@@ -1,0 +1,41 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Event {
+  id             Int      @id @default(autoincrement())
+  slug           String   @unique
+  title          String
+  description    String
+  startDate      DateTime
+  endDate        DateTime
+  locationName   String
+  address        String
+  isFree         Boolean  @default(false)
+  basePrice      Int?
+  timezone       String
+
+  coverImageUrl  String?   // 👈 campo opcional para a URL da imagem de capa
+
+  organizerName  String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  tickets         Ticket[]
+}
+
+model Ticket {
+  id        String   @id @default(cuid())
+  name      String
+  price     Float
+  currency  String
+  available Boolean  @default(true)
+
+  eventId   Int
+  event     Event    @relation(fields: [eventId], references: [id])
+}
