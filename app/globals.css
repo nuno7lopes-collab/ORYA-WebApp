@@ -1,35 +1,31 @@
 @import "tailwindcss";
 
+/* ================== CORES BASE ================== */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+  --background: #05060a;
+  --foreground: #f9fafb;
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --orya-pink: #ff00c8;
+  --orya-cyan: #6bffff;
+  --orya-blue: #1646f5;
+  --orya-purple: #7300ff;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --background: #05060a;
+    --foreground: #f9fafb;
   }
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text",
+    "SF Pro Display", -apple-system, sans-serif;
 }
 
 /* ============ ORYA LOGO ============ */
-
-.orya-logo {
-  /* já controlamos tamanho via Tailwind (w-[220px], h-[220px]) */
-}
 
 /* Glow subtil à volta do anel */
 .orya-logo-glow {
@@ -39,11 +35,11 @@ body {
   filter: blur(35px);
   opacity: 0.55;
   background: conic-gradient(
-    #6BFFFF,
-    #45E5FF,
-    #7300FF,
-    #FF00C8,
-    #6BFFFF
+    var(--orya-cyan),
+    #45e5ff,
+    var(--orya-purple),
+    var(--orya-pink),
+    var(--orya-cyan)
   );
   mask-image: radial-gradient(circle, transparent 58%, black 74%);
   -webkit-mask-image: radial-gradient(circle, transparent 58%, black 74%);
@@ -54,15 +50,157 @@ body {
   background: transparent !important;
   pointer-events: none;
 }
+
 /* ===========================================================
    ANIMAÇÃO DO ANEL ORYA (rotação devagar e cinematográfica)
    =========================================================== */
 
 @keyframes orya-spin {
-  0%   { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
 }
 
 .animate-orya-spin-slow {
   animation: orya-spin 7s linear infinite;
+}
+
+/* ============ ORYA – React DatePicker dark neon theme ============ */
+
+.orya-datepicker-popper {
+  z-index: 40;
+}
+
+/* Container principal do calendário */
+.orya-datepicker-calendar.react-datepicker {
+  background: radial-gradient(
+    circle at top,
+    #17152b 0,
+    #05051a 45%,
+    #040315 100%
+  );
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 18px 45px rgba(0, 0, 0, 0.75);
+  color: #f9fafb;
+  overflow: hidden;
+  font-size: 11px;
+}
+
+/* Header (mês, setas, etc.) */
+.orya-datepicker-calendar .react-datepicker__header {
+  background: linear-gradient(
+    135deg,
+    rgba(255, 0, 200, 0.18),
+    rgba(107, 255, 255, 0.12)
+  );
+  border-bottom: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+.orya-datepicker-calendar .react-datepicker__current-month,
+.orya-datepicker-calendar .react-datepicker-time__header,
+.orya-datepicker-calendar .react-datepicker-year-header {
+  color: #f9fafb;
+  font-size: 12px;
+}
+
+/* Dias e labels */
+.orya-datepicker-calendar .react-datepicker__day-name,
+.orya-datepicker-calendar .react-datepicker__day,
+.orya-datepicker-calendar .react-datepicker__time-name {
+  color: rgba(249, 250, 251, 0.85);
+}
+
+/* Hover */
+.orya-datepicker-calendar .react-datepicker__day:hover,
+.orya-datepicker-calendar .react-datepicker__time-list-item:hover {
+  background: rgba(107, 255, 255, 0.16);
+  color: #f9fafb;
+}
+
+/* Dia selecionado */
+.orya-datepicker-calendar .react-datepicker__day--selected,
+.orya-datepicker-calendar .react-datepicker__day--keyboard-selected {
+  background: linear-gradient(135deg, #ff00c8, #6bffff);
+  color: #020617;
+}
+
+/* Hoje */
+.orya-datepicker-calendar .react-datepicker__day--today {
+  border-radius: 9999px;
+  border: 1px solid rgba(107, 255, 255, 0.8);
+}
+
+/* Coluna de horas */
+.orya-datepicker-calendar .react-datepicker__time-container {
+  border-left: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.orya-datepicker-calendar .react-datepicker__time-list {
+  background: rgba(1, 3, 17, 0.95);
+}
+
+.orya-datepicker-calendar .react-datepicker__time-list-item {
+  padding: 4px 6px;
+}
+
+/* Input wrapper */
+.orya-datepicker-input.react-datepicker-wrapper,
+.orya-datepicker-input .react-datepicker__input-container input {
+  width: 100%;
+}
+
+.orya-datepicker-input::placeholder,
+.orya-datepicker-input .react-datepicker__input-container input::placeholder {
+  color: rgba(148, 163, 184, 0.6);
+}
+
+/* ============ FUNDO GLOBAL ORYA – neutro + detalhe ============ */
+
+.orya-body-bg {
+  min-height: 100vh;
+  color: #f9fafb;
+  background-color: #050814;
+  /* Camadas grandes e suaves, pensadas para o hero + scroll */
+  background-image:
+    radial-gradient(1200px 800px at 50% -200px, rgba(107, 255, 255, 0.18), transparent 60%),
+    radial-gradient(900px 700px at -220px 45%, rgba(255, 0, 200, 0.22), transparent 65%),
+    radial-gradient(1000px 750px at 115% 65%, rgba(22, 70, 245, 0.25), transparent 70%),
+    linear-gradient(180deg, #050814 0%, #05040f 45%, #020308 100%);
+  background-attachment: fixed;
+  background-repeat: no-repeat;
+  background-size: cover;
+  position: relative;
+  overflow-x: hidden;
+}
+
+/* Overlay com “textura” leve (grid + glow suave) */
+.orya-body-bg::before {
+  content: "";
+  position: fixed;
+  inset: -40px;
+  pointer-events: none;
+  z-index: -1;
+  background-image:
+    radial-gradient(circle at 0 0, rgba(255, 255, 255, 0.08) 0, transparent 50%),
+    radial-gradient(circle at 100% 100%, rgba(255, 255, 255, 0.04) 0, transparent 55%),
+    repeating-linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.03) 0,
+      rgba(255, 255, 255, 0.03) 1px,
+      transparent 1px,
+      transparent 14px
+    ),
+    repeating-linear-gradient(
+      0deg,
+      rgba(255, 255, 255, 0.02) 0,
+      rgba(255, 255, 255, 0.02) 1px,
+      transparent 1px,
+      transparent 14px
+    );
+  opacity: 0.42;
+  mix-blend-mode: soft-light;
 }

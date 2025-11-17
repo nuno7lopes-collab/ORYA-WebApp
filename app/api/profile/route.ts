@@ -5,12 +5,14 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 // GET - Ler perfil
 // ------------------------
 export async function GET(req: NextRequest) {
-  const res = NextResponse.next();
-  const { supabase } = createSupabaseServer(req, res);
+  const supabase = await createSupabaseServer();
 
   const { data: userData, error: userError } = await supabase.auth.getUser();
   if (userError || !userData?.user) {
-    return NextResponse.json({ success: false, error: "Not authenticated" }, { status: 401 });
+    return NextResponse.json(
+      { success: false, error: "Not authenticated" },
+      { status: 401 }
+    );
   }
 
   const { data: profile, error: profileError } = await supabase
@@ -21,7 +23,10 @@ export async function GET(req: NextRequest) {
 
   if (profileError) {
     console.error("PROFILE GET ERROR:", profileError);
-    return NextResponse.json({ success: false, error: "Erro ao carregar o perfil" }, { status: 500 });
+    return NextResponse.json(
+      { success: false, error: "Erro ao carregar o perfil" },
+      { status: 500 }
+    );
   }
 
   return NextResponse.json({ success: true, profile });
@@ -31,21 +36,21 @@ export async function GET(req: NextRequest) {
 // PUT - Atualizar perfil
 // ------------------------
 export async function PUT(req: NextRequest) {
-  const res = NextResponse.next();
-  const { supabase } = createSupabaseServer(req, res);
+  const supabase = await createSupabaseServer();
 
   const { data: userData } = await supabase.auth.getUser();
   if (!userData?.user) {
-    return NextResponse.json({ success: false, error: "Not authenticated" }, { status: 401 });
+    return NextResponse.json(
+      { success: false, error: "Not authenticated" },
+      { status: 401 }
+    );
   }
 
   const user = userData.user;
   const body = await req.json();
 
-  // Normalizar username
   const username = body.username?.trim().toLowerCase() || null;
 
-  // Payload FINAL usando apenas colunas reais da DB
   const updatePayload = {
     id: user.id,
     username,
@@ -55,27 +60,16 @@ export async function PUT(req: NextRequest) {
     birthdate: body.birthdate?.trim() === "" ? null : body.birthdate,
     gender: body.gender ?? null,
     phone: body.phone ?? null,
-
-    // LOCALIZAÇÃO — só city porque é o que existe na DB
     city: body.city ?? null,
-
-    // MODO
     user_mode: body.mode ?? null,
-
-    // INTERESSES
     favourite_categories: body.favourite_categories ?? [],
-
-    // PRIVACIDADE
     show_profile: body.show_profile ?? true,
     show_events: body.show_events ?? true,
     show_interests: body.show_interests ?? true,
-
-    // REDES
     instagram: body.instagram ?? null,
     tiktok: body.tiktok ?? null,
   };
 
-  // Verificar duplicado de username
   if (username) {
     const { data: existing, error: usernameErr } = await supabase
       .from("profiles")
@@ -100,7 +94,6 @@ export async function PUT(req: NextRequest) {
     }
   }
 
-  // Upsert
   const { data, error } = await supabase
     .from("profiles")
     .upsert(updatePayload, { onConflict: "id" })

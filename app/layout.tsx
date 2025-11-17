@@ -1,15 +1,23 @@
+import type { Metadata } from "next";
 import "./globals.css";
-import Navbar from "./components/Navbar";
+import { Inter } from "next/font/google";
+import { Navbar } from "./components/Navbar";
 
-export const metadata = {
+const inter = Inter({ subsets: ["latin"] });
+
+export const metadata: Metadata = {
   title: "ORYA",
-  description: "A próxima fase da ORYA está a chegar.",
+  description: "O centro da tua vida social em Portugal.",
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
     <html lang="pt">
-      <body className="bg-[#0a0a0f] text-white min-h-screen">
+      <body className={`${inter.className} orya-body-bg antialiased`}>
         <Navbar />
         {children}
       </body>

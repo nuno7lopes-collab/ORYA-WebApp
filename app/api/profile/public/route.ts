@@ -12,8 +12,7 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  const res = NextResponse.next();
-  const { supabase } = createSupabaseServer(req, res);
+  const supabase = await createSupabaseServer();
 
   // 1) Buscar perfil pelo username
   const { data: profile, error } = await supabase
@@ -90,6 +89,7 @@ export async function GET(req: NextRequest) {
     if (eventsError) {
       console.error("PUBLIC PROFILE EVENTS ERROR:", eventsError);
     } else if (rows) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
       events = rows.map((row: any) => ({
         id: row.events.id,
         title: row.events.title,

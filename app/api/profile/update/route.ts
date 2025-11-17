@@ -3,8 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 
 export async function POST(req: NextRequest) {
-  const res = NextResponse.json({ success: false });
-  const { supabase } = createSupabaseServer(req, res);
+  const supabase = await createSupabaseServer();
 
   // Autenticado?
   const { data: auth, error: authErr } = await supabase.auth.getUser();
@@ -31,7 +30,7 @@ export async function POST(req: NextRequest) {
     "show_events",
     "show_interests",
   ];
-
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
   const updateData: Record<string, any> = {};
   for (const key of allowedFields) {
     if (body[key] !== undefined) updateData[key] = body[key];

@@ -1,22 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 
-export async function POST(req: NextRequest) {
-  // Criamos a resposta onde as cookies vão ser escritas
+export async function POST(_req: NextRequest) {
+  // resposta base
   const res = NextResponse.json({ success: true });
 
-  // Puxamos o supabase corretamente
-  const { supabase } = createSupabaseServer(req, res);
+  // obter o client do Supabase (nova versão da helper)
+  const supabase = await createSupabaseServer();
 
-  // Sign out (apaga cookies de sessão)
+  // terminar sessão (limpa cookies de auth)
   const { error } = await supabase.auth.signOut();
 
   if (error) {
     return NextResponse.json(
       { success: false, error: error.message },
-      { status: 400 }
+      { status: 400 },
     );
   }
 
-  return res; // devolve as cookies apagadas
+  return res;
 }
