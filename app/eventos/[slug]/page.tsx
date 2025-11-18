@@ -74,7 +74,7 @@ export default async function EventPage({ params }: EventPageProps) {
   const userId = userData?.user?.id ?? null;
 
   const goingCount = event.purchases.reduce(
-    (sum, p) => sum + (p.quantity ?? 0),
+    (sum: number, p: { quantity: number | null }) => sum + (p.quantity ?? 0),
     0,
   );
 
