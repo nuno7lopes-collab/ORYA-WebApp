@@ -74,8 +74,20 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // 🔥 Aqui garantimos que o parâmetro `t` não é `any`
     const ticket = event.tickets.find(
-      (t: { id: string }) => t.id === ticketId,
+      (t: {
+        id: string;
+        name?: string | null;
+        price?: number | null;
+        currency?: string | null;
+        available: boolean;
+        isVisible: boolean;
+        startsAt?: Date | null;
+        endsAt?: Date | null;
+        totalQuantity?: number | null;
+        soldQuantity: number;
+      }) => t.id === ticketId,
     );
 
     if (!ticket) {
