@@ -112,12 +112,16 @@ export default async function EventPage({ params }: EventPageProps) {
 
   const orderedTickets = event.tickets
     .filter((t: { isVisible: boolean; available: boolean }) => t.isVisible && t.available)
-    .sort((a, b) => {
-      const ao = a.sortOrder ?? 0;
-      const bo = b.sortOrder ?? 0;
-      if (ao !== bo) return ao - bo;
-      return a.price - b.price;
-    });
+    .sort(
+      (
+        a: { sortOrder: number | null; price: number },
+        b: { sortOrder: number | null; price: number },
+      ) => {
+        const ao = a.sortOrder ?? 0;
+        const bo = b.sortOrder ?? 0;
+        if (ao !== bo) return ao - bo;
+        return a.price - b.price;
+      });
 
   const uiTickets: WaveTicket[] = orderedTickets.map((t, index) => {
     const remaining =
