@@ -84,7 +84,20 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const ticket = event.tickets.find((t) => t.id === ticketId);
+    const ticket = event.tickets.find(
+  (t: {
+    id: string;
+    name?: string | null;
+    price?: number | null;
+    currency?: string | null;
+    available: boolean;
+    isVisible: boolean;
+    startsAt?: Date | null;
+    endsAt?: Date | null;
+    totalQuantity?: number | null;
+    soldQuantity: number;
+  }) => t.id === ticketId,
+);
 
     if (!ticket) {
       return NextResponse.json(
