@@ -111,7 +111,7 @@ export default async function EventPage({ params }: EventPageProps) {
   const interestedCount: number = 0;
 
   const orderedTickets = event.tickets
-    .filter((t) => t.isVisible && t.available)
+    .filter((t: { isVisible: boolean; available: boolean }) => t.isVisible && t.available)
     .sort((a, b) => {
       const ao = a.sortOrder ?? 0;
       const bo = b.sortOrder ?? 0;
