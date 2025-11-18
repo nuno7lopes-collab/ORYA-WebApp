@@ -75,8 +75,8 @@ export async function POST(req: NextRequest) {
     }
 
     const ticket = event.tickets.find(
-  (t: { id: string }) => t.id === ticketId,
-);
+      (t: { id: string }) => t.id === ticketId,
+    );
 
     if (!ticket) {
       return NextResponse.json(
