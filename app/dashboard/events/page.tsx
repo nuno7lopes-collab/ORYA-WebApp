@@ -1,13 +1,38 @@
 // app/dashboard/events/page.tsx
 import { prisma } from "@/lib/prisma";
-import type { Event, Ticket, TicketPurchase } from "@prisma/client";
+// Types locais para o painel de eventos
+// (evitamos depender dos tipos gerados do Prisma no lado do Next.js)
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 
-type EventWithDetails = Event & {
-  tickets: Ticket[];
-  purchases: TicketPurchase[];
+
+type DashboardTicket = {
+  id: string;
+  name: string;
+  price: number;
+  currency: string;
+  soldQuantity: number | null;
+  totalQuantity: number | null;
+  available: boolean;
+  sortOrder: number;
+};
+
+type DashboardPurchase = {
+  pricePaid: number;
+};
+
+type EventWithDetails = {
+  id: string | number;
+  slug: string;
+  title: string;
+  locationName: string | null;
+  startDate: Date;
+  endDate: Date;
+  organizerName: string | null;
+  isFree: boolean;
+  tickets: DashboardTicket[];
+  purchases: DashboardPurchase[];
 };
 
 function formatDateRange(start: Date, end: Date) {
