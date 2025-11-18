@@ -81,7 +81,7 @@ export default async function EventPage({ params }: EventPageProps) {
   const currentUserHasTicket =
     !!userId &&
     event.purchases.some(
-      (p) => p.userId !== null && p.userId === userId,
+      (p: { userId: string | null }) => p.userId !== null && p.userId === userId,
     );
 
   const startDateObj = new Date(event.startDate);
