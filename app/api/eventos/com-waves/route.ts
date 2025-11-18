@@ -30,9 +30,40 @@ function getWaveStatus(ticket: {
   return "on_sale" as const;
 }
 
+type WaveTicket = {
+  id: string;
+  name: string | null;
+  description: string | null;
+  price: number | null;
+  currency: string | null;
+  available: boolean;
+  isVisible: boolean;
+  startsAt: Date | null;
+  endsAt: Date | null;
+  totalQuantity: number | null;
+  soldQuantity: number;
+};
+
+type EventWithTickets = {
+  id: number;
+  slug: string | null;
+  title: string;
+  description: string | null;
+  startDate: Date;
+  endDate: Date | null;
+  locationName: string | null;
+  address: string | null;
+  isFree: boolean;
+  basePrice: number | null;
+  timezone: string | null;
+  coverImageUrl: string | null;
+  organizerName: string | null;
+  tickets: WaveTicket[];
+};
+
 export async function GET(_req: NextRequest) {
   try {
-    const events = await prisma.event.findMany({
+    const events = (await prisma.event.findMany({
       orderBy: {
         startDate: "asc",
       },
@@ -43,7 +74,7 @@ export async function GET(_req: NextRequest) {
           },
         },
       },
-    });
+    })) as EventWithTickets[];
 
     const payload = events.map((event) => {
       const waves = event.tickets.map((t) => {
