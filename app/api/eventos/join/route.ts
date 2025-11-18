@@ -26,7 +26,6 @@ export async function POST(req: NextRequest) {
       address,
       ticketPrice,
       coverImage,
-      organizer,
     } = body;
 
     if (!title || !description || !startDate || !endDate || !locationName) {
@@ -57,13 +56,11 @@ export async function POST(req: NextRequest) {
         endDate: new Date(endDate),
         timezone: timezone || "Europe/Lisbon",
         isFree: !!isFree,
-        ticketPrice: isFree ? null : ticketPrice ?? null,
         locationName,
         address: address || "",
-        coverImage:
+        coverImageUrl:
           coverImage ||
           "https://images.unsplash.com/photo-1541987392829-5937c1069305?q=80&w=1600",
-        organizer: organizer || "ORYA Team",
       },
     });
 
