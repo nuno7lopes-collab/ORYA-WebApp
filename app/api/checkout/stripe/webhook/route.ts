@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
 import { prisma } from "@/lib/prisma";
+import type { Prisma } from "@prisma/client";
 
 export const runtime = "nodejs";
 
@@ -93,7 +94,7 @@ export async function POST(req: NextRequest) {
           : "EUR";
 
         try {
-          await prisma.$transaction(async (tx) => {
+          await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
             // Atualizar soldQuantity da wave / ticket
             await tx.ticket.update({
               where: { id: ticketId },
