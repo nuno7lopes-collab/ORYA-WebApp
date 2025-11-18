@@ -1,8 +1,20 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import type { Prisma } from "@prisma/client";
 
 export async function GET(req: NextRequest) {
+  type EventWithTickets = Prisma.EventGetPayload<{
+    include: {
+      tickets: true;
+      _count: {
+        select: {
+          tickets: true;
+          purchases: true;
+        };
+      };
+    };
+  }>;
   try {
     const { searchParams } = new URL(req.url);
 
@@ -95,7 +107,7 @@ const searchWhere: any =
       }
     }
 
-    const events = await prisma.event.findMany({
+    const events: EventWithTickets[] = await prisma.event.findMany({
       where,
       orderBy,
       take: take + 1, // +1 para detectar se há próxima página
@@ -124,7 +136,7 @@ const searchWhere: any =
     }
 
     // ---- Transformação para payload "feed" ----
-    const payload = events.map((event) => {
+    const payload = events.map((event: EventWithTickets) => {
       const prices = event.tickets
         .map((t) => t.price)
         .filter((p) => typeof p === "number");
