@@ -1,12 +1,27 @@
 // app/components/EventCard.tsx
 import Link from 'next/link';
-import type { Event } from '../../types/event';
 
-type Props = {
-  event: Event;
+type EventTicket = { price: number };
+
+type EventForCard = {
+  slug: string;
+  title: string;
+  startDate: string;
+  endDate: string;
+  timezone: string;
+  locationName: string;
+  address: string;
+  isFree: boolean;
+  tickets?: EventTicket[];
+  interestedCount: number;
+  goingCount: number;
 };
 
-function formatPrice(tickets: Event['tickets'], isFree: boolean) {
+type Props = {
+  event: EventForCard;
+};
+
+function formatPrice(tickets: EventTicket[] | undefined, isFree: boolean) {
   if (isFree) return 'Grátis';
 
   const list = tickets || []; // <— Evita undefined
