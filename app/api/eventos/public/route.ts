@@ -2,6 +2,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
+type EventWithTickets = {
+  id: number;
+  slug: string;
+  title: string;
+  description: string | null;
+  startDate: Date;
+  endDate: Date | null;
+  locationName: string | null;
+  coverImageUrl: string | null;
+  isFree: boolean;
+  basePrice: number | null;
+  tickets: { price: number }[];
+};
+
 export async function GET(_req: NextRequest) {
   try {
     const events = await prisma.event.findMany({
@@ -11,7 +25,7 @@ export async function GET(_req: NextRequest) {
       },
     });
 
-    const payload = events.map((event) => {
+    const payload = events.map((event: EventWithTickets) => {
       const minTicketPrice =
         event.tickets.length > 0
           ? Math.min(...event.tickets.map((t) => t.price))
