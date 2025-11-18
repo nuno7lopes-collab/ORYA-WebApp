@@ -87,7 +87,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const ticket = event.tickets.find((t) => t.id === ticketId);
+    const ticket = event.tickets.find((t: { id: string }) => t.id === ticketId);
 
     if (!ticket) {
       return NextResponse.json(
@@ -240,7 +240,7 @@ export async function POST(req: NextRequest) {
       } else {
         // Mesma quantidade → apenas renovar o tempo da reserva.
         reservation = await prisma.ticketReservation.update({
-          where: { id: reservation.id },
+          where: { id: reservation.id },  
           data: {
             expiresAt,
           },
