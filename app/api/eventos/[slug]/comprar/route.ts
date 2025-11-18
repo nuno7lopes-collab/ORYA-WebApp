@@ -1,6 +1,7 @@
 // app/api/eventos/[slug]/comprar/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import type { Prisma } from "@prisma/client";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 
 export async function POST(req: NextRequest) {
@@ -116,7 +117,8 @@ export async function POST(req: NextRequest) {
     }
 
     // -------- 7) Transação: atualizar stock + registar compra --------
-    const result = await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(
+      async (tx: Prisma.TransactionClient) => {
       const updatedTicket = await tx.ticket.update({
         where: { id: ticket.id },
         data: {
@@ -147,7 +149,8 @@ export async function POST(req: NextRequest) {
       });
 
       return { updatedTicket, purchase };
-    });
+      },
+    );
 
     return NextResponse.json(
       {
