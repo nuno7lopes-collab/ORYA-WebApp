@@ -55,6 +55,15 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ received: true }, { status: 200 });
 }
 
+
+type WebhookTicket = {
+  id: string;
+  totalQuantity: number | null | undefined;
+  soldQuantity: number;
+  price: number | null | undefined;
+  currency: string | null | undefined;
+};
+
 async function handleCheckoutSessionCompleted(
   session: Stripe.Checkout.Session,
 ) {
@@ -117,7 +126,9 @@ async function handleCheckoutSessionCompleted(
     return;
   }
 
-  const ticket = eventRecord.tickets.find((t) => t.id === ticketId);
+  const ticket = eventRecord.tickets.find(
+    (t: WebhookTicket) => t.id === ticketId,
+  );
   if (!ticket) {
     console.warn(
       "[handleCheckoutSessionCompleted] Bilhete não encontrado",
