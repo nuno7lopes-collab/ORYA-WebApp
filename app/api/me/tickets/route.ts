@@ -53,27 +53,49 @@ export async function GET() {
     });
 
     // 3) Mapear para o formato que a página /me consegue usar facilmente
-    const tickets: UserTicket[] = purchases.map((p) => ({
-      id: p.id,
-      quantity: p.quantity,
-      pricePaid: p.pricePaid,
-      currency: p.currency,
-      purchasedAt: p.createdAt.toISOString(),
-      event: {
-        id: p.event.id,
-        slug: p.event.slug,
-        title: p.event.title,
-        startDate: p.event.startDate.toISOString(),
-        endDate: p.event.endDate.toISOString(),
-        locationName: p.event.locationName,
-        coverImageUrl: p.event.coverImageUrl,
-      },
-      ticket: {
-        id: p.ticket.id,
-        name: p.ticket.name,
-        description: p.ticket.description ?? null,
-      },
-    }));
+    const tickets: UserTicket[] = purchases.map(
+      (p: {
+        id: string;
+        quantity: number;
+        pricePaid: number;
+        currency: string;
+        createdAt: Date;
+        event: {
+          id: number;
+          slug: string;
+          title: string;
+          startDate: Date;
+          endDate: Date;
+          locationName: string;
+          coverImageUrl: string | null;
+        };
+        ticket: {
+          id: string;
+          name: string;
+          description: string | null;
+        };
+      }) => ({
+        id: p.id,
+        quantity: p.quantity,
+        pricePaid: p.pricePaid,
+        currency: p.currency,
+        purchasedAt: p.createdAt.toISOString(),
+        event: {
+          id: p.event.id,
+          slug: p.event.slug,
+          title: p.event.title,
+          startDate: p.event.startDate.toISOString(),
+          endDate: p.event.endDate.toISOString(),
+          locationName: p.event.locationName,
+          coverImageUrl: p.event.coverImageUrl,
+        },
+        ticket: {
+          id: p.ticket.id,
+          name: p.ticket.name,
+          description: p.ticket.description ?? null,
+        },
+      }),
+    );
 
     return NextResponse.json(
       {
