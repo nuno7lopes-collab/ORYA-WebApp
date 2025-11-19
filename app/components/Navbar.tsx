@@ -24,6 +24,7 @@ export function Navbar() {
   const [me, setMe] = useState<MeResponse | null>(null);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
+  const profileMenuRef = useRef<HTMLDivElement | null>(null);
 
   const lastScrollYRef = useRef(0);
 
@@ -72,9 +73,9 @@ export function Navbar() {
         setIsVisible(true);
       } else {
         // A descer esconde, a subir mostra
-        if (currentY > prevY + 8) {
+        if (currentY > prevY + 12) {
           setIsVisible(false);
-        } else if (currentY < prevY - 8) {
+        } else if (currentY < prevY - 12) {
           setIsVisible(true);
         }
       }
@@ -89,6 +90,50 @@ export function Navbar() {
 
     return () => {
       window.removeEventListener("scroll", handleScroll);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+
+    const originalOverflow = document.body.style.overflow;
+
+    if (isSearchOpen) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = originalOverflow;
+    }
+
+    return () => {
+      document.body.style.overflow = originalOverflow;
+    };
+  }, [isSearchOpen]);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        profileMenuRef.current &&
+        !profileMenuRef.current.contains(event.target as Node)
+      ) {
+        setIsProfileMenuOpen(false);
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsSearchOpen(false);
+        setIsProfileMenuOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleKeyDown);
     };
   }, []);
 
@@ -140,15 +185,15 @@ export function Navbar() {
   return (
     <>
       <header
-        className={`fixed inset-x-0 top-0 z-50 transition-transform duration-250 ${
+        className={`fixed inset-x-0 top-0 z-50 transition-transform duration-300 ease-out ${
           isVisible ? "translate-y-0" : "-translate-y-full"
         }`}
       >
         <div
-          className={`flex w-full items-center gap-4 px-4 py-3 md:px-6 lg:px-8 ${
+          className={`flex w-full items-center gap-4 px-4 md:px-6 lg:px-8 transition-all duration-300 ${
             isAtTop && !isSearchOpen
-              ? "border-b border-white/5 bg-black/20 backdrop-blur-xl"
-              : "border-b border-white/10 bg-black/40 backdrop-blur-2xl shadow-[0_16px_45px_rgba(15,23,42,0.9)]"
+              ? "py-4 md:py-5 border-b border-white/5 bg-black/20 backdrop-blur-2xl"
+              : "py-2.5 md:py-3 border-b border-white/10 bg-black/60 backdrop-blur-3xl shadow-[0_16px_45px_rgba(15,23,42,0.9)]"
           }`}
         >
           {/* Logo + link explorar */}
@@ -235,13 +280,16 @@ export function Navbar() {
                 Entrar / Registar
               </button>
             ) : (
-              <div className="relative">
+              <div className="relative" ref={profileMenuRef}>
                 <button
                   type="button"
                   onClick={() =>
                     setIsProfileMenuOpen((open) => !open)
                   }
                   className="flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-2.5 py-1 text-[11px] text-white/85 hover:bg-white/15"
+                  aria-haspopup="menu"
+                  aria-expanded={isProfileMenuOpen}
+                  aria-label="Abrir menu de conta"
                 >
                   <div className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] text-[11px] font-bold text-black shadow-[0_0_18px_rgba(107,255,255,0.7)]">
                     {userInitial}
@@ -252,7 +300,11 @@ export function Navbar() {
                 </button>
 
                 {isProfileMenuOpen && (
-                  <div className="absolute right-0 mt-2 w-52 rounded-2xl border border-white/14 bg-black/80 p-2 text-[11px] text-white/80 shadow-[0_18px_45px_rgba(0,0,0,0.85)] backdrop-blur-2xl">
+                  <div
+                    className="absolute right-0 mt-2 w-52 rounded-2xl border border-white/14 bg-black/80 p-2 text-[11px] text-white/80 shadow-[0_18px_45px_rgba(0,0,0,0.85)] backdrop-blur-2xl"
+                    role="menu"
+                    aria-label="Menu de conta ORYA"
+                  >
                     <button
                       type="button"
                       onClick={() => {
@@ -272,6 +324,16 @@ export function Navbar() {
                       className="flex w-full items-center justify-between rounded-xl px-2.5 py-1.5 text-left hover:bg-white/8"
                     >
                       <span>Os meus bilhetes</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsProfileMenuOpen(false);
+                        router.push("/me/edit");
+                      }}
+                      className="flex w-full items-center justify-between rounded-xl px-2.5 py-1.5 text-left hover:bg-white/8"
+                    >
+                      <span>Definições</span>
                     </button>
                     <button
                       type="button"
@@ -305,9 +367,21 @@ export function Navbar() {
 
       {/* Overlay de pesquisa estilo full-screen, com sugestões */}
       {isSearchOpen && (
-        <div className="fixed inset-0 z-40 bg-black/70 backdrop-blur-2xl">
+        <div
+          className="fixed inset-0 z-40 bg-black/70 backdrop-blur-2xl"
+          role="dialog"
+          aria-modal="true"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setIsSearchOpen(false);
+            }
+          }}
+        >
           <div className="mx-auto mt-20 max-w-2xl px-4">
-            <div className="rounded-3xl border border-white/18 bg-[#020617]/90 p-4 shadow-[0_28px_80px_rgba(0,0,0,0.95)]">
+            <div
+              className="rounded-3xl border border-white/18 bg-[#020617]/90 p-4 shadow-[0_28px_80px_rgba(0,0,0,0.95)]"
+              aria-label="Pesquisa de eventos ORYA"
+            >
               <form
                 onSubmit={handleSubmitSearch}
                 className="flex items-center gap-3 rounded-2xl border border-white/20 bg-black/60 px-4 py-2"

@@ -16,10 +16,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="pt">
-      <body className={`${inter.className} orya-body-bg antialiased`}>
+    <html lang="pt" className="h-full">
+      <body
+        className={`${inter.className} orya-body-bg antialiased min-h-screen flex flex-col`}
+      >
         <Navbar />
-        {children}
+        <main className="flex-1 pt-16 md:pt-20">
+          {children}
+        </main>
       </body>
     </html>
   );

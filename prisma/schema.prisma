@@ -31,6 +31,7 @@ model Event {
   tickets   Ticket[]
   purchases TicketPurchase[]
   reservations TicketReservation[]
+  interests   EventInterest[]
 }
 
 model Ticket {
@@ -75,6 +76,12 @@ model TicketPurchase {
   pricePaid Int
   currency  String @default("EUR")
 
+  /// Stripe PaymentIntent ID (para reconciliar pagamentos)
+  stripePaymentIntentId String? @unique
+
+  /// Token único para gerar e validar QR Codes
+  qrToken   String?  @unique
+
   createdAt DateTime @default(now())
 }
 
@@ -108,4 +115,18 @@ model TicketReservation {
   @@index([eventId])
   @@index([userId])
   @@index([status, expiresAt])
+}
+
+model EventInterest {
+  id        String   @id @default(cuid())
+
+  event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  eventId   Int
+
+  userId    String   // Supabase auth user id (obrigatório para interesse)
+
+  createdAt DateTime @default(now())
+
+  @@unique([eventId, userId])
+  @@index([userId])
 }

@@ -106,7 +106,11 @@ const searchWhere: any =
           }
         : {}),
       include: {
-        tickets: true,
+        tickets: {
+          include: {
+            reservations: true,
+          },
+        },
         _count: {
           select: {
             tickets: true,
@@ -125,12 +129,35 @@ const searchWhere: any =
 
     // ---- Transformação para payload "feed" ----
     const payload = events.map((event: any) => {
-      const prices = event.tickets
-        .map((t: any) => t.price)
+      // Price must only consider waves with real stock (remaining > 0)
+      const validPrices = event.tickets
+        .map((t: any) => {
+          if (t.totalQuantity === null || t.totalQuantity === undefined) {
+            return t.price; // unlimited stock → OK
+          }
+
+          const activeReservations = t.reservations
+            ? t.reservations.filter(
+                (r: any) =>
+                  r.status === "ACTIVE" &&
+                  r.expiresAt &&
+                  new Date(r.expiresAt) > now
+              )
+            : [];
+
+          const reservedQty = activeReservations.reduce(
+            (sum: number, r: any) => sum + (r.quantity ?? 0),
+            0
+          );
+
+          const remaining = t.totalQuantity - t.soldQuantity - reservedQty;
+
+          return remaining > 0 ? t.price : null;
+        })
         .filter((p: any) => typeof p === "number");
 
       const priceFromCents =
-        prices.length > 0 ? Math.min(...prices) : event.basePrice ?? null;
+        validPrices.length > 0 ? Math.min(...validPrices) : event.basePrice ?? null;
 
       const priceFrom =
         priceFromCents !== null && priceFromCents !== undefined
@@ -141,12 +168,28 @@ const searchWhere: any =
       const onSaleCount = event.tickets.filter(
         (t: any) => t.available && t.isVisible,
       ).length;
-      const soldOutCount = event.tickets.filter(
-        (t: any) =>
-          t.totalQuantity !== null &&
-          t.totalQuantity !== undefined &&
-          t.soldQuantity >= t.totalQuantity,
-      ).length;
+      const soldOutCount = event.tickets.filter((t: any) => {
+        if (t.totalQuantity === null || t.totalQuantity === undefined) return false;
+
+        // Calculate reservedQty from reservations array already loaded
+        const activeReservations = t.reservations
+          ? t.reservations.filter(
+              (r: any) =>
+                r.status === "ACTIVE" &&
+                r.expiresAt &&
+                new Date(r.expiresAt) > now
+            )
+          : [];
+
+        const reservedQty = activeReservations.reduce(
+          (sum: number, r: any) => sum + (r.quantity ?? 0),
+          0
+        );
+
+        const remaining = t.totalQuantity - t.soldQuantity - reservedQty;
+
+        return remaining <= 0;
+      }).length;
 
       const futureStarts = event.tickets
         .filter((t: any) => t.startsAt && t.startsAt > now)

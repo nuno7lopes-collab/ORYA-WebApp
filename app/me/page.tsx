@@ -15,6 +15,9 @@ type Profile = {
   full_name: string | null;
   city: string | null;
   avatar_url: string | null;
+  phoneNumber?: string | null;
+  phoneConfirmed?: boolean | null;
+  role?: "user" | "organizer" | null;
 };
 
 type MeApiResponse =
@@ -209,6 +212,7 @@ export default function MePage() {
   }
 
   const hasTickets = !ticketsLoading && tickets.length > 0;
+  const hasActivity = !ticketsLoading && tickets.length > 0;
 
   // Bilhetes mais recentes para preview no perfil (3–4)
   const sortedTickets = [...tickets].sort((a, b) => {
@@ -222,10 +226,11 @@ export default function MePage() {
     return db.getTime() - da.getTime();
   });
 
-  const recentTickets = sortedTickets.slice(0, 4);
+  const recentTickets = sortedTickets.slice(0, 3);
 
   return (
-    <main className="orya-body-bg text-white">
+    <main className="orya-body-bg text-white" aria-labelledby="me-page-title">
+      <h1 id="me-page-title" className="sr-only">A minha conta</h1>
       <header className="border-b border-white/10 bg-black/30 backdrop-blur-xl">
         <div className="max-w-5xl mx-auto px-5 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -269,15 +274,37 @@ export default function MePage() {
                 )}
               </div>
               <div className="space-y-1">
-                <p className="text-sm font-semibold tracking-tight md:text-base">
-                  {displayName}
-                </p>
+                <div className="flex items-center gap-2">
+                  <p className="text-sm font-semibold tracking-tight md:text-base">
+                    {displayName}
+                  </p>
+                  {profile?.role === "organizer" && (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-amber-400/60 bg-amber-500/15 px-2 py-0.5 text-[10px] font-medium text-amber-100 shadow-[0_0_16px_rgba(245,158,11,0.55)]">
+                      <span className="text-[11px]">⭐</span>
+                      Organizador ORYA
+                    </span>
+                  )}
+                </div>
                 {user?.email && (
                   <p className="text-[11px] text-white/65">{user.email}</p>
                 )}
                 {profile?.city && (
                   <p className="mt-0.5 text-[11px] text-white/55">
                     📍 {profile.city}
+                  </p>
+                )}
+                {profile?.phoneNumber && (
+                  <p className="mt-0.5 text-[11px] text-white/55">
+                    📱 {profile.phoneNumber}
+                    <span
+                      className={`ml-2 inline-flex items-center rounded-full border px-2 py-0.5 text-[9px] font-medium ${
+                        profile.phoneConfirmed
+                          ? "border-emerald-400/60 bg-emerald-500/15 text-emerald-100"
+                          : "border-amber-400/60 bg-amber-500/15 text-amber-50"
+                      }`}
+                    >
+                      {profile.phoneConfirmed ? "Confirmado" : "Por confirmar"}
+                    </span>
                   </p>
                 )}
                 <div className="mt-1 inline-flex items-center gap-2 rounded-full bg-white/5 border border-white/20 px-3 py-1 text-[10px] text-white/80">
@@ -295,23 +322,35 @@ export default function MePage() {
                   A carregar os teus dados…
                 </span>
               )}
-              {meError && (
-                <span className="px-3 py-1 rounded-full bg-red-500/10 border border-red-400/40 text-red-200">
-                  {meError}
-                </span>
+              {!meLoading && meError && (
+                <>
+                  <span className="px-3 py-1 rounded-full bg-red-500/10 border border-red-400/40 text-red-200">
+                    {meError}
+                  </span>
+                  {meError.includes("iniciar sessão") && (
+                    <Link
+                      href="/login"
+                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-white text-black text-[11px] font-semibold hover:bg-white/90 transition"
+                    >
+                      Iniciar sessão
+                      <span className="text-[12px]">↗</span>
+                    </Link>
+                  )}
+                </>
               )}
               {!meLoading && !meError && (
-                <span className="px-3 py-1 rounded-full bg-[#6BFFFF]/10 border border-[#6BFFFF]/40 text-[#6BFFFF]">
-                  Sessão ativa ORYA
-                </span>
+                <>
+                  <span className="px-3 py-1 rounded-full bg-[#6BFFFF]/10 border border-[#6BFFFF]/40 text-[#6BFFFF]">
+                    Sessão ativa ORYA
+                  </span>
+                  <Link
+                    href="/me/edit"
+                    className="mt-1 inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-black/40 border border-white/18 text-[11px] text-white/80 hover:bg-white/10 transition"
+                  >
+                    Editar perfil
+                  </Link>
+                </>
               )}
-
-              <Link
-                href="/me/edit"
-                className="mt-1 inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-black/40 border border-white/18 text-[11px] text-white/80 hover:bg-white/10 transition"
-              >
-                Editar perfil
-              </Link>
             </div>
           </div>
 
@@ -387,6 +426,13 @@ export default function MePage() {
                 <span className="text-white/60">Cidade</span>
                 <span className="font-medium text-white/85">
                   {profile?.city ?? "Sem cidade definida"}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-white/60">Telemóvel</span>
+                <span className="font-medium text-white/85">
+                  {profile?.phoneNumber ?? "Sem telemóvel definido"}
                 </span>
               </div>
             </div>
@@ -493,27 +539,44 @@ export default function MePage() {
                       key={t.id}
                       className="rounded-xl border border-white/14 bg-gradient-to-br from-white/4 via-black/70 to-black/90 px-4 py-3.5 flex flex-col gap-2.5"
                     >
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="text-sm font-semibold text-white/95">
-                            {t.eventTitle}
-                          </p>
-                          <p className="mt-0.5 text-[11px] text-white/60">
-                            {eventDateFormatted}
-                            {t.eventLocationName
-                              ? ` • ${t.eventLocationName}`
-                              : ""}
-                          </p>
+                      <div className="flex items-start gap-3">
+                        <div className="relative h-20 w-14 rounded-lg border border-white/15 overflow-hidden bg-white/5 flex-shrink-0">
+                          {t.eventCoverImageUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={t.eventCoverImageUrl}
+                              alt={t.eventTitle}
+                              className="h-full w-full object-cover"
+                            />
+                          ) : (
+                            <div className="h-full w-full bg-gradient-to-br from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] flex items-center justify-center text-[10px] font-semibold text-black/90">
+                              ORYA
+                            </div>
+                          )}
                         </div>
-                        <div className="flex flex-col items-end gap-1">
-                          <span
-                            className={`px-2 py-1 rounded-full border text-[10px] ${statusClasses}`}
-                          >
-                            {statusLabel}
-                          </span>
-                          <span className="px-2 py-0.5 rounded-full bg-white/6 border border-white/20 text-[9px] text-white/80">
-                            Bilhete ORYA
-                          </span>
+
+                        <div className="flex-1 flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-semibold text-white/95">
+                              {t.eventTitle}
+                            </p>
+                            <p className="mt-0.5 text-[11px] text-white/60">
+                              {eventDateFormatted}
+                              {t.eventLocationName
+                                ? ` • ${t.eventLocationName}`
+                                : ""}
+                            </p>
+                          </div>
+                          <div className="flex flex-col items-end gap-1">
+                            <span
+                              className={`px-2 py-1 rounded-full border text-[10px] ${statusClasses}`}
+                            >
+                              {statusLabel}
+                            </span>
+                            <span className="px-2 py-0.5 rounded-full bg-white/6 border border-white/20 text-[9px] text-white/80">
+                              Bilhete ORYA
+                            </span>
+                          </div>
                         </div>
                       </div>
 
@@ -551,7 +614,7 @@ export default function MePage() {
                             </Link>
                             <Link
                               href={`/bilhete/${t.id}`}
-                              className="inline-flex items-center gap-1 rounded-full border border-white/25 bg:white/5 bg-white/5 px-3 py-1 text-[10px] text-white/80 hover:bg-white/10 hover:text-white transition"
+                              className="inline-flex items-center gap-1 rounded-full border border-white/25 bg-white/5 px-3 py-1 text-[10px] text-white/80 hover:bg-white/10 hover:text-white transition"
                             >
                               Abrir bilhete
                               <span className="text-[11px]">↗</span>
@@ -579,6 +642,122 @@ export default function MePage() {
             )}
           </section>
         </div>
+
+        {/* ATIVIDADE RECENTE */}
+        <section className="rounded-2xl border border-white/12 bg-gradient-to-r from-[#020617] via-slate-950 to-black backdrop-blur-xl p-5 space-y-4">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div>
+              <h2 className="text-sm font-semibold text-white/95">
+                Atividade recente
+              </h2>
+              <p className="text-[11px] text-white/65">
+                Uma visão rápida do que tens feito na ORYA nos últimos tempos.
+              </p>
+            </div>
+          </div>
+
+          {ticketsLoading && (
+            <div className="space-y-2">
+              <div className="h-14 rounded-xl bg-white/5 border border-white/10 animate-pulse" />
+              <div className="h-14 rounded-xl bg-white/5 border border-white/10 animate-pulse" />
+            </div>
+          )}
+
+          {!ticketsLoading && !hasActivity && (
+            <div className="rounded-xl border border-dashed border-white/20 bg-black/50 px-4 py-4 text-[11px] text-white/70 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+              <div>
+                <p className="font-medium text-white/85">
+                  Ainda não temos atividade para mostrar
+                </p>
+                <p className="mt-1 text-white/60">
+                  Assim que começares a comprar bilhetes, vais ver aqui um
+                  resumo das tuas últimas aventuras.
+                </p>
+              </div>
+              <Link
+                href="/explorar"
+                className="inline-flex px-3 py-1.5 rounded-xl bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] text-[11px] font-semibold text-black hover:scale-[1.02] active:scale-95 transition-transform shadow-[0_0_25px_rgba(107,255,255,0.5)]"
+              >
+                Começar a explorar
+              </Link>
+            </div>
+          )}
+
+          {!ticketsLoading && hasActivity && (
+            <div className="space-y-2">
+              {recentTickets.map((t) => {
+                const eventDate = parseDate(t.eventStartDate);
+                const purchaseDate = parseDate(t.createdAt);
+
+                const isPast =
+                  eventDate !== null && eventDate.getTime() < now.getTime();
+
+                const eventDateFormatted = eventDate
+                  ? eventDate.toLocaleString("pt-PT", {
+                      weekday: "short",
+                      day: "2-digit",
+                      month: "short",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })
+                  : null;
+
+                const purchaseDateFormatted = purchaseDate
+                  ? purchaseDate.toLocaleDateString("pt-PT", {
+                      day: "2-digit",
+                      month: "2-digit",
+                      year: "2-digit",
+                    })
+                  : null;
+
+                const prefix = isPast ? "Foste a" : "Vais a";
+
+                return (
+                  <div
+                    key={`activity-${t.id}`}
+                    className="flex items-center justify-between gap-3 rounded-xl border border-white/15 bg-white/[0.03] px-3.5 py-2.5 text-[11px] text-white/80"
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="h-8 w-8 rounded-full bg-gradient-to-br from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] flex items-center justify-center text-[13px]">
+                        🎟️
+                      </div>
+                      <div className="flex flex-col min-w-0">
+                        <p className="truncate">
+                          <span className="text-white/60">{prefix} </span>
+                          <span className="font-medium text-white/90">
+                            {t.eventTitle}
+                          </span>
+                        </p>
+                        <p className="text-[10px] text-white/55">
+                          {eventDateFormatted && (
+                            <span>
+                              Evento: {eventDateFormatted}
+                              {t.eventLocationName
+                                ? ` • ${t.eventLocationName}`
+                                : ""}
+                            </span>
+                          )}
+                          {!eventDateFormatted && purchaseDateFormatted && (
+                            <span>Compra em {purchaseDateFormatted}</span>
+                          )}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <Link
+                        href={`/bilhete/${t.id}`}
+                        className="inline-flex items-center gap-1 rounded-full border border-white/25 bg-black/60 px-3 py-1 text-[10px] text-white/80 hover:bg-white/10 hover:text-white transition"
+                      >
+                        Ver bilhete
+                        <span className="text-[11px]">↗</span>
+                      </Link>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
       </section>
     </main>
   );

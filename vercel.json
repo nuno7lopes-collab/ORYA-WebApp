@@ -1,0 +1,19 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/reservations/cleanup",
+      "schedule": "*/5 * * * *"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/api/cron/reservations/cleanup",
+      "headers": [
+        {
+          "key": "X-ORYA-CRON-SECRET",
+          "value": "${ORYA_CRON_SECRET}"
+        }
+      ]
+    }
+  ]
+}

@@ -106,22 +106,38 @@ export default async function TicketPage({ params }: PageProps) {
 
   const shortId =
     purchase.id.slice(-8).toUpperCase();
-  const ticketCode = `ORYA-${shortId}`;
+  const ticketCode = purchase.qrToken ?? `ORYA-${shortId}`;
 
   const quantity = purchase.quantity;
   // eslint-disable-next-line react-hooks/purity
   const isPast = endDate.getTime() < Date.now();
+  const isToday =
+    !isPast &&
+    startDate.toDateString() === new Date().toDateString();
+  const isFuture = !isPast && !isToday;
 
-  const statusLabel = isPast ? "Evento terminado" : "A caminho";
-  const statusTag =
-    isPast
-      ? "bg-white/10 border-white/30 text-white/80"
+  const statusLabel = isPast
+    ? "Evento terminado"
+    : isToday
+      ? "É hoje"
+      : "A caminho";
+  const statusTag = isPast
+    ? "bg-white/10 border-white/30 text-white/80"
+    : isToday
+      ? "bg-sky-500/20 border-sky-400/60 text-sky-50"
       : "bg-emerald-500/15 border-emerald-400/60 text-emerald-100";
 
   return (
-    <main className="orya-body-bg min-h-screen text-white">
+    <main
+      className="orya-body-bg min-h-screen text-white"
+      role="main"
+      aria-labelledby="ticket-page-title"
+    >
       {/* HERO */}
-      <section className="relative w-full">
+      <section
+        className="relative w-full min-h-[520px]"
+        aria-label={`Bilhete para o evento ${event.title}`}
+      >
         {/* Background */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
@@ -142,7 +158,7 @@ export default async function TicketPage({ params }: PageProps) {
                   Bilhete digital
                 </p>
                 <p className="text-sm text-white/85">
-                  Mostra este bilhete à entrada do evento.
+                  Mostra este bilhete (ou o código digital) à entrada para validação.
                 </p>
               </div>
             </div>
@@ -169,7 +185,10 @@ export default async function TicketPage({ params }: PageProps) {
               <p className="mb-2 text-xs uppercase tracking-[0.2em] text-white/60">
                 Evento
               </p>
-              <h1 className="bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] bg-clip-text text-2xl font-extrabold leading-tight text-transparent md:text-3xl">
+              <h1
+                id="ticket-page-title"
+                className="bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] bg-clip-text text-2xl font-extrabold leading-tight text-transparent md:text-3xl"
+              >
                 {event.title}
               </h1>
 
@@ -241,33 +260,60 @@ export default async function TicketPage({ params }: PageProps) {
                 <p className="mb-3 text-xs font-semibold uppercase tracking-[0.16em] text-white/65">
                   Bilhete ORYA
                 </p>
+                <div className="mb-4 flex items-center gap-3">
+                  {/* Mini-poster do evento dentro do bilhete */}
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={cover}
+                    alt={event.title}
+                    className="h-12 w-20 rounded-xl object-cover border border-white/15"
+                  />
+                  <div className="flex-1 text-[11px] text-white/80">
+                    <p className="line-clamp-1 font-semibold text-white">
+                      {event.title}
+                    </p>
+                    <p className="text-white/60">
+                      {date} · {time}
+                    </p>
+                  </div>
+                </div>
 
                 <div className="flex flex-col items-start gap-4 md:flex-row md:items-center md:justify-between">
                   {/* “QR” placeholder bonito */}
-                  <div className="flex items-center justify-center rounded-2xl border border-white/20 bg-black/60 p-3">
-                    <div className="h-32 w-32 rounded-2xl bg-[radial-gradient(circle_at_30%_30%,rgba(255,0,200,0.38),transparent),radial-gradient(circle_at_70%_70%,rgba(107,255,255,0.32),transparent)] flex items-center justify-center border border-white/15">
-                      <div className="grid h-24 w-24 grid-cols-6 grid-rows-6 gap-[2px]">
-                        {Array.from({ length: 36 }).map((_, i) => (
-                          <span
-                            key={i}
-                            className={`block rounded-[2px] ${
-                              i % 3 === 0 || i % 5 === 0
-                                ? "bg-white"
-                                : "bg-slate-800"
-                            }`}
-                          />
-                        ))}
-                      </div>
-                    </div>
+                  <div
+                    className="flex items-center justify-center rounded-2xl border border-white/20 bg-black/60 p-3"
+                  >
+                    {purchase.qrToken ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={`/api/qr/${purchase.qrToken}`}
+                        alt="QR Code"
+                        className="h-48 w-48 rounded-2xl p-3 bg-white shadow-[0_0_25px_rgba(255,0,200,0.35)] animate-pulse-slow"
+                        aria-label="QR code único do bilhete ORYA"
+                      />
+                    ) : (
+                      <span className="text-white/70 text-xs">
+                        A gerar QR code…
+                      </span>
+                    )}
                   </div>
 
                   <div className="flex-1 space-y-2 text-[11px] text-white/80 md:pl-2">
                     <p className="text-sm font-semibold text-white">
                       Bilhete digital pronto
                     </p>
+                    <p className="text-white/70">
+                      Estado do evento: <span className="font-semibold text-white">{statusLabel}</span>
+                    </p>
                     <p>
                       Mantém o ecrã com bom brilho e não faças zoom excessivo. O código vai ser lido à
                       entrada para validarmos a tua entrada.
+                    </p>
+                    <p className="text-white/70">
+                      Nº de entradas associadas a este código:{" "}
+                      <span className="font-semibold text-white">
+                        {quantity}
+                      </span>
                     </p>
                     <p className="text-white/60">
                       Código do bilhete:{" "}
@@ -292,6 +338,22 @@ export default async function TicketPage({ params }: PageProps) {
                   >
                     Ver todos os meus bilhetes
                   </Link>
+                  <button
+                    type="button"
+                    className="inline-flex items-center justify-center rounded-full border border-white/15 bg-transparent px-4 py-2 text-xs font-semibold text-white/80 hover:bg-white/5 disabled:opacity-50"
+                    disabled
+                    title="Funcionalidade para adicionar à carteira ainda em desenvolvimento"
+                  >
+                    Adicionar à carteira (em breve)
+                  </button>
+                  <button
+                    type="button"
+                    className="inline-flex items-center justify-center rounded-full border border-white/15 bg-transparent px-4 py-2 text-xs font-semibold text-white/80 hover:bg-white/5 disabled:opacity-50"
+                    disabled
+                    title="Deep link para abrir na app ORYA ficará disponível em breve"
+                  >
+                    Abrir na app (em breve)
+                  </button>
                 </div>
               </div>
 
@@ -300,8 +362,7 @@ export default async function TicketPage({ params }: PageProps) {
                 <p className="mb-1 font-medium text-white/85">Notas importantes</p>
                 <ul className="space-y-1 list-disc pl-4">
                   <li>
-                    Este bilhete é pessoal e está ligado à tua conta ORYA. Não partilhes screenshots
-                    publicamente.
+                    Este bilhete é pessoal, está ligado à tua conta ORYA e pode ser lido digitalmente à entrada. Evita partilhar screenshots em público.
                   </li>
                   <li>
                     Em caso de cancelamento ou alteração do evento, vais receber informação no email da

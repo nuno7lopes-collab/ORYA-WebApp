@@ -62,7 +62,6 @@ export async function POST(req: NextRequest) {
 
         const metadata = session.metadata || {};
         const eventIdRaw = metadata.eventId;
-        const eventSlug = metadata.eventSlug;
         const ticketId = metadata.ticketId;
         const qtyRaw = metadata.qty;
         const userId = metadata.userId || null;

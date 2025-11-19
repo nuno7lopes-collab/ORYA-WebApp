@@ -103,6 +103,26 @@ export async function POST(req: NextRequest) {
     }
 
     const now = new Date();
+    // LIMPEZA SOFT: Expirar reservas que já passaram o prazo
+    await prisma.ticketReservation.updateMany({
+      where: {
+        status: "ACTIVE",
+        expiresAt: { lt: now },
+      },
+      data: { status: "EXPIRED" },
+    });
+
+
+    // 🔧 C) Auto-heal de reservas expiradas — remover e permitir criar nova automaticamente
+    // Se o utilizador tinha uma reserva antiga expirada, apagamos para evitar conflitos futuros
+    await prisma.ticketReservation.deleteMany({
+      where: {
+        ticketId,
+        eventId: event.id,
+        userId,
+        status: "EXPIRED",
+      },
+    });
 
     // Disponibilidade base
     if (!ticket.available || !ticket.isVisible) {
@@ -161,8 +181,9 @@ export async function POST(req: NextRequest) {
 
       const reservedQty = activeReservations._sum.quantity ?? 0;
 
-      remaining =
-        ticket.totalQuantity - ticket.soldQuantity - reservedQty;
+      // 📌 A) Stock premium: ignorar soldQuantity e contar só reservas ativas
+      // Isto faz com que ao apagar compras no Prisma Studio, o stock volte a 100% automaticamente.
+      remaining = ticket.totalQuantity - reservedQty;
 
       if (remaining <= 0) {
         return NextResponse.json(
@@ -199,55 +220,34 @@ export async function POST(req: NextRequest) {
       orderBy: { createdAt: "desc" },
     });
 
-    const expiresAt = new Date(
+    // 🛑 D) Se já existe uma reserva ativa → não criar nova, não renovar timer
+    if (reservation) {
+      return NextResponse.json(
+        {
+          ok: true,
+          reservationId: reservation.id,
+          expiresAt: reservation.expiresAt.toISOString(),
+          now: now.toISOString(),
+        },
+        { status: 200 },
+      );
+    }
+
+    const newExpiresAt = new Date(
       now.getTime() + RESERVATION_MINUTES * 60 * 1000,
     );
 
     if (!reservation) {
+      // Não existe reserva → criar nova com 10 minutos
       reservation = await prisma.ticketReservation.create({
         data: {
           ticketId: ticket.id,
           eventId: event.id,
           userId,
           quantity: qty,
-          expiresAt,
+          expiresAt: newExpiresAt,
         },
       });
-    } else {
-      // Já existe uma reserva ativa deste user para este bilhete/evento.
-      if (reservation.quantity !== qty) {
-        // Se houver stock finito, garantimos que o incremento não excede o remaining.
-        if (remaining !== null) {
-          const delta = qty - reservation.quantity;
-          if (delta > 0 && remaining < delta) {
-            return NextResponse.json(
-              {
-                ok: false,
-                error: `Só é possível reservar mais ${remaining} bilhete(s).`,
-                code: "NOT_ENOUGH_STOCK",
-              },
-              { status: 400 },
-            );
-          }
-        }
-
-        // Atualizar quantidade e renovar o tempo da reserva.
-        reservation = await prisma.ticketReservation.update({
-          where: { id: reservation.id },
-          data: {
-            quantity: qty,
-            expiresAt,
-          },
-        });
-      } else {
-        // Mesma quantidade → apenas renovar o tempo da reserva.
-        reservation = await prisma.ticketReservation.update({
-          where: { id: reservation.id },  
-          data: {
-            expiresAt,
-          },
-        });
-      }
     }
 
     return NextResponse.json(

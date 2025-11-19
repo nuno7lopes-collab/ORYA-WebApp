@@ -2,24 +2,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
 import { prisma } from "@/lib/prisma";
+import crypto from "crypto";
 
-const stripeSecret = process.env.STRIPE_SECRET_KEY;
-const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+const stripeSecret = process.env.STRIPE_SECRET_KEY!;
+const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET!;
 
-const stripe = stripeSecret ? new Stripe(stripeSecret) : null as unknown as Stripe;
+const stripe = new Stripe(stripeSecret, { apiVersion: "2025-10-29.clover" });
 
 export async function POST(req: NextRequest) {
-  if (!stripeSecret || !webhookSecret) {
-    console.error(
-      "[/api/webhooks/stripe] STRIPE_SECRET_KEY ou STRIPE_WEBHOOK_SECRET em falta.",
-    );
-    return new Response("Stripe não configurado", { status: 500 });
-  }
-
   const sig = req.headers.get("stripe-signature");
   if (!sig) {
-    console.warn("[/api/webhooks/stripe] Header stripe-signature em falta.");
-    return new Response("Missing stripe-signature", { status: 400 });
+    return new Response("Missing signature", { status: 400 });
   }
 
   const body = await req.text();
@@ -28,126 +21,78 @@ export async function POST(req: NextRequest) {
   try {
     event = stripe.webhooks.constructEvent(body, sig, webhookSecret);
   } catch (err) {
-    console.error("[/api/webhooks/stripe] Falha na verificação da assinatura", err);
+    console.error("[Webhook] Invalid signature:", err);
     return new Response("Invalid signature", { status: 400 });
   }
 
   try {
     switch (event.type) {
-      case "checkout.session.completed": {
-        const session = event.data.object as Stripe.Checkout.Session;
-        await handleCheckoutSessionCompleted(session);
+      case "payment_intent.succeeded": {
+        const intent = event.data.object as Stripe.PaymentIntent;
+        await fulfillPayment(intent);
         break;
       }
+
       default:
-        // Por agora ignoramos outros eventos
         break;
     }
   } catch (err) {
-    console.error(
-      "[/api/webhooks/stripe] Erro a tratar evento",
-      event.type,
-      err,
-    );
-    // Respondemos 200 na mesma para não levar com retries infinitos.
+    console.error("[Webhook] Error processing event:", err);
   }
 
-  return NextResponse.json({ received: true }, { status: 200 });
+  return NextResponse.json({ received: true });
 }
 
-
-type WebhookTicket = {
-  id: string;
-  totalQuantity: number | null | undefined;
-  soldQuantity: number;
-  price: number | null | undefined;
-  currency: string | null | undefined;
-};
-
-async function handleCheckoutSessionCompleted(
-  session: Stripe.Checkout.Session,
-) {
-  // Só seguimos se o pagamento estiver mesmo pago
-  if (session.payment_status !== "paid") {
-    console.log(
-      "[handleCheckoutSessionCompleted] Ignorado porque payment_status != paid",
-      session.payment_status,
-    );
-    return;
-  }
-
-  const metadata = session.metadata || {};
+async function fulfillPayment(intent: Stripe.PaymentIntent) {
+  const metadata = intent.metadata || {};
   const eventIdStr = metadata.eventId;
   const eventSlug = metadata.eventSlug;
   const ticketId = metadata.ticketId;
-  const quantityStr = metadata.quantity;
-  const userIdMeta = metadata.userId || "";
+  const qtyStr = metadata.quantity;
+  const userIdMeta = metadata.userId || null;
 
   if (!ticketId || (!eventIdStr && !eventSlug)) {
-    console.warn(
-      "[handleCheckoutSessionCompleted] Metadata em falta",
-      metadata,
-    );
+    console.warn("[fulfillPayment] Missing metadata:", metadata);
     return;
   }
 
-  const quantity = Math.max(
-    1,
-    Number.parseInt(quantityStr || "1", 10) || 1,
-  );
+  const quantity = Math.max(1, Number.parseInt(qtyStr || "1", 10) || 1);
 
-  // 1) Buscar evento (por id se existir, senão por slug)
-  let eventRecord = null as null | (Awaited<
-    ReturnType<typeof prisma.event.findUnique>
-  > & { tickets: Awaited<ReturnType<typeof prisma.ticket.findMany>> });
+  // Fetch event
+  let eventRecord = null as any;
 
   if (eventIdStr) {
-    const eventId = Number.parseInt(eventIdStr, 10);
-    if (Number.isFinite(eventId)) {
-      eventRecord = (await prisma.event.findUnique({
-        where: { id: eventId },
-        include: { tickets: true },
-      })) as typeof eventRecord;
-    }
+    const id = Number(eventIdStr);
+    eventRecord = await prisma.event.findUnique({
+      where: { id },
+      include: { tickets: true },
+    });
   }
 
   if (!eventRecord && eventSlug) {
-    eventRecord = (await prisma.event.findUnique({
+    eventRecord = await prisma.event.findUnique({
       where: { slug: eventSlug },
       include: { tickets: true },
-    })) as typeof eventRecord;
+    });
   }
 
   if (!eventRecord) {
-    console.warn(
-      "[handleCheckoutSessionCompleted] Evento não encontrado",
-      { eventIdStr, eventSlug },
-    );
+    console.warn("[fulfillPayment] Event not found");
     return;
   }
 
-  const ticket = eventRecord.tickets.find(
-    (t: WebhookTicket) => t.id === ticketId,
-  );
+  // Validate ticket exists
+  const ticket = eventRecord.tickets.find((t: any) => t.id === ticketId);
   if (!ticket) {
-    console.warn(
-      "[handleCheckoutSessionCompleted] Bilhete não encontrado",
-      { ticketId },
-    );
+    console.warn("[fulfillPayment] Ticket not found:", ticketId);
     return;
   }
 
-  // 2) Revalidar stock
-  if (
-    ticket.totalQuantity !== null &&
-    ticket.totalQuantity !== undefined
-  ) {
+  // Validate stock
+  if (ticket.totalQuantity !== null && ticket.totalQuantity !== undefined) {
     const remaining = ticket.totalQuantity - ticket.soldQuantity;
     if (remaining <= 0 || quantity > remaining) {
-      console.warn(
-        "[handleCheckoutSessionCompleted] Stock insuficiente na webhook",
-        { remaining, quantity },
-      );
+      console.warn("[fulfillPayment] Insufficient stock:", { remaining, quantity });
       return;
     }
   }
@@ -156,40 +101,55 @@ async function handleCheckoutSessionCompleted(
   const totalPrice = unitPrice * quantity;
 
   const finalUserId =
-    typeof userIdMeta === "string" && userIdMeta.trim() !== ""
-      ? userIdMeta
-      : null;
+    typeof userIdMeta === "string" && userIdMeta.trim() !== "" ? userIdMeta : null;
 
-  // 3) Criar TicketPurchase + atualizar soldQuantity em transaction
+  // Check if already fulfilled (idempotency)
+  const existing = await prisma.ticketPurchase.findFirst({
+    where: {
+      stripePaymentIntentId: intent.id,
+    },
+  });
+
+  if (existing) {
+    console.log("[fulfillPayment] Already fulfilled (idempotent)", intent.id);
+    return;
+  }
+
   await prisma.$transaction([
     prisma.ticketPurchase.create({
       data: {
+        stripePaymentIntentId: intent.id,
         ticketId: ticket.id,
         eventId: eventRecord.id,
         userId: finalUserId,
         quantity,
         pricePaid: totalPrice,
         currency: ticket.currency,
+        qrToken: crypto.randomUUID(),
       },
     }),
     prisma.ticket.update({
       where: { id: ticket.id },
       data: {
-        soldQuantity: {
-          increment: quantity,
-        },
+        soldQuantity: { increment: quantity },
       },
+    }),
+    prisma.ticketReservation.updateMany({
+      where: {
+        ticketId: ticket.id,
+        eventId: eventRecord.id,
+        userId: finalUserId,
+        status: "ACTIVE",
+      },
+      data: { status: "COMPLETED" },
     }),
   ]);
 
-  console.log(
-    "[handleCheckoutSessionCompleted] Compra registada com sucesso",
-    {
-      sessionId: session.id,
-      eventId: eventRecord.id,
-      ticketId: ticket.id,
-      quantity,
-      userId: finalUserId,
-    },
-  );
+  console.log("[fulfillPayment] Purchase recorded:", {
+    ticketId: ticket.id,
+    eventId: eventRecord.id,
+    quantity,
+    userId: finalUserId,
+    intentId: intent.id,
+  });
 }

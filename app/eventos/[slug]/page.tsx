@@ -1,11 +1,11 @@
 // app/eventos/[slug]/page.tsx
 import { prisma } from "@/lib/prisma";
+import { CheckoutProvider } from "@/app/components/checkout/checkoutContext";
 import { notFound } from "next/navigation";
-import WavesSectionClient, {
-  WaveTicket,
-  WaveStatus,
-} from "./WavesSectionClient";
+import WavesSectionClient, { type WaveTicket, type WaveStatus } from "./WavesSectionClient";
 import { createSupabaseServer } from "@/lib/supabaseServer";
+import Link from "next/link";
+import EventPageClient from "./EventPageClient";
 
 type EventPageParams = {
   slug: string;
@@ -51,10 +51,22 @@ export default async function EventPage({ params }: EventPageProps) {
     notFound();
   }
 
+  const now = new Date();
+
   const event = await prisma.event.findUnique({
     where: { slug },
     include: {
-      tickets: true,
+      tickets: {
+        include: {
+          reservations: {
+            where: {
+              status: "ACTIVE",
+              expiresAt: { gt: now },
+            },
+            select: { quantity: true },
+          },
+        },
+      },
       purchases: {
         select: {
           id: true,
@@ -123,18 +135,29 @@ export default async function EventPage({ params }: EventPageProps) {
         return a.price - b.price;
       });
 
-  const uiTickets: WaveTicket[] = orderedTickets.map((t, index) => {
+  const uiTickets: WaveTicket[] = orderedTickets.map((t: any, index: number) => {
+    const reservedQty = Array.isArray(t.reservations)
+      ? t.reservations.reduce(
+          (sum: number, r: { quantity: number }) => sum + (r.quantity ?? 0),
+          0,
+        )
+      : 0;
+
     const remaining =
       t.totalQuantity === null || t.totalQuantity === undefined
         ? null
-        : t.totalQuantity - t.soldQuantity;
+        : t.totalQuantity - t.soldQuantity - reservedQty;
 
-    const status = getWaveStatus({
-      startsAt: t.startsAt,
-      endsAt: t.endsAt,
-      totalQuantity: t.totalQuantity,
-      soldQuantity: t.soldQuantity,
-    }) as WaveStatus;
+    // Override: if remaining is 0, this wave is sold_out (even if soldQuantity < totalQuantity)
+    const finalStatus =
+      remaining !== null && remaining <= 0
+        ? "sold_out"
+        : getWaveStatus({
+            startsAt: t.startsAt,
+            endsAt: t.endsAt,
+            totalQuantity: t.totalQuantity,
+            soldQuantity: t.soldQuantity,
+          });
 
     return {
       id: t.id,
@@ -144,7 +167,7 @@ export default async function EventPage({ params }: EventPageProps) {
       totalQuantity: t.totalQuantity,
       soldQuantity: t.soldQuantity,
       remaining,
-      status,
+      status: finalStatus as WaveStatus,
       startsAt: t.startsAt ? t.startsAt.toISOString() : null,
       endsAt: t.endsAt ? t.endsAt.toISOString() : null,
       available: t.available,
@@ -209,7 +232,8 @@ export default async function EventPage({ params }: EventPageProps) {
     !event.isFree && (minTicketPrice !== null || event.basePrice !== null);
 
   return (
-    <main className="relative orya-body-bg min-h-screen w-full text-white">
+    <CheckoutProvider>
+      <main className="relative orya-body-bg min-h-screen w-full text-white">
       {/* BG: blur da capa a cobrir o topo da página com transição super suave para o fundo ORYA */}
       <div
         className="pointer-events-none absolute inset-x-0 top-0 h-[160vh] overflow-hidden"
@@ -238,6 +262,15 @@ export default async function EventPage({ params }: EventPageProps) {
 
       {/* ========== HERO ============ */}
       <section className="relative z-10 w-full pt-24 pb-10 md:pt-28 md:pb-12">
+        <div className="mx-auto mb-4 flex w-full max-w-6xl items-center px-4 md:px-8">
+          <Link
+            href="/explorar"
+            className="inline-flex items-center gap-2 text-xs font-medium text-white/75 transition hover:text-white"
+          >
+            <span className="text-lg leading-none">←</span>
+            <span>Voltar a explorar</span>
+          </Link>
+        </div>
         <div className="mx-auto flex w-full max-w-6xl items-end px-4 md:px-8">
           <div className="flex w-full flex-col gap-6 md:flex-row md:items-stretch">
             {/* CARTÃO VIDRO – INFO DO EVENTO */}
@@ -398,9 +431,9 @@ export default async function EventPage({ params }: EventPageProps) {
             <div>
               <h3 className="mb-3 text-lg font-semibold">Como funciona</h3>
               <p className="text-sm text-white/80">
-                Este evento junta desporto, música e energia real. Reserva o teu
-                lugar, aparece com antecedência e traz a tua melhor atitude para
-                um dia competitivo, mas sempre com espírito ORYA.
+                Cada evento na ORYA é pensado para criar experiências reais e memoráveis.
+                Garante o teu lugar com antecedência, aparece a horas e traz a tua melhor
+                energia — o resto tratamos nós.
               </p>
             </div>
           </div>
@@ -503,6 +536,33 @@ export default async function EventPage({ params }: EventPageProps) {
                 <div className="rounded-xl border border-white/12 bg-black/45 px-3.5 py-2.5 text-sm text-white/80">
                   Ainda não há waves configuradas para este evento.
                 </div>
+              ) : allSoldOut ? (
+                <div className="rounded-xl border border-orange-400/40 bg-orange-500/15 px-3.5 py-2.5 text-sm text-orange-100">
+                  <div>
+                    <p className="font-semibold">Evento esgotado</p>
+                    <p className="text-[11px] text-orange-100/85">
+                      Não há mais bilhetes disponíveis para este evento.
+                    </p>
+                  </div>
+                </div>
+              ) : !anyOnSale && anyUpcoming ? (
+                <div className="rounded-xl border border-yellow-400/40 bg-yellow-500/15 px-3.5 py-2.5 text-sm text-yellow-100">
+                  <div>
+                    <p className="font-semibold">Vendas ainda não abriram</p>
+                    <p className="text-[11px] text-yellow-100/85">
+                      As vendas de bilhetes para este evento ainda não abriram. Volta mais tarde!
+                    </p>
+                  </div>
+                </div>
+              ) : allClosed ? (
+                <div className="rounded-xl border border-white/12 bg-black/45 px-3.5 py-2.5 text-sm text-white/80">
+                  <div>
+                    <p className="font-semibold">Vendas encerradas</p>
+                    <p className="text-[11px] text-white/70">
+                      As vendas para este evento já encerraram.
+                    </p>
+                  </div>
+                </div>
               ) : (
                 <WavesSectionClient
                   slug={event.slug}
@@ -519,6 +579,13 @@ export default async function EventPage({ params }: EventPageProps) {
           )}
         </div>
       </section>
-    </main>
+      <EventPageClient
+        event={event}
+        uiTickets={uiTickets}
+        cover={cover}
+        currentUserId={userId}
+      />
+      </main>
+    </CheckoutProvider>
   );
 }

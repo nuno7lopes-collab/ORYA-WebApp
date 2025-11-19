@@ -1,8 +1,8 @@
-// app/eventos/[slug]/WavesSectionClient.tsx
 "use client";
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useCheckout } from "@/app/components/checkout/checkoutContext";
 
 export type WaveStatus = "on_sale" | "upcoming" | "closed" | "sold_out";
 
@@ -96,6 +96,7 @@ export default function WavesSectionClient({
   isFreeEvent,
 }: WavesSectionClientProps) {
   const router = useRouter();
+  const { openCheckout } = useCheckout();
   const [tickets, setTickets] = useState<WaveTicket[]>(initialTickets);
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<FeedbackState>({});
@@ -116,65 +117,15 @@ export default function WavesSectionClient({
     try {
       const isPaidTicket = !isFreeEvent && selectedTicket.price > 0;
 
-      // 🔥 Evento pago → prepara sessão de checkout via API e só depois faz redirect
+      // 🔥 Evento pago → abre modal de checkout (novo fluxo)
       if (isPaidTicket) {
-        try {
-          const res = await fetch("/api/checkout/session", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              eventSlug: slug,
-              ticketId,
-              quantity: 1,
-              returnTo: `/eventos/${slug}`,
-            }),
-          });
-
-          if (!res.ok) {
-            let errorMessage =
-              "Não foi possível preparar o checkout. Tenta outra vez.";
-
-            try {
-              const errBody = await res.json().catch(() => null);
-              if (errBody && typeof errBody.error === "string") {
-                errorMessage = errBody.error;
-              }
-            } catch {
-              // ignora, fica mensagem genérica
-            }
-
-            setFeedback((prev) => ({
-              ...prev,
-              [ticketId]: {
-                type: "error",
-                message: errorMessage,
-              },
-            }));
-
-            return;
-          }
-
-          const data = await res.json().catch(() => null);
-
-          if (!data || !data.success || !data.checkoutUrl) {
-            setFeedback((prev) => ({
-              ...prev,
-              [ticketId]: {
-                type: "error",
-                message:
-                  "Não foi possível preparar o checkout neste momento. Tenta novamente dentro de instantes.",
-              },
-            }));
-            return;
-          }
-
-          router.push(data.checkoutUrl as string);
-        } finally {
-          // loadingId é limpo no finally global mais abaixo
-        }
-
+        openCheckout({
+          slug,
+          ticketId,
+          price: selectedTicket.price,
+          ticketName: selectedTicket.name,
+        });
+        setLoadingId(null);
         return;
       }
 
@@ -264,7 +215,7 @@ export default function WavesSectionClient({
         }),
       );
 
-      setFeedback((prev) => ({
+      setFeedback((prev) =>({
         ...prev,
         [ticketId]: {
           type: "success",
