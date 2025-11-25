@@ -1,7 +1,108 @@
-// app/organizador/page.tsx
+"use client";
+
 import Link from "next/link";
+import useSWR from "swr";
+import { useUser } from "@/app/hooks/useUser";
+import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
 
 export default function OrganizadorPage() {
+  const { user, profile, isLoading: userLoading, mutate: mutateUser } = useUser();
+  const { openModal } = useAuthModal();
+
+  const { data: organizerData, isLoading: organizerLoading, mutate: mutateOrganizer } = useSWR(
+    user ? "/api/organizador/me" : null,
+    (url: string) => fetch(url).then((res) => res.json())
+  );
+
+  const organizer = organizerData?.organizer ?? null;
+  const loading = userLoading || organizerLoading;
+
+  async function handleBecomeOrganizer() {
+    try {
+      const res = await fetch("/api/organizador/become", {
+        method: "POST",
+      });
+
+      if (!res.ok) {
+        console.error("Erro ao tornar organizador");
+        return;
+      }
+
+      await mutateOrganizer();
+      await mutateUser();
+    } catch (err) {
+      console.error("Erro inesperado ao tornar organizador", err);
+    }
+  }
+
+  function renderPrimaryCta() {
+    if (loading) {
+      return (
+        <button
+          type="button"
+          disabled
+          className="inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-6 py-2.5 text-sm font-semibold text-black/60 shadow-[0_20px_70px_rgba(15,23,42,0.95)] shadow-[#6bffff80] opacity-70"
+        >
+          A carregar a tua conta...
+        </button>
+      );
+    }
+
+    if (!user) {
+      return (
+        <button
+          type="button"
+          onClick={() =>
+            openModal({
+              mode: "login",
+              redirectTo: "/organizador",
+            })
+          }
+          className="inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-6 py-2.5 text-sm font-semibold text-black shadow-[0_20px_70px_rgba(15,23,42,0.95)] shadow-[#6bffff80] transition-transform hover:translate-y-[1px] hover:brightness-110"
+        >
+          Entrar para criar o meu primeiro evento
+          <span className="text-[15px]">↗</span>
+        </button>
+      );
+    }
+
+    if (!organizer) {
+      return (
+        <button
+          type="button"
+          onClick={handleBecomeOrganizer}
+          className="inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-6 py-2.5 text-sm font-semibold text-black shadow-[0_20px_70px_rgba(15,23,42,0.95)] shadow-[#6bffff80] transition-transform hover:translate-y-[1px] hover:brightness-110"
+        >
+          Quero ser organizador ORYA
+          <span className="text-[15px]">↗</span>
+        </button>
+      );
+    }
+
+    return (
+      <Link
+        href="/organizador/eventos/novo"
+        className="inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-6 py-2.5 text-sm font-semibold text-black shadow-[0_20px_70px_rgba(15,23,42,0.95)] shadow-[#6bffff80] transition-transform hover:translate-y-[1px] hover:brightness-110"
+      >
+        Criar o meu próximo evento
+        <span className="text-[15px]">↗</span>
+      </Link>
+    );
+  }
+
+  const statusText = (() => {
+    if (loading) {
+      return "A carregar o estado da tua conta de organizador...";
+    }
+    if (!user) {
+      return "Entra ou cria conta para começares a vender bilhetes com a ORYA.";
+    }
+    if (!organizer) {
+      return "Ainda não és organizador ORYA. Clica em “Quero ser organizador ORYA” para começares a criar eventos.";
+    }
+    return "Já és organizador ORYA — agora é só criares o próximo evento e acompanhar as vendas aqui.";
+  })();
+
   return (
     <main className="orya-body-bg min-h-screen text-white">
       <section className="mx-auto max-w-6xl px-4 pt-10 pb-14 md:px-6 lg:px-8">
@@ -28,14 +129,7 @@ export default function OrganizadorPage() {
             </p>
 
             <div className="flex flex-wrap items-center gap-3">
-              <Link
-                href="/eventos/novo"
-                className="inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-6 py-2.5 text-sm font-semibold text-black shadow-[0_20px_70px_rgba(15,23,42,0.95)] shadow-[#6bffff80] transition-transform hover:translate-y-[1px] hover:brightness-110"
-              >
-                Criar o meu primeiro evento
-                <span className="text-[15px]">↗</span>
-              </Link>
-
+              {renderPrimaryCta()}
               <Link
                 href="/explorar"
                 className="inline-flex items-center justify-center rounded-full border border-zinc-600/70 bg-black/40 px-5 py-2 text-xs font-medium text-zinc-100 hover:border-zinc-300 hover:bg-black/70"
@@ -45,8 +139,7 @@ export default function OrganizadorPage() {
             </div>
 
             <p className="text-[11px] text-zinc-400">
-              Sem compromisso: podes começar com um único evento, testar o
-              fluxo de bilhetes e só depois decidir escalar.
+              {statusText}
             </p>
           </div>
 
@@ -139,7 +232,7 @@ export default function OrganizadorPage() {
                 o que vai aparecer na página pública.
               </p>
               <Link
-                href="/eventos/novo"
+                href="/organizador/eventos/novo"
                 className="mt-1 inline-flex text-[11px] font-medium text-[#6BFFFF] underline underline-offset-4"
               >
                 Criar evento →
@@ -241,7 +334,7 @@ export default function OrganizadorPage() {
                 Enviar e-mail para a equipa ORYA
               </a>
               <Link
-                href="/eventos/novo"
+                href="/organizador/eventos/novo"
                 className="inline-flex items-center justify-center rounded-2xl border border-white/15 bg-transparent px-4 py-2 text-[11px] font-medium text-zinc-100 hover:bg-white/5"
               >
                 Criar evento agora e testar a plataforma

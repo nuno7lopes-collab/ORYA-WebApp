@@ -2,61 +2,26 @@
 
 import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-
-type UserProfile = Record<string, unknown>;
-
-type MeResponse =
-  | {
-      success: true;
-      user: { id: string; email?: string | null };
-      profile: UserProfile;
-    }
-  | { success: false; error: string };
+import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
+import { useUser } from "@/app/hooks/useUser";
 
 export function Navbar() {
   const router = useRouter();
   const pathname = usePathname();
 
+  const { openModal: openAuthModal } = useAuthModal();
+  const { user } = useUser();
+
   const [isVisible, setIsVisible] = useState(true);
   const [isAtTop, setIsAtTop] = useState(true);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [me, setMe] = useState<MeResponse | null>(null);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement | null>(null);
 
   const lastScrollYRef = useRef(0);
 
-  useEffect(() => {
-    let isMounted = true;
-
-    const fetchMe = async () => {
-      try {
-        const res = await fetch("/api/me", { cache: "no-store" });
-        if (!isMounted) return;
-
-        if (res.status === 401) {
-          setMe({ success: false, error: "Not authenticated" });
-          return;
-        }
-
-        const data = (await res.json()) as MeResponse;
-        setMe(data);
-      } catch (err) {
-        console.error("[Navbar] Erro a carregar /api/me", err);
-        if (isMounted) {
-          setMe({ success: false, error: "Erro ao carregar perfil" });
-        }
-      }
-    };
-
-    fetchMe();
-
-    return () => {
-      isMounted = false;
-    };
-  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -154,33 +119,36 @@ export function Navbar() {
   const handleLogout = async () => {
     try {
       setIsLoggingOut(true);
-      const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-      if (baseUrl && typeof window !== "undefined") {
-        const redirect = `${window.location.origin}/`;
-        const url = `${baseUrl}/auth/v1/logout?redirect_to=${encodeURIComponent(
-          redirect,
-        )}`;
-        window.location.href = url;
-        return;
-      }
 
-      // fallback: vai para /login se não houver env
-      router.push("/login");
+      const res = await fetch("/api/auth/logout", {
+        method: "POST",
+        credentials: "include",
+      });
+
+      const data = await res.json();
+
+      if (data.success) {
+        openAuthModal({ mode: "login", redirectTo: pathname || "/" });
+      } else {
+        console.error("[Navbar] Erro no logout:", data.error);
+        openAuthModal({ mode: "login", redirectTo: pathname || "/" });
+      }
     } catch (err) {
       console.error("[Navbar] Erro ao terminar sessão", err);
-      router.push("/login");
+      openAuthModal({ mode: "login", redirectTo: pathname || "/" });
     } finally {
       setIsLoggingOut(false);
     }
   };
 
-  const isAuthenticated = me?.success === true && !!me.user;
-  const userEmail = isAuthenticated ? me.user.email ?? "" : "";
+  const isAuthenticated = !!user;
+  const rawEmail = user?.email;
+  const userEmail = typeof rawEmail === "string" ? rawEmail : "";
   const userInitial =
     userEmail?.trim().charAt(0).toUpperCase() || "O";
 
   const inAuthPage =
-    pathname === "/login" || pathname === "/registar" || pathname === "/auth/callback";
+    pathname === "/login" || pathname === "/signup" || pathname === "/auth/callback";
 
   return (
     <>
@@ -266,15 +234,10 @@ export function Navbar() {
             {!isAuthenticated || inAuthPage ? (
               <button
                 type="button"
-                onClick={() =>
-                  router.push(
-                    `/login${
-                      pathname && pathname !== "/"
-                        ? `?redirect=${encodeURIComponent(pathname)}`
-                        : ""
-                    }`,
-                  )
-                }
+                onClick={() => {
+                  const redirect = pathname && pathname !== "/" ? pathname : "/";
+                  openAuthModal({ mode: "login", redirectTo: redirect });
+                }}
                 className="inline-flex items-center justify-center rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-3.5 py-1.5 text-[11px] font-semibold text-black shadow-[0_0_26px_rgba(107,255,255,0.65)] hover:brightness-110"
               >
                 Entrar / Registar
@@ -319,7 +282,7 @@ export function Navbar() {
                       type="button"
                       onClick={() => {
                         setIsProfileMenuOpen(false);
-                        router.push("/me/bilhetes");
+                        router.push("/me/tickets");
                       }}
                       className="flex w-full items-center justify-between rounded-xl px-2.5 py-1.5 text-left hover:bg-white/8"
                     >
@@ -339,7 +302,7 @@ export function Navbar() {
                       type="button"
                       onClick={() => {
                         setIsProfileMenuOpen(false);
-                        router.push("/organizador/candidatura");
+                        router.push("/organizador");
                       }}
                       className="mt-1 flex w-full items-center justify-between rounded-xl px-2.5 py-1.5 text-left hover:bg-white/8"
                     >

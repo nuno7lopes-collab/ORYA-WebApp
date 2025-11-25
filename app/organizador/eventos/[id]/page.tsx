@@ -3,7 +3,7 @@
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { notFound, redirect } from "next/navigation";
-import type { Event, Ticket } from "@prisma/client";
+import type { Event, TicketType } from "@prisma/client";
 
 type PageProps = {
   params: {
@@ -12,7 +12,7 @@ type PageProps = {
 };
 
 type EventWithTickets = Event & {
-  tickets: Ticket[];
+  ticketTypes: TicketType[];
 };
 
 export default async function OrganizerEventDetailPage({ params }: PageProps) {
@@ -24,16 +24,29 @@ export default async function OrganizerEventDetailPage({ params }: PageProps) {
     redirect("/login");
   }
 
+  const userId = data.user.id;
+
+  const organizer = await prisma.organizer.findFirst({
+    where: { userId },
+  });
+
+  if (!organizer) {
+    redirect("/organizador");
+  }
+
   const eventId = Number.parseInt(params.id, 10);
   if (!Number.isFinite(eventId)) {
     notFound();
   }
 
-  // 2) Buscar evento + tickets
-  const event = (await prisma.event.findUnique({
-    where: { id: eventId },
+  // 2) Buscar evento + tipos de bilhete (waves)
+  const event = (await prisma.event.findFirst({
+    where: {
+      id: eventId,
+      organizerId: organizer.id,
+    },
     include: {
-      tickets: {
+      ticketTypes: {
         orderBy: {
           sortOrder: "asc",
         },
@@ -48,12 +61,12 @@ export default async function OrganizerEventDetailPage({ params }: PageProps) {
   const now = new Date();
 
   // 3) Métricas agregadas
-  const totalWaves = event.tickets.length;
-  const totalTicketsSold = event.tickets.reduce(
+  const totalWaves = event.ticketTypes.length;
+  const totalTicketsSold = event.ticketTypes.reduce(
     (sum, t) => sum + t.soldQuantity,
     0,
   );
-  const totalStock = event.tickets.reduce(
+  const totalStock = event.ticketTypes.reduce(
     (sum, t) =>
       sum +
       (t.totalQuantity !== null && t.totalQuantity !== undefined
@@ -66,14 +79,16 @@ export default async function OrganizerEventDetailPage({ params }: PageProps) {
       ? Math.min(100, Math.round((totalTicketsSold / totalStock) * 100))
       : null;
 
-  const totalRevenueCents = event.tickets.reduce(
+  const totalRevenueCents = event.ticketTypes.reduce(
     (sum, t) => sum + t.soldQuantity * (t.price ?? 0),
     0,
   );
   const totalRevenue = (totalRevenueCents / 100).toFixed(2);
 
-  const cheapestWave = event.tickets.length
-    ? event.tickets.reduce((min, t) => (t.price < min.price ? t : min))
+  const cheapestWave = event.ticketTypes.length
+    ? event.ticketTypes.reduce((min, t) =>
+        ((t.price ?? 0) < (min.price ?? 0) ? t : min)
+      )
     : null;
 
   const formatDateTime = (d: Date | null | undefined) => {
@@ -89,8 +104,8 @@ export default async function OrganizerEventDetailPage({ params }: PageProps) {
   const formatMoney = (cents: number) =>
     `${(cents / 100).toFixed(2)} €`.replace(".", ",");
 
-  const startDateFormatted = formatDateTime(event.startDate);
-  const endDateFormatted = formatDateTime(event.endDate);
+  const startDateFormatted = formatDateTime(event.startsAt);
+  const endDateFormatted = formatDateTime(event.endsAt);
 
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top,_#1a1030_0,_#050509_45%,_#02020a_100%)] text-white">
@@ -163,7 +178,7 @@ export default async function OrganizerEventDetailPage({ params }: PageProps) {
               <p className="mt-1 text-[11px] text-white/70">
                 Preço a partir de{" "}
                 <span className="font-semibold">
-                  {formatMoney(cheapestWave.price)}
+                  {formatMoney(cheapestWave.price ?? 0)}
                 </span>{" "}
                 ({totalWaves} wave{totalWaves !== 1 ? "s" : ""})
               </p>
@@ -232,16 +247,16 @@ export default async function OrganizerEventDetailPage({ params }: PageProps) {
             </div>
           </div>
 
-          {event.tickets.length === 0 && (
+          {event.ticketTypes.length === 0 && (
             <div className="mt-2 rounded-xl border border-dashed border-white/20 bg-white/5 px-4 py-4 text-[11px] text-white/70">
               Este evento ainda não tem waves configuradas. Usa o criador de
               eventos para adicionar bilhetes.
             </div>
           )}
 
-          {event.tickets.length > 0 && (
+          {event.ticketTypes.length > 0 && (
             <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-4">
-              {event.tickets.map((ticket) => {
+              {event.ticketTypes.map((ticket) => {
                 const remaining =
                   ticket.totalQuantity !== null &&
                   ticket.totalQuantity !== undefined
@@ -270,11 +285,7 @@ export default async function OrganizerEventDetailPage({ params }: PageProps) {
                   ? new Date(ticket.endsAt).getTime()
                   : null;
 
-                if (!ticket.available || !ticket.isVisible) {
-                  statusLabel = "Desativado";
-                  statusBadgeClass =
-                    "bg-white/8 border-white/30 text-white/75";
-                } else if (
+                if (
                   ticket.totalQuantity !== null &&
                   ticket.totalQuantity !== undefined &&
                   ticket.soldQuantity >= ticket.totalQuantity

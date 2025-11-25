@@ -3,9 +3,13 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { mapEventToCardDTO, type EventCardDTO } from "@/lib/events";
 
-function formatDateRange(startIso: string, endIso: string) {
-  const start = new Date(startIso);
-  const end = new Date(endIso);
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+function formatDateRange(start: Date | null, end: Date | null) {
+  if (!start || !end) {
+    return "Data a anunciar";
+  }
 
   const sameDay =
     start.getFullYear() === end.getFullYear() &&
@@ -46,17 +50,21 @@ function formatPrice(event: EventCardDTO) {
 }
 
 export default async function HomePage() {
-  const eventsRaw = await prisma.event.findMany({
-    orderBy: { startDate: "asc" },
-    include: {
-      tickets: {
-        orderBy: { sortOrder: "asc" },
+ const eventsRaw = await prisma.event.findMany({
+  orderBy: { startsAt: "asc" },
+  include: {
+    ticketTypes: {
+      orderBy: {
+        sortOrder: "asc",
       },
     },
-    take: 18,
-  });
+  },
+  take: 18,
+});
 
-  const events: EventCardDTO[] = eventsRaw.map(mapEventToCardDTO);
+  const events: EventCardDTO[] = eventsRaw
+    .map(mapEventToCardDTO)
+    .filter((e): e is EventCardDTO => e !== null);
 
   const spotlight = events[0] ?? null;
   const hotNow = events.slice(0, 3); // máx. 3 em alta
@@ -175,25 +183,25 @@ export default async function HomePage() {
               {spotlight ? (
                 <>
                   <div className="relative h-44 w-full overflow-hidden">
-                    {spotlight.coverImageUrl && (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={spotlight.coverImageUrl}
-                        alt={spotlight.title}
-                        className="h-full w-full object-cover opacity-85"
-                      />
-                    )}
+              {/* {spotlight.coverImageUrl && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={spotlight.coverImageUrl}
+                  alt={spotlight.title}
+                  className="h-full w-full object-cover opacity-85"
+                />
+              )} */}
                     <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/55 to-transparent" />
 
-                    <div className="absolute left-4 right-4 top-3 flex items-center justify-between gap-3 text-[10px] text-zinc-100">
-                      <span className="rounded-full bg-black/60 px-2 py-1">
-                        {spotlight.venue.name}
-                      </span>
-                      <span className="inline-flex items-center gap-1 rounded-full bg-black/60 px-2 py-1">
-                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                        {spotlight.stats.goingCount} pessoas confirmadas
-                      </span>
-                    </div>
+                   <div className="absolute left-4 right-4 top-3 flex items-center justify-between gap-3 text-[10px] text-zinc-100">
+                    <span className="rounded-full bg-black/60 px-2 py-1">
+                      {spotlight.slug || "Evento ORYA"}
+                    </span>
+                    <span className="inline-flex items-center gap-1 rounded-full bg-black/60 px-2 py-1">
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                      0 pessoas confirmadas
+                    </span>
+                  </div>
 
                     <div className="absolute bottom-3 left-4 right-4 flex items-end justify-between gap-3">
                       <div>
@@ -202,8 +210,8 @@ export default async function HomePage() {
                         </p>
                         <p className="mt-0.5 text-[11px] text-zinc-200">
                           {formatDateRange(
-                            spotlight.startDate,
-                            spotlight.endDate
+                            spotlight.startsAt,
+                            spotlight.endsAt
                           )}
                         </p>
                       </div>
@@ -215,19 +223,15 @@ export default async function HomePage() {
 
                   <div className="space-y-3 px-4 pb-4 pt-3">
                     <p className="line-clamp-2 text-xs text-zinc-100">
-                      {spotlight.shortDescription}
+                      {spotlight.description}
                     </p>
 
                     <div className="flex items-center justify-between text-[11px] text-zinc-300">
-                      <span>
-                        {spotlight.stats.goingCount} vão ·{" "}
-                        {spotlight.stats.interestedCount} interessados
-                      </span>
+                      <span>0 vão · 0 interessados</span>
                       <span className="hidden rounded-full border border-zinc-500/70 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-zinc-200 sm:inline-block">
                         Evento ORYA
                       </span>
                     </div>
-
                     <Link
                       href={`/eventos/${spotlight.slug}`}
                       className="mt-1 inline-flex w-full items-center justify-center rounded-2xl bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-4 py-2 text-xs font-semibold text-black shadow-lg shadow-[#6bffff80] hover:brightness-110"
@@ -237,16 +241,16 @@ export default async function HomePage() {
                   </div>
                 </>
               ) : (
-                <div className="px-4 py-6 text-sm text-zinc-200">
-                  Ainda não tens eventos criados.
-                  <br />
-                  <Link
-                    href="/eventos/novo"
-                    className="mt-2 inline-flex text-[13px] font-medium text-[#6BFFFF] underline underline-offset-4"
-                  >
-                    Cria o teu primeiro evento →
-                  </Link>
-                </div>
+               <div className="px-4 py-6 text-sm text-zinc-200">
+                Ainda não tens eventos criados.
+                <br />
+                <Link
+                  href="/organizador/eventos/novo"
+                  className="mt-2 inline-flex text-[13px] font-medium text-[#6BFFFF] underline underline-offset-4"
+                >
+                  Cria o teu primeiro evento →
+                </Link>
+              </div>
               )}
             </div>
           </div>
@@ -276,8 +280,8 @@ export default async function HomePage() {
           <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
             {hotNow.map((event) => {
               const dateLabel = formatDateRange(
-                event.startDate,
-                event.endDate
+                event.startsAt,
+                event.endsAt
               );
               const priceLabel = formatPrice(event);
 
@@ -288,20 +292,20 @@ export default async function HomePage() {
                   className="group relative overflow-hidden rounded-2xl border border-white/18 bg-gradient-to-br from-[#FF8AD906] via-[#9BE7FF12] to-[#020617f2] backdrop-blur-xl shadow-[0_22px_80px_rgba(15,23,42,0.9)] transition-transform hover:-translate-y-1 hover:border-[#FF00C8]/80"
                 >
                   <div className="relative h-32 w-full overflow-hidden">
-                    {event.coverImageUrl && (
+                    {/* {event.coverImageUrl && (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
                         src={event.coverImageUrl}
                         alt={event.title}
                         className="absolute inset-0 h-full w-full object-cover opacity-80 transition-opacity duration-300 group-hover:opacity-95"
                       />
-                    )}
+                    )} */}
                     <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/50 to-transparent" />
 
                     <div className="absolute bottom-3 left-3 right-3 flex items-end justify-between gap-2">
                       <div>
                         <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-200">
-                          {event.venue.name}
+                          Local a confirmar
                         </p>
                         <p className="text-[11px] text-zinc-200">
                           {dateLabel}
@@ -318,7 +322,7 @@ export default async function HomePage() {
                       {event.title}
                     </h3>
                     <p className="line-clamp-2 text-xs text-zinc-200">
-                      {event.shortDescription}
+                      {event.description}
                     </p>
                   </div>
                 </Link>

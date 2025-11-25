@@ -1,6 +1,7 @@
-// app/api/eventos/route.ts
+// app/api/eventos/join/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { createSupabaseServer } from "@/lib/supabaseServer";
 
 function slugify(title: string) {
   return title
@@ -13,6 +14,28 @@ function slugify(title: string) {
 
 export async function POST(req: NextRequest) {
   try {
+    // 1) Garantir que o utilizador está autenticado
+    const supabase = createSupabaseServer();
+    const {
+      data: { user },
+      error: supabaseError,
+    } = await (await supabase).auth.getUser();
+
+    if (supabaseError) {
+      console.error("Erro Supabase em /api/eventos/join:", supabaseError);
+      return NextResponse.json(
+        { error: "Erro de autenticação." },
+        { status: 500 }
+      );
+    }
+
+    if (!user) {
+      return NextResponse.json(
+        { error: "Não autenticado." },
+        { status: 401 }
+      );
+    }
+
     const body = await req.json();
 
     const {
@@ -40,7 +63,7 @@ export async function POST(req: NextRequest) {
     let counter = 1;
 
     // garantir slug único
-    // eslint-disable-next-line no-constant-condition
+     
     while (true) {
       const existing = await prisma.event.findUnique({ where: { slug } });
       if (!existing) break;
@@ -52,8 +75,8 @@ export async function POST(req: NextRequest) {
         slug,
         title,
         description,
-        startDate: new Date(startDate),
-        endDate: new Date(endDate),
+        startsAt: new Date(startDate),
+        endsAt: new Date(endDate),
         timezone: timezone || "Europe/Lisbon",
         isFree: !!isFree,
         locationName,
@@ -61,12 +84,14 @@ export async function POST(req: NextRequest) {
         coverImageUrl:
           coverImage ||
           "https://images.unsplash.com/photo-1541987392829-5937c1069305?q=80&w=1600",
+        // Campo obrigatório no schema
+        ownerUserId: user.id,
       },
     });
 
     return NextResponse.json({ slug: event.slug }, { status: 201 });
   } catch (err) {
-    console.error(err);
+    console.error("Erro em /api/eventos/join:", err);
     return NextResponse.json(
       { error: "Erro ao criar evento." },
       { status: 500 }

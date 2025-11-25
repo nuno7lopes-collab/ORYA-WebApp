@@ -1,136 +1,204 @@
+// app/api/qr/validate/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import crypto from "crypto";
+import { env } from "@/lib/env";
+
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 /**
- * QR VALIDATION — S1 ULTRA (Future‑proof)
+ * ENTERPRISE S2 — ORYA2 SIGNATURE VALIDATION
  *
- * Features:
- * ✔ Input sanitization & format checks
- * ✔ Anti‑flood soft rate‑limit (in‑memory)
- * ✔ Minimal leakage of internal data
- * ✔ Future-ready hooks for S2 (signatures, usedAt)
- * ✔ Validation logs (no DB changes yet — soft logging)
+ * Aceita apenas payloads formados como:
+ * ORYA2:<base64urlPayload>.<base64urlSignature>
  *
- * GET /api/qr/validate?token=xxxx
+ * Valida:
+ *  - Formato
+ *  - Base64
+ *  - JSON interno
+ *  - Campos obrigatórios
+ *  - HMAC SHA256 correto
+ *  - Token existe e corresponde ao QR
+ *  - Ticket não expirou
  */
 
-const RATE_LIMIT_WINDOW = 6000; // 6s
-const RATE_LIMIT_MAX = 6;
-
-const rateMemory = new Map<string, { count: number; ts: number }>();
-
-function applyRateLimit(ip: string): boolean {
-  const now = Date.now();
-  const record = rateMemory.get(ip);
-
-  if (!record) {
-    rateMemory.set(ip, { count: 1, ts: now });
-    return false;
-  }
-
-  if (now - record.ts > RATE_LIMIT_WINDOW) {
-    rateMemory.set(ip, { count: 1, ts: now });
-    return false;
-  }
-
-  record.count++;
-  if (record.count > RATE_LIMIT_MAX) return true;
-
-  return false;
-}
-
 export async function GET(req: NextRequest) {
-  const ip =
-    req.headers.get("x-forwarded-for") ||
-    req.headers.get("cf-connecting-ip") ||
-    "unknown";
-
-  if (applyRateLimit(ip)) {
-    console.warn("[QR VALIDATE] Rate limited:", ip);
-    return NextResponse.json(
-      { valid: false, reason: "rate_limited" },
-      { status: 429 }
-    );
-  }
-
+  // ❌ PUBLIC QR VALIDATION IS DISABLED
+  return NextResponse.json(
+    { ok: false, error: "PUBLIC_QR_VALIDATION_DISABLED" },
+    { status: 403 }
+  );
+  /*
   try {
-    const raw = req.nextUrl.searchParams.get("token");
+    const url = req.nextUrl;
+    const searchParams = url.searchParams;
+    const raw = searchParams.get("token");
 
     if (!raw) {
       return NextResponse.json(
-        { valid: false, reason: "missing_token" },
+        { ok: false, error: "MISSING_TOKEN" },
         { status: 400 }
       );
     }
 
-    const token = raw.trim();
-
-    if (token.length < 12 || token.length > 200) {
+    // ---------------------------
+    // 1) Verificar prefixo ORYA2
+    // ---------------------------
+    if (!raw.startsWith("ORYA2:")) {
       return NextResponse.json(
-        { valid: false, reason: "invalid_format" },
+        { ok: false, error: "INVALID_FORMAT_OR_PREFIX" },
         { status: 400 }
       );
     }
 
-    // Soft unicode sanitization
-    if (/[^a-zA-Z0-9\-_.]/.test(token)) {
+    const stripped = raw.replace("ORYA2:", "");
+    const parts = stripped.split(".");
+
+    if (parts.length !== 2) {
       return NextResponse.json(
-        { valid: false, reason: "invalid_characters" },
+        { ok: false, error: "INVALID_FORMAT_PARTS" },
         { status: 400 }
       );
     }
 
-    // 1) Lookup purchase
+    const [payloadB64, sigB64] = parts;
+
+    // ---------------------------
+    // 2) Decodificar payload
+    // ---------------------------
+    let payloadJson: any;
+    try {
+      const jsonString = Buffer.from(payloadB64, "base64url").toString();
+      payloadJson = JSON.parse(jsonString);
+    } catch {
+      return NextResponse.json(
+        { ok: false, error: "INVALID_PAYLOAD_B64_OR_JSON" },
+        { status: 400 }
+      );
+    }
+
+    const required = ["v", "tok", "tid", "eid", "uid", "ts", "exp"];
+    for (const key of required) {
+      if (!(key in payloadJson)) {
+        return NextResponse.json(
+          { ok: false, error: `MISSING_FIELD_${key}` },
+          { status: 400 }
+        );
+      }
+    }
+
+    // ---------------------------
+    // 3) Verificar assinatura HMAC SHA256
+    // ---------------------------
+    const secret = env.qrSecretKey;
+    if (!secret) {
+      return NextResponse.json(
+        { ok: false, error: "SERVER_MISCONFIGURED_NO_SECRET" },
+        { status: 500 }
+      );
+    }
+
+    const hmac = crypto.createHmac("sha256", secret);
+    hmac.update(payloadB64);
+    const expectedSig = hmac.digest("base64url");
+
+    if (expectedSig !== sigB64) {
+      return NextResponse.json(
+        { ok: false, error: "INVALID_SIGNATURE" },
+        { status: 400 }
+      );
+    }
+
+    // ---------------------------
+    // 4) Verificar expiração
+    // ---------------------------
+    const nowSec = Math.floor(Date.now() / 1000);
+    if (payloadJson.exp < nowSec) {
+      return NextResponse.json(
+        { ok: false, error: "TICKET_EXPIRED" },
+        { status: 400 }
+      );
+    }
+
+    // ---------------------------
+    // 5) Lookup real no DB para confirmar tok
+    // ---------------------------
     const purchase = await prisma.ticketPurchase.findUnique({
-      where: { qrToken: token },
-      include: {
-        event: true,
-        ticket: true,
-      },
+      where: { qrToken: payloadJson.tok },
+      include: { event: true, ticket: true },
     });
 
-    if (!purchase) {
-      console.log("[QR VALIDATE] Token not found:", token);
+    // Confirm seed matches DB
+    if (purchase.rotatingSeed && payloadJson.seed !== purchase.rotatingSeed) {
       return NextResponse.json(
-        { valid: false, reason: "not_found" },
+        { ok: false, error: "SEED_MISMATCH" },
+        { status: 400 }
+      );
+    }
+
+    if (!purchase) {
+      return NextResponse.json(
+        { ok: false, error: "TOKEN_NOT_FOUND_IN_DB" },
         { status: 404 }
       );
     }
 
-    // FUTURE HOOK (S2): verify cryptographic signature here
-    // FUTURE HOOK (S2): if purchase.usedAt → invalid
+    // ---------------------------
+    // 6) S3 — Marcação de entrada (anti‑reutilização)
+    // ---------------------------
 
-    const now = new Date();
-
-    if (purchase.event.endDate && purchase.event.endDate < now) {
+    // Se já foi usado → inválido
+    if (purchase.usedAt) {
       return NextResponse.json(
-        { valid: false, reason: "event_finished" },
+        { ok: false, error: "TICKET_ALREADY_USED" },
         { status: 400 }
       );
     }
 
-    // ULTRA: Soft log (stored only in memory for now)
-    console.log("[QR VALIDATE] VALID SCAN", {
-      ip,
-      token,
-      purchaseId: purchase.id,
-      event: purchase.event.slug,
-      at: now.toISOString(),
-    });
+    // Caso exista remainingEntries (multi‑entrada)
+    if (typeof purchase.remainingEntries === "number") {
+      if (purchase.remainingEntries <= 0) {
+        return NextResponse.json(
+          { ok: false, error: "NO_ENTRIES_LEFT" },
+          { status: 400 }
+        );
+      }
 
+      // decremento seguro
+      await prisma.ticketPurchase.update({
+        where: { id: purchase.id },
+        data: { remainingEntries: purchase.remainingEntries - 1 },
+      });
+    } else {
+      // Caso seja single-entry → marcar usado
+      await prisma.ticketPurchase.update({
+        where: { id: purchase.id },
+        data: { usedAt: new Date() },
+      });
+    }
+
+    // ---------------------------
+    // 6) Validado
+    // ---------------------------
     return NextResponse.json(
       {
-        valid: true,
-        ticket: {
-          id: purchase.id,
-          quantity: purchase.quantity,
-        },
-        event: {
-          id: purchase.event.id,
-          title: purchase.event.title,
-          slug: purchase.event.slug,
-          startDate: purchase.event.startDate,
-          endDate: purchase.event.endDate,
+        ok: true,
+        message: "VALID_ORYA2_QR",
+        data: {
+          purchaseId: purchase.id,
+          userId: purchase.userId,
+          event: {
+            id: purchase.event.id,
+            title: purchase.event.title,
+            slug: purchase.event.slug,
+            startDate: purchase.event.startDate,
+            endDate: purchase.event.endDate,
+          },
+          ticket: {
+            id: purchase.ticket.id,
+            name: purchase.ticket.name,
+          },
         },
       },
       { status: 200 }
@@ -138,8 +206,9 @@ export async function GET(req: NextRequest) {
   } catch (err) {
     console.error("[QR VALIDATE ERROR]", err);
     return NextResponse.json(
-      { valid: false, reason: "server_error" },
+      { ok: false, error: "SERVER_ERROR" },
       { status: 500 }
     );
   }
+  */
 }

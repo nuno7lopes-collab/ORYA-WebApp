@@ -1,11 +1,45 @@
 // app/eventos/[slug]/page.tsx
 import { prisma } from "@/lib/prisma";
-import { CheckoutProvider } from "@/app/components/checkout/checkoutContext";
+import { CheckoutProvider } from "@/app/components/checkout/contextoCheckout";
 import { notFound } from "next/navigation";
+import { headers } from "next/headers";
 import WavesSectionClient, { type WaveTicket, type WaveStatus } from "./WavesSectionClient";
-import { createSupabaseServer } from "@/lib/supabaseServer";
 import Link from "next/link";
 import EventPageClient from "./EventPageClient";
+import type { Metadata } from "next";
+import type { Prisma } from "@prisma/client";
+export async function generateMetadata(
+  { params }: { params: EventPageParams },
+): Promise<Metadata> {
+  const { slug } = params;
+
+  const event = await prisma.event.findUnique({
+    where: { slug },
+    select: {
+      title: true,
+      description: true,
+      locationName: true,
+    },
+  });
+
+  if (!event) {
+    return {
+      title: "Evento não encontrado | ORYA",
+      description: "Este evento já não está disponível.",
+    };
+  }
+
+  const location = event.locationName || "ORYA";
+  const baseTitle = event.title || "Evento ORYA";
+
+  return {
+    title: `${baseTitle} | ORYA`,
+    description:
+      event.description && event.description.trim().length > 0
+        ? event.description
+        : `Descobre o evento ${baseTitle} em ${location} na ORYA.`,
+  };
+}
 
 type EventPageParams = {
   slug: string;
@@ -14,6 +48,18 @@ type EventPageParams = {
 type EventPageProps = {
   // No Next 16, params é uma Promise
   params: Promise<EventPageParams>;
+};
+
+type EventResale = {
+  id: string;
+  ticketId: string;
+  price: number;
+  currency: string;
+  seller?: {
+    username: string | null;
+    fullName: string | null;
+  } | null;
+  ticketTypeName?: string | null;
 };
 
 function getWaveStatus(ticket: {
@@ -53,67 +99,57 @@ export default async function EventPage({ params }: EventPageProps) {
 
   const now = new Date();
 
+  type EventWithTickets = Prisma.EventGetPayload<{
+    include: { ticketTypes: true };
+  }>;
+
+  type TicketTypeWithVisibility =
+    EventWithTickets["ticketTypes"][number] & { isVisible?: boolean | null };
+
   const event = await prisma.event.findUnique({
     where: { slug },
-    include: {
-      tickets: {
-        include: {
-          reservations: {
-            where: {
-              status: "ACTIVE",
-              expiresAt: { gt: now },
-            },
-            select: { quantity: true },
-          },
-        },
-      },
-      purchases: {
-        select: {
-          id: true,
-          quantity: true,
-          userId: true,
-        },
-      },
-    },
+    include: { ticketTypes: true },
   });
-
   if (!event) {
     notFound();
   }
 
-  const supabase = await createSupabaseServer();
-  const { data: userData } = await supabase.auth.getUser();
-  const userId = userData?.user?.id ?? null;
+  // Buscar bilhetes ligados a este evento (para contagem de pessoas)
+  const tickets = await prisma.ticket.findMany({
+    where: { eventId: event.id },
+  });
 
-  const goingCount = event.purchases.reduce(
-    (sum: number, p: { quantity: number | null }) => sum + (p.quantity ?? 0),
-    0,
-  );
+  const safeLocationName = event.locationName || "Local a anunciar";
+  const safeTimezone = event.timezone || "Europe/Lisbon";
+  const safeOrganizer = "ORYA";
 
-  const currentUserHasTicket =
-    !!userId &&
-    event.purchases.some(
-      (p: { userId: string | null }) => p.userId !== null && p.userId === userId,
-    );
+  const goingCount = tickets.length;
 
-  const startDateObj = new Date(event.startDate);
-  const endDateObj = new Date(event.endDate);
+  // Nota: no modelo atual, não determinamos o utilizador autenticado neste
+  // Server Component para evitar erros de escrita de cookies.
+  // A verificação de "já tens bilhete" pode ser feita no cliente.
+  const userId: string | null = null;
+  const currentUserHasTicket = false;
 
-  const date = startDateObj.toLocaleDateString("pt-PT", {
+  const startDateObj = event.startsAt;
+  const endDateObj = event.endsAt ?? event.startsAt;
+
+  const dateFormatter = new Intl.DateTimeFormat("pt-PT", {
     weekday: "long",
     day: "numeric",
     month: "long",
+    timeZone: safeTimezone,
   });
 
-  const time = startDateObj.toLocaleTimeString("pt-PT", {
+  const timeFormatter = new Intl.DateTimeFormat("pt-PT", {
     hour: "2-digit",
     minute: "2-digit",
+    timeZone: safeTimezone,
   });
 
-  const endTime = endDateObj.toLocaleTimeString("pt-PT", {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  const date = dateFormatter.format(startDateObj);
+  const time = timeFormatter.format(startDateObj);
+  const endTime = timeFormatter.format(endDateObj);
 
   const cover =
     event.coverImageUrl && event.coverImageUrl.trim().length > 0
@@ -121,32 +157,23 @@ export default async function EventPage({ params }: EventPageProps) {
       : "https://images.unsplash.com/photo-1541987392829-5937c1069305?q=80&w=1600";
 
   const interestedCount: number = 0;
+  const nowDate = new Date();
+  const eventEnded = endDateObj < nowDate;
 
-  const orderedTickets = event.tickets
-    .filter((t: { isVisible: boolean; available: boolean }) => t.isVisible && t.available)
-    .sort(
-      (
-        a: { sortOrder: number | null; price: number },
-        b: { sortOrder: number | null; price: number },
-      ) => {
-        const ao = a.sortOrder ?? 0;
-        const bo = b.sortOrder ?? 0;
-        if (ao !== bo) return ao - bo;
-        return a.price - b.price;
-      });
+  const orderedTickets = event.ticketTypes
+    .filter((t: TicketTypeWithVisibility) => t.isVisible ?? true)
+    .sort((a, b) => {
+      const ao = a.sortOrder ?? 0;
+      const bo = b.sortOrder ?? 0;
+      if (ao !== bo) return ao - bo;
+      return a.price - b.price;
+    });
 
-  const uiTickets: WaveTicket[] = orderedTickets.map((t: any, index: number) => {
-    const reservedQty = Array.isArray(t.reservations)
-      ? t.reservations.reduce(
-          (sum: number, r: { quantity: number }) => sum + (r.quantity ?? 0),
-          0,
-        )
-      : 0;
-
+  const uiTickets: WaveTicket[] = orderedTickets.map((t, index) => {
     const remaining =
       t.totalQuantity === null || t.totalQuantity === undefined
         ? null
-        : t.totalQuantity - t.soldQuantity - reservedQty;
+        : t.totalQuantity - t.soldQuantity;
 
     // Override: if remaining is 0, this wave is sold_out (even if soldQuantity < totalQuantity)
     const finalStatus =
@@ -170,8 +197,8 @@ export default async function EventPage({ params }: EventPageProps) {
       status: finalStatus as WaveStatus,
       startsAt: t.startsAt ? t.startsAt.toISOString() : null,
       endsAt: t.endsAt ? t.endsAt.toISOString() : null,
-      available: t.available,
-      isVisible: t.isVisible,
+      available: remaining === null ? true : remaining > 0 && !eventEnded,
+      isVisible: t.isVisible ?? true,
     };
   });
 
@@ -183,15 +210,42 @@ export default async function EventPage({ params }: EventPageProps) {
         )
       : null;
 
-  const basePriceEuros =
-    event.basePrice !== null && event.basePrice !== undefined
-      ? ((event.basePrice as number) ?? 0) / 100
-      : null;
+  const displayPriceFrom = minTicketPrice;
 
-  const displayPriceFrom =
-    minTicketPrice !== null ? minTicketPrice : basePriceEuros;
+  // Carregar revendas deste evento via API F5-9
+let resales: EventResale[] = [];
+try {
+  const headersList = await headers();
+  const protocol = headersList.get("x-forwarded-proto") ?? "http";
+  const host = headersList.get("host");;
 
-  const nowDate = new Date();
+    if (host) {
+      const baseUrl = `${protocol}://${host}`;
+      const res = await fetch(
+        `${baseUrl}/api/eventos/${encodeURIComponent(slug)}/resales`,
+        { cache: "no-store" }
+      );
+
+      if (res.ok) {
+        const data = (await res.json().catch(() => null)) as
+          | { ok?: boolean; resales?: EventResale[] }
+          | null;
+
+        if (data?.ok && Array.isArray(data.resales)) {
+          resales = data.resales;
+        }
+      } else {
+        console.error(
+          "Falha ao carregar revendas para o evento",
+          slug,
+          res.status,
+        );
+      }
+    }
+  } catch (err) {
+    console.error("Erro ao carregar revendas para o evento", slug, err);
+  }
+
   const hasTickets = uiTickets.length > 0;
   const anyOnSale = uiTickets.some((t) => t.status === "on_sale");
   const anyUpcoming = uiTickets.some((t) => t.status === "upcoming");
@@ -202,7 +256,6 @@ export default async function EventPage({ params }: EventPageProps) {
     uiTickets.every(
       (t) => t.status === "closed" || t.status === "sold_out",
     );
-  const eventEnded = endDateObj < nowDate;
 
   let eventStatusLabel = "Evento ativo";
   if (eventEnded) {
@@ -224,12 +277,7 @@ export default async function EventPage({ params }: EventPageProps) {
       )
     : null;
 
-  const safeLocationName = event.locationName || "Local a anunciar";
-  const safeTimezone = event.timezone || "Europe/Lisbon";
-  const safeOrganizer = event.organizerName || "ORYA";
-
-  const showPriceFrom =
-    !event.isFree && (minTicketPrice !== null || event.basePrice !== null);
+  const showPriceFrom = !event.isFree && minTicketPrice !== null;
 
   return (
     <CheckoutProvider>
@@ -569,6 +617,64 @@ export default async function EventPage({ params }: EventPageProps) {
                   tickets={uiTickets}
                   isFreeEvent={event.isFree}
                 />
+              )}
+
+              {resales.length > 0 && (
+                <div className="mt-6 border-t border-white/15 pt-4 space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <h3 className="text-base font-semibold">
+                      Bilhetes entre utilizadores
+                    </h3>
+                    <span className="text-xs text-white/70">
+                      {resales.length} oferta
+                      {resales.length === 1 ? "" : "s"} de revenda
+                    </span>
+                  </div>
+
+                  <p className="text-xs text-white/65">
+                    Estes bilhetes são vendidos por outros utilizadores da ORYA.
+                    O pagamento é feito de forma segura através da plataforma.
+                  </p>
+
+                  <div className="space-y-3">
+                    {resales.map((r) => (
+                      <div
+                        key={r.id}
+                        className="flex items-center justify-between rounded-xl border border-white/15 bg-black/40 px-3.5 py-2.5 text-sm"
+                      >
+                        <div className="flex flex-col gap-0.5">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-medium">
+                              {r.ticketTypeName ?? "Bilhete ORYA"}
+                            </span>
+                            {r.seller && (
+                              <span className="text-xs text-white/60">
+                                por{" "}
+                                {r.seller.username
+                                  ? `@${r.seller.username}`
+                                  : r.seller.fullName ?? "utilizador ORYA"}
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-xs text-white/65">
+                            Preço pedido:{" "}
+                            <span className="font-semibold text-white">
+                              {(r.price / 100).toFixed(2)} €
+                            </span>
+                          </span>
+                        </div>
+
+                        <button
+                          type="button"
+                          disabled
+                          className="inline-flex items-center rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-3 py-1.5 text-xs font-semibold text-black shadow-[0_0_18px_rgba(107,255,255,0.65)] opacity-70 cursor-not-allowed"
+                        >
+                          Comprar em breve
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               )}
             </div>
           ) : (

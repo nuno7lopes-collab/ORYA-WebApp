@@ -126,8 +126,10 @@ export default function ExplorarPage() {
   // likes locais (UI) – depois ligamos ao backend
   const [likedEvents, setLikedEvents] = useState<number[]>([]);
 
+  const eventsList = Array.isArray(events) ? events : [];
+
   const resultsLabel =
-    events.length === 1 ? "1 evento" : `${events.length} eventos`;
+    eventsList.length === 1 ? "1 evento" : `${eventsList.length} eventos`;
 
   const hasActiveFilters =
     search.trim().length > 0 ||
@@ -167,7 +169,7 @@ export default function ExplorarPage() {
       if (sort) params.set("sort", sort);
       if (cursorToUse !== null) params.set("cursor", String(cursorToUse));
 
-      const res = await fetch(`/api/v1/events?${params.toString()}`, {
+      const res = await fetch(`/api/eventos/list?${params.toString()}`, {
         cache: "no-store",
       });
 
@@ -178,11 +180,12 @@ export default function ExplorarPage() {
       }
 
       const data: ApiResponse = await res.json();
+      const nextEvents = Array.isArray(data?.events) ? data.events : [];
 
       if (append) {
-        setEvents((prev) => [...prev, ...data.events]);
+        setEvents((prev) => [...(Array.isArray(prev) ? prev : []), ...nextEvents]);
       } else {
-        setEvents(data.events);
+        setEvents(nextEvents);
       }
 
       setNextCursor(data.pagination.nextCursor);
@@ -246,7 +249,7 @@ export default function ExplorarPage() {
   const headingCity =
     city.trim().length > 0
       ? city.trim()
-      : events[0]?.venue.city ?? "Portugal";
+      : eventsList[0]?.venue.city ?? "Portugal";
 
   return (
     <main className="orya-body-bg min-h-screen w-full text-white">

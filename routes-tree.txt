@@ -1,0 +1,373 @@
+app
+├── [username]
+│   └── page.tsx
+├── admin
+│   ├── eventos
+│   │   └── page.tsx
+│   ├── organizadores
+│   │   └── page.tsx
+│   ├── page.tsx
+│   ├── tickets
+│   │   └── page.tsx
+│   └── utilizadores
+│       └── page.tsx
+├── api
+│   ├── admin
+│   │   ├── eventos
+│   │   │   ├── list
+│   │   │   │   └── route.ts
+│   │   │   └── update-status
+│   │   │       └── route.ts
+│   │   ├── organizadores
+│   │   │   ├── list
+│   │   │   │   └── route.ts
+│   │   │   └── update-status
+│   │   │       └── route.ts
+│   │   ├── tickets
+│   │   │   └── list
+│   │   │       └── route.ts
+│   │   └── utilizadores
+│   │       └── list
+│   │           └── route.ts
+│   ├── auth
+│   │   ├── logout
+│   │   │   └── route.ts
+│   │   ├── me
+│   │   │   └── route.ts
+│   │   ├── refresh
+│   │   │   └── route.ts
+│   │   └── resend-otp
+│   │       └── route.ts
+│   ├── checkout
+│   │   ├── resale
+│   │   │   └── route.ts
+│   │   ├── reserve
+│   │   │   └── route.ts
+│   │   ├── route.ts
+│   │   └── session
+│   │       └── route.ts
+│   ├── cron
+│   │   └── reservations
+│   │       └── cleanup
+│   │           └── route.ts
+│   ├── eventos
+│   │   ├── [slug]
+│   │   │   ├── comprar
+│   │   │   │   └── route.ts
+│   │   │   ├── interest
+│   │   │   │   └── route.ts
+│   │   │   └── resales
+│   │   │       └── route.ts
+│   │   ├── com-waves
+│   │   │   └── route.ts
+│   │   ├── join
+│   │   │   └── route.ts
+│   │   ├── list
+│   │   │   └── route.ts
+│   │   └── route.ts
+│   ├── experiencias
+│   │   ├── create
+│   │   │   └── route.ts
+│   │   ├── join
+│   │   │   └── route.ts
+│   │   └── list
+│   │       └── route.ts
+│   ├── me
+│   │   ├── route.ts
+│   │   ├── ticket-by-intent
+│   │   └── tickets
+│   │       ├── route.ts
+│   │       └── transfers
+│   │           └── route.ts
+│   ├── organizador
+│   │   ├── become
+│   │   │   └── route.ts
+│   │   ├── estatisticas
+│   │   │   ├── audience
+│   │   │   │   └── route.ts
+│   │   │   ├── by-ticket-type
+│   │   │   │   └── route.ts
+│   │   │   ├── overview
+│   │   │   │   └── route.ts
+│   │   │   └── time-series
+│   │   │       └── route.ts
+│   │   ├── events
+│   │   │   ├── create
+│   │   │   │   └── route.ts
+│   │   │   ├── list
+│   │   │   │   └── route.ts
+│   │   │   ├── stats
+│   │   │   │   └── route.ts
+│   │   │   └── update
+│   │   │       └── route.ts
+│   │   ├── me
+│   │   │   └── route.ts
+│   │   ├── payouts
+│   │   │   ├── connect
+│   │   │   │   └── route.ts
+│   │   │   └── webhook
+│   │   │       └── route.ts
+│   │   └── staff
+│   │       ├── assign
+│   │       │   └── route.ts
+│   │       └── revoke
+│   │           └── route.ts
+│   ├── payments
+│   │   ├── confirm
+│   │   └── intent
+│   │       └── route.ts
+│   ├── profiles
+│   │   ├── check-username
+│   │   │   └── route.ts
+│   │   ├── me
+│   │   │   └── route.ts
+│   │   ├── save-avatar
+│   │   │   └── route.ts
+│   │   ├── save-basic
+│   │   │   └── route.ts
+│   │   ├── save-interests
+│   │   │   └── route.ts
+│   │   └── save-location
+│   │       └── route.ts
+│   ├── qr
+│   │   ├── [token]
+│   │   │   └── route.ts
+│   │   ├── generate
+│   │   │   └── route.ts
+│   │   └── validate
+│   │       └── route.ts
+│   ├── staff
+│   │   ├── events
+│   │   │   └── route.ts
+│   │   └── validate-qr
+│   │       └── route.ts
+│   ├── stripe
+│   │   └── webhook
+│   │       └── route.ts
+│   ├── tickets
+│   │   ├── resale
+│   │   │   ├── cancel
+│   │   │   │   └── route.ts
+│   │   │   ├── list
+│   │   │   │   └── route.ts
+│   │   │   └── route.ts
+│   │   └── transfer
+│   │       ├── respond
+│   │       │   └── route.ts
+│   │       └── start
+│   │           └── route.ts
+│   └── upload
+│       └── route.ts
+├── bilhete
+├── error.tsx
+├── eventos
+│   ├── [slug]
+│   │   ├── EventPageClient.tsx
+│   │   ├── WavesSectionClient.tsx
+│   │   └── page.tsx
+│   └── page.tsx
+├── experiencias
+│   ├── [slug]
+│   │   └── page.tsx
+│   ├── nova
+│   │   └── page.tsx
+│   └── page.tsx
+├── explorar
+│   └── page.tsx
+├── favicon.ico
+├── globals.css
+├── layout.tsx
+├── login
+│   └── page.tsx
+├── mapa
+│   └── page.tsx
+├── me
+│   ├── edit
+│   │   └── page.tsx
+│   ├── experiencias
+│   │   └── page.tsx
+│   ├── page.tsx
+│   └── tickets
+│       ├── page.tsx
+│       └── transfers
+│           └── page.tsx
+├── not-found.tsx
+├── onboarding
+│   └── perfil
+│       └── page.tsx
+├── organizador
+│   ├── estatisticas
+│   │   └── page.tsx
+│   ├── eventos
+│   │   ├── [id]
+│   │   │   └── page.tsx
+│   │   ├── novo
+│   │   │   └── page.tsx
+│   │   └── page.tsx
+│   ├── pagamentos
+│   │   └── page.tsx
+│   ├── page.tsx
+│   └── staff
+│       └── page.tsx
+├── page.tsx
+├── signup
+│   └── page.tsx
+├── staff
+│   ├── eventos
+│   │   └── page.tsx
+│   ├── login
+│   │   └── page.tsx
+│   ├── scan
+│   │   └── page.tsx
+│   └── validate
+└── types
+    └── event.ts
+app/api
+├── admin
+│   ├── eventos
+│   │   ├── list
+│   │   │   └── route.ts
+│   │   └── update-status
+│   │       └── route.ts
+│   ├── organizadores
+│   │   ├── list
+│   │   │   └── route.ts
+│   │   └── update-status
+│   │       └── route.ts
+│   ├── tickets
+│   │   └── list
+│   │       └── route.ts
+│   └── utilizadores
+│       └── list
+│           └── route.ts
+├── auth
+│   ├── logout
+│   │   └── route.ts
+│   ├── me
+│   │   └── route.ts
+│   ├── refresh
+│   │   └── route.ts
+│   └── resend-otp
+│       └── route.ts
+├── checkout
+│   ├── resale
+│   │   └── route.ts
+│   ├── reserve
+│   │   └── route.ts
+│   ├── route.ts
+│   └── session
+│       └── route.ts
+├── cron
+│   └── reservations
+│       └── cleanup
+│           └── route.ts
+├── eventos
+│   ├── [slug]
+│   │   ├── comprar
+│   │   │   └── route.ts
+│   │   ├── interest
+│   │   │   └── route.ts
+│   │   └── resales
+│   │       └── route.ts
+│   ├── com-waves
+│   │   └── route.ts
+│   ├── join
+│   │   └── route.ts
+│   ├── list
+│   │   └── route.ts
+│   └── route.ts
+├── experiencias
+│   ├── create
+│   │   └── route.ts
+│   ├── join
+│   │   └── route.ts
+│   └── list
+│       └── route.ts
+├── me
+│   ├── route.ts
+│   ├── ticket-by-intent
+│   └── tickets
+│       ├── route.ts
+│       └── transfers
+│           └── route.ts
+├── organizador
+│   ├── become
+│   │   └── route.ts
+│   ├── estatisticas
+│   │   ├── audience
+│   │   │   └── route.ts
+│   │   ├── by-ticket-type
+│   │   │   └── route.ts
+│   │   ├── overview
+│   │   │   └── route.ts
+│   │   └── time-series
+│   │       └── route.ts
+│   ├── events
+│   │   ├── create
+│   │   │   └── route.ts
+│   │   ├── list
+│   │   │   └── route.ts
+│   │   ├── stats
+│   │   │   └── route.ts
+│   │   └── update
+│   │       └── route.ts
+│   ├── me
+│   │   └── route.ts
+│   ├── payouts
+│   │   ├── connect
+│   │   │   └── route.ts
+│   │   └── webhook
+│   │       └── route.ts
+│   └── staff
+│       ├── assign
+│       │   └── route.ts
+│       └── revoke
+│           └── route.ts
+├── payments
+│   ├── confirm
+│   └── intent
+│       └── route.ts
+├── profiles
+│   ├── check-username
+│   │   └── route.ts
+│   ├── me
+│   │   └── route.ts
+│   ├── save-avatar
+│   │   └── route.ts
+│   ├── save-basic
+│   │   └── route.ts
+│   ├── save-interests
+│   │   └── route.ts
+│   └── save-location
+│       └── route.ts
+├── qr
+│   ├── [token]
+│   │   └── route.ts
+│   ├── generate
+│   │   └── route.ts
+│   └── validate
+│       └── route.ts
+├── staff
+│   ├── events
+│   │   └── route.ts
+│   └── validate-qr
+│       └── route.ts
+├── stripe
+│   └── webhook
+│       └── route.ts
+├── tickets
+│   ├── resale
+│   │   ├── cancel
+│   │   │   └── route.ts
+│   │   ├── list
+│   │   │   └── route.ts
+│   │   └── route.ts
+│   └── transfer
+│       ├── respond
+│       │   └── route.ts
+│       └── start
+│           └── route.ts
+└── upload
+    └── route.ts
+
+209 directories, 162 files

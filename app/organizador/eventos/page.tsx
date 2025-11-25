@@ -1,8 +1,9 @@
 // app/organizador/eventos/page.tsx
 /* eslint-disable @next/next/no-html-link-for-pages */
+
+import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { redirect } from "next/navigation";
 
 export default async function OrganizerEventsPage() {
   // 1) Garante que só entra quem está autenticado
@@ -10,51 +11,42 @@ export default async function OrganizerEventsPage() {
   const { data, error } = await supabase.auth.getUser();
 
   if (error || !data?.user) {
-    redirect("/login");
+    redirect("/login?redirectTo=/organizador/eventos");
   }
 
-  // 2) Buscar todos os eventos + tickets + contadores
-  // TODO: quando o modelo tiver organizerId consistente, filtrar aqui pelos eventos do utilizador autenticado
+  const userId = data.user.id;
+
+  // 2) Encontrar o organizer associado a este utilizador
+  const organizer = await prisma.organizer.findFirst({
+    where: { userId },
+  });
+
+  if (!organizer) {
+    // Ainda não é organizador → envia para a home do painel do organizador
+    redirect("/organizador");
+  }
+
+  // 3) Buscar eventos deste organizer
   const events = await prisma.event.findMany({
-    include: {
-      tickets: true,
-      _count: {
-        select: {
-          tickets: true,
-          purchases: true,
-        },
-      },
-    },
+    where: { organizerId: organizer.id },
     orderBy: {
-      startDate: "asc",
+      startsAt: "asc",
+    },
+    select: {
+      id: true,
+      slug: true,
+      title: true,
+      startsAt: true,
+      endsAt: true,
+      locationName: true,
+      locationCity: true,
+      status: true,
     },
   });
 
   const now = new Date();
-
-  // 3) Métricas agregadas rápidas
   const totalEvents = events.length;
-  const upcomingEvents = events.filter((e) => e.startDate > now).length;
-
-  const { totalTicketsSold, totalRevenueCents } = events.reduce(
-    (acc, event) => {
-      const soldForEvent = event.tickets.reduce(
-        (sum, t) => sum + t.soldQuantity,
-        0,
-      );
-      const revenueForEvent = event.tickets.reduce(
-        (sum, t) => sum + t.soldQuantity * (t.price ?? 0),
-        0,
-      );
-
-      acc.totalTicketsSold += soldForEvent;
-      acc.totalRevenueCents += revenueForEvent;
-      return acc;
-    },
-    { totalTicketsSold: 0, totalRevenueCents: 0 },
-  );
-
-  const totalRevenue = (totalRevenueCents / 100).toFixed(2);
+  const upcomingEvents = events.filter((e) => e.startsAt > now).length;
 
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top,_#1a1030_0,_#050509_45%,_#02020a_100%)] text-white">
@@ -76,7 +68,7 @@ export default async function OrganizerEventsPage() {
           </div>
 
           <a
-            href="/eventos/novo"
+            href="/organizador/eventos/novo"
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] text-[11px] font-semibold text-black hover:scale-[1.03] active:scale-95 transition-transform shadow-[0_0_24px_rgba(107,255,255,0.6)]"
           >
             Criar novo evento
@@ -85,16 +77,15 @@ export default async function OrganizerEventsPage() {
       </header>
 
       <section className="max-w-6xl mx-auto px-5 py-8 md:py-10 space-y-6">
-        {/* Métricas principais */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {/* Métricas principais (simples) */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="rounded-2xl border border-white/14 bg-white/5 backdrop-blur-xl px-4 py-3.5">
             <p className="text-[11px] text-white/60">Eventos totais</p>
             <p className="mt-1 text-2xl font-semibold tracking-tight">
               {totalEvents}
             </p>
             <p className="mt-1 text-[11px] text-white/55">
-              Todos os eventos que já criaste na plataforma (ou que estão
-              registados no sistema).
+              Todos os eventos que já criaste como organizador.
             </p>
           </div>
 
@@ -104,18 +95,7 @@ export default async function OrganizerEventsPage() {
               {upcomingEvents}
             </p>
             <p className="mt-1 text-[11px] text-white/55">
-              Eventos com data ainda por acontecer — foco na operação próxima.
-            </p>
-          </div>
-
-          <div className="rounded-2xl border border-[#6BFFFF]/40 bg-[#02040b]/90 backdrop-blur-xl px-4 py-3.5">
-            <p className="text-[11px] text-[#6BFFFF]/80">Receita bruta</p>
-            <p className="mt-1 text-2xl font-semibold tracking-tight">
-              {totalRevenue} €
-            </p>
-            <p className="mt-1 text-[11px] text-white/65">
-              Soma aproximada de todas as vendas (com base no preço ×
-              bilhetes vendidos).
+              Eventos com data ainda por acontecer.
             </p>
           </div>
         </div>
@@ -128,7 +108,7 @@ export default async function OrganizerEventsPage() {
                 Meus eventos
               </h2>
               <p className="text-[11px] text-white/65">
-                Lista de eventos com waves, vendas e estado geral.
+                Lista de eventos criados por ti como organizador.
               </p>
             </div>
           </div>
@@ -145,7 +125,7 @@ export default async function OrganizerEventsPage() {
                 </p>
               </div>
               <a
-                href="/eventos/novo"
+                href="/organizador/eventos/novo"
                 className="inline-flex px-3 py-1.5 rounded-xl bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] text-[11px] font-semibold text-black hover:scale-[1.03] active:scale-95 transition-transform shadow-[0_0_24px_rgba(107,255,255,0.6)]"
               >
                 Criar evento
@@ -156,42 +136,25 @@ export default async function OrganizerEventsPage() {
           {events.length > 0 && (
             <div className="mt-3 space-y-3">
               {events.map((event) => {
-                const sold = event.tickets.reduce(
-                  (sum, t) => sum + t.soldQuantity,
-                  0,
-                );
-                const totalStock = event.tickets.reduce(
-                  (sum, t) =>
-                    sum +
-                    (t.totalQuantity !== null && t.totalQuantity !== undefined
-                      ? t.totalQuantity
-                      : 0),
-                  0,
-                );
-                const waves = event.tickets.length;
-                const revenueCents = event.tickets.reduce(
-                  (sum, t) => sum + t.soldQuantity * (t.price ?? 0),
-                  0,
-                );
-                const revenue = (revenueCents / 100).toFixed(2);
-
-                const startDate = new Date(event.startDate);
-                const isPast = startDate < now;
-                const statusLabel = isPast ? "Terminado" : "Agendado";
+                const isPast = event.startsAt < now;
+                const statusLabel = isPast
+                  ? "Terminado"
+                  : event.status === "PUBLISHED"
+                  ? "Publicado"
+                  : event.status === "DRAFT"
+                  ? "Rascunho"
+                  : event.status;
                 const statusClasses = isPast
                   ? "bg-white/8 border-white/30 text-white/80"
                   : "bg-emerald-500/10 border-emerald-400/60 text-emerald-100";
 
-                const dateFormatted = startDate.toLocaleString("pt-PT", {
+                const dateFormatted = event.startsAt.toLocaleString("pt-PT", {
                   weekday: "short",
                   day: "2-digit",
                   month: "short",
                   hour: "2-digit",
                   minute: "2-digit",
                 });
-
-                const occupancy =
-                  totalStock > 0 ? Math.min(100, Math.round((sold / totalStock) * 100)) : null;
 
                 return (
                   <article
@@ -205,9 +168,8 @@ export default async function OrganizerEventsPage() {
                         </h3>
                         <p className="mt-0.5 text-[11px] text-white/60">
                           {dateFormatted}
-                          {event.locationName
-                            ? ` • ${event.locationName}`
-                            : ""}
+                          {event.locationName ? ` • ${event.locationName}` : ""}
+                          {event.locationCity ? `, ${event.locationCity}` : ""}
                         </p>
                         <p className="mt-1 text-[10px] text-white/55">
                           Slug:{" "}
@@ -223,34 +185,6 @@ export default async function OrganizerEventsPage() {
                         >
                           {statusLabel}
                         </span>
-                        <span className="px-2 py-0.5 rounded-full bg-white/5 border border-white/20 text-[9px] text-white/75">
-                          {waves} wave{waves !== 1 ? "s" : ""} ativa(s)
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Linha de stats */}
-                    <div className="mt-1 flex flex-wrap items-center gap-4 text-[11px] text-white/80">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-white/55">Bilhetes vendidos:</span>
-                        <span className="font-semibold">{sold}</span>
-                        {totalStock > 0 && (
-                          <span className="text-white/50 text-[10px]">
-                            de {totalStock} ({occupancy}%)
-                          </span>
-                        )}
-                      </div>
-
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-white/55">Receita:</span>
-                        <span className="font-semibold">{revenue} €</span>
-                      </div>
-
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-white/55">Compras:</span>
-                        <span className="font-medium">
-                          {event._count.purchases}
-                        </span>
                       </div>
                     </div>
 
@@ -261,8 +195,8 @@ export default async function OrganizerEventsPage() {
                           🎟️
                         </span>
                         <span>
-                          Gestão de waves, promotores e estatísticas avançadas
-                          disponível na vista de detalhes do evento.
+                          Gere bilhetes, detalhes e estatísticas na página de
+                          gestão do evento.
                         </span>
                       </div>
 
@@ -277,7 +211,7 @@ export default async function OrganizerEventsPage() {
                           href={`/organizador/eventos/${event.id}`}
                           className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] text-[10px] font-semibold text-black hover:scale-[1.02] active:scale-95 transition-transform shadow-[0_0_20px_rgba(107,255,255,0.6)]"
                         >
-                          Detalhes &amp; waves
+                          Detalhes &amp; gestão
                         </a>
                       </div>
                     </div>

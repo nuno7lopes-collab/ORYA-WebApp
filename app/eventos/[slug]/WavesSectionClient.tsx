@@ -2,7 +2,10 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { useCheckout } from "@/app/components/checkout/checkoutContext";
+import { useCheckout } from "@/app/components/checkout/contextoCheckout";
+import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
+
+import { useUser } from "@/app/hooks/useUser";
 
 export type WaveStatus = "on_sale" | "upcoming" | "closed" | "sold_out";
 
@@ -96,7 +99,9 @@ export default function WavesSectionClient({
   isFreeEvent,
 }: WavesSectionClientProps) {
   const router = useRouter();
-  const { openCheckout } = useCheckout();
+  const { abrirCheckout, atualizarDados } = useCheckout();
+  const { openModal } = useAuthModal();
+  const { user } = useUser();
   const [tickets, setTickets] = useState<WaveTicket[]>(initialTickets);
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<FeedbackState>({});
@@ -119,7 +124,7 @@ export default function WavesSectionClient({
 
       // 🔥 Evento pago → abre modal de checkout (novo fluxo)
       if (isPaidTicket) {
-        openCheckout({
+        abrirCheckout({
           slug,
           ticketId,
           price: selectedTicket.price,
@@ -239,192 +244,66 @@ export default function WavesSectionClient({
 
   const visibleTickets = tickets.filter((t) => t.isVisible);
 
-  // Escolher wave "principal" (recomendada): a wave à venda mais barata
-  const primaryWaveId = (() => {
-    const onSale = visibleTickets.filter(
-      (t) => t.status === "on_sale" && t.available && t.isVisible,
-    );
-    if (!onSale.length) return null;
-    const sorted = [...onSale].sort((a, b) => a.price - b.price);
-    return sorted[0]?.id ?? null;
-  })();
-
-  if (!visibleTickets || visibleTickets.length === 0) {
-    return (
-      <div className="mt-4 rounded-xl border border-white/15 bg-gradient-to-br from-[#FF8AD910] via-[#9BE7FF1F] to-[#020617f2] px-4 py-3 text-xs text-white/70 backdrop-blur-xl">
-        Ainda não há waves configuradas para este evento.
-      </div>
-    );
-  }
+  // 🔥 Calcular preço mínimo (defensivo para o caso de não haver bilhetes visíveis)
+  const minPrice =
+    visibleTickets.length > 0
+      ? Math.min(...visibleTickets.map((t) => t.price))
+      : null;
 
   return (
-    <div className="mt-4 space-y-3">
-      {visibleTickets.map((ticket, index) => {
-        const effectiveStatus: WaveStatus =
-          !ticket.available || !ticket.isVisible ? "closed" : ticket.status;
-
-        let statusLabel: string;
-        let statusClasses: string;
-
-        switch (effectiveStatus) {
-          case "on_sale":
-            statusLabel = "À venda";
-            statusClasses =
-              "bg-emerald-500/15 border-emerald-400/40 text-emerald-100";
-            break;
-          case "upcoming":
-            statusLabel = "Em breve";
-            statusClasses =
-              "bg-[#6BFFFF]/10 border-[#6BFFFF]/40 text-[#E0FEFF]";
-            break;
-          case "sold_out":
-            statusLabel = "Esgotado";
-            statusClasses = "bg-red-500/10 border-red-400/50 text-red-200";
-            break;
-          case "closed":
-          default:
-            statusLabel = "Encerrado";
-            statusClasses = "bg-white/6 border-white/30 text-white/60";
-            break;
-        }
-
-        const feedbackForTicket = feedback[ticket.id];
-
-        const isPaidTicket = !isFreeEvent && ticket.price > 0;
-
-        const buttonDisabled =
-          effectiveStatus !== "on_sale" ||
-          loadingId === ticket.id ||
-          (ticket.remaining !== null && ticket.remaining <= 0);
-
-        const buttonLabel = (() => {
-          if (effectiveStatus !== "on_sale") {
-            return statusLabel;
-          }
-          if (loadingId === ticket.id) {
-            return "A processar...";
-          }
-          return isPaidTicket ? "Comprar" : "Reservar";
-        })();
-
-        const remainingText = (() => {
-          if (ticket.remaining === null) {
-            return "Sem limite máximo de lugares nesta wave.";
-          }
-          if (ticket.remaining <= 0) {
-            return "Sem lugares disponíveis nesta wave.";
-          }
-          if (ticket.remaining <= 5) {
-            return `Últimos ${ticket.remaining} bilhete(s) disponíveis.`;
-          }
-          return `${ticket.remaining} lugar(es) disponíveis.`;
-        })();
-
-        const startsAtLabel = formatDateTime(ticket.startsAt);
-        const endsAtLabel = formatDateTime(ticket.endsAt);
-
-        const priceLabel =
-          ticket.price > 0
-            ? `${ticket.price.toFixed(2)} ${ticket.currency || "EUR"}`
-            : "Grátis";
-
-        return (
-          <div
-            key={ticket.id}
-            className={`flex flex-col gap-3 rounded-2xl border px-4 py-3.5 backdrop-blur-xl transition-transform ${
-              ticket.id === primaryWaveId
-                ? "border-white/18 bg-gradient-to-br from-[#FF8AD910] via-[#9BE7FF26] to-[#020617f2] shadow-[0_0_34px_rgba(15,23,42,0.9)]"
-                : "border-white/12 bg-gradient-to-br from-white/[0.03] via-slate-950/85 to-slate-950"
-            }`}
-          >
-            {/* Topo: nome + estado + stock + preço */}
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-              <div className="flex flex-col gap-1">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[13px] font-semibold text-white/95">
-                    {ticket.name || `Wave ${index + 1}`}
-                  </span>
-                  {ticket.id === primaryWaveId && (
-                    <span className="inline-flex items-center rounded-full bg-[#6BFFFF]/15 border border-[#6BFFFF]/60 text-[9px] uppercase tracking-[0.12em] px-2 py-0.5 text-[#E5FEFF]">
-                      Recomendado
-                    </span>
-                  )}
-                </div>
-
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <span
-                    className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] ${statusClasses}`}
-                  >
-                    {statusLabel}
-                  </span>
-                  <span className="text-[10px] text-white/60">
-                    {remainingText}
-                  </span>
-                </div>
-              </div>
-
-              <div className="mt-1 flex flex-col items-start gap-1 sm:mt-0 sm:items-end">
-                <span className="text-sm font-semibold text-white">
-                  {priceLabel}
-                </span>
-                <span className="text-[10px] text-white/50">
-                  Preço por bilhete
-                </span>
-              </div>
-            </div>
-
-            {/* Botão de compra */}
-            <div className="flex items-center justify-end pt-1">
-              <button
-                type="button"
-                disabled={buttonDisabled}
-                onClick={() => handlePurchase(ticket.id)}
-                className={`min-w-[120px] rounded-full px-3.5 py-1.5 text-[11px] font-semibold transition-all ${
-                  buttonDisabled
-                    ? "cursor-default border border-white/15 bg-white/8 text-white/40"
-                    : "bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] text-black shadow-[0_0_18px_rgba(107,255,255,0.5)] hover:scale-[1.02] active:scale-95"
-                }`}
-              >
-                {buttonLabel}
-              </button>
-            </div>
-
-            {/* Linha de info extra (wave #, datas) */}
-            <div className="flex flex-wrap items-center gap-2 text-[10px] text-white/50">
-              <span className="rounded-full border border-white/14 bg-white/8 px-2 py-0.5">
-                Wave #{index + 1}
+    <div className="mt-6 w-full">
+      <div className="rounded-2xl bg-white/5 border border-white/10 px-5 py-4 backdrop-blur-xl flex flex-col gap-3 shadow-[0_0_30px_rgba(0,0,0,0.45)]">
+        <p className="text-white/80 text-sm">
+          {minPrice !== null ? (
+            <>
+              A partir de{" "}
+              <span className="text-white font-semibold">
+                {minPrice.toFixed(2)}€
               </span>
-              {startsAtLabel && endsAtLabel && (
-                <span className="rounded-full border border-white/14 bg-white/5 px-2 py-0.5">
-                  Ativa de: {startsAtLabel} até {endsAtLabel}
-                </span>
-              )}
-              {startsAtLabel && !endsAtLabel && (
-                <span className="rounded-full border border-white/14 bg-white/5 px-2 py-0.5">
-                  Abre: {startsAtLabel}
-                </span>
-              )}
-              {!startsAtLabel && endsAtLabel && (
-                <span className="rounded-full border border-white/14 bg-white/5 px-2 py-0.5">
-                  Fecha: {endsAtLabel}
-                </span>
-              )}
-            </div>
+            </>
+          ) : (
+            <span className="text-white/60">Sem bilhetes disponíveis</span>
+          )}
+        </p>
 
-            {feedbackForTicket && (
-              <div
-                className={`mt-1 rounded-lg px-3 py-1.5 text-[11px] ${
-                  feedbackForTicket.type === "success"
-                    ? "border border-emerald-400/50 bg-emerald-500/10 text-emerald-100"
-                    : "border border-red-400/50 bg-red-500/10 text-red-100"
-                }`}
-              >
-                {feedbackForTicket.message}
-              </div>
-            )}
-          </div>
-        );
-      })}
+        <button
+          type="button"
+          disabled={visibleTickets.length === 0}
+          onClick={() => {
+            if (visibleTickets.length === 0) return;
+
+            if (!user) {
+              openModal({ mode: "signup" });
+              return;
+            }
+
+            atualizarDados({
+              slug,
+              waves: visibleTickets,
+            });
+
+            const defaultTicket = visibleTickets[0];
+
+            abrirCheckout({
+              slug,
+              ticketId: defaultTicket.id,
+              price: defaultTicket.price,
+              ticketName: defaultTicket.name,
+              waves: visibleTickets,
+            });
+
+            setTimeout(() => {
+              try {
+                const evt = new Event("orya-force-step1");
+                window.dispatchEvent(evt);
+              } catch {}
+            }, 10);
+          }}
+          className="w-full rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] text-black font-semibold py-3 shadow-[0_0_20px_rgba(107,255,255,0.45)] hover:scale-[1.02] active:scale-95 transition-transform text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Comprar agora
+        </button>
+      </div>
     </div>
   );
 }

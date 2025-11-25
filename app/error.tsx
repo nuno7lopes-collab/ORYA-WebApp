@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect } from "react";
 
 type ErrorProps = {
@@ -48,12 +49,12 @@ export default function Error({ error, reset }: ErrorProps) {
             Tentar novamente
             <span className="text-[14px]">↻</span>
           </button>
-          <a
+          <Link
             href="/explorar"
             className="inline-flex w-full items-center justify-center rounded-xl border border-white/15 bg-white/5 px-4 py-2.5 text-[11px] font-medium text-white/80 hover:bg-white/10 transition-colors"
           >
             Voltar a explorar eventos
-          </a>
+          </Link>
         </div>
 
         {process.env.NODE_ENV === "development" && error?.digest && (

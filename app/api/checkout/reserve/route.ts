@@ -3,11 +3,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 const RESERVATION_MINUTES = 10;
 
 type ReserveBody = {
   eventSlug?: string;
-  ticketId?: string;
+  ticketTypeId?: string; // novo campo explícito
+  ticketId?: string; // compatibilidade com código antigo, interpretado como ticketTypeId
   qty?: number;
 };
 
@@ -22,62 +26,63 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const eventSlug = body.eventSlug?.trim();
-    const ticketId = body.ticketId?.trim();
-    const qty =
-      typeof body.qty === "number" && body.qty > 0
-        ? Math.floor(body.qty)
-        : 1;
+    const { eventSlug, ticketTypeId, ticketId, qty: rawQty } = body;
 
-    if (!eventSlug || !ticketId) {
+    // suportar tanto ticketTypeId como ticketId (legacy)
+    const effectiveTicketTypeId = ticketTypeId ?? ticketId;
+
+    if (!eventSlug || !effectiveTicketTypeId || rawQty == null) {
       return NextResponse.json(
         {
           ok: false,
-          error: "eventSlug e ticketId são obrigatórios.",
-          code: "MISSING_FIELDS",
+          error: "Faltam parâmetros obrigatórios.",
+          code: "MISSING_PARAMS",
         },
         { status: 400 },
       );
     }
 
-    // 1) User autenticado (obrigatório para reservar)
-    let userId: string | null = null;
-    try {
-      const supabase = await createSupabaseServer();
-      const { data: userData } = await supabase.auth.getUser();
+    const qty = Number(rawQty);
 
-      if (!userData?.user) {
-        return NextResponse.json(
-          {
-            ok: false,
-            error: "Precisas de iniciar sessão para reservar bilhetes.",
-            code: "NOT_AUTHENTICATED",
-          },
-          { status: 401 },
-        );
-      }
-
-      userId = userData.user.id;
-    } catch (authErr) {
-      console.error(
-        "[POST /api/checkout/reserve] Erro ao obter utilizador do Supabase:",
-        authErr,
-      );
+    if (!Number.isInteger(qty) || qty <= 0) {
       return NextResponse.json(
         {
           ok: false,
-          error:
-            "Não foi possível validar a tua sessão. Tenta iniciar sessão novamente.",
-          code: "AUTH_ERROR",
+          error: "Quantidade inválida.",
+          code: "INVALID_QTY",
         },
-        { status: 500 },
+        { status: 400 },
       );
     }
 
-    // 2) Buscar evento + ticket
+    // converter ticketTypeId (string) para number, porque no Prisma é Int
+    const ticketTypeIdNumber = Number(effectiveTicketTypeId);
+    if (!Number.isInteger(ticketTypeIdNumber) || ticketTypeIdNumber <= 0) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "Tipo de bilhete inválido.",
+          code: "INVALID_TICKET_TYPE_ID",
+        },
+        { status: 400 },
+      );
+    }
+
+    // 1) Sessão Supabase (login obrigatório)
+    const supabase = await createSupabaseServer();
+    const { data: userData } = await supabase.auth.getUser();
+    if (!userData?.user) {
+      return NextResponse.json(
+        { ok: false, error: "Não autenticado.", code: "NOT_AUTH" },
+        { status: 401 },
+      );
+    }
+    const userId = userData.user.id;
+
+    // 2) Buscar evento + ticketTypes
     const event = await prisma.event.findUnique({
       where: { slug: eventSlug },
-      include: { tickets: true },
+      include: { ticketTypes: true },
     });
 
     if (!event) {
@@ -87,187 +92,93 @@ export async function POST(req: NextRequest) {
       );
     }
 
-        const ticket = event.tickets.find(
-      (t: { id: string }) => t.id === ticketId,
+    const ticketType = event.ticketTypes.find(
+      (t) => t.id === ticketTypeIdNumber,
     );
 
-    if (!ticket) {
+    if (!ticketType) {
       return NextResponse.json(
         {
           ok: false,
-          error: "Bilhete não encontrado para este evento.",
-          code: "TICKET_NOT_FOUND",
+          error: "Tipo de bilhete inválido.",
+          code: "TICKET_TYPE_NOT_FOUND",
         },
         { status: 404 },
       );
     }
 
-    const now = new Date();
-    // LIMPEZA SOFT: Expirar reservas que já passaram o prazo
-    await prisma.ticketReservation.updateMany({
-      where: {
-        status: "ACTIVE",
-        expiresAt: { lt: now },
-      },
-      data: { status: "EXPIRED" },
-    });
+    // 3) Validar stock disponível com base no TicketType
+    const remaining =
+      ticketType.totalQuantity !== null &&
+      ticketType.totalQuantity !== undefined
+        ? ticketType.totalQuantity - ticketType.soldQuantity
+        : Infinity;
 
-
-    // 🔧 C) Auto-heal de reservas expiradas — remover e permitir criar nova automaticamente
-    // Se o utilizador tinha uma reserva antiga expirada, apagamos para evitar conflitos futuros
-    await prisma.ticketReservation.deleteMany({
-      where: {
-        ticketId,
-        eventId: event.id,
-        userId,
-        status: "EXPIRED",
-      },
-    });
-
-    // Disponibilidade base
-    if (!ticket.available || !ticket.isVisible) {
+    if (remaining <= 0) {
       return NextResponse.json(
-        {
-          ok: false,
-          error: "Este bilhete não está disponível.",
-          code: "TICKET_UNAVAILABLE",
-        },
-        { status: 400 },
+        { ok: false, error: "Sem stock.", code: "OUT_OF_STOCK" },
+        { status: 409 },
       );
     }
 
-    // 2.1) Janela temporal da wave (abertura/fecho)
-    const nowMs = now.getTime();
-    const startsAtMs = ticket.startsAt ? ticket.startsAt.getTime() : null;
-    const endsAtMs = ticket.endsAt ? ticket.endsAt.getTime() : null;
-
-    if (startsAtMs && nowMs < startsAtMs) {
+    if (qty > remaining) {
       return NextResponse.json(
         {
           ok: false,
-          error: "As reservas para esta wave ainda não abriram.",
-          code: "SALES_NOT_STARTED",
+          error: "Quantidade excede stock disponível.",
+          code: "QUANTITY_EXCEEDS_STOCK",
         },
-        { status: 400 },
+        { status: 409 },
       );
     }
 
-    if (endsAtMs && nowMs > endsAtMs) {
-      return NextResponse.json(
-        {
-          ok: false,
-          error: "As reservas para esta wave já encerraram.",
-          code: "SALES_CLOSED",
-        },
-        { status: 400 },
-      );
-    }
+    // 4) Criar ou atualizar reserva manualmente (porque não há unique composto no Prisma)
+    const expiresAt = new Date();
+    expiresAt.setMinutes(expiresAt.getMinutes() + RESERVATION_MINUTES);
 
-    // 3) Calcular stock real = total - sold - reservas ativas
-    let remaining: number | null = null;
-
-    if (
-      ticket.totalQuantity !== null &&
-      ticket.totalQuantity !== undefined
-    ) {
-      const activeReservations = await prisma.ticketReservation.aggregate({
-        where: {
-          ticketId: ticket.id,
-          status: "ACTIVE",
-          expiresAt: { gt: now },
-        },
-        _sum: { quantity: true },
-      });
-
-      const reservedQty = activeReservations._sum.quantity ?? 0;
-
-      // 📌 A) Stock premium: ignorar soldQuantity e contar só reservas ativas
-      // Isto faz com que ao apagar compras no Prisma Studio, o stock volte a 100% automaticamente.
-      remaining = ticket.totalQuantity - reservedQty;
-
-      if (remaining <= 0) {
-        return NextResponse.json(
-          {
-            ok: false,
-            error: "Não há mais lugares disponíveis nesta wave.",
-            code: "SOLD_OUT",
-          },
-          { status: 400 },
-        );
-      }
-
-      if (qty > remaining) {
-        return NextResponse.json(
-          {
-            ok: false,
-            error: `Só há ${remaining} bilhete(s) disponíveis nesta wave.`,
-            code: "NOT_ENOUGH_STOCK",
-          },
-          { status: 400 },
-        );
-      }
-    }
-
-    // 4) Reutilizar reserva ativa do próprio user (se existir)
     let reservation = await prisma.ticketReservation.findFirst({
       where: {
-        ticketId: ticket.id,
-        eventId: event.id,
         userId,
+        eventId: event.id,
+        ticketTypeId: ticketTypeIdNumber, // <- número, não string
         status: "ACTIVE",
-        expiresAt: { gt: now },
       },
-      orderBy: { createdAt: "desc" },
     });
 
-    // 🛑 D) Se já existe uma reserva ativa → não criar nova, não renovar timer
     if (reservation) {
-      return NextResponse.json(
-        {
-          ok: true,
-          reservationId: reservation.id,
-          expiresAt: reservation.expiresAt.toISOString(),
-          now: now.toISOString(),
+      reservation = await prisma.ticketReservation.update({
+        where: { id: reservation.id },
+        data: {
+          quantity: qty,
+          expiresAt,
+          status: "ACTIVE",
         },
-        { status: 200 },
-      );
-    }
-
-    const newExpiresAt = new Date(
-      now.getTime() + RESERVATION_MINUTES * 60 * 1000,
-    );
-
-    if (!reservation) {
-      // Não existe reserva → criar nova com 10 minutos
+      });
+    } else {
       reservation = await prisma.ticketReservation.create({
         data: {
-          ticketId: ticket.id,
-          eventId: event.id,
           userId,
+          eventId: event.id,
+          ticketTypeId: ticketTypeIdNumber, // <- número, não string
           quantity: qty,
-          expiresAt: newExpiresAt,
+          status: "ACTIVE",
+          expiresAt,
         },
       });
     }
 
-    return NextResponse.json(
-      {
-        ok: true,
-        reservationId: reservation.id,
-        expiresAt: reservation.expiresAt.toISOString(),
-        now: now.toISOString(),
+    return NextResponse.json({
+      ok: true,
+      reservation: {
+        id: reservation.id,
+        expiresAt,
+        quantity: reservation.quantity,
       },
-      { status: 200 },
-    );
-  } catch (err) {
-    console.error("[POST /api/checkout/reserve] ERROR", err);
+    });
+  } catch (error) {
+    console.error("Error in reserve route:", error);
     return NextResponse.json(
-      {
-        ok: false,
-        error:
-          "Erro interno ao criar/renovar a reserva. Tenta novamente dentro de instantes.",
-        code: "INTERNAL_ERROR",
-      },
+      { ok: false, error: "Erro interno.", code: "SERVER_ERROR" },
       { status: 500 },
     );
   }

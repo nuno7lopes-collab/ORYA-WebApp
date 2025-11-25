@@ -4,6 +4,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 function slugify(title: string) {
   return title
     .toLowerCase()
@@ -38,6 +41,14 @@ export async function POST(req: NextRequest) {
     } catch (authErr) {
       // Não quebrar a criação de evento se houver algum problema com Supabase
       console.warn("[POST /api/eventos] Erro ao obter utilizador Supabase:", authErr);
+    }
+
+    // Se não houver utilizador autenticado, não podemos criar o evento
+    if (!organizerId) {
+      return NextResponse.json(
+        { error: "Precisas de iniciar sessão para criar eventos." },
+        { status: 401 }
+      );
     }
 
     // 2) Ler body
@@ -78,6 +89,12 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
+    if (endDateISO <= startDateISO) {
+      return NextResponse.json(
+        { error: "A data de fim tem de ser posterior à data de início." },
+        { status: 400 }
+      );
+    }
 
     // 4) Gerar slug único
     const slugBase = slugify(title);
@@ -85,7 +102,7 @@ export async function POST(req: NextRequest) {
     let counter = 1;
 
     // Garantir slug único
-    // eslint-disable-next-line no-constant-condition
+     
     while (true) {
       const existing = await prisma.event.findUnique({ where: { slug } });
       if (!existing) break;
@@ -102,7 +119,7 @@ export async function POST(req: NextRequest) {
               !Number.isNaN(Number(t.price))
           )
           .map((t: any): TicketPayload => {
-            const priceNumber = Math.round(Number(t.price));
+            const priceNumber = Math.max(0, Math.round(Number(t.price)));
 
             const totalQuantity =
               typeof t.totalQuantity === "number" &&
@@ -151,45 +168,37 @@ export async function POST(req: NextRequest) {
     // 7) Criar evento na DB
     const event = await prisma.event.create({
       data: {
+        ownerUserId: organizerId,
         slug,
         title,
         description,
-        startDate: startDateISO,
-        endDate: endDateISO,
+        startsAt: startDateISO,
+        endsAt: endDateISO,
         timezone: timezone || "Europe/Lisbon",
         isFree: free,
-        basePrice: computedBasePrice,
         locationName,
         address: address || "",
         coverImageUrl:
           coverImageUrl ||
           "https://images.unsplash.com/photo-1541987392829-5937c1069305?q=80&w=1600",
-        organizerName: organizerName || "ORYA Team",
 
-        // 👇 associar organizador se existir user logado
-        // (assumindo que já tens organizerId?: String no modelo Event)
-        organizerId: organizerId ?? undefined,
-
-        tickets:
+        // Nota: por agora não associamos organizerId (modelo Organizer)
+        ticketTypes:
           !free && ticketsArray.length > 0
             ? {
                 create: ticketsArray.map((t, index) => ({
                   name: t.name,
                   currency: "EUR",
                   price: t.price,
-                  available: t.available,
                   totalQuantity: t.totalQuantity,
                   soldQuantity: 0,
-                  startsAt: t.startsAt ?? undefined,
-                  endsAt: t.endsAt ?? undefined,
+                  startsAt: t.startsAt,
+                  endsAt: t.endsAt,
                   isVisible: t.isVisible,
                   sortOrder: index,
                 })),
               }
             : undefined,
-      },
-      include: {
-        tickets: true,
       },
     });
 

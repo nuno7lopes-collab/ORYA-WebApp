@@ -1,31 +1,46 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import type { User } from "@supabase/supabase-js";
-import { createClient } from "@supabase/supabase-js";
+import useSWR from "swr";
 
-export default function useUser() {
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+type Role = "user" | "organizer" | "admin" | string;
 
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+type ApiMeResponse = {
+  user: { id: string; email: string | null } | null;
+  profile: {
+    id: string;
+    username: string | null;
+    fullName: string | null;
+    avatarUrl: string | null;
+    bio: string | null;
+    city: string | null;
+    favouriteCategories: string[];
+    onboardingDone: boolean;
+    roles: Role[];
+  } | null;
+};
+
+const fetcher = async (url: string) => {
+  const res = await fetch(url, { credentials: "include" });
+  if (!res.ok) {
+    throw new Error("Falha ao carregar user");
+  }
+  return (await res.json()) as ApiMeResponse;
+};
+
+export function useUser() {
+  const { data, error, isLoading, mutate } = useSWR<ApiMeResponse>(
+    "/api/auth/me",
+    fetcher
   );
 
-  useEffect(() => {
-    async function load() {
-      const { data } = await supabase.auth.getUser();
-      setUser(data.user ?? null);
-      setLoading(false);
-    }
-
-    load();
-
-    const { data: listener } = supabase.auth.onAuthStateChange(() => load());
-
-    return () => listener.subscription.unsubscribe();
-  }, []);
-
-  return { user, loading };
+  return {
+    user: data?.user ?? null,
+    profile: data?.profile ?? null,
+    roles: data?.profile?.roles ?? [],
+    isLoading,
+    isLoggedIn: !!data?.user,
+    error,
+    mutate,
+    refetch: mutate,
+  };
 }

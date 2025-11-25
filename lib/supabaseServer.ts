@@ -1,66 +1,66 @@
-// lib/supabaseServer.ts
-/* eslint-disable @typescript-eslint/no-explicit-any */
+import "server-only";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { env } from "@/lib/env";
 
 /**
- * Helper genérico para criar o client do Supabase no lado do servidor.
- *
- * 🔹 Em Route Handlers (/api/*): permite ler E definir cookies de sessão.
- * 🔹 Em componentes de servidor (RSC) normais: só deve ler cookies; se o Supabase
- *    tentar fazer refresh e definir cookies, apanhamos o erro em try/catch
- *    para não rebentar a app.
+ * Server-side Supabase client (SSR + Route Handlers)
+ * - Safe cookie reading
+ * - Safe cookie writing
+ * - Prevents JSON parse errors
+ * - No profile fetching here
  */
 export async function createSupabaseServer() {
-  // Em versões mais recentes do Next, cookies() pode ser tipado como assíncrono.
-  const cookieStore = (await cookies()) as any;
+  const cookieStore = (await cookies());
 
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    env.supabaseUrl,
+    env.supabaseAnonKey,
     {
       cookies: {
         get(name: string) {
           try {
-            // ReadonlyRequestCookies / RequestCookies expõem .get(name)
-            const cookie = cookieStore.get?.(name);
-            return cookie?.value;
+            const raw = cookieStore.get(name)?.value;
+            // Avoid "Unexpected token base64" by NOT parsing anything
+            return raw ?? undefined;
           } catch {
             return undefined;
           }
         },
-        set(name: string, value: string, options: any) {
+        set(name: string, value: string, options: Record<string, unknown>) {
           try {
-            // Em Route Handlers, cookieStore suporta .set(...)
-            // Em RSC normais isto atira erro — que é apanhado no catch.
-            cookieStore.set?.({ name, value, ...options });
-          } catch (err) {
-            // Não deixamos a app rebentar em ambientes onde não é permitido escrever cookies.
-            // Em /api/login, /api/me, etc., isto deve funcionar sem problemas.
-            console.error(
-              "[ORYA] Falha ao definir cookie supabase (possivelmente fora de Route Handler):",
-              err,
-            );
+            cookieStore.set({ name, value, ...options });
+          } catch {
+            /* ignore errors for RSC */
           }
         },
-        remove(name: string, options: any) {
+        remove(name: string, options: Record<string, unknown>) {
           try {
-            cookieStore.set?.({
-              name,
-              value: "",
-              ...options,
-              maxAge: 0,
-            });
-          } catch (err) {
-            console.error(
-              "[ORYA] Falha ao remover cookie supabase (possivelmente fora de Route Handler):",
-              err,
-            );
+            cookieStore.set({ name, value: "", ...options, maxAge: 0 });
+          } catch {
+            /* ignore */
           }
         },
       },
-    },
+    }
   );
 
   return supabase;
+}
+
+
+export async function getCurrentUser() {
+  const supabase = await createSupabaseServer();
+
+  try {
+    const { data, error } = await supabase.auth.getUser();
+
+    if (error || !data?.user) {
+      return { user: null, error };
+    }
+
+    return { user: data.user, error: null };
+  } catch (err) {
+    return { user: null, error: err };
+  }
 }

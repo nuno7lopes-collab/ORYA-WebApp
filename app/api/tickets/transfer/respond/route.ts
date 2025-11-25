@@ -1,0 +1,157 @@
+import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+import { createSupabaseServer } from "@/lib/supabaseServer";
+import { TransferStatus, TicketStatus } from "@prisma/client";
+
+/**
+ * F5-3 – Responder à transferência (aceitar / recusar)
+ * Body esperado: { transferId: string, action: "ACCEPT" | "DECLINE" }
+ */
+export async function POST(req: NextRequest) {
+  try {
+    const supabase = await createSupabaseServer();
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError) {
+      console.error("Error getting user in transfer/respond:", authError);
+    }
+
+    if (!user) {
+      return NextResponse.json(
+        { ok: false, error: "UNAUTHENTICATED" },
+        { status: 401 }
+      );
+    }
+
+    const body = await req.json().catch(() => null) as
+      | { transferId?: string; action?: "ACCEPT" | "DECLINE" }
+      | null;
+
+    if (
+      !body ||
+      typeof body !== "object" ||
+      !body.transferId ||
+      (body.action !== "ACCEPT" && body.action !== "DECLINE")
+    ) {
+      return NextResponse.json(
+        { ok: false, error: "INVALID_BODY" },
+        { status: 400 }
+      );
+    }
+
+    const { transferId, action } = body;
+    const userId = user.id;
+
+    // 1. Carregar TicketTransfer PENDING para o to_user_id = auth.uid()
+    const transfer = await prisma.ticketTransfer.findUnique({
+      where: { id: transferId },
+      include: {
+        ticket: true,
+      },
+    });
+
+    if (!transfer) {
+      return NextResponse.json(
+        { ok: false, error: "TRANSFER_NOT_FOUND" },
+        { status: 404 }
+      );
+    }
+
+    if (transfer.toUserId !== userId) {
+      return NextResponse.json(
+        { ok: false, error: "NOT_TRANSFER_TARGET" },
+        { status: 403 }
+      );
+    }
+
+    if (transfer.status !== TransferStatus.PENDING) {
+      return NextResponse.json(
+        { ok: false, error: "TRANSFER_NOT_PENDING" },
+        { status: 400 }
+      );
+    }
+
+    // 2. Se for DECLINE -> marcar DECLINED e terminar
+    if (action === "DECLINE") {
+      const updated = await prisma.ticketTransfer.update({
+        where: { id: transfer.id },
+        data: {
+          status: TransferStatus.CANCELLED,
+          completedAt: new Date(),
+        },
+      });
+
+      return NextResponse.json(
+        {
+          ok: true,
+          status: updated.status,
+        },
+        { status: 200 }
+      );
+    }
+
+    // 3. Se for ACCEPT -> mudar dono do ticket e marcar ACCEPTED
+    const ticket = transfer.ticket;
+
+    if (!ticket) {
+      return NextResponse.json(
+        { ok: false, error: "TICKET_NOT_FOUND_FOR_TRANSFER" },
+        { status: 404 }
+      );
+    }
+
+    if (ticket.status !== TicketStatus.ACTIVE) {
+      return NextResponse.json(
+        { ok: false, error: "TICKET_NOT_ACTIVE" },
+        { status: 400 }
+      );
+    }
+
+    if (ticket.userId !== transfer.fromUserId) {
+      // Algo está inconsistente: o dono atual já não é o fromUserId
+      return NextResponse.json(
+        { ok: false, error: "TICKET_OWNER_MISMATCH" },
+        { status: 409 }
+      );
+    }
+
+    // Transaction: atualizar ticket + transfer de forma atómica
+    const result = await prisma.$transaction(async (tx) => {
+      const updatedTicket = await tx.ticket.update({
+        where: { id: ticket.id },
+        data: {
+          userId, // novo dono
+          status: TicketStatus.ACTIVE, // garante que fica novamente ACTIVE, caso tenhas usado um estado intermédio
+        },
+      });
+
+      const updatedTransfer = await tx.ticketTransfer.update({
+        where: { id: transfer.id },
+        data: {
+          status: TransferStatus.ACCEPTED,
+          completedAt: new Date(),
+        },
+      });
+
+      return { updatedTicket, updatedTransfer };
+    });
+
+    return NextResponse.json(
+      {
+        ok: true,
+        status: result.updatedTransfer.status,
+        ticketId: result.updatedTicket.id,
+      },
+      { status: 200 }
+    );
+  } catch (error) {
+    console.error("Error in /api/tickets/transfer/respond:", error);
+    return NextResponse.json(
+      { ok: false, error: "INTERNAL_ERROR" },
+      { status: 500 }
+    );
+  }
+}

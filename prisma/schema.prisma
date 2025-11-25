@@ -1,88 +1,248 @@
-datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
-}
-
 generator client {
   provider = "prisma-client-js"
 }
 
-model Event {
-  id            Int       @id @default(autoincrement())
-  slug          String    @unique
-  title         String
-  description   String
-  startDate     DateTime
-  endDate       DateTime
-  locationName  String
-  address       String
-  isFree        Boolean   @default(false)
-  basePrice     Int?
-  timezone      String    @default("Europe/Lisbon")
-  coverImageUrl String?
-  organizerName String?
-
-  /// 👇 NOVO CAMPO – quem criou o evento (Supabase user id)
-  organizerId   String?   // id do utilizador do Supabase que criou o evento
-
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-
-  tickets   Ticket[]
-  purchases TicketPurchase[]
-  reservations TicketReservation[]
-  interests   EventInterest[]
+datasource db {
+  provider = "postgresql"
+  schemas  = ["app_v3"]
 }
 
-model Ticket {
-  id      String @id @default(cuid())
-  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  eventId Int
+/// Perfil base do utilizador ORYA (1-1 com auth.users)
+model Profile {
+  id        String  @id @db.Uuid
+  username  String? @unique
+  fullName  String? @map("full_name")
+  avatarUrl String? @map("avatar_url")
+  bio       String?
+  city      String?
 
+  favouriteCategories String[] @default([]) @map("favourite_categories") @db.Text
+  onboardingDone      Boolean  @default(false) @map("onboarding_done")
+
+  /// roles do user: ["user"], ["user","organizer"], ["user","admin"], etc.
+  roles String[] @default(["user"]) @db.Text
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  organizers Organizer[]
+
+  @@map("profiles")
+  @@schema("app_v3")
+}
+
+/// Entidade organizadora (marca, página de eventos)
+model Organizer {
+  id     Int     @id @default(autoincrement())
+  userId String  @map("user_id") @db.Uuid
+  user   Profile @relation(fields: [userId], references: [id])
+
+  displayName     String          @map("display_name")
+  stripeAccountId String?         @map("stripe_account_id")
+  status          OrganizerStatus @default(PENDING)
+  createdAt       DateTime        @default(now()) @map("created_at")
+  updatedAt       DateTime        @updatedAt @map("updated_at")
+
+  events           Event[]
+  staffAssignments StaffAssignment[]
+
+  @@index([userId])
+  @@map("organizers")
+  @@schema("app_v3")
+}
+
+enum OrganizerStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+
+  @@schema("app_v3")
+}
+
+/// Evento/Experiência — único tipo com campo `type` a separar
+model Event {
+  id          Int    @id @default(autoincrement())
+  slug        String @unique
+  title       String
+  description String
+
+  /// "EXPERIENCE" (user) ou "ORGANIZER_EVENT" (organizador)
+  type EventType @default(EXPERIENCE)
+
+  /// Template de apoio (festa, desporto, voluntariado, palestra...)
+  templateType EventTemplateType? @map("template_type")
+
+  /// auth.users.id de quem criou (user base)
+  ownerUserId String @map("owner_user_id") @db.Uuid
+
+  /// Liga ao Organizer quando é evento de organizador
+  organizerId Int?       @map("organizer_id")
+  organizer   Organizer? @relation(fields: [organizerId], references: [id])
+
+  startsAt DateTime @map("starts_at")
+  endsAt   DateTime @map("ends_at")
+
+  locationName String  @map("location_name")
+  locationCity String? @map("location_city")
+  address      String?
+  latitude     Float?  @map("lat")
+  longitude    Float?  @map("lng")
+
+  isFree Boolean     @default(false) @map("is_free")
+  status EventStatus @default(DRAFT)
+
+  timezone      String  @default("Europe/Lisbon")
+  coverImageUrl String? @map("cover_image_url")
+
+  // Relações
+  ticketTypes      TicketType[]
+  tickets          Ticket[]
+  reservations     TicketReservation[]
+  interests        EventInterest[]
+  participants     ExperienceParticipant[]
+  views            EventView[]
+  salesAgg         EventSalesAgg?
+  staffAssignments StaffAssignment[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([type, status])
+  @@index([ownerUserId])
+  @@index([organizerId])
+  @@map("events")
+  @@schema("app_v3")
+}
+
+enum EventType {
+  EXPERIENCE
+  ORGANIZER_EVENT
+
+  @@schema("app_v3")
+}
+
+enum EventTemplateType {
+  PARTY
+  SPORT
+  VOLUNTEERING
+  TALK
+  OTHER
+
+  @@schema("app_v3")
+}
+
+enum EventStatus {
+  DRAFT
+  PUBLISHED
+  CANCELLED
+  FINISHED
+
+  @@schema("app_v3")
+}
+
+/// Tipos de bilhete (antigas "waves")
+model TicketType {
+  id          Int     @id @default(autoincrement())
+  eventId     Int
   name        String
   description String?
   price       Int
   currency    String  @default("EUR")
-  available   Boolean @default(true)
 
-  // Waves / stock
-  isVisible     Boolean   @default(true)
-  totalQuantity Int?      // null = stock ilimitado
-  soldQuantity  Int       @default(0)
-  startsAt      DateTime?
-  endsAt        DateTime?
-  sortOrder     Int       @default(0)
+  totalQuantity Int?             @map("total_quantity")
+  soldQuantity  Int              @default(0) @map("sold_quantity")
+  status        TicketTypeStatus @default(ON_SALE)
+  startsAt      DateTime?        @map("starts_at")
+  endsAt        DateTime?        @map("ends_at")
+  sortOrder     Int              @default(0) @map("sort_order")
 
-  purchases TicketPurchase[]
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  event        Event               @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  tickets      Ticket[]
   reservations TicketReservation[]
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  @@index([eventId])
+  @@map("ticket_types")
+  @@schema("app_v3")
 }
 
-model TicketPurchase {
-  id        String  @id @default(cuid())
+enum TicketTypeStatus {
+  ON_SALE
+  UPCOMING
+  CLOSED
+  SOLD_OUT
 
-  ticket    Ticket  @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-  ticketId  String
+  @@schema("app_v3")
+}
 
-  event     Event   @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  eventId   Int
+/// Bilhete individual (por utilizador)
+model Ticket {
+  id           String @id @default(cuid())
+  eventId      Int
+  ticketTypeId Int    @map("ticket_type_id")
+  userId       String @map("user_id") @db.Uuid
 
-  // 👇 id do utilizador Supabase (opcional)
-  userId    String? // Supabase auth user id (nullable)
+  purchasedAt DateTime     @default(now()) @map("purchased_at")
+  status      TicketStatus @default(ACTIVE)
 
-  quantity  Int
-  pricePaid Int
-  currency  String @default("EUR")
+  qrSecret     String  @map("qr_secret")
+  rotatingSeed String? @map("rotating_seed") @db.Uuid
 
-  /// Stripe PaymentIntent ID (para reconciliar pagamentos)
-  stripePaymentIntentId String? @unique
+  pricePaid             Int     @map("price_paid")
+  currency              String  @default("EUR")
+  stripePaymentIntentId String? @map("stripe_payment_intent_id")
 
-  /// Token único para gerar e validar QR Codes
-  qrToken   String?  @unique
+  usedAt DateTime? @map("used_at")
 
-  createdAt DateTime @default(now())
+  event      Event      @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  ticketType TicketType @relation(fields: [ticketTypeId], references: [id], onDelete: Cascade)
+
+  transfers TicketTransfer[]
+  resales   TicketResale[]
+
+  @@unique([qrSecret])
+  @@index([eventId])
+  @@index([userId])
+  @@index([ticketTypeId])
+  @@index([stripePaymentIntentId])
+  @@map("tickets")
+  @@schema("app_v3")
+}
+
+enum TicketStatus {
+  ACTIVE
+  USED
+  REFUNDED
+  TRANSFERRED
+  RESALE_LISTED
+
+  @@schema("app_v3")
+}
+
+/// Reservas temporárias de stock de bilhetes
+model TicketReservation {
+  id           String            @id @default(cuid())
+  eventId      Int
+  ticketTypeId Int               @map("ticket_type_id")
+  userId       String?           @map("user_id") @db.Uuid
+  quantity     Int
+  status       ReservationStatus @default(ACTIVE)
+  expiresAt    DateTime          @map("expires_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  event      Event      @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  ticketType TicketType @relation(fields: [ticketTypeId], references: [id], onDelete: Cascade)
+
+  @@index([eventId])
+  @@index([ticketTypeId])
+  @@index([userId])
+  @@index([status, expiresAt])
+  @@map("ticket_reservations")
+  @@schema("app_v3")
 }
 
 enum ReservationStatus {
@@ -90,43 +250,147 @@ enum ReservationStatus {
   COMPLETED
   EXPIRED
   CANCELED
+
+  @@schema("app_v3")
 }
 
-model TicketReservation {
-  id        String            @id @default(cuid())
-
-  ticket    Ticket            @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-  ticketId  String
-
-  event     Event             @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  eventId   Int
-
-  userId    String?           // Supabase user id (nullable)
-
-  quantity  Int
-
-  status    ReservationStatus @default(ACTIVE)
-  expiresAt DateTime
-
-  createdAt DateTime          @default(now())
-  updatedAt DateTime          @updatedAt
-
-  @@index([ticketId])
-  @@index([eventId])
-  @@index([userId])
-  @@index([status, expiresAt])
-}
-
-model EventInterest {
+/// Participantes em experiências (sem QR / bilhete)
+model ExperienceParticipant {
   id        String   @id @default(cuid())
-
-  event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
   eventId   Int
+  userId    String   @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
 
-  userId    String   // Supabase auth user id (obrigatório para interesse)
-
-  createdAt DateTime @default(now())
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
 
   @@unique([eventId, userId])
   @@index([userId])
+  @@map("experience_participants")
+  @@schema("app_v3")
+}
+
+/// Interesse / "quero ir" em eventos de organizador
+model EventInterest {
+  id        String   @id @default(cuid())
+  eventId   Int
+  userId    String   @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, userId])
+  @@index([userId])
+  @@map("event_interests")
+  @@schema("app_v3")
+}
+
+/// Staff associado a organizadores / eventos
+model StaffAssignment {
+  id          Int        @id @default(autoincrement())
+  organizerId Int        @map("organizer_id")
+  userId      String     @map("user_id") @db.Uuid
+  scope       StaffScope
+  eventId     Int?       @map("event_id")
+  createdAt   DateTime   @default(now()) @map("created_at")
+  revokedAt   DateTime?  @map("revoked_at")
+
+  organizer Organizer @relation(fields: [organizerId], references: [id], onDelete: Cascade)
+  event     Event?    @relation(fields: [eventId], references: [id])
+
+  @@index([organizerId])
+  @@index([userId])
+  @@index([eventId])
+  @@map("staff_assignments")
+  @@schema("app_v3")
+}
+
+enum StaffScope {
+  GLOBAL
+  EVENT
+
+  @@schema("app_v3")
+}
+
+/// Transferência de bilhetes entre utilizadores
+model TicketTransfer {
+  id          String         @id @default(cuid())
+  ticketId    String         @map("ticket_id")
+  fromUserId  String         @map("from_user_id") @db.Uuid
+  toUserId    String         @map("to_user_id") @db.Uuid
+  status      TransferStatus @default(PENDING)
+  createdAt   DateTime       @default(now()) @map("created_at")
+  completedAt DateTime?      @map("completed_at")
+
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId])
+  @@index([fromUserId])
+  @@index([toUserId])
+  @@map("ticket_transfers")
+  @@schema("app_v3")
+}
+
+enum TransferStatus {
+  PENDING
+  ACCEPTED
+  CANCELLED
+
+  @@schema("app_v3")
+}
+
+/// Revenda de bilhetes pelo utilizador
+model TicketResale {
+  id           String       @id @default(cuid())
+  ticketId     String       @map("ticket_id")
+  sellerUserId String       @map("seller_user_id") @db.Uuid
+  price        Int
+  currency     String       @default("EUR")
+  status       ResaleStatus @default(LISTED)
+  createdAt    DateTime     @default(now()) @map("created_at")
+  completedAt  DateTime?    @map("completed_at")
+
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId])
+  @@index([sellerUserId])
+  @@map("ticket_resales")
+  @@schema("app_v3")
+}
+
+enum ResaleStatus {
+  LISTED
+  SOLD
+  CANCELLED
+
+  @@schema("app_v3")
+}
+
+/// Pageviews por evento (simples, para futuras stats)
+model EventView {
+  id        String   @id @default(cuid())
+  eventId   Int
+  userId    String?  @db.Uuid
+  sessionId String?  @map("session_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([eventId])
+  @@index([userId])
+  @@map("event_views")
+  @@schema("app_v3")
+}
+
+/// Agregado diário de vendas por evento
+model EventSalesAgg {
+  id          Int      @id @default(autoincrement())
+  eventId     Int      @unique
+  date        DateTime @map("date")
+  ticketsSold Int      @default(0) @map("tickets_sold")
+  revenue     Int      @default(0) @map("revenue")
+
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@map("event_sales_agg")
+  @@schema("app_v3")
 }

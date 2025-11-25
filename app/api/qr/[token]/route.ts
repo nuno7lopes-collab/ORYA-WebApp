@@ -1,55 +1,37 @@
 // app/api/qr/[token]/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 import QRCode from "qrcode";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 export async function GET(
-  req: NextRequest,
+  _req: NextRequest,
   { params }: { params: { token: string } }
 ) {
-  const token = params.token;
+  const { token } = params;
 
-  if (!token) {
+  if (typeof token !== "string" || !token.trim()) {
     return new NextResponse("Missing token", { status: 400 });
   }
 
-  // Verificar se este token existe na DB
-  const purchase = await prisma.ticketPurchase.findFirst({
-    where: { qrToken: token }
-  });
-
-  if (!purchase) {
-    return new NextResponse("QR inválido", { status: 404 });
-  }
-
-  // Criar payload do QR:
-  const qrPayload = JSON.stringify({
-    type: "ORYA_TICKET",
-    ticketId: purchase.id,
-    qrToken: purchase.qrToken,
-    eventId: purchase.eventId,
-    ts: Date.now()
-  });
-
   try {
-    const svg = await QRCode.toString(qrPayload, {
-      type: "svg",
+    const png = await QRCode.toBuffer(token, {
+      type: "png",
+      width: 512,
       margin: 1,
-      color: {
-        dark: "#000000",
-        light: "#FFFFFF"
-      }
+      errorCorrectionLevel: "M",
     });
 
-    return new NextResponse(svg, {
+    return new NextResponse(png, {
       status: 200,
       headers: {
-        "Content-Type": "image/svg+xml",
-        "Cache-Control": "no-store"
-      }
+        "Content-Type": "image/png",
+        "Cache-Control": "public, max-age=60",
+      },
     });
   } catch (err) {
-    console.error("QR ERROR", err);
-    return new NextResponse("Erro a gerar QR", { status: 500 });
+    console.error("[QR] Error generating:", err);
+    return new NextResponse("Error generating QR", { status: 500 });
   }
 }
