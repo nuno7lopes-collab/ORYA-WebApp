@@ -28,15 +28,15 @@ import { ResaleStatus } from "@prisma/client";
  * }
  */
 
-type RouteParams = {
-  params: {
-    slug?: string;
-  };
-};
+type RouteParams = { slug?: string };
 
-export async function GET(_req: NextRequest, { params }: RouteParams) {
+export async function GET(
+  _req: NextRequest,
+  context: { params: RouteParams | Promise<RouteParams> },
+) {
   try {
-    const slug = params?.slug;
+    const resolved = await context.params;
+    const slug = resolved?.slug;
 
     if (!slug || typeof slug !== "string") {
       return NextResponse.json(

@@ -46,6 +46,8 @@ export default function ProfileHeader({
     ? avatarUrl
     : undefined;
 
+  const publicProfileHref = ownerHasPublicProfile ? `/${handle}` : null;
+
   return (
     <section className="w-full rounded-3xl border border-white/10 bg-gradient-to-b from-white/5 via-black/80 to-black/95 px-4 py-5 sm:px-6 sm:py-6 shadow-[0_28px_80px_rgba(0,0,0,0.9)]">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -102,20 +104,7 @@ export default function ProfileHeader({
             </div>
 
             {/* Badges de perfil (placeholders por agora) */}
-            <div className="mt-1 flex flex-wrap gap-1.5 text-[10px]">
-              <span className="inline-flex items-center gap-1 rounded-full bg-[#FF00C8]/10 px-2 py-0.5 text-[#FFB3F0] border border-[#FF00C8]/30">
-                <span className="text-[11px]">✨</span>
-                Primeiros passos
-              </span>
-              <span className="inline-flex items-center gap-1 rounded-full bg-[#6BFFFF]/10 px-2 py-0.5 text-[#C8FFFF] border border-[#6BFFFF]/30">
-                <span className="text-[11px]">🎫</span>
-                Host de eventos (brevemente)
-              </span>
-              <span className="inline-flex items-center gap-1 rounded-full bg-white/5 px-2 py-0.5 text-white/70 border border-white/15">
-                <span className="text-[11px]">🌍</span>
-                Vida social real
-              </span>
-            </div>
+            <div className="mt-1" />
 
             {/* Bio / descrição curta */}
             {bio && (
@@ -130,9 +119,9 @@ export default function ProfileHeader({
         <div className="flex flex-wrap items-center justify-start gap-2 sm:justify-end text-[11px]">
           {isOwner ? (
             <>
-              {isOwner && handle && (
+              {publicProfileHref && (
                 <Link
-                  href={`/u/${handle}`}
+                  href={publicProfileHref}
                   className="inline-flex items-center gap-1 rounded-full border border-white/25 bg-black/40 px-3 py-1.5 text-white/80 hover:bg-white/10 transition-colors"
                 >
                   Ver perfil público
@@ -145,15 +134,6 @@ export default function ProfileHeader({
                 Editar perfil
               </Link>
 
-              {ownerHasPublicProfile && handle && (
-                <Link
-                  href={`/u/${handle}`}
-                  className="inline-flex items-center gap-1 rounded-full border border-white/25 bg-black/40 px-3 py-1.5 text-white/80 hover:bg-white/10 transition-colors"
-                >
-                  Ver perfil público
-                </Link>
-              )}
-
               {!ownerHasPublicProfile && (
                 <Link
                   href="/me/edit"
@@ -164,7 +144,7 @@ export default function ProfileHeader({
               )}
 
               <Link
-                href="/me/edit"
+                href="/me/settings"
                 className="inline-flex items-center gap-1 rounded-full border border-white/10 px-3 py-1.5 text-white/70 hover:bg-white/10 transition-colors"
               >
                 Definições

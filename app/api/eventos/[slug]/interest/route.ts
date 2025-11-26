@@ -3,9 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 
 type RouteContext = {
-  params: {
-    slug: string;
-  };
+  params: { slug: string } | Promise<{ slug: string }>;
 };
 
 export const runtime = "nodejs";
@@ -19,9 +17,9 @@ export const dynamic = "force-dynamic";
  */
 export async function GET(
   _req: NextRequest,
-  { params }: RouteContext,
+  context: RouteContext,
 ): Promise<NextResponse> {
-  const { slug } = params;
+  const { slug } = await context.params;
 
   if (!slug) {
     return NextResponse.json(
@@ -82,9 +80,9 @@ export async function GET(
  */
 export async function POST(
   _req: NextRequest,
-  { params }: RouteContext,
+  context: RouteContext,
 ): Promise<NextResponse> {
-  const { slug } = params;
+  const { slug } = await context.params;
 
   if (!slug) {
     return NextResponse.json(

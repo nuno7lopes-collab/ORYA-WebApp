@@ -8,6 +8,9 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const cursor = searchParams.get("cursor");
   const limitParam = searchParams.get("limit");
+  const category = searchParams.get("category");
+  const typeFilter = searchParams.get("type"); // all | free | paid
+  const search = searchParams.get("q");
 
   const take = limitParam
     ? Math.min(parseInt(limitParam, 10) || DEFAULT_PAGE_SIZE, 50)
@@ -17,20 +20,76 @@ export async function GET(req: NextRequest) {
     id: number;
     slug: string;
     title: string;
-    description: string | null;
-    startsAt: string | null;
-    locationName: string | null;
-    locationCity: string | null;
-    priceFromCents: number | null;
+    shortDescription: string | null;
+    startDate: string;
+    endDate: string;
+    venue: {
+      name: string | null;
+      address: string | null;
+      city: string | null;
+      lat: number | null;
+      lng: number | null;
+    };
+    coverImageUrl: string | null;
+    isFree: boolean;
+    priceFrom: number | null;
+    category: string | null;
+    tags: string[];
+    stats: {
+      goingCount: number;
+      interestedCount: number;
+    };
+    wavesSummary: {
+      totalWaves: number;
+      onSaleCount: number;
+      soldOutCount: number;
+      nextWaveOpensAt: string | null;
+    };
   };
 
   let items: EventListItem[] = [];
   let nextCursor: number | null = null;
 
   try {
+    const where: Prisma.EventWhereInput = {
+      status: "PUBLISHED",
+    };
+
+    if (category && category !== "all") {
+      where.templateType = category.toUpperCase() as Prisma.EventWhereInput["templateType"];
+    }
+
+    if (typeFilter === "free") {
+      where.isFree = true;
+    } else if (typeFilter === "paid") {
+      where.isFree = false;
+    }
+
+    if (search && search.trim().length > 0) {
+      const q = search.trim();
+      where.OR = [
+        { title: { contains: q, mode: "insensitive" } },
+        { description: { contains: q, mode: "insensitive" } },
+        { locationCity: { contains: q, mode: "insensitive" } },
+      ];
+    }
+
     const query: Prisma.EventFindManyArgs = {
+      where,
       orderBy: { startsAt: "asc" },
       take: take + 1, // +1 para sabermos se há mais páginas
+      include: {
+        ticketTypes: {
+          select: {
+            price: true,
+            totalQuantity: true,
+            soldQuantity: true,
+            startsAt: true,
+            endsAt: true,
+            status: true,
+          },
+        },
+      },
     };
 
     if (cursor) {
@@ -52,20 +111,46 @@ export async function GET(req: NextRequest) {
       nextCursor = next?.id ?? null;
     }
 
-    items = events.map((e) => ({
-      id: e.id,
-      slug: e.slug,
-      title: e.title,
-      description: e.description ?? null,
-      startsAt: e.startsAt
-        ? (typeof e.startsAt === "string"
-            ? e.startsAt
-            : e.startsAt.toISOString?.() ?? null)
-        : null,
-      locationName: e.locationName ?? null,
-      locationCity: e.locationCity ?? null,
-      priceFromCents: e.priceFromCents ?? null,
-    }));
+    items = events.map((e) => {
+      const priceFrom =
+        e.ticketTypes && e.ticketTypes.length > 0
+          ? Math.min(...e.ticketTypes.map((t) => t.price ?? 0)) / 100
+          : null;
+
+      const onSaleCount = e.ticketTypes?.filter((t) => t.status === "ON_SALE").length ?? 0;
+      const soldOutCount = e.ticketTypes?.filter((t) => t.status === "SOLD_OUT").length ?? 0;
+
+      return {
+        id: e.id,
+        slug: e.slug,
+        title: e.title,
+        shortDescription: e.description?.slice(0, 160) ?? null,
+        startDate: e.startsAt ? new Date(e.startsAt).toISOString() : "",
+        endDate: e.endsAt ? new Date(e.endsAt).toISOString() : "",
+        venue: {
+          name: e.locationName ?? null,
+          address: e.address ?? null,
+          city: e.locationCity ?? null,
+          lat: e.latitude ?? null,
+          lng: e.longitude ?? null,
+        },
+        coverImageUrl: e.coverImageUrl ?? null,
+        isFree: e.isFree,
+        priceFrom,
+        category: e.templateType ?? null,
+        tags: [],
+        stats: {
+          goingCount: e.ticketTypes?.reduce((sum, t) => sum + t.soldQuantity, 0) ?? 0,
+          interestedCount: 0,
+        },
+        wavesSummary: {
+          totalWaves: e.ticketTypes?.length ?? 0,
+          onSaleCount,
+          soldOutCount,
+          nextWaveOpensAt: null,
+        },
+      };
+    });
   } catch (error) {
     console.error("[api/eventos/list] Erro ao carregar eventos, fallback para lista vazia:", error);
     items = [];
@@ -73,7 +158,7 @@ export async function GET(req: NextRequest) {
   }
 
   return NextResponse.json({
-    items,
+    events: items,
     pagination: {
       nextCursor,
       hasMore: nextCursor !== null,

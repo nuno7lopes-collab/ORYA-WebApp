@@ -139,6 +139,21 @@ export async function POST(req: NextRequest) {
       },
     });
 
+    // Se aprovado (ACTIVE), adicionar role organizer ao profile
+    if (normalizedStatus === "ACTIVE") {
+      const profile = await prisma.profile.findUnique({
+        where: { id: updated.userId },
+        select: { roles: true },
+      });
+      const roles = Array.isArray(profile?.roles) ? profile?.roles : [];
+      if (!roles.includes("organizer")) {
+        await prisma.profile.update({
+          where: { id: updated.userId },
+          data: { roles: [...roles, "organizer"] },
+        });
+      }
+    }
+
     return NextResponse.json(
       {
         ok: true,

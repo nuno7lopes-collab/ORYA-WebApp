@@ -33,12 +33,20 @@ function AuthModalContent({
   const [loading, setLoading] = useState(false);
   const [fullName, setFullName] = useState("");
   const [username, setUsername] = useState("");
+  const [signupCooldown, setSignupCooldown] = useState(0);
+
+  const isSignupBlocked = signupCooldown > 0;
+  const isOnboarding = mode === "onboarding";
 
   const modalRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
-      if (modalRef.current && !modalRef.current.contains(e.target as Node)) {
+      if (
+        modalRef.current &&
+        !modalRef.current.contains(e.target as Node) &&
+        !isOnboarding
+      ) {
         closeModal();
       }
     }
@@ -47,7 +55,7 @@ function AuthModalContent({
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
     };
-  }, [closeModal]);
+  }, [closeModal, isOnboarding]);
 
   async function finishAuthAndMaybeOnboard() {
     try {
@@ -82,12 +90,28 @@ function AuthModalContent({
     setError(null);
     setLoading(true);
 
-    const emailToUse = (email || "").trim().toLowerCase();
+    const identifier = (email || "").trim().toLowerCase();
 
-    if (!emailToUse || !password) {
-      setError("Preenche o email e a password.");
+    if (!identifier || !password) {
+      setError("Preenche o email/username e a password.");
       setLoading(false);
       return;
+    }
+
+    let emailToUse = identifier;
+    if (!identifier.includes("@")) {
+      const res = await fetch("/api/auth/resolve-identifier", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ identifier }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.ok || !data?.email) {
+        setError("Credenciais inválidas. Confirma username/email e password.");
+        setLoading(false);
+        return;
+      }
+      emailToUse = data.email;
     }
 
     const { error: loginError } = await supabaseBrowser.auth.signInWithPassword({
@@ -105,6 +129,14 @@ function AuthModalContent({
     setLoading(false);
   }
 
+  useEffect(() => {
+    if (signupCooldown <= 0) return;
+    const t = setInterval(() => {
+      setSignupCooldown((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(t);
+  }, [signupCooldown]);
+
   async function handleSignup() {
     setError(null);
     setLoading(true);
@@ -117,13 +149,32 @@ function AuthModalContent({
       return;
     }
 
-    const { error: signupError } = await supabaseBrowser.auth.signUp({
+    const { data: signupData, error: signupError } = await supabaseBrowser.auth.signUp({
       email: emailToUse,
       password,
     });
 
     if (signupError) {
-      setError(signupError.message);
+      const message = signupError.message || "Não foi possível criar a conta.";
+      const isRateLimit =
+        message.toLowerCase().includes("rate limit") ||
+        message.toLowerCase().includes("too many requests");
+
+      if (isRateLimit) {
+        setSignupCooldown(60);
+        setError(
+          "Recebeste emails a mais num curto espaço de tempo. Tenta novamente daqui a 1 minuto.",
+        );
+      } else {
+        setError(message);
+      }
+      setLoading(false);
+      return;
+    }
+
+    // Se o Supabase não requer confirmar email, vem logo com session
+    if (signupData?.session) {
+      await finishAuthAndMaybeOnboard();
       setLoading(false);
       return;
     }
@@ -213,6 +264,7 @@ function AuthModalContent({
   const isPrimaryDisabled =
     loading ||
     ((mode === "login" || mode === "signup") && (!email || !password)) ||
+    (mode === "signup" && isSignupBlocked) ||
     (mode === "verify" && (!email || otp.trim().length < 6)) ||
     (mode === "onboarding" && !username.trim());
 
@@ -226,13 +278,13 @@ function AuthModalContent({
 
         {(mode === "login" || mode === "signup") && (
           <>
-            <label className="block text-xs text-white/70 mb-1">Email</label>
+            <label className="block text-xs text-white/70 mb-1">Email ou username</label>
             <input
-              type="email"
+              type="text"
               value={email ?? ""}
               onChange={(e) => setEmail(e.target.value)}
               className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]"
-              placeholder="nome@exemplo.com"
+              placeholder="nome@exemplo.com ou @username"
             />
 
             <label className="mt-3 block text-xs text-white/70 mb-1">
@@ -311,6 +363,12 @@ function AuthModalContent({
           <p className="mt-3 text-[12px] text-red-300 leading-snug">{error}</p>
         )}
 
+        {mode === "signup" && isSignupBlocked && (
+          <p className="mt-2 text-[11px] text-white/60">
+            Aguardar {signupCooldown}s para tentar novamente.
+          </p>
+        )}
+
         <div className="mt-5 flex flex-col gap-2">
           {(mode === "login" || mode === "signup") && (
             <button
@@ -363,8 +421,9 @@ function AuthModalContent({
 
           <button
             type="button"
-            onClick={closeModal}
-            className="text-[11px] text-white/50 hover:text-white"
+            onClick={isOnboarding ? undefined : closeModal}
+            disabled={isOnboarding}
+            className="text-[11px] text-white/50 hover:text-white disabled:opacity-60"
           >
             Fechar
           </button>

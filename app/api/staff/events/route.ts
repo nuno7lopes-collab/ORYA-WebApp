@@ -16,6 +16,7 @@ export async function GET() {
       where: {
         userId: user.id,
         revokedAt: null,
+        status: "ACCEPTED",
       },
       include: {
         organizer: true,

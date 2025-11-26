@@ -11,6 +11,7 @@ export async function GET(req: NextRequest) {
     const searchParams = url.searchParams;
 
     const cityParam = searchParams.get("city") || undefined;
+    const slugParam = searchParams.get("slug") || undefined;
     const searchParam = searchParams.get("search") || undefined;
     const limitParam = searchParams.get("limit");
     const limitNumber = limitParam ? parseInt(limitParam, 10) : 20;
@@ -61,7 +62,9 @@ export async function GET(req: NextRequest) {
     }
 
     const events = await prisma.event.findMany({
-      where,
+      where: slugParam
+        ? { ...where, slug: { equals: slugParam, mode: "insensitive" } }
+        : where,
       orderBy: { startsAt: "asc" },
       take,
     });

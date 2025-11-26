@@ -24,6 +24,10 @@ type ApiAuthMeResponse = {
     favouriteCategories: string[];
     onboardingDone: boolean;
     roles: string[];
+    visibility: string;
+    allowEmailNotifications: boolean;
+    allowEventReminders: boolean;
+    allowFriendRequests: boolean;
   } | null;
 };
 
@@ -62,6 +66,10 @@ export async function GET() {
           fullName: userMetadata.full_name ?? userMetadata.name ?? null,
           avatarUrl: userMetadata.avatar_url ?? null,
           roles: ["user"],
+          visibility: "PUBLIC",
+          allowEmailNotifications: true,
+          allowEventReminders: true,
+          allowFriendRequests: true,
         },
       });
     }
@@ -76,6 +84,10 @@ export async function GET() {
       favouriteCategories: profile.favouriteCategories,
       onboardingDone: profile.onboardingDone,
       roles: profile.roles,
+      visibility: profile.visibility,
+      allowEmailNotifications: profile.allowEmailNotifications,
+      allowEventReminders: profile.allowEventReminders,
+      allowFriendRequests: profile.allowFriendRequests,
     };
 
     return NextResponse.json<ApiAuthMeResponse>(

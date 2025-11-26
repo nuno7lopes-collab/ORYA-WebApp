@@ -16,6 +16,10 @@ type ApiMeResponse = {
     favouriteCategories: string[];
     onboardingDone: boolean;
     roles: Role[];
+    visibility: string;
+    allowEmailNotifications: boolean;
+    allowEventReminders: boolean;
+    allowFriendRequests: boolean;
   } | null;
 };
 

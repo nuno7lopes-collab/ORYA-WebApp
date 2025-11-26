@@ -15,6 +15,16 @@ const fetcher = async (url: string) => {
   return res.json();
 };
 
+type EventItem = {
+  id: number;
+  title: string;
+  slug: string;
+  startsAt: string;
+  endsAt: string;
+  locationName: string | null;
+  status: string;
+};
+
 type StaffAssignmentItem = {
   id: number;
   userId: string;
@@ -23,6 +33,8 @@ type StaffAssignmentItem = {
   userName: string | null;
   userEmail: string | null;
   eventTitle: string | null;
+  status?: "ACTIVE" | "REVOKED";
+  revokedAt?: string | null;
 };
 
 export default function OrganizerStaffPage() {
@@ -31,7 +43,7 @@ export default function OrganizerStaffPage() {
 
   const [emailOrUsername, setEmailOrUsername] = useState("");
   const [scope, setScope] = useState<"GLOBAL" | "EVENT">("GLOBAL");
-  const [eventIdInput, setEventIdInput] = useState("");
+  const [eventIdInput, setEventIdInput] = useState<number | "">("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -43,6 +55,14 @@ export default function OrganizerStaffPage() {
     mutate,
   } = useSWR<{ ok: boolean; items: StaffAssignmentItem[] }>(
     user ? "/api/organizador/staff/list" : null,
+    fetcher
+  );
+
+  const {
+    data: eventsData,
+    isLoading: isEventsLoading,
+  } = useSWR<{ ok: boolean; items: EventItem[] }>(
+    user ? "/api/organizador/events/list" : null,
     fetcher
   );
 
@@ -62,8 +82,8 @@ export default function OrganizerStaffPage() {
       return;
     }
 
-    if (scope === "EVENT" && !eventIdInput.trim()) {
-      setErrorMessage("Escolhe o evento (ID) para este staff.");
+    if (scope === "EVENT" && !eventIdInput) {
+      setErrorMessage("Escolhe o evento para este staff.");
       return;
     }
 
@@ -166,6 +186,12 @@ export default function OrganizerStaffPage() {
   }
 
   const items = data?.items ?? [];
+  const activeEvents =
+    (eventsData?.items || []).filter((ev) => {
+      if (ev.status !== "PUBLISHED") return false;
+      const ends = ev.endsAt ? new Date(ev.endsAt) : null;
+      return !ends || ends.getTime() >= Date.now();
+    }) ?? [];
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-8 space-y-6">
@@ -215,15 +241,44 @@ export default function OrganizerStaffPage() {
             </div>
 
             {scope === "EVENT" && (
-              <div className="space-y-1">
-                <label className="text-xs text-white/70">ID do evento</label>
-                <input
-                  type="text"
-                  value={eventIdInput}
-                  onChange={(e) => setEventIdInput(e.target.value)}
-                  className="w-40 rounded-md border border-white/10 bg-black/40 px-3 py-2 text-sm outline-none focus:border-white/40"
-                  placeholder="ex: 12"
-                />
+              <div className="space-y-1 min-w-[260px]">
+                <label className="text-xs text-white/70">Evento ativo</label>
+                <select
+                  value={eventIdInput === "" ? "" : String(eventIdInput)}
+                  onChange={(e) =>
+                    setEventIdInput(e.target.value ? Number(e.target.value) : "")
+                  }
+                  className="w-full rounded-md border border-white/10 bg-black/40 px-3 py-2 text-sm outline-none focus:border-white/40"
+                >
+                  <option value="">
+                    {isEventsLoading ? "A carregar eventos..." : "Escolhe um evento"}
+                  </option>
+                  {(eventsData?.items || [])
+                    .filter((ev) => {
+                      if (ev.status !== "PUBLISHED") return false;
+                      const ends = ev.endsAt ? new Date(ev.endsAt) : null;
+                      return !ends || ends.getTime() >= Date.now();
+                    })
+                    .map((ev) => {
+                      const start = ev.startsAt ? new Date(ev.startsAt) : null;
+                      const startLabel = start
+                        ? start.toLocaleString("pt-PT", {
+                            day: "2-digit",
+                            month: "short",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })
+                        : "Data a confirmar";
+                      return (
+                        <option key={ev.id} value={ev.id}>
+                          #{ev.id} — {ev.title} — {startLabel} — {ev.locationName ?? "Local a anunciar"}
+                        </option>
+                      );
+                    })}
+                </select>
+                <p className="text-[11px] text-white/50">
+                  Só aparecem eventos publicados e ainda não terminados.
+                </p>
               </div>
             )}
           </div>
@@ -278,12 +333,31 @@ export default function OrganizerStaffPage() {
                       ? ` • Evento: ${assignment.eventTitle}`
                       : null}
                   </p>
+                  <p className="text-[11px] text-white/50">
+                    Estado:{" "}
+                    <span
+                      className={
+                        assignment.status === "REVOKED"
+                          ? "text-red-300"
+                          : "text-emerald-300"
+                      }
+                    >
+                      {assignment.status === "REVOKED" ? "Revogado" : "Ativo"}
+                    </span>
+                    {assignment.revokedAt && (
+                      <span className="text-white/40">
+                        {" "}
+                        (revogado em {new Date(assignment.revokedAt).toLocaleDateString("pt-PT")})
+                      </span>
+                    )}
+                  </p>
                 </div>
 
                 <button
                   type="button"
                   onClick={() => handleRevoke(assignment.id)}
-                  className="shrink-0 rounded-md border border-red-500/40 px-3 py-1.5 text-xs font-medium text-red-300 hover:bg-red-500/10"
+                  disabled={assignment.status === "REVOKED"}
+                  className="shrink-0 rounded-md border border-red-500/40 px-3 py-1.5 text-xs font-medium text-red-300 hover:bg-red-500/10 disabled:opacity-50 disabled:hover:bg-transparent"
                 >
                   Revogar
                 </button>

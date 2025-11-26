@@ -72,6 +72,7 @@ export type EventCardDTO = {
   slug: string;
   title: string;
   description: string;
+  type: Event["type"];
   startsAt: Date | null;
   endsAt: Date | null;
   locationName: string | null;
@@ -111,5 +112,6 @@ export function mapEventToCardDTO(
     locationCity: event.locationCity,
     isFree: event.isFree,
     priceFrom,
+    type: event.type,
   };
 }

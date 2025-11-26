@@ -9,6 +9,8 @@ type Wave = {
   price: number;
   description?: string | null;
   quantity?: number | null;
+  status?: string;
+  remaining?: number | null;
 };
 
 type CheckoutData = {
@@ -24,9 +26,21 @@ export default function Step1Bilhete() {
       ? (dados as CheckoutData)
       : { waves: [], additional: {} };
 
+  const normalizeStatus = (status?: string) =>
+    (status || "on_sale").toLowerCase();
+
   const stableWaves: Wave[] = Array.isArray(safeDados.waves)
-    ? [...safeDados.waves]
+    ? [...safeDados.waves].map((w) => ({
+        ...w,
+        status: normalizeStatus(w.status),
+      }))
     : [];
+  const cheapestAvailable = [...stableWaves]
+    .filter((w) => {
+      const st = normalizeStatus(w.status);
+      return st !== "sold_out" && st !== "closed";
+    })
+    .sort((a, b) => (a.price ?? 0) - (b.price ?? 0))[0];
   const hasWaves = stableWaves.length > 0;
 
   // 🧮 Quantidades iniciais por wave (memoizado para não recriar em cada render)
@@ -43,11 +57,11 @@ export default function Step1Bilhete() {
 
   // Qual wave está expandida (tipo acordeão)
   const [aberto, setAberto] = useState<string | null>(
-    stableWaves[0]?.id ?? null,
+    cheapestAvailable?.id ?? stableWaves[0]?.id ?? null,
   );
 
   // 💰 Total dinâmico
-  const total = waves.reduce((acc: number, w: Wave) => {
+  const total = stableWaves.reduce((acc: number, w: Wave) => {
     const q = quantidades[w.id] ?? 0;
     const price = typeof w.price === "number" ? w.price : 0;
     return acc + q * price;
@@ -128,6 +142,19 @@ export default function Step1Bilhete() {
         {stableWaves.map((wave: Wave) => {
           const q = quantidades[wave.id] ?? 0;
           const isOpen = aberto === wave.id;
+          const status = normalizeStatus(wave.status);
+          const isSoldOut = status === "sold_out" || status === "closed";
+          const badge =
+            status === "upcoming"
+              ? "Em breve"
+              : isSoldOut
+                ? "Venda terminada"
+                : "Disponível";
+          const badgeClass = isSoldOut
+            ? "border-red-400/50 bg-red-500/20 text-red-50"
+            : status === "upcoming"
+              ? "border-amber-300/50 bg-amber-400/20 text-amber-50"
+              : "border-emerald-300/50 bg-emerald-500/18 text-emerald-50";
 
           return (
             <div
@@ -139,6 +166,7 @@ export default function Step1Bilhete() {
                 type="button"
                 onClick={() => toggleWave(wave.id)}
                 className="w-full flex items-center justify-between px-4 py-3"
+                disabled={isSoldOut}
               >
                 <div className="text-left">
                   <p className="text-sm font-semibold">{wave.name}</p>
@@ -149,7 +177,12 @@ export default function Step1Bilhete() {
                   </p>
                 </div>
 
-                <span className="text-xl">{isOpen ? "−" : "+"}</span>
+                <div className="flex items-center gap-2">
+                  <span className="rounded-full border border-white/15 bg-white/10 px-2 py-0.5 text-[10px] text-white/75">
+                    {badge}
+                  </span>
+                  <span className="text-xl">{isOpen ? "−" : "+"}</span>
+                </div>
               </button>
 
               {/* Conteúdo Wave */}
@@ -159,11 +192,18 @@ export default function Step1Bilhete() {
                     {wave.description ?? "Sem descrição disponível."}
                   </p>
 
+                  {isSoldOut && (
+                    <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-[11px] text-white/70">
+                      Venda terminada. Escolhe outra wave ou volta mais tarde.
+                    </div>
+                  )}
+
                   <div className="inline-flex items-center gap-2 rounded-full bg-black/60 border border-white/15 px-2 py-1.5 shadow-md">
                     <button
                       type="button"
                       onClick={() => handleDecrement(wave.id)}
-                      className="flex h-7 w-7 items-center justify-center rounded-full bg-white/10 hover:bg-white/20"
+                      className="flex h-7 w-7 items-center justify-center rounded-full bg-white/10 hover:bg-white/20 disabled:opacity-50"
+                      disabled={isSoldOut}
                     >
                       –
                     </button>
@@ -175,7 +215,8 @@ export default function Step1Bilhete() {
                     <button
                       type="button"
                       onClick={() => handleIncrement(wave.id)}
-                      className="flex h-7 w-7 items-center justify-center rounded-full bg-white text-black hover:bg-zinc-100"
+                      className="flex h-7 w-7 items-center justify-center rounded-full bg-white text-black hover:bg-zinc-100 disabled:opacity-50"
+                      disabled={isSoldOut}
                     >
                       +
                     </button>

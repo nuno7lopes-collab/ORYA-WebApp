@@ -4,7 +4,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  schemas  = ["app_v3"]
+  schemas  = ["app_v3", "auth"]
 }
 
 /// Perfil base do utilizador ORYA (1-1 com auth.users)
@@ -21,11 +21,18 @@ model Profile {
 
   /// roles do user: ["user"], ["user","organizer"], ["user","admin"], etc.
   roles String[] @default(["user"]) @db.Text
+  visibility Visibility @default(PUBLIC)
+  allowEmailNotifications Boolean @default(true) @map("allow_email_notifications")
+  allowEventReminders     Boolean @default(true) @map("allow_event_reminders")
+  allowFriendRequests     Boolean @default(true) @map("allow_friend_requests")
+  isDeleted               Boolean @default(false) @map("is_deleted")
+  deletedAt               DateTime? @map("deleted_at")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
   organizers Organizer[]
+  events     Event[]   @relation("UserEvents")
 
   @@map("profiles")
   @@schema("app_v3")
@@ -74,6 +81,7 @@ model Event {
 
   /// auth.users.id de quem criou (user base)
   ownerUserId String @map("owner_user_id") @db.Uuid
+  owner       Profile @relation("UserEvents", fields: [ownerUserId], references: [id])
 
   /// Liga ao Organizer quando é evento de organizador
   organizerId Int?       @map("organizer_id")
@@ -90,9 +98,12 @@ model Event {
 
   isFree Boolean     @default(false) @map("is_free")
   status EventStatus @default(DRAFT)
+  resaleMode ResaleMode @default(ALWAYS) @map("resale_mode")
 
   timezone      String  @default("Europe/Lisbon")
   coverImageUrl String? @map("cover_image_url")
+  isDeleted     Boolean @default(false) @map("is_deleted")
+  deletedAt     DateTime? @map("deleted_at")
 
   // Relações
   ticketTypes      TicketType[]
@@ -103,6 +114,7 @@ model Event {
   views            EventView[]
   salesAgg         EventSalesAgg?
   staffAssignments StaffAssignment[]
+  categories       EventCategory[]
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -121,6 +133,40 @@ enum EventType {
   @@schema("app_v3")
 }
 
+enum Visibility {
+  PUBLIC
+  PRIVATE
+
+  @@schema("app_v3")
+}
+
+enum EventCategoryType {
+  FESTA
+  DESPORTO
+  CONCERTO
+  PALESTRA
+  ARTE
+  COMIDA
+  DRINKS
+
+  @@schema("app_v3")
+}
+
+/// Junção N-N de eventos a categorias
+model EventCategory {
+  id        Int               @id @default(autoincrement())
+  eventId   Int               @map("event_id")
+  category  EventCategoryType
+  createdAt DateTime          @default(now()) @map("created_at")
+
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, category])
+  @@index([category])
+  @@map("event_categories")
+  @@schema("app_v3")
+}
+
 enum EventTemplateType {
   PARTY
   SPORT
@@ -136,6 +182,14 @@ enum EventStatus {
   PUBLISHED
   CANCELLED
   FINISHED
+
+  @@schema("app_v3")
+}
+
+enum ResaleMode {
+  ALWAYS
+  AFTER_SOLD_OUT
+  DISABLED
 
   @@schema("app_v3")
 }
@@ -293,6 +347,8 @@ model StaffAssignment {
   eventId     Int?       @map("event_id")
   createdAt   DateTime   @default(now()) @map("created_at")
   revokedAt   DateTime?  @map("revoked_at")
+  acceptedAt  DateTime?  @map("accepted_at")
+  status      StaffStatus @default(PENDING)
 
   organizer Organizer @relation(fields: [organizerId], references: [id], onDelete: Cascade)
   event     Event?    @relation(fields: [eventId], references: [id])
@@ -307,6 +363,14 @@ model StaffAssignment {
 enum StaffScope {
   GLOBAL
   EVENT
+
+  @@schema("app_v3")
+}
+
+enum StaffStatus {
+  PENDING
+  ACCEPTED
+  REVOKED
 
   @@schema("app_v3")
 }

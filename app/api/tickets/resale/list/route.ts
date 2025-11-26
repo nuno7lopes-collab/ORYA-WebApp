@@ -70,6 +70,13 @@ export async function POST(req: NextRequest) {
         userId,
         status: "ACTIVE",
       },
+      include: {
+        event: {
+          include: {
+            ticketTypes: true,
+          },
+        },
+      },
     });
 
     if (!ticket) {
@@ -109,7 +116,43 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 4. Criar registo em ticket_resales com status LISTED
+    // 4. Validar configuração de revenda ao nível do evento
+    const event = ticket.event;
+    if (event) {
+      const resaleMode =
+        (event as { resaleMode?: string }).resaleMode ?? "ALWAYS";
+
+      if (resaleMode === "DISABLED") {
+        return NextResponse.json(
+          { ok: false, error: "RESALE_DISABLED_FOR_EVENT" },
+          { status: 400 }
+        );
+      }
+
+      if (resaleMode === "AFTER_SOLD_OUT") {
+        const ticketTypes = event.ticketTypes ?? [];
+        const hasUnlimited = ticketTypes.some(
+          (tt) => tt.totalQuantity === null || tt.totalQuantity === undefined,
+        );
+        const soldOut =
+          !hasUnlimited &&
+          ticketTypes.length > 0 &&
+          ticketTypes.every((tt) => {
+            if (tt.totalQuantity === null || tt.totalQuantity === undefined)
+              return false;
+            return tt.soldQuantity >= tt.totalQuantity;
+          });
+
+        if (!soldOut) {
+          return NextResponse.json(
+            { ok: false, error: "RESALE_ONLY_AFTER_SOLD_OUT" },
+            { status: 400 }
+          );
+        }
+      }
+    }
+
+    // 5. Criar registo em ticket_resales com status LISTED
     const resale = await prisma.ticketResale.create({
       data: {
         ticketId: ticket.id,

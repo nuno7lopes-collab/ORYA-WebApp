@@ -48,19 +48,42 @@ export default function ModalCheckout() {
             onClick={fecharCheckout}
           />
 
-                    {/* Modal */}
+          {/* Modal */}
           <motion.div
-  className="fixed inset-0 z-[210] flex items-center justify-center p-4 overflow-hidden"
-  initial={{ opacity: 0, y: 40 }}
-  animate={{ opacity: 1, y: 0 }}
-  exit={{ opacity: 0, y: 30 }}
->
-  <div className="w-full max-w-lg max-h-[85vh] rounded-3xl border border-white/15 bg-gradient-to-br from-[#020617ee] via-[#020617f8] to-[#020617ee] shadow-[0_24px_80px_rgba(0,0,0,0.95)] text-white overflow-hidden">
-    <div className="p-6 overflow-y-auto max-h-[85vh]">
-      <StepController />
-    </div>
-  </div>
-</motion.div>
+            className="fixed inset-0 z-[210] flex items-center justify-center p-4 overflow-hidden"
+            initial={{ opacity: 0, y: 40 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 30 }}
+          >
+            <div className="w-full max-w-lg max-h-[85vh] rounded-3xl border border-white/15 bg-gradient-to-br from-[#020617ee] via-[#020617f8] to-[#020617ee] shadow-[0_24px_80px_rgba(0,0,0,0.95)] text-white overflow-hidden">
+              <div className="flex items-center justify-between px-5 py-3 border-b border-white/10">
+                {passo > 1 && passo !== 3 ? (
+                  <button
+                    type="button"
+                    onClick={() => irParaPasso(passo - 1)}
+                    className="text-[12px] text-white/70 hover:text-white"
+                  >
+                    ← Voltar
+                  </button>
+                ) : (
+                  <span className="text-[12px] text-white/50">
+                    {passo === 3 ? "Pagamento concluído" : "Checkout"}
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={fecharCheckout}
+                  className="h-8 w-8 inline-flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white/80"
+                  aria-label="Fechar checkout"
+                >
+                  ×
+                </button>
+              </div>
+              <div className="p-6 overflow-y-auto max-h-[78vh]">
+                <StepController />
+              </div>
+            </div>
+          </motion.div>
         </>
       )}
     </AnimatePresence>

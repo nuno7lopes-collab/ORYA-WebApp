@@ -13,6 +13,9 @@ type CreateExperienceBody = {
   locationName?: string;
   locationCity?: string;
   templateType?: string; // PARTY | SPORT | VOLUNTEERING | TALK | OTHER
+  address?: string | null;
+  categories?: string[]; // obrigatório pelo negócio
+  coverImageUrl?: string | null;
 };
 
 function slugify(input: string): string {
@@ -55,6 +58,9 @@ export async function POST(req: NextRequest) {
     const endsAtRaw = body.endsAt;
     const locationName = body.locationName?.trim() ?? "";
     const locationCity = body.locationCity?.trim() ?? "";
+    const address = body.address?.trim() || null;
+    const categoriesInput = Array.isArray(body.categories) ? body.categories : [];
+    const coverImageUrl = body.coverImageUrl?.trim?.() || null;
 
     if (!title) {
       return NextResponse.json(
@@ -69,6 +75,36 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
+
+    if (!locationCity) {
+      return NextResponse.json(
+        { ok: false, error: "Cidade é obrigatória." },
+        { status: 400 },
+      );
+    }
+
+    // Até termos a tabela de categorias em produção, mapeamos a primeira categoria para templateType fallback.
+    const allowedCategories = [
+      "FESTA",
+      "DESPORTO",
+      "CONCERTO",
+      "PALESTRA",
+      "ARTE",
+      "COMIDA",
+      "DRINKS",
+    ];
+
+    const categories = categoriesInput
+      .map((c) => c.trim().toUpperCase())
+      .filter((c) => allowedCategories.includes(c));
+
+    const templateFromCategory = (() => {
+      const first = categories[0];
+      if (first === "FESTA") return "PARTY";
+      if (first === "DESPORTO") return "SPORT";
+      if (first === "PALESTRA") return "TALK";
+      return "OTHER";
+    })();
 
     const startsAt = new Date(startsAtRaw);
     if (Number.isNaN(startsAt.getTime())) {
@@ -116,23 +152,26 @@ export async function POST(req: NextRequest) {
       | "VOLUNTEERING"
       | "TALK"
       | "OTHER"
-      | undefined) ?? "OTHER";
+      | undefined) ?? templateFromCategory ?? "OTHER";
 
     // 👇 Construímos primeiro o objeto bem tipado
-    const eventData: Prisma.EventUncheckedCreateInput = {
+    const eventData: Prisma.EventCreateInput = {
       slug,
       title,
       description,
       type: "EXPERIENCE",
       templateType,
+      owner: { connect: { id: user.id } },
       ownerUserId: user.id,
-      organizerId: null,
+      organizer: undefined,
       startsAt,
-      endsAt: endsAtIso ?? startsAt.toISOString(),
+      endsAt: endsAtIso ? new Date(endsAtIso) : startsAt,
       locationName,
       locationCity,
+      address,
       isFree: true,
       status: "PUBLISHED",
+      coverImageUrl,
     };
 
     const event = await prisma.event.create({

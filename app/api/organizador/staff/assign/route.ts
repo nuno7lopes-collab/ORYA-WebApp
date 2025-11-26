@@ -8,6 +8,7 @@ import { ensureAuthenticated, assertOrganizer } from "@/lib/security";
 
 type AssignStaffBody = {
   userId?: string;
+  emailOrUsername?: string;
   scope?: "GLOBAL" | "EVENT";
   eventId?: number;
 };
@@ -28,14 +29,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { userId, scope, eventId } = body || {};
-
-    if (!userId) {
-      return NextResponse.json(
-        { ok: false, error: "userId é obrigatório." },
-        { status: 400 }
-      );
-    }
+    const { userId, emailOrUsername, scope, eventId } = body || {};
 
     if (!scope || (scope !== "GLOBAL" && scope !== "EVENT")) {
       return NextResponse.json(
@@ -90,10 +84,20 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Confirmar que o userId alvo existe
-    const targetProfile = await prisma.profile.findUnique({
-      where: { id: userId },
-    });
+    // Resolver user alvo (permite userId direto OU email/username)
+    let targetProfile = null;
+    if (userId) {
+      targetProfile = await prisma.profile.findUnique({
+        where: { id: userId },
+      });
+    } else if (emailOrUsername) {
+      const normalized = emailOrUsername.trim().replace(/^@/, "");
+      targetProfile = await prisma.profile.findFirst({
+        where: {
+          OR: [{ username: normalized }, { fullName: normalized }],
+        },
+      });
+    }
 
     if (!targetProfile) {
       return NextResponse.json(
@@ -105,36 +109,70 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Se vier userId vazio mas email/username preenchido, usar o encontrado
+    const targetUserId = targetProfile.id;
+
+    // Validar evento se scope EVENT (e garantir que pertence ao organizer)
+    let targetEventId: number | null = null;
+    if (scope === "EVENT") {
+      targetEventId = Number(eventId);
+      if (!Number.isFinite(targetEventId)) {
+        return NextResponse.json(
+          { ok: false, error: "eventId inválido." },
+          { status: 400 },
+        );
+      }
+
+      const event = await prisma.event.findFirst({
+        where: {
+          id: targetEventId,
+          organizerId: organizer.id,
+          status: "PUBLISHED",
+          endsAt: { gte: new Date() },
+        },
+        select: { id: true },
+      });
+
+      if (!event) {
+        return NextResponse.json(
+          { ok: false, error: "Evento não encontrado ou inativo para este organizador." },
+          { status: 404 },
+        );
+      }
+    }
+
     // Procurar assignment existente (para não duplicar)
     const existing = await prisma.staffAssignment.findFirst({
       where: {
         organizerId: organizer.id,
-        userId,
+        userId: targetUserId,
         scope,
-        ...(scope === "EVENT" ? { eventId: eventId ?? undefined } : {}),
+        ...(scope === "EVENT" ? { eventId: targetEventId ?? undefined } : {}),
       },
     });
 
     let assignment;
 
     if (existing) {
-      // Reativar / atualizar assignment existente
       assignment = await prisma.staffAssignment.update({
         where: { id: existing.id },
         data: {
           revokedAt: null,
+          acceptedAt: null,
+          status: "PENDING",
           scope,
-          eventId: scope === "EVENT" ? eventId ?? null : null,
+          eventId: scope === "EVENT" ? targetEventId ?? null : null,
+          userId: targetUserId,
         },
       });
     } else {
-      // Criar novo assignment
       assignment = await prisma.staffAssignment.create({
         data: {
           organizerId: organizer.id,
-          userId,
+          userId: targetUserId,
           scope,
-          eventId: scope === "EVENT" ? eventId ?? null : null,
+          eventId: scope === "EVENT" ? targetEventId ?? null : null,
+          status: "PENDING",
         },
       });
     }

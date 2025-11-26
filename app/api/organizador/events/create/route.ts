@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, assertOrganizer } from "@/lib/security";
+import { Prisma } from "@prisma/client";
 
 // Tipos esperados no body do pedido
 type TicketTypeInput = {
@@ -22,6 +23,10 @@ type CreateOrganizerEventBody = {
   locationCity?: string;
   templateType?: string; // PARTY | SPORT | VOLUNTEERING | TALK | OTHER
   ticketTypes?: TicketTypeInput[];
+  address?: string | null;
+  categories?: string[];
+  resaleMode?: string; // ALWAYS | AFTER_SOLD_OUT | DISABLED
+  coverImageUrl?: string | null;
 };
 
 function slugify(input: string): string {
@@ -81,12 +86,18 @@ export async function POST(req: NextRequest) {
     const endsAtRaw = body.endsAt;
     const locationName = body.locationName?.trim() ?? "";
     const locationCity = body.locationCity?.trim() ?? "";
+    const address = body.address?.trim() || null;
     const templateTypeRaw = body.templateType?.toUpperCase() as
       | "PARTY"
       | "SPORT"
       | "VOLUNTEERING"
       | "TALK"
       | "OTHER"
+      | undefined;
+    const resaleModeRaw = body.resaleMode?.toUpperCase() as
+      | "ALWAYS"
+      | "AFTER_SOLD_OUT"
+      | "DISABLED"
       | undefined;
 
     if (!title) {
@@ -103,8 +114,46 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const startsAt = new Date(startsAtRaw);
-    if (Number.isNaN(startsAt.getTime())) {
+    if (!locationCity) {
+      return NextResponse.json(
+        { ok: false, error: "Cidade é obrigatória." },
+        { status: 400 },
+      );
+    }
+
+    const categoriesInput = Array.isArray(body.categories) ? body.categories : [];
+    const allowedCategories = [
+      "FESTA",
+      "DESPORTO",
+      "CONCERTO",
+      "PALESTRA",
+      "ARTE",
+      "COMIDA",
+      "DRINKS",
+    ];
+    const categories = categoriesInput
+      .map((c) => c.trim().toUpperCase())
+      .filter((c) => allowedCategories.includes(c));
+
+    if (categories.length === 0) {
+      return NextResponse.json(
+        { ok: false, error: "Escolhe pelo menos uma categoria." },
+        { status: 400 },
+      );
+    }
+
+    const parseDate = (raw?: string | null) => {
+      if (!raw) return null;
+      const normalized = raw.replace(" ", "T");
+      const date = new Date(normalized);
+      if (!Number.isNaN(date.getTime())) return date;
+      const alt = new Date(`${normalized}:00`);
+      if (!Number.isNaN(alt.getTime())) return alt;
+      return null;
+    };
+
+    const startsAt = parseDate(startsAtRaw);
+    if (!startsAt) {
       return NextResponse.json(
         { ok: false, error: "Data/hora de início inválida." },
         { status: 400 }
@@ -113,21 +162,21 @@ export async function POST(req: NextRequest) {
 
     // Para simplificar e evitar conflitos de tipos, endsAt será sempre enviado.
     // Se o utilizador não mandar, usamos a mesma data/hora de início.
-    let endsAt: Date = startsAt;
-    if (endsAtRaw) {
-      const d = new Date(endsAtRaw);
-      if (Number.isNaN(d.getTime())) {
-        return NextResponse.json(
-          { ok: false, error: "Data/hora de fim inválida." },
-          { status: 400 }
-        );
-      }
-      endsAt = d;
-    }
+    const endsAtParsed = parseDate(endsAtRaw);
+    const endsAt = endsAtParsed && endsAtParsed >= startsAt ? endsAtParsed : startsAt;
 
-    const templateType = templateTypeRaw ?? "OTHER";
+    const templateType =
+      templateTypeRaw ??
+      (categories.includes("FESTA")
+        ? "PARTY"
+        : categories.includes("DESPORTO")
+          ? "SPORT"
+          : categories.includes("PALESTRA")
+            ? "TALK"
+            : "OTHER");
 
     const ticketTypesInput = body.ticketTypes ?? [];
+    const coverImageUrl = body.coverImageUrl?.trim?.() || null;
 
     // Validar tipos de bilhete
     const ticketTypesData = ticketTypesInput
@@ -135,10 +184,13 @@ export async function POST(req: NextRequest) {
         const name = t.name?.trim();
         if (!name) return null;
 
-        const price =
-          typeof t.price === "number" && !Number.isNaN(t.price) && t.price >= 0
-            ? t.price
-            : 0;
+        const priceRaw =
+          typeof t.price === "number" && !Number.isNaN(t.price) ? t.price : 0;
+
+        // preço mínimo 0.50 € (ou 0 para grátis)
+        if (priceRaw > 0 && priceRaw < 0.5) {
+          throw new Error("O preço mínimo de bilhete é 0,50 € (ou grátis).");
+        }
 
         const totalQuantity =
           typeof t.totalQuantity === "number" && t.totalQuantity > 0
@@ -147,7 +199,7 @@ export async function POST(req: NextRequest) {
 
         return {
           name,
-          price,
+          price: priceRaw,
           totalQuantity,
         };
       })
@@ -165,6 +217,10 @@ export async function POST(req: NextRequest) {
     const baseSlug = slugify(title) || "evento";
     const randomSuffix = Math.random().toString(36).slice(2, 8);
     const slug = `${baseSlug}-${randomSuffix}`;
+    const resaleMode =
+      resaleModeRaw === "AFTER_SOLD_OUT" || resaleModeRaw === "DISABLED"
+        ? resaleModeRaw
+        : "ALWAYS";
 
     // Criar o evento primeiro
     const event = await prisma.event.create({
@@ -175,13 +231,16 @@ export async function POST(req: NextRequest) {
         type: "ORGANIZER_EVENT",
         templateType,
         ownerUserId: profile.id,
-        organizerId: organizer!.id,
+        organizerId: organizer?.id ?? null,
         startsAt,
         endsAt,
         locationName,
         locationCity,
+        address,
         isFree: ticketTypesData.every((t) => t.price === 0),
         status: "PUBLISHED",
+        resaleMode,
+        coverImageUrl,
       },
     });
 
@@ -190,7 +249,7 @@ export async function POST(req: NextRequest) {
       data: ticketTypesData.map((t) => ({
         eventId: event.id,
         name: t.name,
-        price: t.price,
+        price: Math.round(t.price * 100), // guardar em cents
         // Assumimos que currency tem default "EUR" e restantes campos têm defaults.
         totalQuantity: t.totalQuantity ?? null,
       })),

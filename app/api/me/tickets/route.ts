@@ -6,12 +6,16 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 // DTO usado pelo frontend
 export type UserTicket = {
   id: string;
-  quantity: number;
-  pricePaid: number;
-  currency: string;
+  quantity: number; // sempre 1 (um registo por bilhete)
+  pricePaid: number; // em cêntimos
+  currency: string; // ex: EUR
   purchasedAt: string;
 
   qrToken: string | null;
+  resaleId?: string | null;
+  resaleStatus?: string | null;
+  resalePrice?: number | null;
+  resaleCurrency?: string | null;
 
   event: {
     id: number;
@@ -21,31 +25,10 @@ export type UserTicket = {
     endDate: string;
     locationName: string;
     coverImageUrl: string | null;
+    resaleMode?: "ALWAYS" | "AFTER_SOLD_OUT" | "DISABLED";
+    isSoldOut?: boolean;
   };
 
-  ticket: {
-    id: string;
-    name: string;
-    description: string | null;
-  };
-};
-
-type GroupedTicket = {
-  id: string;
-  quantity: number;
-  pricePaid: number;
-  currency: string;
-  purchasedAt: string;
-  qrTokens: string[];
-  event: {
-    id: number;
-    slug: string;
-    title: string;
-    startDate: string;
-    endDate: string;
-    locationName: string;
-    coverImageUrl: string | null;
-  };
   ticket: {
     id: string;
     name: string;
@@ -73,76 +56,94 @@ export async function GET() {
       where: { userId },
       orderBy: { purchasedAt: "desc" },
       include: {
-        event: true,
+        event: {
+          include: {
+            ticketTypes: true,
+          },
+        },
         ticketType: true,
+        resales: {
+          orderBy: { createdAt: "desc" },
+          take: 1,
+        },
       },
     });
 
-    // 3) Agrupar por evento + tipo de bilhete (para ter quantity > 1)
-    const groupedMap = new Map<string, GroupedTicket>();
+    // Pré-calcular sold out por evento para suportar o modo AFTER_SOLD_OUT
+    const eventSoldOutMap = new Map<number, boolean>();
 
-    for (const t of userTickets) {
-      const event = t.event;
-      const ticketType = t.ticketType;
+    const isEventSoldOut = (
+      eventId: number,
+      ticketTypes: { totalQuantity: number | null | undefined; soldQuantity: number }[],
+    ) => {
+      if (eventSoldOutMap.has(eventId)) return eventSoldOutMap.get(eventId)!;
 
-      if (!event || !ticketType) continue;
+      const list = ticketTypes ?? [];
+      const hasUnlimited = list.some(
+        (tt) => tt.totalQuantity === null || tt.totalQuantity === undefined,
+      );
 
-      const key = `${event.id}_${ticketType.id}`;
+      const soldOut =
+        !hasUnlimited &&
+        list.length > 0 &&
+        list.every((tt) => {
+          if (tt.totalQuantity === null || tt.totalQuantity === undefined)
+            return false;
+          return tt.soldQuantity >= tt.totalQuantity;
+        });
 
-      const baseEvent = {
-        id: event.id,
-        slug: event.slug,
-        title: event.title,
-        startDate: event.startsAt?.toISOString?.() ?? "",
-        endDate: event.endsAt?.toISOString?.() ?? "",
-        locationName: event.locationName ?? "",
-        coverImageUrl: event.coverImageUrl ?? null,
-      };
+      eventSoldOutMap.set(eventId, soldOut);
+      return soldOut;
+    };
 
-      const baseTicket = {
-        id: String(ticketType.id),
-        name: ticketType.name ?? "Bilhete",
-        description: ticketType.description ?? null,
-      };
+    // 3) Devolver 1 registo por bilhete (sem agrupar) para não perder QR únicos
+    const tickets: UserTicket[] = userTickets
+      .filter((t) => t.event && t.ticketType)
+      .map((t) => {
+        const event = t.event!;
+        const ticketType = t.ticketType!;
+        const resale = t.resales?.[0];
+        const resaleMode =
+          (event as { resaleMode?: "ALWAYS" | "AFTER_SOLD_OUT" | "DISABLED" | null }).resaleMode ??
+          "ALWAYS";
+        const ticketTypesForSoldOut =
+          Array.isArray(event.ticketTypes) && event.ticketTypes.length > 0
+            ? event.ticketTypes.map((tt) => ({
+                totalQuantity: tt.totalQuantity,
+                soldQuantity: tt.soldQuantity,
+              }))
+            : [];
+        const soldOut = isEventSoldOut(event.id, ticketTypesForSoldOut);
 
-      if (!groupedMap.has(key)) {
-        groupedMap.set(key, {
+        return {
           id: t.id,
           quantity: 1,
           pricePaid: t.pricePaid ?? 0,
           currency: t.currency ?? "EUR",
           purchasedAt: t.purchasedAt.toISOString(),
-          qrTokens: [t.id], // neste momento usamos o id como token base
-          event: baseEvent,
-          ticket: baseTicket,
-        });
-      } else {
-        const g = groupedMap.get(key)!;
-        g.quantity += 1;
-        g.pricePaid += t.pricePaid ?? 0;
-        g.qrTokens.push(t.id);
-
-        // manter purchasedAt mais antigo
-        const old = new Date(g.purchasedAt).getTime();
-        const now = t.purchasedAt.getTime();
-        if (now < old) g.purchasedAt = t.purchasedAt.toISOString();
-      }
-    }
-
-    const tickets: UserTicket[] = Array.from(groupedMap.values()).map((g) => {
-      const primaryQrToken = g.qrTokens[0] ?? null;
-
-      return {
-        id: g.id,
-        quantity: g.quantity,
-        pricePaid: g.pricePaid,
-        currency: g.currency,
-        purchasedAt: g.purchasedAt,
-        qrToken: primaryQrToken,
-        event: g.event,
-        ticket: g.ticket,
-      };
-    });
+          qrToken: t.qrSecret ?? null,
+          resaleId: resale?.id ?? null,
+          resaleStatus: resale?.status ?? null,
+          resalePrice: resale?.price ?? null,
+          resaleCurrency: resale?.currency ?? null,
+          event: {
+            id: event.id,
+            slug: event.slug,
+            title: event.title,
+            startDate: event.startsAt?.toISOString?.() ?? "",
+            endDate: event.endsAt?.toISOString?.() ?? "",
+            locationName: event.locationName ?? "",
+            coverImageUrl: event.coverImageUrl ?? null,
+            resaleMode,
+            isSoldOut: soldOut,
+          },
+          ticket: {
+            id: String(ticketType.id),
+            name: ticketType.name ?? "Bilhete",
+            description: ticketType.description ?? null,
+          },
+        };
+      });
 
     return NextResponse.json(
       {

@@ -5,12 +5,23 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useUser } from "@/app/hooks/useUser";
 import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
+import { InlineDateTimePicker } from "@/app/components/forms/InlineDateTimePicker";
 
 type TicketTypeRow = {
   name: string;
   price: string;
   totalQuantity: string;
 };
+
+const CATEGORY_OPTIONS = [
+  { value: "FESTA", label: "Festa", accent: "from-[#FF00C8] to-[#FF8AD9]" },
+  { value: "DESPORTO", label: "Desporto", accent: "from-[#6BFFFF] to-[#4ADE80]" },
+  { value: "CONCERTO", label: "Concerto", accent: "from-[#9B8CFF] to-[#6BFFFF]" },
+  { value: "PALESTRA", label: "Palestra", accent: "from-[#FDE68A] to-[#F472B6]" },
+  { value: "ARTE", label: "Arte", accent: "from-[#F472B6] to-[#A855F7]" },
+  { value: "COMIDA", label: "Comida", accent: "from-[#F97316] to-[#FACC15]" },
+  { value: "DRINKS", label: "Drinks", accent: "from-[#34D399] to-[#6BFFFF]" },
+] as const;
 
 export default function NewOrganizerEventPage() {
   const router = useRouter();
@@ -23,10 +34,14 @@ export default function NewOrganizerEventPage() {
   const [endsAt, setEndsAt] = useState("");
   const [locationName, setLocationName] = useState("");
   const [locationCity, setLocationCity] = useState("");
+  const [address, setAddress] = useState("");
   const [templateType, setTemplateType] = useState("PARTY");
+  const [categories, setCategories] = useState<string[]>([]);
   const [ticketTypes, setTicketTypes] = useState<TicketTypeRow[]>([
     { name: "Normal", price: "", totalQuantity: "" },
   ]);
+  const [coverUrl, setCoverUrl] = useState<string | null>(null);
+  const [uploadingCover, setUploadingCover] = useState(false);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -63,6 +78,30 @@ export default function NewOrganizerEventPage() {
     );
   };
 
+  const handleCoverUpload = async (file: File | null) => {
+    if (!file) return;
+    const formData = new FormData();
+    formData.append("file", file);
+    setUploadingCover(true);
+    setErrorMessage(null);
+    try {
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        body: formData,
+      });
+      const json = await res.json();
+      if (!res.ok || !json?.url) {
+        throw new Error(json?.error || "Falha no upload da imagem.");
+      }
+      setCoverUrl(json.url as string);
+    } catch (err) {
+      console.error("Erro no upload de capa", err);
+      setErrorMessage("Não foi possível carregar a imagem de capa.");
+    } finally {
+      setUploadingCover(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
@@ -87,6 +126,16 @@ export default function NewOrganizerEventPage() {
 
     if (!startsAt) {
       setErrorMessage("A data/hora de início é obrigatória.");
+      return;
+    }
+
+    if (!locationCity.trim()) {
+      setErrorMessage("A cidade é obrigatória.");
+      return;
+    }
+
+    if (categories.length === 0) {
+      setErrorMessage("Escolhe pelo menos uma categoria.");
       return;
     }
 
@@ -116,7 +165,10 @@ export default function NewOrganizerEventPage() {
         locationName: locationName.trim() || null,
         locationCity: locationCity.trim() || null,
         templateType,
+        address: address.trim() || null,
+        categories,
         ticketTypes: preparedTickets,
+        coverImageUrl: coverUrl,
       };
 
       const res = await fetch("/api/organizador/events/create", {
@@ -218,6 +270,42 @@ export default function NewOrganizerEventPage() {
             Detalhes do evento
           </h2>
 
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Imagem de capa</label>
+            <div className="flex flex-col sm:flex-row gap-3 items-start">
+              <div className="h-32 w-48 rounded-xl border border-white/15 bg-black/30 overflow-hidden flex items-center justify-center text-[11px] text-white/60">
+                {coverUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={coverUrl} alt="Capa" className="h-full w-full object-cover" />
+                ) : (
+                  <span>Sem imagem</span>
+                )}
+              </div>
+              <div className="space-y-2">
+                <div className="flex flex-wrap gap-2 text-[11px] text-white/60">
+                  <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-white/20 px-3 py-1 hover:bg-white/10">
+                    <span>{coverUrl ? "Substituir imagem" : "Adicionar imagem de capa"}</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => handleCoverUpload(e.target.files?.[0] ?? null)}
+                      className="hidden"
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    disabled={uploadingCover || !coverUrl}
+                    onClick={() => setCoverUrl(null)}
+                    className="inline-flex items-center rounded-full border border-white/20 px-3 py-1 hover:bg-white/10 disabled:opacity-60"
+                  >
+                    Remover imagem
+                  </button>
+                </div>
+                {uploadingCover && <span className="text-[11px] text-white/60">A carregar imagem…</span>}
+              </div>
+            </div>
+          </div>
+
           <div className="space-y-1">
             <label className="text-sm font-medium">Título *</label>
             <input
@@ -241,29 +329,19 @@ export default function NewOrganizerEventPage() {
           </div>
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div className="space-y-1">
-              <label className="text-sm font-medium">
-                Data/hora início *
-              </label>
-              <input
-                type="datetime-local"
-                value={startsAt}
-                onChange={(e) => setStartsAt(e.target.value)}
-                className="w-full rounded-md border border-white/15 bg-black/20 px-3 py-2 text-sm outline-none focus:border-white/60"
-              />
-            </div>
-
-            <div className="space-y-1">
-              <label className="text-sm font-medium">
-                Data/hora fim (opcional)
-              </label>
-              <input
-                type="datetime-local"
-                value={endsAt}
-                onChange={(e) => setEndsAt(e.target.value)}
-                className="w-full rounded-md border border-white/15 bg-black/20 px-3 py-2 text-sm outline-none focus:border-white/60"
-              />
-            </div>
+            <InlineDateTimePicker
+              label="Data/hora início *"
+              value={startsAt}
+              onChange={(v) => setStartsAt(v)}
+              minDateTime={new Date()}
+              required
+            />
+            <InlineDateTimePicker
+              label="Data/hora fim (opcional)"
+              value={endsAt}
+              onChange={(v) => setEndsAt(v)}
+              minDateTime={startsAt ? new Date(startsAt) : new Date()}
+            />
           </div>
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -291,6 +369,17 @@ export default function NewOrganizerEventPage() {
           </div>
 
           <div className="space-y-1">
+            <label className="text-sm font-medium">Rua / morada (opcional)</label>
+            <input
+              type="text"
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+              className="w-full rounded-md border border-white/15 bg-black/20 px-3 py-2 text-sm outline-none focus:border-white/60"
+              placeholder="Ex.: Rua de exemplo, 123 (TODO: ligar a Mapbox Search)"
+            />
+          </div>
+
+          <div className="space-y-1">
             <label className="text-sm font-medium">Tipo de evento</label>
             <select
               value={templateType}
@@ -303,6 +392,43 @@ export default function NewOrganizerEventPage() {
               <option value="TALK">Palestra / Talk</option>
               <option value="OTHER">Outro</option>
             </select>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Categorias (obrigatório)</label>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              {CATEGORY_OPTIONS.map((cat) => {
+                const checked = categories.includes(cat.value);
+                return (
+                  <label
+                    key={cat.value}
+                    className={`inline-flex items-center gap-2 rounded-2xl border px-3 py-2 text-sm transition ${
+                      checked
+                        ? "bg-white text-black border-white shadow-[0_0_18px_rgba(255,255,255,0.35)]"
+                        : "bg-black/30 border-white/15 text-white"
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      className="sr-only"
+                      checked={checked}
+                      onChange={(e) => {
+                        const next = e.target.checked
+                          ? [...categories, cat.value]
+                          : categories.filter((c) => c !== cat.value);
+                        setCategories(next);
+                      }}
+                    />
+                    <span className="flex items-center gap-2">
+                      <span
+                        className={`h-2 w-2 rounded-full bg-gradient-to-r ${cat.accent} shadow-[0_0_10px_rgba(255,255,255,0.4)]`}
+                      />
+                      {cat.label}
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
           </div>
         </div>
 

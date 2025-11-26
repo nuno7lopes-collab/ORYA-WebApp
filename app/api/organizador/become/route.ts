@@ -17,7 +17,7 @@ export async function POST(_req: NextRequest) {
     if (error || !user) {
       return NextResponse.json(
         { ok: false, error: "Não autenticado." },
-        { status: 401 }
+        { status: 401 },
       );
     }
 
@@ -28,7 +28,7 @@ export async function POST(_req: NextRequest) {
     if (!profile) {
       return NextResponse.json(
         { ok: false, error: "Perfil não encontrado." },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -37,48 +37,31 @@ export async function POST(_req: NextRequest) {
       where: { userId: profile.id },
     });
 
-    if (!organizer) {
-      const displayName =
-        profile.fullName?.trim() || profile.username || "Organizador";
+    const displayName =
+      profile.fullName?.trim() || profile.username || "Organizador";
 
+    if (!organizer) {
       organizer = await prisma.organizer.create({
         data: {
           userId: profile.id,
           displayName,
-          status: "ACTIVE",
+          status: "PENDING",
         },
       });
-    }
-
-    // Garantir que o role "organizer" está presente no profile
-    const currentRoles = profile.roles ?? [];
-    const hasOrganizerRole = currentRoles.includes("organizer");
-
-    let updatedProfile = profile;
-
-    if (!hasOrganizerRole) {
-      updatedProfile = await prisma.profile.update({
-        where: { id: profile.id },
+    } else {
+      organizer = await prisma.organizer.update({
+        where: { id: organizer.id },
         data: {
-          roles: [...currentRoles, "organizer"],
+          status: "PENDING",
+          displayName,
         },
       });
     }
 
+    // Não adicionamos role organizer aqui — só após aprovação admin
     return NextResponse.json(
       {
         ok: true,
-        profile: {
-          id: updatedProfile.id,
-          username: updatedProfile.username,
-          fullName: updatedProfile.fullName,
-          avatarUrl: updatedProfile.avatarUrl,
-          bio: updatedProfile.bio,
-          city: updatedProfile.city,
-          favouriteCategories: updatedProfile.favouriteCategories,
-          onboardingDone: updatedProfile.onboardingDone,
-          roles: updatedProfile.roles,
-        },
         organizer: {
           id: organizer.id,
           displayName: organizer.displayName,
@@ -86,13 +69,42 @@ export async function POST(_req: NextRequest) {
           stripeAccountId: organizer.stripeAccountId,
         },
       },
-      { status: 200 }
+      { status: 200 },
     );
   } catch (err) {
     console.error("POST /api/organizador/become error:", err);
     return NextResponse.json(
-      { ok: false, error: "Erro interno ao tornar organizador." },
-      { status: 500 }
+      { ok: false, error: "Erro interno ao enviar candidatura de organizador." },
+      { status: 500 },
+    );
+  }
+}
+
+export async function DELETE(_req: NextRequest) {
+  try {
+    const supabase = await createSupabaseServer();
+    const {
+      data: { user },
+      error,
+    } = await supabase.auth.getUser();
+
+    if (error || !user) {
+      return NextResponse.json(
+        { ok: false, error: "Não autenticado." },
+        { status: 401 },
+      );
+    }
+
+    await prisma.organizer.deleteMany({
+      where: { userId: user.id, status: "PENDING" },
+    });
+
+    return NextResponse.json({ ok: true }, { status: 200 });
+  } catch (err) {
+    console.error("DELETE /api/organizador/become error:", err);
+    return NextResponse.json(
+      { ok: false, error: "Erro interno ao cancelar candidatura." },
+      { status: 500 },
     );
   }
 }

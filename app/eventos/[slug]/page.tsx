@@ -8,10 +8,22 @@ import Link from "next/link";
 import EventPageClient from "./EventPageClient";
 import type { Metadata } from "next";
 import type { Prisma } from "@prisma/client";
+
+type EventPageParams = { slug: string };
+type EventPageParamsInput = EventPageParams | Promise<EventPageParams>;
+
 export async function generateMetadata(
-  { params }: { params: EventPageParams },
+  { params }: { params: EventPageParamsInput },
 ): Promise<Metadata> {
-  const { slug } = params;
+  const resolved = await params;
+  const slug = resolved?.slug;
+
+  if (!slug) {
+    return {
+      title: "Evento | ORYA",
+      description: "Explora eventos na ORYA.",
+    };
+  }
 
   const event = await prisma.event.findUnique({
     where: { slug },
@@ -41,13 +53,8 @@ export async function generateMetadata(
   };
 }
 
-type EventPageParams = {
-  slug: string;
-};
-
 type EventPageProps = {
-  // No Next 16, params é uma Promise
-  params: Promise<EventPageParams>;
+  params: { slug?: string };
 };
 
 type EventResale = {
@@ -89,12 +96,11 @@ function getWaveStatus(ticket: {
   return "on_sale" as const;
 }
 
-export default async function EventPage({ params }: EventPageProps) {
+export default async function EventPage({ params }: { params: EventPageParamsInput }) {
   const { slug } = await params;
 
   if (!slug) {
-    console.error("EventPage: slug param em falta", await params);
-    notFound();
+    return notFound();
   }
 
   const now = new Date();
@@ -175,16 +181,27 @@ export default async function EventPage({ params }: EventPageProps) {
         ? null
         : t.totalQuantity - t.soldQuantity;
 
-    // Override: if remaining is 0, this wave is sold_out (even if soldQuantity < totalQuantity)
-    const finalStatus =
+    const statusFromEnum =
+      t.status === "CLOSED" || t.status === "ENDED" || t.status === "OFF_SALE"
+        ? "closed"
+        : t.status === "SOLD_OUT"
+          ? "sold_out"
+          : t.status === "UPCOMING"
+            ? "upcoming"
+            : "on_sale";
+
+    // Override: if remaining is 0, this wave é sold_out (mesmo com status)
+    const finalStatus: WaveStatus =
       remaining !== null && remaining <= 0
         ? "sold_out"
-        : getWaveStatus({
-            startsAt: t.startsAt,
-            endsAt: t.endsAt,
-            totalQuantity: t.totalQuantity,
-            soldQuantity: t.soldQuantity,
-          });
+        : statusFromEnum !== "on_sale"
+          ? (statusFromEnum as WaveStatus)
+          : getWaveStatus({
+              startsAt: t.startsAt,
+              endsAt: t.endsAt,
+              totalQuantity: t.totalQuantity,
+              soldQuantity: t.soldQuantity,
+            });
 
     return {
       id: t.id,
@@ -197,7 +214,12 @@ export default async function EventPage({ params }: EventPageProps) {
       status: finalStatus as WaveStatus,
       startsAt: t.startsAt ? t.startsAt.toISOString() : null,
       endsAt: t.endsAt ? t.endsAt.toISOString() : null,
-      available: remaining === null ? true : remaining > 0 && !eventEnded,
+      available:
+        finalStatus === "on_sale"
+          ? remaining === null
+            ? true
+            : remaining > 0 && !eventEnded
+          : false,
       isVisible: t.isVisible ?? true,
     };
   });
@@ -213,11 +235,11 @@ export default async function EventPage({ params }: EventPageProps) {
   const displayPriceFrom = minTicketPrice;
 
   // Carregar revendas deste evento via API F5-9
-let resales: EventResale[] = [];
-try {
-  const headersList = await headers();
-  const protocol = headersList.get("x-forwarded-proto") ?? "http";
-  const host = headersList.get("host");;
+  let resales: EventResale[] = [];
+  try {
+    const headersList = await headers();
+    const protocol = headersList.get("x-forwarded-proto") ?? "http";
+    const host = headersList.get("host");
 
     if (host) {
       const baseUrl = `${protocol}://${host}`;
@@ -695,3 +717,5 @@ try {
     </CheckoutProvider>
   );
 }
+export const dynamic = "force-dynamic";
+export const revalidate = 0;

@@ -3,7 +3,6 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
 import ProfileHeader from "@/app/components/profile/ProfileHeader";
 import { useUser } from "@/app/hooks/useUser";
 
@@ -41,7 +40,6 @@ function parseDate(value?: string | null): Date | null {
 }
 
 export default function MePage() {
-  const { openModal } = useAuthModal();
   const { user, profile, isLoading: meLoading, error: meError } = useUser();
 
   const [ticketsLoading, setTicketsLoading] = useState(true);
@@ -173,98 +171,35 @@ export default function MePage() {
     levelLabel,
     levelDescription,
     isOwner: true,
+    name: profile?.fullName ?? null,
+    username: profile?.username ?? null,
+    avatarUrl: profile?.avatarUrl ?? null,
+    createdAt: profile?.id ? undefined : undefined,
   };
 
   return (
     <main className="orya-body-bg text-white" aria-labelledby="me-page-title">
       <h1 id="me-page-title" className="sr-only">A minha conta</h1>
       <section className="max-w-5xl mx-auto px-5 py-8 md:py-10 space-y-6">
-        <ProfileHeader {...profileHeaderProps} />
-        {/* HERO PERFIL */}
-        <div className="rounded-3xl border border-white/15 bg-gradient-to-br from-[#0f172a] via-[#020617] to-black backdrop-blur-2xl p-6 md:p-7 flex flex-col gap-6 shadow-[0_28px_80px_rgba(15,23,42,0.95)]">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
-            <div className="flex items-center gap-4">
-              <div className="relative h-16 w-16 rounded-2xl bg-gradient-to-br from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] flex items-center justify-center text-xl font-semibold shadow-[0_0_40px_rgba(107,255,255,0.7)] overflow-hidden">
-                {profile?.avatarUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={profile.avatarUrl}
-                    alt={displayName}
-                    className="h-full w-full object-cover"
-                  />
-                ) : (
-                  <span>{displayInitial}</span>
-                )}
-              </div>
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <p className="text-sm font-semibold tracking-tight md:text-base">
-                    {displayName}
-                  </p>
-                  {profile?.roles?.includes("organizer") && (
-                    <span className="inline-flex items-center gap-1 rounded-full border border-amber-400/60 bg-amber-500/15 px-2 py-0.5 text-[10px] font-medium text-amber-100 shadow-[0_0_16px_rgba(245,158,11,0.55)]">
-                      <span className="text-[11px]">⭐</span>
-                      Organizador ORYA
-                    </span>
-                  )}
-                </div>
-                {user?.email && (
-                  <p className="text-[11px] text-white/65">{user.email}</p>
-                )}
-                {profile?.city && (
-                  <p className="mt-0.5 text-[11px] text-white/55">
-                    📍 {profile.city}
-                  </p>
-                )}
-                <div className="mt-1 inline-flex items-center gap-2 rounded-full bg-white/5 border border-white/20 px-3 py-1 text-[10px] text-white/80">
-                  <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-gradient-to-br from-[#FF00C8] to-[#6BFFFF] text-[9px]">
-                    ⚡
-                  </span>
-                  <span className="font-medium">{levelLabel}</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex flex-col items-start md:items-end gap-2 text-[11px]">
-              {meLoading && (
-                <span className="px-3 py-1 rounded-full bg-white/10 border border-white/15 text-white/70">
-                  A carregar os teus dados…
-                </span>
-              )}
-              {!meLoading && meError && (
-                <>
-                  <span className="px-3 py-1 rounded-full bg-red-500/10 border border-red-400/40 text-red-200">
-                    {meError}
-                  </span>
-                  {meError.includes("iniciar sessão") && (
-                    <button
-                      onClick={() => openModal({ mode: "login", redirectTo: "/me" })}
-                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-white text-black text-[11px] font-semibold hover:bg-white/90 transition"
-                    >
-                      Iniciar sessão
-                      <span className="text-[12px]">↗</span>
-                    </button>
-                  )}
-                </>
-              )}
-              {!meLoading && !meError && (
-                <>
-                  <span className="px-3 py-1 rounded-full bg-[#6BFFFF]/10 border border-[#6BFFFF]/40 text-[#6BFFFF]">
-                    Sessão ativa ORYA
-                  </span>
-                  <Link
-                    href="/me/edit"
-                    className="mt-1 inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-black/40 border border-white/18 text-[11px] text-white/80 hover:bg-white/10 transition"
-                  >
-                    Editar perfil
-                  </Link>
-                </>
-              )}
+        {meLoading ? (
+          <div className="space-y-3">
+            <div className="h-20 rounded-3xl border border-white/10 bg-white/5 animate-pulse blur-[0.2px]" />
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {[1, 2, 3, 4].map((i) => (
+                <div
+                  key={i}
+                  className="h-24 rounded-2xl border border-white/8 bg-white/5 animate-pulse blur-[0.3px]"
+                />
+              ))}
             </div>
           </div>
+        ) : (
+          <ProfileHeader {...profileHeaderProps} />
+        )}
 
-          {/* STATS */}
-          <div className="grid grid-cols-1 gap-3 text-[11px] md:grid-cols-4 md:gap-4 mt-1">
+        {/* STATS COMPACTO */}
+        <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-[#0f172a]/70 via-[#020617]/60 to-black/70 backdrop-blur-2xl p-6 shadow-[0_24px_70px_rgba(0,0,0,0.85)]">
+          <div className="grid grid-cols-1 gap-3 text-[11px] md:grid-cols-4 md:gap-4">
             <div className="rounded-2xl border border-white/18 bg-white/[0.02] px-4 py-3">
               <p className="text-white/55">Eventos com bilhete</p>
               <p className="mt-1 text-lg font-semibold text-white">
@@ -302,10 +237,7 @@ export default function MePage() {
               </p>
             </div>
           </div>
-
-          <p className="mt-1 text-[11px] text-white/60 max-w-xl">
-            {levelDescription}
-          </p>
+          <p className="mt-3 text-[11px] text-white/65">{levelDescription}</p>
         </div>
 
         {/* GRID PRINCIPAL */}
@@ -317,17 +249,21 @@ export default function MePage() {
             </h2>
 
             <div className="space-y-2 text-[11px] text-white/75">
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-white/60">Telemóvel</span>
-              <span className="font-medium text-white/85">
-                Sem telemóvel definido
-              </span>
-            </div>
               {!profile?.username && (
                 <div className="mt-2 rounded-xl border border-amber-400/40 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-100">
                   Ainda não escolheste um @username. Define um para ativares o teu perfil público.
                 </div>
               )}
+
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-white/60">Área de staff</span>
+                <Link
+                  href="/staff/eventos"
+                  className="inline-flex items-center gap-1 rounded-full border border-white/20 px-3 py-1 text-white/80 hover:bg-white/10 transition-colors"
+                >
+                  Entrar como staff
+                </Link>
+              </div>
 
               <div className="flex items-center justify-between gap-3">
                 <span className="text-white/60">Nome</span>
@@ -342,13 +278,6 @@ export default function MePage() {
                   {profile?.city ?? "Sem cidade definida"}
                 </span>
               </div>
-
-             <div className="flex items-center justify-between gap-3">
-              <span className="text-white/60">Telemóvel</span>
-              <span className="font-medium text-white/85">
-                Sem telemóvel definido
-              </span>
-            </div>
             </div>
 
             <p className="mt-3 text-[11px] text-white/55">
@@ -491,23 +420,6 @@ export default function MePage() {
             )}
           </section>
         </div>
-
-        {/* ATIVIDADE RECENTE (placeholder temporário nesta fase) */}
-        <section className="rounded-2xl border border-white/12 bg-gradient-to-r from-[#020617] via-slate-950 to-black backdrop-blur-xl p-5 space-y-4">
-          <div>
-            <h2 className="text-sm font-semibold text-white/95">
-              Atividade recente
-            </h2>
-            <p className="text-[11px] text-white/65">
-              Em breve vais poder ver aqui um feed visual das tuas últimas ações na ORYA.
-            </p>
-          </div>
-
-          <div className="space-y-2">
-            <div className="h-14 rounded-xl bg-white/5 border border-white/10 animate-pulse" />
-            <div className="h-14 rounded-xl bg-white/5 border border-white/10 animate-pulse" />
-          </div>
-        </section>
       </section>
     </main>
   );

@@ -4,6 +4,7 @@ import { useEffect, useState, FormEvent, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useUser } from "@/app/hooks/useUser";
 import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
+import { InlineDateTimePicker } from "@/app/components/forms/InlineDateTimePicker";
 
 const TEMPLATE_TYPES = [
   { value: "PARTY", label: "Festa" },
@@ -11,6 +12,16 @@ const TEMPLATE_TYPES = [
   { value: "VOLUNTEERING", label: "Voluntariado" },
   { value: "TALK", label: "Palestra / Talk" },
   { value: "OTHER", label: "Outro" },
+] as const;
+
+const CATEGORY_OPTIONS = [
+  { value: "FESTA", label: "Festa", accent: "from-[#FF00C8] to-[#FF8AD9]" },
+  { value: "DESPORTO", label: "Desporto", accent: "from-[#6BFFFF] to-[#4ADE80]" },
+  { value: "CONCERTO", label: "Concerto", accent: "from-[#9B8CFF] to-[#6BFFFF]" },
+  { value: "PALESTRA", label: "Palestra", accent: "from-[#FDE68A] to-[#F472B6]" },
+  { value: "ARTE", label: "Arte", accent: "from-[#F472B6] to-[#A855F7]" },
+  { value: "COMIDA", label: "Comida", accent: "from-[#F97316] to-[#FACC15]" },
+  { value: "DRINKS", label: "Drinks", accent: "from-[#34D399] to-[#6BFFFF]" },
 ] as const;
 
 type TemplateType = (typeof TEMPLATE_TYPES)[number]["value"];
@@ -23,6 +34,9 @@ type FormState = {
   locationName: string;
   locationCity: string;
   templateType: TemplateType;
+  address: string;
+  categories: string[];
+  coverUrl: string | null;
 };
 
 export default function NovaExperienciaPage() {
@@ -39,10 +53,14 @@ export default function NovaExperienciaPage() {
     locationName: "",
     locationCity: "",
     templateType: "OTHER",
+    address: "",
+    categories: [],
+    coverUrl: null,
   });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [uploadingCover, setUploadingCover] = useState(false);
 
   // Evitar abrir o modal em loop
   const authGuardChecked = useRef(false);
@@ -60,11 +78,32 @@ export default function NovaExperienciaPage() {
     authGuardChecked.current = true;
   }, [isLoading, user, openModal]);
 
-  const handleChange = (
-    field: keyof FormState,
-    value: string,
-  ) => {
+  function handleChange<K extends keyof FormState>(field: K, value: FormState[K]) {
     setForm((prev) => ({ ...prev, [field]: value }));
+  }
+
+  const handleCoverUpload = async (file: File | null) => {
+    if (!file) return;
+    setUploadingCover(true);
+    setError(null);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        body: formData,
+      });
+      const json = await res.json();
+      if (!res.ok || !json?.url) {
+        throw new Error(json?.error || "Erro ao carregar imagem.");
+      }
+      setForm((prev) => ({ ...prev, coverUrl: json.url as string }));
+    } catch (err) {
+      console.error("Erro no upload de capa:", err);
+      setError("Não foi possível carregar a imagem de capa.");
+    } finally {
+      setUploadingCover(false);
+    }
   };
 
   const handleSubmit = async (e: FormEvent) => {
@@ -77,6 +116,12 @@ export default function NovaExperienciaPage() {
 
     setIsSubmitting(true);
     setError(null);
+
+    if (!form.categories.length) {
+      setError("Escolhe pelo menos uma categoria.");
+      setIsSubmitting(false);
+      return;
+    }
 
     try {
       const startsAt = form.date;
@@ -95,8 +140,11 @@ export default function NovaExperienciaPage() {
           locationName: form.locationName,
           locationCity: form.locationCity,
           templateType: form.templateType,
-        }),
-      });
+        address: form.address,
+        categories: form.categories,
+        coverImageUrl: form.coverUrl,
+      }),
+    });
 
       const json = await res.json();
 
@@ -143,6 +191,37 @@ export default function NovaExperienciaPage() {
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
+          <label className="block text-sm font-medium mb-1">Imagem de capa</label>
+          <div className="flex gap-3 items-start">
+            <div className="h-28 w-40 rounded-xl border border-neutral-700 bg-neutral-900/40 overflow-hidden flex items-center justify-center text-[11px] text-neutral-400">
+              {form.coverUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={form.coverUrl} alt="Capa" className="h-full w-full object-cover" />
+              ) : (
+                "Sem imagem"
+              )}
+            </div>
+            <div className="space-y-2 text-[12px] text-neutral-300">
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => handleCoverUpload(e.target.files?.[0] ?? null)}
+              />
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleChange("coverUrl", null)}
+                  className="rounded-full border border-neutral-600 px-3 py-1 text-xs hover:border-white"
+                >
+                  Remover
+                </button>
+                {uploadingCover && <span className="text-xs text-neutral-400">A carregar…</span>}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div>
           <label className="block text-sm font-medium mb-1">Título *</label>
           <input
             type="text"
@@ -166,30 +245,19 @@ export default function NovaExperienciaPage() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium mb-1">
-              Data e hora de início *
-            </label>
-            <input
-              type="datetime-local"
-              className="w-full rounded-md border border-neutral-300 bg-neutral-900/20 px-3 py-2 text-sm outline-none focus:border-pink-500 focus:ring-1 focus:ring-pink-500"
-              value={form.date}
-              onChange={(e) => handleChange("date", e.target.value)}
-              required
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-1">
-              Data e hora de fim (opcional)
-            </label>
-            <input
-              type="datetime-local"
-              className="w-full rounded-md border border-neutral-300 bg-neutral-900/20 px-3 py-2 text-sm outline-none focus:border-pink-500 focus:ring-1 focus:ring-pink-500"
-              value={form.endDate}
-              onChange={(e) => handleChange("endDate", e.target.value)}
-            />
-          </div>
+          <InlineDateTimePicker
+            label="Data e hora de início *"
+            value={form.date}
+            onChange={(v) => handleChange("date", v)}
+            minDateTime={new Date()}
+            required
+          />
+          <InlineDateTimePicker
+            label="Data e hora de fim (opcional)"
+            value={form.endDate}
+            onChange={(v) => handleChange("endDate", v)}
+            minDateTime={form.date ? new Date(form.date) : new Date()}
+          />
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -214,8 +282,21 @@ export default function NovaExperienciaPage() {
               value={form.locationCity}
               onChange={(e) => handleChange("locationCity", e.target.value)}
               required
-            />
-          </div>
+          />
+        </div>
+      </div>
+
+        <div>
+          <label className="block text-sm font-medium mb-1">
+            Rua / morada (opcional)
+          </label>
+          <input
+            type="text"
+            className="w-full rounded-md border border-neutral-300 bg-neutral-900/20 px-3 py-2 text-sm outline-none focus:border-pink-500 focus:ring-1 focus:ring-pink-500"
+            placeholder="Ex.: Rua de exemplo, 123 (TODO: ligar a Mapbox Search)"
+            value={form.address}
+            onChange={(e) => handleChange("address", e.target.value)}
+          />
         </div>
 
         <div>
@@ -223,7 +304,7 @@ export default function NovaExperienciaPage() {
           <select
             className="w-full rounded-md border border-neutral-300 bg-neutral-900/20 px-3 py-2 text-sm outline-none focus:border-pink-500 focus:ring-1 focus:ring-pink-500"
             value={form.templateType}
-            onChange={(e) => handleChange("templateType", e.target.value)}
+            onChange={(e) => handleChange("templateType", e.target.value as TemplateType)}
           >
             {TEMPLATE_TYPES.map((t) => (
               <option key={t.value} value={t.value}>
@@ -231,6 +312,48 @@ export default function NovaExperienciaPage() {
               </option>
             ))}
           </select>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium mb-1">
+            Categorias (obrigatório)
+          </label>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            {CATEGORY_OPTIONS.map((cat) => {
+              const checked = form.categories.includes(cat.value);
+              return (
+                <label
+                  key={cat.value}
+                  className={`inline-flex items-center gap-2 rounded-2xl border px-3 py-2 text-sm transition ${
+                    checked
+                      ? "bg-white text-black border-white shadow-[0_0_18px_rgba(255,255,255,0.35)]"
+                      : "bg-black/30 border-white/15 text-white"
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    className="sr-only"
+                    checked={checked}
+                    onChange={(e) => {
+                      const next = e.target.checked
+                        ? [...form.categories, cat.value]
+                        : form.categories.filter((c) => c !== cat.value);
+                      handleChange("categories", next);
+                    }}
+                  />
+                  <span className="flex items-center gap-2">
+                    <span
+                      className={`h-2 w-2 rounded-full bg-gradient-to-r ${cat.accent} shadow-[0_0_10px_rgba(255,255,255,0.4)]`}
+                    />
+                    {cat.label}
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+          <p className="mt-1 text-xs text-neutral-400">
+            Escolhe pelo menos uma categoria para ajudar na descoberta.
+          </p>
         </div>
 
         {error && (

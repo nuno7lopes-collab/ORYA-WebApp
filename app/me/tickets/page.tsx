@@ -5,26 +5,33 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
 
+type ResaleMode = "ALWAYS" | "AFTER_SOLD_OUT" | "DISABLED";
+
 type TicketFromApi = {
   id: string;
-  quantity?: number | null;
-  pricePaid?: number | null;
+  pricePaid?: number | null; // cêntimos
   currency?: string | null;
   purchasedAt: string;
   event?: {
+    id?: number | null;
     slug?: string | null;
     title?: string | null;
     startDate?: string | null;
     locationName?: string | null;
     coverImageUrl?: string | null;
+    resaleMode?: ResaleMode | null;
+    isSoldOut?: boolean | null;
   } | null;
   ticket?: {
+    id?: string | null;
     name?: string | null;
     description?: string | null;
   } | null;
   qrToken?: string | null;
   resaleId?: string | null;
   resaleStatus?: "LISTED" | "SOLD" | "CANCELLED" | null;
+  resalePrice?: number | null; // cêntimos
+  resaleCurrency?: string | null;
 };
 
 type TicketsApiResponse = {
@@ -32,26 +39,42 @@ type TicketsApiResponse = {
   tickets: TicketFromApi[];
 };
 
-type UITicketPurchase = {
+type UITicket = {
   id: string;
-  quantity: number;
-  pricePaid: number;
+  eventId: number;
+  ticketTypeId: string;
+  priceCents: number;
+  priceEur: number;
   currency: string;
   createdAt: string;
+  qrToken: string | null;
+  resaleId?: string | null;
+  resaleStatus?: "LISTED" | "SOLD" | "CANCELLED" | null;
+  resalePriceCents?: number | null;
+  resaleCurrency?: string | null;
+};
+
+type UITicketGroup = {
+  key: string;
+  quantity: number;
+  totalPaidEur: number;
+  currency: string;
   event: {
+    id: number;
     slug: string;
     title: string;
     startDate: string;
     locationName: string;
     coverImageUrl?: string | null;
+    resaleMode: ResaleMode;
+    isSoldOut: boolean;
   };
   ticket: {
+    id: string;
     name: string;
     description?: string | null;
   };
-  qrToken: string | null;
-  resaleId?: string | null;
-  resaleStatus?: "LISTED" | "SOLD" | "CANCELLED" | null;
+  tickets: UITicket[];
 };
 
 export default function MyTicketsPage() {
@@ -60,7 +83,8 @@ export default function MyTicketsPage() {
 
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [tickets, setTickets] = useState<UITicketPurchase[]>([]);
+  const [ticketGroups, setTicketGroups] = useState<UITicketGroup[]>([]);
+  const [expandedGroupKey, setExpandedGroupKey] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"upcoming" | "past" | "all">("upcoming");
 
   const [transferModal, setTransferModal] = useState<{
@@ -91,6 +115,17 @@ export default function MyTicketsPage() {
   const [resaleLoading, setResaleLoading] = useState(false);
   const [resaleError, setResaleError] = useState<string | null>(null);
   const [resaleSuccess, setResaleSuccess] = useState<string | null>(null);
+  const [toasts, setToasts] = useState<
+    { id: number; type: "error" | "success"; message: string }[]
+  >([]);
+
+  function pushToast(message: string, type: "error" | "success" = "error") {
+    const id = Date.now() + Math.random();
+    setToasts((prev) => [...prev, { id, type, message }]);
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 4000);
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -132,30 +167,82 @@ export default function MyTicketsPage() {
           }
           return;
         }
-                const mapped: UITicketPurchase[] = json.tickets.map((p: TicketFromApi) => ({
-          id: p.id,
-          quantity: p.quantity ?? 1,
-          pricePaid: Number(p.pricePaid ?? 0),
-          currency: p.currency ?? "EUR",
-          createdAt: p.purchasedAt,
-          qrToken: p.qrToken ?? null,
-          resaleId: p.resaleId ?? null,
-          resaleStatus:
-            (p.resaleStatus as "LISTED" | "SOLD" | "CANCELLED" | null) ?? null,
 
-          event: {
-            slug: p.event?.slug ?? "",
-            title: p.event?.title ?? "Evento ORYA",
-            startDate: p.event?.startDate ?? p.purchasedAt,
-            locationName: p.event?.locationName ?? "Local a anunciar",
-            coverImageUrl: p.event?.coverImageUrl ?? null,
-          },
+        const apiTicketMap = new Map<string, TicketFromApi>(
+          json.tickets.map((t: TicketFromApi) => [t.id, t])
+        );
 
-          ticket: {
-            name: p.ticket?.name ?? "Bilhete",
-            description: p.ticket?.description ?? null,
-          },
-        }));
+        // Normalizar tickets individuais (1 entrada = 1 registo)
+        const singles: UITicket[] = json.tickets.map((p: TicketFromApi) => {
+          const priceCents = Number(p.pricePaid ?? 0);
+          const eventId = Number(p.event?.id ?? -1);
+          const ticketTypeId = (p.ticket?.id ?? "").toString();
+
+          return {
+            id: p.id,
+            eventId,
+            ticketTypeId,
+            priceCents,
+            priceEur: priceCents / 100,
+            currency: p.currency ?? "EUR",
+            createdAt: p.purchasedAt,
+            qrToken: p.qrToken ?? null,
+            resaleId: p.resaleId ?? null,
+            resaleStatus:
+              (p.resaleStatus as "LISTED" | "SOLD" | "CANCELLED" | null) ?? null,
+            resalePriceCents: p.resalePrice ?? null,
+            resaleCurrency: p.resaleCurrency ?? null,
+          };
+        });
+
+        // Agrupar por evento + tipo de bilhete para o cartão principal,
+        // mas manter cada QR individual dentro do grupo.
+        const groupsMap = new Map<string, UITicketGroup>();
+
+        for (const single of singles) {
+          const source = apiTicketMap.get(single.id) as TicketFromApi | undefined;
+          const event = source?.event ?? {};
+          const ticket = source?.ticket ?? {};
+
+          const eventData = {
+            id: Number(event.id ?? single.eventId ?? -1),
+            slug: event.slug ?? "",
+            title: event.title ?? "Evento ORYA",
+            startDate: event.startDate ?? single.createdAt,
+            locationName: event.locationName ?? "Local a anunciar",
+            coverImageUrl: event.coverImageUrl ?? null,
+            resaleMode: (event.resaleMode as ResaleMode | undefined) ?? "ALWAYS",
+            isSoldOut: Boolean(event.isSoldOut),
+          };
+
+          const ticketData = {
+            id: ticket.id ? String(ticket.id) : "wave",
+            name: ticket.name ?? "Bilhete",
+            description: ticket.description ?? null,
+          };
+
+          const eventKey = eventData.id > 0 ? String(eventData.id) : eventData.slug;
+          const key = `${eventKey}-${ticketData.id}`;
+
+          if (!groupsMap.has(key)) {
+            groupsMap.set(key, {
+              key,
+              quantity: 1,
+              totalPaidEur: single.priceEur,
+              currency: single.currency,
+              event: eventData,
+              ticket: ticketData,
+              tickets: [single],
+            });
+          } else {
+            const existing = groupsMap.get(key)!;
+            existing.quantity += 1;
+            existing.totalPaidEur += single.priceEur;
+            existing.tickets.push(single);
+          }
+        }
+
+        const mapped = Array.from(groupsMap.values());
 
         // Ordenar por data do evento (mais próximo primeiro)
         mapped.sort((a, b) => {
@@ -165,7 +252,7 @@ export default function MyTicketsPage() {
         });
 
         if (!cancelled) {
-          setTickets(mapped);
+          setTicketGroups(mapped);
         }
       } catch (err) {
         console.error("Erro inesperado ao carregar bilhetes:", err);
@@ -188,40 +275,27 @@ export default function MyTicketsPage() {
     };
   }, [router]);
 
-  const hasTickets = tickets.length > 0;
+  const hasTickets = ticketGroups.length > 0;
 
   const now = new Date();
+  const rotationWindow = Math.floor(now.getTime() / 15000);
 
-  const totalCount = tickets.length;
+  const totalCount = ticketGroups.reduce((sum, group) => sum + group.quantity, 0);
 
-  const upcomingCount = tickets.filter((purchase) => {
-    const date = purchase.event?.startDate
-      ? new Date(purchase.event.startDate)
-      : null;
+  const upcomingCount = ticketGroups.reduce((sum, group) => {
+    const date = group.event?.startDate ? new Date(group.event.startDate) : null;
+    if (!date || Number.isNaN(date.getTime())) return sum;
+    return date >= now ? sum + group.quantity : sum;
+  }, 0);
 
-    if (!date || Number.isNaN(date.getTime())) {
-      return false;
-    }
+  const pastCount = ticketGroups.reduce((sum, group) => {
+    const date = group.event?.startDate ? new Date(group.event.startDate) : null;
+    if (!date || Number.isNaN(date.getTime())) return sum;
+    return date < now ? sum + group.quantity : sum;
+  }, 0);
 
-    return date >= now;
-  }).length;
-
-  const pastCount = tickets.filter((purchase) => {
-    const date = purchase.event?.startDate
-      ? new Date(purchase.event.startDate)
-      : null;
-
-    if (!date || Number.isNaN(date.getTime())) {
-      return false;
-    }
-
-    return date < now;
-  }).length;
-
-  const filteredTickets = tickets.filter((purchase) => {
-    const date = purchase.event?.startDate
-      ? new Date(purchase.event.startDate)
-      : null;
+  const filteredGroups = ticketGroups.filter((group) => {
+    const date = group.event?.startDate ? new Date(group.event.startDate) : null;
 
     if (!date || Number.isNaN(date.getTime())) {
       return activeTab === "all";
@@ -261,11 +335,11 @@ export default function MyTicketsPage() {
     }).format(amount);
   }
 
-  function openTransferModalForTicket(ticket: UITicketPurchase) {
+  function openTransferModalForTicket(ticketId: string, ticketTitle: string) {
     setTransferModal({
       open: true,
-      ticketId: ticket.id,
-      ticketTitle: ticket.event.title,
+      ticketId,
+      ticketTitle,
     });
     setTransferUsername("");
     setTransferError(null);
@@ -301,11 +375,18 @@ export default function MyTicketsPage() {
       const data = await res.json().catch(() => null);
 
       if (!res.ok || !data?.ok) {
-        const reason =
-          data?.error ||
-          data?.reason ||
-          "Não foi possível iniciar a transferência. Tenta novamente.";
+        const code = (data?.error || data?.reason || "").toString();
+        const friendly =
+          code === "CANNOT_TRANSFER_TO_SELF"
+            ? "Não podes enviar um bilhete para ti próprio."
+            : code === "TARGET_NOT_FOUND"
+              ? "Não encontrámos esse username. Confirma o @ do teu amigo."
+              : code === "TRANSFER_ALREADY_PENDING"
+                ? "Já tens uma transferência pendente para este bilhete."
+                : "Não foi possível iniciar a transferência. Tenta novamente.";
+        const reason = friendly;
         setTransferError(reason);
+        pushToast(reason, "error");
         setTransferSuccess(null);
         return;
       }
@@ -313,22 +394,27 @@ export default function MyTicketsPage() {
       setTransferSuccess(
         `Transferência enviada para @${username}. O teu amigo vai poder aceitar ou recusar.`
       );
+      pushToast(`Transferência enviada para @${username}.`, "success");
     } catch (err) {
       console.error("Erro ao iniciar transferência:", err);
       setTransferError(
         "Ocorreu um erro inesperado ao iniciar a transferência. Tenta novamente dentro de instantes."
       );
       setTransferSuccess(null);
+      pushToast(
+        "Ocorreu um erro inesperado ao iniciar a transferência. Tenta novamente.",
+        "error"
+      );
     } finally {
       setTransferLoading(false);
     }
   }
 
-  function openResaleModalForTicket(ticket: UITicketPurchase) {
+  function openResaleModalForTicket(ticketId: string, ticketTitle: string) {
     setResaleModal({
       open: true,
-      ticketId: ticket.id,
-      ticketTitle: ticket.event.title,
+      ticketId,
+      ticketTitle,
     });
     setResalePrice("");
     setResaleError(null);
@@ -337,6 +423,25 @@ export default function MyTicketsPage() {
 
   async function handleConfirmResale() {
     if (!resaleModal.ticketId) return;
+
+    const targetGroup = ticketGroups.find((g) =>
+      g.tickets.some((t) => t.id === resaleModal.ticketId)
+    );
+    if (targetGroup) {
+      const resaleMode = targetGroup.event.resaleMode ?? "ALWAYS";
+      const allowed =
+        resaleMode === "ALWAYS" ||
+        (resaleMode === "AFTER_SOLD_OUT" && targetGroup.event.isSoldOut);
+      if (!allowed) {
+        setResaleError(
+          resaleMode === "DISABLED"
+            ? "Este evento não permite revendas."
+            : "A revenda fica disponível quando o evento estiver esgotado."
+        );
+        setResaleSuccess(null);
+        return;
+      }
+    }
 
     const raw = resalePrice.replace(",", ".").trim();
     const value = Number(raw);
@@ -368,11 +473,19 @@ export default function MyTicketsPage() {
       const data = await res.json().catch(() => null);
 
       if (!res.ok || !data?.ok) {
-        const reason =
-          data?.error ||
-          data?.reason ||
-          "Não foi possível listar este bilhete à venda. Tenta novamente.";
-        setResaleError(reason);
+        const code = (data?.error || data?.reason || "").toString();
+        const friendly =
+          code === "RESALE_DISABLED_FOR_EVENT"
+            ? "Este evento não permite revendas."
+            : code === "RESALE_ONLY_AFTER_SOLD_OUT"
+              ? "Só podes revender depois de o evento esgotar."
+              : code === "TICKET_ALREADY_IN_RESALE"
+                ? "Este bilhete já está listado."
+                : code === "TRANSFER_ALREADY_PENDING"
+                  ? "Tens uma transferência pendente para este bilhete."
+                  : "Não foi possível listar este bilhete à venda. Tenta novamente.";
+        setResaleError(friendly);
+        pushToast(friendly, "error");
         setResaleSuccess(null);
         return;
       }
@@ -380,17 +493,29 @@ export default function MyTicketsPage() {
       setResaleSuccess(
         "Bilhete colocado em revenda. Outros utilizadores já o podem comprar."
       );
+      pushToast("Bilhete colocado em revenda.", "success");
 
-      setTickets((prev) =>
-        prev.map((t) =>
-          t.id === resaleModal.ticketId
-            ? {
-                ...t,
-                resaleStatus: "LISTED",
-                resaleId: (data.resaleId as string | undefined) ?? t.resaleId ?? null,
-              }
-            : t
-        )
+      setTicketGroups((prev) =>
+        prev.map((group) => {
+          if (!group.tickets.some((t) => t.id === resaleModal.ticketId)) {
+            return group;
+          }
+
+          return {
+            ...group,
+            tickets: group.tickets.map((t) =>
+              t.id === resaleModal.ticketId
+                ? {
+                    ...t,
+                    resaleStatus: "LISTED",
+                    resaleId: (data.resaleId as string | undefined) ?? t.resaleId ?? null,
+                    resalePriceCents: cents,
+                    resaleCurrency: t.currency,
+                  }
+                : t
+            ),
+          };
+        })
       );
     } catch (err) {
       console.error("Erro ao criar revenda:", err);
@@ -398,6 +523,10 @@ export default function MyTicketsPage() {
         "Ocorreu um erro inesperado ao listar o bilhete. Tenta novamente dentro de instantes."
       );
       setResaleSuccess(null);
+      pushToast(
+        "Ocorreu um erro inesperado ao listar o bilhete. Tenta novamente dentro de instantes.",
+        "error"
+      );
     } finally {
       setResaleLoading(false);
     }
@@ -418,27 +547,58 @@ export default function MyTicketsPage() {
       if (!res.ok || !data?.ok) {
         console.error("Erro ao cancelar revenda:", data);
         alert("Não foi possível cancelar esta revenda. Tenta novamente.");
+        pushToast("Não foi possível cancelar esta revenda. Tenta novamente.", "error");
         return;
       }
 
-      setTickets((prev) =>
-        prev.map((t) =>
-          t.id === ticketId ? { ...t, resaleStatus: null, resaleId: null } : t
-        )
+      setTicketGroups((prev) =>
+        prev.map((group) => {
+          if (!group.tickets.some((t) => t.id === ticketId)) return group;
+
+          return {
+            ...group,
+            tickets: group.tickets.map((t) =>
+              t.id === ticketId
+                ? { ...t, resaleStatus: null, resaleId: null, resalePriceCents: null }
+                : t
+            ),
+          };
+        })
       );
+      pushToast("Revenda cancelada com sucesso.", "success");
     } catch (err) {
       console.error("Erro ao cancelar revenda:", err);
       alert(
         "Ocorreu um erro inesperado ao cancelar a revenda. Tenta novamente dentro de instantes."
       );
+      pushToast(
+        "Ocorreu um erro inesperado ao cancelar a revenda. Tenta novamente.",
+        "error"
+      );
     }
   }
 
   return (
-    <main
-      aria-labelledby="my-tickets-title"
-      className="orya-body-bg min-h-screen w-full text-white pb-16"
-    >
+    <>
+      <div className="fixed top-4 right-4 z-[60] space-y-2">
+        {toasts.map((toast) => (
+          <div
+            key={toast.id}
+            className={`min-w-[240px] rounded-xl px-3 py-2 text-[11px] shadow-lg backdrop-blur ${
+              toast.type === "success"
+                ? "bg-emerald-500/20 border border-emerald-400/50 text-emerald-50"
+                : "bg-red-500/15 border border-red-400/50 text-red-50"
+            }`}
+          >
+            {toast.message}
+          </div>
+        ))}
+      </div>
+
+      <main
+        aria-labelledby="my-tickets-title"
+        className="orya-body-bg min-h-screen w-full text-white pb-16"
+      >
       {/* Top bar */}
       <header className="border-b border-white/10 bg-black/40 backdrop-blur-xl">
         <div className="max-w-5xl mx-auto px-5 py-4 flex items-center justify-between">
@@ -487,12 +647,6 @@ export default function MyTicketsPage() {
               className="px-3 py-1.5 rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] text-black font-semibold hover:scale-105 active:scale-95 transition-transform shadow-[0_0_26px_rgba(107,255,255,0.45)]"
             >
               Descobrir novos eventos
-            </Link>
-            <Link
-              href="/me/edit"
-              className="px-3 py-1.5 rounded-full border border-white/15 bg-white/5 text-white/80 hover:bg-white/10 transition-colors"
-            >
-              Editar perfil
             </Link>
           </div>
         </div>
@@ -544,12 +698,6 @@ export default function MyTicketsPage() {
               Assim que comprares um bilhete através da ORYA, ele vai aparecer
               aqui — com acesso rápido ao evento, à informação e ao teu QR code.
             </p>
-            <Link
-              href="/explorar"
-              className="inline-flex mt-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] text-xs font-semibold text-black hover:scale-105 active:scale-95 transition-transform shadow-[0_0_28px_rgba(107,255,255,0.5)]"
-            >
-              Ver eventos disponíveis
-            </Link>
           </div>
         )}
 
@@ -616,23 +764,21 @@ export default function MyTicketsPage() {
               </div>
             </div>
 
-            {filteredTickets.length === 0 ? (
+            {filteredGroups.length === 0 ? (
               <p className="mt-2 text-xs text-white/60">
                 Não há bilhetes nesta secção. Experimenta outra aba acima.
               </p>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {filteredTickets.map((purchase) => {
-                  const event = purchase.event;
-                  const ticket = purchase.ticket;
+                {filteredGroups.map((group) => {
+                  const event = group.event;
+                  const ticket = group.ticket;
                   const dateLabel = formatDate(event.startDate);
-                  const totalLabel = formatPrice(
-                    purchase.pricePaid,
-                    purchase.currency
-                  );
-                  const unitPrice = purchase.quantity > 0
-                    ? purchase.pricePaid / purchase.quantity
-                    : purchase.pricePaid;
+                  const totalLabel = formatPrice(group.totalPaidEur, group.currency);
+                  const unitPrice =
+                    group.quantity > 0
+                      ? group.totalPaidEur / group.quantity
+                      : group.totalPaidEur;
 
                   const eventDateObj = event.startDate ? new Date(event.startDate) : null;
                   let statusLabel = "Confirmado";
@@ -658,32 +804,49 @@ export default function MyTicketsPage() {
                     }
                   }
 
+                  const isExpanded = expandedGroupKey === group.key;
+                  const resaleMode = event.resaleMode ?? "ALWAYS";
+                  const resaleAllowed =
+                    resaleMode === "ALWAYS" ||
+                    (resaleMode === "AFTER_SOLD_OUT" && event.isSoldOut);
+                  const resaleDisabledReason =
+                    resaleMode === "DISABLED"
+                      ? "Revenda desativada pelo organizador."
+                      : "A revenda fica disponível quando o evento estiver esgotado.";
+
                   return (
                     <div
-                      key={purchase.id}
+                      key={group.key}
                       className="group relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-b from-white/5 via-black/80 to-black/95 hover:border-[#6BFFFF]/70 transition-colors shadow-[0_16px_45px_rgba(0,0,0,0.75)]"
                     >
-                      {/* QR + título compacto */}
                       <div className="flex items-center gap-3 px-4 py-3 bg-black/40 border-b border-white/10">
-                        {purchase.qrToken ? (
-                          <img
-                            src={`/api/qr/${purchase.qrToken}`}
-                            alt="QR Code do bilhete ORYA"
-                            loading="lazy"
-                            className="h-12 w-12 rounded-lg bg-black/20 p-1"
-                          />
-                        ) : (
-                          <div className="h-12 w-12 rounded-lg bg-black/30 border border-white/10 flex items-center justify-center text-[10px] text-white/50">
-                            sem QR
-                          </div>
-                        )}
+                        <div className="h-12 w-12 rounded-lg bg-black/30 border border-white/10 flex items-center justify-center text-[11px] text-white/70 font-semibold">
+                          {group.quantity}x
+                        </div>
                         <div className="flex flex-col">
-                          <p className="text-white font-medium leading-tight">{purchase.event.title}</p>
+                          <p className="text-white font-medium leading-tight">{event.title}</p>
                           <p className="text-xs text-white/60 leading-tight">
-                            Wave {purchase.ticket.name}
+                            {ticket.name}
                           </p>
                         </div>
+                        <div className="ml-auto inline-flex items-center gap-1 text-[10px] text-white/60">
+                          <span
+                            className={`rounded-full border px-2 py-0.5 ${statusClass}`}
+                          >
+                            {statusLabel}
+                          </span>
+                          <span className="rounded-full border border-white/15 px-2 py-0.5 bg-white/5">
+                            {resaleMode === "DISABLED"
+                              ? "Revenda OFF"
+                              : resaleMode === "AFTER_SOLD_OUT"
+                                ? event.isSoldOut
+                                  ? "Revenda ON (esgotado)"
+                                  : "Revenda após esgotar"
+                                : "Revenda ON"}
+                          </span>
+                        </div>
                       </div>
+
                       {/* Poster visual */}
                       <div className="relative w-full overflow-hidden">
                         <div className="relative aspect-[3/4] w-full">
@@ -711,8 +874,8 @@ export default function MyTicketsPage() {
                               {statusLabel}
                             </span>
                             <span className="inline-flex items-center rounded-full bg-black/70 px-2 py-0.5 text-[10px] font-semibold text-white/85">
-                              {purchase.quantity > 1
-                                ? `${purchase.quantity} bilhetes`
+                              {group.quantity > 1
+                                ? `${group.quantity} bilhetes`
                                 : "1 bilhete"}
                             </span>
                           </div>
@@ -720,7 +883,7 @@ export default function MyTicketsPage() {
                           {/* Título + data na parte de baixo do poster */}
                           <div className="absolute inset-x-2 bottom-2 space-y-1">
                             <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">
-                              Bilhete ORYA
+                              Bilhetes ORYA
                             </p>
                             <h3 className="text-sm font-semibold leading-snug line-clamp-2">
                               {event.title}
@@ -747,9 +910,9 @@ export default function MyTicketsPage() {
                             <p className="text-white/90">{totalLabel}</p>
                           </div>
                           <div className="space-y-1">
-                            <p className="text-white/50">Preço unitário</p>
+                            <p className="text-white/50">Preço médio</p>
                             <p className="text-white/90">
-                              {formatPrice(unitPrice, purchase.currency)}
+                              {formatPrice(unitPrice, group.currency)}
                             </p>
                           </div>
                           <div className="space-y-1">
@@ -761,32 +924,15 @@ export default function MyTicketsPage() {
                           <div className="space-y-1">
                             <p className="text-white/50">Referência</p>
                             <p className="text-white/80 text-[10px] break-all">
-                              {purchase.id}
+                              {group.tickets[0]?.id}
+                              {group.quantity > 1 ? " (+)" : ""}
                             </p>
                           </div>
                         </div>
 
-                        <p className="mt-1 text-[10px] text-white/40">
-                            QR code disponível neste bilhete. Podes transferi-lo para um amigo e, se fizer sentido, colocá-lo à venda diretamente aqui.
-                          </p>
-
-                        {/* QR Code real (se disponível) */}
-                        <div className="mt-4 flex justify-center">
-                          {purchase.qrToken ? (
-                            <div className="bg-white p-3 rounded-2xl shadow-[0_0_30px_rgba(255,0,200,0.4)]">
-                              <img
-                                src={`/api/qr/${purchase.qrToken}`}
-                                alt="QR Code do bilhete ORYA"
-                                loading="lazy"
-                                className="h-32 w-32 object-contain"
-                              />
-                            </div>
-                          ) : (
-                            <div className="rounded-2xl border border-dashed border-white/20 bg-black/40 px-3 py-2 text-[10px] text-white/70 text-center">
-                              A preparar o QR code deste bilhete… se o pagamento acabou de ser confirmado, atualiza a página em alguns segundos.
-                            </div>
-                          )}
-                        </div>
+                        <p className="mt-1 text-[10px] text-white/45">
+                          Os QR codes aparecem apenas ao abrir este cartão. Cada bilhete tem o seu QR único.
+                        </p>
 
                         <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[11px]">
                           <div className="flex flex-wrap gap-2">
@@ -799,41 +945,111 @@ export default function MyTicketsPage() {
                             >
                               Ver evento
                             </button>
-                            <button
-                              type="button"
-                              onClick={() => openTransferModalForTicket(purchase)}
-                              className="inline-flex items-center gap-1 rounded-full border border-white/25 px-3 py-1 text-white/80 hover:bg-white/10 transition-colors"
-                            >
-                              Enviar a amigo
-                            </button>
-                            {purchase.resaleStatus === "LISTED" && purchase.resaleId ? (
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  handleCancelResale(purchase.resaleId as string, purchase.id)
-                                }
-                                className="inline-flex items-center gap-1 rounded-full border border-amber-300/60 px-3 py-1 text-amber-100 hover:bg-amber-500/15 transition-colors"
-                              >
-                                Cancelar revenda
-                              </button>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => openResaleModalForTicket(purchase)}
-                                className="inline-flex items-center gap-1 rounded-full border border-[#6BFFFF]/70 px-3 py-1 text-[#6BFFFF] hover:bg-[#6BFFFF]/10 transition-colors"
-                              >
-                                Pôr à venda
-                              </button>
-                            )}
                           </div>
                           <button
                             type="button"
-                            onClick={() => router.push(`/bilhete/${purchase.id}`)}
+                            onClick={() =>
+                              setExpandedGroupKey(isExpanded ? null : group.key)
+                            }
                             className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-3 py-1 font-semibold text-black shadow-[0_0_20px_rgba(107,255,255,0.7)] hover:scale-[1.03] active:scale-95 transition-transform"
                           >
-                            Abrir bilhete
+                            {isExpanded ? "Fechar bilhetes" : `Ver bilhetes (${group.quantity})`}
                           </button>
                         </div>
+
+                        {isExpanded && (
+                          <div className="mt-3 space-y-3">
+                            {group.tickets.map((t, idx) => {
+                              const isListed = t.resaleStatus === "LISTED" && t.resaleId;
+                              const ticketLabel = `${event.title} — ${ticket.name} (#${idx + 1})`;
+
+                              return (
+                                <div
+                                  key={t.id}
+                                  className="rounded-xl border border-white/12 bg-black/60 p-3 space-y-3"
+                                >
+                                  <div className="flex items-center justify-between gap-2">
+                                    <div className="flex flex-col">
+                                      <p className="text-sm font-medium text-white">
+                                        Bilhete #{idx + 1}
+                                      </p>
+                                      <p className="text-[10px] text-white/60 break-all">
+                                        Ref: {t.id}
+                                      </p>
+                                    </div>
+                                    <span className="inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] text-white/80">
+                                      {isListed ? "À venda" : "Na tua carteira"}
+                                    </span>
+                                  </div>
+
+                                  <div className="flex items-start gap-3">
+                                        {t.qrToken ? (
+                                          <div className="shrink-0 rounded-2xl bg-white p-2 shadow-[0_0_28px_rgba(255,0,200,0.35)]">
+                                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                                            <img
+                                              src={`/api/qr/${t.qrToken}?r=${rotationWindow}`}
+                                              alt="QR Code do bilhete ORYA"
+                                              className="h-20 w-20 object-contain"
+                                            />
+                                          </div>
+                                    ) : (
+                                      <div className="shrink-0 rounded-2xl border border-dashed border-white/25 bg-black/40 px-3 py-2 text-[10px] text-white/60 text-center max-w-[120px]">
+                                        A preparar o QR…
+                                      </div>
+                                    )}
+
+                                    <div className="flex-1 space-y-2 text-[11px]">
+                                      <p className="text-white/80">
+                                        Preço pago: {formatPrice(t.priceEur, t.currency)}
+                                      </p>
+                                      <div className="flex flex-wrap gap-2">
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            openTransferModalForTicket(t.id, ticketLabel)
+                                          }
+                                          className="inline-flex items-center gap-1 rounded-full border border-white/25 px-3 py-1 text-white/80 hover:bg-white/10 transition-colors"
+                                        >
+                                          Enviar a amigo
+                                        </button>
+                                        {isListed ? (
+                                          <button
+                                            type="button"
+                                            onClick={() => handleCancelResale(t.resaleId as string, t.id)}
+                                            className="inline-flex items-center gap-1 rounded-full border border-red-400/60 px-3 py-1 text-red-100 hover:bg-red-500/15 transition-colors"
+                                          >
+                                            Cancelar venda
+                                          </button>
+                                        ) : (
+                                          <button
+                                            type="button"
+                                            onClick={() => openResaleModalForTicket(t.id, ticketLabel)}
+                                            disabled={!resaleAllowed}
+                                            title={!resaleAllowed ? resaleDisabledReason : undefined}
+                                            className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 transition-colors ${
+                                              resaleAllowed
+                                                ? "border-[#6BFFFF]/70 text-[#6BFFFF] hover:bg-[#6BFFFF]/10"
+                                                : "border-white/15 text-white/40 cursor-not-allowed"
+                                            }`}
+                                          >
+                                            Pôr à venda
+                                          </button>
+                                        )}
+                                        <button
+                                          type="button"
+                                          onClick={() => router.push(`/bilhete/${t.id}`)}
+                                          className="inline-flex items-center gap-1 rounded-full border border-white/20 px-3 py-1 text-white/80 hover:bg-white/10 transition-colors"
+                                        >
+                                          Abrir bilhete
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
                       </div>
                     </div>
                   );
@@ -1006,5 +1222,6 @@ export default function MyTicketsPage() {
         </div>
       )}
     </main>
+    </>
   );
 }

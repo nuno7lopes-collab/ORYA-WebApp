@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 
-type RouteParams = { params: { slug: string } };
+type RouteParams = { params: { slug: string } | Promise<{ slug: string }> };
 
 export async function POST(req: NextRequest, context: RouteParams) {
-  const { slug } = context.params;
+  const { slug } = await context.params;
 
   let body: { ticketId?: string; quantity?: number } = {};
   try {

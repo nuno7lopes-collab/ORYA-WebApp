@@ -26,6 +26,24 @@ type StaffEvent = {
   organizerName: string | null;
 };
 
+type Invitation = {
+  id: number;
+  scope: "GLOBAL" | "EVENT";
+  eventId: number | null;
+  createdAt: string;
+  event: {
+    id: number;
+    title: string;
+    startsAt: string;
+    locationName: string | null;
+    locationCity: string | null;
+  } | null;
+  organizer: {
+    id: number;
+    displayName: string | null;
+  } | null;
+};
+
 export default function StaffEventsPage() {
   const router = useRouter();
   const { user, isLoading: isUserLoading } = useUser();
@@ -36,6 +54,15 @@ export default function StaffEventsPage() {
     isLoading: isEventsLoading,
   } = useSWR<{ ok: boolean; events: StaffEvent[] }>(
     user ? "/api/staff/events" : null,
+    fetcher
+  );
+
+  const {
+    data: invitationsData,
+    mutate: mutateInvites,
+    isLoading: isInvitesLoading,
+  } = useSWR<{ ok: boolean; invitations: Invitation[] }>(
+    user ? "/api/staff/invitations" : null,
     fetcher
   );
 
@@ -63,6 +90,25 @@ export default function StaffEventsPage() {
   }
 
   const events = data?.events ?? [];
+  const invitations = invitationsData?.invitations ?? [];
+
+  const acceptInvite = async (id: number) => {
+    await fetch("/api/staff/invitations/accept", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ assignmentId: id }),
+    });
+    mutateInvites();
+  };
+
+  const rejectInvite = async (id: number) => {
+    await fetch("/api/staff/invitations/reject", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ assignmentId: id }),
+    });
+    mutateInvites();
+  };
 
   const getBadgeLabel = (startsAt: string) => {
     if (!startsAt) return "";
@@ -100,6 +146,63 @@ export default function StaffEventsPage() {
           de participantes.
         </p>
       </div>
+
+      <section className="space-y-2">
+        <h2 className="text-sm font-semibold">Convites pendentes</h2>
+        {isInvitesLoading && <p className="text-sm text-white/70">A carregar convites…</p>}
+        {!isInvitesLoading && invitations.length === 0 && (
+          <p className="text-sm text-white/50">Nenhum convite pendente.</p>
+        )}
+        {invitations.length > 0 && (
+          <div className="space-y-2">
+            {invitations.map((inv) => {
+              const event = inv.event;
+              const dateLabel = event?.startsAt
+                ? new Date(event.startsAt).toLocaleString("pt-PT", {
+                    day: "2-digit",
+                    month: "short",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })
+                : "Data a anunciar";
+              return (
+                <div
+                  key={inv.id}
+                  className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-sm"
+                >
+                  <div className="min-w-0">
+                    <p className="font-medium">
+                      {event?.title ?? "Evento"}
+                    </p>
+                    <p className="text-xs text-white/60">
+                      {dateLabel} · {event?.locationName ?? event?.locationCity ?? "Local a definir"}
+                    </p>
+                    <p className="text-[11px] text-white/50">
+                      Organizador: {inv.organizer?.displayName ?? "ORYA"}
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => acceptInvite(inv.id)}
+                      className="rounded-md border border-emerald-400/60 px-3 py-1.5 text-xs font-medium text-emerald-100 hover:bg-emerald-500/10"
+                    >
+                      Aceitar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => rejectInvite(inv.id)}
+                      className="rounded-md border border-red-400/60 px-3 py-1.5 text-xs font-medium text-red-100 hover:bg-red-500/10"
+                    >
+                      Recusar
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
 
       {isEventsLoading && (
         <p>A carregar eventos onde tens acesso como staff…</p>

@@ -6,9 +6,9 @@ import { notFound, redirect } from "next/navigation";
 import type { Event, TicketType } from "@prisma/client";
 
 type PageProps = {
-  params: {
+  params: Promise<{
     id: string;
-  };
+  }>;
 };
 
 type EventWithTickets = Event & {
@@ -16,6 +16,8 @@ type EventWithTickets = Event & {
 };
 
 export default async function OrganizerEventDetailPage({ params }: PageProps) {
+  const resolved = await params;
+
   // 1) Garante auth
   const supabase = await createSupabaseServer();
   const { data, error } = await supabase.auth.getUser();
@@ -34,7 +36,7 @@ export default async function OrganizerEventDetailPage({ params }: PageProps) {
     redirect("/organizador");
   }
 
-  const eventId = Number.parseInt(params.id, 10);
+  const eventId = Number.parseInt(resolved.id, 10);
   if (!Number.isFinite(eventId)) {
     notFound();
   }

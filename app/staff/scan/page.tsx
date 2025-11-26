@@ -26,15 +26,37 @@ export default function StaffScanPage() {
   const eventId = eventIdParam ? Number(eventIdParam) : null;
 
   useEffect(() => {
-    try {
-      const session = window.localStorage.getItem("orya_staff_session");
-      if (session !== "active") {
-        window.location.href = "/staff/login";
-        return;
+    let cancelled = false;
+    async function check() {
+      try {
+        const res = await fetch("/api/staff/events", { cache: "no-store" });
+        if (res.status === 401) {
+          window.location.href = `/staff/login?redirectTo=/staff/scan${eventId ? `?eventId=${eventId}` : ""}`;
+          return;
+        }
+        const json = await res.json().catch(() => null);
+        if (!json?.ok) {
+          setError("Não tens sessão de staff válida.");
+          return;
+        }
+        const events: { id: number }[] = Array.isArray(json?.events) ? json.events : [];
+        const hasAccess =
+          events.some((ev) => ev.id === eventId) || events.length > 0;
+        if (!hasAccess) {
+          setError("Não tens permissões para este evento como staff.");
+          return;
+        }
+      } catch (e) {
+        console.error("Erro ao validar sessão de staff:", e);
+        setError("Erro ao validar sessão de staff.");
+      } finally {
+        if (!cancelled) setCheckingSession(false);
       }
-    } finally {
-      setCheckingSession(false);
     }
+    check();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Start camera

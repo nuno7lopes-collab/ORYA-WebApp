@@ -140,13 +140,13 @@ export async function POST(req: NextRequest) {
     const paymentIntent = await stripe.paymentIntents.create({
       amount: amountInCents,
       currency: "eur",
+      payment_method_types: ["card", "mb_way"],
       metadata: {
         eventId: String(event.id),
         eventSlug: String(event.slug),
         userId: String(userId),
         items: JSON.stringify(items),
       },
-      automatic_payment_methods: { enabled: true },
     });
 
     return NextResponse.json({

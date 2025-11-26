@@ -6,7 +6,7 @@ import { useUser } from "@/app/hooks/useUser";
 import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
 
 type ExperienceItem = {
-  id: string;
+  id: number;
   slug: string;
   title: string;
   description: string;
@@ -36,23 +36,42 @@ export default function ExperiencePage() {
   const [joinError, setJoinError] = useState<string | null>(null);
   const [joined, setJoined] = useState(false);
 
-  useEffect(() => {
-    if (!slug) return;
+  async function checkJoined(eventId: number) {
+    if (!user) return;
+    try {
+      const res = await fetch(`/api/experiencias/join/status?eventId=${eventId}`, {
+        cache: "no-store",
+      });
+      const json = await res.json();
+      if (json.joined) setJoined(true);
+    } catch (err) {
+      console.error("Erro a verificar join:", err);
+    }
+  }
 
+  async function loadExperience() {
     setLoading(true);
     setExperience(null);
 
-    fetch("/api/experiencias/list?slug=" + encodeURIComponent(slug) + "&limit=1")
-      .then((res) => res.json())
-      .then((json) => {
-        setExperience(json.items?.[0] || null);
-      })
-      .catch(() => {
-        setExperience(null);
-      })
-      .finally(() => {
-        setLoading(false);
-      });
+    try {
+      const res = await fetch(
+        "/api/experiencias/list?slug=" + encodeURIComponent(slug) + "&limit=1",
+      );
+      const json = await res.json();
+      setExperience(json.items?.[0] || null);
+      if (json.items?.[0]?.id) {
+        await checkJoined(json.items[0].id);
+      }
+    } catch {
+      setExperience(null);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!slug) return;
+    loadExperience();
   }, [slug]);
 
   async function handleJoin() {
@@ -77,6 +96,7 @@ export default function ExperiencePage() {
         setJoinError(data?.error || "Erro ao juntar-se à experiência.");
       } else {
         setJoined(true);
+        await loadExperience();
       }
     } catch {
       setJoinError("Erro ao juntar-se à experiência.");

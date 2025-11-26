@@ -5,18 +5,30 @@ import { usePathname, useRouter } from "next/navigation";
 import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
 import { useUser } from "@/app/hooks/useUser";
 
+type Suggestion = {
+  id: number;
+  type: "EVENT" | "EXPERIENCE";
+  slug: string;
+  title: string;
+  startsAt: string | null;
+  locationName: string | null;
+  locationCity: string | null;
+  coverImageUrl: string | null;
+};
+
 export function Navbar() {
   const router = useRouter();
   const pathname = usePathname();
 
   const { openModal: openAuthModal } = useAuthModal();
-  const { user } = useUser();
+  const { user, profile, roles, isLoading } = useUser();
 
   const [isVisible, setIsVisible] = useState(true);
   const [isAtTop, setIsAtTop] = useState(true);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  const [isSuggestLoading, setIsSuggestLoading] = useState(false);
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement | null>(null);
 
@@ -116,36 +128,86 @@ export function Navbar() {
     router.push(`/explorar?query=${encodeURIComponent(value)}`);
   };
 
-  const handleLogout = async () => {
-    try {
-      setIsLoggingOut(true);
+  const buildSlug = (item: Pick<Suggestion, "type" | "slug">) =>
+    item.type === "EXPERIENCE" ? `/experiencias/${item.slug}` : `/eventos/${item.slug}`;
 
-      const res = await fetch("/api/auth/logout", {
-        method: "POST",
-        credentials: "include",
-      });
+  // Sugestões ao digitar (tipo DICE)
+  useEffect(() => {
+    let active = true;
+    const controller = new AbortController();
 
-      const data = await res.json();
-
-      if (data.success) {
-        openAuthModal({ mode: "login", redirectTo: pathname || "/" });
-      } else {
-        console.error("[Navbar] Erro no logout:", data.error);
-        openAuthModal({ mode: "login", redirectTo: pathname || "/" });
+    async function load() {
+      const q = searchQuery.trim();
+      if (q.length < 2) {
+        setSuggestions([]);
+        return;
       }
-    } catch (err) {
-      console.error("[Navbar] Erro ao terminar sessão", err);
-      openAuthModal({ mode: "login", redirectTo: pathname || "/" });
-    } finally {
-      setIsLoggingOut(false);
+      try {
+        setIsSuggestLoading(true);
+        const res = await fetch(`/api/explorar/list?q=${encodeURIComponent(q)}&limit=6`, {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        if (!res.ok) throw new Error("erro sugestões");
+        const data = await res.json();
+        if (!active) return;
+        const items = Array.isArray(data?.items)
+          ? (data.items as Array<{
+              id: number;
+              type: "EVENT" | "EXPERIENCE";
+              slug: string;
+              title: string;
+              startsAt?: string | null;
+              location?: { name?: string | null; city?: string | null };
+              coverImageUrl?: string | null;
+            }>)
+          : [];
+        setSuggestions(
+          items.map((it) => ({
+            id: it.id,
+            type: it.type,
+            slug: it.slug,
+            title: it.title,
+            startsAt: it.startsAt ?? null,
+            locationName: it.location?.name ?? null,
+            locationCity: it.location?.city ?? null,
+            coverImageUrl: it.coverImageUrl ?? null,
+          })),
+        );
+      } catch (err) {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        if (active) setSuggestions([]);
+      } finally {
+        if (active) setIsSuggestLoading(false);
+      }
     }
-  };
+
+    const handle = setTimeout(load, 220);
+    return () => {
+      active = false;
+      controller.abort();
+      clearTimeout(handle);
+    };
+  }, [searchQuery]);
+
+  // Forçar onboarding: se autenticado e onboardingDone=false, abre modal e impede fechar
+  useEffect(() => {
+    if (user && profile && !profile.onboardingDone) {
+      openAuthModal({
+        mode: "onboarding",
+        redirectTo: pathname || "/",
+      });
+    }
+  }, [user, profile, pathname, openAuthModal]);
 
   const isAuthenticated = !!user;
-  const rawEmail = user?.email;
-  const userEmail = typeof rawEmail === "string" ? rawEmail : "";
+  const isOrganizer = roles?.includes("organizer");
+  const userLabel =
+    profile?.username ||
+    profile?.fullName ||
+    (typeof user?.email === "string" ? user.email : "");
   const userInitial =
-    userEmail?.trim().charAt(0).toUpperCase() || "O";
+    (userLabel || "O").trim().charAt(0).toUpperCase() || "O";
 
   const inAuthPage =
     pathname === "/login" || pathname === "/signup" || pathname === "/auth/callback";
@@ -160,8 +222,8 @@ export function Navbar() {
         <div
           className={`flex w-full items-center gap-4 px-4 md:px-6 lg:px-8 transition-all duration-300 ${
             isAtTop && !isSearchOpen
-              ? "py-4 md:py-5 border-b border-white/5 bg-black/20 backdrop-blur-2xl"
-              : "py-2.5 md:py-3 border-b border-white/10 bg-black/60 backdrop-blur-3xl shadow-[0_16px_45px_rgba(15,23,42,0.9)]"
+              ? "py-4 md:py-5 border-b border-white/5 bg-[#050915]/60 backdrop-blur-xl"
+              : "py-3.5 md:py-4 border-b border-white/10 bg-[#060a16]/85 backdrop-blur-2xl shadow-[0_14px_50px_rgba(0,0,0,0.65)]"
           }`}
         >
           {/* Logo + link explorar */}
@@ -171,8 +233,12 @@ export function Navbar() {
               onClick={() => router.push("/")}
               className="flex items-center gap-2"
             >
-              <div className="flex h-8 w-8 items-center justify-center rounded-2xl bg-gradient-to-br from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] text-xs font-black tracking-[0.2em] shadow-lg shadow-[#ff00c833]">
-                OY
+              <div className="relative flex h-9 w-9 items-center justify-center rounded-2xl bg-gradient-to-br from-[#0f172a] via-[#111827] to-[#0b1224] text-xs font-black tracking-[0.2em] shadow-[0_0_18px_rgba(107,255,255,0.25)]">
+                <span className="absolute inset-0 rounded-2xl border border-white/10" />
+                <span className="absolute inset-0 rounded-2xl bg-gradient-to-tr from-[#FF00C8]/35 via-[#6BFFFF]/20 to-transparent animate-[spin_9s_linear_infinite]" />
+                <span className="relative z-10 bg-gradient-to-r from-[#FF9CF2] to-[#6BFFFF] bg-clip-text text-transparent">
+                  OY
+                </span>
               </div>
               <span className="hidden text-sm font-semibold uppercase tracking-[0.22em] text-zinc-100 sm:inline">
                 ORYA
@@ -189,7 +255,7 @@ export function Navbar() {
                     : "text-zinc-300 hover:bg-white/5 hover:text-white"
                 }`}
               >
-                Explorar eventos
+                Explorar
               </button>
             </nav>
           </div>
@@ -199,16 +265,16 @@ export function Navbar() {
             <button
               type="button"
               onClick={() => setIsSearchOpen(true)}
-              className="group flex w-full max-w-md items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-left text-xs text-white/70 hover:border-white/40 hover:bg-white/10 transition-colors"
+              className="group flex w-full max-w-xl items-center gap-3 rounded-full border border-white/12 bg-white/5 px-4 py-2 text-left text-[13px] text-white/75 hover:border-white/40 hover:bg-white/10 transition-colors shadow-[0_16px_36px_rgba(0,0,0,0.45)]"
             >
               <span className="flex h-5 w-5 items-center justify-center rounded-full border border-white/30 text-[10px] text-white/70">
                 ⌕
               </span>
-              <span className="flex-1 truncate">
-                Procura eventos, festas, concertos…
+              <span className="flex-1 truncate text-[12px]">
+                Procurar por evento, local ou cidade
               </span>
-              <span className="hidden rounded-full border border-white/20 px-2 py-0.5 text-[9px] text-white/50 md:inline">
-                /explorar
+              <span className="hidden rounded-full border border-white/20 px-2.5 py-1 text-[10px] text-white/50 md:inline">
+                Pesquisar
               </span>
             </button>
           </div>
@@ -231,7 +297,12 @@ export function Navbar() {
               <span>Instalar app</span>
             </button>
 
-            {!isAuthenticated || inAuthPage ? (
+            {isLoading ? (
+              <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[11px] text-white/60 animate-pulse">
+                <div className="h-7 w-7 rounded-full bg-white/20" />
+                <div className="h-3 w-20 rounded-full bg-white/15" />
+              </div>
+            ) : !isAuthenticated || inAuthPage ? (
               <button
                 type="button"
                 onClick={() => {
@@ -258,7 +329,7 @@ export function Navbar() {
                     {userInitial}
                   </div>
                   <span className="hidden max-w-[120px] truncate text-[11px] sm:inline">
-                    {userEmail || "Conta ORYA"}
+                    {userLabel || "Conta ORYA"}
                   </span>
                 </button>
 
@@ -292,7 +363,7 @@ export function Navbar() {
                       type="button"
                       onClick={() => {
                         setIsProfileMenuOpen(false);
-                        router.push("/me/edit");
+                        router.push("/me/settings");
                       }}
                       className="flex w-full items-center justify-between rounded-xl px-2.5 py-1.5 text-left hover:bg-white/8"
                     >
@@ -302,23 +373,26 @@ export function Navbar() {
                       type="button"
                       onClick={() => {
                         setIsProfileMenuOpen(false);
+                        router.push("/me/experiencias");
+                      }}
+                      className="flex w-full items-center justify-between rounded-xl px-2.5 py-1.5 text-left hover:bg-white/8"
+                    >
+                      <span>Minhas experiências</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsProfileMenuOpen(false);
                         router.push("/organizador");
                       }}
                       className="mt-1 flex w-full items-center justify-between rounded-xl px-2.5 py-1.5 text-left hover:bg-white/8"
                     >
-                      <span>Tornar-me organizador</span>
-                      <span className="text-[10px] text-[#FFCC66]">
-                        Em breve
-                      </span>
-                    </button>
-                    <div className="my-1 h-px bg-white/10" />
-                    <button
-                      type="button"
-                      disabled={isLoggingOut}
-                      onClick={handleLogout}
-                      className="flex w-full items-center justify-between rounded-xl px-2.5 py-1.5 text-left text-red-200 hover:bg-red-500/15 disabled:opacity-60"
-                    >
-                      <span>Terminar sessão</span>
+                      <span>{isOrganizer ? "Dashboard de organizador" : "Tornar-me organizador"}</span>
+                      {!isOrganizer && (
+                        <span className="text-[10px] text-[#FFCC66]">
+                          Em breve
+                        </span>
+                      )}
                     </button>
                   </div>
                 )}
@@ -331,7 +405,7 @@ export function Navbar() {
       {/* Overlay de pesquisa estilo full-screen, com sugestões */}
       {isSearchOpen && (
         <div
-          className="fixed inset-0 z-40 bg-black/70 backdrop-blur-2xl"
+          className="fixed inset-0 z-40 bg-black/75 backdrop-blur-2xl"
           role="dialog"
           aria-modal="true"
           onClick={(e) => {
@@ -340,14 +414,14 @@ export function Navbar() {
             }
           }}
         >
-          <div className="mx-auto mt-20 max-w-2xl px-4">
+          <div className="mx-auto mt-20 max-w-3xl px-4">
             <div
-              className="rounded-3xl border border-white/18 bg-[#020617]/90 p-4 shadow-[0_28px_80px_rgba(0,0,0,0.95)]"
+              className="rounded-3xl border border-white/18 bg-[#050915]/90 p-4 shadow-[0_32px_90px_rgba(0,0,0,0.9)]"
               aria-label="Pesquisa de eventos ORYA"
             >
               <form
                 onSubmit={handleSubmitSearch}
-                className="flex items-center gap-3 rounded-2xl border border-white/20 bg-black/60 px-4 py-2"
+                className="flex items-center gap-3 rounded-2xl border border-white/20 bg-black/60 px-4 py-2.5"
               >
                 <span className="flex h-6 w-6 items-center justify-center rounded-full border border-white/30 text-[12px] text-white/80">
                   ⌕
@@ -368,37 +442,82 @@ export function Navbar() {
                 </button>
               </form>
 
-              <div className="mt-4 text-[11px] text-white/60">
-                <p className="mb-2 text-white/75">Sugestões populares</p>
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handleQuickSearch("festas universitárias")}
-                    className="rounded-full bg-white/8 px-3 py-1 hover:bg-white/12"
-                  >
-                    Festas universitárias
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleQuickSearch("jogos de padel")}
-                    className="rounded-full bg-white/8 px-3 py-1 hover:bg-white/12"
-                  >
-                    Jogos de padel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleQuickSearch("concertos hoje")}
-                    className="rounded-full bg-white/8 px-3 py-1 hover:bg-white/12"
-                  >
-                    Concertos hoje
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleQuickSearch("afterwork porto")}
-                    className="rounded-full bg-white/8 px-3 py-1 hover:bg-white/12"
-                  >
-                    Afterwork no Porto
-                  </button>
+              <div className="mt-4 grid gap-4 md:grid-cols-3">
+                <div className="md:col-span-2 rounded-2xl border border-white/8 bg-white/5 p-3">
+                  <div className="flex items-center justify-between text-[11px] text-white/60">
+                    <span>Resultados</span>
+                    {isSuggestLoading && <span className="animate-pulse text-white/50">a carregar…</span>}
+                  </div>
+                  <div className="mt-2 space-y-2">
+                    {suggestions.length === 0 && !isSuggestLoading && (
+                      <p className="text-[11px] text-white/55">
+                        Começa a escrever para ver eventos, locais e cidades.
+                      </p>
+                    )}
+                    {suggestions.map((item) => (
+                      <button
+                        key={`${item.type}-${item.id}`}
+                        type="button"
+                        onClick={() => {
+                          setIsSearchOpen(false);
+                          router.push(buildSlug(item));
+                        }}
+                        className="w-full rounded-xl border border-white/8 bg-black/50 p-2.5 text-left hover:border-white/20 hover:bg-white/5 transition flex gap-3"
+                      >
+                        <div className="h-14 w-14 overflow-hidden rounded-lg bg-gradient-to-br from-[#111827]/70 to-[#0f172a]/60">
+                          {item.coverImageUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={item.coverImageUrl}
+                              alt={item.title}
+                              className="h-full w-full object-cover"
+                            />
+                          ) : null}
+                        </div>
+                        <div className="flex-1">
+                          <p className="text-[12px] font-semibold text-white line-clamp-1">
+                            {item.title}
+                          </p>
+                          <p className="text-[10px] text-white/65 line-clamp-1">
+                            {item.locationName || item.locationCity || "Local a anunciar"}
+                          </p>
+                          <p className="text-[10px] text-white/55">
+                            {item.startsAt
+                              ? new Date(item.startsAt).toLocaleString("pt-PT", {
+                                  weekday: "short",
+                                  day: "2-digit",
+                                  month: "short",
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                })
+                              : "Data a anunciar"}
+                          </p>
+                        </div>
+                        <span className="self-center rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[10px] text-white/70">
+                          {item.type === "EXPERIENCE" ? "Experiência" : "Evento"}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-3 rounded-2xl border border-white/8 bg-white/5 p-3 text-[11px] text-white/70">
+                  <p className="text-white/80 font-semibold text-[12px]">Sugestões rápidas</p>
+                  {[
+                    "Festas universitárias",
+                    "Jogos de padel",
+                    "Concertos hoje",
+                    "Afterwork no Porto",
+                  ].map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => handleQuickSearch(s.toLowerCase())}
+                      className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-left hover:border-white/20 hover:bg-white/5 transition"
+                    >
+                      {s}
+                    </button>
+                  ))}
                 </div>
               </div>
             </div>

@@ -276,6 +276,7 @@ export default function Step2Pagamento() {
     ? {
         clientSecret,
         appearance,
+        paymentMethodOrder: ["apple_pay", "card", "mb_way"],
       }
     : undefined;
 
@@ -460,7 +461,7 @@ function delay(ms: number) {
 
 function AuthWall({ onAuthenticated }: AuthWallProps) {
   const [mode, setMode] = useState<"login" | "signup">("login");
-  const [email, setEmail] = useState("");
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -471,14 +472,29 @@ function AuthWall({ onAuthenticated }: AuthWallProps) {
     setError(null);
 
     try {
-      if (!email || !password) {
-        setError("Preenche o e-mail e a palavra-passe.");
+      if (!identifier || !password) {
+        setError("Preenche o email/username e a palavra-passe.");
         return;
+      }
+
+      let emailToUse = identifier;
+      if (!identifier.includes("@")) {
+        const res = await fetch("/api/auth/resolve-identifier", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ identifier }),
+        });
+        const data = await res.json().catch(() => null);
+        if (!res.ok || !data?.ok || !data?.email) {
+          setError("Credenciais inválidas. Confirma username/email e password.");
+          return;
+        }
+        emailToUse = data.email;
       }
 
       if (mode === "login") {
         const { error } = await supabaseBrowser.auth.signInWithPassword({
-          email,
+          email: emailToUse,
           password,
         });
         if (error) {
@@ -487,7 +503,7 @@ function AuthWall({ onAuthenticated }: AuthWallProps) {
         }
       } else {
         const { error } = await supabaseBrowser.auth.signUp({
-          email,
+          email: emailToUse,
           password,
         });
         if (error) {
@@ -559,13 +575,13 @@ function AuthWall({ onAuthenticated }: AuthWallProps) {
 
         <div className="flex flex-col gap-2 text-[12px]">
           <div className="flex flex-col gap-1">
-            <label className="text-white/70">E-mail</label>
+            <label className="text-white/70">Email ou username</label>
             <input
-              type="email"
+              type="text"
               className="w-full rounded-xl bg-black/60 border border-white/15 px-3 py-2 text-[12px] outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]"
-              placeholder="nome@exemplo.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              placeholder="nome@exemplo.com ou @username"
+              value={identifier}
+              onChange={(e) => setIdentifier(e.target.value)}
               autoComplete="email"
             />
           </div>

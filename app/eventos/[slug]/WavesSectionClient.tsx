@@ -243,11 +243,14 @@ export default function WavesSectionClient({
   }
 
   const visibleTickets = tickets.filter((t) => t.isVisible);
+  const purchasableTickets = visibleTickets.filter(
+    (t) => t.status === "on_sale" || t.status === "upcoming",
+  );
 
   // 🔥 Calcular preço mínimo (defensivo para o caso de não haver bilhetes visíveis)
   const minPrice =
-    visibleTickets.length > 0
-      ? Math.min(...visibleTickets.map((t) => t.price))
+    purchasableTickets.length > 0
+      ? Math.min(...purchasableTickets.map((t) => t.price))
       : null;
 
   return (
@@ -268,9 +271,9 @@ export default function WavesSectionClient({
 
         <button
           type="button"
-          disabled={visibleTickets.length === 0}
+          disabled={purchasableTickets.length === 0}
           onClick={() => {
-            if (visibleTickets.length === 0) return;
+            if (purchasableTickets.length === 0) return;
 
             if (!user) {
               openModal({ mode: "signup" });
@@ -282,7 +285,7 @@ export default function WavesSectionClient({
               waves: visibleTickets,
             });
 
-            const defaultTicket = visibleTickets[0];
+            const defaultTicket = purchasableTickets[0];
 
             abrirCheckout({
               slug,
@@ -301,7 +304,7 @@ export default function WavesSectionClient({
           }}
           className="w-full rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] text-black font-semibold py-3 shadow-[0_0_20px_rgba(107,255,255,0.45)] hover:scale-[1.02] active:scale-95 transition-transform text-sm disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          Comprar agora
+          {purchasableTickets.length === 0 ? "Esgotado" : "Comprar agora"}
         </button>
       </div>
     </div>

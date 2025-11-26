@@ -49,8 +49,13 @@ function formatPrice(event: EventCardDTO) {
   return `Desde ${event.priceFrom}€`;
 }
 
+function buildEventLink(event: EventCardDTO) {
+  return event.type === "EXPERIENCE" ? `/experiencias/${event.slug}` : `/eventos/${event.slug}`;
+}
+
 export default async function HomePage() {
  const eventsRaw = await prisma.event.findMany({
+  where: { status: "PUBLISHED" },
   orderBy: { startsAt: "asc" },
   include: {
     ticketTypes: {
@@ -68,6 +73,7 @@ export default async function HomePage() {
 
   const spotlight = events[0] ?? null;
   const hotNow = events.slice(0, 3); // máx. 3 em alta
+  const exploreShowcase = hotNow.slice(0, 2);
 
   const totalEvents = events.length;
   const paidEvents = events.filter((e) => !e.isFree).length;
@@ -233,7 +239,7 @@ export default async function HomePage() {
                       </span>
                     </div>
                     <Link
-                      href={`/eventos/${spotlight.slug}`}
+                      href={buildEventLink(spotlight)}
                       className="mt-1 inline-flex w-full items-center justify-center rounded-2xl bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-4 py-2 text-xs font-semibold text-black shadow-lg shadow-[#6bffff80] hover:brightness-110"
                     >
                       Abrir página do evento
@@ -253,6 +259,78 @@ export default async function HomePage() {
               </div>
               )}
             </div>
+          </div>
+        </div>
+      </section>
+
+      {/* BANNER EXPLORAR */}
+      <section className="mx-auto max-w-6xl px-4 pb-10 md:px-6 lg:px-8">
+        <div className="grid gap-6 overflow-hidden rounded-3xl border border-white/15 bg-gradient-to-br from-[#0B1229] via-[#0A0E1A] to-[#05060f] p-6 shadow-[0_26px_70px_rgba(15,23,42,0.85)] md:grid-cols-2 md:p-8">
+          <div className="space-y-4">
+            <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-400">
+              Explorar · Eventos e Experiências
+            </p>
+            <h2 className="text-2xl font-semibold md:text-3xl">
+              Uma só página para{" "}
+              <span className="bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] bg-clip-text text-transparent">
+                eventos e experiências
+              </span>{" "}
+              em Portugal.
+            </h2>
+            <p className="text-sm text-zinc-200">
+              Filtra por categoria, preço (0–100+), cidade e data. Se tens token da Mapbox, ligas
+              autocomplete de moradas e preenchemos a localização por ti.
+            </p>
+            <div className="flex flex-wrap gap-3">
+              <Link
+                href="/explorar"
+                className="inline-flex items-center justify-center rounded-full bg-white px-5 py-2 text-sm font-semibold text-black shadow-[0_12px_40px_rgba(255,255,255,0.35)] hover:scale-[1.02] active:scale-[0.99] transition"
+              >
+                Abrir Explorar
+              </Link>
+              <Link
+                href="/experiencias/nova"
+                className="inline-flex items-center justify-center rounded-full border border-white/20 bg-white/5 px-5 py-2 text-sm font-semibold text-white hover:bg-white/10"
+              >
+                Criar experiência
+              </Link>
+            </div>
+            <div className="flex flex-wrap gap-2 text-[11px] text-zinc-300">
+              {["Festa", "Desporto", "Concerto", "Palestra", "Arte", "Comida", "Drinks"].map(
+                (tag) => (
+                  <span
+                    key={tag}
+                    className="rounded-full border border-white/10 bg-white/5 px-3 py-1"
+                  >
+                    {tag}
+                  </span>
+                ),
+              )}
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            {exploreShowcase.length > 0 ? (
+              exploreShowcase.map((ev) => (
+                <Link
+                  key={ev.id}
+                  href={buildEventLink(ev)}
+                  className="group flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 p-3 hover:border-[#6BFFFF]/70 hover:bg-white/8"
+                >
+                  <div className="h-14 w-14 overflow-hidden rounded-xl bg-gradient-to-br from-[#FF00C8]/40 via-[#6BFFFF]/25 to-[#1646F5]/40" />
+                  <div className="flex-1">
+                    <p className="text-[11px] text-zinc-300">{formatDateRange(ev.startsAt, ev.endsAt)}</p>
+                    <p className="line-clamp-1 text-sm font-semibold text-white">{ev.title}</p>
+                    <p className="text-[11px] text-zinc-400">{formatPrice(ev)}</p>
+                  </div>
+                  <span className="text-[12px] text-white/60 group-hover:text-white">→</span>
+                </Link>
+              ))
+            ) : (
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-zinc-300">
+                Em breve vamos mostrar aqui cartões reais da página Explorar.
+              </div>
+            )}
           </div>
         </div>
       </section>
@@ -288,7 +366,7 @@ export default async function HomePage() {
               return (
                 <Link
                   key={event.id}
-                  href={`/eventos/${event.slug}`}
+                  href={buildEventLink(event)}
                   className="group relative overflow-hidden rounded-2xl border border-white/18 bg-gradient-to-br from-[#FF8AD906] via-[#9BE7FF12] to-[#020617f2] backdrop-blur-xl shadow-[0_22px_80px_rgba(15,23,42,0.9)] transition-transform hover:-translate-y-1 hover:border-[#FF00C8]/80"
                 >
                   <div className="relative h-32 w-full overflow-hidden">
