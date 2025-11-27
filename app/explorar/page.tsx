@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -127,6 +127,7 @@ export default function ExplorarPage() {
 
   const [likedItems, setLikedItems] = useState<number[]>([]);
   const searchParams = useSearchParams();
+  const requestController = useRef<AbortController | null>(null);
 
   // City via geolocation + Mapbox (opcional)
   // Geolocation desativada para evitar preencher com valores inválidos
@@ -153,6 +154,15 @@ export default function ExplorarPage() {
     const append = opts?.append ?? false;
     const cursorToUse = opts?.cursor ?? null;
 
+    // Cancelar pedidos anteriores para evitar estados inconsistentes
+    if (requestController.current) {
+      requestController.current.abort();
+    }
+    const controller = new AbortController();
+    requestController.current = controller;
+    const timeoutId = setTimeout(() => controller.abort(), 4500);
+    const currentRequest = controller;
+
     try {
       if (!append) {
         setLoading(true);
@@ -171,30 +181,50 @@ export default function ExplorarPage() {
       if (effectiveMaxParam !== null) params.set("priceMax", String(effectiveMaxParam));
       if (cursorToUse !== null) params.set("cursor", String(cursorToUse));
 
-      const res = await fetch(`/api/explorar/list?${params.toString()}`, { cache: "no-store" });
+      const res = await fetch(`/api/explorar/list?${params.toString()}`, {
+        cache: "no-store",
+        signal: controller.signal,
+      });
       if (!res.ok) {
         const text = await res.text();
-        console.error("Erro a carregar explorar:", text);
+        if (process.env.NODE_ENV !== "production") {
+          console.error("Erro a carregar explorar:", text);
+        } else {
+          console.warn("Erro a carregar explorar");
+        }
         throw new Error("Erro ao carregar explorar");
       }
 
       const data: ApiResponse = await res.json();
       const nextItems = Array.isArray(data?.items) ? data.items : [];
 
-      if (append) {
-        setItems((prev) => [...(Array.isArray(prev) ? prev : []), ...nextItems]);
-      } else {
-        setItems(nextItems);
-      }
+      if (requestController.current === currentRequest) {
+        if (append) {
+          setItems((prev) => [...(Array.isArray(prev) ? prev : []), ...nextItems]);
+        } else {
+          setItems(nextItems);
+        }
 
-      setNextCursor(data.pagination.nextCursor);
-      setHasMore(data.pagination.hasMore);
+        setNextCursor(data.pagination.nextCursor);
+        setHasMore(data.pagination.hasMore);
+      }
     } catch (err) {
-      console.error(err);
-      setError("Não conseguimos carregar. Tenta outra vez.");
+      if (requestController.current !== currentRequest) return;
+      const isAbort = (err as Error | undefined)?.name === "AbortError";
+      if (!isAbort && process.env.NODE_ENV !== "production") {
+        console.error(err);
+      }
+      setError(
+        isAbort
+          ? "Demorou demasiado a responder. Tenta novamente."
+          : "Não conseguimos carregar. Tenta outra vez.",
+      );
     } finally {
-      setLoading(false);
-      setIsLoadingMore(false);
+      clearTimeout(timeoutId);
+      if (requestController.current === currentRequest) {
+        setLoading(false);
+        setIsLoadingMore(false);
+      }
     }
   }
 
@@ -223,6 +253,7 @@ export default function ExplorarPage() {
 
   const headingCity = city.trim() || "Portugal";
   const resultsLabel = items.length === 1 ? "1 resultado" : `${items.length} resultados`;
+  const showSkeleton = loading || (error && items.length === 0);
 
   return (
     <main className="orya-body-bg min-h-screen w-full text-white">
@@ -458,8 +489,8 @@ export default function ExplorarPage() {
         </div>
 
         {/* LOADING */}
-        {loading && (
-          <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {showSkeleton && (
+          <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4" aria-hidden>
             {Array.from({ length: 8 }).map((_, i) => (
               <div
                 key={i}
@@ -474,9 +505,37 @@ export default function ExplorarPage() {
         )}
 
         {/* ERRO */}
-        {error && !loading && (
-          <div className="mt-6 rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-100">
-            {error}
+        {error && (
+          <div className="mt-4 max-w-xl mx-auto rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-100 shadow-[0_12px_30px_rgba(0,0,0,0.55)]">
+            <p className="font-semibold mb-1">Não foi possível carregar.</p>
+            <p className="text-[12px] text-red-50/85 leading-relaxed">{error}</p>
+            <div className="mt-3 flex gap-2">
+              <button
+                type="button"
+                onClick={() => fetchItems({ append: false, cursor: null })}
+                className="rounded-full bg-white text-red-700 px-4 py-1.5 text-[11px] font-semibold shadow hover:bg-white/90 transition"
+              >
+                Tentar novamente
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSearch("");
+                  setSearchInput("");
+                  setDateFilter("all");
+                  setTypeFilter("all");
+                  setSelectedCategories([]);
+                  setCity("");
+                  setCityInput("");
+                  setPriceMin(0);
+                  setPriceMax(100);
+                  fetchItems({ append: false, cursor: null });
+                }}
+                className="rounded-full border border-white/25 text-white/85 px-4 py-1.5 text-[11px] hover:bg-white/5 transition"
+              >
+                Limpar filtros
+              </button>
+            </div>
           </div>
         )}
 

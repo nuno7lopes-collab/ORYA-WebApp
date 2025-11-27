@@ -15,9 +15,6 @@ import {
 import { useCheckout } from "./contextoCheckout";
 import { supabaseBrowser } from "@/lib/supabaseBrowser";
 
-const stripePublishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!;
-const stripePromise = loadStripe(stripePublishableKey);
-
 type CheckoutItem = {
   ticketId: number;
   quantity: number;
@@ -52,6 +49,19 @@ export default function Step2Pagamento() {
 
   const safeDados: CheckoutData | null =
     dados && typeof dados === "object" ? (dados as CheckoutData) : null;
+
+  const stripePromise = useMemo(() => {
+    const key = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
+    if (!key) return null;
+    return loadStripe(key);
+  }, []);
+
+  useEffect(() => {
+    if (!stripePromise) {
+      setError("Configuração de pagamentos indisponível. Tenta novamente mais tarde.");
+      setLoading(false);
+    }
+  }, [stripePromise]);
 
   // Primeiro: verificar se há sessão Supabase no browser e ficar a escutar mudanças de auth
   useEffect(() => {
@@ -159,6 +169,7 @@ export default function Step2Pagamento() {
       setServerAmount(null);
       return;
     }
+    if (!stripePromise) return;
 
     let cancelled = false;
 
@@ -227,7 +238,7 @@ export default function Step2Pagamento() {
     return () => {
       cancelled = true;
     };
-  }, [payload, irParaPasso, authChecked, userId]);
+  }, [payload, irParaPasso, authChecked, userId, stripePromise]);
 
   if (!safeDados) {
     return (
@@ -327,7 +338,23 @@ export default function Step2Pagamento() {
       {/* 💳 Se está logado ➜ mostrar Stripe / estados normais */}
       {!authChecking && userId && (
         <>
-          {loading || !clientSecret || !options ? (
+          {error || !stripePromise ? (
+            <div className="flex-1 rounded-2xl border border-red-500/30 bg-red-500/10 px-5 py-6 text-sm text-red-100 shadow-[0_0_30px_rgba(255,0,0,0.35)]">
+              <p className="font-semibold mb-1 flex items-center gap-2">
+                <span className="text-lg">⚠️</span> Ocorreu um problema
+              </p>
+              <p className="text-[12px] mb-4 leading-relaxed">
+                {error ?? "Configuração de pagamentos indisponível. Tenta novamente mais tarde."}
+              </p>
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                className="rounded-full bg-white text-red-700 px-5 py-1.5 text-[11px] font-semibold shadow hover:bg-white/90 transition"
+              >
+                Tentar novamente
+              </button>
+            </div>
+          ) : loading || !clientSecret || !options ? (
             <div className="flex-1 rounded-2xl border border-white/10 bg-white/[0.03] px-6 py-12 flex flex-col justify-center items-center text-center shadow-[0_0_40px_rgba(255,0,200,0.25)]">
               <div className="relative mb-6">
                 <div className="h-14 w-14 rounded-full border-2 border-white/20 border-t-transparent animate-spin" />
