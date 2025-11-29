@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthModal } from "./AuthModalContext";
 import { supabaseBrowser } from "@/lib/supabaseBrowser";
+import { mutate as swrMutate } from "swr";
 
 export default function AuthModal() {
   const modal = useAuthModal();
@@ -95,6 +96,8 @@ function AuthModalContent({
 
       const data = await res.json();
       const onboardingDone = data?.profile?.onboardingDone;
+      // Atualiza SWR para refletir o novo estado de auth/profile imediatamente
+      swrMutate("/api/auth/me");
 
       if (onboardingDone) {
         closeModal();
@@ -205,6 +208,7 @@ function AuthModalContent({
     // Se o Supabase não requer confirmar email, vem logo com session
     if (signupData?.session) {
       await syncSessionWithServer();
+      swrMutate("/api/auth/me");
       await finishAuthAndMaybeOnboard();
       setLoading(false);
       return;
@@ -245,6 +249,7 @@ function AuthModalContent({
     }
 
     await syncSessionWithServer();
+    swrMutate("/api/auth/me");
     await finishAuthAndMaybeOnboard();
     setLoading(false);
   }
@@ -274,6 +279,8 @@ function AuthModalContent({
         return;
       }
 
+      // Atualizar cache do utilizador para refletir onboardingDone=true
+      swrMutate("/api/auth/me");
       closeModal();
       router.push(redirectTo ?? "/me");
       setLoading(false);
