@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, FormEvent, useRef } from "react";
+import { Suspense, useEffect, useState, FormEvent, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useUser } from "@/app/hooks/useUser";
 import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
@@ -39,7 +39,7 @@ type FormState = {
   coverUrl: string | null;
 };
 
-export default function NovaExperienciaPage() {
+function NovaExperienciaContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user, isLoading } = useUser();
@@ -369,5 +369,13 @@ export default function NovaExperienciaPage() {
         </button>
       </form>
     </div>
+  );
+}
+
+export default function NovaExperienciaPage() {
+  return (
+    <Suspense fallback={null}>
+      <NovaExperienciaContent />
+    </Suspense>
   );
 }

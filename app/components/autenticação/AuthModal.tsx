@@ -28,6 +28,9 @@ function AuthModalContent({
   const router = useRouter();
 
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [otp, setOtp] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -57,8 +60,28 @@ function AuthModalContent({
     };
   }, [closeModal, isOnboarding]);
 
+  async function syncSessionWithServer() {
+    try {
+      const { data } = await supabaseBrowser.auth.getSession();
+      const access_token = data.session?.access_token;
+      const refresh_token = data.session?.refresh_token;
+      if (!access_token || !refresh_token) return;
+      await fetch("/api/auth/refresh", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ access_token, refresh_token }),
+        credentials: "include",
+      });
+    } catch (err) {
+      console.warn("syncSessionWithServer failed", err);
+    }
+  }
+
   async function finishAuthAndMaybeOnboard() {
     try {
+      // Garantir que o servidor tem a sessão atualizada antes de pedir /api/auth/me
+      await syncSessionWithServer();
+
       const res = await fetch("/api/auth/me", {
         method: "GET",
         credentials: "include",
@@ -66,7 +89,7 @@ function AuthModalContent({
 
       if (!res.ok) {
         closeModal();
-        if (redirectTo) router.push(redirectTo);
+        router.push(redirectTo ?? "/me");
         return;
       }
 
@@ -75,14 +98,14 @@ function AuthModalContent({
 
       if (onboardingDone) {
         closeModal();
-        if (redirectTo) router.push(redirectTo);
+        router.push(redirectTo ?? "/me");
       } else {
         setMode("onboarding");
       }
     } catch (err) {
       console.error("finishAuthAndMaybeOnboard error", err);
       closeModal();
-      if (redirectTo) router.push(redirectTo);
+      router.push(redirectTo ?? "/me");
     }
   }
 
@@ -125,6 +148,7 @@ function AuthModalContent({
       return;
     }
 
+    await syncSessionWithServer();
     await finishAuthAndMaybeOnboard();
     setLoading(false);
   }
@@ -143,8 +167,14 @@ function AuthModalContent({
 
     const emailToUse = (email || "").trim().toLowerCase();
 
-    if (!emailToUse || !password) {
-      setError("Preenche o email e a password.");
+    if (!emailToUse || !password || !confirmPassword) {
+      setError("Preenche o email e ambas as passwords.");
+      setLoading(false);
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      setError("As passwords não coincidem.");
       setLoading(false);
       return;
     }
@@ -174,6 +204,7 @@ function AuthModalContent({
 
     // Se o Supabase não requer confirmar email, vem logo com session
     if (signupData?.session) {
+      await syncSessionWithServer();
       await finishAuthAndMaybeOnboard();
       setLoading(false);
       return;
@@ -213,6 +244,7 @@ function AuthModalContent({
       return;
     }
 
+    await syncSessionWithServer();
     await finishAuthAndMaybeOnboard();
     setLoading(false);
   }
@@ -243,7 +275,7 @@ function AuthModalContent({
       }
 
       closeModal();
-      if (redirectTo) router.push(redirectTo);
+      router.push(redirectTo ?? "/me");
       setLoading(false);
     } catch (err) {
       console.error("handleOnboardingSave error", err);
@@ -264,6 +296,7 @@ function AuthModalContent({
   const isPrimaryDisabled =
     loading ||
     ((mode === "login" || mode === "signup") && (!email || !password)) ||
+    (mode === "signup" && (password !== confirmPassword || !confirmPassword)) ||
     (mode === "signup" && isSignupBlocked) ||
     (mode === "verify" && (!email || otp.trim().length < 6)) ||
     (mode === "onboarding" && !username.trim());
@@ -282,7 +315,10 @@ function AuthModalContent({
             <input
               type="text"
               value={email ?? ""}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                setError(null);
+              }}
               className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]"
               placeholder="nome@exemplo.com ou @username"
             />
@@ -290,13 +326,52 @@ function AuthModalContent({
             <label className="mt-3 block text-xs text-white/70 mb-1">
               Palavra-passe
             </label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]"
-              placeholder="••••••••"
-            />
+            <div className="flex items-center rounded-xl border border-white/15 bg-white/5 px-3 py-2">
+              <input
+                type={showPassword ? "text" : "password"}
+                value={password}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  setError(null);
+                }}
+                className="flex-1 bg-transparent text-sm text-white outline-none"
+                placeholder="••••••••"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((v) => !v)}
+                className="text-[11px] text-white/70 hover:text-white"
+              >
+                {showPassword ? "Ocultar" : "Mostrar"}
+              </button>
+            </div>
+
+            {mode === "signup" && (
+              <>
+                <label className="mt-3 block text-xs text-white/70 mb-1">
+                  Confirmar palavra-passe
+                </label>
+                <div className="flex items-center rounded-xl border border-white/15 bg-white/5 px-3 py-2">
+                  <input
+                    type={showConfirmPassword ? "text" : "password"}
+                    value={confirmPassword}
+                    onChange={(e) => {
+                      setConfirmPassword(e.target.value);
+                      setError(null);
+                    }}
+                    className="flex-1 bg-transparent text-sm text-white outline-none"
+                    placeholder="••••••••"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword((v) => !v)}
+                    className="text-[11px] text-white/70 hover:text-white"
+                  >
+                    {showConfirmPassword ? "Ocultar" : "Mostrar"}
+                  </button>
+                </div>
+              </>
+            )}
 
             <p className="mt-2 text-[10px] text-white/50 leading-snug">
               Ao continuar, aceitas os termos da ORYA. Podes terminar sessão

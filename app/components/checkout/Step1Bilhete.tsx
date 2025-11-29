@@ -46,8 +46,14 @@ export default function Step1Bilhete() {
   // 🧮 Quantidades iniciais por wave (memoizado para não recriar em cada render)
   const initialQuantidades: Record<string, number> = {};
   for (const w of stableWaves) {
-    const qty =
+    const maxAvailable =
+      typeof w.remaining === "number" && w.remaining >= 0
+        ? w.remaining
+        : null;
+    const qtyRaw =
       typeof w.quantity === "number" && w.quantity > 0 ? w.quantity : 0;
+    const qty =
+      maxAvailable !== null ? Math.min(qtyRaw, maxAvailable) : qtyRaw;
     initialQuantidades[w.id] = qty;
   }
 
@@ -72,10 +78,23 @@ export default function Step1Bilhete() {
   }
 
   function handleIncrement(id: string) {
-    setQuantidades((prev) => ({
-      ...prev,
-      [id]: (prev[id] ?? 0) + 1,
-    }));
+    setQuantidades((prev) => {
+      const wave = stableWaves.find((w) => w.id === id);
+      const maxAvailable =
+        wave && typeof wave.remaining === "number" && wave.remaining >= 0
+          ? wave.remaining
+          : null;
+      const current = prev[id] ?? 0;
+
+      if (maxAvailable !== null && current >= maxAvailable) {
+        return prev; // já atingiu o limite de stock
+      }
+
+      return {
+        ...prev,
+        [id]: current + 1,
+      };
+    });
   }
 
   function handleDecrement(id: string) {
@@ -150,6 +169,12 @@ export default function Step1Bilhete() {
               : isSoldOut
                 ? "Venda terminada"
                 : "Disponível";
+          const maxAvailable =
+            typeof wave.remaining === "number" && wave.remaining >= 0
+              ? wave.remaining
+              : null;
+          const isAtLimit =
+            maxAvailable !== null ? q >= maxAvailable : false;
           const badgeClass = isSoldOut
             ? "border-red-400/50 bg-red-500/20 text-red-50"
             : status === "upcoming"
@@ -216,11 +241,17 @@ export default function Step1Bilhete() {
                       type="button"
                       onClick={() => handleIncrement(wave.id)}
                       className="flex h-7 w-7 items-center justify-center rounded-full bg-white text-black hover:bg-zinc-100 disabled:opacity-50"
-                      disabled={isSoldOut}
+                      disabled={isSoldOut || isAtLimit}
                     >
                       +
                     </button>
                   </div>
+
+                  {isAtLimit && maxAvailable !== null && (
+                    <p className="text-[11px] text-white/60">
+                      Já não há mais stock disponível para este bilhete.
+                    </p>
+                  )}
                 </div>
               )}
             </div>

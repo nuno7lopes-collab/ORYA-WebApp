@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useUser } from "@/app/hooks/useUser";
 import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
 import { supabaseBrowser } from "@/lib/supabaseBrowser";
 
-export default function StaffLoginPage() {
+function StaffLoginContent() {
   const router = useRouter();
   const search = useSearchParams();
   const { user, isLoading } = useUser();
@@ -122,5 +122,13 @@ export default function StaffLoginPage() {
         </button>
       </div>
     </div>
+  );
+}
+
+export default function StaffLoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <StaffLoginContent />
+    </Suspense>
   );
 }

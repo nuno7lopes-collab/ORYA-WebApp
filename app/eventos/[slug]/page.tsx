@@ -162,12 +162,13 @@ export default async function EventPage({ params }: { params: EventPageParamsInp
       ? event.coverImageUrl
       : "https://images.unsplash.com/photo-1541987392829-5937c1069305?q=80&w=1600";
 
-  const interestedCount: number = 0;
   const nowDate = new Date();
   const eventEnded = endDateObj < nowDate;
 
-  const orderedTickets = event.ticketTypes
-    .filter((t: TicketTypeWithVisibility) => t.isVisible ?? true)
+  const ticketTypesWithVisibility = event.ticketTypes as TicketTypeWithVisibility[];
+
+  const orderedTickets = ticketTypesWithVisibility
+    .filter((t) => t.isVisible ?? true)
     .sort((a, b) => {
       const ao = a.sortOrder ?? 0;
       const bo = b.sortOrder ?? 0;
@@ -176,17 +177,18 @@ export default async function EventPage({ params }: { params: EventPageParamsInp
     });
 
   const uiTickets: WaveTicket[] = orderedTickets.map((t, index) => {
+    const rawStatus = String(t.status || "").toUpperCase();
     const remaining =
       t.totalQuantity === null || t.totalQuantity === undefined
         ? null
         : t.totalQuantity - t.soldQuantity;
 
     const statusFromEnum =
-      t.status === "CLOSED" || t.status === "ENDED" || t.status === "OFF_SALE"
+      rawStatus === "CLOSED" || rawStatus === "ENDED" || rawStatus === "OFF_SALE"
         ? "closed"
-        : t.status === "SOLD_OUT"
+        : rawStatus === "SOLD_OUT"
           ? "sold_out"
-          : t.status === "UPCOMING"
+          : rawStatus === "UPCOMING"
             ? "upcoming"
             : "on_sale";
 
@@ -204,7 +206,7 @@ export default async function EventPage({ params }: { params: EventPageParamsInp
             });
 
     return {
-      id: t.id,
+      id: String(t.id),
       name: t.name?.trim() || `Wave ${index + 1}`,
       price: (t.price ?? 0) / 100,
       currency: t.currency,
@@ -328,6 +330,14 @@ export default async function EventPage({ params }: { params: EventPageParamsInp
         />
         {/* overlay extra para garantir legibilidade no topo da hero e uma transição ainda mais orgânica */}
         <div className="absolute inset-0 bg-gradient-to-b from-black/55 via-black/35 to-transparent" />
+        {/* fade tardio para preto para unir com o fundo */}
+        <div
+          className="absolute inset-0"
+          style={{
+            background:
+              "linear-gradient(to bottom, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 70%, rgba(0,0,0,0.45) 82%, rgba(0,0,0,0.8) 92%, rgba(0,0,0,1) 100%)",
+          }}
+        />
       </div>
 
       {/* ========== HERO ============ */}
@@ -392,27 +402,11 @@ export default async function EventPage({ params }: { params: EventPageParamsInp
                             : "bg-yellow-400"
                     }`}
                   />
-                  <span>
-                    {eventStatusLabel} ·{" "}
-                    {goingCount === 0
-                      ? "Sê o primeiro a garantir o teu lugar"
-                      : `${goingCount} pessoa${
-                          goingCount === 1 ? "" : "s"
-                        } já têm bilhete`}
-                  </span>
-                </div>
-
-                <div className="flex items-center gap-1.5 text-xs text-white/70">
-                  <span className="text-[13px]">♡</span>
-                  {interestedCount === 0 ? (
-                    <span>
-                      Em breve vais poder marcar interesse neste evento.
-                    </span>
-                  ) : (
-                    <span>
-                      {interestedCount} pessoa
-                      {interestedCount === 1 ? "" : "s"} interessada
-                      {interestedCount === 1 ? "" : "s"}.
+                  <span>{eventStatusLabel}</span>
+                  {goingCount > 0 && (
+                    <span className="text-white/70">
+                      · {goingCount} pessoa{goingCount === 1 ? "" : "s"} já com
+                      bilhete
                     </span>
                   )}
                 </div>
@@ -557,23 +551,6 @@ export default async function EventPage({ params }: { params: EventPageParamsInp
               Contagem baseada em compras reais de bilhetes em todas as waves.
             </p>
 
-            <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-white/15 bg-black/45 px-3.5 py-2.5">
-              <div className="flex items-center gap-2">
-                <span className="text-sm">♡</span>
-                <div className="text-xs">
-                  <p className="font-medium text-white/85">
-                    Pessoas interessadas
-                  </p>
-                  <p className="text-white/70">
-                    Em breve vais poder marcar este evento como “quero ir”.
-                  </p>
-                </div>
-              </div>
-              <span className="rounded-full bg-white/10 px-2 py-1 text-[11px] text-white/70">
-                {interestedCount} interessad
-                {interestedCount === 1 ? "a" : "os"}
-              </span>
-            </div>
           </div>
 
           {!eventEnded ? (

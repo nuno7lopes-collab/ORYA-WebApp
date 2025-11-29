@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -101,7 +101,7 @@ function buildSlug(type: ExploreItem["type"], slug: string) {
   return type === "EXPERIENCE" ? `/experiencias/${slug}` : `/eventos/${slug}`;
 }
 
-export default function ExplorarPage() {
+function ExplorarContent() {
   const [items, setItems] = useState<ExploreItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -276,7 +276,7 @@ export default function ExplorarPage() {
                 <span className="font-medium">{headingCity}</span>
               </button>
               {isCityOpen && (
-                <div className="absolute z-20 mt-2 w-64 rounded-2xl border border-white/15 bg-black/90 p-3 shadow-2xl backdrop-blur">
+                <div className="mt-2 w-full rounded-2xl border border-white/15 bg-black/85 p-3 backdrop-blur md:absolute md:w-64 md:shadow-2xl">
                   <p className="text-[11px] text-white/60 mb-2">
                     Escreve a cidade (autocomplete de morada liga depois ao Mapbox)
                   </p>
@@ -318,7 +318,7 @@ export default function ExplorarPage() {
                 </span>
               </button>
               {isDateOpen && (
-                <div className="absolute z-20 mt-2 w-64 rounded-2xl border border-white/15 bg-black/90 p-3 shadow-2xl backdrop-blur">
+                <div className="mt-2 w-full rounded-2xl border border-white/15 bg-black/85 p-3 backdrop-blur md:absolute md:w-64 md:shadow-2xl">
                   <p className="text-[11px] text-white/60 mb-2">Quando queres sair?</p>
                   <div className="flex flex-wrap gap-1.5 mb-3">
                     {DATE_FILTER_OPTIONS.map((opt) => (
@@ -362,7 +362,7 @@ export default function ExplorarPage() {
                 </span>
               </button>
               {isPriceOpen && (
-                <div className="absolute z-20 mt-2 w-80 rounded-2xl border border-white/15 bg-black/90 p-3 shadow-2xl backdrop-blur space-y-3">
+                <div className="mt-2 w-full rounded-2xl border border-white/15 bg-black/85 p-3 backdrop-blur space-y-3 md:absolute md:w-80 md:shadow-2xl">
                   <p className="text-[11px] text-white/60">Intervalo de preço</p>
                   <DoubleRange
                     min={0}
@@ -606,6 +606,14 @@ export default function ExplorarPage() {
         )}
       </section>
     </main>
+  );
+}
+
+export default function ExplorarPage() {
+  return (
+    <Suspense fallback={null}>
+      <ExplorarContent />
+    </Suspense>
   );
 }
 

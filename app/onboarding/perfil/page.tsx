@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useState, FormEvent } from "react";
+import { Suspense, useEffect, useState, FormEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useUser } from "@/app/hooks/useUser";
 
-export default function OnboardingPerfilPage() {
+function OnboardingPerfilContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const redirectTo = searchParams.get("redirectTo") || "/";
@@ -35,6 +35,14 @@ export default function OnboardingPerfilPage() {
         router.push(redirectTo || "/");
       }}
     />
+  );
+}
+
+export default function OnboardingPerfilPage() {
+  return (
+    <Suspense fallback={null}>
+      <OnboardingPerfilContent />
+    </Suspense>
   );
 }
 

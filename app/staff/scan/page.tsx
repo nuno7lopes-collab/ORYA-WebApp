@@ -1,8 +1,6 @@
-
-
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
 type ValidateQrResponse = {
@@ -14,7 +12,7 @@ type ValidateQrResponse = {
   status?: string;
 };
 
-export default function StaffScanPage() {
+function StaffScanContent() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [scanning, setScanning] = useState(false);
   const [result, setResult] = useState<ValidateQrResponse | null>(null);
@@ -57,7 +55,7 @@ export default function StaffScanPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [eventId]);
 
   // Start camera
   async function startCamera() {
@@ -178,5 +176,13 @@ export default function StaffScanPage() {
         </p>
       )}
     </main>
+  );
+}
+
+export default function StaffScanPage() {
+  return (
+    <Suspense fallback={null}>
+      <StaffScanContent />
+    </Suspense>
   );
 }
