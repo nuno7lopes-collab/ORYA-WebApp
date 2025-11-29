@@ -1,15 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import Stripe from "stripe";
-
-/**
- * Instância Stripe local a este route.
- * Usa a STRIPE_SECRET_KEY já configurada no projeto.
- */
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "", {
-  apiVersion: "2025-10-29.clover" as Stripe.LatestApiVersion,
-});
+import { stripe } from "@/lib/stripeClient";
 
 /**
  * F5-12 – Checkout específico para revenda de bilhetes

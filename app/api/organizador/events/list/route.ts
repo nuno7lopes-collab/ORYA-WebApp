@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated } from "@/lib/security";
+import { TicketStatus } from "@prisma/client";
 
 export async function GET() {
   try {
@@ -50,6 +51,35 @@ export async function GET() {
       },
     });
 
+    const ticketStats = await prisma.ticket.groupBy({
+      by: ["eventId"],
+      where: {
+        status: { in: [TicketStatus.ACTIVE, TicketStatus.USED] },
+        event: { organizerId: organizer.id },
+      },
+      _count: { _all: true },
+      _sum: { pricePaid: true, totalPaidCents: true, platformFeeCents: true },
+    });
+
+    const statsMap = new Map<
+      number,
+      {
+        tickets: number;
+        revenueCents: number;
+        totalPaidCents: number;
+        platformFeeCents: number;
+      }
+    >();
+
+    ticketStats.forEach((stat) => {
+      statsMap.set(stat.eventId, {
+        tickets: stat._count._all,
+        revenueCents: stat._sum.pricePaid ?? 0,
+        totalPaidCents: stat._sum.totalPaidCents ?? 0,
+        platformFeeCents: stat._sum.platformFeeCents ?? 0,
+      });
+    });
+
     const items = events.map((event) => ({
       id: event.id,
       slug: event.slug,
@@ -61,6 +91,10 @@ export async function GET() {
       locationCity: event.locationCity,
       status: event.status,
       isFree: event.isFree,
+      ticketsSold: statsMap.get(event.id)?.tickets ?? 0,
+      revenueCents: statsMap.get(event.id)?.revenueCents ?? 0,
+      totalPaidCents: statsMap.get(event.id)?.totalPaidCents ?? 0,
+      platformFeeCents: statsMap.get(event.id)?.platformFeeCents ?? 0,
     }));
 
     return NextResponse.json(

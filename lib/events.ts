@@ -79,22 +79,35 @@ export type EventCardDTO = {
   locationCity: string | null;
   isFree: boolean;
   priceFrom: number | null;
+  coverImageUrl: string | null;
 };
 
 /**
  * Mapeia um Event (com ticketTypes) para o formato usado nos cards da home.
  */
 export function mapEventToCardDTO(
-  event: (Event & { ticketTypes?: TicketType[] | null }) | null
+  event:
+    | (Partial<Event> & { ticketTypes?: (Partial<TicketType> | null)[] | null })
+    | null
 ): EventCardDTO | null {
   if (!event) return null;
+
+  if (
+    typeof event.id !== "number" ||
+    typeof event.slug !== "string" ||
+    typeof event.title !== "string" ||
+    typeof event.description !== "string" ||
+    typeof event.type !== "string"
+  ) {
+    return null;
+  }
 
   let priceFrom: number | null = null;
 
   if (event.ticketTypes && event.ticketTypes.length > 0) {
     const prices = event.ticketTypes
-      .filter((tt) => typeof tt.price === "number")
-      .map((tt) => tt.price as number);
+      .filter((tt): tt is { price: number } => Boolean(tt) && typeof tt?.price === "number")
+      .map((tt) => tt.price);
 
     if (prices.length > 0) {
       priceFrom = Math.min(...prices);
@@ -106,12 +119,13 @@ export function mapEventToCardDTO(
     slug: event.slug,
     title: event.title,
     description: event.description,
-    startsAt: event.startsAt,
-    endsAt: event.endsAt,
-    locationName: event.locationName,
-    locationCity: event.locationCity,
-    isFree: event.isFree,
-    priceFrom,
+    startsAt: event.startsAt ?? null,
+    endsAt: event.endsAt ?? null,
+    locationName: event.locationName ?? null,
+    locationCity: event.locationCity ?? null,
+    isFree: Boolean(event.isFree),
+    priceFrom: priceFrom !== null ? priceFrom / 100 : null,
     type: event.type,
+    coverImageUrl: event.coverImageUrl ?? null,
   };
 }

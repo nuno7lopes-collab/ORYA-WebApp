@@ -5,6 +5,8 @@
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { redirect } from "next/navigation";
+import Link from "next/link";
+import { AdminLayout } from "./components/AdminLayout";
 
 export const dynamic = "force-dynamic";
 
@@ -55,7 +57,7 @@ export default async function AdminDashboardPage() {
     redirect("/");
   }
 
-  const [usersCount, organizersCount, eventsCount, ticketsCount, revenueAgg, recentEvents, recentTickets] =
+  const [usersCount, organizersCount, eventsCount, ticketsCount, revenueAgg, recentEvents, recentTickets, recentPaymentEvents] =
     await Promise.all([
       prisma.profile.count(),
       prisma.organizer.count(),
@@ -93,29 +95,28 @@ export default async function AdminDashboardPage() {
           },
         },
       }),
+      prisma.paymentEvent.findMany({
+        orderBy: { createdAt: "desc" },
+        take: 8,
+        select: {
+          id: true,
+          stripePaymentIntentId: true,
+          status: true,
+          eventId: true,
+          amountCents: true,
+          platformFeeCents: true,
+          errorMessage: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      }),
     ]);
 
   const totalRevenueCents = revenueAgg._sum.pricePaid ?? 0;
 
   return (
-    <main className="orya-body-bg min-h-screen w-full text-white pb-16">
-      <header className="border-b border-white/10 bg-black/40 backdrop-blur-xl">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-4">
-          <div className="flex items-center gap-3">
-            <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-tr from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] text-xs font-extrabold tracking-[0.15em]">
-              AD
-            </span>
-            <div>
-              <p className="text-xs uppercase tracking-[0.18em] text-white/60">
-                Painel interno
-              </p>
-              <p className="text-sm text-white/85">Admin ORYA – visão geral da plataforma</p>
-            </div>
-          </div>
-        </div>
-      </header>
-
-      <section className="mx-auto max-w-6xl px-5 pt-8 space-y-8">
+    <AdminLayout title="Admin ORYA – visão geral da plataforma">
+      <section className="space-y-8">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
             Visão geral
@@ -124,6 +125,38 @@ export default async function AdminDashboardPage() {
             Aqui consegues ver o estado global da ORYA: utilizadores, organizadores,
             eventos, bilhetes e o volume total processado.
           </p>
+          <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
+            <Link
+              href="/admin/organizadores"
+              className="inline-flex items-center gap-1 rounded-full border border-white/20 bg-white/5 px-3 py-1.5 text-white/80 hover:bg-white/10"
+            >
+              Gerir pedidos de organizador
+            </Link>
+            <Link
+              href="/admin/eventos"
+              className="inline-flex items-center gap-1 rounded-full border border-white/20 bg-white/5 px-3 py-1.5 text-white/80 hover:bg-white/10"
+            >
+              Ver eventos
+            </Link>
+            <Link
+              href="/admin/payments"
+              className="inline-flex items-center gap-1 rounded-full border border-white/20 bg-white/5 px-3 py-1.5 text-white/80 hover:bg-white/10"
+            >
+              Pagamentos / intents
+            </Link>
+            <Link
+              href="/admin/tickets"
+              className="inline-flex items-center gap-1 rounded-full border border-white/20 bg-white/5 px-3 py-1.5 text-white/80 hover:bg-white/10"
+            >
+              Auditoria de bilhetes
+            </Link>
+            <Link
+              href="/admin/settings"
+              className="inline-flex items-center gap-1 rounded-full border border-white/20 bg-white/5 px-3 py-1.5 text-white/80 hover:bg-white/10"
+            >
+              Configurações
+            </Link>
+          </div>
         </div>
 
         {/* KPI cards */}
@@ -239,6 +272,6 @@ export default async function AdminDashboardPage() {
           </div>
         </div>
       </section>
-    </main>
+    </AdminLayout>
   );
 }

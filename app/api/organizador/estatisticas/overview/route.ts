@@ -58,6 +58,17 @@ export async function GET(req: NextRequest) {
       );
     }
 
+    const organizer = await prisma.organizer.findFirst({
+      where: { userId: user.id, status: "ACTIVE" },
+    });
+
+    if (!organizer) {
+      return NextResponse.json(
+        { ok: false, error: "NOT_ORGANIZER" },
+        { status: 403 },
+      );
+    }
+
     // Cálculo do intervalo temporal
     let fromDate: Date | undefined;
     let toDate: Date | undefined;
@@ -82,8 +93,7 @@ export async function GET(req: NextRequest) {
         in: [TicketStatus.ACTIVE, TicketStatus.USED],
       },
       event: {
-        // Assumimos que o Event tem campo ownerUserId (quem criou / organizador principal)
-        ownerUserId: user.id,
+        organizerId: organizer.id,
       },
     };
 
@@ -112,7 +122,7 @@ export async function GET(req: NextRequest) {
     // Contar eventos publicados do organizador (no geral, não só no período)
     const activeEventsCount = await prisma.event.count({
       where: {
-        ownerUserId: user.id,
+        organizerId: organizer.id,
         status: EventStatus.PUBLISHED,
       },
     });

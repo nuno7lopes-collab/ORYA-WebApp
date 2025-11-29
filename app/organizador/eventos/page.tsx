@@ -4,6 +4,7 @@
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
+import { TicketStatus } from "@prisma/client";
 
 export default async function OrganizerEventsPage() {
   // 1) Garante que só entra quem está autenticado
@@ -41,12 +42,35 @@ export default async function OrganizerEventsPage() {
       locationName: true,
       locationCity: true,
       status: true,
+      organizerId: true,
     },
+  });
+
+  const ticketStats = await prisma.ticket.groupBy({
+    by: ["eventId"],
+    where: {
+      status: { in: [TicketStatus.ACTIVE, TicketStatus.USED] },
+      event: { organizerId: organizer.id },
+    },
+    _count: { _all: true },
+    _sum: { pricePaid: true, totalPaidCents: true, platformFeeCents: true },
+  });
+
+  const statsMap = new Map<number, { tickets: number; revenueCents: number; totalPaidCents: number; platformFeeCents: number }>();
+  ticketStats.forEach((stat) => {
+    statsMap.set(stat.eventId, {
+      tickets: stat._count._all,
+      revenueCents: stat._sum.pricePaid ?? 0,
+      totalPaidCents: stat._sum.totalPaidCents ?? 0,
+      platformFeeCents: stat._sum.platformFeeCents ?? 0,
+    });
   });
 
   const now = new Date();
   const totalEvents = events.length;
   const upcomingEvents = events.filter((e) => e.startsAt > now).length;
+  const totalTickets = ticketStats.reduce((sum, s) => sum + s._count._all, 0);
+  const totalRevenueCents = ticketStats.reduce((sum, s) => sum + (s._sum.pricePaid ?? 0), 0);
 
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top,_#1a1030_0,_#050509_45%,_#02020a_100%)] text-white">
@@ -78,7 +102,7 @@ export default async function OrganizerEventsPage() {
 
       <section className="max-w-6xl mx-auto px-5 py-8 md:py-10 space-y-6">
         {/* Métricas principais (simples) */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="rounded-2xl border border-white/14 bg-white/5 backdrop-blur-xl px-4 py-3.5">
             <p className="text-[11px] text-white/60">Eventos totais</p>
             <p className="mt-1 text-2xl font-semibold tracking-tight">
@@ -96,6 +120,26 @@ export default async function OrganizerEventsPage() {
             </p>
             <p className="mt-1 text-[11px] text-white/55">
               Eventos com data ainda por acontecer.
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-white/14 bg-white/5 backdrop-blur-xl px-4 py-3.5">
+            <p className="text-[11px] text-white/60">Bilhetes vendidos</p>
+            <p className="mt-1 text-2xl font-semibold tracking-tight">
+              {totalTickets}
+            </p>
+            <p className="mt-1 text-[11px] text-white/55">
+              Contam apenas bilhetes ativos/usados.
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-white/14 bg-white/5 backdrop-blur-xl px-4 py-3.5">
+            <p className="text-[11px] text-white/60">Receita bruta</p>
+            <p className="mt-1 text-2xl font-semibold tracking-tight">
+              {(totalRevenueCents / 100).toFixed(2)} €
+            </p>
+            <p className="mt-1 text-[11px] text-white/55">
+              Soma do preço de bilhete recebido (antes de taxas Stripe).
             </p>
           </div>
         </div>
@@ -136,6 +180,10 @@ export default async function OrganizerEventsPage() {
           {events.length > 0 && (
             <div className="mt-3 space-y-3">
               {events.map((event) => {
+                const stats = statsMap.get(event.id);
+                const ticketsSold = stats?.tickets ?? 0;
+                const revenueEuro = ((stats?.revenueCents ?? 0) / 100).toFixed(2);
+
                 const isPast = event.startsAt < now;
                 const statusLabel = isPast
                   ? "Terminado"
@@ -170,6 +218,9 @@ export default async function OrganizerEventsPage() {
                           {dateFormatted}
                           {event.locationName ? ` • ${event.locationName}` : ""}
                           {event.locationCity ? `, ${event.locationCity}` : ""}
+                        </p>
+                        <p className="mt-1 text-[11px] text-white/65">
+                          {ticketsSold} bilhetes · {revenueEuro} €
                         </p>
                         <p className="mt-1 text-[10px] text-white/55">
                           Slug:{" "}

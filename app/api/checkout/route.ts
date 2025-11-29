@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { stripe } from "@/lib/stripeClient";
+import { getPlatformFees } from "@/lib/platformSettings";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -48,10 +49,11 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 2️⃣ Evento + ticketTypes
-    const event = await prisma.event.findUnique({
-      where: { slug },
-    });
+  // 2️⃣ Evento + organizer
+  const event = await prisma.event.findUnique({
+    where: { slug },
+    include: { organizer: true },
+  });
 
     if (!event) {
       return NextResponse.json(
@@ -84,12 +86,19 @@ export async function POST(req: NextRequest) {
 
     // 3️⃣ Validar items + calcular montante em cêntimos
     let amountInCents = 0;
+    const itemsForMetadata: {
+      ticketId: number;
+      ticketTypeId: number;
+      quantity: number;
+    }[] = [];
 
     for (const item of items) {
-      const id =
+      const idRaw =
         typeof item.ticketTypeId === "number"
           ? item.ticketTypeId
           : Number(item.ticketId);
+
+      const id = Number.isFinite(idRaw) ? Number(idRaw) : NaN;
 
       const dbType = ticketTypesDB.find((t) => t.id === id);
 
@@ -129,6 +138,7 @@ export async function POST(req: NextRequest) {
       }
 
       amountInCents += priceCents * qty;
+      itemsForMetadata.push({ ticketId: id, ticketTypeId: id, quantity: qty });
     }
 
     if (amountInCents <= 0) {
@@ -138,24 +148,100 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 4️⃣ Criar PaymentIntent (Stripe nativo)
+    const organizer = event.organizer;
+
+    if (!organizer || organizer.status !== "ACTIVE") {
+      return NextResponse.json(
+        { ok: false, error: "Organizador inativo ou não encontrado." },
+        { status: 400 },
+      );
+    }
+
+    if (!organizer.stripeAccountId) {
+      return NextResponse.json(
+        { ok: false, error: "Organizador sem conta Stripe ligada." },
+        { status: 400 },
+      );
+    }
+
+    if (!organizer.stripeChargesEnabled) {
+      return NextResponse.json(
+        { ok: false, error: "Conta Stripe do organizador ainda não está ativa." },
+        { status: 400 },
+      );
+    }
+
+    const { feeBps: defaultFeeBps, feeFixedCents: defaultFeeFixed } = await getPlatformFees();
+
+    const feeMode =
+      event.feeModeOverride ??
+      organizer.feeMode ??
+      ("ADDED" as "ADDED" | "INCLUDED");
+
+    const feeBpsCandidates = [
+      event.platformFeeBpsOverride,
+      organizer.platformFeeBps,
+      defaultFeeBps,
+    ];
+    const platformFeeBps = feeBpsCandidates.find(
+      (n) => typeof n === "number" && Number.isFinite(n),
+    ) ?? defaultFeeBps;
+
+    const feeFixedCandidates = [
+      event.platformFeeFixedCentsOverride,
+      organizer.platformFeeFixedCents,
+      defaultFeeFixed,
+    ];
+    const platformFeeFixedCents = feeFixedCandidates.find(
+      (n) => typeof n === "number" && Number.isFinite(n),
+    ) ?? defaultFeeFixed;
+
+    const platformFeeCents = Math.max(
+      0,
+      Math.round((amountInCents * platformFeeBps) / 10_000) +
+        platformFeeFixedCents,
+    );
+
+    const totalAmountInCents =
+      feeMode === "ADDED" ? amountInCents + platformFeeCents : amountInCents;
+
+    if (totalAmountInCents <= 0) {
+      return NextResponse.json(
+        { ok: false, error: "Montante total inválido." },
+        { status: 400 },
+      );
+    }
+
+    // 4️⃣ Criar PaymentIntent (Stripe Connect com destination charges)
     const paymentIntent = await stripe.paymentIntents.create({
-      amount: amountInCents,
+      amount: totalAmountInCents,
       currency: "eur",
       automatic_payment_methods: { enabled: true },
+      transfer_data: {
+        destination: organizer.stripeAccountId,
+      },
+      application_fee_amount: platformFeeCents,
+      on_behalf_of: organizer.stripeAccountId,
       metadata: {
         source: "orya_checkout_v2",
         userId: user.id,
         eventId: String(event.id),
         eventSlug: slug,
-        items: JSON.stringify(items),
+        organizerId: String(organizer.id),
+        feeMode,
+        platformFeeBps: String(platformFeeBps),
+        platformFeeFixedCents: String(platformFeeFixedCents),
+        platformFeeCents: String(platformFeeCents),
+        baseAmountCents: String(amountInCents),
+        items: JSON.stringify(itemsForMetadata),
+        itemsJson: JSON.stringify(itemsForMetadata),
       },
     });
 
     return NextResponse.json({
       ok: true,
       clientSecret: paymentIntent.client_secret,
-      amount: amountInCents,
+      amount: totalAmountInCents,
       currency: "eur",
     });
   } catch (err) {

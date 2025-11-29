@@ -60,7 +60,7 @@ export default function ModalCheckout() {
                 {passo > 1 && passo !== 3 ? (
                   <button
                     type="button"
-                    onClick={() => irParaPasso(passo - 1)}
+                    onClick={() => irParaPasso(Math.max(1, passo - 1) as 1 | 2 | 3)}
                     className="text-[12px] text-white/70 hover:text-white"
                   >
                     ← Voltar

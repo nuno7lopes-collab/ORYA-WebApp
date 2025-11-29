@@ -105,6 +105,10 @@ export default function AdminOrganizadoresPage() {
   const [organizers, setOrganizers] = useState<AdminOrganizerItem[]>([]);
   const [filter, setFilter] = useState<"ALL" | OrganizerStatus>("ALL");
   const [updatingId, setUpdatingId] = useState<number | string | null>(null);
+  const pendingOrganizers = useMemo(
+    () => organizers.filter((o) => o.status === "PENDING"),
+    [organizers],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -207,7 +211,7 @@ export default function AdminOrganizadoresPage() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ organizerId, status: newStatus }),
+        body: JSON.stringify({ organizerId, newStatus }),
       });
 
       const data = await res.json().catch(() => null);
@@ -267,6 +271,11 @@ export default function AdminOrganizadoresPage() {
               Vê quem está a organizar eventos na plataforma, aprova novos
               pedidos e suspende contas quando necessário.
             </p>
+            {pendingOrganizers.length > 0 && (
+              <p className="mt-1 text-[12px] text-amber-100/80">
+                Tens {pendingOrganizers.length} pedido(s) pendente(s) de aprovação.
+              </p>
+            )}
           </div>
 
           <div className="grid grid-cols-2 sm:flex sm:flex-row gap-2 text-[11px]">
@@ -343,6 +352,51 @@ export default function AdminOrganizadoresPage() {
           <div className="mt-4 rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-[11px] text-red-50">
             <p className="font-medium">Não foi possível carregar</p>
             <p className="mt-1 text-red-100/80">{errorMsg}</p>
+          </div>
+        )}
+
+        {/* Lista rápida de pendentes */}
+        {!loading && !accessIssue && !errorMsg && pendingOrganizers.length > 0 && (
+          <div className="rounded-2xl border border-amber-400/40 bg-amber-500/10 px-4 py-3 text-[11px] text-amber-50">
+            <div className="mb-2 flex items-center justify-between">
+              <p className="font-semibold text-amber-50">Pedidos pendentes</p>
+              <span className="rounded-full bg-amber-400/20 px-2 py-0.5 text-[10px] text-amber-100">
+                {pendingOrganizers.length} para rever
+              </span>
+            </div>
+            <div className="space-y-2">
+              {pendingOrganizers.map((org) => (
+                <div
+                  key={String(org.id)}
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-300/30 bg-black/40 px-3 py-2"
+                >
+                  <div className="flex flex-col">
+                    <span className="text-white">{org.displayName}</span>
+                    <span className="text-amber-100/80">
+                      Dono: {formatOwner(org.owner)}
+                    </span>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      disabled={updatingId === org.id}
+                      onClick={() => updateStatus(org.id, "ACTIVE")}
+                      className="px-3 py-1 rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] text-black font-semibold shadow-[0_0_14px_rgba(107,255,255,0.6)] disabled:opacity-60"
+                    >
+                      {updatingId === org.id ? "A aprovar…" : "Aprovar"}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={updatingId === org.id}
+                      onClick={() => updateStatus(org.id, "SUSPENDED")}
+                      className="px-3 py-1 rounded-full border border-amber-200/60 text-amber-50 hover:bg-amber-200/10 disabled:opacity-60"
+                    >
+                      {updatingId === org.id ? "A atualizar…" : "Reprovar"}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 

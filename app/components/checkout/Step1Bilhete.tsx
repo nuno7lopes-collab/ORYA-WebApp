@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useCheckout } from "./contextoCheckout";
+import { MAX_TICKETS_PER_WAVE } from "@/lib/tickets";
 
 type Wave = {
   id: string;
@@ -46,15 +47,17 @@ export default function Step1Bilhete() {
   // 🧮 Quantidades iniciais por wave (memoizado para não recriar em cada render)
   const initialQuantidades: Record<string, number> = {};
   for (const w of stableWaves) {
-    const maxAvailable =
+    const rawQty =
+      typeof w.quantity === "number" && w.quantity > 0 ? w.quantity : 0;
+    const remaining =
       typeof w.remaining === "number" && w.remaining >= 0
         ? w.remaining
         : null;
-    const qtyRaw =
-      typeof w.quantity === "number" && w.quantity > 0 ? w.quantity : 0;
-    const qty =
-      maxAvailable !== null ? Math.min(qtyRaw, maxAvailable) : qtyRaw;
-    initialQuantidades[w.id] = qty;
+    const maxForWave =
+      remaining === null
+        ? MAX_TICKETS_PER_WAVE
+        : Math.max(0, Math.min(remaining, MAX_TICKETS_PER_WAVE));
+    initialQuantidades[w.id] = Math.min(rawQty, maxForWave);
   }
 
   const [quantidades, setQuantidades] = useState<Record<string, number>>(
@@ -77,19 +80,23 @@ export default function Step1Bilhete() {
     setAberto((prev) => (prev === id ? null : id));
   }
 
+  function getMaxForWave(waveId: string) {
+    const wave = stableWaves.find((w) => w.id === waveId);
+    if (!wave) return MAX_TICKETS_PER_WAVE;
+    const remaining =
+      typeof wave.remaining === "number" && wave.remaining >= 0
+        ? wave.remaining
+        : null;
+    return remaining === null
+      ? MAX_TICKETS_PER_WAVE
+      : Math.max(0, Math.min(remaining, MAX_TICKETS_PER_WAVE));
+  }
+
   function handleIncrement(id: string) {
+    const maxAllowed = getMaxForWave(id);
     setQuantidades((prev) => {
-      const wave = stableWaves.find((w) => w.id === id);
-      const maxAvailable =
-        wave && typeof wave.remaining === "number" && wave.remaining >= 0
-          ? wave.remaining
-          : null;
       const current = prev[id] ?? 0;
-
-      if (maxAvailable !== null && current >= maxAvailable) {
-        return prev; // já atingiu o limite de stock
-      }
-
+      if (current >= maxAllowed) return prev;
       return {
         ...prev,
         [id]: current + 1,
@@ -163,18 +170,13 @@ export default function Step1Bilhete() {
           const isOpen = aberto === wave.id;
           const status = normalizeStatus(wave.status);
           const isSoldOut = status === "sold_out" || status === "closed";
+          const maxForWave = getMaxForWave(wave.id);
           const badge =
             status === "upcoming"
               ? "Em breve"
               : isSoldOut
                 ? "Venda terminada"
                 : "Disponível";
-          const maxAvailable =
-            typeof wave.remaining === "number" && wave.remaining >= 0
-              ? wave.remaining
-              : null;
-          const isAtLimit =
-            maxAvailable !== null ? q >= maxAvailable : false;
           const badgeClass = isSoldOut
             ? "border-red-400/50 bg-red-500/20 text-red-50"
             : status === "upcoming"
@@ -223,6 +225,24 @@ export default function Step1Bilhete() {
                     </div>
                   )}
 
+                  {!isSoldOut && (
+                    <p className="text-[11px] text-white/55">
+                      Podes comprar até{" "}
+                      <span className="font-semibold text-white">
+                        {maxForWave}
+                      </span>{" "}
+                      bilhete{maxForWave === 1 ? "" : "s"} nesta
+                      wave.
+                      {typeof wave.remaining === "number" &&
+                        wave.remaining >= 0 && (
+                          <>
+                            {" "}
+                            Restam {wave.remaining}.
+                          </>
+                        )}
+                    </p>
+                  )}
+
                   <div className="inline-flex items-center gap-2 rounded-full bg-black/60 border border-white/15 px-2 py-1.5 shadow-md">
                     <button
                       type="button"
@@ -241,17 +261,13 @@ export default function Step1Bilhete() {
                       type="button"
                       onClick={() => handleIncrement(wave.id)}
                       className="flex h-7 w-7 items-center justify-center rounded-full bg-white text-black hover:bg-zinc-100 disabled:opacity-50"
-                      disabled={isSoldOut || isAtLimit}
+                      disabled={
+                        isSoldOut || (quantidades[wave.id] ?? 0) >= maxForWave
+                      }
                     >
                       +
                     </button>
                   </div>
-
-                  {isAtLimit && maxAvailable !== null && (
-                    <p className="text-[11px] text-white/60">
-                      Já não há mais stock disponível para este bilhete.
-                    </p>
-                  )}
                 </div>
               )}
             </div>

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
 import { useUser } from "@/app/hooks/useUser";
+import MobileBottomNav from "./MobileBottomNav";
 
 type Suggestion = {
   id: number;
@@ -18,9 +19,9 @@ type Suggestion = {
 
 export function Navbar() {
   const router = useRouter();
-  const pathname = usePathname();
+  const rawPathname = usePathname();
 
-  const { openModal: openAuthModal } = useAuthModal();
+  const { openModal: openAuthModal, isOpen: isAuthOpen } = useAuthModal();
   const { user, profile, roles, isLoading } = useUser();
 
   const [isVisible, setIsVisible] = useState(true);
@@ -30,10 +31,22 @@ export function Navbar() {
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [isSuggestLoading, setIsSuggestLoading] = useState(false);
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
+  const [hasMounted, setHasMounted] = useState(false);
+  const [hydratedPathname, setHydratedPathname] = useState<string | null>(null);
   const profileMenuRef = useRef<HTMLDivElement | null>(null);
-
   const lastScrollYRef = useRef(0);
+  const pathname = hydratedPathname ?? "";
 
+  useEffect(() => {
+    setHasMounted(true);
+  }, []);
+
+  useEffect(() => {
+    // Garantir pathname estável só depois de montar para evitar mismatch
+    if (typeof window !== "undefined") {
+      setHydratedPathname(rawPathname ?? window.location.pathname);
+    }
+  }, [rawPathname]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -114,6 +127,9 @@ export function Navbar() {
     };
   }, []);
 
+  const inAuthPage =
+    pathname === "/login" || pathname === "/signup" || pathname === "/auth/callback";
+
   const handleSubmitSearch = (e: React.FormEvent) => {
     e.preventDefault();
     const query = searchQuery.trim();
@@ -190,15 +206,15 @@ export function Navbar() {
     };
   }, [searchQuery]);
 
-  // Forçar onboarding: se autenticado e onboardingDone=false, abre modal e impede fechar
+  // Forçar onboarding: se autenticado e perfil incompleto, abre modal e impede fechar
   useEffect(() => {
-    if (user && profile && !profile.onboardingDone) {
+    if (user && profile && !profile.onboardingDone && !isAuthOpen && !inAuthPage) {
       openAuthModal({
         mode: "onboarding",
         redirectTo: pathname || "/",
       });
     }
-  }, [user, profile, pathname, openAuthModal]);
+  }, [user, profile, pathname, openAuthModal, isAuthOpen, inAuthPage]);
 
   const isAuthenticated = !!user;
   const isOrganizer = roles?.includes("organizer");
@@ -208,9 +224,6 @@ export function Navbar() {
     (typeof user?.email === "string" ? user.email : "");
   const userInitial =
     (userLabel || "O").trim().charAt(0).toUpperCase() || "O";
-
-  const inAuthPage =
-    pathname === "/login" || pathname === "/signup" || pathname === "/auth/callback";
 
   return (
     <>
@@ -261,7 +274,7 @@ export function Navbar() {
           </div>
 
           {/* Barra de pesquisa central */}
-          <div className="flex flex-[1.2] justify-center">
+          <div className="hidden md:flex flex-[1.2] justify-center">
             <button
               type="button"
               onClick={() => setIsSearchOpen(true)}
@@ -401,7 +414,6 @@ export function Navbar() {
           </div>
         </div>
       </header>
-
       {/* Overlay de pesquisa estilo full-screen, com sugestões */}
       {isSearchOpen && (
         <div
@@ -427,11 +439,10 @@ export function Navbar() {
                   ⌕
                 </span>
                 <input
-                  autoFocus
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="O que queres fazer hoje?"
-                  className="flex-1 bg-transparent text-sm text-white placeholder:text-white/45 focus:outline-none"
+                  className="flex-1 bg-transparent text-base text-white placeholder:text-white/45 focus:outline-none"
                 />
                 <button
                   type="button"
@@ -443,23 +454,23 @@ export function Navbar() {
               </form>
 
               <div className="mt-4 grid gap-4 md:grid-cols-3">
-                <div className="md:col-span-2 rounded-2xl border border-white/8 bg-white/5 p-3">
+                <div className="md:col-span-3 rounded-2xl border border-white/8 bg-white/5 p-3">
                   <div className="flex items-center justify-between text-[11px] text-white/60">
                     <span>Resultados</span>
                     {isSuggestLoading && <span className="animate-pulse text-white/50">a carregar…</span>}
                   </div>
                   <div className="mt-2 space-y-2">
-                    {suggestions.length === 0 && !isSuggestLoading && (
-                      <p className="text-[11px] text-white/55">
-                        Começa a escrever para ver eventos, locais e cidades.
-                      </p>
-                    )}
-                    {suggestions.map((item) => (
-                      <button
-                        key={`${item.type}-${item.id}`}
-                        type="button"
-                        onClick={() => {
-                          setIsSearchOpen(false);
+                  {suggestions.length === 0 && !isSuggestLoading && (
+                    <p className="text-[11px] text-white/55">
+                      Começa a escrever para ver eventos, locais e cidades.
+                    </p>
+                  )}
+                  {suggestions.map((item) => (
+                    <button
+                      key={`${item.type}-${item.id}`}
+                      type="button"
+                      onClick={() => {
+                        setIsSearchOpen(false);
                           router.push(buildSlug(item));
                         }}
                         className="w-full rounded-xl border border-white/8 bg-black/50 p-2.5 text-left hover:border-white/20 hover:bg-white/5 transition flex gap-3"
@@ -500,29 +511,18 @@ export function Navbar() {
                     ))}
                   </div>
                 </div>
-
-                <div className="space-y-3 rounded-2xl border border-white/8 bg-white/5 p-3 text-[11px] text-white/70">
-                  <p className="text-white/80 font-semibold text-[12px]">Sugestões rápidas</p>
-                  {[
-                    "Festas universitárias",
-                    "Jogos de padel",
-                    "Concertos hoje",
-                    "Afterwork no Porto",
-                  ].map((s) => (
-                    <button
-                      key={s}
-                      type="button"
-                      onClick={() => handleQuickSearch(s.toLowerCase())}
-                      className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-left hover:border-white/20 hover:bg-white/5 transition"
-                    >
-                      {s}
-                    </button>
-                  ))}
-                </div>
               </div>
             </div>
           </div>
         </div>
+      )}
+      {hasMounted && (
+        <MobileBottomNav
+          pathname={pathname || ""}
+          isSearchOpen={isSearchOpen}
+          onOpenSearch={() => setIsSearchOpen(true)}
+          onCloseSearch={() => setIsSearchOpen(false)}
+        />
       )}
     </>
   );

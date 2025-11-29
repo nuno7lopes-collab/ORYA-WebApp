@@ -27,6 +27,9 @@ type CreateOrganizerEventBody = {
   categories?: string[];
   resaleMode?: string; // ALWAYS | AFTER_SOLD_OUT | DISABLED
   coverImageUrl?: string | null;
+  feeMode?: string | null;
+  platformFeeBps?: number | null;
+  platformFeeFixedCents?: number | null;
 };
 
 function slugify(input: string): string {
@@ -99,6 +102,8 @@ export async function POST(req: NextRequest) {
       | "AFTER_SOLD_OUT"
       | "DISABLED"
       | undefined;
+    const feeModeRaw = body.feeMode?.toUpperCase() as "ADDED" | "INCLUDED" | undefined;
+    const feeMode = feeModeRaw === "ADDED" || feeModeRaw === "INCLUDED" ? feeModeRaw : undefined;
 
     if (!title) {
       return NextResponse.json(
@@ -177,6 +182,14 @@ export async function POST(req: NextRequest) {
 
     const ticketTypesInput = body.ticketTypes ?? [];
     const coverImageUrl = body.coverImageUrl?.trim?.() || null;
+    const platformFeeBps =
+      typeof body.platformFeeBps === "number" && Number.isFinite(body.platformFeeBps)
+        ? Math.max(0, Math.min(5000, Math.floor(body.platformFeeBps)))
+        : null;
+    const platformFeeFixedCents =
+      typeof body.platformFeeFixedCents === "number" && Number.isFinite(body.platformFeeFixedCents)
+        ? Math.max(0, Math.min(5000, Math.floor(body.platformFeeFixedCents)))
+        : null;
 
     // Validar tipos de bilhete
     const ticketTypesData = ticketTypesInput
@@ -241,6 +254,9 @@ export async function POST(req: NextRequest) {
         status: "PUBLISHED",
         resaleMode,
         coverImageUrl,
+        feeModeOverride: feeMode,
+        platformFeeBpsOverride: platformFeeBps,
+        platformFeeFixedCentsOverride: platformFeeFixedCents,
       },
     });
 

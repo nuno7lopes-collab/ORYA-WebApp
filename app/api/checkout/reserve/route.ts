@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
+import { MAX_TICKETS_PER_WAVE } from "@/lib/tickets";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -50,6 +51,17 @@ export async function POST(req: NextRequest) {
           ok: false,
           error: "Quantidade inválida.",
           code: "INVALID_QTY",
+        },
+        { status: 400 },
+      );
+    }
+
+    if (qty > MAX_TICKETS_PER_WAVE) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: `Só podes reservar até ${MAX_TICKETS_PER_WAVE} bilhetes por wave.`,
+          code: "QTY_ABOVE_LIMIT",
         },
         { status: 400 },
       );
@@ -107,11 +119,30 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 3) Validar stock disponível com base no TicketType
+    // 3) Validar stock disponível com base no TicketType (conta reservas ativas de outros)
+    const now = new Date();
+    const activeReservations = await prisma.ticketReservation.findMany({
+      where: {
+        ticketTypeId: ticketTypeIdNumber,
+        status: "ACTIVE",
+        expiresAt: { gt: now },
+      },
+      select: {
+        id: true,
+        quantity: true,
+        userId: true,
+      },
+    });
+
+    const reservedByOthers = activeReservations.reduce((acc, r) => {
+      if (r.userId && r.userId === userId) return acc;
+      return acc + r.quantity;
+    }, 0);
+
     const remaining =
       ticketType.totalQuantity !== null &&
       ticketType.totalQuantity !== undefined
-        ? ticketType.totalQuantity - ticketType.soldQuantity
+        ? ticketType.totalQuantity - ticketType.soldQuantity - reservedByOthers
         : Infinity;
 
     if (remaining <= 0) {

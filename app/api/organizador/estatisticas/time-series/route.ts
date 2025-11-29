@@ -111,7 +111,7 @@ export async function GET(req: NextRequest) {
     }
 
     // 2) Buscar tickets dos eventos deste organizer no intervalo de datas
-    const purchasedAtFilter: Prisma.DateTimeNullableFilter = {};
+    const purchasedAtFilter: Prisma.DateTimeFilter<"Ticket"> = {};
     if (from) purchasedAtFilter.gte = from;
     if (to) purchasedAtFilter.lte = to;
 

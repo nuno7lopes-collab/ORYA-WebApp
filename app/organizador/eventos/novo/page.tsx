@@ -40,6 +40,9 @@ export default function NewOrganizerEventPage() {
   const [ticketTypes, setTicketTypes] = useState<TicketTypeRow[]>([
     { name: "Normal", price: "", totalQuantity: "" },
   ]);
+  const [feeMode, setFeeMode] = useState<"INHERIT" | "ADDED" | "INCLUDED">("INHERIT");
+  const [feeBps, setFeeBps] = useState("");
+  const [feeFixedCents, setFeeFixedCents] = useState("");
   const [coverUrl, setCoverUrl] = useState<string | null>(null);
   const [uploadingCover, setUploadingCover] = useState(false);
 
@@ -154,6 +157,19 @@ export default function NewOrganizerEventPage() {
       return;
     }
 
+    const normalizedFeeMode = feeMode === "INHERIT" ? null : feeMode;
+    const feeBpsNumber = feeBps.trim() ? Number(feeBps.replace(",", ".")) : null;
+    const feeFixedNumber = feeFixedCents.trim() ? Number(feeFixedCents.replace(",", ".")) : null;
+
+    if (feeBpsNumber !== null && (!Number.isFinite(feeBpsNumber) || feeBpsNumber < 0)) {
+      setErrorMessage("Fee (%) inválida.");
+      return;
+    }
+    if (feeFixedNumber !== null && (!Number.isFinite(feeFixedNumber) || feeFixedNumber < 0)) {
+      setErrorMessage("Fee fixa inválida.");
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
@@ -169,6 +185,9 @@ export default function NewOrganizerEventPage() {
         categories,
         ticketTypes: preparedTickets,
         coverImageUrl: coverUrl,
+        feeMode: normalizedFeeMode,
+        platformFeeBps: feeBpsNumber === null ? null : Math.floor(feeBpsNumber),
+        platformFeeFixedCents: feeFixedNumber === null ? null : Math.floor(feeFixedNumber),
       };
 
       const res = await fetch("/api/organizador/events/create", {
@@ -224,6 +243,24 @@ export default function NewOrganizerEventPage() {
         >
           Entrar
         </button>
+      </div>
+    );
+  }
+
+  if (!user.emailConfirmedAt) {
+    return (
+      <div className="max-w-3xl mx-auto px-4 py-8 space-y-4">
+        <h1 className="text-2xl font-semibold">Confirma o teu e-mail</h1>
+        <p className="text-sm text-white/70">
+          Precisamos do teu e-mail verificado antes de poderes criar eventos pagos. Verifica a caixa de entrada e clica
+          no link de confirmação.
+        </p>
+        <Link
+          href="/me"
+          className="inline-flex items-center rounded-md border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium hover:bg-white/10"
+        >
+          Ir ao perfil
+        </Link>
       </div>
     );
   }
@@ -428,6 +465,50 @@ export default function NewOrganizerEventPage() {
                   </label>
                 );
               })}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div className="space-y-1">
+              <label className="text-sm font-medium">Modo de fee</label>
+              <select
+                value={feeMode}
+                onChange={(e) => setFeeMode(e.target.value as typeof feeMode)}
+                className="w-full rounded-md border border-white/15 bg-black/20 px-3 py-2 text-sm outline-none focus:border-white/60"
+              >
+                <option value="INHERIT">Usar padrão do organizador</option>
+                <option value="ADDED">Taxa adicionada ao preço</option>
+                <option value="INCLUDED">Taxa incluída no preço</option>
+              </select>
+              <p className="text-[11px] text-white/60">
+                Define se a comissão é adicionada em cima do bilhete ou incluída no preço.
+              </p>
+            </div>
+            <div className="space-y-1">
+              <label className="text-sm font-medium">Fee % (basis points)</label>
+              <input
+                type="number"
+                min="0"
+                max="5000"
+                value={feeBps}
+                onChange={(e) => setFeeBps(e.target.value)}
+                className="w-full rounded-md border border-white/15 bg-black/20 px-3 py-2 text-sm outline-none focus:border-white/60"
+                placeholder="ex.: 200"
+              />
+              <p className="text-[11px] text-white/60">200 bps = 2%. Deixa vazio para usar o padrão.</p>
+            </div>
+            <div className="space-y-1">
+              <label className="text-sm font-medium">Fee fixa (cêntimos)</label>
+              <input
+                type="number"
+                min="0"
+                max="5000"
+                value={feeFixedCents}
+                onChange={(e) => setFeeFixedCents(e.target.value)}
+                className="w-full rounded-md border border-white/15 bg-black/20 px-3 py-2 text-sm outline-none focus:border-white/60"
+                placeholder="ex.: 0"
+              />
+              <p className="text-[11px] text-white/60">Cêntimos adicionados/retidos. Vazio = padrão.</p>
             </div>
           </div>
         </div>

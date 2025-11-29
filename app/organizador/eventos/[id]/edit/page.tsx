@@ -66,20 +66,22 @@ export default async function OrganizerEventEditPage({ params }: PageProps) {
         </div>
 
         <EventEditClient
-          event={{
-            id: event.id,
-            title: event.title,
-            description: event.description,
-            startsAt: event.startsAt.toISOString(),
-            endsAt: event.endsAt.toISOString(),
-            locationName: event.locationName,
-            locationCity: event.locationCity,
-            address: event.address,
-            templateType: event.templateType,
-            isFree: event.isFree,
-            coverImageUrl: event.coverImageUrl,
-            hasTickets: event.ticketTypes.length > 0,
-          }}
+        event={{
+          id: event.id,
+          title: event.title,
+          description: event.description,
+          startsAt: event.startsAt.toISOString(),
+          endsAt: event.endsAt.toISOString(),
+          locationName: event.locationName,
+          locationCity: event.locationCity,
+          address: event.address,
+          templateType: event.templateType,
+          isFree: event.isFree,
+          coverImageUrl: event.coverImageUrl,
+          feeModeOverride: event.feeModeOverride,
+          platformFeeBpsOverride: event.platformFeeBpsOverride,
+          platformFeeFixedCentsOverride: event.platformFeeFixedCentsOverride,
+        }}
           tickets={tickets}
         />
       </section>

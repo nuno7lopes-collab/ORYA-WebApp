@@ -6,14 +6,14 @@ export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
 import { prisma } from "@/lib/prisma";
-import crypto from "crypto";
 import { env } from "@/lib/env";
 import { Prisma } from "@prisma/client";
+import { stripe } from "@/lib/stripeClient";
+import crypto from "crypto";
+import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { sendPurchaseConfirmationEmail } from "@/lib/emailSender";
 
-const stripeSecret = env.stripeSecretKey;
 const webhookSecret = env.stripeWebhookSecret;
-
-const stripe = new Stripe(stripeSecret, { apiVersion: "2025-10-29.clover" });
 
 export async function POST(req: NextRequest) {
   const sig = req.headers.get("stripe-signature");
@@ -139,6 +139,16 @@ export async function POST(req: NextRequest) {
         break;
       }
 
+      case "charge.refunded": {
+        const charge = event.data.object as Stripe.Charge;
+        console.log("[Webhook] charge.refunded", {
+          id: charge.id,
+          payment_intent: charge.payment_intent,
+        });
+        await handleRefund(charge);
+        break;
+      }
+
       default: {
         // outros eventos, por agora, podem ser ignorados
         console.log("[Webhook] Evento ignorado:", event.type);
@@ -159,7 +169,7 @@ type EventWithTickets = Prisma.EventGetPayload<{
 
 type ParsedItem = { ticketId: number; quantity: number };
 
-async function fulfillPayment(intent: Stripe.PaymentIntent) {
+export async function fulfillPayment(intent: Stripe.PaymentIntent) {
   // [ORYA PATCH v1] Webhook reforçado e preparado para múltiplos bilhetes com total segurança.
   const meta = intent.metadata ?? {};
 
@@ -199,9 +209,10 @@ async function fulfillPayment(intent: Stripe.PaymentIntent) {
       if (Array.isArray(parsed)) {
         items = parsed
           .map((entry) => {
-            const ticketId = Number(
-              (entry as { ticketId?: unknown })?.ticketId,
-            );
+            const rawId =
+              (entry as { ticketId?: unknown })?.ticketId ??
+              (entry as { ticketTypeId?: unknown })?.ticketTypeId;
+            const ticketId = Number(rawId);
             const quantity = Number(
               (entry as { quantity?: unknown })?.quantity ?? 1,
             );
@@ -223,9 +234,10 @@ async function fulfillPayment(intent: Stripe.PaymentIntent) {
       if (Array.isArray(parsed)) {
         items = parsed
           .map((entry) => {
-            const ticketId = Number(
-              (entry as { ticketId?: unknown })?.ticketId,
-            );
+            const rawId =
+              (entry as { ticketId?: unknown })?.ticketId ??
+              (entry as { ticketTypeId?: unknown })?.ticketTypeId;
+            const ticketId = Number(rawId);
             const quantity = Number(
               (entry as { quantity?: unknown })?.quantity ?? 1,
             );
@@ -286,6 +298,20 @@ async function fulfillPayment(intent: Stripe.PaymentIntent) {
     title: eventRecord.title,
   });
 
+  const platformFeeTotal = Number(meta.platformFeeCents ?? 0);
+  const baseAmount = Number(meta.baseAmountCents ?? intent.amount ?? 0);
+  const totalTicketsRequested = items.reduce(
+    (sum, item) => sum + Math.max(1, Number(item.quantity ?? 0)),
+    0
+  );
+
+  const perTicketPlatformFee =
+    totalTicketsRequested > 0
+      ? Math.floor(platformFeeTotal / totalTicketsRequested)
+      : 0;
+  let feeRemainder =
+    totalTicketsRequested > 0 ? platformFeeTotal % totalTicketsRequested : 0;
+
   // --------- IDEMPOTÊNCIA (permite múltiplos bilhetes por pagamento) ---------
   const already = await prisma.ticket.findFirst({
     where: { stripePaymentIntentId: intent.id },
@@ -296,7 +322,40 @@ async function fulfillPayment(intent: Stripe.PaymentIntent) {
       "[fulfillPayment] INTENT JÁ PROCESSADO — evitar duplicação mas permitir múltiplos bilhetes dentro do mesmo intent:",
       intent.id
     );
+    try {
+      await prisma.paymentEvent.updateMany({
+        where: { stripePaymentIntentId: intent.id },
+        data: { status: "OK", updatedAt: new Date(), errorMessage: null },
+      });
+    } catch (logErr) {
+      console.warn("[fulfillPayment] Falha ao marcar paymentEvent como OK num retry", logErr);
+    }
     return;
+  }
+
+  // Marcar log como PROCESSING (idempotência/auditoria)
+  try {
+    await prisma.paymentEvent.upsert({
+      where: { stripePaymentIntentId: intent.id },
+      create: {
+        stripePaymentIntentId: intent.id,
+        status: "PROCESSING",
+        eventId: eventRecord.id,
+        userId,
+        amountCents: intent.amount ?? null,
+        platformFeeCents: platformFeeTotal ?? null,
+      },
+      update: {
+        status: "PROCESSING",
+        eventId: eventRecord.id,
+        userId,
+        amountCents: intent.amount ?? null,
+        platformFeeCents: platformFeeTotal ?? null,
+        errorMessage: null,
+      },
+    });
+  } catch (logErr) {
+    console.warn("[fulfillPayment] Não foi possível registar paymentEvent", logErr);
   }
 
   // --------- PREPARAR CRIAÇÃO DE BILHETES + STOCK ---------
@@ -333,6 +392,9 @@ async function fulfillPayment(intent: Stripe.PaymentIntent) {
     for (let i = 0; i < qty; i++) {
       // Gerar QR seguro para cada bilhete
       const token = crypto.randomUUID();
+      const feeForThisTicket =
+        perTicketPlatformFee + (feeRemainder > 0 ? 1 : 0);
+      if (feeRemainder > 0) feeRemainder -= 1;
 
       purchasesToCreate.push(
         prisma.ticket.create({
@@ -345,6 +407,8 @@ async function fulfillPayment(intent: Stripe.PaymentIntent) {
             qrSecret: token,
             pricePaid: ticketType.price,
             currency: ticketType.currency,
+            platformFeeCents: feeForThisTicket,
+            totalPaidCents: ticketType.price + feeForThisTicket,
             stripePaymentIntentId: intent.id,
           },
         })
@@ -363,6 +427,22 @@ async function fulfillPayment(intent: Stripe.PaymentIntent) {
 
   if (purchasesToCreate.length === 0) {
     console.warn("[fulfillPayment] No valid items to process");
+    // Marcar log como erro para intervenção manual (não reprocessar em loop)
+    try {
+      await prisma.paymentEvent.updateMany({
+        where: { stripePaymentIntentId: intent.id },
+        data: {
+          status: "ERROR",
+          errorMessage: "Nenhum bilhete processado (stock/itens inválidos).",
+          updatedAt: new Date(),
+        },
+      });
+    } catch (logErr) {
+      console.warn(
+        "[fulfillPayment] Falha ao marcar paymentEvent como ERROR em caso sem bilhetes",
+        logErr
+      );
+    }
     return;
   }
 
@@ -382,6 +462,10 @@ async function fulfillPayment(intent: Stripe.PaymentIntent) {
       },
       data: { status: "COMPLETED" },
     }),
+    prisma.paymentEvent.updateMany({
+      where: { stripePaymentIntentId: intent.id },
+      data: { status: "OK", updatedAt: new Date(), errorMessage: null },
+    }),
     // Fim da transação — sistema seguro e idempotente
   ]);
 
@@ -389,5 +473,111 @@ async function fulfillPayment(intent: Stripe.PaymentIntent) {
     intentId: intent.id,
     userId,
     items,
+  });
+
+  // Enviar email de confirmação (best-effort)
+  if (userId) {
+    const email = await fetchUserEmail(userId);
+    if (email) {
+      const baseUrl =
+        process.env.NEXT_PUBLIC_BASE_URL ??
+        process.env.NEXT_PUBLIC_APP_URL ??
+        "https://app.orya.pt";
+
+      try {
+        await sendPurchaseConfirmationEmail({
+          to: email,
+          eventTitle: eventRecord.title,
+          eventSlug: eventRecord.slug,
+          startsAt: eventRecord.startsAt?.toISOString() ?? null,
+          endsAt: eventRecord.endsAt?.toISOString() ?? null,
+          locationName: eventRecord.locationName ?? null,
+          ticketsCount: purchasesToCreate.length,
+          ticketUrl: `${baseUrl}/me/tickets`,
+        });
+        console.log("[fulfillPayment] Email de confirmação enviado para", email);
+      } catch (emailErr) {
+        console.error("[fulfillPayment] Falha ao enviar email de confirmação", emailErr);
+      }
+    } else {
+      console.warn("[fulfillPayment] Email do utilizador não encontrado para envio de recibo");
+    }
+  }
+
+  return;
+}
+
+async function fetchUserEmail(userId: string) {
+  try {
+    const { data, error } = await supabaseAdmin.auth.admin.getUserById(userId);
+    if (error) {
+      console.warn("[fetchUserEmail] erro ao obter user", error);
+      return null;
+    }
+    return data.user?.email ?? null;
+  } catch (err) {
+    console.warn("[fetchUserEmail] erro inesperado", err);
+    return null;
+  }
+}
+
+async function handleRefund(charge: Stripe.Charge) {
+  const paymentIntentId =
+    typeof charge.payment_intent === "string"
+      ? charge.payment_intent
+      : charge.payment_intent?.id;
+
+  if (!paymentIntentId) {
+    console.warn("[handleRefund] charge.refunded sem payment_intent");
+    return;
+  }
+
+  const tickets = await prisma.ticket.findMany({
+    where: { stripePaymentIntentId: paymentIntentId },
+    select: { id: true, ticketTypeId: true, eventId: true, status: true },
+  });
+
+  if (!tickets.length) {
+    console.warn("[handleRefund] Nenhum ticket associado ao payment_intent", paymentIntentId);
+    return;
+  }
+
+  const byType = tickets.reduce<Record<number, number>>((acc, t) => {
+    acc[t.ticketTypeId] = (acc[t.ticketTypeId] ?? 0) + 1;
+    return acc;
+  }, {});
+
+  const ticketTypeIds = Object.keys(byType).map((id) => Number(id));
+  const ticketTypes = await prisma.ticketType.findMany({
+    where: { id: { in: ticketTypeIds } },
+    select: { id: true, soldQuantity: true },
+  });
+
+  const stockUpdates = ticketTypes.map((tt) => {
+    const decrementBy = byType[tt.id] ?? 0;
+    const newSold = Math.max(0, tt.soldQuantity - decrementBy);
+    return prisma.ticketType.update({
+      where: { id: tt.id },
+      data: { soldQuantity: newSold },
+    });
+  });
+
+  const ticketIds = tickets.map((t) => t.id);
+
+  await prisma.$transaction([
+    prisma.ticket.updateMany({
+      where: { id: { in: ticketIds } },
+      data: { status: "REFUNDED" },
+    }),
+    ...stockUpdates,
+    prisma.paymentEvent.updateMany({
+      where: { stripePaymentIntentId: paymentIntentId },
+      data: { status: "REFUNDED", errorMessage: null, updatedAt: new Date() },
+    }),
+  ]);
+
+  console.log("[handleRefund] Tickets marcados como REFUNDED", {
+    paymentIntentId,
+    ticketCount: tickets.length,
   });
 }

@@ -4,6 +4,8 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { AdminLayout } from "@/app/admin/components/AdminLayout";
+import { AdminTopActions } from "@/app/admin/components/AdminTopActions";
 
 // Tipos esperados da API de admin tickets (flexíveis para não rebentar se mudares algo no backend)
 type AdminTicketEvent = {
@@ -29,14 +31,18 @@ type AdminTicket = {
   status?: string | null;
   event?: AdminTicketEvent | null;
   user?: AdminTicketUser | null;
+  ticketType?: { id?: number | null; name?: string | null } | null;
+  platformFeeCents?: number | null;
+  totalPaidCents?: number | null;
   pricePaidCents?: number | null;
   currency?: string | null;
   purchasedAt?: string | null;
   stripePaymentIntentId?: string | null;
+  paymentEventStatus?: string | null;
 };
 
 type AdminTicketsApiResponse =
-  | { ok: true; tickets: AdminTicket[] }
+  | { ok: true; tickets: AdminTicket[]; page: number; pageSize: number; total: number }
   | { ok: false; error?: string };
 
 function formatDate(value?: string | null) {
@@ -104,15 +110,34 @@ export default function AdminTicketsPage() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
+  const [intentFilter, setIntentFilter] = useState("");
+  const [slugFilter, setSlugFilter] = useState("");
+  const [userFilter, setUserFilter] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize] = useState(25);
+  const [total, setTotal] = useState(0);
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
 
-  async function loadTickets(opts?: { q?: string; status?: string }) {
+  async function loadTickets(opts?: {
+    q?: string;
+    status?: string;
+    intent?: string;
+    slug?: string;
+    user?: string;
+    page?: number;
+  }) {
     try {
       setLoading(true);
       setErrorMsg(null);
+      setActionMessage(null);
 
       const params = new URLSearchParams();
       const q = opts?.q ?? query;
       const status = opts?.status ?? statusFilter;
+      const intent = opts?.intent ?? intentFilter;
+      const slug = opts?.slug ?? slugFilter;
+      const user = opts?.user ?? userFilter;
+      const pageParam = opts?.page ?? page;
 
       if (q && q.trim().length > 0) {
         params.set("q", q.trim());
@@ -120,6 +145,11 @@ export default function AdminTicketsPage() {
       if (status && status !== "ALL") {
         params.set("status", status);
       }
+      if (intent.trim()) params.set("intent", intent.trim());
+      if (slug.trim()) params.set("slug", slug.trim());
+      if (user.trim()) params.set("userQuery", user.trim());
+      params.set("page", String(pageParam));
+      params.set("pageSize", String(pageSize));
 
       const url = "/api/admin/tickets/list" + (params.toString() ? `?${params.toString()}` : "");
 
@@ -155,6 +185,8 @@ export default function AdminTicketsPage() {
       }
 
       setTickets(Array.isArray(json.tickets) ? json.tickets : []);
+      setPage(json.page || 1);
+      setTotal(json.total || 0);
     } catch (err) {
       console.error("[AdminTickets] Erro inesperado:", err);
       setErrorMsg("Ocorreu um erro inesperado ao carregar os bilhetes.");
@@ -166,17 +198,41 @@ export default function AdminTicketsPage() {
 
   useEffect(() => {
     // carregar logo ao entrar
-    void loadTickets();
+    void loadTickets({ page: 1 });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const hasTickets = tickets.length > 0;
 
+  async function handleRefund(intentId?: string | null) {
+    if (!intentId) return;
+    setLoading(true);
+    setActionMessage(null);
+    try {
+      const res = await fetch("/api/admin/payments/refund", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ paymentIntentId: intentId }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) {
+        setActionMessage(json?.error || "Falha ao pedir refund.");
+      } else {
+        setActionMessage(`Refund solicitado para ${intentId}.`);
+        await loadTickets({ page });
+      }
+    } catch (err) {
+      console.error("[AdminTickets] refund error", err);
+      setActionMessage("Erro inesperado ao pedir refund.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
-    <main className="min-h-screen bg-neutral-950 px-4 py-8 text-neutral-50">
+    <AdminLayout title="Bilhetes & histórico" subtitle="Consulta bilhetes, estados, intent e ações de refund.">
       <div className="mx-auto flex max-w-6xl flex-col gap-6">
-        {/* Cabeçalho */}
-        <header className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+        <div className="flex items-center justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-neutral-400">
               Admin · Tickets
@@ -185,20 +241,11 @@ export default function AdminTicketsPage() {
               Bilhetes & histórico
             </h1>
             <p className="mt-1 max-w-xl text-sm text-neutral-400">
-              Consulta bilhetes emitidos em toda a plataforma, estados atuais e
-              ligações a eventos e utilizadores. Ideal para debugging e análise de
-              casos específicos.
+              Consulta bilhetes emitidos em toda a plataforma, estados atuais e ligações a eventos e utilizadores.
             </p>
           </div>
-          <div className="flex items-center gap-2 text-xs">
-            <Link
-              href="/admin"
-              className="rounded-full border border-neutral-700 px-3 py-1.5 text-neutral-200 hover:bg-neutral-800/80"
-            >
-              ← Voltar ao dashboard
-            </Link>
-          </div>
-        </header>
+          <AdminTopActions showTicketsExport />
+        </div>
 
         {/* Filtros */}
         <section className="rounded-2xl border border-neutral-800 bg-neutral-900/60 p-4 shadow-sm">
@@ -209,8 +256,8 @@ export default function AdminTicketsPage() {
               void loadTickets({ q: query });
             }}
           >
-            <div className="flex flex-1 flex-col gap-2 md:flex-row md:items-center">
-              <div className="flex-1">
+            <div className="grid flex-1 grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+              <div>
                 <label className="mb-1 block text-xs font-medium text-neutral-400">
                   Pesquisa
                 </label>
@@ -218,15 +265,42 @@ export default function AdminTicketsPage() {
                   type="text"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="ID do bilhete, slug do evento, username ou email…"
+                  placeholder="ID do bilhete, título do evento…"
                   className="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-50 placeholder:text-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-400/60"
                 />
               </div>
-
-              <div className="w-full md:w-48">
-                <label className="mb-1 block text-xs font-medium text-neutral-400">
-                  Estado
-                </label>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-neutral-400">Intent</label>
+                <input
+                  type="text"
+                  value={intentFilter}
+                  onChange={(e) => setIntentFilter(e.target.value)}
+                  placeholder="payment_intent id"
+                  className="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-50 placeholder:text-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-400/60"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-neutral-400">Slug do evento</label>
+                <input
+                  type="text"
+                  value={slugFilter}
+                  onChange={(e) => setSlugFilter(e.target.value)}
+                  placeholder="ex.: test-connect"
+                  className="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-50 placeholder:text-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-400/60"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-neutral-400">Utilizador</label>
+                <input
+                  type="text"
+                  value={userFilter}
+                  onChange={(e) => setUserFilter(e.target.value)}
+                  placeholder="email ou username"
+                  className="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-50 placeholder:text-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-400/60"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-neutral-400">Estado</label>
                 <select
                   value={statusFilter}
                   onChange={(e) => {
@@ -246,18 +320,22 @@ export default function AdminTicketsPage() {
               </div>
             </div>
 
-            <div className="flex gap-2 self-end md:self-auto">
-              <button
-                type="button"
-                onClick={() => {
-                  setQuery("");
-                  setStatusFilter("ALL");
-                  void loadTickets({ q: "", status: "ALL" });
-                }}
-                className="rounded-full border border-neutral-700 px-3 py-2 text-xs text-neutral-300 hover:bg-neutral-800/80"
-              >
-                Limpar filtros
-              </button>
+        <div className="flex gap-2 self-end md:self-auto">
+          <button
+            type="button"
+            onClick={() => {
+              setQuery("");
+              setStatusFilter("ALL");
+              setIntentFilter("");
+              setSlugFilter("");
+              setUserFilter("");
+              setPage(1);
+              void loadTickets({ q: "", status: "ALL", intent: "", slug: "", user: "", page: 1 });
+            }}
+            className="rounded-full border border-neutral-700 px-3 py-2 text-xs text-neutral-300 hover:bg-neutral-800/80"
+          >
+            Limpar filtros
+          </button>
               <button
                 type="submit"
                 className="rounded-full bg-neutral-50 px-4 py-2 text-xs font-semibold text-neutral-900 hover:bg-white"
@@ -281,6 +359,12 @@ export default function AdminTicketsPage() {
           </div>
         )}
 
+        {!loading && actionMessage && !errorMsg && (
+          <div className="rounded-2xl border border-emerald-700/60 bg-emerald-900/50 p-4 text-sm text-emerald-100">
+            {actionMessage}
+          </div>
+        )}
+
         {!loading && !errorMsg && !hasTickets && (
           <div className="rounded-2xl border border-dashed border-neutral-800 bg-neutral-900/60 p-6 text-sm text-neutral-300">
             <p className="font-medium">Nenhum bilhete encontrado para estes filtros.</p>
@@ -299,11 +383,13 @@ export default function AdminTicketsPage() {
                   <tr className="border-b border-neutral-800 text-[11px] uppercase tracking-[0.16em] text-neutral-500">
                     <th className="px-3 py-3">Bilhete</th>
                     <th className="px-3 py-3">Evento</th>
+                    <th className="px-3 py-3">Tipo</th>
                     <th className="px-3 py-3">Utilizador</th>
-                    <th className="px-3 py-3">Preço</th>
+                    <th className="px-3 py-3">Preço / Fees</th>
                     <th className="px-3 py-3">Estado</th>
                     <th className="px-3 py-3">Comprado em</th>
                     <th className="px-3 py-3">Intent</th>
+                    <th className="px-3 py-3 text-right">Ações</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -311,36 +397,24 @@ export default function AdminTicketsPage() {
                     const event = t.event;
                     const user = t.user;
                     const profile = user?.profile;
-
-                    const userLabel =
-                      profile?.username
-                        ? `@${profile.username}`
-                        : profile?.fullName
+                    const userLabel = profile?.username
+                      ? `@${profile.username}`
+                      : profile?.fullName
                         ? profile.fullName
                         : user?.email ?? "—";
 
                     return (
-                      <tr
-                        key={t.id}
-                        className="border-b border-neutral-900/80 last:border-0 hover:bg-neutral-900/80"
-                      >
-                        <td className="px-3 py-3 align-top font-mono text-[11px] text-neutral-300">
-                          {t.id}
-                        </td>
+                      <tr key={t.id} className="border-b border-neutral-900/80 last:border-0 hover:bg-neutral-900/80">
+                        <td className="px-3 py-3 align-top font-mono text-[11px] text-neutral-300">{t.id}</td>
                         <td className="px-3 py-3 align-top">
                           {event?.title ? (
                             <div className="flex flex-col gap-0.5">
                               {event.slug ? (
-                                <Link
-                                  href={`/eventos/${event.slug}`}
-                                  className="text-xs font-medium text-neutral-50 hover:underline"
-                                >
+                                <Link href={`/eventos/${event.slug}`} className="text-xs font-medium text-neutral-50 hover:underline">
                                   {event.title}
                                 </Link>
                               ) : (
-                                <span className="text-xs font-medium text-neutral-50">
-                                  {event.title}
-                                </span>
+                                <span className="text-xs font-medium text-neutral-50">{event.title}</span>
                               )}
                               {event.startsAt && (
                                 <span className="text-[11px] text-neutral-400">
@@ -352,27 +426,32 @@ export default function AdminTicketsPage() {
                             <span className="text-xs text-neutral-500">—</span>
                           )}
                         </td>
+                        <td className="px-3 py-3 align-top text-xs text-neutral-100">
+                          {t.ticketType?.name ?? "—"}
+                        </td>
                         <td className="px-3 py-3 align-top">
                           <div className="flex flex-col gap-0.5 text-xs">
-                            <span className="font-medium text-neutral-50">
-                              {userLabel}
-                            </span>
+                            <span className="font-medium text-neutral-50">{userLabel}</span>
                             {user?.email && (
-                              <span className="text-[11px] text-neutral-500">
-                                {user.email}
-                              </span>
+                              <span className="text-[11px] text-neutral-500">{user.email}</span>
                             )}
                           </div>
                         </td>
-                        <td className="px-3 py-3 align-top text-xs text-neutral-100">
-                          {formatMoney(t.pricePaidCents ?? null, t.currency || "EUR")}
+                        <td className="px-3 py-3 align-top text-[11px] text-neutral-100">
+                          <div className="flex flex-col gap-1">
+                            <span className="text-xs text-neutral-100">
+                              Pago: {formatMoney(t.pricePaidCents ?? null, t.currency || "EUR")}
+                            </span>
+                            <span className="text-[11px] text-neutral-400">
+                              Fee: {formatMoney(t.platformFeeCents ?? null, t.currency || "EUR")}
+                            </span>
+                            <span className="text-[11px] text-neutral-400">
+                              Total: {formatMoney(t.totalPaidCents ?? null, t.currency || "EUR")}
+                            </span>
+                          </div>
                         </td>
                         <td className="px-3 py-3 align-top">
-                          <span
-                            className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-medium ${statusBadgeClasses(
-                              t.status || "",
-                            )}`}
-                          >
+                          <span className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-medium ${statusBadgeClasses(t.status || "")}`}>
                             {statusLabel(t.status)}
                           </span>
                         </td>
@@ -380,7 +459,45 @@ export default function AdminTicketsPage() {
                           {formatDate(t.purchasedAt)}
                         </td>
                         <td className="px-3 py-3 align-top font-mono text-[10px] text-neutral-500 max-w-[160px] truncate">
-                          {t.stripePaymentIntentId || "—"}
+                          <div className="flex flex-col gap-1">
+                            <span className="truncate">{t.stripePaymentIntentId || "—"}</span>
+                            {t.stripePaymentIntentId && (
+                              <div className="flex flex-wrap gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => navigator.clipboard?.writeText(t.stripePaymentIntentId || "")}
+                                  className="rounded-full border border-neutral-700 px-2 py-0.5 text-[10px] text-neutral-300 hover:bg-neutral-800/70"
+                                >
+                                  Copiar
+                                </button>
+                                <Link
+                                  href={`/admin/payments?q=${encodeURIComponent(t.stripePaymentIntentId)}`}
+                                  className="rounded-full border border-neutral-700 px-2 py-0.5 text-[10px] text-neutral-300 hover:bg-neutral-800/70"
+                                >
+                                  Ver intent
+                                </Link>
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-3 py-3 align-top text-right">
+                          <div className="flex flex-wrap justify-end gap-2">
+                            <Link
+                              href={`/admin/payments?q=${encodeURIComponent(t.stripePaymentIntentId || "")}`}
+                              className="rounded-full border border-neutral-700 px-2.5 py-1 text-[11px] text-neutral-200 hover:bg-neutral-800/70"
+                            >
+                              Pagamento
+                            </Link>
+                            {t.stripePaymentIntentId && t.paymentEventStatus === "REFUNDED" && (
+                              <button
+                                type="button"
+                                onClick={() => handleRefund(t.stripePaymentIntentId)}
+                                className="rounded-full border border-neutral-700 px-2.5 py-1 text-[11px] text-neutral-100 hover:bg-neutral-800/70"
+                              >
+                                Refund
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     );
@@ -391,6 +508,38 @@ export default function AdminTicketsPage() {
           </section>
         )}
       </div>
-    </main>
+      {/* Paginação simples */}
+      <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4 text-xs text-neutral-300">
+        <span>
+          Página {page} · {total} registos
+        </span>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            disabled={page <= 1}
+            onClick={() => {
+              const next = Math.max(1, page - 1);
+              setPage(next);
+              void loadTickets({ page: next });
+            }}
+            className="rounded-full border border-neutral-700 px-3 py-1.5 disabled:opacity-40 hover:bg-neutral-800/70"
+          >
+            Anterior
+          </button>
+          <button
+            type="button"
+            disabled={page * pageSize >= total}
+            onClick={() => {
+              const next = page + 1;
+              setPage(next);
+              void loadTickets({ page: next });
+            }}
+            className="rounded-full border border-neutral-700 px-3 py-1.5 disabled:opacity-40 hover:bg-neutral-800/70"
+          >
+            Seguinte
+          </button>
+        </div>
+      </div>
+    </AdminLayout>
   );
 }

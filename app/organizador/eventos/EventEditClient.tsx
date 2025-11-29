@@ -31,6 +31,9 @@ type EventEditClientProps = {
     templateType: string | null;
     isFree: boolean;
     coverImageUrl: string | null;
+    feeModeOverride?: string | null;
+    platformFeeBpsOverride?: number | null;
+    platformFeeFixedCentsOverride?: number | null;
   };
   tickets: TicketTypeUI[];
   eventHasTickets?: boolean;
@@ -48,6 +51,13 @@ export function EventEditClient({ event, tickets, eventHasTickets }: EventEditCl
   const [isFree, setIsFree] = useState(event.isFree);
   const [coverUrl, setCoverUrl] = useState<string | null>(event.coverImageUrl);
   const [uploadingCover, setUploadingCover] = useState(false);
+  const [feeMode, setFeeMode] = useState<string>(event.feeModeOverride ?? "INHERIT");
+  const [feeBpsOverride, setFeeBpsOverride] = useState<string>(
+    event.platformFeeBpsOverride != null ? String(event.platformFeeBpsOverride) : "",
+  );
+  const [feeFixedOverride, setFeeFixedOverride] = useState<string>(
+    event.platformFeeFixedCentsOverride != null ? String(event.platformFeeFixedCentsOverride) : "",
+  );
 
   const [newTicket, setNewTicket] = useState({
     name: "",
@@ -97,6 +107,19 @@ export function EventEditClient({ event, tickets, eventHasTickets }: EventEditCl
         status: TicketTypeStatus.CLOSED,
       }));
 
+      const normalizedFeeMode = feeMode === "INHERIT" ? null : feeMode;
+      const feeBps =
+        feeBpsOverride.trim() === "" ? null : Number(feeBpsOverride.replace(",", "."));
+      const feeFixed =
+        feeFixedOverride.trim() === "" ? null : Number(feeFixedOverride.replace(",", "."));
+
+      if (feeBps !== null && (!Number.isFinite(feeBps) || feeBps < 0)) {
+        throw new Error("Fee (%) inválido.");
+      }
+      if (feeFixed !== null && (!Number.isFinite(feeFixed) || feeFixed < 0)) {
+        throw new Error("Fee fixa inválida.");
+      }
+
       const newTicketsPayload =
         newTicket.name.trim() && newTicket.priceEuro
           ? [
@@ -128,6 +151,9 @@ export function EventEditClient({ event, tickets, eventHasTickets }: EventEditCl
           templateType,
           isFree,
           coverImageUrl: coverUrl,
+          feeModeOverride: normalizedFeeMode,
+          platformFeeBpsOverride: feeBps === null ? null : Math.floor(feeBps),
+          platformFeeFixedCentsOverride: feeFixed === null ? null : Math.floor(feeFixed),
           ticketTypeUpdates,
           newTicketTypes: newTicketsPayload,
         }),
@@ -383,6 +409,41 @@ export function EventEditClient({ event, tickets, eventHasTickets }: EventEditCl
             <option value="TALK">Palestra / Talk</option>
             <option value="OTHER">Outro</option>
           </select>
+        </div>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="space-y-1">
+            <label className="text-sm font-medium">Modo de fee</label>
+            <select
+              value={feeMode}
+              onChange={(e) => setFeeMode(e.target.value)}
+              className="w-full rounded-md border border-white/15 bg-black/20 px-3 py-2 text-sm outline-none focus:border-white/60"
+            >
+              <option value="INHERIT">Usar padrão do organizador</option>
+              <option value="ADDED">Taxa adicionada ao bilhete</option>
+              <option value="INCLUDED">Taxa incluída no preço</option>
+            </select>
+            <p className="text-[11px] text-white/60">Leave em “padrão” para herdar o configurado no painel.</p>
+          </div>
+          <div className="space-y-1">
+            <label className="text-sm font-medium">Fee % (bps)</label>
+            <input
+              value={feeBpsOverride}
+              onChange={(e) => setFeeBpsOverride(e.target.value)}
+              placeholder="ex.: 200"
+              className="w-full rounded-md border border-white/15 bg-black/20 px-3 py-2 text-sm outline-none focus:border-white/60"
+            />
+            <p className="text-[11px] text-white/60">Em basis points (200 = 2%). Vazio = usar padrão.</p>
+          </div>
+          <div className="space-y-1">
+            <label className="text-sm font-medium">Fee fixa (cêntimos)</label>
+            <input
+              value={feeFixedOverride}
+              onChange={(e) => setFeeFixedOverride(e.target.value)}
+              placeholder="ex.: 0"
+              className="w-full rounded-md border border-white/15 bg-black/20 px-3 py-2 text-sm outline-none focus:border-white/60"
+            />
+            <p className="text-[11px] text-white/60">Valor em cêntimos. Vazio = usar padrão.</p>
+          </div>
         </div>
         <label className="inline-flex items-center gap-2 text-sm text-white/80">
           <input

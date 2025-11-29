@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import useSWR from "swr";
 import { useUser } from "@/app/hooks/useUser";
@@ -23,6 +23,8 @@ type EventItem = {
   locationCity: string | null;
   status: string;
   isFree: boolean;
+  ticketsSold?: number;
+  revenueCents?: number;
 };
 
 type EventsResponse = { ok: boolean; items: EventItem[] };
@@ -30,6 +32,8 @@ type EventsResponse = { ok: boolean; items: EventItem[] };
 export default function OrganizadorPage() {
   const { user, profile, isLoading: userLoading, mutate: mutateUser } = useUser();
   const { openModal } = useAuthModal();
+  const [ctaError, setCtaError] = useState<string | null>(null);
+  const emailVerified = Boolean(user?.emailConfirmedAt);
 
   const { data: organizerData, isLoading: organizerLoading, mutate: mutateOrganizer } = useSWR(
     user ? "/api/organizador/me" : null,
@@ -52,6 +56,10 @@ export default function OrganizadorPage() {
   );
 
   async function handleBecomeOrganizer() {
+    if (!emailVerified) {
+      setCtaError("Confirma o teu e-mail antes de pedires acesso a organizador.");
+      return;
+    }
     try {
       const res = await fetch("/api/organizador/become", {
         method: "POST",
@@ -64,6 +72,7 @@ export default function OrganizadorPage() {
 
       await mutateOrganizer();
       await mutateUser();
+      setCtaError(null);
     } catch (err) {
       console.error("Erro inesperado ao tornar organizador", err);
     }
@@ -118,7 +127,7 @@ export default function OrganizadorPage() {
     { label: "Criar evento", href: "/organizador/eventos/novo", accent: "from-[#FF00C8] to-[#6BFFFF]" },
     { label: "Eventos", href: "/organizador/eventos", accent: "from-[#6BFFFF] to-[#1646F5]" },
     { label: "Estatísticas", href: "/organizador/estatisticas", accent: "from-[#A855F7] to-[#6366F1]" },
-    { label: "Payouts Stripe", href: "/organizador/payouts/connect", accent: "from-[#10B981] to-[#34D399]" },
+    { label: "Pagamentos / Stripe", href: "/organizador/pagamentos", accent: "from-[#10B981] to-[#34D399]" },
     { label: "Staff", href: "/organizador/staff", accent: "from-[#F59E0B] to-[#F97316]" },
   ];
 
@@ -148,10 +157,17 @@ export default function OrganizadorPage() {
           <p className="text-sm text-white/70">
             Queres vender bilhetes na ORYA? Envia a tua candidatura e a equipa vai rever.
           </p>
+          {!emailVerified && (
+            <p className="text-sm text-amber-200">
+              Confirma o teu e-mail antes de pedires acesso a organizador.
+            </p>
+          )}
+          {ctaError && <p className="text-sm text-red-200">{ctaError}</p>}
           <button
             type="button"
             onClick={handleBecomeOrganizer}
-            className="px-4 py-2 rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] font-semibold text-black shadow-lg"
+            disabled={!emailVerified}
+            className="px-4 py-2 rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] font-semibold text-black shadow-lg disabled:opacity-60"
           >
             Enviar candidatura
           </button>
@@ -250,16 +266,16 @@ export default function OrganizadorPage() {
               Liga a tua conta Stripe para receberes payouts automáticos e evitares bloqueios de venda.
               <div className="mt-2 flex gap-2">
                 <Link
-                  href="/organizador/payouts/connect"
+                  href="/organizador/pagamentos"
                   className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-[#10B981] to-[#34D399] px-3 py-1.5 text-[11px] font-semibold text-black shadow"
                 >
                   Ligar Stripe
                 </Link>
                 <Link
-                  href="/organizador/payouts"
+                  href="/organizador/pagamentos"
                   className="inline-flex items-center gap-1 rounded-full border border-white/15 px-3 py-1.5 text-white/80 hover:bg-white/10"
                 >
-                  Ver payouts
+                  Ver pagamentos
                 </Link>
               </div>
             </div>
@@ -318,6 +334,8 @@ export default function OrganizadorPage() {
               <div className="grid gap-3 md:grid-cols-2">
                 {events.items.slice(0, 6).map((ev) => {
                   const date = ev.startsAt ? new Date(ev.startsAt) : null;
+                  const ticketsSold = ev.ticketsSold ?? 0;
+                  const revenue = ((ev.revenueCents ?? 0) / 100).toFixed(2);
                   const dateLabel = date
                     ? date.toLocaleString("pt-PT", {
                         day: "2-digit",
@@ -337,6 +355,9 @@ export default function OrganizadorPage() {
                           <p className="text-[11px] text-white/60">{dateLabel}</p>
                           <p className="text-[11px] text-white/60">
                             {ev.locationName || ev.locationCity || "Local a anunciar"}
+                          </p>
+                          <p className="text-[11px] text-white/60">
+                            {ticketsSold} bilhetes · {revenue} €
                           </p>
                         </div>
                         <span className="rounded-full border border-white/20 px-2 py-0.5 text-[10px] text-white/80">

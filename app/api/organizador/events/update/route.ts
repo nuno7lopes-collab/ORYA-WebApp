@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, assertOrganizer } from "@/lib/security";
-import { TicketTypeStatus, Prisma } from "@prisma/client";
+import { TicketTypeStatus, Prisma, EventTemplateType } from "@prisma/client";
 
 type TicketTypeUpdate = {
   id: number;
@@ -33,6 +33,9 @@ type UpdateEventBody = {
   coverImageUrl?: string | null;
   ticketTypeUpdates?: TicketTypeUpdate[];
   newTicketTypes?: NewTicketType[];
+  feeModeOverride?: string | null;
+  platformFeeBpsOverride?: number | null;
+  platformFeeFixedCentsOverride?: number | null;
 };
 
 export async function POST(req: NextRequest) {
@@ -102,7 +105,47 @@ export async function POST(req: NextRequest) {
     if (body.locationName !== undefined) dataUpdate.locationName = body.locationName ?? "";
     if (body.locationCity !== undefined) dataUpdate.locationCity = body.locationCity ?? "";
     if (body.address !== undefined) dataUpdate.address = body.address ?? null;
-    if (body.templateType) dataUpdate.templateType = body.templateType.toUpperCase();
+    if (body.templateType) {
+      const tpl = body.templateType.toUpperCase();
+      if ((Object.values(EventTemplateType) as string[]).includes(tpl)) {
+        dataUpdate.templateType = tpl as EventTemplateType;
+      }
+    }
+    if (body.feeModeOverride !== undefined) {
+      const normalized = body.feeModeOverride?.toUpperCase();
+      if (normalized === "ADDED" || normalized === "INCLUDED") {
+        dataUpdate.feeModeOverride = normalized;
+      } else if (!normalized) {
+        dataUpdate.feeModeOverride = null;
+      } else {
+        return NextResponse.json({ ok: false, error: "feeModeOverride inválido." }, { status: 400 });
+      }
+    }
+    if (body.platformFeeBpsOverride !== undefined) {
+      if (body.platformFeeBpsOverride === null) {
+        dataUpdate.platformFeeBpsOverride = null;
+      } else {
+        const value = Number(body.platformFeeBpsOverride);
+        if (!Number.isFinite(value) || value < 0 || value > 5000) {
+          return NextResponse.json({ ok: false, error: "platformFeeBpsOverride inválido." }, { status: 400 });
+        }
+        dataUpdate.platformFeeBpsOverride = Math.floor(value);
+      }
+    }
+    if (body.platformFeeFixedCentsOverride !== undefined) {
+      if (body.platformFeeFixedCentsOverride === null) {
+        dataUpdate.platformFeeFixedCentsOverride = null;
+      } else {
+        const value = Number(body.platformFeeFixedCentsOverride);
+        if (!Number.isFinite(value) || value < 0 || value > 5000) {
+          return NextResponse.json(
+            { ok: false, error: "platformFeeFixedCentsOverride inválido." },
+            { status: 400 },
+          );
+        }
+        dataUpdate.platformFeeFixedCentsOverride = Math.floor(value);
+      }
+    }
     // Não permitir converter para grátis se já há bilhetes e atualmente não é grátis
     if (body.isFree !== undefined) {
       const hasTickets = event.ticketTypes.length > 0;

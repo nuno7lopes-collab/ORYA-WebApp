@@ -3,6 +3,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
+import { getPlatformFees } from "@/lib/platformSettings";
 
 export async function GET(req: NextRequest) {
   try {
@@ -38,6 +39,7 @@ export async function GET(req: NextRequest) {
     const organizer = await prisma.organizer.findFirst({
       where: { userId: profile.id },
     });
+    const platformFees = await getPlatformFees();
 
     const profilePayload = {
       id: profile.id,
@@ -57,6 +59,11 @@ export async function GET(req: NextRequest) {
           displayName: organizer.displayName,
           stripeAccountId: organizer.stripeAccountId,
           status: organizer.status,
+          stripeChargesEnabled: organizer.stripeChargesEnabled,
+          stripePayoutsEnabled: organizer.stripePayoutsEnabled,
+          feeMode: organizer.feeMode,
+          platformFeeBps: organizer.platformFeeBps,
+          platformFeeFixedCents: organizer.platformFeeFixedCents,
         }
       : null;
 
@@ -65,6 +72,7 @@ export async function GET(req: NextRequest) {
         ok: true,
         profile: profilePayload,
         organizer: organizerPayload,
+        platformFees,
       },
       { status: 200 }
     );
