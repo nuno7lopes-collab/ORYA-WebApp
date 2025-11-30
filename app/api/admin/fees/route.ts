@@ -82,22 +82,23 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json();
 
-    const platformFeeBps = Number(body?.platformFeeBps);
-    const platformFeeFixedCents = Number(body?.platformFeeFixedCents);
-    const stripeFeeBpsEu = Number(body?.stripeFeeBpsEu);
-    const stripeFeeFixedCentsEu = Number(body?.stripeFeeFixedCentsEu);
+    const clamp = (val: number, min: number, max: number) => Math.min(Math.max(val, min), max);
+    const platformFeeBpsRaw = Number(body?.platformFeeBps);
+    const platformFeeFixedCentsRaw = Number(body?.platformFeeFixedCents);
+    const stripeFeeBpsEuRaw = Number(body?.stripeFeeBpsEu);
+    const stripeFeeFixedCentsEuRaw = Number(body?.stripeFeeFixedCentsEu);
 
     const updatesErrors: string[] = [];
-    if (body?.platformFeeBps !== undefined && !Number.isFinite(platformFeeBps)) {
+    if (body?.platformFeeBps !== undefined && !Number.isFinite(platformFeeBpsRaw)) {
       updatesErrors.push("platformFeeBps inválido");
     }
-    if (body?.platformFeeFixedCents !== undefined && !Number.isFinite(platformFeeFixedCents)) {
+    if (body?.platformFeeFixedCents !== undefined && !Number.isFinite(platformFeeFixedCentsRaw)) {
       updatesErrors.push("platformFeeFixedCents inválido");
     }
-    if (body?.stripeFeeBpsEu !== undefined && !Number.isFinite(stripeFeeBpsEu)) {
+    if (body?.stripeFeeBpsEu !== undefined && !Number.isFinite(stripeFeeBpsEuRaw)) {
       updatesErrors.push("stripeFeeBpsEu inválido");
     }
-    if (body?.stripeFeeFixedCentsEu !== undefined && !Number.isFinite(stripeFeeFixedCentsEu)) {
+    if (body?.stripeFeeFixedCentsEu !== undefined && !Number.isFinite(stripeFeeFixedCentsEuRaw)) {
       updatesErrors.push("stripeFeeFixedCentsEu inválido");
     }
 
@@ -107,12 +108,20 @@ export async function POST(req: NextRequest) {
 
     await Promise.all([
       setPlatformFees({
-        feeBps: Number.isFinite(platformFeeBps) ? platformFeeBps : undefined,
-        feeFixedCents: Number.isFinite(platformFeeFixedCents) ? platformFeeFixedCents : undefined,
+        feeBps: Number.isFinite(platformFeeBpsRaw)
+          ? clamp(Math.round(platformFeeBpsRaw), 0, 5000)
+          : undefined,
+        feeFixedCents: Number.isFinite(platformFeeFixedCentsRaw)
+          ? clamp(Math.round(platformFeeFixedCentsRaw), 0, 5000)
+          : undefined,
       }),
       setStripeBaseFees({
-        feeBps: Number.isFinite(stripeFeeBpsEu) ? stripeFeeBpsEu : undefined,
-        feeFixedCents: Number.isFinite(stripeFeeFixedCentsEu) ? stripeFeeFixedCentsEu : undefined,
+        feeBps: Number.isFinite(stripeFeeBpsEuRaw)
+          ? clamp(Math.round(stripeFeeBpsEuRaw), 0, 5000)
+          : undefined,
+        feeFixedCents: Number.isFinite(stripeFeeFixedCentsEuRaw)
+          ? clamp(Math.round(stripeFeeFixedCentsEuRaw), 0, 5000)
+          : undefined,
       }),
     ]);
 

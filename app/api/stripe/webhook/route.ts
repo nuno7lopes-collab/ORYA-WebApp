@@ -342,6 +342,7 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent) {
         eventId: eventRecord.id,
         amountCents: intent.amount ?? null,
         platformFeeCents: platformFeeTotal ?? null,
+        userId,
         errorMessage: null,
         updatedAt: new Date(),
       },
@@ -352,6 +353,7 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent) {
           stripePaymentIntentId: intent.id,
           status: "PROCESSING",
           eventId: eventRecord.id,
+          userId,
           amountCents: intent.amount ?? null,
           platformFeeCents: platformFeeTotal ?? null,
         },
@@ -405,16 +407,18 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent) {
             userId,
             eventId: eventRecord.id,
             ticketTypeId: ticketType.id,
-            status: "ACTIVE",
-            purchasedAt: new Date(),
-            qrSecret: token,
-            pricePaid: ticketType.price,
-            currency: ticketType.currency,
-            stripePaymentIntentId: intent.id,
-          },
-        })
-      );
-    }
+          status: "ACTIVE",
+          purchasedAt: new Date(),
+          qrSecret: token,
+          pricePaid: ticketType.price,
+          currency: ticketType.currency,
+          platformFeeCents: feeForThisTicket,
+          totalPaidCents: ticketType.price + feeForThisTicket,
+          stripePaymentIntentId: intent.id,
+        },
+      })
+    );
+  }
 
     stockUpdates.push(
       prisma.ticketType.update({

@@ -263,6 +263,8 @@ model Ticket {
   pricePaid             Int     @map("price_paid")
   currency              String  @default("EUR")
   stripePaymentIntentId String? @map("stripe_payment_intent_id")
+  platformFeeCents      Int?    @map("platform_fee_cents")
+  totalPaidCents        Int?    @map("total_paid_cents")
 
   usedAt DateTime? @map("used_at")
 
@@ -483,6 +485,7 @@ model PaymentEvent {
   eventId              Int?     @map("event_id")
   amountCents          Int?     @map("amount_cents")
   platformFeeCents     Int?     @map("platform_fee_cents")
+  userId               String?  @map("user_id") @db.Uuid
   errorMessage         String?  @map("error_message")
   createdAt            DateTime @default(now()) @map("created_at")
   updatedAt            DateTime @updatedAt @map("updated_at")
