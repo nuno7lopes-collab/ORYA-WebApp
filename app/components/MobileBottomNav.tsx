@@ -48,8 +48,11 @@ export default function MobileBottomNav({
 
   return (
     <nav
-      className="fixed bottom-0 left-0 right-0 z-40 border-t border-white/10 bg-[#050915]/92 text-white shadow-[0_-12px_36px_rgba(0,0,0,0.55)] backdrop-blur md:hidden"
-      style={{ paddingBottom: "calc(10px + env(safe-area-inset-bottom, 0px))", paddingTop: "10px" }}
+      className="fixed bottom-0 left-0 right-0 z-[60] border-t border-white/10 bg-[#050915]/92 text-white shadow-[0_-12px_36px_rgba(0,0,0,0.55)] backdrop-blur md:hidden"
+      style={{
+        paddingBottom: "calc(10px + env(safe-area-inset-bottom, 14px))",
+        paddingTop: "12px",
+      }}
     >
       <div className="relative mx-auto flex max-w-md items-end justify-between px-3">
         {/* Grupo esquerdo */}
@@ -75,23 +78,23 @@ export default function MobileBottomNav({
         </div>
 
         {/* Botão central com anel ORYA */}
-        <div className="absolute left-1/2 top-[-24px] -translate-x-1/2">
-          <button
-            type="button"
-            onClick={() => router.push("/")}
-            className="relative flex h-14 w-14 items-center justify-center rounded-full outline-none"
-            aria-label="Início ORYA"
-          >
-            <span className="absolute inset-0 rounded-full bg-gradient-to-r from-[#5bf5ff]/30 via-[#8f66ff]/30 to-[#ff3cd6]/30 blur-sm" />
-            <span className="absolute inset-0 rounded-full bg-gradient-to-r from-[#5bf5ff] via-[#8f66ff] to-[#ff3cd6] opacity-90 shadow-[0_0_22px_rgba(107,255,255,0.32)]" />
-            <span className="absolute inset-[5px] rounded-full bg-[#050915]" />
-            <span className="absolute inset-0 rounded-full bg-gradient-to-r from-[#5bf5ff]/35 via-[#8f66ff]/35 to-[#ff3cd6]/35 animate-pulse opacity-60" />
-          </button>
-        </div>
+            <div className="absolute left-1/2 top-[-24px] -translate-x-1/2">
+              <button
+                type="button"
+                onClick={() => router.push("/")}
+                className="relative flex h-14 w-14 items-center justify-center rounded-full outline-none"
+                aria-label="Início ORYA"
+              >
+                <span className="absolute inset-0 rounded-full bg-gradient-to-r from-[#5bf5ff]/25 via-[#8f66ff]/25 to-[#ff3cd6]/25 blur-sm" />
+                <span className="absolute inset-0 rounded-full bg-gradient-to-r from-[#5bf5ff] via-[#8f66ff] to-[#ff3cd6] opacity-90 shadow-[0_0_26px_rgba(107,255,255,0.42)]" />
+                <span className="absolute inset-[5px] rounded-full bg-[#050915]" />
+                <span className="absolute inset-0 rounded-full bg-gradient-to-r from-[#5bf5ff]/35 via-[#8f66ff]/35 to-[#ff3cd6]/35 animate-pulse opacity-60" />
+              </button>
+            </div>
 
-        {/* Grupo direito */}
-        <div className="flex flex-1 items-center justify-end gap-2">
-          {itemsRight.map((item) => {
+            {/* Grupo direito */}
+            <div className="flex flex-1 items-center justify-end gap-2">
+              {itemsRight.map((item) => {
             const active = item.active(pathname);
             return (
               <button
