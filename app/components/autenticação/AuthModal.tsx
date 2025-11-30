@@ -302,14 +302,27 @@ function AuthModalContent({
     }
   }
 
+  const isLogin = mode === "login";
+  const isSignup = mode === "signup";
+
   const title =
     mode === "login"
-      ? "Iniciar sessão"
+      ? "Entrar na ORYA"
       : mode === "signup"
-      ? "Criar conta"
+      ? "Criar conta na ORYA"
       : mode === "verify"
       ? "Confirmar email"
       : "Completar perfil";
+
+  const subtitle =
+    mode === "login"
+      ? "Acede à tua conta e continua onde ficaste."
+      : mode === "signup"
+      ? "Demora segundos. Depois é só viver experiências."
+      : mode === "verify"
+      ? "Valida o código que enviámos para o teu email."
+      : "Só falta isto para ficares pronto.";
+
 
   const isPrimaryDisabled =
     loading ||
@@ -325,7 +338,39 @@ function AuthModalContent({
         ref={modalRef}
         className="w-full max-w-md rounded-3xl border border-white/15 bg-black/80 p-6 shadow-xl"
       >
-        <h2 className="text-xl font-semibold text-white mb-4">{title}</h2>
+        <div className="mb-4 space-y-2">
+          <div className="space-y-1">
+            <h2 className="text-2xl font-semibold text-white leading-tight">{title}</h2>
+            <p className="text-sm text-white/70">{subtitle}</p>
+          </div>
+
+          {(isLogin || isSignup) && (
+            <div className="mt-3 grid grid-cols-2 gap-1 rounded-full bg-white/5 p-1 text-sm text-white/80">
+              <button
+                type="button"
+                onClick={() => setMode("login")}
+                className={`rounded-full px-3 py-2 transition ${
+                  isLogin
+                    ? "bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] text-black shadow-[0_0_16px_rgba(107,255,255,0.35)]"
+                    : "hover:bg-white/10"
+                }`}
+              >
+                Entrar
+              </button>
+              <button
+                type="button"
+                onClick={() => setMode("signup")}
+                className={`rounded-full px-3 py-2 transition ${
+                  isSignup
+                    ? "bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] text-black shadow-[0_0_16px_rgba(107,255,255,0.35)]"
+                    : "hover:bg-white/10"
+                }`}
+              >
+                Criar conta
+              </button>
+            </div>
+          )}
+        </div>
 
         {(mode === "login" || mode === "signup") && (
           <>
@@ -392,8 +437,7 @@ function AuthModalContent({
             )}
 
             <p className="mt-2 text-[10px] text-white/50 leading-snug">
-              Ao continuar, aceitas os termos da ORYA. Podes terminar sessão
-              quando quiseres.
+              Ao continuar, aceitas os termos da ORYA.
             </p>
           </>
         )}
@@ -473,7 +517,7 @@ function AuthModalContent({
               {loading
                 ? "A processar…"
                 : mode === "login"
-                ? "Entrar na ORYA"
+                ? "Entrar"
                 : "Criar conta"}
             </button>
           )}
@@ -507,8 +551,8 @@ function AuthModalContent({
               className="text-[11px] text-white/70 hover:text-white"
             >
               {mode === "login"
-                ? "Ainda não tens conta? Cria uma agora."
-                : "Já tens conta? Inicia sessão."}
+                ? "Ainda não tens conta? Criar conta"
+                : "Já tens conta? Entrar"}
             </button>
           )}
 
