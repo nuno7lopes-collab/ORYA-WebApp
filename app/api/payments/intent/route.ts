@@ -4,7 +4,6 @@ export const runtime = "nodejs";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { MAX_TICKETS_PER_WAVE } from "@/lib/tickets";
 import { stripe } from "@/lib/stripeClient";
 import { getPlatformFees } from "@/lib/platformSettings";
 
@@ -213,15 +212,7 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      if (qty > MAX_TICKETS_PER_WAVE) {
-        return NextResponse.json(
-          {
-            ok: false,
-            error: `Máximo ${MAX_TICKETS_PER_WAVE} bilhetes por wave em cada compra.`,
-          },
-          { status: 400 },
-        );
-      }
+      // limite agora é apenas o stock disponível; o cap de 6 foi removido
 
       // Validação de stock (incluindo reservas ativas de outros)
       if (

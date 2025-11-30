@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { useCheckout } from "./contextoCheckout";
-import { MAX_TICKETS_PER_WAVE } from "@/lib/tickets";
 
 type Wave = {
   id: string;
@@ -85,9 +84,7 @@ export default function Step1Bilhete() {
       typeof wave.remaining === "number" && wave.remaining >= 0
         ? wave.remaining
         : null;
-    return remaining === null
-      ? Number.MAX_SAFE_INTEGER
-      : Math.max(0, remaining);
+    return remaining === null ? Number.MAX_SAFE_INTEGER : Math.max(0, remaining);
   }
 
   function handleIncrement(id: string) {

@@ -57,8 +57,12 @@ function ProfileForm({
   initialUsername,
   onSaved,
 }: ProfileFormProps) {
+  const sanitizeUsername = (value: string) =>
+    value.replace(/[^A-Za-z]/g, "").slice(0, 16);
+
   const [fullName, setFullName] = useState(initialFullName);
-  const [username, setUsername] = useState(initialUsername);
+  const [username, setUsername] = useState(sanitizeUsername(initialUsername));
+  const [usernameHint, setUsernameHint] = useState<string | null>(null);
   const [usernameStatus, setUsernameStatus] = useState<
     "idle" | "checking" | "available" | "taken" | "error"
   >("idle");
@@ -66,7 +70,7 @@ function ProfileForm({
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   async function checkUsernameAvailability(currentUsername: string) {
-    const trimmed = currentUsername.trim().toLowerCase();
+    const trimmed = sanitizeUsername(currentUsername).toLowerCase();
     if (!trimmed) {
       setUsernameStatus("idle");
       return;
@@ -98,10 +102,10 @@ function ProfileForm({
     setError(null);
 
     const trimmedName = fullName.trim();
-    const trimmedUsername = username.trim().toLowerCase();
+    const trimmedUsername = sanitizeUsername(username).toLowerCase();
 
     if (!trimmedName || !trimmedUsername) {
-      setError("Preenche o nome e o username.");
+      setError("Preenche o nome e um username só com letras (máx. 16).");
       return;
     }
 
@@ -176,12 +180,23 @@ function ProfileForm({
               <input
                 id="username"
                 type="text"
+                inputMode="text"
+                pattern="[A-Za-z]{0,16}"
                 value={username}
                 onChange={(e) => {
-                  setUsername(e.target.value);
+                  const raw = e.target.value;
+                  const cleaned = sanitizeUsername(raw);
+                  if (raw !== cleaned) {
+                    e.target.value = cleaned;
+                  }
+                  setUsername(cleaned);
+                  setUsernameHint(
+                    raw !== cleaned ? "Só letras (A-Z), sem espaços, máximo 16." : null,
+                  );
                   setUsernameStatus("idle");
                 }}
                 onBlur={() => checkUsernameAvailability(username)}
+                maxLength={16}
                 className="w-full rounded-lg border border-gray-300 pl-7 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black/80"
                 placeholder="teu.nome"
               />
@@ -189,6 +204,9 @@ function ProfileForm({
             <p className="text-xs text-gray-400">
               Este será o link público do teu perfil: orya.app/@{username || "teu.username"}
             </p>
+            {usernameHint && (
+              <p className="text-xs text-amber-600">{usernameHint}</p>
+            )}
             {usernameStatus === "checking" && (
               <p className="text-xs text-gray-500">A verificar disponibilidade...</p>
             )}

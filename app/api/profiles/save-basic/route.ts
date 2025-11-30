@@ -41,22 +41,26 @@ export async function POST(req: NextRequest) {
     const rawUsername = body.username ?? "";
 
     const fullName = rawFullName.trim();
-    const username = rawUsername.trim().toLowerCase();
+    const username = rawUsername.trim();
 
-    if (!fullName || !username) {
+    const usernameValid = /^[A-Za-z]{1,16}$/.test(username);
+
+    if (!fullName || !usernameValid) {
       return NextResponse.json(
         {
           ok: false,
-          error: "Nome completo e username são obrigatórios.",
+          error: "Nome completo e username são obrigatórios e o username só pode ter letras (até 16).",
         },
         { status: 400 }
       );
     }
 
+    const usernameNormalized = username.toLowerCase();
+
     // Verificar se username já está em uso por outro utilizador
     const existing = await prisma.profile.findFirst({
       where: {
-        username,
+        username: usernameNormalized,
         NOT: { id: userId },
       },
     });
@@ -76,13 +80,13 @@ export async function POST(req: NextRequest) {
       where: { id: userId },
       update: {
         fullName,
-        username,
+        username: usernameNormalized,
         onboardingDone: true,
       },
       create: {
         id: userId,
         fullName,
-        username,
+        username: usernameNormalized,
         onboardingDone: true,
         roles: ["user"],
       },

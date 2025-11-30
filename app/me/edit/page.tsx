@@ -18,6 +18,9 @@ type SaveBasicResponse = {
 };
 
 export default function EditProfilePage() {
+  const sanitizeUsername = (value: string) =>
+    value.replace(/[^A-Za-z]/g, "").slice(0, 16);
+
   const router = useRouter();
   const { user, profile, isLoading, mutate } = useUser();
   const { openModal } = useAuthModal();
@@ -29,6 +32,7 @@ export default function EditProfilePage() {
   const [usernameAvailable, setUsernameAvailable] = useState<boolean | null>(
     null,
   );
+  const [usernameHint, setUsernameHint] = useState<string | null>(null);
 
   const [saving, setSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -45,12 +49,12 @@ export default function EditProfilePage() {
 
     if (profile) {
       setFullName(profile.fullName ?? "");
-      setUsername(profile.username ?? "");
+      setUsername(sanitizeUsername(profile.username ?? ""));
     }
   }, [isLoading, user, profile, openModal, router]);
 
   async function checkUsernameAvailability(value: string) {
-    const trimmed = value.trim().toLowerCase();
+    const trimmed = sanitizeUsername(value).toLowerCase();
 
     if (!trimmed) {
       setUsernameAvailable(null);
@@ -92,10 +96,10 @@ export default function EditProfilePage() {
     setErrorMsg(null);
     setSuccessMsg(null);
 
-    const trimmedUsername = username.trim().toLowerCase();
+    const trimmedUsername = sanitizeUsername(username).toLowerCase();
 
     if (!trimmedUsername) {
-      setErrorMsg("Escolhe um username.");
+      setErrorMsg("Escolhe um username só com letras (máx. 16).");
       return;
     }
 
@@ -206,15 +210,29 @@ export default function EditProfilePage() {
               <label className="text-white/70 text-sm">Username</label>
               <input
                 type="text"
+                inputMode="text"
+                pattern="[A-Za-z]{0,16}"
                 value={username}
                 onChange={(e) => {
-                  setUsername(e.target.value);
+                  const raw = e.target.value;
+                  const cleaned = sanitizeUsername(raw);
+                  if (raw !== cleaned) {
+                    e.target.value = cleaned;
+                  }
+                  setUsername(cleaned);
+                  setUsernameHint(
+                    raw !== cleaned ? "Só letras (A-Z), sem espaços, máximo 16." : null,
+                  );
                   setUsernameAvailable(null);
                 }}
                 onBlur={(e) => checkUsernameAvailability(e.target.value)}
+                maxLength={16}
                 className="bg-black/40 border border-white/15 rounded-lg px-3 py-2 text-white outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]/60 text-sm"
                 placeholder="Escolhe o teu @username"
               />
+              {usernameHint && (
+                <p className="text-[11px] text-amber-300 mt-1">{usernameHint}</p>
+              )}
               <p className="text-[11px] text-white/55 mt-1">
                 Este será o link do teu perfil público (ex.: orya.app/@teuusername).
               </p>

@@ -9,11 +9,15 @@ export async function POST(req: NextRequest) {
     if (!body || typeof body.username !== "string") {
       return NextResponse.json({ ok: false, error: "username é obrigatório" }, { status: 400 });
     }
-    let username = body.username.trim().toLowerCase();
-    username = username.replace(/\s+/g, "-");
-    if (!username) {
-      return NextResponse.json({ ok: false, error: "username é obrigatório" }, { status: 400 });
+    const usernameRaw = body.username.trim();
+    const isValid = /^[A-Za-z]{1,16}$/.test(usernameRaw);
+    if (!isValid) {
+      return NextResponse.json(
+        { ok: false, error: "O username só pode ter letras (até 16 caracteres)." },
+        { status: 400 },
+      );
     }
+    const username = usernameRaw.toLowerCase();
     const existing = await prisma.profile.findFirst({
       where: { username },
       select: { id: true },

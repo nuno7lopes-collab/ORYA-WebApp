@@ -38,6 +38,7 @@ function AuthModalContent({
   const [fullName, setFullName] = useState("");
   const [username, setUsername] = useState("");
   const [signupCooldown, setSignupCooldown] = useState(0);
+  const [usernameHint, setUsernameHint] = useState<string | null>(null);
 
   const isSignupBlocked = signupCooldown > 0;
   const isOnboarding = mode === "onboarding";
@@ -259,6 +260,18 @@ function AuthModalContent({
     setLoading(true);
 
     try {
+      const usernameClean = username.replace(/[^A-Za-z]/g, "").slice(0, 16).trim();
+      if (!usernameClean) {
+        setError("O username só pode ter letras (sem espaços, números ou símbolos).");
+        setLoading(false);
+        return;
+      }
+      if (usernameClean.length > 16) {
+        setError("O username pode ter no máximo 16 letras.");
+        setLoading(false);
+        return;
+      }
+
       const res = await fetch("/api/profiles/save-basic", {
         method: "POST",
         headers: {
@@ -266,7 +279,7 @@ function AuthModalContent({
         },
         body: JSON.stringify({
           fullName: fullName.trim() || null,
-          username: username.trim(),
+          username: usernameClean,
         }),
       });
 
@@ -330,7 +343,9 @@ function AuthModalContent({
     (mode === "signup" && (password !== confirmPassword || !confirmPassword)) ||
     (mode === "signup" && isSignupBlocked) ||
     (mode === "verify" && (!email || otp.trim().length < 6)) ||
-    (mode === "onboarding" && !username.trim());
+    (mode === "onboarding" &&
+      (!username.replace(/[^A-Za-z]/g, "").trim() ||
+        username.replace(/[^A-Za-z]/g, "").length > 16));
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xl">
@@ -479,16 +494,32 @@ function AuthModalContent({
             <label className="mt-3 block text-xs text-white/70 mb-1">
               Username público
             </label>
-            <div className="flex items-center rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white">
-              <span className="text-white/40 mr-1">@</span>
-              <input
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                className="flex-1 bg-transparent outline-none"
-                placeholder="ines.martins"
-              />
-            </div>
+              <div className="flex items-center rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white">
+                <span className="text-white/40 mr-1">@</span>
+                <input
+                  type="text"
+                  inputMode="text"
+                  pattern="[A-Za-z]{0,16}"
+                  value={username}
+                  maxLength={16}
+                  onChange={(e) =>
+                    {
+                      const raw = e.target.value;
+                      const cleaned = raw.replace(/[^A-Za-z]/g, "").slice(0, 16);
+                      if (raw !== cleaned) {
+                        e.target.value = cleaned;
+                      }
+                      setUsername(cleaned);
+                      setUsernameHint(raw !== cleaned ? "Só letras A-Z, sem espaços, máximo 16." : null);
+                    }
+                  }
+                  className="flex-1 bg-transparent outline-none"
+                  placeholder="inesmartins"
+                />
+              </div>
+              {usernameHint && (
+                <p className="mt-1 text-[10px] text-amber-300/90">{usernameHint}</p>
+              )}
 
             <p className="mt-1 text-[10px] text-white/45 leading-snug">
               Podes alterar estes dados depois nas definições.

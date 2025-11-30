@@ -2,7 +2,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { MAX_TICKETS_PER_WAVE } from "@/lib/tickets";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -51,17 +50,6 @@ export async function POST(req: NextRequest) {
           ok: false,
           error: "Quantidade inválida.",
           code: "INVALID_QTY",
-        },
-        { status: 400 },
-      );
-    }
-
-    if (qty > MAX_TICKETS_PER_WAVE) {
-      return NextResponse.json(
-        {
-          ok: false,
-          error: `Só podes reservar até ${MAX_TICKETS_PER_WAVE} bilhetes por wave.`,
-          code: "QTY_ABOVE_LIMIT",
         },
         { status: 400 },
       );
