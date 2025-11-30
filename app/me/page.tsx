@@ -46,6 +46,8 @@ export default function MePage() {
   const [ticketsError, setTicketsError] = useState<string | null>(null);
   const [tickets, setTickets] = useState<UserTicket[]>([]);
 
+  const isAdmin = Array.isArray(profile?.roles) && profile.roles.includes("admin");
+
   useEffect(() => {
     const fetchTickets = async () => {
       setTicketsLoading(true);
@@ -255,15 +257,17 @@ export default function MePage() {
                 </div>
               )}
 
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-white/60">Área de staff</span>
-                <Link
-                  href="/staff/eventos"
-                  className="inline-flex items-center gap-1 rounded-full border border-white/20 px-3 py-1 text-white/80 hover:bg-white/10 transition-colors"
-                >
-                  Entrar como staff
-                </Link>
-              </div>
+              {isAdmin && (
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-white/60">Área de staff</span>
+                  <Link
+                    href="/staff/eventos"
+                    className="inline-flex items-center gap-1 rounded-full border border-white/20 px-3 py-1 text-white/80 hover:bg-white/10 transition-colors"
+                  >
+                    Entrar como staff
+                  </Link>
+                </div>
+              )}
 
               <div className="flex items-center justify-between gap-3">
                 <span className="text-white/60">Nome</span>

@@ -16,6 +16,7 @@ type CheckoutItem = {
 type Body = {
   slug?: string;
   items?: CheckoutItem[];
+  contact?: string;
 };
 
 export async function POST(req: NextRequest) {
@@ -29,7 +30,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { slug, items } = body;
+    const { slug, items, contact } = body;
 
     // Validar que o evento existe (fetch raw para evitar issues com enum legacy "ADDED")
     // Autenticação do utilizador
@@ -98,6 +99,14 @@ export async function POST(req: NextRequest) {
     const isAdmin = Array.isArray(profile?.roles) ? profile.roles.includes("admin") : false;
     if (event.is_test && !isAdmin) {
       return NextResponse.json({ ok: false, error: "Evento não disponível." }, { status: 404 });
+    }
+
+    // Atualizar contacto no perfil se fornecido
+    if (contact && contact.trim()) {
+      await prisma.profile.update({
+        where: { id: userId },
+        data: { contactPhone: contact.trim() },
+      });
     }
 
     if (event.is_deleted || event.status !== "PUBLISHED" || event.type !== "ORGANIZER_EVENT") {
@@ -319,6 +328,7 @@ export async function POST(req: NextRequest) {
       platformFeeBps: String(platformFeeBps),
       platformFeeFixedCents: String(platformFeeFixedCents),
       platformFeeCents: String(platformFeeCents),
+      contact: contact?.trim() ?? "",
       stripeAccountId: stripeAccountId ?? "orya",
     };
 

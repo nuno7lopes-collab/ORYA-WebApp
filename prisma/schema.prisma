@@ -15,6 +15,7 @@ model Profile {
   avatarUrl String? @map("avatar_url")
   bio       String?
   city      String?
+  contactPhone String? @map("contact_phone")
 
   favouriteCategories String[] @default([]) @map("favourite_categories") @db.Text
   onboardingDone      Boolean  @default(false) @map("onboarding_done")

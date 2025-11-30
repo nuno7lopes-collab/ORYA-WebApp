@@ -438,32 +438,6 @@ export default async function EventPage({ params }: { params: EventPageParamsInp
             </p>
           </div>
 
-          <div className="grid grid-cols-1 gap-8 md:grid-cols-2">
-            <div>
-              <h3 className="mb-3 text-lg font-semibold">
-                Informações adicionais
-              </h3>
-              <ul className="space-y-2 text-sm text-white/80">
-                <li>
-                  <span className="text-white/55">Fuso horário: </span>
-                  {safeTimezone}
-                </li>
-                <li>
-                  <span className="text-white/55">Organizador: </span>
-                  {safeOrganizer}
-                </li>
-              </ul>
-            </div>
-
-            <div>
-              <h3 className="mb-3 text-lg font-semibold">Como funciona</h3>
-              <p className="text-sm text-white/80">
-                Cada evento na ORYA é pensado para criar experiências reais e memoráveis.
-                Garante o teu lugar com antecedência, aparece a horas e traz a tua melhor
-                energia — o resto tratamos nós.
-              </p>
-            </div>
-          </div>
         </div>
 
         {/* RIGHT SIDE — CARD DE INFORMAÇÕES / TICKETS */}
@@ -482,15 +456,6 @@ export default async function EventPage({ params }: { params: EventPageParamsInp
             {event.address && (
               <p className="text-sm text-white/60">{event.address}</p>
             )}
-          </div>
-
-          <div>
-            <h3 className="mb-2 text-xl font-semibold">
-              Estado &amp; lotação
-            </h3>
-            <p className="text-sm text-white/80">
-              Informação de stock e presenças não disponível neste evento.
-            </p>
           </div>
 
           {!eventEnded ? (

@@ -544,18 +544,6 @@ function AuthModalContent({
             </button>
           )}
 
-          {(mode === "login" || mode === "signup") && (
-            <button
-              type="button"
-              onClick={() => setMode(mode === "login" ? "signup" : "login")}
-              className="text-[11px] text-white/70 hover:text-white"
-            >
-              {mode === "login"
-                ? "Ainda não tens conta? Criar conta"
-                : "Já tens conta? Entrar"}
-            </button>
-          )}
-
           <button
             type="button"
             onClick={isOnboarding ? undefined : closeModal}

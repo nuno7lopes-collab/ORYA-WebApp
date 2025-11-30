@@ -14,6 +14,7 @@ import {
 } from "@stripe/stripe-js";
 import { useCheckout } from "./contextoCheckout";
 import { supabaseBrowser } from "@/lib/supabaseBrowser";
+import { useEffect, useMemo, useState } from "react";
 
 type CheckoutItem = {
   ticketId: number;
@@ -35,12 +36,13 @@ type CheckoutData = {
 };
 
 export default function Step2Pagamento() {
-  const { dados, irParaPasso } = useCheckout();
+  const { dados, irParaPasso, atualizarDados } = useCheckout();
 
   const [clientSecret, setClientSecret] = useState<string | null>(null);
   const [serverAmount, setServerAmount] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [contacto, setContacto] = useState("");
 
   // 🔐 Auth state
   const [authChecked, setAuthChecked] = useState(false);
@@ -62,6 +64,21 @@ export default function Step2Pagamento() {
       setLoading(false);
     }
   }, [stripePromise]);
+
+  useEffect(() => {
+    if (payload?.contact) {
+      setContacto(payload.contact);
+    }
+  }, [payload?.contact]);
+
+  useEffect(() => {
+    atualizarDados({
+      additional: {
+        ...(dados?.additional ?? {}),
+        contact: contacto,
+      },
+    });
+  }, [contacto, atualizarDados, dados?.additional]);
 
   // Primeiro: verificar se há sessão Supabase no browser e ficar a escutar mudanças de auth
   useEffect(() => {
@@ -116,6 +133,27 @@ export default function Step2Pagamento() {
     };
   }, []);
 
+  // Carregar contacto gravado no perfil (prefill)
+  useEffect(() => {
+    let cancelled = false;
+    async function fetchProfileContact() {
+      try {
+        const res = await fetch("/api/auth/me", { cache: "no-store" });
+        const data = await res.json().catch(() => null);
+        const contactFromProfile = data?.profile?.contactPhone;
+        if (!cancelled && contactFromProfile && !contacto) {
+          setContacto(contactFromProfile);
+        }
+      } catch (err) {
+        console.warn("Não foi possível obter contacto do perfil", err);
+      }
+    }
+    fetchProfileContact();
+    return () => {
+      cancelled = true;
+    };
+  }, [contacto]);
+
   const payload = useMemo(() => {
     if (!safeDados) return null;
 
@@ -145,10 +183,13 @@ export default function Step2Pagamento() {
     const totalFromStep1 =
       typeof additional.total === "number" ? additional.total : null;
 
+    const contact = typeof additional.contact === "string" ? additional.contact : "";
+
     return {
       slug: safeDados.slug,
       items,
       total: totalFromStep1,
+      contact,
     };
   }, [safeDados]);
 
@@ -164,6 +205,12 @@ export default function Step2Pagamento() {
 
     // Se não está logado, garantimos que aparece o AuthWall e não chamamos a API
     if (!userId) {
+      setLoading(false);
+      setClientSecret(null);
+      setServerAmount(null);
+      return;
+    }
+    if (!contacto.trim()) {
       setLoading(false);
       setClientSecret(null);
       setServerAmount(null);
@@ -238,7 +285,7 @@ export default function Step2Pagamento() {
     return () => {
       cancelled = true;
     };
-  }, [payload, irParaPasso, authChecked, userId, stripePromise]);
+  }, [payload, irParaPasso, authChecked, userId, stripePromise, contacto]);
 
   if (!safeDados) {
     return (
@@ -453,6 +500,22 @@ function PaymentForm({ total }: PaymentFormProps) {
           </span>
         </div>
       )}
+
+      <div className="space-y-2">
+        <label className="text-xs text-white/70">
+          Contacto (telemóvel ou email alternativo)
+        </label>
+        <input
+          type="text"
+          value={contacto}
+          onChange={(e) => setContacto(e.target.value)}
+          className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]"
+          placeholder="Ex.: +351 9xx xxx xxx ou outro email"
+        />
+        <p className="text-[11px] text-white/50">
+          Usamos este contacto para te avisar sobre o evento ou bilhetes.
+        </p>
+      </div>
 
       <div className="rounded-xl bg-black/40 px-3 py-3 text-sm min-h-[320px] max-h-[400px] overflow-y-auto pr-1">
         <PaymentElement />

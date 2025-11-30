@@ -54,9 +54,7 @@ export default function Step1Bilhete() {
         ? w.remaining
         : null;
     const maxForWave =
-      remaining === null
-        ? MAX_TICKETS_PER_WAVE
-        : Math.max(0, Math.min(remaining, MAX_TICKETS_PER_WAVE));
+      remaining === null ? Number.MAX_SAFE_INTEGER : Math.max(0, remaining);
     initialQuantidades[w.id] = Math.min(rawQty, maxForWave);
   }
 
@@ -82,14 +80,14 @@ export default function Step1Bilhete() {
 
   function getMaxForWave(waveId: string) {
     const wave = stableWaves.find((w) => w.id === waveId);
-    if (!wave) return MAX_TICKETS_PER_WAVE;
+    if (!wave) return Number.MAX_SAFE_INTEGER;
     const remaining =
       typeof wave.remaining === "number" && wave.remaining >= 0
         ? wave.remaining
         : null;
     return remaining === null
-      ? MAX_TICKETS_PER_WAVE
-      : Math.max(0, Math.min(remaining, MAX_TICKETS_PER_WAVE));
+      ? Number.MAX_SAFE_INTEGER
+      : Math.max(0, remaining);
   }
 
   function handleIncrement(id: string) {
@@ -205,10 +203,24 @@ export default function Step1Bilhete() {
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <span className="rounded-full border border-white/15 bg-white/10 px-2 py-0.5 text-[10px] text-white/75">
-                    {badge}
+                  <span
+                    className={`rounded-full border px-2 py-0.5 text-[10px] text-white/80 ${
+                      isSoldOut
+                        ? "border-red-400/40 bg-red-500/10"
+                        : "border-emerald-300/30 bg-emerald-400/10"
+                    }`}
+                  >
+                    {isSoldOut ? "Esgotado" : "Disponível"}
                   </span>
-                  <span className="text-xl">{isOpen ? "−" : "+"}</span>
+                  <span
+                    className={`flex h-7 w-7 items-center justify-center rounded-full border ${
+                      q > 0
+                        ? "border-emerald-400/50 bg-emerald-400/15 text-emerald-100"
+                        : "border-white/20 bg-white/10 text-white/80"
+                    }`}
+                  >
+                    {q > 0 ? q : isOpen ? "−" : "+"}
+                  </span>
                 </div>
               </button>
 
@@ -223,24 +235,6 @@ export default function Step1Bilhete() {
                     <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-[11px] text-white/70">
                       Venda terminada. Escolhe outra wave ou volta mais tarde.
                     </div>
-                  )}
-
-                  {!isSoldOut && (
-                    <p className="text-[11px] text-white/55">
-                      Podes comprar até{" "}
-                      <span className="font-semibold text-white">
-                        {maxForWave}
-                      </span>{" "}
-                      bilhete{maxForWave === 1 ? "" : "s"} nesta
-                      wave.
-                      {typeof wave.remaining === "number" &&
-                        wave.remaining >= 0 && (
-                          <>
-                            {" "}
-                            Restam {wave.remaining}.
-                          </>
-                        )}
-                    </p>
                   )}
 
                   <div className="inline-flex items-center gap-2 rounded-full bg-black/60 border border-white/15 px-2 py-1.5 shadow-md">
