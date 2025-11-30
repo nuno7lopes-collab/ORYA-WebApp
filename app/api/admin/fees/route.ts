@@ -1,0 +1,126 @@
+import { NextRequest, NextResponse } from "next/server";
+import { createSupabaseServer } from "@/lib/supabaseServer";
+import { prisma } from "@/lib/prisma";
+import { getPlatformAndStripeFees, setPlatformFees, setStripeBaseFees } from "@/lib/platformSettings";
+
+function rolesContainsAdmin(roles: unknown) {
+  if (Array.isArray(roles)) return roles.includes("admin");
+  if (typeof roles === "string") {
+    try {
+      const parsed = JSON.parse(roles);
+      if (Array.isArray(parsed) && parsed.includes("admin")) return true;
+    } catch {
+      return roles.split(",").map((r) => r.trim()).includes("admin");
+    }
+  }
+  return false;
+}
+
+async function isAdminUser(userId: string) {
+  const supabase = await createSupabaseServer();
+  const profileRes = await supabase.from("profiles").select("roles").eq("id", userId).maybeSingle();
+  const rolesFromSupabase = profileRes.data?.roles ?? [];
+
+  if (rolesContainsAdmin(rolesFromSupabase)) {
+    return true;
+  }
+
+  // fallback via prisma (auth schema) in caso de erro/mismatch
+  const profileDb = await prisma.profile.findUnique({
+    where: { id: userId },
+    select: { roles: true },
+  });
+  const rolesDb = profileDb?.roles ?? [];
+  return rolesContainsAdmin(rolesDb);
+}
+
+export async function GET(_req: NextRequest) {
+  try {
+    const supabase = await createSupabaseServer();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+    }
+
+    if (!(await isAdminUser(user.id))) {
+      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    }
+
+    const { orya, stripe } = await getPlatformAndStripeFees();
+
+    return NextResponse.json(
+      {
+        ok: true,
+        orya,
+        stripe,
+      },
+      { status: 200 },
+    );
+  } catch (err) {
+    console.error("[admin/fees] unexpected error", err);
+    return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+  }
+}
+
+export async function POST(req: NextRequest) {
+  try {
+    const supabase = await createSupabaseServer();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+    }
+
+    if (!(await isAdminUser(user.id))) {
+      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    }
+
+    const body = await req.json();
+
+    const platformFeeBps = Number(body?.platformFeeBps);
+    const platformFeeFixedCents = Number(body?.platformFeeFixedCents);
+    const stripeFeeBpsEu = Number(body?.stripeFeeBpsEu);
+    const stripeFeeFixedCentsEu = Number(body?.stripeFeeFixedCentsEu);
+
+    const updatesErrors: string[] = [];
+    if (body?.platformFeeBps !== undefined && !Number.isFinite(platformFeeBps)) {
+      updatesErrors.push("platformFeeBps inválido");
+    }
+    if (body?.platformFeeFixedCents !== undefined && !Number.isFinite(platformFeeFixedCents)) {
+      updatesErrors.push("platformFeeFixedCents inválido");
+    }
+    if (body?.stripeFeeBpsEu !== undefined && !Number.isFinite(stripeFeeBpsEu)) {
+      updatesErrors.push("stripeFeeBpsEu inválido");
+    }
+    if (body?.stripeFeeFixedCentsEu !== undefined && !Number.isFinite(stripeFeeFixedCentsEu)) {
+      updatesErrors.push("stripeFeeFixedCentsEu inválido");
+    }
+
+    if (updatesErrors.length > 0) {
+      return NextResponse.json({ ok: false, error: updatesErrors.join(", ") }, { status: 400 });
+    }
+
+    await Promise.all([
+      setPlatformFees({
+        feeBps: Number.isFinite(platformFeeBps) ? platformFeeBps : undefined,
+        feeFixedCents: Number.isFinite(platformFeeFixedCents) ? platformFeeFixedCents : undefined,
+      }),
+      setStripeBaseFees({
+        feeBps: Number.isFinite(stripeFeeBpsEu) ? stripeFeeBpsEu : undefined,
+        feeFixedCents: Number.isFinite(stripeFeeFixedCentsEu) ? stripeFeeFixedCentsEu : undefined,
+      }),
+    ]);
+
+    const { orya, stripe } = await getPlatformAndStripeFees();
+
+    return NextResponse.json({ ok: true, orya, stripe }, { status: 200 });
+  } catch (err) {
+    console.error("[admin/fees] unexpected error on POST", err);
+    return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+  }
+}

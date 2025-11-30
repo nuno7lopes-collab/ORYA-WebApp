@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import useSWR from "swr";
 import { useUser } from "@/app/hooks/useUser";
 import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
 import { InlineDateTimePicker } from "@/app/components/forms/InlineDateTimePicker";
@@ -23,10 +24,58 @@ const CATEGORY_OPTIONS = [
   { value: "DRINKS", label: "Drinks", accent: "from-[#34D399] to-[#6BFFFF]" },
 ] as const;
 
+const DEFAULT_PLATFORM_FEE_BPS = 800; // 8%
+const DEFAULT_PLATFORM_FEE_FIXED_CENTS = 30; // €0.30
+const DEFAULT_STRIPE_FEE_BPS = 140; // 1.4%
+const DEFAULT_STRIPE_FEE_FIXED_CENTS = 25; // €0.25
+
+type PlatformFeeResponse =
+  | {
+      ok: true;
+      orya: { feeBps: number; feeFixedCents: number };
+      stripe: { feeBps: number; feeFixedCents: number; region: string };
+    }
+  | { ok: false; error?: string };
+
+const fetcher = (url: string) => fetch(url).then((res) => res.json());
+
+function formatMoney(cents: number) {
+  const value = cents / 100;
+  return value.toLocaleString("pt-PT", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
+function computeFeePreview(
+  priceEuro: number,
+  mode: "ON_TOP" | "INCLUDED",
+  platformFees: { feeBps: number; feeFixedCents: number },
+  stripeFees: { feeBps: number; feeFixedCents: number },
+) {
+  const baseCents = Math.round(Math.max(0, priceEuro) * 100);
+  const feeCents = Math.round((baseCents * platformFees.feeBps) / 10_000) + platformFees.feeFixedCents;
+
+  if (mode === "ON_TOP") {
+    const totalCliente = baseCents + feeCents;
+    const stripeOnTotal = Math.round((totalCliente * stripeFees.feeBps) / 10_000) + stripeFees.feeFixedCents;
+    const recebeOrganizador = Math.max(0, baseCents - stripeOnTotal);
+    return { baseCents, feeCents, totalCliente, recebeOrganizador, stripeFeeCents: stripeOnTotal };
+  }
+
+  const totalCliente = baseCents;
+  const stripeOnBase = Math.round((totalCliente * stripeFees.feeBps) / 10_000) + stripeFees.feeFixedCents;
+  const recebeOrganizador = Math.max(0, baseCents - feeCents - stripeOnBase);
+  return { baseCents, feeCents, totalCliente, recebeOrganizador, stripeFeeCents: stripeOnBase };
+}
+
 export default function NewOrganizerEventPage() {
   const router = useRouter();
   const { user, profile, isLoading: isUserLoading } = useUser();
   const { openModal } = useAuthModal();
+  const { data: platformFeeData } = useSWR<PlatformFeeResponse>("/api/platform/fees", fetcher, {
+    revalidateOnFocus: false,
+  });
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -40,16 +89,25 @@ export default function NewOrganizerEventPage() {
   const [ticketTypes, setTicketTypes] = useState<TicketTypeRow[]>([
     { name: "Normal", price: "", totalQuantity: "" },
   ]);
-  const [feeMode, setFeeMode] = useState<"INHERIT" | "ADDED" | "INCLUDED">("INHERIT");
-  const [feeBps, setFeeBps] = useState("");
-  const [feeFixedCents, setFeeFixedCents] = useState("");
+  const [feeMode, setFeeMode] = useState<"ON_TOP" | "INCLUDED">("ON_TOP");
   const [coverUrl, setCoverUrl] = useState<string | null>(null);
   const [uploadingCover, setUploadingCover] = useState(false);
+  const [isTest, setIsTest] = useState(false);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const isOrganizer = profile?.roles?.includes("organizer");
+  const isAdmin = profile?.roles?.includes("admin");
+
+  const platformFees =
+    platformFeeData && platformFeeData.ok
+      ? platformFeeData.orya
+      : { feeBps: DEFAULT_PLATFORM_FEE_BPS, feeFixedCents: DEFAULT_PLATFORM_FEE_FIXED_CENTS };
+  const stripeFees =
+    platformFeeData && platformFeeData.ok
+      ? platformFeeData.stripe
+      : { feeBps: DEFAULT_STRIPE_FEE_BPS, feeFixedCents: DEFAULT_STRIPE_FEE_FIXED_CENTS, region: "UE" };
 
   const handleRequireLogin = () => {
     openModal({
@@ -157,27 +215,14 @@ export default function NewOrganizerEventPage() {
       return;
     }
 
-    const normalizedFeeMode = feeMode === "INHERIT" ? null : feeMode;
-    const feeBpsNumber = feeBps.trim() ? Number(feeBps.replace(",", ".")) : null;
-    const feeFixedNumber = feeFixedCents.trim() ? Number(feeFixedCents.replace(",", ".")) : null;
-
-    if (feeBpsNumber !== null && (!Number.isFinite(feeBpsNumber) || feeBpsNumber < 0)) {
-      setErrorMessage("Fee (%) inválida.");
-      return;
-    }
-    if (feeFixedNumber !== null && (!Number.isFinite(feeFixedNumber) || feeFixedNumber < 0)) {
-      setErrorMessage("Fee fixa inválida.");
-      return;
-    }
-
     setIsSubmitting(true);
 
     try {
       const payload = {
         title: title.trim(),
-        description: description.trim() || null,
-        startsAt, // "datetime-local" string, API converte para Date
-        endsAt: endsAt || null,
+      description: description.trim() || null,
+      startsAt, // "datetime-local" string, API converte para Date
+      endsAt: endsAt || null,
         locationName: locationName.trim() || null,
         locationCity: locationCity.trim() || null,
         templateType,
@@ -185,14 +230,13 @@ export default function NewOrganizerEventPage() {
         categories,
         ticketTypes: preparedTickets,
         coverImageUrl: coverUrl,
-        feeMode: normalizedFeeMode,
-        platformFeeBps: feeBpsNumber === null ? null : Math.floor(feeBpsNumber),
-        platformFeeFixedCents: feeFixedNumber === null ? null : Math.floor(feeFixedNumber),
+        feeMode,
+        isTest: isAdmin ? isTest : undefined,
       };
 
-      const res = await fetch("/api/organizador/events/create", {
-        method: "POST",
-        headers: {
+    const res = await fetch("/api/organizador/events/create", {
+      method: "POST",
+      headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify(payload),
@@ -247,24 +291,6 @@ export default function NewOrganizerEventPage() {
     );
   }
 
-  if (!user.emailConfirmedAt) {
-    return (
-      <div className="max-w-3xl mx-auto px-4 py-8 space-y-4">
-        <h1 className="text-2xl font-semibold">Confirma o teu e-mail</h1>
-        <p className="text-sm text-white/70">
-          Precisamos do teu e-mail verificado antes de poderes criar eventos pagos. Verifica a caixa de entrada e clica
-          no link de confirmação.
-        </p>
-        <Link
-          href="/me"
-          className="inline-flex items-center rounded-md border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium hover:bg-white/10"
-        >
-          Ir ao perfil
-        </Link>
-      </div>
-    );
-  }
-
   // Autenticado mas sem role organizer
   if (!isOrganizer) {
     return (
@@ -306,6 +332,20 @@ export default function NewOrganizerEventPage() {
           <h2 className="text-sm font-semibold uppercase tracking-wide text-white/70">
             Detalhes do evento
           </h2>
+
+          {isAdmin && (
+            <label className="flex items-center gap-3 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm">
+              <input
+                type="checkbox"
+                checked={isTest}
+                onChange={(e) => setIsTest(e.target.checked)}
+                className="h-4 w-4 rounded border-white/40 bg-transparent"
+              />
+              <span className="text-white/80">
+                Evento de teste (visível só para admin, não aparece em explorar)
+              </span>
+            </label>
+          )}
 
           <div className="space-y-2">
             <label className="text-sm font-medium">Imagem de capa</label>
@@ -468,47 +508,51 @@ export default function NewOrganizerEventPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <div className="space-y-1">
-              <label className="text-sm font-medium">Modo de fee</label>
-              <select
-                value={feeMode}
-                onChange={(e) => setFeeMode(e.target.value as typeof feeMode)}
-                className="w-full rounded-md border border-white/15 bg-black/20 px-3 py-2 text-sm outline-none focus:border-white/60"
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Quem paga a taxa ORYA?</label>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <label
+                className={`flex cursor-pointer items-start gap-3 rounded-2xl border px-3 py-3 transition ${
+                  feeMode === "ON_TOP"
+                    ? "border-white/60 bg-white/10"
+                    : "border-white/10 bg-black/20 hover:border-white/20"
+                }`}
               >
-                <option value="INHERIT">Usar padrão do organizador</option>
-                <option value="ADDED">Taxa adicionada ao preço</option>
-                <option value="INCLUDED">Taxa incluída no preço</option>
-              </select>
-              <p className="text-[11px] text-white/60">
-                Define se a comissão é adicionada em cima do bilhete ou incluída no preço.
-              </p>
-            </div>
-            <div className="space-y-1">
-              <label className="text-sm font-medium">Fee % (basis points)</label>
-              <input
-                type="number"
-                min="0"
-                max="5000"
-                value={feeBps}
-                onChange={(e) => setFeeBps(e.target.value)}
-                className="w-full rounded-md border border-white/15 bg-black/20 px-3 py-2 text-sm outline-none focus:border-white/60"
-                placeholder="ex.: 200"
-              />
-              <p className="text-[11px] text-white/60">200 bps = 2%. Deixa vazio para usar o padrão.</p>
-            </div>
-            <div className="space-y-1">
-              <label className="text-sm font-medium">Fee fixa (cêntimos)</label>
-              <input
-                type="number"
-                min="0"
-                max="5000"
-                value={feeFixedCents}
-                onChange={(e) => setFeeFixedCents(e.target.value)}
-                className="w-full rounded-md border border-white/15 bg-black/20 px-3 py-2 text-sm outline-none focus:border-white/60"
-                placeholder="ex.: 0"
-              />
-              <p className="text-[11px] text-white/60">Cêntimos adicionados/retidos. Vazio = padrão.</p>
+                <input
+                  type="radio"
+                  name="feeMode"
+                  checked={feeMode === "ON_TOP"}
+                  onChange={() => setFeeMode("ON_TOP")}
+                  className="mt-1 h-4 w-4 accent-[#6BFFFF]"
+                />
+                <div className="space-y-1 text-sm">
+                  <p className="font-semibold text-white">Cliente paga taxa</p>
+                  <p className="text-white/65 text-[12px]">
+                    A taxa ORYA é acrescentada ao preço. O organizador recebe o valor base.
+                  </p>
+                </div>
+              </label>
+              <label
+                className={`flex cursor-pointer items-start gap-3 rounded-2xl border px-3 py-3 transition ${
+                  feeMode === "INCLUDED"
+                    ? "border-white/60 bg-white/10"
+                    : "border-white/10 bg-black/20 hover:border-white/20"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="feeMode"
+                  checked={feeMode === "INCLUDED"}
+                  onChange={() => setFeeMode("INCLUDED")}
+                  className="mt-1 h-4 w-4 accent-[#6BFFFF]"
+                />
+                <div className="space-y-1 text-sm">
+                  <p className="font-semibold text-white">Organizador absorve</p>
+                  <p className="text-white/65 text-[12px]">
+                    O preço mostrado já inclui a taxa; é deduzida ao liquidar.
+                  </p>
+                </div>
+              </label>
             </div>
           </div>
         </div>
@@ -588,6 +632,72 @@ export default function NewOrganizerEventPage() {
                       Remover
                     </button>
                   )}
+                </div>
+
+                {/* Preview de preço */}
+                <div className="sm:col-span-12">
+                  {(() => {
+                    const priceNumber = Number(row.price.replace(",", "."));
+                    if (!Number.isFinite(priceNumber) || priceNumber < 0) {
+                      return (
+                        <div className="rounded-md border border-white/10 bg-white/5 px-3 py-2 text-[11px] text-white/65">
+                          Introduz um preço para ver o resumo deste bilhete.
+                        </div>
+                      );
+                    }
+                    const summary = computeFeePreview(priceNumber, feeMode, platformFees, stripeFees);
+                    return (
+                      <div className="rounded-xl border border-white/12 bg-white/5 px-3 py-2 text-[11px] text-white/85">
+                        <p className="text-[12px] font-semibold mb-1">Resumo do preço</p>
+                        {feeMode === "ON_TOP" ? (
+                          <div className="space-y-1">
+                            <p className="flex justify-between">
+                              <span>Preço base</span>
+                              <span>{formatMoney(summary.baseCents)} €</span>
+                            </p>
+                            <p className="flex justify-between">
+                              <span>Taxa ORYA</span>
+                              <span>{formatMoney(summary.feeCents)} €</span>
+                            </p>
+                            <p className="flex justify-between">
+                              <span>Taxa Stripe (estimada)</span>
+                              <span>{formatMoney(summary.stripeFeeCents ?? 0)} €</span>
+                            </p>
+                            <p className="flex justify-between font-semibold">
+                              <span>Total para o cliente</span>
+                              <span>{formatMoney(summary.totalCliente)} €</span>
+                            </p>
+                            <p className="flex justify-between text-white/70">
+                              <span>Recebes (líquido, após Stripe)</span>
+                              <span>{formatMoney(summary.recebeOrganizador)} €</span>
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="space-y-1">
+                            <p className="flex justify-between">
+                              <span>Preço mostrado</span>
+                              <span>{formatMoney(summary.totalCliente)} €</span>
+                            </p>
+                            <p className="flex justify-between">
+                              <span>Taxa ORYA</span>
+                              <span>{formatMoney(summary.feeCents)} €</span>
+                            </p>
+                            <p className="flex justify-between">
+                              <span>Taxa Stripe (estimada)</span>
+                              <span>{formatMoney(summary.stripeFeeCents ?? 0)} €</span>
+                            </p>
+                            <p className="flex justify-between font-semibold">
+                              <span>Recebes (líquido, após Stripe)</span>
+                              <span>{formatMoney(summary.recebeOrganizador)} €</span>
+                            </p>
+                            <p className="text-white/60 text-[10px]">
+                              A taxa ORYA é deduzida ao valor mostrado.
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
             ))}

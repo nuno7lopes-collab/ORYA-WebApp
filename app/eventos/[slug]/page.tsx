@@ -6,6 +6,7 @@ import { headers } from "next/headers";
 import WavesSectionClient, { type WaveTicket, type WaveStatus } from "./WavesSectionClient";
 import Link from "next/link";
 import EventPageClient from "./EventPageClient";
+import { createSupabaseServer } from "@/lib/supabaseServer";
 import type { Metadata } from "next";
 import type { Prisma } from "@prisma/client";
 
@@ -112,11 +113,23 @@ export default async function EventPage({ params }: { params: EventPageParamsInp
   type TicketTypeWithVisibility =
     EventWithTickets["ticketTypes"][number] & { isVisible?: boolean | null };
 
+  const supabase = await createSupabaseServer();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const profile = user
+    ? await prisma.profile.findUnique({ where: { id: user.id } })
+    : null;
+  const isAdmin = Array.isArray(profile?.roles) ? profile.roles.includes("admin") : false;
+
   const event = await prisma.event.findUnique({
     where: { slug },
     include: { ticketTypes: true },
   });
   if (!event) {
+    notFound();
+  }
+  if (event.isTest && !isAdmin) {
     notFound();
   }
 
@@ -235,6 +248,10 @@ export default async function EventPage({ params }: { params: EventPageParamsInp
       : null;
 
   const displayPriceFrom = minTicketPrice;
+  const anyOnSale = uiTickets.some((t) => t.status === "on_sale");
+  const anyUpcoming = uiTickets.some((t) => t.status === "upcoming");
+  const allClosed = uiTickets.length > 0 && uiTickets.every((t) => t.status === "closed");
+  const allSoldOut = uiTickets.length > 0 && uiTickets.every((t) => t.status === "sold_out");
 
   // Carregar revendas deste evento via API F5-9
   let resales: EventResale[] = [];
@@ -269,37 +286,6 @@ export default async function EventPage({ params }: { params: EventPageParamsInp
   } catch (err) {
     console.error("Erro ao carregar revendas para o evento", slug, err);
   }
-
-  const hasTickets = uiTickets.length > 0;
-  const anyOnSale = uiTickets.some((t) => t.status === "on_sale");
-  const anyUpcoming = uiTickets.some((t) => t.status === "upcoming");
-  const allSoldOut =
-    hasTickets && uiTickets.every((t) => t.status === "sold_out");
-  const allClosed =
-    hasTickets &&
-    uiTickets.every(
-      (t) => t.status === "closed" || t.status === "sold_out",
-    );
-
-  let eventStatusLabel = "Evento ativo";
-  if (eventEnded) {
-    eventStatusLabel = "Evento terminado";
-  } else if (allSoldOut) {
-    eventStatusLabel = "Evento esgotado";
-  } else if (!anyOnSale && anyUpcoming) {
-    eventStatusLabel = "Vendas ainda não abriram";
-  } else if (allClosed) {
-    eventStatusLabel = "Vendas encerradas";
-  }
-
-  const hasFiniteStock =
-    uiTickets.length > 0 && uiTickets.some((t) => t.remaining !== null);
-  const totalRemainingTickets = hasFiniteStock
-    ? uiTickets.reduce(
-        (sum, t) => sum + Math.max(0, t.remaining ?? 0),
-        0,
-      )
-    : null;
 
   const showPriceFrom = !event.isFree && minTicketPrice !== null;
 
@@ -388,36 +374,13 @@ export default async function EventPage({ params }: { params: EventPageParamsInp
                 {event.title}
               </h1>
 
-              {/* Estado / pessoas + badge "Já tens bilhete" */}
-              <div className="flex flex-wrap items-center gap-4 text-sm text-white/85">
-                <div className="flex items-center gap-2">
-                  <span
-                    className={`block h-2 w-2 rounded-full ${
-                      eventEnded
-                        ? "bg-white/40"
-                        : allSoldOut
-                          ? "bg-orange-400"
-                          : anyOnSale
-                            ? "bg-emerald-400 animate-pulse"
-                            : "bg-yellow-400"
-                    }`}
-                  />
-                  <span>{eventStatusLabel}</span>
-                  {goingCount > 0 && (
-                    <span className="text-white/70">
-                      · {goingCount} pessoa{goingCount === 1 ? "" : "s"} já com
-                      bilhete
-                    </span>
-                  )}
+              {/* badge "Já tens bilhete" */}
+              {currentUserHasTicket && (
+                <div className="inline-flex items-center gap-2 rounded-full border border-emerald-400/70 bg-emerald-500/18 px-3 py-1 text-xs text-emerald-100">
+                  <span className="text-sm">🎟️</span>
+                  <span>Já tens bilhete para este evento</span>
                 </div>
-
-                {currentUserHasTicket && (
-                  <div className="inline-flex items-center gap-2 rounded-full border border-emerald-400/70 bg-emerald-500/18 px-3 py-1 text-xs text-emerald-100">
-                    <span className="text-sm">🎟️</span>
-                    <span>Já tens bilhete para este evento</span>
-                  </div>
-                )}
-              </div>
+              )}
 
               <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">
                 {!eventEnded && (
@@ -525,32 +488,9 @@ export default async function EventPage({ params }: { params: EventPageParamsInp
             <h3 className="mb-2 text-xl font-semibold">
               Estado &amp; lotação
             </h3>
-            <p className="text-sm text-white/80">{eventStatusLabel}</p>
             <p className="text-sm text-white/80">
-              {goingCount === 0
-                ? "Ainda ninguém confirmou presença."
-                : `${goingCount} pessoa${
-                    goingCount === 1 ? "" : "s"
-                  } já têm bilhete confirmado (todas as waves).`}
+              Informação de stock e presenças não disponível neste evento.
             </p>
-            {hasFiniteStock &&
-              !eventEnded &&
-              !event.isFree &&
-              totalRemainingTickets !== null && (
-                <p className="mt-1 text-xs text-white/75">
-                  Há ainda{" "}
-                    <span className="font-semibold text-white">
-                      {totalRemainingTickets}
-                    </span>{" "}
-                  bilhete
-                  {totalRemainingTickets === 1 ? "" : "s"} disponível
-                  {totalRemainingTickets === 1 ? "" : "s"} no total.
-                </p>
-              )}
-            <p className="mt-1 text-[11px] text-white/55">
-              Contagem baseada em compras reais de bilhetes em todas as waves.
-            </p>
-
           </div>
 
           {!eventEnded ? (

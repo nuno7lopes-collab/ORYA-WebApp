@@ -279,8 +279,19 @@ function AuthModalContent({
         return;
       }
 
-      // Atualizar cache do utilizador para refletir onboardingDone=true
-      swrMutate("/api/auth/me");
+      // Atualizar cache do utilizador para refletir onboardingDone=true (evita reabrir modal)
+      swrMutate("/api/auth/me", (curr: unknown) => {
+        const prev = curr as
+          | { user?: unknown; profile?: { onboardingDone?: boolean } }
+          | undefined;
+        if (prev?.profile) {
+          return {
+            ...prev,
+            profile: { ...prev.profile, onboardingDone: true },
+          };
+        }
+        return prev;
+      }, false);
       closeModal();
       router.push(redirectTo ?? "/me");
       setLoading(false);

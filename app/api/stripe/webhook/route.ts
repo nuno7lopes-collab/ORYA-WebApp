@@ -335,25 +335,28 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent) {
 
   // Marcar log como PROCESSING (idempotência/auditoria)
   try {
-    await prisma.paymentEvent.upsert({
+    const updated = await prisma.paymentEvent.updateMany({
       where: { stripePaymentIntentId: intent.id },
-      create: {
-        stripePaymentIntentId: intent.id,
+      data: {
         status: "PROCESSING",
         eventId: eventRecord.id,
-        userId,
-        amountCents: intent.amount ?? null,
-        platformFeeCents: platformFeeTotal ?? null,
-      },
-      update: {
-        status: "PROCESSING",
-        eventId: eventRecord.id,
-        userId,
         amountCents: intent.amount ?? null,
         platformFeeCents: platformFeeTotal ?? null,
         errorMessage: null,
+        updatedAt: new Date(),
       },
     });
+    if (updated.count === 0) {
+      await prisma.paymentEvent.create({
+        data: {
+          stripePaymentIntentId: intent.id,
+          status: "PROCESSING",
+          eventId: eventRecord.id,
+          amountCents: intent.amount ?? null,
+          platformFeeCents: platformFeeTotal ?? null,
+        },
+      });
+    }
   } catch (logErr) {
     console.warn("[fulfillPayment] Não foi possível registar paymentEvent", logErr);
   }
@@ -407,8 +410,6 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent) {
             qrSecret: token,
             pricePaid: ticketType.price,
             currency: ticketType.currency,
-            platformFeeCents: feeForThisTicket,
-            totalPaidCents: ticketType.price + feeForThisTicket,
             stripePaymentIntentId: intent.id,
           },
         })

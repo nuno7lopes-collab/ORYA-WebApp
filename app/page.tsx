@@ -63,7 +63,7 @@ function coverStyle(coverUrl: string | null) {
 
 export default async function HomePage() {
   const eventsRaw = await prisma.event.findMany({
-    where: { status: "PUBLISHED" },
+    where: { status: "PUBLISHED", isTest: false },
     orderBy: { startsAt: "asc" },
     include: {
       ticketTypes: {

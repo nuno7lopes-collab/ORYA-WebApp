@@ -27,6 +27,7 @@ type CreateOrganizerEventBody = {
   categories?: string[];
   resaleMode?: string; // ALWAYS | AFTER_SOLD_OUT | DISABLED
   coverImageUrl?: string | null;
+  isTest?: boolean;
   feeMode?: string | null;
   platformFeeBps?: number | null;
   platformFeeFixedCents?: number | null;
@@ -82,6 +83,7 @@ export async function POST(req: NextRequest) {
 
     // Garante que o user tem role de organizer e que este organizer pertence-lhe
     assertOrganizer(user, profile, organizer ?? undefined);
+    const isAdmin = Array.isArray(profile.roles) ? profile.roles.includes("admin") : false;
 
     const title = body.title?.trim();
     const description = body.description?.trim() ?? "";
@@ -257,6 +259,7 @@ export async function POST(req: NextRequest) {
         feeModeOverride: feeMode,
         platformFeeBpsOverride: platformFeeBps,
         platformFeeFixedCentsOverride: platformFeeFixedCents,
+        isTest: isAdmin && body.isTest === true,
       },
     });
 

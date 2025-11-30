@@ -90,6 +90,7 @@ export async function GET(req: NextRequest) {
 
     const where: Prisma.EventWhereInput = {
       status: "PUBLISHED",
+      isTest: false,
     };
 
   if (typeParam === "event") {

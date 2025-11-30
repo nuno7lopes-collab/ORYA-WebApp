@@ -5,29 +5,127 @@ export type PlatformFeeConfig = {
   feeFixedCents: number;
 };
 
-const DEFAULT_PLATFORM_FEE_BPS = 200;
-const DEFAULT_PLATFORM_FEE_FIXED_CENTS = 0;
+type FeeKeys =
+  | "platform_fee_bps"
+  | "platform_fee_fixed_cents"
+  | "stripe_fee_bps_eu"
+  | "stripe_fee_fixed_cents_eu";
 
-/**
- * Lê platform_settings e devolve os valores normalizados.
- * Fallback para defaults se ainda não existirem entradas.
- */
-export async function getPlatformFees(): Promise<PlatformFeeConfig> {
-  const settings = await prisma.platformSetting.findMany();
+const envPlatformFeeBps = process.env.PLATFORM_FEE_BPS ?? process.env.NEXT_PUBLIC_PLATFORM_FEE_BPS;
+const envPlatformFeePercent = process.env.PLATFORM_FEE_PERCENT ?? process.env.NEXT_PUBLIC_PLATFORM_FEE_PERCENT;
+const envPlatformFeeFixedCents =
+  process.env.PLATFORM_FEE_FIXED_CENTS ?? process.env.NEXT_PUBLIC_PLATFORM_FEE_FIXED_CENTS;
+const envPlatformFeeFixedEur =
+  process.env.PLATFORM_FEE_FIXED_EUR ?? process.env.NEXT_PUBLIC_PLATFORM_FEE_FIXED_EUR;
 
-  const map = settings.reduce<Record<string, string>>((acc, s) => {
-    acc[s.key] = s.value;
+const DEFAULT_PLATFORM_FEE_BPS = Number.isFinite(Number(envPlatformFeeBps))
+  ? Number(envPlatformFeeBps)
+  : Math.round(Number(envPlatformFeePercent ?? 0.08) * 10_000) || 800; // 8%
+const DEFAULT_PLATFORM_FEE_FIXED_CENTS = Number.isFinite(Number(envPlatformFeeFixedCents))
+  ? Number(envPlatformFeeFixedCents)
+  : Math.round(Number(envPlatformFeeFixedEur ?? 0.3) * 100) || 30; // €0.30
+
+const DEFAULT_STRIPE_FEE_BPS_EU = Number.isFinite(Number(process.env.STRIPE_FEE_BPS_EU))
+  ? Number(process.env.STRIPE_FEE_BPS_EU)
+  : Math.round(Number(process.env.STRIPE_FEE_PERCENT_EU ?? 0.014) * 10_000) || 140; // 1.4%
+const DEFAULT_STRIPE_FEE_FIXED_CENTS_EU = Number.isFinite(Number(process.env.STRIPE_FEE_FIXED_CENTS_EU))
+  ? Number(process.env.STRIPE_FEE_FIXED_CENTS_EU)
+  : Math.round(Number(process.env.STRIPE_FEE_FIXED_EUR_EU ?? 0.25) * 100) || 25; // €0.25
+
+function parseNumber(raw: unknown, fallback: number) {
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+async function getSettingsMap(keys: FeeKeys[]): Promise<Record<string, string>> {
+  const rows = await prisma.platformSetting.findMany({
+    where: {
+      key: {
+        in: keys,
+      },
+    },
+  });
+
+  return rows.reduce<Record<string, string>>((acc, row) => {
+    acc[row.key] = row.value;
     return acc;
   }, {});
+}
 
-  const feeBpsRaw = Number(map["platform_fee_bps"]);
-  const feeFixedRaw = Number(map["platform_fee_fixed_cents"]);
+async function upsertSettings(values: { key: FeeKeys; value: string }[]) {
+  const tasks = values.map(({ key, value }) =>
+    prisma.platformSetting.upsert({
+      where: { key },
+      create: { key, value },
+      update: { value },
+    }),
+  );
+  await Promise.all(tasks);
+}
 
-  const feeBps = Number.isFinite(feeBpsRaw) ? feeBpsRaw : DEFAULT_PLATFORM_FEE_BPS;
-  const feeFixedCents = Number.isFinite(feeFixedRaw) ? feeFixedRaw : DEFAULT_PLATFORM_FEE_FIXED_CENTS;
+/**
+ * Lê platform_settings (DB). Se não houver valores guardados, aplica defaults/env.
+ */
+export async function getPlatformFees(): Promise<PlatformFeeConfig> {
+  const map = await getSettingsMap(["platform_fee_bps", "platform_fee_fixed_cents"]);
 
   return {
-    feeBps,
-    feeFixedCents,
+    feeBps: parseNumber(map["platform_fee_bps"], DEFAULT_PLATFORM_FEE_BPS),
+    feeFixedCents: parseNumber(map["platform_fee_fixed_cents"], DEFAULT_PLATFORM_FEE_FIXED_CENTS),
   };
+}
+
+export async function setPlatformFees(config: Partial<PlatformFeeConfig>) {
+  const updates: { key: FeeKeys; value: string }[] = [];
+
+  if (config.feeBps !== undefined) {
+    updates.push({ key: "platform_fee_bps", value: String(Math.max(0, Math.round(config.feeBps))) });
+  }
+  if (config.feeFixedCents !== undefined) {
+    updates.push({
+      key: "platform_fee_fixed_cents",
+      value: String(Math.max(0, Math.round(config.feeFixedCents))),
+    });
+  }
+
+  if (updates.length > 0) {
+    await upsertSettings(updates);
+  }
+
+  return getPlatformFees();
+}
+
+export async function getStripeBaseFees() {
+  const map = await getSettingsMap(["stripe_fee_bps_eu", "stripe_fee_fixed_cents_eu"]);
+
+  return {
+    feeBps: parseNumber(map["stripe_fee_bps_eu"], DEFAULT_STRIPE_FEE_BPS_EU),
+    feeFixedCents: parseNumber(map["stripe_fee_fixed_cents_eu"], DEFAULT_STRIPE_FEE_FIXED_CENTS_EU),
+    region: "UE",
+  };
+}
+
+export async function setStripeBaseFees(config: Partial<PlatformFeeConfig>) {
+  const updates: { key: FeeKeys; value: string }[] = [];
+
+  if (config.feeBps !== undefined) {
+    updates.push({ key: "stripe_fee_bps_eu", value: String(Math.max(0, Math.round(config.feeBps))) });
+  }
+  if (config.feeFixedCents !== undefined) {
+    updates.push({
+      key: "stripe_fee_fixed_cents_eu",
+      value: String(Math.max(0, Math.round(config.feeFixedCents))),
+    });
+  }
+
+  if (updates.length > 0) {
+    await upsertSettings(updates);
+  }
+
+  return getStripeBaseFees();
+}
+
+export async function getPlatformAndStripeFees() {
+  const [orya, stripe] = await Promise.all([getPlatformFees(), getStripeBaseFees()]);
+  return { orya, stripe };
 }

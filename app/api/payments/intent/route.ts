@@ -31,45 +31,7 @@ export async function POST(req: NextRequest) {
 
     const { slug, items } = body;
 
-    // Validar que o evento existe (e obter o id + organizer para metadata/Connect)
-    const event = await prisma.event.findUnique({
-      where: { slug },
-      include: {
-        organizer: {
-          select: {
-            id: true,
-            stripeAccountId: true,
-            stripeChargesEnabled: true,
-            stripePayoutsEnabled: true,
-            feeMode: true,
-            platformFeeBps: true,
-            platformFeeFixedCents: true,
-          },
-        },
-      },
-    });
-
-    if (!event) {
-      return NextResponse.json(
-        { ok: false, error: "Evento não encontrado." },
-        { status: 404 },
-      );
-    }
-
-    if (event.isDeleted || event.status !== "PUBLISHED") {
-      return NextResponse.json(
-        { ok: false, error: "Evento indisponível para compra." },
-        { status: 400 },
-      );
-    }
-
-    if (event.endsAt && event.endsAt < new Date()) {
-      return NextResponse.json(
-        { ok: false, error: "Vendas encerradas: evento já terminou." },
-        { status: 400 },
-      );
-    }
-
+    // Validar que o evento existe (fetch raw para evitar issues com enum legacy "ADDED")
     // Autenticação do utilizador
     const supabase = await createSupabaseServer();
     const { data: userData } = await supabase.auth.getUser();
@@ -80,6 +42,70 @@ export async function POST(req: NextRequest) {
         { ok: false, error: "Precisas de iniciar sessão." },
         { status: 401 },
       );
+    }
+
+    const eventRows = await prisma.$queryRaw<
+      {
+        id: number;
+        slug: string;
+        title: string;
+        status: string;
+        type: string;
+        is_deleted: boolean;
+        is_test: boolean;
+        ends_at: Date | null;
+        fee_mode: string | null;
+        organizer_id: number | null;
+        org_user_id: string | null;
+        org_stripe_account_id: string | null;
+        org_stripe_charges_enabled: boolean | null;
+        org_stripe_payouts_enabled: boolean | null;
+        org_fee_mode: string | null;
+        org_platform_fee_bps: number | null;
+        org_platform_fee_fixed_cents: number | null;
+      }[]
+    >`
+      SELECT
+        e.id,
+        e.slug,
+        e.title,
+        e.status,
+        e.type,
+        e.is_deleted,
+        e.is_test,
+        e.ends_at,
+        e.fee_mode,
+        e.organizer_id,
+        o.user_id AS org_user_id,
+        o.stripe_account_id AS org_stripe_account_id,
+        o.stripe_charges_enabled AS org_stripe_charges_enabled,
+        o.stripe_payouts_enabled AS org_stripe_payouts_enabled,
+        o.fee_mode AS org_fee_mode,
+        o.platform_fee_bps AS org_platform_fee_bps,
+        o.platform_fee_fixed_cents AS org_platform_fee_fixed_cents
+      FROM app_v3.events e
+      LEFT JOIN app_v3.organizers o ON o.id = e.organizer_id
+      WHERE e.slug = ${slug}
+      LIMIT 1;
+    `;
+
+    const event = eventRows[0];
+
+    if (!event) {
+      return NextResponse.json({ ok: false, error: "Evento não encontrado." }, { status: 404 });
+    }
+    const profile = await prisma.profile.findUnique({ where: { id: userId } });
+    const isAdmin = Array.isArray(profile?.roles) ? profile.roles.includes("admin") : false;
+    if (event.is_test && !isAdmin) {
+      return NextResponse.json({ ok: false, error: "Evento não disponível." }, { status: 404 });
+    }
+
+    if (event.is_deleted || event.status !== "PUBLISHED" || event.type !== "ORGANIZER_EVENT") {
+      return NextResponse.json({ ok: false, error: "Evento indisponível para compra." }, { status: 400 });
+    }
+
+    if (event.ends_at && event.ends_at < new Date()) {
+      return NextResponse.json({ ok: false, error: "Vendas encerradas: evento já terminou." }, { status: 400 });
     }
 
     const ticketTypeIds = Array.from(
@@ -238,53 +264,43 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { feeBps: defaultFeeBps, feeFixedCents: defaultFeeFixed } =
-      await getPlatformFees();
+    const { feeBps: defaultFeeBps, feeFixedCents: defaultFeeFixed } = await getPlatformFees();
 
-    const organizer = event.organizer;
-    const stripeAccountId = organizer?.stripeAccountId ?? null;
+    const feeModeRaw = (event.org_fee_mode ?? event.fee_mode ?? "ON_TOP").toString();
+    const feeMode = feeModeRaw === "ADDED" ? "ON_TOP" : (feeModeRaw as "ON_TOP" | "INCLUDED");
+
+    // Organizer admin? (conta oficial)
+    const orgProfile =
+      event.org_user_id
+        ? await prisma.profile.findUnique({ where: { id: event.org_user_id } })
+        : null;
+    const isOrganizerAdmin =
+      Array.isArray(orgProfile?.roles) && orgProfile.roles.includes("admin");
+
+    const stripeAccountId = event.org_stripe_account_id ?? null;
     const isPartnerEvent = Boolean(stripeAccountId);
 
-    if (isPartnerEvent && !organizer?.stripeChargesEnabled) {
+    if (isPartnerEvent && !event.org_stripe_charges_enabled) {
       return NextResponse.json(
         { ok: false, error: "Conta Stripe do organizador ainda não está ativa." },
         { status: 400 },
       );
     }
 
-    const feeMode =
-      event.feeModeOverride ??
-      organizer?.feeMode ??
-      ("ADDED" as "ADDED" | "INCLUDED");
-
-    const feeBpsCandidates = [
-      event.platformFeeBpsOverride,
-      organizer?.platformFeeBps,
-      defaultFeeBps,
-    ];
-    const platformFeeBps =
-      feeBpsCandidates.find(
-        (n) => typeof n === "number" && Number.isFinite(n),
-      ) ?? defaultFeeBps;
-
-    const feeFixedCandidates = [
-      event.platformFeeFixedCentsOverride,
-      organizer?.platformFeeFixedCents,
-      defaultFeeFixed,
-    ];
-    const platformFeeFixedCents =
-      feeFixedCandidates.find(
-        (n) => typeof n === "number" && Number.isFinite(n),
-      ) ?? defaultFeeFixed;
+    const platformFeeBps = isOrganizerAdmin
+      ? 0
+      : event.org_platform_fee_bps ?? defaultFeeBps;
+    const platformFeeFixedCents = isOrganizerAdmin
+      ? 0
+      : event.org_platform_fee_fixed_cents ?? defaultFeeFixed;
 
     const platformFeeCents = Math.max(
       0,
-      Math.round((amountInCents * platformFeeBps) / 10_000) +
-        platformFeeFixedCents,
+      Math.round((amountInCents * platformFeeBps) / 10_000) + platformFeeFixedCents,
     );
 
     const totalAmountInCents =
-      feeMode === "ADDED" ? amountInCents + platformFeeCents : amountInCents;
+      feeMode === "ON_TOP" ? amountInCents + platformFeeCents : amountInCents;
 
     if (totalAmountInCents <= 0 || platformFeeCents > totalAmountInCents) {
       return NextResponse.json(
@@ -314,10 +330,13 @@ export async function POST(req: NextRequest) {
     };
 
     if (isPartnerEvent && stripeAccountId) {
-      intentParams.application_fee_amount = platformFeeCents;
       intentParams.transfer_data = {
         destination: stripeAccountId,
       };
+      // Apenas aplica application_fee se não for organizer admin
+      if (!isOrganizerAdmin) {
+        intentParams.application_fee_amount = platformFeeCents;
+      }
     }
 
     const paymentIntent = await stripe.paymentIntents.create(intentParams);

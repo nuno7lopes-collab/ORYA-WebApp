@@ -103,6 +103,14 @@ export async function POST(req: NextRequest) {
         { status: 404 },
       );
     }
+    const profile = await prisma.profile.findUnique({ where: { id: userId } });
+    const isAdmin = Array.isArray(profile?.roles) ? profile.roles.includes("admin") : false;
+    if (event.isTest && !isAdmin) {
+      return NextResponse.json(
+        { ok: false, error: "Evento não disponível.", code: "EVENT_NOT_FOUND" },
+        { status: 404 },
+      );
+    }
 
     const ticketType = event.ticketTypes.find(
       (t) => t.id === ticketTypeIdNumber,

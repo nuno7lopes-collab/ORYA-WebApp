@@ -61,6 +61,14 @@ export async function POST(req: NextRequest) {
         { status: 404 },
       );
     }
+    const profile = await prisma.profile.findUnique({ where: { id: user.id } });
+    const isAdmin = Array.isArray(profile?.roles) ? profile.roles.includes("admin") : false;
+    if (event.isTest && !isAdmin) {
+      return NextResponse.json(
+        { ok: false, error: "Evento não disponível." },
+        { status: 404 },
+      );
+    }
 
     if (event.type !== "ORGANIZER_EVENT" || event.status !== "PUBLISHED") {
       return NextResponse.json(
@@ -171,30 +179,23 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const organizerProfile = await prisma.profile.findUnique({
+      where: { id: organizer.userId },
+      select: { roles: true },
+    });
+    const isOrganizerAdmin =
+      Array.isArray(organizerProfile?.roles) && organizerProfile.roles.includes("admin");
+
     const { feeBps: defaultFeeBps, feeFixedCents: defaultFeeFixed } = await getPlatformFees();
+    const feeModeRaw = (event.organizer?.feeMode ?? event.feeMode ?? "ON_TOP").toString();
+    const feeMode = feeModeRaw === "ADDED" ? "ON_TOP" : (feeModeRaw as "ON_TOP" | "INCLUDED");
 
-    const feeMode =
-      event.feeModeOverride ??
-      organizer.feeMode ??
-      ("ADDED" as "ADDED" | "INCLUDED");
-
-    const feeBpsCandidates = [
-      event.platformFeeBpsOverride,
-      organizer.platformFeeBps,
-      defaultFeeBps,
-    ];
-    const platformFeeBps = feeBpsCandidates.find(
-      (n) => typeof n === "number" && Number.isFinite(n),
-    ) ?? defaultFeeBps;
-
-    const feeFixedCandidates = [
-      event.platformFeeFixedCentsOverride,
-      organizer.platformFeeFixedCents,
-      defaultFeeFixed,
-    ];
-    const platformFeeFixedCents = feeFixedCandidates.find(
-      (n) => typeof n === "number" && Number.isFinite(n),
-    ) ?? defaultFeeFixed;
+    const platformFeeBps = isOrganizerAdmin
+      ? 0
+      : event.organizer?.platformFeeBps ?? defaultFeeBps;
+    const platformFeeFixedCents = isOrganizerAdmin
+      ? 0
+      : event.organizer?.platformFeeFixedCents ?? defaultFeeFixed;
 
     const platformFeeCents = Math.max(
       0,
@@ -203,7 +204,7 @@ export async function POST(req: NextRequest) {
     );
 
     const totalAmountInCents =
-      feeMode === "ADDED" ? amountInCents + platformFeeCents : amountInCents;
+      feeMode === "ON_TOP" ? amountInCents + platformFeeCents : amountInCents;
 
     if (totalAmountInCents <= 0) {
       return NextResponse.json(
@@ -213,14 +214,13 @@ export async function POST(req: NextRequest) {
     }
 
     // 4️⃣ Criar PaymentIntent (Stripe Connect com destination charges)
-    const paymentIntent = await stripe.paymentIntents.create({
+    const paymentIntentParams: Parameters<typeof stripe.paymentIntents.create>[0] = {
       amount: totalAmountInCents,
       currency: "eur",
       automatic_payment_methods: { enabled: true },
       transfer_data: {
         destination: organizer.stripeAccountId,
       },
-      application_fee_amount: platformFeeCents,
       on_behalf_of: organizer.stripeAccountId,
       metadata: {
         source: "orya_checkout_v2",
@@ -236,7 +236,13 @@ export async function POST(req: NextRequest) {
         items: JSON.stringify(itemsForMetadata),
         itemsJson: JSON.stringify(itemsForMetadata),
       },
-    });
+    };
+
+    if (!isOrganizerAdmin) {
+      paymentIntentParams.application_fee_amount = platformFeeCents;
+    }
+
+    const paymentIntent = await stripe.paymentIntents.create(paymentIntentParams);
 
     return NextResponse.json({
       ok: true,

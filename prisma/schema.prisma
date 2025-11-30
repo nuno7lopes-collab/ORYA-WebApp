@@ -47,6 +47,11 @@ model Organizer {
   displayName     String          @map("display_name")
   stripeAccountId String?         @map("stripe_account_id")
   status          OrganizerStatus @default(PENDING)
+  feeMode         FeeMode?        @map("fee_mode")
+  platformFeeBps          Int?    @map("platform_fee_bps")
+  platformFeeFixedCents    Int?    @map("platform_fee_fixed_cents")
+  stripeChargesEnabled     Boolean @default(false) @map("stripe_charges_enabled")
+  stripePayoutsEnabled     Boolean @default(false) @map("stripe_payouts_enabled")
   createdAt       DateTime        @default(now()) @map("created_at")
   updatedAt       DateTime        @updatedAt @map("updated_at")
 
@@ -99,11 +104,13 @@ model Event {
   isFree Boolean     @default(false) @map("is_free")
   status EventStatus @default(DRAFT)
   resaleMode ResaleMode @default(ALWAYS) @map("resale_mode")
+  feeMode   FeeMode   @default(ON_TOP) @map("fee_mode")
 
   timezone      String  @default("Europe/Lisbon")
   coverImageUrl String? @map("cover_image_url")
   isDeleted     Boolean @default(false) @map("is_deleted")
   deletedAt     DateTime? @map("deleted_at")
+  isTest        Boolean  @default(false) @map("is_test")
 
   // Relações
   ticketTypes      TicketType[]
@@ -115,6 +122,7 @@ model Event {
   salesAgg         EventSalesAgg?
   staffAssignments StaffAssignment[]
   categories       EventCategory[]
+  paymentEvents    PaymentEvent[]
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -190,6 +198,14 @@ enum ResaleMode {
   ALWAYS
   AFTER_SOLD_OUT
   DISABLED
+
+  @@schema("app_v3")
+}
+
+enum FeeMode {
+  ON_TOP
+  INCLUDED
+  ADDED // legacy valor existente na BD; tratar como ON_TOP
 
   @@schema("app_v3")
 }
@@ -456,5 +472,37 @@ model EventSalesAgg {
   event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
 
   @@map("event_sales_agg")
+  @@schema("app_v3")
+}
+
+/// Registo de eventos de pagamento (auditoria webhooks/intent)
+model PaymentEvent {
+  id                   Int      @id @default(autoincrement())
+  stripePaymentIntentId String?  @map("stripe_payment_intent_id")
+  status               String?
+  eventId              Int?     @map("event_id")
+  amountCents          Int?     @map("amount_cents")
+  platformFeeCents     Int?     @map("platform_fee_cents")
+  errorMessage         String?  @map("error_message")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  event Event? @relation(fields: [eventId], references: [id], onDelete: SetNull)
+
+  @@index([stripePaymentIntentId])
+  @@index([eventId])
+  @@map("payment_events")
+  @@schema("app_v3")
+}
+
+/// Configurações simples chave-valor (taxas, etc.)
+model PlatformSetting {
+  id        Int      @id @default(autoincrement())
+  key       String   @unique
+  value     String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("platform_settings")
   @@schema("app_v3")
 }
