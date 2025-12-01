@@ -3,8 +3,10 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import ProfileHeader from "@/app/components/profile/ProfileHeader";
 import { useUser } from "@/app/hooks/useUser";
+import { defaultBlurDataURL, optimizeImageUrl } from "@/lib/image";
 
 
 type UserTicket = {
@@ -181,28 +183,32 @@ export default function MePage() {
 
   return (
     <main className="orya-body-bg text-white" aria-labelledby="me-page-title">
-      <h1 id="me-page-title" className="sr-only">A minha conta</h1>
+      <h1 id="me-page-title" className="sr-only">
+        A minha conta
+      </h1>
       <section className="max-w-5xl mx-auto px-5 py-8 md:py-10 space-y-6">
-        {meLoading ? (
-          <div className="space-y-3">
-            <div className="h-20 rounded-3xl border border-white/10 bg-white/5 animate-pulse blur-[0.2px]" />
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              {[1, 2, 3, 4].map((i) => (
-                <div
-                  key={i}
-                  className="h-24 rounded-2xl border border-white/8 bg-white/5 animate-pulse blur-[0.3px]"
-                />
-              ))}
+        <div className="min-h-[180px]">
+          {meLoading ? (
+            <div className="space-y-3 h-full">
+              <div className="h-20 rounded-3xl border border-white/10 bg-white/5 animate-pulse blur-[0.2px]" />
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {[1, 2, 3, 4].map((i) => (
+                  <div
+                    key={i}
+                    className="h-24 rounded-2xl border border-white/8 bg-white/5 animate-pulse blur-[0.3px]"
+                  />
+                ))}
+              </div>
             </div>
-          </div>
-        ) : (
-          <ProfileHeader {...profileHeaderProps} />
-        )}
+          ) : (
+            <ProfileHeader {...profileHeaderProps} />
+          )}
+        </div>
 
         {/* STATS COMPACTO */}
-        <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-[#0f172a]/70 via-[#020617]/60 to-black/70 backdrop-blur-2xl p-6 shadow-[0_24px_70px_rgba(0,0,0,0.85)]">
+        <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-[#0f172a]/70 via-[#020617]/60 to-black/70 backdrop-blur-2xl p-6 shadow-[0_24px_70px_rgba(0,0,0,0.85)] min-h-[240px]">
           <div className="grid grid-cols-1 gap-3 text-[11px] md:grid-cols-4 md:gap-4">
-            <div className="rounded-2xl border border-white/18 bg-white/[0.02] px-4 py-3">
+            <div className="rounded-2xl border border-white/18 bg-white/[0.02] px-4 py-3 min-h-[96px]">
               <p className="text-white/55">Eventos com bilhete</p>
               <p className="mt-1 text-lg font-semibold text-white">
                 {totalEvents}
@@ -211,7 +217,7 @@ export default function MePage() {
                 Toda a tua timeline ORYA.
               </p>
             </div>
-            <div className="rounded-2xl border border-emerald-400/40 bg-emerald-500/10 px-4 py-3">
+            <div className="rounded-2xl border border-emerald-400/40 bg-emerald-500/10 px-4 py-3 min-h-[96px]">
               <p className="text-emerald-100/80">Próximos eventos</p>
               <p className="mt-1 text-lg font-semibold text-emerald-100">
                 {totalUpcoming}
@@ -220,7 +226,7 @@ export default function MePage() {
                 O que ainda vem aí.
               </p>
             </div>
-            <div className="rounded-2xl border border-white/18 bg-white/[0.02] px-4 py-3">
+            <div className="rounded-2xl border border-white/18 bg-white/[0.02] px-4 py-3 min-h-[96px]">
               <p className="text-white/55">Eventos já vividos</p>
               <p className="mt-1 text-lg font-semibold text-white">
                 {totalPast}
@@ -229,7 +235,7 @@ export default function MePage() {
                 Memórias que já fazem parte da tua história.
               </p>
             </div>
-            <div className="rounded-2xl border border-fuchsia-400/40 bg-fuchsia-500/10 px-4 py-3">
+            <div className="rounded-2xl border border-fuchsia-400/40 bg-fuchsia-500/10 px-4 py-3 min-h-[96px]">
               <p className="text-fuchsia-100/85">Total investido</p>
               <p className="mt-1 text-lg font-semibold text-fuchsia-100">
                 {totalSpentEuros} €
@@ -239,7 +245,7 @@ export default function MePage() {
               </p>
             </div>
           </div>
-          <p className="mt-3 text-[11px] text-white/65">{levelDescription}</p>
+          <p className="mt-3 text-[11px] text-white/65 min-h-[32px]">{levelDescription}</p>
         </div>
 
         {/* GRID PRINCIPAL */}
@@ -250,7 +256,7 @@ export default function MePage() {
               Detalhes da conta
             </h2>
 
-            <div className="space-y-2 text-[11px] text-white/75">
+            <div className="space-y-2 text-[11px] text-white/75 min-h-[120px]">
               {!profile?.username && (
                 <div className="mt-2 rounded-xl border border-amber-400/40 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-100">
                   Ainda não escolheste um @username. Define um para ativares o teu perfil público.
@@ -292,7 +298,7 @@ export default function MePage() {
           </section>
 
           {/* BILHETES */}
-          <section className="rounded-2xl border border-[#6BFFFF]/30 bg-gradient-to-br from-[#020617f2] via-slate-950 to-slate-950 backdrop-blur-xl p-5 space-y-4 shadow-[0_16px_40px_rgba(15,23,42,0.7)]">
+          <section className="rounded-2xl border border-[#6BFFFF]/30 bg-gradient-to-br from-[#020617f2] via-slate-950 to-slate-950 backdrop-blur-xl p-5 space-y-4 shadow-[0_16px_40px_rgba(15,23,42,0.7)] min-h-[320px]">
             <div className="flex items-center justify-between gap-3 flex-wrap">
               <div>
                 <h2 className="text-sm font-semibold text-white/95">
@@ -370,11 +376,14 @@ export default function MePage() {
                       >
                         <div className="relative h-32 w-full overflow-hidden">
                           {t.eventCoverImageUrl ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img
-                              src={t.eventCoverImageUrl}
+                            <Image
+                              src={optimizeImageUrl(t.eventCoverImageUrl, 600, 70)}
                               alt={t.eventTitle}
-                              className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
+                              fill
+                              sizes="(max-width: 640px) 90vw, 320px"
+                              className="object-cover transition-transform duration-500 group-hover:scale-[1.03]"
+                              placeholder="blur"
+                              blurDataURL={defaultBlurDataURL}
                             />
                           ) : (
                             <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] text-[11px] font-semibold text-black/80">
@@ -404,10 +413,15 @@ export default function MePage() {
                             </span>
                           </div>
                           <div className="flex items-center gap-3">
-                            <img
+                            <Image
                               src={`/api/qr/${t.qrToken}`}
                               alt="QR Code do bilhete ORYA"
-                              className="h-12 w-12 rounded-lg bg-black/20 p-1"
+                              width={48}
+                              height={48}
+                              className="h-12 w-12 rounded-lg bg-black/20 p-1 object-cover"
+                              sizes="48px"
+                              placeholder="blur"
+                              blurDataURL={defaultBlurDataURL}
                             />
 
                             <div>

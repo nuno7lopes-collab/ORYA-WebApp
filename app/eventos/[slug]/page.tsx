@@ -9,6 +9,8 @@ import EventPageClient from "./EventPageClient";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import type { Metadata } from "next";
 import type { Prisma } from "@prisma/client";
+import Image from "next/image";
+import { defaultBlurDataURL, optimizeImageUrl } from "@/lib/image";
 
 type EventPageParams = { slug: string };
 type EventPageParamsInput = EventPageParams | Promise<EventPageParams>;
@@ -170,10 +172,13 @@ export default async function EventPage({ params }: { params: EventPageParamsInp
   const time = timeFormatter.format(startDateObj);
   const endTime = timeFormatter.format(endDateObj);
 
-  const cover =
+  const rawCover =
     event.coverImageUrl && event.coverImageUrl.trim().length > 0
       ? event.coverImageUrl
       : "https://images.unsplash.com/photo-1541987392829-5937c1069305?q=80&w=1600";
+  const cover = optimizeImageUrl(rawCover, 1200, 72, "webp");
+   // versão ultra-leve apenas para o blur de fundo (mantém o efeito mas evita puxar MBs)
+  const blurredCover = optimizeImageUrl(rawCover, 120, 20, "webp");
 
   const nowDate = new Date();
   const eventEnded = endDateObj < nowDate;
@@ -301,7 +306,7 @@ export default async function EventPage({ params }: { params: EventPageParamsInp
         <div
           className="h-full w-full scale-[1.25]"
           style={{
-            backgroundImage: `url(${cover})`,
+            backgroundImage: `url(${blurredCover})`,
             backgroundSize: "cover",
             backgroundPosition: "center",
             filter: "blur(40px)",
@@ -406,10 +411,16 @@ export default async function EventPage({ params }: { params: EventPageParamsInp
             {/* POSTER / CAPA DO EVENTO À DIREITA (maior, alinhado em altura com o card) */}
             <div className="md:w-[280px] lg:w-[320px] flex-shrink-0 flex">
               <div className="relative mt-4 h-60 w-full overflow-hidden rounded-3xl border border-white/20 bg-white/5 shadow-[0_22px_50px_rgba(0,0,0,0.9)] backdrop-blur-2xl md:mt-0 md:h-full min-h-[230px]">
-                <img
+                <Image
                   src={cover}
                   alt={`Capa do evento ${event.title}`}
-                  className="h-full w-full object-cover"
+                  fill
+                  priority
+                  fetchPriority="high"
+                  sizes="(max-width: 768px) 90vw, (max-width: 1200px) 40vw, 480px"
+                  className="object-cover"
+                  placeholder="blur"
+                  blurDataURL={defaultBlurDataURL}
                 />
                 <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/35 via-transparent to-white/0" />
               </div>

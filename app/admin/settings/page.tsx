@@ -86,7 +86,9 @@ export default function AdminSettingsPage() {
       });
       const json = (await res.json()) as FeesResponse;
       if (!res.ok || !json || !("ok" in json) || !json.ok) {
-        const msg = (json as any)?.error || "Não foi possível guardar as taxas.";
+        const msg = (typeof json === "object" && json && "error" in json && typeof json.error === "string")
+          ? json.error
+          : "Não foi possível guardar as taxas.";
         setSaveError(msg);
         return;
       }
