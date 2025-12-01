@@ -1,11 +1,8 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import { Inter } from "next/font/google";
 import { Navbar } from "./components/Navbar";
 import { AuthModalProvider } from "./components/autenticação/AuthModalContext";
 import AuthModal from "./components/autenticação/AuthModal";
-
-const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: "ORYA",
@@ -20,7 +17,7 @@ export default function RootLayout({
   return (
     <html lang="pt-PT" className="h-full" suppressHydrationWarning>
       <body
-        className={`${inter.className} orya-body-bg antialiased min-h-screen flex flex-col`}
+        className="orya-body-bg antialiased min-h-screen flex flex-col font-sans"
       >
         <AuthModalProvider>
           <Navbar />
