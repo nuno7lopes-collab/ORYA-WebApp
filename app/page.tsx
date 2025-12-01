@@ -1,6 +1,8 @@
 import Link from "next/link";
+import Image from "next/image";
 import { prisma } from "@/lib/prisma";
 import { mapEventToCardDTO, type EventCardDTO } from "@/lib/events";
+import { defaultBlurDataURL, optimizeImageUrl } from "@/lib/image";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -48,19 +50,6 @@ function formatPriceLabel(event: EventCardDTO) {
   return `Desde ${formatted} €`;
 }
 
-function coverStyle(coverUrl: string | null) {
-  if (coverUrl) {
-    return {
-      backgroundImage: `url(${coverUrl})`,
-      transform: "scale(1.04)",
-    };
-  }
-  return {
-    backgroundImage:
-      "radial-gradient(circle at 20% 20%, rgba(255,0,200,0.35), transparent 25%), radial-gradient(circle at 80% 20%, rgba(107,255,255,0.3), transparent 30%), linear-gradient(135deg, #0b1224 0%, #050915 60%)",
-  };
-}
-
 export default async function HomePage() {
   const eventsRaw = await prisma.event.findMany({
     where: { status: "PUBLISHED", isTest: false },
@@ -78,6 +67,9 @@ export default async function HomePage() {
     .filter((e): e is EventCardDTO => e !== null);
 
   const spotlight = events[0] ?? null;
+  const spotlightCover = spotlight
+    ? optimizeImageUrl(spotlight.coverImageUrl, 1400, 70, "webp")
+    : null;
 
   return (
     <main className="min-h-screen bg-gradient-to-b from-[#050915] to-[#080b12] text-white pb-28 md:pb-8">
@@ -104,11 +96,20 @@ export default async function HomePage() {
             {spotlight ? (
               <>
                 <div className="relative h-44 w-full overflow-hidden">
-                  <div
-                    className="absolute inset-0 bg-cover bg-center transition-transform duration-500"
-                    style={coverStyle(spotlight.coverImageUrl)}
-                    aria-hidden
-                  />
+                  {spotlightCover ? (
+                    <Image
+                      src={spotlightCover}
+                      alt={spotlight.title}
+                      fill
+                      sizes="(max-width: 768px) 100vw, (max-width: 1200px) 80vw, 1200px"
+                      priority
+                      className="object-cover transition-transform duration-500"
+                      placeholder="blur"
+                      blurDataURL={defaultBlurDataURL}
+                    />
+                  ) : (
+                    <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(255,0,200,0.35),transparent_25%),radial-gradient(circle_at_80%_20%,rgba(107,255,255,0.3),transparent_30%),linear-gradient(135deg,#0b1224_0%,#050915_60%)]" />
+                  )}
                   <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/55 to-transparent" />
 
                   <div className="absolute bottom-3 left-4 right-4 flex items-end justify-between gap-3">

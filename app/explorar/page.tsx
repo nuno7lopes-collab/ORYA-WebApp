@@ -4,6 +4,8 @@ import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
+import { defaultBlurDataURL, optimizeImageUrl } from "@/lib/image";
 
 type ExploreItem = {
   id: number;
@@ -753,11 +755,14 @@ function BaseCard({
       <div className="relative overflow-hidden">
         <div className="aspect-square w-full">
           {item.coverImageUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={item.coverImageUrl}
+            <Image
+              src={optimizeImageUrl(item.coverImageUrl, 900, 72)}
               alt={item.title}
-              className="h-full w-full object-cover transform transition-transform duration-300 group-hover:scale-[1.04]"
+              fill
+              sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+              className="object-cover transform transition-transform duration-300 group-hover:scale-[1.04]"
+              placeholder="blur"
+              blurDataURL={defaultBlurDataURL}
             />
           ) : (
             <div className={`h-full w-full bg-gradient-to-br ${accentClass}`} />
