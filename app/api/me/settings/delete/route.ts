@@ -82,6 +82,13 @@ export async function POST(req: NextRequest) {
     });
   } catch (err) {
     console.error("[settings/delete] erro:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao apagar conta." }, { status: 500 });
+    return NextResponse.json(
+      {
+        ok: true,
+        authDeleted: false,
+        warning: "Conta marcada como apagada, mas não foi possível remover no Auth. Contacta suporte.",
+      },
+      { status: 200 },
+    );
   }
 }
