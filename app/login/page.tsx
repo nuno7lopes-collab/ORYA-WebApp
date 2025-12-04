@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
 import { useSearchParams, useRouter } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabaseBrowser";
@@ -101,5 +101,15 @@ function LoginContent() {
 }
 
 export default function LoginRedirectPage() {
-  return <LoginContent />;
+  return (
+    <Suspense
+      fallback={
+        <main className="min-h-screen flex items-center justify-center text-white">
+          <p className="text-sm text-white/60">A preparar sessão...</p>
+        </main>
+      }
+    >
+      <LoginContent />
+    </Suspense>
+  );
 }
