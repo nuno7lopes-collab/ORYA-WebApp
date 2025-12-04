@@ -17,8 +17,33 @@ export default async function OrganizerLayout({ children }: { children: ReactNod
 
   const profile = await prisma.profile.findUnique({
     where: { id: user.id },
-    select: { fullName: true, username: true },
+    select: { fullName: true, username: true, roles: true },
   });
+  const roles = Array.isArray(profile?.roles) ? (profile?.roles as string[]) : [];
+  const isAdmin = roles.some((r) => r?.toLowerCase() === "admin");
+
+  if (!isAdmin) {
+    return (
+      <div className="orya-body-bg min-h-screen flex items-center justify-center text-white px-4">
+        <div className="max-w-md space-y-5 text-center rounded-2xl border border-white/10 bg-black/40 p-6 shadow-[0_20px_60px_rgba(0,0,0,0.45)]">
+          <p className="text-[11px] uppercase tracking-[0.28em] text-white/60">Área do organizador</p>
+          <h1 className="text-2xl font-semibold">Estamos a preparar algo grande</h1>
+          <p className="text-sm text-white/70 leading-relaxed">
+            A nova experiência de organizador está quase a chegar.
+            Obrigado pela paciência!
+          </p>
+          <div className="flex justify-center">
+            <Link
+              href="/explorar"
+              className="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-white/85 hover:bg-white/20 transition"
+            >
+              Voltar à experiência de utilizador
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const organizer = await prisma.organizer.findFirst({
     where: { userId: user.id },

@@ -63,9 +63,9 @@ model Profile {
 
 /// Entidade organizadora (marca, página de eventos)
 model Organizer {
-  id     Int     @id @default(autoincrement())
-  userId String  @map("user_id") @db.Uuid
-  user   Profile @relation(fields: [userId], references: [id])
+  id     Int      @id @default(autoincrement())
+  userId String?  @map("user_id") @db.Uuid
+  user   Profile? @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   displayName     String          @map("display_name")
   entityType      String?         @map("entity_type")

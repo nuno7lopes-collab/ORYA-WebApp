@@ -50,11 +50,17 @@ export async function POST(req: NextRequest) {
       prisma.ticketResale.deleteMany({ where: { sellerUserId: user.id } }),
     ]);
 
+    // Desassociar organizers antes do delete na Auth
+    await prisma.organizer.updateMany({
+      where: { userId: user.id },
+      data: { userId: null },
+    });
+
     // Supabase Auth: hard delete
     let authDeleted = true;
     try {
-      // Hard delete para libertar o email
-      const { error: deleteError } = await supabaseAdmin.auth.admin.deleteUser(user.id, false);
+      // Hard delete para libertar o email (sem segundo argumento para evitar erro de assinatura)
+      const { error: deleteError } = await supabaseAdmin.auth.admin.deleteUser(user.id);
       if (deleteError) {
         authDeleted = false;
         console.error("[settings/delete] supabase delete error (hard):", deleteError);

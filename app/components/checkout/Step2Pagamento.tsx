@@ -79,8 +79,10 @@ export default function Step2Pagamento() {
   const [guestEmailConfirm, setGuestEmailConfirm] = useState("");
   const [guestPhone, setGuestPhone] = useState("");
   const [guestSubmitVersion, setGuestSubmitVersion] = useState(0);
+  const [promoInput, setPromoInput] = useState("");
   const [promoCode, setPromoCode] = useState("");
   const [appliedDiscount, setAppliedDiscount] = useState<number>(0);
+  const [promoWarning, setPromoWarning] = useState<string | null>(null);
 
   useEffect(() => {
     if (!promoCode.trim()) {
@@ -311,6 +313,17 @@ export default function Step2Pagamento() {
               ? data.error
               : "Não foi possível preparar o pagamento.";
 
+          const promoFail =
+            payload?.promoCode && typeof data?.error === "string" && data.error.toLowerCase().includes("código");
+
+          if (promoFail && !cancelled) {
+            setPromoWarning("Código não aplicado. Continuas sem desconto.");
+            setPromoCode("");
+            setAppliedDiscount(0);
+            setError(null);
+            return;
+          }
+
           if (!cancelled) setError(msg);
           return;
         }
@@ -345,9 +358,6 @@ export default function Step2Pagamento() {
     stripePromise,
     purchaseMode,
     guestSubmitVersion,
-    guestName,
-    guestEmail,
-    guestPhone,
   ]);
 
   if (!safeDados) {
@@ -550,19 +560,29 @@ const options: StripeElementsOptions | undefined = clientSecret
             </div>
           ) : (
             <div className="flex-1 rounded-2xl border border-white/12 bg-white/[0.05] px-6 py-6 shadow-[0_0_60px_rgba(0,0,0,0.6)] overflow-y-auto max-h-[65vh] space-y-4">
+              {promoWarning && (
+                <div className="rounded-md border border-amber-400/40 bg-amber-400/10 px-3 py-2 text-sm text-amber-100">
+                  {promoWarning}
+                </div>
+              )}
               <div className="rounded-2xl border border-white/10 bg-black/30 p-4 space-y-2">
                 <label className="text-xs text-white/70">Tens um código promocional?</label>
                 <div className="flex flex-col gap-2 sm:flex-row">
                   <input
                     type="text"
-                    value={promoCode}
-                    onChange={(e) => setPromoCode(e.target.value)}
+                    value={promoInput}
+                    onChange={(e) => setPromoInput(e.target.value)}
                     placeholder="Insere o código"
                     className="flex-1 rounded-xl bg-black/50 border border-white/15 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]"
                   />
                   <button
                     type="button"
-                    onClick={() => setGuestSubmitVersion((v) => v + 1)}
+                    onClick={() => {
+                      setPromoWarning(null);
+                      setError(null);
+                      setPromoCode(promoInput.trim());
+                      setGuestSubmitVersion((v) => v + 1);
+                    }}
                     className="px-4 py-2 rounded-full bg-white text-black text-sm font-semibold shadow hover:scale-[1.01] active:scale-[0.99] transition"
                   >
                     Aplicar
