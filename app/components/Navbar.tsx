@@ -36,6 +36,7 @@ export function Navbar() {
   const profileMenuRef = useRef<HTMLDivElement | null>(null);
   const lastScrollYRef = useRef(0);
   const pathname = hydratedPathname ?? "";
+  const shouldHide = rawPathname?.startsWith("/organizador");
 
   useEffect(() => {
     setHasMounted(true);
@@ -47,6 +48,15 @@ export function Navbar() {
       setHydratedPathname(rawPathname ?? window.location.pathname);
     }
   }, [rawPathname]);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    if (shouldHide) {
+      document.body.dataset.navHidden = "true";
+    } else {
+      delete document.body.dataset.navHidden;
+    }
+  }, [shouldHide]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -230,7 +240,7 @@ export function Navbar() {
       <header
         className={`fixed inset-x-0 top-0 z-50 transition-transform duration-300 ease-out ${
           isVisible ? "translate-y-0" : "-translate-y-full"
-        }`}
+        } ${shouldHide ? "hidden" : ""}`}
       >
         <div
           className={`flex w-full items-center gap-4 px-4 md:px-6 lg:px-8 transition-all duration-300 ${
@@ -269,6 +279,17 @@ export function Navbar() {
                 }`}
               >
                 Explorar
+              </button>
+              <button
+                type="button"
+                onClick={() => router.push("/organizador")}
+                className={`rounded-full px-3 py-1.5 transition-colors ${
+                  pathname?.startsWith("/organizador")
+                    ? "bg-white/10 text-white border border-white/15"
+                    : "text-zinc-300 hover:bg-white/5 hover:text-white border border-transparent"
+                }`}
+              >
+                Organizar
               </button>
             </nav>
           </div>

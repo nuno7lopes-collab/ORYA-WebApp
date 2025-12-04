@@ -3,6 +3,25 @@ import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { env } from "@/lib/env";
 
+function decodeBase64Cookie(raw: string) {
+  const BASE64_PREFIX = "base64-";
+  if (!raw.startsWith(BASE64_PREFIX)) return raw;
+
+  const base = raw.slice(BASE64_PREFIX.length);
+  const encodings: BufferEncoding[] = ["base64url", "base64"];
+
+  for (const enc of encodings) {
+    try {
+      return Buffer.from(base, enc).toString("utf-8");
+    } catch {
+      /* try next */
+    }
+  }
+
+  // Se não conseguirmos decodificar, tratamos como cookie ausente para evitar JSON.parse de strings inválidas
+  return undefined;
+}
+
 /**
  * Server-side Supabase client (SSR + Route Handlers)
  * - Safe cookie reading
@@ -20,9 +39,14 @@ export async function createSupabaseServer() {
       cookies: {
         get(name: string) {
           try {
+            // Só devolvemos cookies do Supabase (sb-*) e ignoramos o resto
+            if (!name.startsWith("sb-")) return undefined;
             const raw = cookieStore.get(name)?.value;
-            // Avoid "Unexpected token base64" by NOT parsing anything
-            return raw ?? undefined;
+            if (!raw) return undefined;
+
+            // Se for um chunk (sb-*.0, sb-*.1, ...), deixamos intacto para o combinador do Supabase tratar
+            const isChunk = /\.\d+$/.test(name);
+            return isChunk ? raw : decodeBase64Cookie(raw);
           } catch {
             return undefined;
           }

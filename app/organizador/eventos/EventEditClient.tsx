@@ -1,9 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import useSWR from "swr";
 import { InlineDateTimePicker } from "@/app/components/forms/InlineDateTimePicker";
 import { TicketTypeStatus } from "@prisma/client";
+import { useUser } from "@/app/hooks/useUser";
 
 type TicketTypeUI = {
   id: number;
@@ -34,12 +36,21 @@ type EventEditClientProps = {
     feeModeOverride?: string | null;
     platformFeeBpsOverride?: number | null;
     platformFeeFixedCentsOverride?: number | null;
+    payoutMode?: string | null;
   };
   tickets: TicketTypeUI[];
   eventHasTickets?: boolean;
 };
 
+const fetcher = (url: string) => fetch(url).then((res) => res.json());
+
 export function EventEditClient({ event, tickets, eventHasTickets }: EventEditClientProps) {
+  const { user, profile } = useUser();
+  const { data: organizerStatus } = useSWR<{ paymentsStatus?: string }>(
+    user ? "/api/organizador/me" : null,
+    fetcher,
+    { revalidateOnFocus: false }
+  );
   const [title, setTitle] = useState(event.title);
   const [description, setDescription] = useState(event.description ?? "");
   const [startsAt, setStartsAt] = useState(event.startsAt);
@@ -75,6 +86,47 @@ export function EventEditClient({ event, tickets, eventHasTickets }: EventEditCl
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [ticketList, setTicketList] = useState<TicketTypeUI[]>(tickets);
+  const [stripeAlert, setStripeAlert] = useState<string | null>(null);
+  const [validationAlert, setValidationAlert] = useState<string | null>(null);
+  const [backendAlert, setBackendAlert] = useState<string | null>(null);
+  const ctaRef = useRef<HTMLDivElement | null>(null);
+  const titleRef = useRef<HTMLInputElement | null>(null);
+  const startsRef = useRef<HTMLDivElement | null>(null);
+  const cityRef = useRef<HTMLInputElement | null>(null);
+  const roles = Array.isArray(profile?.roles) ? (profile?.roles as string[]) : [];
+  const isAdmin = roles.some((r) => r?.toLowerCase() === "admin");
+  const payoutMode = (event.payoutMode ?? "ORGANIZER").toUpperCase();
+  const isPlatformPayout = payoutMode === "PLATFORM";
+  const paymentsStatusRaw = isAdmin ? "READY" : organizerStatus?.paymentsStatus ?? "NO_STRIPE";
+  const paymentsStatus = isPlatformPayout ? "READY" : paymentsStatusRaw;
+  const hasPaidTicket = useMemo(
+    () =>
+      ticketList.some((t) => t.price > 0 && t.status !== TicketTypeStatus.CANCELLED) ||
+      (newTicket.priceEuro && Number(newTicket.priceEuro.replace(",", ".")) > 0),
+    [ticketList, newTicket.priceEuro],
+  );
+  const FormAlert = ({
+    variant,
+    title,
+    message,
+  }: {
+    variant: "error" | "warning" | "success";
+    title?: string;
+    message: string;
+  }) => {
+    const tones =
+      variant === "error"
+        ? "border-red-500/40 bg-red-500/10 text-red-100"
+        : variant === "warning"
+          ? "border-amber-400/40 bg-amber-400/10 text-amber-100"
+          : "border-emerald-400/40 bg-emerald-500/10 text-emerald-50";
+    return (
+      <div className={`rounded-md border px-4 py-3 text-sm ${tones}`}>
+        {title && <p className="font-semibold">{title}</p>}
+        <p>{message}</p>
+      </div>
+    );
+  };
 
   const handleCoverUpload = async (file: File | null) => {
     if (!file) return;
@@ -98,9 +150,50 @@ export function EventEditClient({ event, tickets, eventHasTickets }: EventEditCl
   };
 
   const handleSave = async () => {
-    setIsSaving(true);
+    setStripeAlert(null);
+    setValidationAlert(null);
+    setBackendAlert(null);
     setError(null);
     setMessage(null);
+
+    const scrollTo = (el?: HTMLElement | null) =>
+      el?.scrollIntoView({ behavior: "smooth", block: "center" });
+
+    if (!title.trim()) {
+      setValidationAlert("Revê os campos em destaque antes de guardar o evento.");
+      setError("O título é obrigatório.");
+      scrollTo(titleRef.current);
+      titleRef.current?.classList.add("ring-1", "ring-red-400");
+      setTimeout(() => titleRef.current?.classList.remove("ring-1", "ring-red-400"), 800);
+      return;
+    }
+
+    if (!startsAt) {
+      setValidationAlert("Revê os campos em destaque antes de guardar o evento.");
+      setError("A data/hora de início é obrigatória.");
+      scrollTo(startsRef.current);
+      startsRef.current?.classList.add("ring-1", "ring-red-400");
+      setTimeout(() => startsRef.current?.classList.remove("ring-1", "ring-red-400"), 800);
+      return;
+    }
+
+    if (!locationCity.trim()) {
+      setValidationAlert("Revê os campos em destaque antes de guardar o evento.");
+      setError("A cidade é obrigatória.");
+      scrollTo(cityRef.current);
+      cityRef.current?.classList.add("ring-1", "ring-red-400");
+      setTimeout(() => cityRef.current?.classList.remove("ring-1", "ring-red-400"), 800);
+      return;
+    }
+
+    if (hasPaidTicket && paymentsStatus !== "READY") {
+      setStripeAlert("Podes gerir o evento, mas só vender bilhetes pagos depois de ligares o Stripe.");
+      setError("Para vender bilhetes pagos, liga a tua conta Stripe em Finanças & Payouts.");
+      scrollTo(ctaRef.current);
+      return;
+    }
+
+    setIsSaving(true);
     try {
       const ticketTypeUpdates = endingIds.map((id) => ({
         id,
@@ -114,10 +207,18 @@ export function EventEditClient({ event, tickets, eventHasTickets }: EventEditCl
         feeFixedOverride.trim() === "" ? null : Number(feeFixedOverride.replace(",", "."));
 
       if (feeBps !== null && (!Number.isFinite(feeBps) || feeBps < 0)) {
-        throw new Error("Fee (%) inválido.");
+        setValidationAlert("Revê os campos em destaque antes de guardar o evento.");
+        setError("Fee (%) inválido.");
+        scrollTo(ctaRef.current);
+        setIsSaving(false);
+        return;
       }
       if (feeFixed !== null && (!Number.isFinite(feeFixed) || feeFixed < 0)) {
-        throw new Error("Fee fixa inválida.");
+        setValidationAlert("Revê os campos em destaque antes de guardar o evento.");
+        setError("Fee fixa inválida.");
+        scrollTo(ctaRef.current);
+        setIsSaving(false);
+        return;
       }
 
       const newTicketsPayload =
@@ -200,9 +301,11 @@ export function EventEditClient({ event, tickets, eventHasTickets }: EventEditCl
         startsAt: "",
         endsAt: "",
       });
+      setMessage("Evento atualizado com sucesso.");
     } catch (err) {
       console.error("Erro ao atualizar evento", err);
-      setError(err instanceof Error ? err.message : "Erro ao atualizar evento.");
+      setBackendAlert(err instanceof Error ? err.message : "Erro ao atualizar evento.");
+      scrollTo(ctaRef.current);
     } finally {
       setIsSaving(false);
     }
@@ -286,16 +389,6 @@ export function EventEditClient({ event, tickets, eventHasTickets }: EventEditCl
           </div>
         </div>
       )}
-      {error && (
-        <div className="rounded-md border border-red-400/40 bg-red-500/10 px-3 py-2 text-sm text-red-100">
-          {error}
-        </div>
-      )}
-      {message && (
-        <div className="rounded-md border border-emerald-400/40 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-100">
-          {message}
-        </div>
-      )}
 
       <div className="rounded-2xl border border-white/10 bg-white/5 p-4 space-y-4">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-white/70">
@@ -343,6 +436,7 @@ export function EventEditClient({ event, tickets, eventHasTickets }: EventEditCl
           <input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
+            ref={titleRef}
             className="w-full rounded-md border border-white/15 bg-black/20 px-3 py-2 text-sm outline-none focus:border-white/60"
           />
         </div>
@@ -357,11 +451,13 @@ export function EventEditClient({ event, tickets, eventHasTickets }: EventEditCl
         </div>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <InlineDateTimePicker
-            label="Data/hora início"
-            value={startsAt}
-            onChange={(v) => setStartsAt(v)}
-          />
+          <div ref={startsRef}>
+            <InlineDateTimePicker
+              label="Data/hora início"
+              value={startsAt}
+              onChange={(v) => setStartsAt(v)}
+            />
+          </div>
           <InlineDateTimePicker
             label="Data/hora fim"
             value={endsAt}
@@ -384,6 +480,7 @@ export function EventEditClient({ event, tickets, eventHasTickets }: EventEditCl
             <input
               value={locationCity}
               onChange={(e) => setLocationCity(e.target.value)}
+              ref={cityRef}
               className="w-full rounded-md border border-white/15 bg-black/20 px-3 py-2 text-sm outline-none focus:border-white/60"
             />
           </div>
@@ -569,21 +666,40 @@ export function EventEditClient({ event, tickets, eventHasTickets }: EventEditCl
         </div>
       </div>
 
-      <div className="flex gap-3">
-        <button
-          type="button"
-          onClick={handleSave}
-          disabled={isSaving}
-          className="rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-4 py-2 text-sm font-semibold text-black shadow disabled:opacity-60"
-        >
-          {isSaving ? "A gravar…" : "Guardar alterações"}
-        </button>
-        <Link
-          href={`/organizador/eventos/${event.id}`}
-          className="rounded-full border border-white/20 px-4 py-2 text-sm text-white/80 hover:bg-white/10"
-        >
-          Voltar
-        </Link>
+      <div ref={ctaRef} className="space-y-3">
+        {stripeAlert && (
+          <FormAlert
+            variant={hasPaidTicket ? "error" : "warning"}
+            title="Stripe incompleto"
+            message={stripeAlert}
+          />
+        )}
+        {validationAlert && <FormAlert variant="warning" message={validationAlert} />}
+        {error && <FormAlert variant="error" message={error} />}
+        {backendAlert && (
+          <FormAlert
+            variant="error"
+            title="Algo correu mal ao guardar o evento"
+            message={backendAlert}
+          />
+        )}
+        {message && <FormAlert variant="success" message={message} />}
+        <div className="flex gap-3">
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={isSaving}
+            className="rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-4 py-2 text-sm font-semibold text-black shadow disabled:opacity-60"
+          >
+            {isSaving ? "A gravar…" : "Guardar alterações"}
+          </button>
+          <Link
+            href={`/organizador/eventos/${event.id}`}
+            className="rounded-full border border-white/20 px-4 py-2 text-sm text-white/80 hover:bg-white/10"
+          >
+            Voltar
+          </Link>
+        </div>
       </div>
     </div>
   );

@@ -9,6 +9,7 @@ const required = [
   "STRIPE_SECRET_KEY",
   "STRIPE_WEBHOOK_SECRET",
   "QR_SECRET_KEY",
+  "RESEND_API_KEY",
 ] as const;
 
 type EnvKey = (typeof required)[number];
@@ -29,4 +30,9 @@ export const env = {
   stripeSecretKey: getEnv("STRIPE_SECRET_KEY"),
   stripeWebhookSecret: getEnv("STRIPE_WEBHOOK_SECRET"),
   qrSecretKey: getEnv("QR_SECRET_KEY"),
+  resendApiKey: getEnv("RESEND_API_KEY"),
+  resendFrom:
+    process.env.RESEND_FROM ??
+    process.env.RESEND_FROM_EMAIL ??
+    "no-reply@orya.pt",
 };

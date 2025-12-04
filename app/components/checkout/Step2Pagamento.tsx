@@ -15,6 +15,19 @@ import {
 import { useCheckout } from "./contextoCheckout";
 import { supabaseBrowser } from "@/lib/supabaseBrowser";
 
+function isValidEmail(email: string) {
+  return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email);
+}
+
+function sanitizePhone(input: string) {
+  let cleaned = input.replace(/[^\d+]/g, "");
+  if (cleaned.includes("+")) {
+    const firstPlus = cleaned.indexOf("+");
+    cleaned = "+" + cleaned.slice(firstPlus + 1).replace(/\+/g, "");
+  }
+  return cleaned;
+}
+
 type CheckoutItem = {
   ticketId: number;
   quantity: number;
@@ -31,7 +44,16 @@ type CheckoutData = {
   additional?: {
     quantidades?: Record<string, number>;
     total?: number;
+    guestName?: string;
+    guestEmail?: string;
+    guestPhone?: string | null;
   };
+};
+
+type GuestInfo = {
+  name: string;
+  email: string;
+  phone?: string;
 };
 
 export default function Step2Pagamento() {
@@ -46,6 +68,25 @@ export default function Step2Pagamento() {
   const [authChecked, setAuthChecked] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [authChecking, setAuthChecking] = useState(true);
+  // Preferimos convidado por defeito para reduzir fricção
+  const [purchaseMode, setPurchaseMode] = useState<"auth" | "guest">("guest");
+  const [authInfo, setAuthInfo] = useState<string | null>(null);
+  const [guestErrors, setGuestErrors] = useState<{ name?: string; email?: string; phone?: string }>({});
+
+  // 👤 Guest form state
+  const [guestName, setGuestName] = useState("");
+  const [guestEmail, setGuestEmail] = useState("");
+  const [guestEmailConfirm, setGuestEmailConfirm] = useState("");
+  const [guestPhone, setGuestPhone] = useState("");
+  const [guestSubmitVersion, setGuestSubmitVersion] = useState(0);
+  const [promoCode, setPromoCode] = useState("");
+  const [appliedDiscount, setAppliedDiscount] = useState<number>(0);
+
+  useEffect(() => {
+    if (!promoCode.trim()) {
+      setAppliedDiscount(0);
+    }
+  }, [promoCode]);
 
   const safeDados: CheckoutData | null =
     dados && typeof dados === "object" ? (dados as CheckoutData) : null;
@@ -76,13 +117,18 @@ export default function Step2Pagamento() {
 
         if (error || !data?.user) {
           setUserId(null);
+          if (error) {
+            setAuthInfo("Sessão não encontrada. Inicia sessão ou continua como convidado.");
+          }
         } else {
           setUserId(data.user.id);
+          setAuthInfo(null);
         }
       } catch (err) {
         console.error("[Step2Pagamento] Erro ao verificar auth inicial:", err);
         if (!cancelled) {
           setUserId(null);
+          setAuthInfo("Sessão não encontrada. Inicia sessão ou continua como convidado.");
         }
       } finally {
         if (!cancelled) {
@@ -103,10 +149,12 @@ export default function Step2Pagamento() {
         setUserId(session.user.id);
         setAuthChecked(true);
         setAuthChecking(false);
+        setAuthInfo(null);
       } else {
         setUserId(null);
         setAuthChecked(true);
         setAuthChecking(false);
+        setAuthInfo("Sessão não encontrada. Inicia sessão ou continua como convidado.");
       }
     });
 
@@ -115,6 +163,26 @@ export default function Step2Pagamento() {
       subscription.unsubscribe();
     };
   }, []);
+
+  // Se vierem dados pré-preenchidos (ex.: voltar atrás), sincronizamos com o estado local do guest
+  useEffect(() => {
+    const additional =
+      safeDados?.additional && typeof safeDados.additional === "object"
+        ? safeDados.additional
+        : {};
+    if (typeof additional.guestName === "string") {
+      setGuestName(additional.guestName);
+    }
+    if (typeof additional.guestEmail === "string") {
+      setGuestEmail(additional.guestEmail);
+    }
+    if (typeof (additional as Record<string, unknown>)?.guestEmailConfirm === "string") {
+      setGuestEmailConfirm((additional as Record<string, string>).guestEmailConfirm);
+    }
+    if (typeof additional.guestPhone === "string") {
+      setGuestPhone(additional.guestPhone);
+    }
+  }, [safeDados]);
 
   const payload = useMemo(() => {
     if (!safeDados) return null;
@@ -145,12 +213,13 @@ export default function Step2Pagamento() {
     const totalFromStep1 =
       typeof additional.total === "number" ? additional.total : null;
 
-    return {
-      slug: safeDados.slug,
-      items,
-      total: totalFromStep1,
-    };
-  }, [safeDados]);
+      return {
+        slug: safeDados.slug,
+        items,
+        total: totalFromStep1,
+        promoCode: promoCode.trim() || undefined,
+      };
+  }, [safeDados, promoCode]);
 
   useEffect(() => {
     // Se não houver dados de checkout, mandamos de volta
@@ -159,17 +228,33 @@ export default function Step2Pagamento() {
       return;
     }
 
+    if (!stripePromise) return;
     // Enquanto não sabemos se está logado, não fazemos nada
     if (!authChecked) return;
 
-    // Se não está logado, garantimos que aparece o AuthWall e não chamamos a API
-    if (!userId) {
+    const isGuestFlow = purchaseMode === "guest";
+    const hasGuestSubmission = guestSubmitVersion > 0;
+    const guestNameClean = guestName.trim();
+    const guestEmailClean = guestEmail.trim();
+    const guestPhoneClean = guestPhone.trim();
+    const guestReady =
+      isGuestFlow && hasGuestSubmission && guestNameClean !== "" && guestEmailClean !== "";
+
+    // Se não está logado e ainda não escolheu convidado, mostramos UI e não chamamos a API
+    if (!userId && !guestReady) {
       setLoading(false);
       setClientSecret(null);
       setServerAmount(null);
       return;
     }
-    if (!stripePromise) return;
+
+    const guestPayload: GuestInfo | null = guestReady
+      ? {
+          name: guestNameClean,
+          email: guestEmailClean,
+          phone: guestPhoneClean || undefined,
+        }
+      : null;
 
     let cancelled = false;
 
@@ -186,7 +271,10 @@ export default function Step2Pagamento() {
         const res = await fetch("/api/payments/intent", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
+          body: JSON.stringify({
+            ...payload,
+            guest: guestPayload ?? undefined,
+          }),
         });
 
         const data = await res.json();
@@ -198,6 +286,16 @@ export default function Step2Pagamento() {
 
         // Se a API disser 401 ➜ perder sessão entretanto
         if (res.status === 401) {
+          if (purchaseMode === "guest") {
+            if (!cancelled) {
+              setError(
+                typeof data?.error === "string"
+                  ? data.error
+                  : "Não foi possível continuar como convidado."
+              );
+            }
+            return;
+          }
           if (!cancelled) {
             setUserId(null);
             setClientSecret(null);
@@ -222,6 +320,7 @@ export default function Step2Pagamento() {
           setServerAmount(
             typeof data.amount === "number" ? data.amount : null,
           );
+          setAppliedDiscount(typeof data.discountCents === "number" ? data.discountCents / 100 : 0);
         }
       } catch (err) {
         console.error("Erro ao criar PaymentIntent:", err);
@@ -238,7 +337,18 @@ export default function Step2Pagamento() {
     return () => {
       cancelled = true;
     };
-  }, [payload, irParaPasso, authChecked, userId, stripePromise]);
+  }, [
+    payload,
+    irParaPasso,
+    authChecked,
+    userId,
+    stripePromise,
+    purchaseMode,
+    guestSubmitVersion,
+    guestName,
+    guestEmail,
+    guestPhone,
+  ]);
 
   if (!safeDados) {
     return (
@@ -283,23 +393,83 @@ export default function Step2Pagamento() {
     },
   };
 
-  const options: StripeElementsOptions | undefined = clientSecret
-    ? {
-        clientSecret,
-        appearance,
-        paymentMethodOrder: ["apple_pay", "card", "mb_way"],
-      }
-    : undefined;
+const options: StripeElementsOptions | undefined = clientSecret
+  ? {
+      clientSecret,
+      appearance,
+      // Nota: a lista de métodos permitidos é definida no PaymentIntent (backend).
+    }
+  : undefined;
 
-  // Callback chamado pelo AuthWall quando o utilizador faz login/cria conta com sucesso
-  const handleAuthenticated = (newUserId: string) => {
+// Callback chamado pelo AuthWall quando o utilizador faz login/cria conta com sucesso
+  const handleAuthenticated = async (newUserId: string) => {
     setUserId(newUserId);
     setAuthChecked(true);
     setAuthChecking(false);
+    setPurchaseMode("auth");
+
+    // Tentar migrar bilhetes de guest para este user (best-effort)
+    try {
+      await fetch("/api/tickets/migrate-guest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+    } catch (err) {
+      console.warn("[Step2Pagamento] Falha ao migrar bilhetes de convidado", err);
+    }
   };
 
+  // Callback para continuar como convidado
+  const handleGuestContinue = () => {
+    setError(null);
+    const localErrors: { name?: string; email?: string; phone?: string } = {};
+    if (!guestName.trim()) {
+      localErrors.name = "Nome é obrigatório para emitir o bilhete.";
+    }
+    if (!guestEmail.trim()) {
+      localErrors.email = "Email é obrigatório para enviar os bilhetes.";
+    } else if (!isValidEmail(guestEmail.trim())) {
+      localErrors.email = "Email inválido. Confirma o formato (ex: nome@dominio.com).";
+    } else if (guestEmailConfirm.trim() && guestEmailConfirm.trim() !== guestEmail.trim()) {
+      localErrors.email = "Email e confirmação não coincidem.";
+    }
+
+    const phoneNormalized = sanitizePhone(guestPhone);
+    if (phoneNormalized) {
+      const isValidPhone = /^\+?\d{6,15}$/.test(phoneNormalized);
+      if (!isValidPhone) {
+        localErrors.phone = "Telemóvel inválido. Usa apenas dígitos e opcional + no início.";
+      }
+    }
+    setGuestErrors(localErrors);
+
+    if (localErrors.name || localErrors.email || localErrors.phone) {
+      setError("Revê os dados para continuar como convidado.");
+      return;
+    }
+
+    atualizarDados({
+      additional: {
+        ...(safeDados?.additional ?? {}),
+        guestName: guestName.trim(),
+        guestEmail: guestEmail.trim(),
+        guestEmailConfirm: guestEmailConfirm.trim(),
+        guestPhone: phoneNormalized || undefined,
+      },
+    });
+
+    setPurchaseMode("guest");
+    setClientSecret(null);
+    setServerAmount(null);
+    setGuestSubmitVersion((v) => v + 1);
+  };
+
+  const showPaymentUI =
+    (!authChecking && Boolean(userId)) ||
+    (purchaseMode === "guest" && guestSubmitVersion > 0);
+
   return (
-    <div className="flex flex-col gap-6 text-white max-h-[80vh] overflow-hidden">
+    <div className="flex flex-col gap-6 text-white">
       <header className="flex items-start justify-between gap-3">
         <div className="space-y-1">
           <p className="text-[11px] uppercase tracking-[0.18em] text-white/55">
@@ -332,11 +502,8 @@ export default function Step2Pagamento() {
         </div>
       )}
 
-      {/* 🔐 Se não está logado ➜ mostrar muro de autenticação dentro do Step 2 */}
-      {!authChecking && !userId && <AuthWall onAuthenticated={handleAuthenticated} />}
-
-      {/* 💳 Se está logado ➜ mostrar Stripe / estados normais */}
-      {!authChecking && userId && (
+      {/* 💳 UI de pagamento (user logado OU convidado depois de validar form) */}
+      {!authChecking && showPaymentUI ? (
         <>
           {error || !stripePromise ? (
             <div className="flex-1 rounded-2xl border border-red-500/30 bg-red-500/10 px-5 py-6 text-sm text-red-100 shadow-[0_0_30px_rgba(255,0,0,0.35)]">
@@ -382,13 +549,98 @@ export default function Step2Pagamento() {
               </button>
             </div>
           ) : (
-            <div className="flex-1 rounded-2xl border border-white/12 bg-white/[0.05] px-6 py-6 shadow-[0_0_60px_rgba(0,0,0,0.6)] overflow-y-auto max-h-[65vh]">
+            <div className="flex-1 rounded-2xl border border-white/12 bg-white/[0.05] px-6 py-6 shadow-[0_0_60px_rgba(0,0,0,0.6)] overflow-y-auto max-h-[65vh] space-y-4">
+              <div className="rounded-2xl border border-white/10 bg-black/30 p-4 space-y-2">
+                <label className="text-xs text-white/70">Tens um código promocional?</label>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <input
+                    type="text"
+                    value={promoCode}
+                    onChange={(e) => setPromoCode(e.target.value)}
+                    placeholder="Insere o código"
+                    className="flex-1 rounded-xl bg-black/50 border border-white/15 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setGuestSubmitVersion((v) => v + 1)}
+                    className="px-4 py-2 rounded-full bg-white text-black text-sm font-semibold shadow hover:scale-[1.01] active:scale-[0.99] transition"
+                  >
+                    Aplicar
+                  </button>
+                </div>
+                {appliedDiscount > 0 && (
+                  <p className="text-xs text-emerald-300">
+                    Desconto aplicado: -{appliedDiscount.toFixed(2)} €
+                  </p>
+                )}
+              </div>
               <Elements stripe={stripePromise} options={options}>
-                <PaymentForm total={total} />
+                <PaymentForm total={total} discount={appliedDiscount} />
               </Elements>
             </div>
           )}
         </>
+      ) : null}
+
+      {/* 🔐/🎟️ Se não está logado e ainda não avançou como convidado */}
+      {!authChecking && !userId && !showPaymentUI && (
+        <div className="space-y-3">
+          {authInfo && (
+            <div className="rounded-xl border border-amber-400/30 bg-amber-500/15 px-3 py-2 text-[11px] text-amber-50">
+              {authInfo}
+            </div>
+          )}
+          {error && (
+            <div className="rounded-xl border border-red-500/30 bg-red-500/15 px-3 py-2 text-[11px] text-red-50">
+              {error}
+            </div>
+          )}
+          <div className="flex items-center gap-2 text-[11px] bg-black/40 rounded-full p-1 border border-white/10 w-fit">
+            <button
+              type="button"
+              onClick={() => setPurchaseMode("guest")}
+              className={`px-3 py-1 rounded-full ${
+                purchaseMode === "guest"
+                  ? "bg-white text-black font-semibold"
+                  : "text-white/70"
+              }`}
+            >
+              Comprar como convidado
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setPurchaseMode("auth");
+                setClientSecret(null);
+                setServerAmount(null);
+              }}
+              className={`px-3 py-1 rounded-full ${
+                purchaseMode === "auth"
+                  ? "bg-white text-black font-semibold"
+                  : "text-white/70"
+              }`}
+            >
+              Entrar / Criar conta
+            </button>
+          </div>
+
+      {purchaseMode === "guest" ? (
+        <GuestCheckoutCard
+          guestName={guestName}
+          guestEmail={guestEmail}
+          guestEmailConfirm={guestEmailConfirm}
+          guestPhone={guestPhone}
+          guestErrors={guestErrors}
+          onChangeName={setGuestName}
+          onChangeEmail={setGuestEmail}
+          onChangeEmailConfirm={setGuestEmailConfirm}
+          onChangePhone={setGuestPhone}
+          onContinue={handleGuestContinue}
+        />
+          ) : (
+            <AuthWall onAuthenticated={handleAuthenticated} />
+          )}
+        </div>
       )}
     </div>
   );
@@ -396,9 +648,10 @@ export default function Step2Pagamento() {
 
 type PaymentFormProps = {
   total: number | null;
+  discount?: number;
 };
 
-function PaymentForm({ total }: PaymentFormProps) {
+function PaymentForm({ total, discount = 0 }: PaymentFormProps) {
   const stripe = useStripe();
   const elements = useElements();
   const { irParaPasso, atualizarDados, dados } = useCheckout();
@@ -443,19 +696,32 @@ function PaymentForm({ total }: PaymentFormProps) {
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-5">
       {total !== null && (
-        <div className="flex items-center justify-between rounded-xl bg-black/50 px-5 py-3 text-sm shadow-inner shadow-black/40 border border-white/10">
-          <div className="flex items-center gap-2 text-white/75">
-            <span className="text-xs">🔒</span>
-            <span>Total a pagar</span>
+        <div className="rounded-xl bg-black/50 px-5 py-3 text-sm shadow-inner shadow-black/40 border border-white/10 space-y-1">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-white/75">
+              <span className="text-xs">🔒</span>
+              <span>Total a pagar</span>
+            </div>
+            <span className="text-lg font-semibold tracking-tight text-white">
+              {total.toFixed(2)} €
+            </span>
           </div>
-          <span className="text-lg font-semibold tracking-tight text-white">
-            {total.toFixed(2)} €
-          </span>
+          {discount > 0 && (
+            <div className="flex items-center justify-between text-xs text-emerald-300">
+              <span>Desconto aplicado</span>
+              <span>-{discount.toFixed(2)} €</span>
+            </div>
+          )}
         </div>
       )}
 
       <div className="rounded-xl bg-black/40 px-3 py-3 text-sm min-h-[320px] max-h-[400px] overflow-y-auto pr-1">
-        <PaymentElement />
+        <PaymentElement
+          options={{
+            // Ordem preferida; os métodos efectivamente mostrados dependem do PaymentIntent
+            paymentMethodOrder: ["card", "mb_way"],
+          }}
+        />
       </div>
 
       {error && (
@@ -487,11 +753,88 @@ function delay(ms: number) {
 }
 
 function AuthWall({ onAuthenticated }: AuthWallProps) {
-  const [mode, setMode] = useState<"login" | "signup">("login");
+  const [mode, setMode] = useState<"login" | "signup" | "verify">("login");
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [fullName, setFullName] = useState("");
+  const [username, setUsername] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [otp, setOtp] = useState("");
+  const [authOtpCooldown, setAuthOtpCooldown] = useState(0);
+  const [authOtpResending, setAuthOtpResending] = useState(false);
+
+  function isUnconfirmedError(err: unknown) {
+    if (!err) return false;
+    const anyErr = err as { message?: string; status?: number; error_description?: string };
+    const msg = (anyErr.message || anyErr.error_description || "").toLowerCase();
+    return (
+      msg.includes("not confirmed") ||
+      msg.includes("confirm your email") ||
+      msg.includes("email_not_confirmed")
+    );
+  }
+
+  useEffect(() => {
+    if (authOtpCooldown <= 0) return;
+    const t = setInterval(() => {
+      setAuthOtpCooldown((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(t);
+  }, [authOtpCooldown]);
+
+  async function triggerResendOtp(email: string) {
+    setError(null);
+    setAuthOtpResending(true);
+    setAuthOtpCooldown(60);
+    try {
+      const res = await fetch("/api/auth/resend-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        setError(data?.error ?? "Não foi possível reenviar o código.");
+        setAuthOtpCooldown(0);
+      }
+    } catch (err) {
+      console.error("[AuthWall] resend OTP error:", err);
+      setError("Não foi possível reenviar o código.");
+      setAuthOtpCooldown(0);
+    } finally {
+      setAuthOtpResending(false);
+    }
+  }
+
+  async function handleGoogle() {
+    setSubmitting(true);
+    setError(null);
+    try {
+      const redirectTo =
+        typeof window !== "undefined"
+          ? `${window.location.origin}/auth/callback?redirect=${encodeURIComponent(window.location.href)}`
+          : undefined;
+      if (typeof window !== "undefined") {
+        try {
+          localStorage.setItem("orya_post_auth_redirect", window.location.href);
+        } catch {}
+      }
+      const { error } = await supabaseBrowser.auth.signInWithOAuth({
+        provider: "google",
+        options: { redirectTo },
+      });
+      if (error) {
+        setError(error.message ?? "Não foi possível iniciar sessão com Google.");
+      }
+    } catch (err) {
+      console.error("[AuthWall] Google OAuth error:", err);
+      setError("Não foi possível iniciar sessão com Google.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -499,12 +842,35 @@ function AuthWall({ onAuthenticated }: AuthWallProps) {
     setError(null);
 
     try {
-      if (!identifier || !password) {
-        setError("Preenche o email/username e a palavra-passe.");
+      if (mode === "verify") {
+        if (!identifier || !otp.trim()) {
+          setError("Indica o email e o código recebido.");
+          return;
+        }
+        const emailToUse = identifier.trim().toLowerCase();
+        const token = otp.trim();
+        const { error: verifyErr } = await supabaseBrowser.auth.verifyOtp({
+          type: "signup",
+          email: emailToUse,
+          token,
+        });
+        if (verifyErr) {
+          setError(verifyErr.message || "Código inválido ou expirado.");
+          setAuthOtpCooldown(0);
+          return;
+        }
+        await delay(400);
+        const { data: userData } = await supabaseBrowser.auth.getUser();
+        if (userData?.user) onAuthenticated?.(userData.user.id);
         return;
       }
 
-      let emailToUse = identifier;
+      if (!identifier || !password) {
+        setError("Preenche o email e a palavra-passe.");
+        return;
+      }
+
+      let emailToUse = identifier.trim().toLowerCase();
       if (!identifier.includes("@")) {
         const res = await fetch("/api/auth/resolve-identifier", {
           method: "POST",
@@ -525,18 +891,52 @@ function AuthWall({ onAuthenticated }: AuthWallProps) {
           password,
         });
         if (error) {
+          if (isUnconfirmedError(error)) {
+            setMode("verify");
+            setIdentifier(emailToUse);
+            setError("Email ainda não confirmado. Reenviei-te um novo código.");
+            await triggerResendOtp(emailToUse);
+            return;
+          }
           setError(error.message ?? "Não foi possível iniciar sessão.");
           return;
         }
       } else {
-        const { error } = await supabaseBrowser.auth.signUp({
-          email: emailToUse,
-          password,
-        });
-        if (error) {
-          setError(error.message ?? "Não foi possível criar conta.");
+        if (password.length < 6) {
+          setError("A password deve ter pelo menos 6 caracteres.");
           return;
         }
+        if (password !== confirmPassword) {
+          setError("As passwords não coincidem.");
+          return;
+        }
+        if (!fullName.trim()) {
+          setError("Nome é obrigatório para criar conta.");
+          return;
+        }
+        const usernameClean = username.trim();
+        if (usernameClean.length < 3 || !/^[a-zA-Z0-9_.-]+$/.test(usernameClean)) {
+          setError("Escolhe um username com pelo menos 3 caracteres (letras/números/-._).");
+          return;
+        }
+
+        const res = await fetch("/api/auth/send-otp", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: emailToUse, password }),
+        });
+        const data = await res.json().catch(() => null);
+        if (!res.ok || !data?.ok) {
+          const message = data?.error ?? "Não foi possível enviar o código de verificação.";
+          setError(message);
+          return;
+        }
+
+        setMode("verify");
+        setIdentifier(emailToUse);
+        setError("Enviámos um código para confirmar o email. Introduz para continuares.");
+        setAuthOtpCooldown(60);
+        return;
       }
 
       // Pequeno delay para garantir que a sessão foi escrita nos cookies
@@ -575,81 +975,282 @@ function AuthWall({ onAuthenticated }: AuthWallProps) {
       </div>
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-3 mt-2">
-        <div className="flex gap-2 text-[11px] bg-black/40 rounded-full p-1 border border-white/10 w-fit">
-          <button
-            type="button"
-            onClick={() => setMode("login")}
-            className={`px-3 py-1 rounded-full ${
-              mode === "login"
-                ? "bg-white text-black font-semibold"
-                : "text-white/70"
-            }`}
-          >
-            Já tenho conta
-          </button>
-          <button
-            type="button"
-            onClick={() => setMode("signup")}
-            className={`px-3 py-1 rounded-full ${
-              mode === "signup"
-                ? "bg-white text-black font-semibold"
-                : "text-white/70"
-            }`}
-          >
-            Criar conta
-          </button>
-        </div>
+        {mode !== "verify" && (
+          <div className="flex gap-2 text-[11px] bg-black/40 rounded-full p-1 border border-white/10 w-fit">
+            <button
+              type="button"
+              onClick={() => setMode("login")}
+              className={`px-3 py-1 rounded-full ${mode === "login" ? "bg-white text-black font-semibold" : "text-white/70"}`}
+            >
+              Já tenho conta
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode("signup")}
+              className={`px-3 py-1 rounded-full ${mode === "signup" ? "bg-white text-black font-semibold" : "text-white/70"}`}
+            >
+              Criar conta
+            </button>
+          </div>
+        )}
 
         <div className="flex flex-col gap-2 text-[12px]">
-          <div className="flex flex-col gap-1">
-            <label className="text-white/70">Email ou username</label>
-            <input
-              type="text"
-              className="w-full rounded-xl bg-black/60 border border-white/15 px-3 py-2 text-[12px] outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]"
-              placeholder="nome@exemplo.com ou @username"
-              value={identifier}
-              onChange={(e) => setIdentifier(e.target.value)}
-              autoComplete="email"
-            />
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-white/70">Palavra-passe</label>
-            <input
-              type="password"
-              className="w-full rounded-xl bg-black/60 border border-white/15 px-3 py-2 text-[12px] outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]"
-              placeholder="••••••••"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              autoComplete={
-                mode === "login" ? "current-password" : "new-password"
-              }
-            />
-          </div>
+          {mode !== "verify" ? (
+            <>
+              <div className="flex flex-col gap-1">
+                <label className="text-white/70">Email</label>
+                <input
+                  type="email"
+                  className="w-full rounded-xl bg-black/60 border border-white/15 px-3 py-2 text-[12px] outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]"
+                  placeholder="nome@exemplo.com"
+                  value={identifier}
+                  onChange={(e) => setIdentifier(e.target.value)}
+                  autoComplete="email"
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-white/70">Palavra-passe</label>
+                <input
+                  type="password"
+                  className="w-full rounded-xl bg-black/60 border border-white/15 px-3 py-2 text-[12px] outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]"
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  autoComplete={mode === "login" ? "current-password" : "new-password"}
+                />
+              </div>
+              {mode === "signup" && (
+                <>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-white/70">Confirmar palavra-passe</label>
+                    <input
+                      type="password"
+                      className="w-full rounded-xl bg-black/60 border border-white/15 px-3 py-2 text-[12px] outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]"
+                      placeholder="••••••••"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      autoComplete="new-password"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-white/70">Nome completo</label>
+                    <input
+                      type="text"
+                      className="w-full rounded-xl bg-black/60 border border-white/15 px-3 py-2 text-[12px] outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]"
+                      placeholder="O teu nome"
+                      value={fullName}
+                      onChange={(e) => setFullName(e.target.value)}
+                      autoComplete="name"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-white/70">Username</label>
+                    <input
+                      type="text"
+                      className="w-full rounded-xl bg-black/60 border border-white/15 px-3 py-2 text-[12px] outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]"
+                      placeholder="@teuuser"
+                      value={username}
+                      onChange={(e) => setUsername(e.target.value)}
+                      autoComplete="username"
+                    />
+                  </div>
+                </>
+              )}
+            </>
+          ) : (
+            <>
+              <p className="text-[12px] text-white/70">
+                Enviámos um código de confirmação para <strong>{identifier}</strong>. Introduz abaixo ou pede novo código.
+              </p>
+              <div className="flex flex-col gap-1">
+                <label className="text-white/70">Código</label>
+                <input
+                  type="text"
+                  maxLength={8}
+                  className="w-full rounded-xl bg-black/60 border border-white/15 px-3 py-2 text-[12px] outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]"
+                  placeholder="87612097"
+                  value={otp}
+                  onChange={(e) => setOtp(e.target.value)}
+                  autoComplete="one-time-code"
+                />
+              </div>
+              <div className="text-[11px] text-white/65 flex items-center justify-between">
+                <span>
+                  Não chegou? {authOtpCooldown > 0 ? `Podes reenviar em ${authOtpCooldown}s.` : "Reenvia um novo código."}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => identifier && triggerResendOtp(identifier)}
+                  disabled={authOtpCooldown > 0 || authOtpResending || !identifier}
+                  className="text-[#6BFFFF] hover:text-white transition disabled:opacity-50"
+                >
+                  Reenviar código
+                </button>
+              </div>
+            </>
+          )}
         </div>
 
         {error && (
           <p className="text-[11px] text-red-300 mt-1 leading-snug">{error}</p>
         )}
+        {authOtpCooldown > 0 && mode === "verify" && (
+          <p className="text-[11px] text-white/60">Podes reenviar código em {authOtpCooldown}s.</p>
+        )}
+
+        <button
+          type="button"
+          onClick={handleGoogle}
+          disabled={submitting}
+          className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-white/20 bg-black/50 px-6 py-2.5 text-xs font-semibold text-white shadow hover:border-white/40 hover:bg-black/60 transition-colors disabled:opacity-50"
+        >
+          <span>Continuar com Google</span>
+        </button>
 
         <button
           type="submit"
           disabled={submitting}
           className="mt-2 inline-flex w-full items-center justify-center rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-6 py-2.5 text-xs font-semibold text-black shadow-[0_0_24px_rgba(107,255,255,0.55)] disabled:opacity-40 disabled:cursor-not-allowed hover:scale-[1.02] active:scale-95 transition-transform"
         >
-          {submitting
-            ? mode === "login"
-              ? "A entrar…"
-              : "A criar conta…"
+          {mode === "verify"
+            ? submitting
+              ? "A confirmar…"
+              : "Confirmar código e continuar"
             : mode === "login"
-            ? "Iniciar sessão e continuar"
-            : "Criar conta e continuar"}
+            ? submitting
+              ? "A entrar…"
+              : "Iniciar sessão e continuar"
+            : submitting
+            ? "A enviar código…"
+            : "Criar conta e enviar código"}
         </button>
-
-        <p className="mt-1 text-[10px] text-white/40 leading-snug">
-          Ao continuares, aceitas os termos da ORYA. Podes gerir a tua conta e
-          eventos em qualquer momento dentro da app.
-        </p>
       </form>
+    </div>
+  );
+}
+
+type GuestCheckoutCardProps = {
+  guestName: string;
+  guestEmail: string;
+  guestEmailConfirm: string;
+  guestPhone: string;
+  guestErrors: { name?: string; email?: string; phone?: string };
+  onChangeName: (v: string) => void;
+  onChangeEmail: (v: string) => void;
+  onChangeEmailConfirm: (v: string) => void;
+  onChangePhone: (v: string) => void;
+  onContinue: () => void;
+};
+
+function GuestCheckoutCard({
+  guestName,
+  guestEmail,
+  guestEmailConfirm,
+  guestPhone,
+  guestErrors,
+  onChangeName,
+  onChangeEmail,
+  onChangeEmailConfirm,
+  onChangePhone,
+  onContinue,
+}: GuestCheckoutCardProps) {
+  return (
+    <div className="flex-1 rounded-2xl border border-white/12 bg-white/[0.05] px-6 py-6 shadow-[0_0_40px_rgba(0,0,0,0.6)] flex flex-col gap-4">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h3 className="text-sm font-semibold mb-1">Continuar como convidado</h3>
+          <p className="text-[11px] text-white/60 max-w-sm leading-relaxed">
+            Compra em 30 segundos. Guardamos os teus bilhetes pelo email e podes
+            criar conta depois para os ligar ao teu perfil.
+          </p>
+          <div className="mt-2 space-y-1 text-[11px] text-white/55">
+            <p>• Email é usado para entregar bilhetes e recibo.</p>
+            <p>• Telefone ajuda no contacto no dia do evento (opcional).</p>
+          </div>
+        </div>
+        <span className="text-[20px]">🎟️</span>
+      </div>
+
+      <div className="flex flex-col gap-3 text-[12px]">
+        <div className="flex flex-col gap-1">
+          <label className="text-white/70">Nome completo</label>
+          <input
+            type="text"
+            className={`w-full rounded-xl bg-black/60 border px-3 py-2 text-[12px] outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF] ${
+              guestErrors.name ? "border-red-400/70" : "border-white/15"
+            }`}
+            placeholder="Como queres que apareça no bilhete"
+            value={guestName}
+            onChange={(e) => onChangeName(e.target.value)}
+            autoComplete="name"
+          />
+          {guestErrors.name && (
+            <span className="text-[11px] text-red-300">{guestErrors.name}</span>
+          )}
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-white/70">Email</label>
+          <input
+            type="email"
+            className={`w-full rounded-xl bg-black/60 border px-3 py-2 text-[12px] outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF] ${
+              guestErrors.email ? "border-red-400/70" : "border-white/15"
+            }`}
+            placeholder="nome@exemplo.com"
+            value={guestEmail}
+            onChange={(e) => onChangeEmail(e.target.value)}
+            autoComplete="email"
+          />
+          {guestErrors.email && (
+            <span className="text-[11px] text-red-300">{guestErrors.email}</span>
+          )}
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-white/70">Confirmar email</label>
+          <input
+            type="email"
+            className={`w-full rounded-xl bg-black/60 border px-3 py-2 text-[12px] outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF] ${
+              guestErrors.email ? "border-red-400/70" : "border-white/15"
+            }`}
+            placeholder="repete o teu email"
+            value={guestEmailConfirm}
+            onChange={(e) => onChangeEmailConfirm(e.target.value)}
+            autoComplete="email"
+          />
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-white/70">Telemóvel (opcional)</label>
+          <input
+            type="tel"
+            inputMode="tel"
+            className={`w-full rounded-xl bg-black/60 border px-3 py-2 text-[12px] outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF] ${
+              guestErrors.phone ? "border-red-400/70" : "border-white/15"
+            }`}
+            placeholder="+351 ..."
+            value={guestPhone}
+            onChange={(e) => {
+              const sanitized = sanitizePhone(e.target.value);
+              onChangePhone(sanitized);
+            }}
+            autoComplete="tel"
+          />
+          {guestErrors.phone && (
+            <span className="text-[11px] text-red-300">{guestErrors.phone}</span>
+          )}
+        </div>
+      </div>
+
+      <button
+        type="button"
+        onClick={onContinue}
+        className="mt-1 inline-flex w-full items-center justify-center rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-6 py-2.5 text-xs font-semibold text-black shadow-[0_0_24px_rgba(107,255,255,0.55)] hover:scale-[1.02] active:scale-95 transition-transform"
+      >
+        Continuar como convidado
+      </button>
+
+      <p className="mt-1 text-[10px] text-white/40 leading-snug">
+        Vamos enviar os bilhetes para este email. Depois podes criar conta e
+        migrar todos os bilhetes para o teu perfil.
+      </p>
     </div>
   );
 }

@@ -14,6 +14,18 @@ export default function Step3Sucesso() {
     }
   }, [dados, router]);
 
+  // Revalidar bilhetes após sucesso (traz novos bilhetes mais depressa)
+  useEffect(() => {
+    async function revalidateTickets() {
+      try {
+        await fetch("/api/me/tickets", { method: "GET", cache: "no-store" });
+      } catch (err) {
+        console.warn("[Step3Sucesso] Falha ao revalidar /api/me/tickets", err);
+      }
+    }
+    revalidateTickets();
+  }, []);
+
   if (!dados) {
     return (
       <div className="text-center space-y-4">
@@ -35,6 +47,13 @@ export default function Step3Sucesso() {
     return null;
   }
 
+  const guestEmail =
+    dados.additional &&
+    typeof dados.additional === "object" &&
+    typeof dados.additional.guestEmail === "string"
+      ? dados.additional.guestEmail
+      : null;
+
   return (
     <div className="flex flex-col items-center text-center gap-8 py-6 px-4 text-white">
 
@@ -44,7 +63,9 @@ export default function Step3Sucesso() {
           Compra Confirmada 🎉
         </h2>
         <p className="text-sm text-white/70">
-          A tua compra foi processada com sucesso.
+          {guestEmail
+            ? `Obrigado! Enviámos os teus bilhetes para ${guestEmail}.`
+            : "A tua compra foi processada com sucesso."}
         </p>
       </div>
 
@@ -71,15 +92,17 @@ export default function Step3Sucesso() {
 
         {/* Info */}
         <p className="text-white/60 text-sm">
-          A tua compra foi concluída com sucesso.
+          {guestEmail
+            ? "Guarda o email com os bilhetes. Podes criar conta e ligar estes bilhetes mais tarde."
+            : "A tua compra foi concluída com sucesso."}
         </p>
 
         {/* Botão ver bilhetes */}
         <button
-          onClick={() => router.push("/me")}
+          onClick={() => (guestEmail ? router.push("/login") : router.push("/me"))}
           className="w-full rounded-full bg-white text-black py-3 text-sm font-semibold shadow-[0_0_25px_rgba(255,255,255,0.35)] hover:scale-[1.03] active:scale-95 transition-transform"
         >
-          Ver os teus bilhetes
+          {guestEmail ? "Criar conta e ligar bilhetes" : "Ver os teus bilhetes"}
         </button>
       </div>
 

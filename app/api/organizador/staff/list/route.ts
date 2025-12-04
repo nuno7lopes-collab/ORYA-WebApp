@@ -2,7 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { ensureAuthenticated } from "@/lib/security";
+import { ensureAuthenticated, assertOrganizer } from "@/lib/security";
 
 export async function GET(_req: NextRequest) {
   try {
@@ -19,6 +19,7 @@ export async function GET(_req: NextRequest) {
         { status: 400 },
       );
     }
+    assertOrganizer(user, organizerProfile);
 
     const organizer = await prisma.organizer.findFirst({
       where: { userId: organizerProfile.id },
@@ -52,10 +53,11 @@ export async function GET(_req: NextRequest) {
       eventId: a.eventId,
       createdAt: a.createdAt,
       revokedAt: a.revokedAt,
-      status: a.revokedAt ? "REVOKED" : "ACTIVE",
+      status: a.revokedAt ? "REVOKED" : a.status,
       userName: staffMap[a.userId]?.fullName ?? staffMap[a.userId]?.username ?? null,
-      userEmail: null,
+      userEmail: staffMap[a.userId]?.email ?? null,
       eventTitle: a.event?.title ?? null,
+      role: a.role,
     }));
 
     return NextResponse.json({ ok: true, items }, { status: 200 });

@@ -5,12 +5,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, assertOrganizer } from "@/lib/security";
+import { StaffRole } from "@prisma/client";
 
 type AssignStaffBody = {
   userId?: string;
   emailOrUsername?: string;
   scope?: "GLOBAL" | "EVENT";
   eventId?: number;
+  role?: StaffRole;
 };
 
 export async function POST(req: NextRequest) {
@@ -29,7 +31,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { userId, emailOrUsername, scope, eventId } = body || {};
+    const { userId, emailOrUsername, scope, eventId, role } = body || {};
 
     if (!scope || (scope !== "GLOBAL" && scope !== "EVENT")) {
       return NextResponse.json(
@@ -37,6 +39,9 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
+
+    const allowedRoles: StaffRole[] = ["OWNER", "ADMIN", "STAFF", "CHECKIN"];
+    const chosenRole: StaffRole = allowedRoles.includes(role as StaffRole) ? (role as StaffRole) : "STAFF";
 
     if (scope === "EVENT" && !eventId) {
       return NextResponse.json(
@@ -163,6 +168,7 @@ export async function POST(req: NextRequest) {
           scope,
           eventId: scope === "EVENT" ? targetEventId ?? null : null,
           userId: targetUserId,
+          role: chosenRole,
         },
       });
     } else {
@@ -173,6 +179,7 @@ export async function POST(req: NextRequest) {
           scope,
           eventId: scope === "EVENT" ? targetEventId ?? null : null,
           status: "PENDING",
+          role: chosenRole,
         },
       });
     }

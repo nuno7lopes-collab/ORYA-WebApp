@@ -7,6 +7,28 @@ datasource db {
   schemas  = ["app_v3", "auth"]
 }
 
+enum OtpPurpose {
+  SIGNUP
+  LOGIN
+
+  @@schema("app_v3")
+}
+
+/// Armazena OTP de email gerado pela app (hash + expiração)
+model EmailOtp {
+  id        String     @id @default(uuid())
+  email     String
+  codeHash  String     @map("code_hash")
+  purpose   OtpPurpose
+  expiresAt DateTime   @map("expires_at")
+  createdAt DateTime   @default(now()) @map("created_at")
+  consumedAt DateTime? @map("consumed_at")
+
+  @@index([email])
+  @@schema("app_v3")
+  @@map("email_otps")
+}
+
 /// Perfil base do utilizador ORYA (1-1 com auth.users)
 model Profile {
   id        String  @id @db.Uuid
@@ -46,6 +68,10 @@ model Organizer {
   user   Profile @relation(fields: [userId], references: [id])
 
   displayName     String          @map("display_name")
+  entityType      String?         @map("entity_type")
+  businessName    String?         @map("business_name")
+  city            String?         @map("city")
+  payoutIban      String?         @map("payout_iban")
   stripeAccountId String?         @map("stripe_account_id")
   status          OrganizerStatus @default(PENDING)
   feeMode         FeeMode?        @map("fee_mode")
@@ -92,6 +118,7 @@ model Event {
   /// Liga ao Organizer quando é evento de organizador
   organizerId Int?       @map("organizer_id")
   organizer   Organizer? @relation(fields: [organizerId], references: [id])
+  promoCodes  PromoCode[]
 
   startsAt DateTime @map("starts_at")
   endsAt   DateTime @map("ends_at")
@@ -106,6 +133,7 @@ model Event {
   status EventStatus @default(DRAFT)
   resaleMode ResaleMode @default(ALWAYS) @map("resale_mode")
   feeMode   FeeMode   @default(ON_TOP) @map("fee_mode")
+  payoutMode PayoutMode @default(ORGANIZER) @map("payout_mode")
 
   timezone      String  @default("Europe/Lisbon")
   coverImageUrl String? @map("cover_image_url")
@@ -211,6 +239,20 @@ enum FeeMode {
   @@schema("app_v3")
 }
 
+enum PayoutMode {
+  ORGANIZER
+  PLATFORM
+
+  @@schema("app_v3")
+}
+
+enum PromoType {
+  PERCENTAGE
+  FIXED
+
+  @@schema("app_v3")
+}
+
 /// Tipos de bilhete (antigas "waves")
 model TicketType {
   id          Int     @id @default(autoincrement())
@@ -253,7 +295,7 @@ model Ticket {
   id           String @id @default(cuid())
   eventId      Int
   ticketTypeId Int    @map("ticket_type_id")
-  userId       String @map("user_id") @db.Uuid
+  userId       String? @map("user_id") @db.Uuid
 
   purchasedAt DateTime     @default(now()) @map("purchased_at")
   status      TicketStatus @default(ACTIVE)
@@ -271,6 +313,7 @@ model Ticket {
 
   event      Event      @relation(fields: [eventId], references: [id], onDelete: Cascade)
   ticketType TicketType @relation(fields: [ticketTypeId], references: [id], onDelete: Cascade)
+  guestLink  GuestTicketLink?
 
   transfers TicketTransfer[]
   resales   TicketResale[]
@@ -281,6 +324,24 @@ model Ticket {
   @@index([ticketTypeId])
   @@index([stripePaymentIntentId])
   @@map("tickets")
+  @@schema("app_v3")
+}
+
+/// Ligação de bilhetes comprados como convidado
+model GuestTicketLink {
+  ticketId        String  @id @map("ticket_id")
+  ticket          Ticket  @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  guestEmail      String  @map("guest_email")
+  guestName       String  @map("guest_name")
+  guestPhone      String? @map("guest_phone")
+  migratedToUserId String? @map("migrated_to_user_id") @db.Uuid
+  migratedAt      DateTime? @map("migrated_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  @@index([guestEmail])
+  @@index([migratedToUserId])
+  @@map("guest_ticket_links")
   @@schema("app_v3")
 }
 
@@ -362,6 +423,7 @@ model StaffAssignment {
   id          Int        @id @default(autoincrement())
   organizerId Int        @map("organizer_id")
   userId      String     @map("user_id") @db.Uuid
+  role        StaffRole  @default(STAFF)
   scope       StaffScope
   eventId     Int?       @map("event_id")
   createdAt   DateTime   @default(now()) @map("created_at")
@@ -382,6 +444,15 @@ model StaffAssignment {
 enum StaffScope {
   GLOBAL
   EVENT
+
+  @@schema("app_v3")
+}
+
+enum StaffRole {
+  OWNER
+  ADMIN
+  STAFF
+  CHECKIN
 
   @@schema("app_v3")
 }
@@ -508,5 +579,45 @@ model PlatformSetting {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("platform_settings")
+  @@schema("app_v3")
+}
+
+/// Códigos promocionais simples
+model PromoCode {
+  id                Int        @id @default(autoincrement())
+  code              String
+  type              PromoType
+  value             Int         // percent em bps se PERCENTAGE; cêntimos se FIXED
+  maxUses           Int?        @map("max_uses")
+  perUserLimit      Int?        @map("per_user_limit")
+  validFrom         DateTime?   @map("valid_from")
+  validUntil        DateTime?   @map("valid_until")
+  active            Boolean     @default(true)
+  eventId           Int?        @map("event_id")
+  autoApply         Boolean     @default(false) @map("auto_apply")
+  minQuantity       Int?        @map("min_quantity")
+  minTotalCents     Int?        @map("min_total_cents")
+  createdAt         DateTime    @default(now()) @map("created_at")
+  updatedAt         DateTime    @updatedAt @map("updated_at")
+
+  event        Event?             @relation(fields: [eventId], references: [id], onDelete: SetNull)
+  redemptions  PromoRedemption[]
+
+  @@index([eventId])
+  @@map("promo_codes")
+  @@schema("app_v3")
+}
+
+model PromoRedemption {
+  id           Int       @id @default(autoincrement())
+  promoCodeId  Int       @map("promo_code_id")
+  userId       String?   @map("user_id") @db.Uuid
+  guestEmail   String?   @map("guest_email")
+  usedAt       DateTime  @default(now()) @map("used_at")
+
+  promoCode PromoCode @relation(fields: [promoCodeId], references: [id], onDelete: Cascade)
+
+  @@index([promoCodeId])
+  @@map("promo_redemptions")
   @@schema("app_v3")
 }

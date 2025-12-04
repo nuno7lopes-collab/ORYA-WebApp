@@ -49,6 +49,21 @@ export async function GET() {
       orderBy: {
         startsAt: "asc",
       },
+      include: {
+        categories: true,
+      },
+    });
+
+    const capacityAgg = await prisma.ticketType.groupBy({
+      by: ["eventId"],
+      where: { eventId: { in: events.map((e) => e.id) } },
+      _sum: { totalQuantity: true },
+    });
+
+    const capacityMap = new Map<number, number>();
+    capacityAgg.forEach((row) => {
+      const sum = row._sum.totalQuantity ?? 0;
+      capacityMap.set(row.eventId, sum);
     });
 
     const ticketStats = await prisma.ticket.groupBy({
@@ -90,11 +105,14 @@ export async function GET() {
       locationName: event.locationName,
       locationCity: event.locationCity,
       status: event.status,
+      templateType: event.templateType,
       isFree: event.isFree,
       ticketsSold: statsMap.get(event.id)?.tickets ?? 0,
       revenueCents: statsMap.get(event.id)?.revenueCents ?? 0,
       totalPaidCents: statsMap.get(event.id)?.totalPaidCents ?? 0,
       platformFeeCents: statsMap.get(event.id)?.platformFeeCents ?? 0,
+      capacity: capacityMap.get(event.id) ?? null,
+      categories: event.categories.map((c) => c.category),
     }));
 
     return NextResponse.json(

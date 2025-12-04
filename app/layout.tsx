@@ -24,7 +24,7 @@ export default function RootLayout({
       >
         <AuthModalProvider>
           <Navbar />
-          <main className="flex-1 pt-16 md:pt-20 pb-[120px] md:pb-0">
+          <main className="main-shell flex-1">
             {children}
           </main>
           <AuthModal />

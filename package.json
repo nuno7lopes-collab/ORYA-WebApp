@@ -9,7 +9,8 @@
     "backup": "node backup.js",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "prisma:generate": "prisma generate"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.0.0",
@@ -20,12 +21,14 @@
     "@supabase/ssr": "^0.7.0",
     "@supabase/supabase-js": "^2.81.1",
     "framer-motion": "^12.23.24",
+    "libphonenumber-js": "^1.12.31",
     "next": "16.0.2",
     "pg": "^8.16.3",
     "qrcode": "^1.5.4",
     "react": "19.2.0",
     "react-datepicker": "^8.9.0",
     "react-dom": "19.2.0",
+    "resend": "^4.8.0",
     "stripe": "^19.3.1",
     "swr": "^2.3.6"
   },
@@ -35,10 +38,12 @@
     "@types/qrcode": "^1.5.6",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "baseline-browser-mapping": "^2.9.0",
     "eslint": "^9",
     "eslint-config-next": "16.0.2",
     "prisma": "^7.0.1",
     "tailwindcss": "^4",
+    "ts-node": "^10.9.2",
     "typescript": "^5",
     "vercel": "^48.11.0"
   }

@@ -76,7 +76,7 @@ export default function ExperiencePage() {
 
   async function handleJoin() {
     if (!user) {
-      openModal({ mode: "login", redirectTo: "/experiencias/" + slug });
+      openModal({ mode: "login", redirectTo: "/experiencias/" + slug, showGoogle: true });
       return;
     }
     if (!experience) return;

@@ -49,23 +49,22 @@ export default async function OrganizerEventEditPage({ params }: PageProps) {
   }));
 
   return (
-    <main className="orya-body-bg min-h-screen text-white">
-      <section className="max-w-5xl mx-auto px-4 py-8 space-y-6">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Editar evento</p>
-            <h1 className="text-2xl font-semibold">{event.title}</h1>
-            <p className="text-sm text-white/60">ID {event.id} · {event.slug}</p>
-          </div>
-          <a
-            href={`/eventos/${event.slug}`}
-            className="rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-3 py-1.5 text-[11px] font-semibold text-black shadow"
-          >
-            Ver página pública
-          </a>
+    <div className="mx-auto max-w-5xl px-4 py-10 space-y-6 text-white md:px-6 lg:px-8">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Editar evento</p>
+          <h1 className="text-2xl font-semibold">{event.title}</h1>
+          <p className="text-sm text-white/60">ID {event.id} · {event.slug}</p>
         </div>
+        <a
+          href={`/eventos/${event.slug}`}
+          className="rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-3 py-1.5 text-[11px] font-semibold text-black shadow"
+        >
+          Ver página pública
+        </a>
+      </div>
 
-        <EventEditClient
+      <EventEditClient
         event={{
           id: event.id,
           title: event.title,
@@ -81,10 +80,10 @@ export default async function OrganizerEventEditPage({ params }: PageProps) {
           feeModeOverride: event.feeModeOverride,
           platformFeeBpsOverride: event.platformFeeBpsOverride,
           platformFeeFixedCentsOverride: event.platformFeeFixedCentsOverride,
+          payoutMode: event.payoutMode,
         }}
-          tickets={tickets}
-        />
-      </section>
-    </main>
+        tickets={tickets}
+      />
+    </div>
   );
 }

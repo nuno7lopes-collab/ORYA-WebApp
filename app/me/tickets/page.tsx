@@ -145,7 +145,7 @@ export default function MyTicketsPage() {
 
         if (res.status === 401) {
           // Não autenticado → abre modal de autenticação e define redirect para esta página
-          openModal({ mode: "login", redirectTo: "/me/tickets" });
+          openModal({ mode: "login", redirectTo: "/me/tickets", showGoogle: true });
           return;
         }
 

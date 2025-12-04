@@ -295,8 +295,8 @@ export default async function EventPage({ params }: { params: EventPageParamsInp
   const showPriceFrom = !event.isFree && minTicketPrice !== null;
 
   return (
-    <CheckoutProvider>
-      <main className="relative orya-body-bg min-h-screen w-full text-white">
+    <main className="relative orya-body-bg min-h-screen w-full text-white">
+      <CheckoutProvider>
       {/* BG: blur da capa a cobrir o topo da página com transição super suave para o fundo ORYA */}
       <div
         className="pointer-events-none absolute inset-x-0 top-0 h-[160vh] overflow-hidden"
@@ -600,14 +600,14 @@ export default async function EventPage({ params }: { params: EventPageParamsInp
           )}
         </div>
       </section>
-      <EventPageClient
-        event={event}
-        uiTickets={uiTickets}
-        cover={cover}
-        currentUserId={userId}
-      />
-      </main>
-    </CheckoutProvider>
+        <EventPageClient
+          event={event}
+          uiTickets={uiTickets}
+          cover={cover}
+          currentUserId={userId}
+        />
+      </CheckoutProvider>
+    </main>
   );
 }
 export const dynamic = "force-dynamic";

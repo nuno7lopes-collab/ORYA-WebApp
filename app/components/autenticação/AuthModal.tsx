@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuthModal } from "./AuthModalContext";
 import { supabaseBrowser } from "@/lib/supabaseBrowser";
 import { mutate as swrMutate } from "swr";
+import type { User } from "@supabase/supabase-js";
 
 export default function AuthModal() {
   const modal = useAuthModal();
@@ -25,6 +26,7 @@ function AuthModalContent({
   closeModal,
   setMode,
   redirectTo,
+  showGoogle,
 }: AuthModalContentProps) {
   const router = useRouter();
 
@@ -33,17 +35,46 @@ function AuthModalContent({
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [otp, setOtp] = useState("");
+  const [loginOtpSending, setLoginOtpSending] = useState(false);
+  const [loginOtpSent, setLoginOtpSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [fullName, setFullName] = useState("");
   const [username, setUsername] = useState("");
   const [signupCooldown, setSignupCooldown] = useState(0);
+  const [otpCooldown, setOtpCooldown] = useState(0);
+  const [otpResending, setOtpResending] = useState(false);
   const [usernameHint, setUsernameHint] = useState<string | null>(null);
 
   const isSignupBlocked = signupCooldown > 0;
   const isOnboarding = mode === "onboarding";
 
   const modalRef = useRef<HTMLDivElement | null>(null);
+
+  function clearPendingVerification() {
+    setOtpCooldown(0);
+    if (typeof window !== "undefined") {
+      try {
+        window.localStorage.removeItem("orya_pending_email");
+        window.localStorage.removeItem("orya_pending_step");
+        window.localStorage.removeItem("orya_otp_last_sent_at");
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+
+  function isUnconfirmedError(err: unknown) {
+    if (!err) return false;
+    const anyErr = err as { message?: string; status?: number; error_description?: string };
+    const msg = (anyErr.message || anyErr.error_description || "").toLowerCase();
+    if (!msg) return false;
+    return (
+      msg.includes("not confirmed") ||
+      msg.includes("confirm your email") ||
+      msg.includes("email_not_confirmed")
+    );
+  }
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -62,6 +93,53 @@ function AuthModalContent({
     };
   }, [closeModal, isOnboarding]);
 
+  // Recupera email pendente após reload
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const pendingEmail = window.localStorage.getItem("orya_pending_email");
+      const pendingStep = window.localStorage.getItem("orya_pending_step");
+      const lastOtp = Number(window.localStorage.getItem("orya_otp_last_sent_at") || "0");
+      const cooldownSeconds = 60;
+      const elapsed = lastOtp ? Math.floor((Date.now() - lastOtp) / 1000) : cooldownSeconds;
+      const remaining = Math.max(0, cooldownSeconds - elapsed);
+      if (pendingEmail && !email) setEmail(pendingEmail);
+      if (pendingStep === "verify") {
+        setMode("verify");
+        if (remaining > 0) setOtpCooldown(remaining);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [email, setEmail, setMode]);
+
+  // Se estivermos no modo verify mas o user já estiver confirmado (sessão existente),
+  // limpamos o estado pendente e fechamos o modal para não bloquear o fluxo.
+  useEffect(() => {
+    if (mode !== "verify") return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await supabaseBrowser.auth.getUser();
+        const supaUser = (data?.user as User | null) ?? null;
+        const confirmed =
+          Boolean(supaUser?.email_confirmed_at) ||
+          Boolean((supaUser as { email_confirmed?: string | null } | null)?.email_confirmed) ||
+          false;
+        if (confirmed && !cancelled) {
+          clearPendingVerification();
+          setError(null);
+          closeModal();
+        }
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [mode, closeModal]);
+
   async function syncSessionWithServer() {
     try {
       const { data } = await supabaseBrowser.auth.getSession();
@@ -79,6 +157,101 @@ function AuthModalContent({
     }
   }
 
+  async function handleLoginOtp() {
+    if (!email) {
+      setError("Indica o email para receber o link de entrada.");
+      return;
+    }
+    setLoginOtpSending(true);
+    setError(null);
+    setLoginOtpSent(false);
+    try {
+      const redirect =
+        typeof window !== "undefined"
+          ? `${window.location.origin}/auth/callback`
+          : undefined;
+      const { error: otpErr } = await supabaseBrowser.auth.signInWithOtp({
+        email,
+        options: { emailRedirectTo: redirect },
+      });
+      if (otpErr) {
+        setError(otpErr.message ?? "Não foi possível enviar o link de login.");
+        setLoginOtpSending(false);
+        return;
+      }
+      setLoginOtpSent(true);
+    } catch (err) {
+      console.error("[AuthModal] login OTP error:", err);
+      setError("Não foi possível enviar o link de login.");
+    } finally {
+      setLoginOtpSending(false);
+    }
+  }
+
+  async function handleResetPassword() {
+    if (!email) {
+      setError("Indica o email para recuperar a password.");
+      return;
+    }
+    setLoginOtpSending(true);
+    setError(null);
+    setLoginOtpSent(false);
+    try {
+      const redirect =
+        typeof window !== "undefined"
+          ? `${window.location.origin}/auth/callback`
+          : undefined;
+      const { error: resetErr } = await supabaseBrowser.auth.resetPasswordForEmail(
+        email,
+        { redirectTo: redirect },
+      );
+      if (resetErr) {
+        setError(resetErr.message ?? "Não foi possível enviar recuperação de password.");
+        setLoginOtpSending(false);
+        return;
+      }
+      setLoginOtpSent(true);
+    } catch (err) {
+      console.error("[AuthModal] reset password error:", err);
+      setError("Não foi possível enviar recuperação de password.");
+    } finally {
+      setLoginOtpSending(false);
+    }
+  }
+
+  async function triggerResendOtp(emailToUse: string) {
+    setError(null);
+    setOtpResending(true);
+    const cooldownSeconds = 60;
+    setOtpCooldown(cooldownSeconds);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("orya_otp_last_sent_at", String(Date.now()));
+      window.localStorage.setItem("orya_pending_email", emailToUse);
+      window.localStorage.setItem("orya_pending_step", "verify");
+    }
+
+    try {
+      const res = await fetch("/api/auth/resend-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: emailToUse }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        setError(data?.error ?? "Não foi possível reenviar o código.");
+        setOtpCooldown(0);
+      } else {
+        setLoginOtpSent(true);
+      }
+    } catch (err) {
+      console.error("triggerResendOtp error", err);
+      setError("Não foi possível reenviar o código.");
+      setOtpCooldown(0);
+    } finally {
+      setOtpResending(false);
+    }
+  }
+
   async function finishAuthAndMaybeOnboard() {
     try {
       // Garantir que o servidor tem a sessão atualizada antes de pedir /api/auth/me
@@ -89,7 +262,22 @@ function AuthModalContent({
         credentials: "include",
       });
 
+      // Se a API exigir confirmação de email, volta para o modo verify
       if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        const needsEmailConfirmation = data?.needsEmailConfirmation;
+        if (needsEmailConfirmation) {
+          if (typeof window !== "undefined" && email) {
+            window.localStorage.setItem("orya_pending_email", email);
+            window.localStorage.setItem("orya_pending_step", "verify");
+          }
+          setMode("verify");
+          if (email) {
+            await triggerResendOtp(email);
+          }
+          setLoading(false);
+          return;
+        }
         closeModal();
         router.push(redirectTo ?? "/me");
         return;
@@ -99,6 +287,9 @@ function AuthModalContent({
       const onboardingDone = data?.profile?.onboardingDone;
       // Atualiza SWR para refletir o novo estado de auth/profile imediatamente
       swrMutate("/api/auth/me");
+
+      // Sessão OK: limpa qualquer estado de verificação pendente para não reabrir o passo verify
+      clearPendingVerification();
 
       if (onboardingDone) {
         closeModal();
@@ -147,12 +338,25 @@ function AuthModalContent({
     });
 
     if (loginError) {
-      setError(loginError.message);
+      const message = loginError.message || "";
+      if (isUnconfirmedError(loginError)) {
+        if (typeof window !== "undefined") {
+          window.localStorage.setItem("orya_pending_email", emailToUse);
+          window.localStorage.setItem("orya_pending_step", "verify");
+        }
+        setMode("verify");
+        setEmail(emailToUse);
+        setError("Email ainda não confirmado. Reenviei-te um novo código.");
+        await triggerResendOtp(emailToUse);
+      } else {
+        setError(message || "Não foi possível iniciar sessão.");
+      }
       setLoading(false);
       return;
     }
 
     await syncSessionWithServer();
+    clearPendingVerification();
     await finishAuthAndMaybeOnboard();
     setLoading(false);
   }
@@ -165,9 +369,18 @@ function AuthModalContent({
     return () => clearInterval(t);
   }, [signupCooldown]);
 
+  useEffect(() => {
+    if (otpCooldown <= 0) return;
+    const t = setInterval(() => {
+      setOtpCooldown((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(t);
+  }, [otpCooldown]);
+
   async function handleSignup() {
     setError(null);
     setLoading(true);
+    setLoginOtpSent(false);
 
     const emailToUse = (email || "").trim().toLowerCase();
 
@@ -183,36 +396,27 @@ function AuthModalContent({
       return;
     }
 
-    const { data: signupData, error: signupError } = await supabaseBrowser.auth.signUp({
-      email: emailToUse,
-      password,
-    });
-
-    if (signupError) {
-      const message = signupError.message || "Não foi possível criar a conta.";
-      const isRateLimit =
-        message.toLowerCase().includes("rate limit") ||
-        message.toLowerCase().includes("too many requests");
-
-      if (isRateLimit) {
-        setSignupCooldown(60);
-        setError(
-          "Recebeste emails a mais num curto espaço de tempo. Tenta novamente daqui a 1 minuto.",
-        );
-      } else {
-        setError(message);
+    try {
+      const res = await fetch("/api/auth/send-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: emailToUse, password }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) {
+        setError(json?.error ?? "Não foi possível enviar o código.");
+        setLoading(false);
+        return;
       }
-      setLoading(false);
-      return;
-    }
-
-    // Se o Supabase não requer confirmar email, vem logo com session
-    if (signupData?.session) {
-      await syncSessionWithServer();
-      swrMutate("/api/auth/me");
-      await finishAuthAndMaybeOnboard();
-      setLoading(false);
-      return;
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem("orya_pending_email", emailToUse);
+        window.localStorage.setItem("orya_pending_step", "verify");
+        window.localStorage.setItem("orya_otp_last_sent_at", String(Date.now()));
+      }
+      setOtpCooldown(60);
+      setEmail(emailToUse);
+    } catch (err) {
+      console.warn("[AuthModal] Falhou envio de OTP custom:", err);
     }
 
     setMode("verify");
@@ -231,26 +435,32 @@ function AuthModalContent({
       return;
     }
 
-    if (!otp || otp.trim().length < 6) {
-      setError("Introduce o código completo.");
+    const cleanOtp = otp.trim();
+    if (!cleanOtp || cleanOtp.length < 6) {
+      setError("Introduce o código completo (6-8 dígitos).");
       setLoading(false);
       return;
     }
 
     const { error: verifyError } = await supabaseBrowser.auth.verifyOtp({
-      type: "email",
+      type: "signup",
       email: emailToUse,
-      token: otp.trim(),
+      token: cleanOtp,
     });
 
     if (verifyError) {
-      setError(verifyError.message);
+      const message = verifyError.message || "Código inválido ou expirado. Pede novo código.";
+      setError(message);
+      setOtpCooldown(0);
       setLoading(false);
       return;
     }
 
     await syncSessionWithServer();
     swrMutate("/api/auth/me");
+    if (typeof window !== "undefined") {
+      clearPendingVerification();
+    }
     await finishAuthAndMaybeOnboard();
     setLoading(false);
   }
@@ -451,6 +661,54 @@ function AuthModalContent({
               </>
             )}
 
+            {showGoogle && (
+              <button
+                type="button"
+                disabled={loading}
+                onClick={async () => {
+                  setError(null);
+                  setLoading(true);
+                  try {
+                    const redirect =
+                      typeof window !== "undefined"
+                        ? `${window.location.origin}/auth/callback?redirect=${encodeURIComponent(
+                            redirectTo ?? window.location.href,
+                          )}`
+                        : undefined;
+                    if (typeof window !== "undefined") {
+                      try {
+                        window.localStorage.setItem(
+                          "orya_post_auth_redirect",
+                          redirectTo ?? window.location.href,
+                        );
+                      } catch {}
+                    }
+                    const { error: oauthError } =
+                      await supabaseBrowser.auth.signInWithOAuth({
+                        provider: "google",
+                        options: { redirectTo: redirect },
+                      });
+                    if (oauthError) {
+                      setError(
+                        oauthError.message ??
+                          "Não foi possível iniciar sessão com Google.",
+                      );
+                    }
+                  } catch (err) {
+                    console.error("[AuthModal] Google OAuth error:", err);
+                    setError(
+                      "Não foi possível iniciar sessão com Google. Tenta novamente.",
+                    );
+                  } finally {
+                    setLoading(false);
+                  }
+                }}
+                className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-full border border-white/20 bg-white/5 px-4 py-2 text-sm font-semibold text-white shadow hover:border-white/40 hover:bg-white/10 transition-colors disabled:opacity-50"
+              >
+                Continuar com Google
+              </button>
+            )}
+
             <p className="mt-2 text-[10px] text-white/50 leading-snug">
               Ao continuar, aceitas os termos da ORYA.
             </p>
@@ -465,12 +723,32 @@ function AuthModalContent({
             <label className="block text-xs text-white/70 mb-1">Código</label>
             <input
               type="text"
-              maxLength={6}
+              maxLength={8}
               value={otp}
               onChange={(e) => setOtp(e.target.value)}
               className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]"
-              placeholder="123456"
+              placeholder="87612097"
             />
+            <div className="mt-2 flex items-center justify-between text-[12px] text-white/65">
+              <span>
+                Não chegou?{" "}
+                {otpCooldown > 0 ? (
+                  <span className="text-white/75">Podes reenviar em {otpCooldown}s.</span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (email) triggerResendOtp(email);
+                    }}
+                    disabled={!email || otpResending}
+                    className="text-[#6BFFFF] hover:text-white transition disabled:opacity-50"
+                  >
+                    Reenviar código
+                  </button>
+                )}
+              </span>
+              {otpResending && <span className="text-[11px] text-white/50">A enviar…</span>}
+            </div>
           </>
         )}
 
@@ -528,7 +806,41 @@ function AuthModalContent({
         )}
 
         {error && (
-          <p className="mt-3 text-[12px] text-red-300 leading-snug">{error}</p>
+          <div className="mt-3 space-y-2">
+            <p className="text-[12px] text-red-300 leading-snug">{error}</p>
+            {mode === "signup" && error.toLowerCase().includes("já tem conta") && (
+              <div className="space-y-2 text-[12px] text-white/75">
+                <button
+                  type="button"
+                  onClick={() => setMode("login")}
+                  className="w-full rounded-full border border-white/15 bg-white/5 px-3 py-2 text-white hover:bg-white/10 transition"
+                >
+                  Ir para login
+                </button>
+                <button
+                  type="button"
+                  disabled={loginOtpSending}
+                  onClick={handleLoginOtp}
+                  className="w-full rounded-full border border-white/15 bg-white/5 px-3 py-2 text-white hover:bg-white/10 transition disabled:opacity-50"
+                >
+                  {loginOtpSending ? "A enviar link de login…" : "Enviar link de login por email"}
+                </button>
+                <button
+                  type="button"
+                  disabled={loginOtpSending}
+                  onClick={handleResetPassword}
+                  className="w-full rounded-full border border-white/15 bg-white/5 px-3 py-2 text-white hover:bg-white/10 transition disabled:opacity-50"
+                >
+                  {loginOtpSending ? "A enviar recuperação…" : "Recuperar password"}
+                </button>
+                {loginOtpSent && (
+                  <p className="text-emerald-300 text-[11px]">
+                    Verifica o teu email para o link de login/recuperação.
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
         )}
 
         {mode === "signup" && isSignupBlocked && (
