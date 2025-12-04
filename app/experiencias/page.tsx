@@ -85,7 +85,7 @@ export default function ExperiencesPage() {
     if (isUserLoading) return;
 
     if (!user) {
-      openModal({ mode: "login", redirectTo: "/experiencias/nova" });
+      openModal({ mode: "login", redirectTo: "/experiencias/nova", showGoogle: true });
       return;
     }
 

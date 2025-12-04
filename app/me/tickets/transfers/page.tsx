@@ -73,7 +73,7 @@ export default function TicketTransfersPage() {
 
         if (res.status === 401) {
           // não autenticado → abrir modal de login e redirecionar de volta para esta página
-          openModal({ mode: "login", redirectTo: "/me/tickets/transfers" });
+          openModal({ mode: "login", redirectTo: "/me/tickets/transfers", showGoogle: true });
           return;
         }
 

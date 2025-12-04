@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { env } from "@/lib/env";
 import { prisma } from "@/lib/prisma";
-import { createClient } from "@supabase/supabase-js";
+import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 export async function POST(req: NextRequest) {
   try {
@@ -52,23 +51,29 @@ export async function POST(req: NextRequest) {
     ]);
 
     // Supabase Auth: hard delete
-    const admin = createClient(env.supabaseUrl, env.serviceRoleKey, {
-      auth: { autoRefreshToken: false, persistSession: false },
-    });
-    const { error: deleteError } = await admin.auth.admin.deleteUser(user.id);
-
-    if (deleteError) {
-      console.error("[settings/delete] supabase delete error:", deleteError);
-      return NextResponse.json(
-        { ok: false, error: deleteError.message || "Erro ao apagar conta no Supabase." },
-        { status: 500 },
-      );
+    let authDeleted = true;
+    try {
+      // Hard delete para libertar o email
+      const { error: deleteError } = await supabaseAdmin.auth.admin.deleteUser(user.id, false);
+      if (deleteError) {
+        authDeleted = false;
+        console.error("[settings/delete] supabase delete error (hard):", deleteError);
+      }
+    } catch (e) {
+      authDeleted = false;
+      console.error("[settings/delete] supabase delete exception:", e);
     }
 
     // Limpar sessão atual
     await supabase.auth.signOut();
 
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({
+      ok: true,
+      authDeleted,
+      warning: authDeleted
+        ? null
+        : "Conta marcada como apagada, mas não foi possível remover no Auth. Contacta suporte.",
+    });
   } catch (err) {
     console.error("[settings/delete] erro:", err);
     return NextResponse.json({ ok: false, error: "Erro ao apagar conta." }, { status: 500 });

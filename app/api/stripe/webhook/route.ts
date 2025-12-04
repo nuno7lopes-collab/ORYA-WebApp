@@ -12,6 +12,7 @@ import { stripe } from "@/lib/stripeClient";
 import crypto from "crypto";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { sendPurchaseConfirmationEmail } from "@/lib/emailSender";
+import { parsePhoneNumberFromString } from "libphonenumber-js/min";
 
 const webhookSecret = env.stripeWebhookSecret;
 
@@ -184,6 +185,38 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent) {
 
   const rawUserId = typeof meta.userId === "string" ? meta.userId.trim() : "";
   const userId = rawUserId !== "" ? rawUserId : null;
+  const guestEmail =
+    typeof meta.guestEmail === "string"
+      ? meta.guestEmail.trim().toLowerCase()
+      : "";
+  const guestName =
+    typeof meta.guestName === "string" ? meta.guestName.trim() : "";
+  const guestPhoneRaw =
+    typeof meta.guestPhone === "string" ? meta.guestPhone.trim() : "";
+  const promoCodeId =
+    typeof meta.promoCode === "string" && meta.promoCode.trim() !== ""
+      ? meta.promoCode.trim()
+      : "";
+  const promoCodeRaw =
+    typeof meta.promoCodeRaw === "string" && meta.promoCodeRaw.trim() !== ""
+      ? meta.promoCodeRaw.trim()
+      : "";
+  const normalizePhone = (phone: string | null | undefined, defaultCountry = "PT") => {
+    if (!phone) return null;
+    const cleaned = phone.trim();
+    if (!cleaned) return null;
+    const parsed = parsePhoneNumberFromString(cleaned, defaultCountry);
+    if (parsed && parsed.isPossible() && parsed.isValid()) {
+      return parsed.number;
+    }
+    const regexPT = /^(?:\+351)?9[1236]\d{7}$/;
+    if (regexPT.test(cleaned)) {
+      const digits = cleaned.replace(/[^\d]/g, "");
+      return digits.startsWith("351") ? `+${digits}` : `+351${digits}`;
+    }
+    return null;
+  };
+  const guestPhone = normalizePhone(guestPhoneRaw);
 
   console.log("[fulfillPayment] Início", {
     intentId: intent.id,
@@ -192,9 +225,9 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent) {
   });
 
   // Segurança extra: só processamos intents que vieram da nossa app
-  if (!userId) {
+  if (!userId && !guestEmail) {
     console.warn(
-      "[fulfillPayment] payment_intent sem userId em metadata, a ignorar",
+      "[fulfillPayment] payment_intent sem userId nem guestEmail em metadata, a ignorar",
       intent.id
     );
     return;
@@ -299,7 +332,6 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent) {
   });
 
   const platformFeeTotal = Number(meta.platformFeeCents ?? 0);
-  const baseAmount = Number(meta.baseAmountCents ?? intent.amount ?? 0);
   const totalTicketsRequested = items.reduce(
     (sum, item) => sum + Math.max(1, Number(item.quantity ?? 0)),
     0
@@ -363,78 +395,111 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent) {
     console.warn("[fulfillPayment] Não foi possível registar paymentEvent", logErr);
   }
 
-  // --------- PREPARAR CRIAÇÃO DE BILHETES + STOCK ---------
-  const purchasesToCreate: Prisma.PrismaPromise<unknown>[] = [];
-  const stockUpdates: Prisma.PrismaPromise<unknown>[] = [];
-
-  for (const item of items) {
-    const ticketType = eventRecord.ticketTypes.find(
-      (t) => t.id === item.ticketId
-    );
-    if (!ticketType) {
-      console.warn("[fulfillPayment] TicketType not found:", item.ticketId);
-      continue;
+  // --------- Redemptions de promo (best-effort) ---------
+  if (promoCodeId) {
+    try {
+      await prisma.promoRedemption.create({
+        data: {
+          promoCodeId: Number(promoCodeId),
+          userId: userId ?? null,
+          guestEmail: guestEmail || null,
+        },
+      });
+    } catch (err) {
+      console.warn("[fulfillPayment] Não foi possível registar promo redemption", {
+        intentId: intent.id,
+        promoCodeId,
+        promoCodeRaw,
+        err,
+      });
     }
+  }
 
-    const qty = Math.max(1, Number(item.quantity ?? 0));
-    if (!qty) continue;
+  // --------- PREPARAR CRIAÇÃO DE BILHETES + STOCK ---------
+  let createdTicketsCount = 0;
 
-    if (
-      ticketType.totalQuantity !== null &&
-      ticketType.totalQuantity !== undefined
-    ) {
-      const remaining = ticketType.totalQuantity - ticketType.soldQuantity;
-      if (remaining <= 0 || qty > remaining) {
-        console.warn("[fulfillPayment] Insufficient stock for:", {
-          ticketTypeId: ticketType.id,
-          remaining,
-          requested: qty,
-        });
+  await prisma.$transaction(async (tx) => {
+    for (const item of items) {
+      const ticketType = eventRecord.ticketTypes.find(
+        (t) => t.id === item.ticketId
+      );
+      if (!ticketType) {
+        console.warn("[fulfillPayment] TicketType not found:", item.ticketId);
         continue;
       }
-    }
 
-    for (let i = 0; i < qty; i++) {
-      // Gerar QR seguro para cada bilhete
-      const token = crypto.randomUUID();
-      const feeForThisTicket =
-        perTicketPlatformFee + (feeRemainder > 0 ? 1 : 0);
-      if (feeRemainder > 0) feeRemainder -= 1;
+      const qty = Math.max(1, Number(item.quantity ?? 0));
+      if (!qty) continue;
 
-      purchasesToCreate.push(
-        prisma.ticket.create({
+      if (
+        ticketType.totalQuantity !== null &&
+        ticketType.totalQuantity !== undefined
+      ) {
+        const remaining = ticketType.totalQuantity - ticketType.soldQuantity;
+        if (remaining <= 0 || qty > remaining) {
+          console.warn("[fulfillPayment] Insufficient stock for:", {
+            ticketTypeId: ticketType.id,
+            remaining,
+            requested: qty,
+          });
+          continue;
+        }
+      }
+
+      for (let i = 0; i < qty; i++) {
+        // Gerar QR seguro para cada bilhete
+        const token = crypto.randomUUID();
+        const feeForThisTicket =
+          perTicketPlatformFee + (feeRemainder > 0 ? 1 : 0);
+        if (feeRemainder > 0) feeRemainder -= 1;
+
+        const ticket = await tx.ticket.create({
           data: {
             userId,
             eventId: eventRecord.id,
             ticketTypeId: ticketType.id,
-          status: "ACTIVE",
-          purchasedAt: new Date(),
-          qrSecret: token,
-          pricePaid: ticketType.price,
-          currency: ticketType.currency,
-          platformFeeCents: feeForThisTicket,
-          totalPaidCents: ticketType.price + feeForThisTicket,
-          stripePaymentIntentId: intent.id,
-        },
-      })
-    );
-  }
+            status: "ACTIVE",
+            purchasedAt: new Date(),
+            qrSecret: token,
+            pricePaid: ticketType.price,
+            currency: ticketType.currency,
+            platformFeeCents: feeForThisTicket,
+            totalPaidCents: ticketType.price + feeForThisTicket,
+            stripePaymentIntentId: intent.id,
+          },
+        });
 
-    stockUpdates.push(
-      prisma.ticketType.update({
+        if (!userId && guestEmail) {
+          await tx.guestTicketLink.upsert({
+            where: { ticketId: ticket.id },
+            update: {
+              guestEmail,
+              guestName: guestName || "Convidado",
+              guestPhone: guestPhone || null,
+            },
+            create: {
+              ticketId: ticket.id,
+              guestEmail,
+              guestName: guestName || "Convidado",
+              guestPhone: guestPhone || null,
+            },
+          });
+        }
+
+        createdTicketsCount += 1;
+      }
+
+      await tx.ticketType.update({
         where: { id: ticketType.id },
         data: {
           soldQuantity: { increment: qty },
         },
-      })
-    );
-  }
+      });
+    }
 
-  if (purchasesToCreate.length === 0) {
-    console.warn("[fulfillPayment] No valid items to process");
-    // Marcar log como erro para intervenção manual (não reprocessar em loop)
-    try {
-      await prisma.paymentEvent.updateMany({
+    if (createdTicketsCount === 0) {
+      // Nada criado, marcamos paymentEvent como erro
+      await tx.paymentEvent.updateMany({
         where: { stripePaymentIntentId: intent.id },
         data: {
           status: "ERROR",
@@ -442,37 +507,31 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent) {
           updatedAt: new Date(),
         },
       });
-    } catch (logErr) {
-      console.warn(
-        "[fulfillPayment] Falha ao marcar paymentEvent como ERROR em caso sem bilhetes",
-        logErr
-      );
+      return;
     }
-    return;
-  }
 
-  console.log("[fulfillPayment] A executar transaction:", {
-    purchasesCount: purchasesToCreate.length,
-    stockUpdatesCount: stockUpdates.length,
-  });
+    // Reservas apenas se a compra foi feita com sessão (guest não cria reservas)
+    if (userId) {
+      await tx.ticketReservation.updateMany({
+        where: {
+          eventId: eventRecord.id,
+          userId,
+          status: "ACTIVE",
+        },
+        data: { status: "COMPLETED" },
+      });
+    }
 
-  await prisma.$transaction([
-    ...purchasesToCreate,
-    ...stockUpdates,
-    prisma.ticketReservation.updateMany({
-      where: {
-        eventId: eventRecord.id,
-        userId,
-        status: "ACTIVE",
-      },
-      data: { status: "COMPLETED" },
-    }),
-    prisma.paymentEvent.updateMany({
+    await tx.paymentEvent.updateMany({
       where: { stripePaymentIntentId: intent.id },
       data: { status: "OK", updatedAt: new Date(), errorMessage: null },
-    }),
-    // Fim da transação — sistema seguro e idempotente
-  ]);
+    });
+  });
+
+  if (createdTicketsCount === 0) {
+    console.warn("[fulfillPayment] No valid items to process");
+    return;
+  }
 
   console.log("[fulfillPayment] OK, items processados:", {
     intentId: intent.id,
@@ -481,32 +540,30 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent) {
   });
 
   // Enviar email de confirmação (best-effort)
-  if (userId) {
-    const email = await fetchUserEmail(userId);
-    if (email) {
-      const baseUrl =
-        process.env.NEXT_PUBLIC_BASE_URL ??
-        process.env.NEXT_PUBLIC_APP_URL ??
-        "https://app.orya.pt";
+  const targetEmail = userId ? await fetchUserEmail(userId) : guestEmail || null;
+  if (targetEmail) {
+    const baseUrl =
+      process.env.NEXT_PUBLIC_BASE_URL ??
+      process.env.NEXT_PUBLIC_APP_URL ??
+      "https://app.orya.pt";
 
-      try {
-        await sendPurchaseConfirmationEmail({
-          to: email,
-          eventTitle: eventRecord.title,
-          eventSlug: eventRecord.slug,
-          startsAt: eventRecord.startsAt?.toISOString() ?? null,
-          endsAt: eventRecord.endsAt?.toISOString() ?? null,
-          locationName: eventRecord.locationName ?? null,
-          ticketsCount: purchasesToCreate.length,
-          ticketUrl: `${baseUrl}/me/tickets`,
-        });
-        console.log("[fulfillPayment] Email de confirmação enviado para", email);
-      } catch (emailErr) {
-        console.error("[fulfillPayment] Falha ao enviar email de confirmação", emailErr);
-      }
-    } else {
-      console.warn("[fulfillPayment] Email do utilizador não encontrado para envio de recibo");
+    try {
+      await sendPurchaseConfirmationEmail({
+        to: targetEmail,
+        eventTitle: eventRecord.title,
+        eventSlug: eventRecord.slug,
+        startsAt: eventRecord.startsAt?.toISOString() ?? null,
+        endsAt: eventRecord.endsAt?.toISOString() ?? null,
+        locationName: eventRecord.locationName ?? null,
+        ticketsCount: createdTicketsCount,
+        ticketUrl: userId ? `${baseUrl}/me/tickets` : `${baseUrl}/`,
+      });
+      console.log("[fulfillPayment] Email de confirmação enviado para", targetEmail);
+    } catch (emailErr) {
+      console.error("[fulfillPayment] Falha ao enviar email de confirmação", emailErr);
     }
+  } else {
+    console.warn("[fulfillPayment] Email do comprador não encontrado para envio de recibo");
   }
 
   return;

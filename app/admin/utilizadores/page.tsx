@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import type { Prisma } from "@prisma/client";
+import { UsersTableClient } from "./UsersTableClient";
 
 type AdminUsersPageProps = {
   searchParams?: {
@@ -37,7 +38,8 @@ export default async function AdminUsersPage({ searchParams }: AdminUsersPagePro
     redirect("/");
   }
 
-  const search = (searchParams?.q || "").trim();
+  const resolvedSearchParams = await Promise.resolve(searchParams);
+  const search = (resolvedSearchParams?.q || "").trim();
 
   const where: Prisma.ProfileWhereInput = {};
   if (search.length > 0) {
@@ -75,18 +77,11 @@ export default async function AdminUsersPage({ searchParams }: AdminUsersPagePro
         city: true,
         roles: true,
         createdAt: true,
+        isDeleted: true,
+        deletedAt: true,
       },
     }),
   ]);
-
-  function formatDate(date: Date | null) {
-    if (!date) return "";
-    return new Intl.DateTimeFormat("pt-PT", {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-    }).format(date);
-  }
 
   return (
     <main className="orya-body-bg min-h-screen text-white pb-16">
@@ -195,65 +190,13 @@ export default async function AdminUsersPage({ searchParams }: AdminUsersPagePro
               Nenhum utilizador encontrado para este filtro.
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-left text-[11px]">
-                <thead className="bg-white/5 border-b border-white/10">
-                  <tr>
-                    <th className="px-4 py-2 font-medium text-white/70">Username</th>
-                    <th className="px-4 py-2 font-medium text-white/70">Nome</th>
-                    <th className="px-4 py-2 font-medium text-white/70">Cidade</th>
-                    <th className="px-4 py-2 font-medium text-white/70">Roles</th>
-                    <th className="px-4 py-2 font-medium text-white/70">Criado em</th>
-                    <th className="px-4 py-2 font-medium text-white/70">ID</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {users.map((u) => (
-                    <tr key={u.id} className="border-b border-white/5 hover:bg-white/5">
-                      <td className="px-4 py-2 align-top">
-                        {u.username ? (
-                          <span className="font-medium text-white">@{u.username}</span>
-                        ) : (
-                          <span className="text-white/60 italic">sem username</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-2 align-top">
-                        {u.fullName || (
-                          <span className="text-white/60 italic">sem nome</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-2 align-top">
-                        {u.city || (
-                          <span className="text-white/60 italic">—</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-2 align-top">
-                        {Array.isArray(u.roles) && u.roles.length > 0 ? (
-                          <div className="flex flex-wrap gap-1">
-                            {u.roles.map((role) => (
-                              <span
-                                key={role}
-                                className="inline-flex items-center rounded-full border border-white/20 px-2 py-[2px] text-[10px] uppercase tracking-[0.14em] text-white/75"
-                              >
-                                {role}
-                              </span>
-                            ))}
-                          </div>
-                        ) : (
-                          <span className="text-white/60 italic">user</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-2 align-top text-white/70">
-                        {formatDate(u.createdAt)}
-                      </td>
-                      <td className="px-4 py-2 align-top text-white/40 truncate max-w-[180px]">
-                        {u.id}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <UsersTableClient
+              users={users.map((u) => ({
+                ...u,
+                createdAt: u.createdAt.toISOString(),
+                deletedAt: u.deletedAt ? u.deletedAt.toISOString() : null,
+              }))}
+            />
           )}
         </div>
       </section>

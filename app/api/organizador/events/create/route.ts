@@ -5,7 +5,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, assertOrganizer } from "@/lib/security";
-import { Prisma } from "@prisma/client";
 
 // Tipos esperados no body do pedido
 type TicketTypeInput = {
@@ -28,9 +27,10 @@ type CreateOrganizerEventBody = {
   resaleMode?: string; // ALWAYS | AFTER_SOLD_OUT | DISABLED
   coverImageUrl?: string | null;
   isTest?: boolean;
-  feeMode?: string | null;
-  platformFeeBps?: number | null;
-  platformFeeFixedCents?: number | null;
+  payoutMode?: string; // ORGANIZER | PLATFORM
+  feeMode?: string;
+  platformFeeBps?: number;
+  platformFeeFixedCents?: number;
 };
 
 function slugify(input: string): string {
@@ -104,8 +104,7 @@ export async function POST(req: NextRequest) {
       | "AFTER_SOLD_OUT"
       | "DISABLED"
       | undefined;
-    const feeModeRaw = body.feeMode?.toUpperCase() as "ADDED" | "INCLUDED" | undefined;
-    const feeMode = feeModeRaw === "ADDED" || feeModeRaw === "INCLUDED" ? feeModeRaw : undefined;
+    const payoutMode = body.payoutMode?.toUpperCase() === "PLATFORM" ? "PLATFORM" : "ORGANIZER";
 
     if (!title) {
       return NextResponse.json(
@@ -184,15 +183,6 @@ export async function POST(req: NextRequest) {
 
     const ticketTypesInput = body.ticketTypes ?? [];
     const coverImageUrl = body.coverImageUrl?.trim?.() || null;
-    const platformFeeBps =
-      typeof body.platformFeeBps === "number" && Number.isFinite(body.platformFeeBps)
-        ? Math.max(0, Math.min(5000, Math.floor(body.platformFeeBps)))
-        : null;
-    const platformFeeFixedCents =
-      typeof body.platformFeeFixedCents === "number" && Number.isFinite(body.platformFeeFixedCents)
-        ? Math.max(0, Math.min(5000, Math.floor(body.platformFeeFixedCents)))
-        : null;
-
     // Validar tipos de bilhete
     const ticketTypesData = ticketTypesInput
       .map((t) => {
@@ -221,6 +211,25 @@ export async function POST(req: NextRequest) {
       .filter((t): t is { name: string; price: number; totalQuantity: number | null } =>
         Boolean(t)
       );
+
+    const paymentsStatus = organizer
+      ? organizer.stripeAccountId
+        ? organizer.stripeChargesEnabled && organizer.stripePayoutsEnabled
+          ? "READY"
+          : "PENDING"
+        : "NO_STRIPE"
+      : "NO_STRIPE";
+    const hasPaidTickets = ticketTypesData.some((t) => t.price > 0);
+    if (payoutMode === "ORGANIZER" && hasPaidTickets && paymentsStatus !== "READY" && !isAdmin) {
+      return NextResponse.json(
+        {
+          ok: false,
+          code: "PAYMENTS_NOT_READY",
+          error: "Para vender bilhetes pagos, primeiro liga a tua conta Stripe em Finanças & Payouts.",
+        },
+        { status: 403 },
+      );
+    }
 
     if (ticketTypesData.length === 0) {
       return NextResponse.json(
@@ -256,10 +265,8 @@ export async function POST(req: NextRequest) {
         status: "PUBLISHED",
         resaleMode,
         coverImageUrl,
-        feeModeOverride: feeMode,
-        platformFeeBpsOverride: platformFeeBps,
-        platformFeeFixedCentsOverride: platformFeeFixedCents,
         isTest: isAdmin && body.isTest === true,
+        payoutMode,
       },
     });
 

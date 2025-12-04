@@ -33,9 +33,7 @@ type UpdateEventBody = {
   coverImageUrl?: string | null;
   ticketTypeUpdates?: TicketTypeUpdate[];
   newTicketTypes?: NewTicketType[];
-  feeModeOverride?: string | null;
-  platformFeeBpsOverride?: number | null;
-  platformFeeFixedCentsOverride?: number | null;
+  payoutMode?: string | null;
 };
 
 export async function POST(req: NextRequest) {
@@ -85,6 +83,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "Evento não encontrado." }, { status: 404 });
     }
 
+    const isAdmin = Array.isArray(profile.roles) ? profile.roles.includes("admin") : false;
+
+    const paymentsStatus = organizer
+      ? organizer.stripeAccountId
+        ? organizer.stripeChargesEnabled && organizer.stripePayoutsEnabled
+          ? "READY"
+          : "PENDING"
+        : "NO_STRIPE"
+      : "NO_STRIPE";
+
     const dataUpdate: Partial<Prisma.EventUncheckedUpdateInput> = {};
     if (body.title !== undefined) dataUpdate.title = body.title?.trim() ?? "";
     if (body.description !== undefined) dataUpdate.description = body.description ?? "";
@@ -111,41 +119,6 @@ export async function POST(req: NextRequest) {
         dataUpdate.templateType = tpl as EventTemplateType;
       }
     }
-    if (body.feeModeOverride !== undefined) {
-      const normalized = body.feeModeOverride?.toUpperCase();
-      if (normalized === "ADDED" || normalized === "INCLUDED") {
-        dataUpdate.feeModeOverride = normalized;
-      } else if (!normalized) {
-        dataUpdate.feeModeOverride = null;
-      } else {
-        return NextResponse.json({ ok: false, error: "feeModeOverride inválido." }, { status: 400 });
-      }
-    }
-    if (body.platformFeeBpsOverride !== undefined) {
-      if (body.platformFeeBpsOverride === null) {
-        dataUpdate.platformFeeBpsOverride = null;
-      } else {
-        const value = Number(body.platformFeeBpsOverride);
-        if (!Number.isFinite(value) || value < 0 || value > 5000) {
-          return NextResponse.json({ ok: false, error: "platformFeeBpsOverride inválido." }, { status: 400 });
-        }
-        dataUpdate.platformFeeBpsOverride = Math.floor(value);
-      }
-    }
-    if (body.platformFeeFixedCentsOverride !== undefined) {
-      if (body.platformFeeFixedCentsOverride === null) {
-        dataUpdate.platformFeeFixedCentsOverride = null;
-      } else {
-        const value = Number(body.platformFeeFixedCentsOverride);
-        if (!Number.isFinite(value) || value < 0 || value > 5000) {
-          return NextResponse.json(
-            { ok: false, error: "platformFeeFixedCentsOverride inválido." },
-            { status: 400 },
-          );
-        }
-        dataUpdate.platformFeeFixedCentsOverride = Math.floor(value);
-      }
-    }
     // Não permitir converter para grátis se já há bilhetes e atualmente não é grátis
     if (body.isFree !== undefined) {
       const hasTickets = event.ticketTypes.length > 0;
@@ -165,11 +138,39 @@ export async function POST(req: NextRequest) {
       dataUpdate.isFree = body.isFree;
     }
     if (body.coverImageUrl !== undefined) dataUpdate.coverImageUrl = body.coverImageUrl ?? null;
+    if (
+      isAdmin &&
+      body.payoutMode &&
+      (body.payoutMode.toUpperCase() === "PLATFORM" || body.payoutMode.toUpperCase() === "ORGANIZER")
+    ) {
+      dataUpdate.payoutMode = body.payoutMode.toUpperCase() as Prisma.PayoutMode;
+    }
 
     const ticketTypeUpdates = Array.isArray(body.ticketTypeUpdates)
       ? body.ticketTypeUpdates
       : [];
     const newTicketTypes = Array.isArray(body.newTicketTypes) ? body.newTicketTypes : [];
+
+    const payoutMode = event.payoutMode ?? "ORGANIZER";
+    const hasExistingPaid = event.ticketTypes.some(
+      (t) => (t.price ?? 0) > 0 && t.status !== TicketTypeStatus.CANCELLED
+    );
+    const hasNewPaid = newTicketTypes.some((nt) => Number(nt.price ?? 0) > 0);
+    if (
+      payoutMode === "ORGANIZER" &&
+      (hasExistingPaid || hasNewPaid) &&
+      paymentsStatus !== "READY" &&
+      !isAdmin
+    ) {
+      return NextResponse.json(
+        {
+          ok: false,
+          code: "PAYMENTS_NOT_READY",
+          error: "Para vender bilhetes pagos, primeiro liga a tua conta Stripe em Finanças & Payouts.",
+        },
+        { status: 403 },
+      );
+    }
 
     const transactions: Prisma.PrismaPromise<unknown>[] = [];
 

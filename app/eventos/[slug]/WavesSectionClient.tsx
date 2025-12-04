@@ -275,11 +275,6 @@ export default function WavesSectionClient({
           onClick={() => {
             if (purchasableTickets.length === 0) return;
 
-            if (!user) {
-              openModal({ mode: "signup" });
-              return;
-            }
-
             atualizarDados({
               slug,
               waves: visibleTickets,

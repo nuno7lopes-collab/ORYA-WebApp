@@ -21,6 +21,8 @@ export default function SettingsPage() {
   const [logoutLoading, setLogoutLoading] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
 
   useEffect(() => {
     if (user?.email) setEmail(user.email);
@@ -112,11 +114,8 @@ export default function SettingsPage() {
   }
 
   async function handleDeleteAccount() {
-    const confirmation = window.prompt(
-      "Para confirmar, escreve: APAGAR CONTA"
-    );
-    if (!confirmation || confirmation.trim().toUpperCase() !== "APAGAR CONTA") {
-      setFeedback("Ação cancelada. Escreve exatamente: APAGAR CONTA");
+    if (deleteConfirmText.trim().toUpperCase() !== "APAGAR CONTA") {
+      setErrorMsg("Para confirmar, escreve: APAGAR CONTA");
       return;
     }
     setDeleting(true);
@@ -128,6 +127,10 @@ export default function SettingsPage() {
       if (!res.ok || !json?.ok) {
         throw new Error(json?.error || "Erro ao apagar conta.");
       }
+      if (json.warning) {
+        setFeedback(json.warning);
+      }
+      setShowDeleteConfirm(false);
       router.push("/login");
     } catch (err) {
       console.error(err);
@@ -308,7 +311,12 @@ export default function SettingsPage() {
             </button>
             <button
               type="button"
-              onClick={handleDeleteAccount}
+              onClick={() => {
+                setShowDeleteConfirm(true);
+                setDeleteConfirmText("");
+                setFeedback(null);
+                setErrorMsg(null);
+              }}
               disabled={deleting}
               className="inline-flex items-center gap-2 rounded-full border border-red-400/40 bg-red-500/10 px-4 py-2 text-sm text-red-100 hover:bg-red-500/20 transition disabled:opacity-60"
             >
@@ -326,6 +334,77 @@ export default function SettingsPage() {
           </Link>
         </div>
       </section>
+
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-md" />
+          <div className="relative w-full max-w-md rounded-2xl border border-white/12 bg-gradient-to-b from-[#0b0b13]/95 to-[#0b0b13]/90 p-6 shadow-2xl">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs uppercase tracking-[0.2em] text-white/40">Zona segura</p>
+                <h3 className="mt-1 text-lg font-semibold text-white">Apagar conta ORYA</h3>
+              </div>
+              <button
+                type="button"
+                className="h-8 w-8 rounded-full border border-white/10 text-white/70 hover:bg-white/10 transition"
+                onClick={() => {
+                  setShowDeleteConfirm(false);
+                  setDeleteConfirmText("");
+                }}
+                disabled={deleting}
+                aria-label="Fechar confirmação"
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="mt-3 text-sm text-white/70 leading-relaxed">
+              Esta ação é definitiva. Os teus eventos e dados serão marcados como apagados. Para
+              continuares, escreve <span className="font-semibold text-white">APAGAR CONTA</span>{" "}
+              e confirma.
+            </p>
+
+            <div className="mt-4 space-y-2">
+              <label className="text-xs text-white/60" htmlFor="delete-confirm-input">
+                Confirmação
+              </label>
+              <input
+                id="delete-confirm-input"
+                value={deleteConfirmText}
+                onChange={(e) => setDeleteConfirmText(e.target.value)}
+                placeholder="APAGAR CONTA"
+                className="w-full rounded-xl bg-black/40 border border-white/15 px-3 py-2 text-sm outline-none focus:border-[#FF4D8F] focus:ring-1 focus:ring-[#FF4D8F]/50 text-white placeholder:text-white/30"
+                disabled={deleting}
+              />
+              {deleteConfirmText.length > 0 && deleteConfirmText.trim().toUpperCase() !== "APAGAR CONTA" && (
+                <p className="text-xs text-red-300">Escreve exatamente: APAGAR CONTA.</p>
+              )}
+            </div>
+
+            <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                className="w-full sm:w-auto rounded-full border border-white/15 px-4 py-2 text-sm text-white/80 hover:bg-white/10 transition disabled:opacity-50"
+                onClick={() => {
+                  setShowDeleteConfirm(false);
+                  setDeleteConfirmText("");
+                }}
+                disabled={deleting}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteAccount}
+                disabled={deleting || deleteConfirmText.trim().toUpperCase() !== "APAGAR CONTA"}
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-full border border-red-400/50 bg-gradient-to-r from-[#FF2A6F] to-[#FF6B2A] px-4 py-2 text-sm font-semibold text-white shadow-[0_0_30px_rgba(255,77,143,0.35)] hover:translate-y-[-1px] active:translate-y-[0px] transition disabled:opacity-60"
+              >
+                {deleting ? "A apagar..." : "Confirmar eliminação"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

@@ -115,7 +115,7 @@ function StaffLoginContent() {
 
         <button
           type="button"
-          onClick={() => openModal({ mode: "login", redirectTo })}
+          onClick={() => openModal({ mode: "login", redirectTo, showGoogle: true })}
           className="w-full text-[12px] text-white/70 underline underline-offset-4"
         >
           Preferes usar o modal standard?

@@ -73,34 +73,7 @@ export default async function OrganizerEventsPage() {
   const totalRevenueCents = ticketStats.reduce((sum, s) => sum + (s._sum.pricePaid ?? 0), 0);
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top,_#1a1030_0,_#050509_45%,_#02020a_100%)] text-white">
-      {/* Header */}
-      <header className="border-b border-white/10 bg-black/40 backdrop-blur-xl">
-        <div className="max-w-6xl mx-auto px-5 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-tr from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] text-xs font-extrabold tracking-[0.15em]">
-              OR
-            </span>
-            <div>
-              <p className="text-xs uppercase tracking-[0.18em] text-white/60">
-                Painel do organizador
-              </p>
-              <p className="text-sm text-white/85">
-                Visão geral dos eventos criados na ORYA.
-              </p>
-            </div>
-          </div>
-
-          <a
-            href="/organizador/eventos/novo"
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] text-[11px] font-semibold text-black hover:scale-[1.03] active:scale-95 transition-transform shadow-[0_0_24px_rgba(107,255,255,0.6)]"
-          >
-            Criar novo evento
-          </a>
-        </div>
-      </header>
-
-      <section className="max-w-6xl mx-auto px-5 py-8 md:py-10 space-y-6">
+    <section className="mx-auto max-w-6xl px-4 py-8 md:px-6 md:py-10 space-y-6 text-white">
         {/* Métricas principais (simples) */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="rounded-2xl border border-white/14 bg-white/5 backdrop-blur-xl px-4 py-3.5">
@@ -273,6 +246,5 @@ export default async function OrganizerEventsPage() {
           )}
         </section>
       </section>
-    </main>
   );
 }

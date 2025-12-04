@@ -1,5 +1,4 @@
 
-
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
@@ -175,191 +174,222 @@ export default function OrganizerPaymentsPage() {
       ? "Onboarding incompleto"
       : "Por ligar";
 
-  if (!user) {
+  const statusBanner = (() => {
+    if (!organizer) return null;
+    if (!organizer.stripeAccountId) {
+      return {
+        tone: "warning",
+        text: "Liga a tua conta Stripe para começares a vender. Podes desligar a qualquer momento.",
+      };
+    }
+    if (!organizer.stripeChargesEnabled) {
+      return {
+        tone: "info",
+        text: "Onboarding Stripe incompleto. Continua o processo para ativares cobranças e payouts.",
+      };
+    }
+    return {
+      tone: "success",
+      text: "Stripe ligado. Pagas só quando vendes — podes absorver ou passar a taxa ao cliente.",
+    };
+  })();
+
+  if (!user || !organizer || organizer.status !== "ACTIVE") {
     return (
-      <main className="orya-body-bg min-h-screen text-white">
-        <section className="mx-auto max-w-3xl px-4 py-10 space-y-4">
-          <h1 className="text-2xl font-semibold">Pagamentos</h1>
-          <p className="text-sm text-white/70">Entra para ligar a tua conta Stripe.</p>
+      <section className="mx-auto max-w-3xl px-4 py-10 space-y-4 text-white md:px-6 lg:px-8">
+        <h1 className="text-2xl font-semibold">Pagamentos</h1>
+        <p className="text-sm text-white/70">
+          {!user
+            ? "Entra para ligar a tua conta Stripe."
+            : "A tua conta de organizador ainda não está ativa."}
+        </p>
+        {!user && (
           <button
             type="button"
-            onClick={() => openModal({ mode: "login", redirectTo: "/organizador/pagamentos" })}
+            onClick={() =>
+              openModal({
+                mode: "login",
+                redirectTo: "/organizador/pagamentos",
+                showGoogle: true,
+              })
+            }
             className="px-4 py-2 rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] font-semibold text-black shadow-lg"
           >
             Entrar / Criar conta
           </button>
-        </section>
-      </main>
-    );
-  }
-
-  if (!organizer || organizer.status !== "ACTIVE") {
-    return (
-      <main className="orya-body-bg min-h-screen text-white">
-        <section className="mx-auto max-w-3xl px-4 py-10 space-y-4">
-          <h1 className="text-2xl font-semibold">Pagamentos</h1>
-          <p className="text-sm text-white/70">
-            A tua conta de organizador ainda não está ativa. Aprovação: {organizer?.status ?? "PENDING"}.
-          </p>
+        )}
+        {user && (
           <Link
             href="/organizador"
             className="inline-flex items-center gap-2 rounded-full border border-white/20 px-4 py-2 text-white/80 hover:bg-white/10"
           >
             Voltar ao painel do organizador
           </Link>
-        </section>
-      </main>
+        )}
+      </section>
     );
   }
 
   return (
-    <main className="orya-body-bg min-h-screen text-white">
-      <section className="mx-auto max-w-4xl px-4 py-10 space-y-6">
-        <div className="space-y-2">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-white/60">
-            Pagamentos · Stripe Connect
-          </p>
-          <h1 className="text-3xl font-bold leading-tight">Liga a tua conta Stripe e recebe diretamente</h1>
-          <p className="text-sm text-white/70">{statusCard}</p>
+    <section className="mx-auto max-w-5xl px-4 py-10 space-y-6 text-white md:px-6 lg:px-8">
+      <div className="space-y-2">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-white/60">
+          Pagamentos · Stripe Connect
+        </p>
+        <h1 className="text-3xl font-bold leading-tight">Liga a tua conta Stripe e recebe diretamente</h1>
+        <p className="text-sm text-white/70">{statusCard}</p>
+      </div>
+
+      {statusBanner && (
+        <div
+          className={`rounded-2xl border px-4 py-3 text-sm ${
+            statusBanner.tone === "success"
+              ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-100"
+              : statusBanner.tone === "warning"
+                ? "border-amber-400/30 bg-amber-400/10 text-amber-100"
+                : "border-cyan-400/30 bg-cyan-400/10 text-cyan-100"
+          }`}
+        >
+          {statusBanner.text}
         </div>
+      )}
 
-        <div className="grid gap-4 md:grid-cols-2">
-          <div className="rounded-3xl border border-white/10 bg-white/5 backdrop-blur-xl p-4 space-y-3 shadow-[0_18px_60px_rgba(0,0,0,0.65)]">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold">Estado Stripe</h2>
-              <button
-                type="button"
-                onClick={() => mutate()}
-                className="text-[11px] rounded-full border border-white/20 px-2 py-1 text-white/80 hover:bg-white/10"
-              >
-                Atualizar estado
-              </button>
-            </div>
-            <div className="rounded-2xl border border-white/10 bg-black/40 p-3 text-sm space-y-1">
-              <p className="text-white/60">Conta</p>
-              <p className="font-semibold">
-                {organizer.stripeAccountId
-                  ? `Stripe ${organizer.stripeAccountId.slice(-6)}`
-                  : "Por ligar"}
-              </p>
-              <p className="text-[12px] text-white/60">Charges: {organizer.stripeChargesEnabled ? "Ativo" : "Inativo"}</p>
-              <p className="text-[12px] text-white/60">Payouts: {organizer.stripePayoutsEnabled ? "Ativo" : "Inativo"}</p>
-              <p className="text-[12px] text-white/60">Modo de fees: {feeText}</p>
-            </div>
-            <div className="space-y-2">
-              <button
-                type="button"
-                disabled={ctaLoading}
-                onClick={handleConnect}
-                className="w-full inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-[#10B981] to-[#34D399] px-4 py-2 text-sm font-semibold text-black shadow disabled:opacity-60"
-              >
-                {ctaLoading ? "A gerar link..." : "Ligar / continuar onboarding"}
-              </button>
-              {error && <p className="text-xs text-red-300">{error}</p>}
-              <p className="text-[11px] text-white/60">
-                O Stripe vai abrir numa nova janela para completares o KYC. Se já ligaste e faltou algo, usa o botão para
-                voltar ao onboarding.
-              </p>
-            </div>
-          </div>
-
-          <div className="rounded-3xl border border-white/10 bg-black/30 backdrop-blur-xl p-4 space-y-3 shadow-[0_18px_60px_rgba(0,0,0,0.65)]">
-            <h2 className="text-lg font-semibold text-white">Resumo</h2>
-            <div className="rounded-2xl border border-white/12 bg-white/5 p-3 text-sm text-white/75 space-y-2">
-              <p>Organizer: {organizer.displayName || `#${organizer.id}`}</p>
-              <p>Estado de aprovação: {organizer.status}</p>
-              <p>Stripe: {stripeStatusLabel}</p>
-              <p>Recebes diretamente na tua conta Stripe; a ORYA retém a fee configurada.</p>
-            </div>
-            {summaryData && (
-              <div className="grid gap-2 rounded-2xl border border-white/10 bg-white/5 p-3 text-xs text-white/80 sm:grid-cols-2">
-                <div>
-                  <p className="text-white/60">Bilhetes vendidos</p>
-                  <p className="text-base font-semibold text-white">{summaryData.ticketsSold}</p>
-                </div>
-                <div>
-                  <p className="text-white/60">Receita bruta</p>
-                  <p className="text-base font-semibold text-white">{formatEuro(centsToEuro(summaryData.revenueCents))}</p>
-                </div>
-                <div>
-                  <p className="text-white/60">Total pago</p>
-                  <p className="text-base font-semibold text-white">{formatEuro(centsToEuro(summaryData.grossCents))}</p>
-                </div>
-                <div>
-                  <p className="text-white/60">Payout estimado</p>
-                  <p className="text-base font-semibold text-white">
-                    {formatEuro(centsToEuro(summaryData.estimatedPayoutCents))}
-                  </p>
-                </div>
-              </div>
-            )}
-            <div className="text-[11px] text-white/60">
-              Precisas de ajuda? Contacta a equipa ORYA para rever o onboarding ou ajustar a comissão do teu clube.
-            </div>
-          </div>
-        </div>
-
-        <div className="rounded-3xl border border-white/10 bg-white/5 backdrop-blur-xl p-4 space-y-4 shadow-[0_18px_60px_rgba(0,0,0,0.65)]">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <h2 className="text-lg font-semibold">Configuração de fees</h2>
-              <p className="text-[11px] text-white/65">
-                Padrão plataforma:{" "}
-                {data?.platformFees
-                  ? `${(data.platformFees.feeBps / 100).toFixed(2)}% + ${(data.platformFees.feeFixedCents / 100).toFixed(2)} €`
-                  : "—"}
-              </p>
-            </div>
+      <div className="grid gap-4 md:grid-cols-2">
+        <div className="rounded-3xl border border-white/10 bg-white/5 backdrop-blur-xl p-4 space-y-3 shadow-[0_18px_60px_rgba(0,0,0,0.65)]">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold">Estado Stripe</h2>
             <button
               type="button"
-              onClick={handleSaveFees}
-              disabled={savingFees}
-              className="rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-4 py-2 text-sm font-semibold text-black shadow disabled:opacity-60"
+              onClick={() => mutate()}
+              className="text-[11px] rounded-full border border-white/20 px-2 py-1 text-white/80 hover:bg-white/10"
             >
-              {savingFees ? "A guardar..." : "Guardar fees"}
+              Atualizar estado
             </button>
           </div>
-          <div className="grid gap-3 md:grid-cols-3">
-            <div className="space-y-1">
-              <label className="text-sm font-medium">Modo</label>
-              <select
-                value={feeMode}
-                onChange={(e) => setFeeMode(e.target.value as "ADDED" | "INCLUDED")}
-                className="w-full rounded-xl border border-white/15 bg-black/50 px-3 py-2 text-sm text-white outline-none focus:border-white/30"
-              >
-                <option value="ADDED">Taxa adicionada em cima</option>
-                <option value="INCLUDED">Taxa incluída no preço</option>
-              </select>
-              <p className="text-[11px] text-white/60">Define se o cliente vê a taxa separada.</p>
-            </div>
-            <div className="space-y-1">
-              <label className="text-sm font-medium">Fee % (bps)</label>
-              <input
-                type="number"
-                min={0}
-                max={5000}
-                value={feeBps}
-                onChange={(e) => setFeeBps(e.target.value)}
-                className="w-full rounded-xl border border-white/15 bg-black/50 px-3 py-2 text-sm text-white outline-none focus:border-white/30"
-              />
-              <p className="text-[11px] text-white/60">Basis points (200 = 2%).</p>
-            </div>
-            <div className="space-y-1">
-              <label className="text-sm font-medium">Fee fixa (cêntimos)</label>
-              <input
-                type="number"
-                min={0}
-                max={5000}
-                value={feeFixed}
-                onChange={(e) => setFeeFixed(e.target.value)}
-                className="w-full rounded-xl border border-white/15 bg-black/50 px-3 py-2 text-sm text-white outline-none focus:border-white/30"
-              />
-              <p className="text-[11px] text-white/60">Valor fixo retido pela ORYA.</p>
-            </div>
+          <div className="rounded-2xl border border-white/10 bg-black/40 p-3 text-sm space-y-1">
+            <p className="text-white/60">Conta</p>
+            <p className="font-semibold">
+              {organizer.stripeAccountId
+                ? `Stripe ${organizer.stripeAccountId.slice(-6)}`
+                : "Por ligar"}
+            </p>
+            <p className="text-[12px] text-white/60">Charges: {organizer.stripeChargesEnabled ? "Ativo" : "Inativo"}</p>
+            <p className="text-[12px] text-white/60">Payouts: {organizer.stripePayoutsEnabled ? "Ativo" : "Inativo"}</p>
+            <p className="text-[12px] text-white/60">Modo de fees: {feeText}</p>
           </div>
-          {feesMessage && <p className="text-[11px] text-white/80">{feesMessage}</p>}
+          <div className="space-y-2">
+            <button
+              type="button"
+              disabled={ctaLoading}
+              onClick={handleConnect}
+              className="w-full inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-[#10B981] to-[#34D399] px-4 py-2 text-sm font-semibold text-black shadow disabled:opacity-60"
+            >
+              {ctaLoading ? "A gerar link..." : "Ligar / continuar onboarding"}
+            </button>
+            {error && <p className="text-xs text-red-300">{error}</p>}
+            <p className="text-[11px] text-white/60">
+              O Stripe vai abrir numa nova janela para completares o KYC. Se já ligaste e faltou algo, usa o botão para
+              voltar ao onboarding.
+            </p>
+          </div>
         </div>
-      </section>
-    </main>
+
+        <div className="rounded-3xl border border-white/10 bg-black/30 backdrop-blur-xl p-4 space-y-3 shadow-[0_18px_60px_rgba(0,0,0,0.65)]">
+          <h2 className="text-lg font-semibold text-white">Resumo</h2>
+          <div className="rounded-2xl border border-white/12 bg-white/5 p-3 text-sm text-white/75 space-y-2">
+            <p>Organizer: {organizer.displayName || `#${organizer.id}`}</p>
+            <p>Estado de aprovação: {organizer.status}</p>
+            <p>Stripe: {stripeStatusLabel}</p>
+            <p>Recebes diretamente na tua conta Stripe; a ORYA retém a fee configurada (podes absorver ou passar ao cliente).</p>
+          </div>
+          {summaryData && (
+            <div className="grid gap-2 rounded-2xl border border-white/10 bg-white/5 p-3 text-xs text-white/80 sm:grid-cols-2">
+              <div>
+                <p className="text-white/60">Bilhetes vendidos</p>
+                <p className="text-base font-semibold text-white">{summaryData.ticketsSold}</p>
+              </div>
+              <div>
+                <p className="text-white/60">Receita bruta</p>
+                <p className="text-base font-semibold text-white">{formatEuro(centsToEuro(summaryData.revenueCents))}</p>
+              </div>
+              <div>
+                <p className="text-white/60">Total pago</p>
+                <p className="text-base font-semibold text-white">{formatEuro(centsToEuro(summaryData.grossCents))}</p>
+              </div>
+              <div>
+                <p className="text-white/60">Payout estimado</p>
+                <p className="text-base font-semibold text-white">
+                  {formatEuro(centsToEuro(summaryData.estimatedPayoutCents))}
+                </p>
+              </div>
+            </div>
+          )}
+          <div className="text-[11px] text-white/60">
+            Precisas de ajuda? Contacta a equipa ORYA para rever o onboarding ou ajustar a comissão do teu clube.
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-3xl border border-white/10 bg-white/5 backdrop-blur-xl p-4 space-y-4 shadow-[0_18px_60px_rgba(0,0,0,0.65)]">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold">Configuração de fees</h2>
+            <p className="text-[11px] text-white/65">
+              Padrão plataforma:{" "}
+              {data?.platformFees
+                ? `${(data.platformFees.feeBps / 100).toFixed(2)}% + ${(data.platformFees.feeFixedCents / 100).toFixed(2)} €`
+                : "—"}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={handleSaveFees}
+            disabled={savingFees}
+            className="rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-4 py-2 text-sm font-semibold text-black shadow disabled:opacity-60"
+          >
+            {savingFees ? "A guardar..." : "Guardar fees"}
+          </button>
+        </div>
+        <div className="grid gap-3 md:grid-cols-3">
+          <div className="space-y-1">
+            <label className="text-sm font-medium">Modo</label>
+            <select
+              value={feeMode}
+              onChange={(e) => setFeeMode(e.target.value as "ADDED" | "INCLUDED")}
+              className="w-full rounded-xl border border-white/15 bg-black/50 px-3 py-2 text-sm text-white outline-none focus:border-white/30"
+            >
+              <option value="ADDED">Taxa adicionada em cima</option>
+              <option value="INCLUDED">Taxa incluída no preço</option>
+            </select>
+            <p className="text-[11px] text-white/60">Define se o cliente vê a taxa separada.</p>
+          </div>
+          <div className="space-y-1">
+            <label className="text-sm font-medium">Fee % (bps)</label>
+            <input
+              type="number"
+              min={0}
+              max={5000}
+              value={feeBps}
+              onChange={(e) => setFeeBps(e.target.value)}
+              className="w-full rounded-xl border border-white/15 bg-black/50 px-3 py-2 text-sm text-white outline-none focus:border-white/30"
+            />
+            <p className="text-[11px] text-white/60">Basis points (200 = 2%).</p>
+          </div>
+          <div className="space-y-1">
+            <label className="text-sm font-medium">Fee fixa (cêntimos)</label>
+            <input
+              type="number"
+              min={0}
+              max={5000}
+              value={feeFixed}
+              onChange={(e) => setFeeFixed(e.target.value)}
+              className="w-full rounded-xl border border-white/15 bg-black/50 px-3 py-2 text-sm text-white outline-none focus:border-white/30"
+            />
+            <p className="text-[11px] text-white/60">Valor fixo retido pela ORYA.</p>
+          </div>
+        </div>
+        {feesMessage && <p className="text-[11px] text-white/80">{feesMessage}</p>}
+      </div>
+    </section>
   );
 }

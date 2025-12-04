@@ -42,7 +42,7 @@ export default function EditProfilePage() {
   useEffect(() => {
     if (!isLoading && !user) {
       // Se alguém chegar aqui sem sessão, mandamos para login
-      openModal({ mode: "login", redirectTo: "/me/edit" });
+      openModal({ mode: "login", redirectTo: "/me/edit", showGoogle: true });
       router.push("/");
       return;
     }

@@ -4,10 +4,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
+import { parsePhoneNumberFromString } from "libphonenumber-js";
 
 interface SaveBasicBody {
   fullName?: string;
   username?: string;
+  contactPhone?: string | null;
 }
 
 export async function POST(req: NextRequest) {
@@ -39,9 +41,27 @@ export async function POST(req: NextRequest) {
 
     const rawFullName = body.fullName ?? "";
     const rawUsername = body.username ?? "";
+    const rawPhone = body.contactPhone;
 
     const fullName = rawFullName.trim();
     const username = rawUsername.trim();
+
+    let normalizedPhone: string | null | undefined = undefined;
+    if (rawPhone !== undefined) {
+      if (rawPhone === null || rawPhone === "") {
+        normalizedPhone = null;
+      } else if (typeof rawPhone === "string") {
+        const parsed = parsePhoneNumberFromString(rawPhone.trim(), "PT");
+        if (parsed && parsed.isPossible()) {
+          normalizedPhone = parsed.number; // E.164
+        } else {
+          return NextResponse.json(
+            { ok: false, error: "Telefone inválido." },
+            { status: 400 },
+          );
+        }
+      }
+    }
 
     const usernameValid = /^[A-Za-z]{1,16}$/.test(username);
 
@@ -82,6 +102,7 @@ export async function POST(req: NextRequest) {
         fullName,
         username: usernameNormalized,
         onboardingDone: true,
+        ...(normalizedPhone !== undefined ? { contactPhone: normalizedPhone } : {}),
       },
       create: {
         id: userId,
@@ -89,6 +110,7 @@ export async function POST(req: NextRequest) {
         username: usernameNormalized,
         onboardingDone: true,
         roles: ["user"],
+        contactPhone: normalizedPhone ?? null,
       },
     });
 

@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
+import type { User } from "@supabase/supabase-js";
 
 type SupabaseUserMetadata = {
   full_name?: string;
@@ -13,6 +14,7 @@ type ApiAuthMeResponse = {
   user: {
     id: string;
     email: string | null;
+    emailConfirmed: boolean;
   } | null;
   profile: {
     id: string;
@@ -30,6 +32,7 @@ type ApiAuthMeResponse = {
     allowEventReminders: boolean;
     allowFriendRequests: boolean;
   } | null;
+  needsEmailConfirmation?: boolean;
 };
 
 export async function GET() {
@@ -41,14 +44,19 @@ export async function GET() {
       error,
     } = await supabase.auth.getUser();
 
-    if (error) {
-      console.error("auth.getUser error:", error);
-      return NextResponse.json<ApiAuthMeResponse>({ user: null, profile: null }, { status: 200 });
+    if (error || !user) {
+      // Sessão ausente ou inválida → 401 limpo (evita spam de logs)
+      return NextResponse.json<ApiAuthMeResponse>(
+        { user: null, profile: null },
+        { status: 401 },
+      );
     }
 
-    if (!user) {
-      return NextResponse.json<ApiAuthMeResponse>({ user: null, profile: null }, { status: 200 });
-    }
+    const supaUser = user as User;
+    const emailConfirmed =
+      Boolean(supaUser.email_confirmed_at) ||
+      Boolean((supaUser as { confirmed_at?: string | null })?.confirmed_at) ||
+      false;
 
     const userMetadata = (user.user_metadata ?? {}) as SupabaseUserMetadata;
 
@@ -92,15 +100,32 @@ export async function GET() {
       allowFriendRequests: profile.allowFriendRequests,
     };
 
+    // Se email não está confirmado, força o frontend a continuar em modo "verify"
+    if (!emailConfirmed) {
+      return NextResponse.json<ApiAuthMeResponse>(
+        {
+          user: {
+            id: user.id,
+            email: user.email ?? null,
+            emailConfirmed,
+          },
+          profile: null,
+          needsEmailConfirmation: true,
+        },
+        { status: 401 },
+      );
+    }
+
     return NextResponse.json<ApiAuthMeResponse>(
       {
-       user: {
-  id: user.id,
-  email: user.email ?? null,
-},
+        user: {
+          id: user.id,
+          email: user.email ?? null,
+          emailConfirmed,
+        },
         profile: safeProfile,
       },
-      { status: 200 }
+      { status: 200 },
     );
   } catch (err) {
     console.error("GET /api/auth/me error:", err);

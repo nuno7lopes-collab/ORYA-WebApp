@@ -25,6 +25,18 @@ body {
     "SF Pro Display", -apple-system, sans-serif;
 }
 
+/* Remover padding top do main quando a navbar pública está escondida (organizador) */
+body[data-nav-hidden="true"] .main-shell {
+  padding-top: 0 !important;
+  padding-bottom: 0;
+}
+
+/* Padding default do main quando a navbar está visível (páginas públicas) */
+body:not([data-nav-hidden="true"]) .main-shell {
+  padding-top: 4rem;
+  padding-bottom: 120px;
+}
+
 /* ============ ORYA LOGO ============ */
 
 /* Glow subtil à volta do anel */

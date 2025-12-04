@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { redirect } from "next/navigation";
 import Link from "next/link";
+import { ReactNode } from "react";
 import { AdminLayout } from "./components/AdminLayout";
 
 export const dynamic = "force-dynamic";
@@ -32,6 +33,83 @@ function formatDateTime(value: Date | string | null | undefined) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(d);
+}
+
+type BadgeTone = "neutral" | "positive" | "warning" | "danger";
+type StatTone = "magenta" | "cyan" | "emerald" | "indigo";
+
+function Badge({ children, tone = "neutral" }: { children: ReactNode; tone?: BadgeTone }) {
+  const tones: Record<BadgeTone, string> = {
+    neutral: "border-white/15 bg-white/10 text-white/80",
+    positive: "border-emerald-300/50 bg-emerald-500/10 text-emerald-100",
+    warning: "border-amber-300/60 bg-amber-500/15 text-amber-100",
+    danger: "border-rose-300/60 bg-rose-500/15 text-rose-100",
+  };
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[11px] ${tones[tone]}`}>
+      {children}
+    </span>
+  );
+}
+
+function StatCard({
+  label,
+  value,
+  helper,
+  tone = "magenta",
+}: {
+  label: string;
+  value: ReactNode;
+  helper?: string;
+  tone?: StatTone;
+}) {
+  const accents: Record<StatTone, string> = {
+    magenta: "from-[#FF00C8]/16 via-[#8b5cf6]/20 to-[#1b1f32]/60",
+    cyan: "from-[#6BFFFF]/20 via-[#1fb6ff]/18 to-[#0e1729]/70",
+    emerald: "from-emerald-400/14 via-emerald-500/12 to-[#0e1f1a]/80",
+    indigo: "from-indigo-400/14 via-indigo-500/12 to-[#0e1226]/80",
+  };
+
+  return (
+    <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-black/70 p-4 shadow-[0_12px_40px_rgba(0,0,0,0.35)]">
+      <div className={`pointer-events-none absolute inset-0 bg-gradient-to-br ${accents[tone]}`} aria-hidden />
+      <div className="relative space-y-1">
+        <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">{label}</p>
+        <div className="flex items-end gap-2">
+          <p className="text-3xl font-semibold leading-tight">{value}</p>
+        </div>
+        {helper && <p className="text-[11px] text-white/60">{helper}</p>}
+      </div>
+    </div>
+  );
+}
+
+function SectionCard({
+  title,
+  action,
+  children,
+}: {
+  title: string;
+  action?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <div className="rounded-2xl border border-white/12 bg-black/70 p-5 shadow-[0_12px_40px_rgba(0,0,0,0.35)]">
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <h2 className="text-sm font-semibold text-white/90">{title}</h2>
+        {action}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function toneForStatus(status: string | null | undefined): BadgeTone {
+  const normalized = (status || "").toUpperCase();
+  if (["PUBLISHED", "ACTIVE", "SUCCEEDED", "CONFIRMED"].includes(normalized)) return "positive";
+  if (["PENDING", "DRAFT", "PROCESSING"].includes(normalized)) return "warning";
+  if (["CANCELLED", "FAILED", "SUSPENDED"].includes(normalized)) return "danger";
+  return "neutral";
 }
 
 export default async function AdminDashboardPage() {
@@ -121,162 +199,189 @@ export default async function AdminDashboardPage() {
   const totalRevenueCents = revenueAgg._sum.pricePaid ?? 0;
 
   return (
-    <AdminLayout title="Admin ORYA – visão geral da plataforma">
+    <AdminLayout
+      title="Admin ORYA – visão geral da plataforma"
+      subtitle="Monitoriza utilizadores, organizadores, eventos, bilhetes e pagamentos num só ecrã."
+    >
       <section className="space-y-8">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
-            Visão geral
-          </h1>
-          <p className="mt-1 max-w-xl text-sm text-white/70">
-            Aqui consegues ver o estado global da ORYA: utilizadores, organizadores,
-            eventos, bilhetes e o volume total processado.
-          </p>
-          <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
+        <div className="space-y-3">
+          <div className="space-y-1">
+            <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
+              Painel geral
+            </h1>
+            <p className="max-w-2xl text-sm text-white/70">
+              Estado global da ORYA e atalhos para as áreas críticas. Usa os links rápidos abaixo para abrir listas detalhadas.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2 text-[11px]">
             <Link
               href="/admin/organizadores"
-              className="inline-flex items-center gap-1 rounded-full border border-white/20 bg-white/5 px-3 py-1.5 text-white/80 hover:bg-white/10"
+              className="inline-flex items-center gap-1 rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-white/80 transition hover:border-white/25 hover:bg-white/10"
             >
               Gerir pedidos de organizador
             </Link>
             <Link
               href="/admin/eventos"
-              className="inline-flex items-center gap-1 rounded-full border border-white/20 bg-white/5 px-3 py-1.5 text-white/80 hover:bg-white/10"
+              className="inline-flex items-center gap-1 rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-white/80 transition hover:border-white/25 hover:bg-white/10"
             >
               Ver eventos
             </Link>
             <Link
               href="/admin/payments"
-              className="inline-flex items-center gap-1 rounded-full border border-white/20 bg-white/5 px-3 py-1.5 text-white/80 hover:bg-white/10"
+              className="inline-flex items-center gap-1 rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-white/80 transition hover:border-white/25 hover:bg-white/10"
             >
               Pagamentos / intents
             </Link>
             <Link
               href="/admin/tickets"
-              className="inline-flex items-center gap-1 rounded-full border border-white/20 bg-white/5 px-3 py-1.5 text-white/80 hover:bg-white/10"
+              className="inline-flex items-center gap-1 rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-white/80 transition hover:border-white/25 hover:bg-white/10"
             >
               Auditoria de bilhetes
             </Link>
             <Link
               href="/admin/settings"
-              className="inline-flex items-center gap-1 rounded-full border border-white/20 bg-white/5 px-3 py-1.5 text-white/80 hover:bg-white/10"
+              className="inline-flex items-center gap-1 rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-white/80 transition hover:border-white/25 hover:bg-white/10"
             >
               Configurações
             </Link>
           </div>
         </div>
 
-        {/* KPI cards */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <div className="rounded-2xl border border-white/12 bg-black/70 px-4 py-3">
-            <p className="text-[11px] uppercase tracking-[0.16em] text-white/55">
-              Utilizadores
-            </p>
-            <p className="mt-2 text-2xl font-semibold">{usersCount}</p>
-            <p className="mt-1 text-[11px] text-white/55">
-              Contas com perfil criado.
-            </p>
-          </div>
-
-          <div className="rounded-2xl border border-white/12 bg-black/70 px-4 py-3">
-            <p className="text-[11px] uppercase tracking-[0.16em] text-white/55">
-              Organizadores
-            </p>
-            <p className="mt-2 text-2xl font-semibold">{organizersCount}</p>
-            <p className="mt-1 text-[11px] text-white/55">
-              Entidades a criar eventos pagos.
-            </p>
-          </div>
-
-          <div className="rounded-2xl border border-white/12 bg-black/70 px-4 py-3">
-            <p className="text-[11px] uppercase tracking-[0.16em] text-white/55">
-              Eventos
-            </p>
-            <p className="mt-2 text-2xl font-semibold">{eventsCount}</p>
-            <p className="mt-1 text-[11px] text-white/55">
-              Total de eventos registados.
-            </p>
-          </div>
-
-          <div className="rounded-2xl border border-white/12 bg-black/70 px-4 py-3">
-            <p className="text-[11px] uppercase tracking-[0.16em] text-white/55">
-              Volume total
-            </p>
-            <p className="mt-2 text-xl font-semibold">
-              {formatCurrencyFromCents(totalRevenueCents)}
-            </p>
-            <p className="mt-1 text-[11px] text-white/55">
-              Soma dos pagamentos processados.
-            </p>
-          </div>
+        <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-5">
+          <StatCard
+            label="Utilizadores"
+            value={usersCount}
+            helper="Contas com perfil criado."
+            tone="magenta"
+          />
+          <StatCard
+            label="Organizadores"
+            value={organizersCount}
+            helper="Entidades a criar eventos pagos."
+            tone="emerald"
+          />
+          <StatCard
+            label="Eventos"
+            value={eventsCount}
+            helper="Total de eventos registados."
+            tone="indigo"
+          />
+          <StatCard
+            label="Bilhetes"
+            value={ticketsCount}
+            helper="Total de bilhetes emitidos."
+            tone="indigo"
+          />
+          <StatCard
+            label="Volume total"
+            value={formatCurrencyFromCents(totalRevenueCents)}
+            helper="Soma dos pagamentos processados."
+            tone="cyan"
+          />
         </div>
 
         <div className="grid gap-6 lg:grid-cols-2">
-          {/* Últimos eventos criados */}
-          <div className="rounded-2xl border border-white/12 bg-black/70 p-4">
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-white/85">
-                Últimos eventos criados
-              </h2>
-            </div>
+          <SectionCard
+            title="Últimos eventos criados"
+            action={
+              <Link href="/admin/eventos" className="text-[12px] text-white/70 hover:text-white">
+                Ver todos
+              </Link>
+            }
+          >
             {recentEvents.length === 0 ? (
-              <p className="text-[11px] text-white/60">
-                Ainda não há eventos registados.
-              </p>
+              <p className="text-[12px] text-white/60">Ainda não há eventos registados.</p>
             ) : (
-              <ul className="space-y-2 text-[11px]">
+              <div className="divide-y divide-white/5">
                 {recentEvents.map((ev) => (
-                  <li
-                    key={ev.id}
-                    className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 px-3 py-2"
-                  >
-                    <div className="flex flex-col gap-0.5">
-                      <span className="text-white/90">{ev.title}</span>
-                      <span className="text-white/55">{formatDateTime(ev.startsAt)}</span>
+                  <div key={ev.id} className="flex flex-col gap-1 py-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="space-y-0.5">
+                      <p className="text-[13px] font-medium text-white/90">{ev.title}</p>
+                      <p className="text-[12px] text-white/55">{formatDateTime(ev.startsAt)}</p>
                     </div>
-                    <span className="text-[10px] uppercase tracking-[0.16em] text-white/50">
-                      {ev.status}
-                    </span>
-                  </li>
+                    <Badge tone={toneForStatus(ev.status)}>{ev.status ?? "—"}</Badge>
+                  </div>
                 ))}
-              </ul>
+              </div>
             )}
-          </div>
+          </SectionCard>
 
-          {/* Últimos bilhetes vendidos */}
-          <div className="rounded-2xl border border-white/12 bg-black/70 p-4">
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-white/85">
-                Últimos bilhetes vendidos
-              </h2>
-            </div>
+          <SectionCard
+            title="Últimos bilhetes vendidos"
+            action={
+              <Link href="/admin/tickets" className="text-[12px] text-white/70 hover:text-white">
+                Abrir auditoria
+              </Link>
+            }
+          >
             {recentTickets.length === 0 ? (
-              <p className="text-[11px] text-white/60">
-                Ainda não há bilhetes registados.
-              </p>
+              <p className="text-[12px] text-white/60">Ainda não há bilhetes registados.</p>
             ) : (
-              <ul className="space-y-2 text-[11px]">
+              <div className="divide-y divide-white/5">
                 {recentTickets.map((t) => (
-                  <li
-                    key={t.id}
-                    className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 px-3 py-2"
-                  >
-                    <div className="flex flex-col gap-0.5">
-                      <span className="text-white/90">
+                  <div key={t.id} className="flex flex-col gap-1 py-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="space-y-0.5">
+                      <p className="text-[13px] font-medium text-white/90">
                         {t.event?.title ?? "Evento ORYA"}
-                      </span>
-                      <span className="text-white/55">
+                      </p>
+                      <p className="text-[12px] text-white/55">
                         Vendido em {formatDateTime(t.purchasedAt)}
-                      </span>
+                      </p>
                     </div>
-                    <span className="text-[11px] font-medium text-white/80">
+                    <p className="text-sm font-semibold text-white/90">
                       {formatCurrencyFromCents(t.pricePaid)}
-                    </span>
-                  </li>
+                    </p>
+                  </div>
                 ))}
-              </ul>
+              </div>
             )}
-          </div>
+          </SectionCard>
         </div>
+
+        <SectionCard
+          title="Pagamentos / intents recentes"
+          action={
+            <Link href="/admin/payments" className="text-[12px] text-white/70 hover:text-white">
+              Ver pagamentos
+            </Link>
+          }
+        >
+          {recentPaymentEvents.length === 0 ? (
+            <p className="text-[12px] text-white/60">Sem eventos de pagamento registados.</p>
+          ) : (
+            <div className="divide-y divide-white/5 text-[13px]">
+              {recentPaymentEvents.map((p) => (
+                <div
+                  key={p.id}
+                  className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div className="flex flex-1 items-center gap-3">
+                    <Badge tone={toneForStatus(p.status)}>{p.status ?? "—"}</Badge>
+                    <div className="space-y-0.5">
+                      <p className="font-medium text-white/90">
+                        {p.stripePaymentIntentId ?? "Intent"}
+                      </p>
+                      <p className="text-[12px] text-white/55">
+                        Atualizado {formatDateTime(p.updatedAt)}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm font-semibold text-white/90">
+                      {formatCurrencyFromCents(p.amountCents ?? 0)}
+                    </p>
+                    <p className="text-[11px] text-white/55">
+                      Fee plataforma {formatCurrencyFromCents(p.platformFeeCents ?? 0)}
+                    </p>
+                  </div>
+                  {p.errorMessage && (
+                    <p className="text-[11px] text-rose-200">Erro: {p.errorMessage}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </SectionCard>
       </section>
     </AdminLayout>
   );

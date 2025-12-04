@@ -83,7 +83,24 @@ export default function MePage() {
           return;
         }
 
-        setTickets(data.tickets ?? []);
+        const mappedTickets =
+          data.tickets?.map((t) => ({
+            id: t.id,
+            qrToken: t.qrToken ?? "",
+            eventId: t.event?.id ?? 0,
+            eventSlug: t.event?.slug ?? "",
+            eventTitle: t.event?.title ?? "Evento",
+            eventStartDate: t.event?.startDate ?? t.purchasedAt,
+            eventLocationName: t.event?.locationName ?? null,
+            eventCoverImageUrl: t.event?.coverImageUrl ?? null,
+            ticketName: t.ticket?.name ?? "Bilhete",
+            quantity: t.quantity ?? 1,
+            pricePaid: t.pricePaid ?? 0,
+            currency: t.currency ?? "EUR",
+            createdAt: t.purchasedAt ?? new Date().toISOString(),
+          })) ?? [];
+
+        setTickets(mappedTickets);
       } catch (err) {
         console.error("Erro inesperado em /api/me/tickets:", err);
         setTicketsError("Erro inesperado ao carregar os teus bilhetes.");
