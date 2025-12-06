@@ -201,7 +201,7 @@ export default function NewOrganizerEventPage() {
   const handleRequireLogin = () => {
     openModal({
       mode: "login",
-      redirectTo: "/organizador/eventos/novo",
+      redirectTo: "/organizador/(dashboard)/eventos/novo",
     });
   };
 

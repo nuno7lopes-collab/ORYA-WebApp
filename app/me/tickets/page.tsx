@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
+import { useUser } from "@/app/hooks/useUser";
 
 type ResaleMode = "ALWAYS" | "AFTER_SOLD_OUT" | "DISABLED";
 
@@ -78,6 +79,7 @@ type UITicketGroup = {
 };
 
 export default function MyTicketsPage() {
+  const { profile } = useUser();
   const router = useRouter();
   const { openModal } = useAuthModal();
 
@@ -118,6 +120,7 @@ export default function MyTicketsPage() {
   const [toasts, setToasts] = useState<
     { id: number; type: "error" | "success"; message: string }[]
   >([]);
+  const isAdmin = Array.isArray(profile?.roles) && profile.roles.includes("admin");
 
   function pushToast(message: string, type: "error" | "success" = "error") {
     const id = Date.now() + Math.random();
@@ -1003,37 +1006,41 @@ export default function MyTicketsPage() {
                                         Preço pago: {formatPrice(t.priceEur, t.currency)}
                                       </p>
                                       <div className="flex flex-wrap gap-2">
-                                        <button
-                                          type="button"
-                                          onClick={() =>
-                                            openTransferModalForTicket(t.id, ticketLabel)
-                                          }
-                                          className="inline-flex items-center gap-1 rounded-full border border-white/25 px-3 py-1 text-white/80 hover:bg-white/10 transition-colors"
-                                        >
-                                          Enviar a amigo
-                                        </button>
-                                        {isListed ? (
-                                          <button
-                                            type="button"
-                                            onClick={() => handleCancelResale(t.resaleId as string, t.id)}
-                                            className="inline-flex items-center gap-1 rounded-full border border-red-400/60 px-3 py-1 text-red-100 hover:bg-red-500/15 transition-colors"
-                                          >
-                                            Cancelar venda
-                                          </button>
-                                        ) : (
-                                          <button
-                                            type="button"
-                                            onClick={() => openResaleModalForTicket(t.id, ticketLabel)}
-                                            disabled={!resaleAllowed}
-                                            title={!resaleAllowed ? resaleDisabledReason : undefined}
-                                            className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 transition-colors ${
-                                              resaleAllowed
-                                                ? "border-[#6BFFFF]/70 text-[#6BFFFF] hover:bg-[#6BFFFF]/10"
-                                                : "border-white/15 text-white/40 cursor-not-allowed"
-                                            }`}
-                                          >
-                                            Pôr à venda
-                                          </button>
+                                        {isAdmin && (
+                                          <>
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                openTransferModalForTicket(t.id, ticketLabel)
+                                              }
+                                              className="inline-flex items-center gap-1 rounded-full border border-white/25 px-3 py-1 text-white/80 hover:bg-white/10 transition-colors"
+                                            >
+                                              Enviar a amigo
+                                            </button>
+                                            {isListed ? (
+                                              <button
+                                                type="button"
+                                                onClick={() => handleCancelResale(t.resaleId as string, t.id)}
+                                                className="inline-flex items-center gap-1 rounded-full border border-red-400/60 px-3 py-1 text-red-100 hover:bg-red-500/15 transition-colors"
+                                              >
+                                                Cancelar venda
+                                              </button>
+                                            ) : (
+                                              <button
+                                                type="button"
+                                                onClick={() => openResaleModalForTicket(t.id, ticketLabel)}
+                                                disabled={!resaleAllowed}
+                                                title={!resaleAllowed ? resaleDisabledReason : undefined}
+                                                className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 transition-colors ${
+                                                  resaleAllowed
+                                                    ? "border-[#6BFFFF]/70 text-[#6BFFFF] hover:bg-[#6BFFFF]/10"
+                                                    : "border-white/15 text-white/40 cursor-not-allowed"
+                                                }`}
+                                              >
+                                                Pôr à venda
+                                              </button>
+                                            )}
+                                          </>
                                         )}
                                         <button
                                           type="button"

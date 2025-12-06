@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
+import { getActiveOrganizerForUser } from "@/lib/organizerContext";
 import { TicketStatus } from "@prisma/client";
 
 export async function GET(req: NextRequest) {
@@ -27,9 +28,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "INVALID_EVENT_ID" }, { status: 400 });
     }
 
-    const organizer = await prisma.organizer.findFirst({
-      where: { userId: user.id, status: "ACTIVE" },
-    });
+    const { organizer } = await getActiveOrganizerForUser(user.id);
 
     if (!organizer) {
       return NextResponse.json({ ok: false, error: "NOT_ORGANIZER" }, { status: 403 });

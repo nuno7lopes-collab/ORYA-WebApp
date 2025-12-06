@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useState, FormEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useUser } from "@/app/hooks/useUser";
+import { sanitizeUsername, validateUsername, USERNAME_RULES_HINT } from "@/lib/username";
 
 function OnboardingPerfilContent() {
   const router = useRouter();
@@ -57,9 +58,6 @@ function ProfileForm({
   initialUsername,
   onSaved,
 }: ProfileFormProps) {
-  const sanitizeUsername = (value: string) =>
-    value.replace(/[^A-Za-z]/g, "").slice(0, 16);
-
   const [fullName, setFullName] = useState(initialFullName);
   const [username, setUsername] = useState(sanitizeUsername(initialUsername));
   const [usernameHint, setUsernameHint] = useState<string | null>(null);
@@ -70,30 +68,38 @@ function ProfileForm({
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   async function checkUsernameAvailability(currentUsername: string) {
-    const trimmed = sanitizeUsername(currentUsername).toLowerCase();
+    const trimmed = sanitizeUsername(currentUsername);
     if (!trimmed) {
+      setUsernameHint(USERNAME_RULES_HINT);
       setUsernameStatus("idle");
-      return;
+      return false;
     }
 
+    const validation = validateUsername(trimmed);
+    if (!validation.valid) {
+      setUsernameHint(validation.error);
+      setUsernameStatus("error");
+      return false;
+    }
+
+    setUsernameHint(null);
     setUsernameStatus("checking");
     try {
-      const res = await fetch("/api/profiles/check-username", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username: trimmed }),
-      });
+      const res = await fetch(`/api/username/check?username=${encodeURIComponent(trimmed)}`);
 
       if (!res.ok) {
         setUsernameStatus("error");
-        return;
+        return false;
       }
 
       const data = (await res.json()) as { available: boolean };
-      setUsernameStatus(data.available ? "available" : "taken");
+      const available = data.available;
+      setUsernameStatus(available ? "available" : "taken");
+      return available;
     } catch (e) {
       console.error("Erro a verificar username:", e);
       setUsernameStatus("error");
+      return false;
     }
   }
 
@@ -102,20 +108,20 @@ function ProfileForm({
     setError(null);
 
     const trimmedName = fullName.trim();
-    const trimmedUsername = sanitizeUsername(username).toLowerCase();
+    const trimmedUsername = sanitizeUsername(username);
+    const validation = validateUsername(trimmedUsername);
 
-    if (!trimmedName || !trimmedUsername) {
-      setError("Preenche o nome e um username só com letras (máx. 16).");
+    if (!trimmedName || !validation.valid) {
+      setError(validation.valid ? "Preenche o nome e o username." : validation.error);
       return;
     }
 
     setIsSubmitting(true);
 
-    // Garantir que o username está disponível antes de gravar
-    await checkUsernameAvailability(trimmedUsername);
-    if (usernameStatus === "taken") {
+    const available = await checkUsernameAvailability(trimmedUsername);
+    if (!available) {
       setIsSubmitting(false);
-      setError("Este username já está a ser usado.");
+      setError("Este @ já está a ser usado — escolhe outro.");
       return;
     }
 
@@ -123,7 +129,7 @@ function ProfileForm({
       const res = await fetch("/api/profiles/save-basic", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fullName: trimmedName, username: trimmedUsername }),
+        body: JSON.stringify({ fullName: trimmedName, username: validation.normalized }),
       });
 
       if (!res.ok) {
@@ -181,24 +187,20 @@ function ProfileForm({
                 id="username"
                 type="text"
                 inputMode="text"
-                pattern="[A-Za-z]{0,16}"
+                pattern="[A-Za-z0-9._]{0,30}"
                 value={username}
                 onChange={(e) => {
                   const raw = e.target.value;
                   const cleaned = sanitizeUsername(raw);
-                  if (raw !== cleaned) {
-                    e.target.value = cleaned;
-                  }
                   setUsername(cleaned);
-                  setUsernameHint(
-                    raw !== cleaned ? "Só letras (A-Z), sem espaços, máximo 16." : null,
-                  );
+                  const validation = validateUsername(cleaned);
+                  setUsernameHint(validation.valid ? null : validation.error);
                   setUsernameStatus("idle");
                 }}
                 onBlur={() => checkUsernameAvailability(username)}
-                maxLength={16}
+                maxLength={30}
                 className="w-full rounded-lg border border-gray-300 pl-7 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black/80"
-                placeholder="teu.nome"
+                placeholder="teu.nome_ou_marca"
               />
             </div>
             <p className="text-xs text-gray-400">

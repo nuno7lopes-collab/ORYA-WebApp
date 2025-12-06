@@ -46,6 +46,7 @@ function AuthModalContent({
   const [otpResending, setOtpResending] = useState(false);
   const [usernameHint, setUsernameHint] = useState<string | null>(null);
 
+  const RESEND_COOLDOWN = 30;
   const isSignupBlocked = signupCooldown > 0;
   const isOnboarding = mode === "onboarding";
 
@@ -53,6 +54,8 @@ function AuthModalContent({
 
   function clearPendingVerification() {
     setOtpCooldown(0);
+    setOtp("");
+    setError(null);
     if (typeof window !== "undefined") {
       try {
         window.localStorage.removeItem("orya_pending_email");
@@ -62,6 +65,18 @@ function AuthModalContent({
         /* ignore */
       }
     }
+  }
+  function hardResetAuthState() {
+    clearPendingVerification();
+    setEmail("");
+    setPassword("");
+    setConfirmPassword("");
+    setOtp("");
+    setLoginOtpSent(false);
+    setLoginOtpSending(false);
+    setOtpResending(false);
+    setError(null);
+    setMode("login");
   }
 
   function isUnconfirmedError(err: unknown) {
@@ -100,9 +115,8 @@ function AuthModalContent({
       const pendingEmail = window.localStorage.getItem("orya_pending_email");
       const pendingStep = window.localStorage.getItem("orya_pending_step");
       const lastOtp = Number(window.localStorage.getItem("orya_otp_last_sent_at") || "0");
-      const cooldownSeconds = 60;
-      const elapsed = lastOtp ? Math.floor((Date.now() - lastOtp) / 1000) : cooldownSeconds;
-      const remaining = Math.max(0, cooldownSeconds - elapsed);
+      const elapsed = lastOtp ? Math.floor((Date.now() - lastOtp) / 1000) : RESEND_COOLDOWN;
+      const remaining = Math.max(0, RESEND_COOLDOWN - elapsed);
       if (pendingEmail && !email) setEmail(pendingEmail);
       if (pendingStep === "verify") {
         setMode("verify");
@@ -117,6 +131,12 @@ function AuthModalContent({
   // limpamos o estado pendente e fechamos o modal para não bloquear o fluxo.
   useEffect(() => {
     if (mode !== "verify") return;
+    if (otpCooldown === 0) {
+      setOtpCooldown(RESEND_COOLDOWN);
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem("orya_otp_last_sent_at", String(Date.now()));
+      }
+    }
     let cancelled = false;
     (async () => {
       try {
@@ -222,13 +242,6 @@ function AuthModalContent({
   async function triggerResendOtp(emailToUse: string) {
     setError(null);
     setOtpResending(true);
-    const cooldownSeconds = 60;
-    setOtpCooldown(cooldownSeconds);
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem("orya_otp_last_sent_at", String(Date.now()));
-      window.localStorage.setItem("orya_pending_email", emailToUse);
-      window.localStorage.setItem("orya_pending_step", "verify");
-    }
 
     try {
       const res = await fetch("/api/auth/resend-otp", {
@@ -242,6 +255,12 @@ function AuthModalContent({
         setOtpCooldown(0);
       } else {
         setLoginOtpSent(true);
+        setOtpCooldown(RESEND_COOLDOWN);
+        if (typeof window !== "undefined") {
+          window.localStorage.setItem("orya_otp_last_sent_at", String(Date.now()));
+          window.localStorage.setItem("orya_pending_email", emailToUse);
+          window.localStorage.setItem("orya_pending_step", "verify");
+        }
       }
     } catch (err) {
       console.error("triggerResendOtp error", err);
@@ -413,13 +432,17 @@ function AuthModalContent({
         window.localStorage.setItem("orya_pending_step", "verify");
         window.localStorage.setItem("orya_otp_last_sent_at", String(Date.now()));
       }
-      setOtpCooldown(60);
+      setOtpCooldown(RESEND_COOLDOWN);
       setEmail(emailToUse);
+      setMode("verify");
     } catch (err) {
       console.warn("[AuthModal] Falhou envio de OTP custom:", err);
+      setError("Não foi possível enviar o código. Tenta novamente dentro de alguns minutos.");
+      setMode("signup");
+      setLoading(false);
+      return;
     }
 
-    setMode("verify");
     setLoading(false);
   }
 
@@ -449,7 +472,7 @@ function AuthModalContent({
     });
 
     if (verifyError) {
-      const message = verifyError.message || "Código inválido ou expirado. Pede novo código.";
+      const message = verifyError.message || "Código inválido ou expirado. Verifica o email ou pede novo código.";
       setError(message);
       setOtpCooldown(0);
       setLoading(false);
@@ -556,6 +579,12 @@ function AuthModalContent({
     (mode === "onboarding" &&
       (!username.replace(/[^A-Za-z]/g, "").trim() ||
         username.replace(/[^A-Za-z]/g, "").length > 16));
+
+  const handleClose = () => {
+    hardResetAuthState();
+    closeModal();
+    router.push(redirectTo ?? "/");
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xl">
@@ -727,7 +756,7 @@ function AuthModalContent({
               value={otp}
               onChange={(e) => setOtp(e.target.value)}
               className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]"
-              placeholder="87612097"
+              placeholder="Insere o código de 6 dígitos"
             />
             <div className="mt-2 flex items-center justify-between text-[12px] text-white/65">
               <span>
@@ -748,6 +777,18 @@ function AuthModalContent({
                 )}
               </span>
               {otpResending && <span className="text-[11px] text-white/50">A enviar…</span>}
+            </div>
+            <div className="mt-2 flex items-center justify-between text-[12px] text-white/65">
+              <button
+                type="button"
+                onClick={() => {
+                  hardResetAuthState();
+                  setMode("login");
+                }}
+                className="text-[#6BFFFF] hover:text-white transition"
+              >
+                Usar outro email
+              </button>
             </div>
           </>
         )}
@@ -889,7 +930,7 @@ function AuthModalContent({
 
           <button
             type="button"
-            onClick={isOnboarding ? undefined : closeModal}
+            onClick={isOnboarding ? undefined : handleClose}
             disabled={isOnboarding}
             className="text-[11px] text-white/50 hover:text-white disabled:opacity-60"
           >

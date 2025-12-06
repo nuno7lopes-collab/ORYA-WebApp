@@ -25,7 +25,7 @@ export function OrganizerSidebar() {
     },
     {
       label: "Criar evento",
-      href: "/organizador/eventos/novo",
+      href: "/organizador/(dashboard)/eventos/novo",
       isActive: pathname.startsWith("/organizador/eventos/novo") || pathname.includes("/organizador/eventos/") && pathname.endsWith("/edit"),
     },
     {
@@ -51,7 +51,7 @@ export function OrganizerSidebar() {
     },
     {
       label: "Staff",
-      href: "/organizador/staff",
+      href: "/organizador/(dashboard)/staff",
       isActive: pathname.startsWith("/organizador/staff"),
     },
     {

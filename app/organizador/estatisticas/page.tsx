@@ -323,7 +323,7 @@ export default function OrganizerStatsPage() {
           </p>
           <div className="mt-4 flex justify-center gap-2 text-[11px]">
             <Link
-              href="/organizador/eventos/novo"
+              href="/organizador/(dashboard)/eventos/novo"
               className="rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-4 py-2 font-semibold text-black shadow-[0_0_20px_rgba(107,255,255,0.7)] hover:scale-[1.02] active:scale-95 transition-transform"
             >
               Criar primeiro evento

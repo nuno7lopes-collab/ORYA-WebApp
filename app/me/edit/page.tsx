@@ -5,6 +5,7 @@ import { useEffect, useState, FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { useUser } from "@/app/hooks/useUser";
 import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
+import { sanitizeUsername, validateUsername, USERNAME_RULES_HINT } from "@/lib/username";
 
 type SaveBasicResponse = {
   ok: boolean;
@@ -18,9 +19,6 @@ type SaveBasicResponse = {
 };
 
 export default function EditProfilePage() {
-  const sanitizeUsername = (value: string) =>
-    value.replace(/[^A-Za-z]/g, "").slice(0, 16);
-
   const router = useRouter();
   const { user, profile, isLoading, mutate } = useUser();
   const { openModal } = useAuthModal();
@@ -54,37 +52,45 @@ export default function EditProfilePage() {
   }, [isLoading, user, profile, openModal, router]);
 
   async function checkUsernameAvailability(value: string) {
-    const trimmed = sanitizeUsername(value).toLowerCase();
+    const trimmed = sanitizeUsername(value);
 
     if (!trimmed) {
       setUsernameAvailable(null);
-      return;
+      setUsernameHint(USERNAME_RULES_HINT);
+      return false;
+    }
+
+    const validation = validateUsername(trimmed);
+    if (!validation.valid) {
+      setUsernameHint(validation.error);
+      setUsernameAvailable(false);
+      return false;
     }
 
     // Se não mudou em relação ao username atual, consideramos disponível
     if (trimmed === (profile?.username ?? "")) {
       setUsernameAvailable(true);
-      return;
+      setUsernameHint(null);
+      return true;
     }
 
     try {
       setCheckingUsername(true);
-      const res = await fetch("/api/profiles/check-username", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username: trimmed }),
-      });
+      const res = await fetch(`/api/username/check?username=${encodeURIComponent(trimmed)}`);
 
       if (!res.ok) {
         setUsernameAvailable(null);
-        return;
+        return false;
       }
 
       const json = (await res.json()) as { available: boolean };
       setUsernameAvailable(json.available);
+      setUsernameHint(json.available ? null : "Esse username já existe.");
+      return json.available;
     } catch (err) {
       console.error("Erro a verificar username:", err);
       setUsernameAvailable(null);
+      return false;
     } finally {
       setCheckingUsername(false);
     }
@@ -96,16 +102,25 @@ export default function EditProfilePage() {
     setErrorMsg(null);
     setSuccessMsg(null);
 
-    const trimmedUsername = sanitizeUsername(username).toLowerCase();
+    const trimmedUsername = sanitizeUsername(username);
+    const validation = validateUsername(trimmedUsername);
 
-    if (!trimmedUsername) {
-      setErrorMsg("Escolhe um username só com letras (máx. 16).");
+    if (!validation.valid) {
+      setErrorMsg(validation.error);
       return;
     }
 
     if (usernameAvailable === false) {
       setErrorMsg("Esse username já está a ser usado.");
       return;
+    }
+
+    if (usernameAvailable === null) {
+      const ok = await checkUsernameAvailability(trimmedUsername);
+      if (!ok) {
+        setErrorMsg("Esse username já está a ser usado.");
+        return;
+      }
     }
 
     try {
@@ -116,7 +131,7 @@ export default function EditProfilePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           fullName: fullName.trim() || null,
-          username: trimmedUsername,
+          username: validation.normalized,
         }),
       });
 
@@ -211,22 +226,18 @@ export default function EditProfilePage() {
               <input
                 type="text"
                 inputMode="text"
-                pattern="[A-Za-z]{0,16}"
+                pattern="[A-Za-z0-9._]{0,30}"
                 value={username}
                 onChange={(e) => {
                   const raw = e.target.value;
                   const cleaned = sanitizeUsername(raw);
-                  if (raw !== cleaned) {
-                    e.target.value = cleaned;
-                  }
                   setUsername(cleaned);
-                  setUsernameHint(
-                    raw !== cleaned ? "Só letras (A-Z), sem espaços, máximo 16." : null,
-                  );
+                  const validation = validateUsername(cleaned);
+                  setUsernameHint(validation.valid ? null : validation.error);
                   setUsernameAvailable(null);
                 }}
                 onBlur={(e) => checkUsernameAvailability(e.target.value)}
-                maxLength={16}
+                maxLength={30}
                 className="bg-black/40 border border-white/15 rounded-lg px-3 py-2 text-white outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]/60 text-sm"
                 placeholder="Escolhe o teu @username"
               />

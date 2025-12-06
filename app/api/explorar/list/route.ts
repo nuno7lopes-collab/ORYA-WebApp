@@ -88,10 +88,10 @@ export async function GET(req: NextRequest) {
     .map((c) => c.trim().toUpperCase())
     .filter(Boolean);
 
-    const where: Prisma.EventWhereInput = {
-      status: "PUBLISHED",
-      isTest: false,
-    };
+  const where: Prisma.EventWhereInput = {
+    status: "PUBLISHED",
+    isTest: false,
+  };
 
   if (typeParam === "event") {
     where.type = "ORGANIZER_EVENT";
@@ -99,9 +99,12 @@ export async function GET(req: NextRequest) {
     where.type = "EXPERIENCE";
   }
 
-  if (cityParam) {
+  const normalizedCity = cityParam?.trim();
+  const applyCityFilter = normalizedCity && normalizedCity.toLowerCase() !== "portugal";
+
+  if (applyCityFilter) {
     where.locationCity = {
-      contains: cityParam,
+      contains: normalizedCity,
       mode: "insensitive",
     };
   }
@@ -209,12 +212,6 @@ export async function GET(req: NextRequest) {
           displayName: true,
         },
       },
-      owner: {
-        select: {
-          username: true,
-          fullName: true,
-        },
-      },
     },
   };
 
@@ -225,6 +222,22 @@ export async function GET(req: NextRequest) {
 
   try {
     const events = await prisma.event.findMany(query);
+
+    const ownerIds = Array.from(
+      new Set(
+        events
+          .map((e) => e.ownerUserId)
+          .filter((v): v is string => typeof v === "string" && v.length > 0),
+      ),
+    );
+    const owners =
+      ownerIds.length > 0
+        ? await prisma.profile.findMany({
+            where: { id: { in: ownerIds } },
+            select: { id: true, username: true, fullName: true },
+          })
+        : [];
+    const ownerMap = new Map(owners.map((o) => [o.id, o]));
 
     let nextCursor: number | null = null;
     if (events.length > take) {
@@ -254,8 +267,9 @@ export async function GET(req: NextRequest) {
         priceFrom = Math.min(...ticketPrices) / 100;
       }
 
-      const hostName = event.organizer?.displayName ?? event.owner?.fullName ?? null;
-      const hostUsername = event.owner?.username ?? null;
+      const ownerProfile = event.ownerUserId ? ownerMap.get(event.ownerUserId) : null;
+      const hostName = event.organizer?.displayName ?? ownerProfile?.fullName ?? null;
+      const hostUsername = ownerProfile?.username ?? null;
 
       const templateToCategory: Record<string, string> = {
         PARTY: "FESTA",
@@ -301,12 +315,14 @@ export async function GET(req: NextRequest) {
     });
   } catch (error) {
     console.error("[api/explorar/list] erro:", error);
-    return NextResponse.json<ExploreResponse>(
+    // Em caso de erro, devolve lista vazia mas não rebenta o frontend
+    return NextResponse.json<ExploreResponse & { error?: string }>(
       {
         items: [],
         pagination: { nextCursor: null, hasMore: false },
+        error: error instanceof Error ? error.message : "Erro desconhecido",
       },
-      { status: 500 },
+      { status: 200 },
     );
   }
 }

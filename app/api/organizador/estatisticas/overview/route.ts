@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { TicketStatus, EventStatus, Prisma } from "@prisma/client";
+import { getActiveOrganizerForUser } from "@/lib/organizerContext";
 
 /**
  * F6 – Estatísticas do organizador (overview)
@@ -58,9 +59,7 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    const organizer = await prisma.organizer.findFirst({
-      where: { userId: user.id, status: "ACTIVE" },
-    });
+    const { organizer } = await getActiveOrganizerForUser(user.id);
 
     if (!organizer) {
       return NextResponse.json(

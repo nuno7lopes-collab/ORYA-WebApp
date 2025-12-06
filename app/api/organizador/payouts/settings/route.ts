@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { FeeMode } from "@prisma/client";
+import { getActiveOrganizerForUser } from "@/lib/organizerContext";
 
 function isValidFeeMode(value: string | null | undefined): value is FeeMode {
   if (!value) return false;
@@ -23,8 +24,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
 
-    const organizer = await prisma.organizer.findFirst({
-      where: { userId: user.id },
+    const { organizer } = await getActiveOrganizerForUser(user.id, {
+      roles: ["OWNER", "ADMIN"],
     });
 
     if (!organizer) {

@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated } from "@/lib/security";
 import { TicketStatus } from "@prisma/client";
+import { getActiveOrganizerForUser } from "@/lib/organizerContext";
 
 export async function GET() {
   try {
@@ -28,10 +29,8 @@ export async function GET() {
       );
     }
 
-    // 3) Encontrar o organizer ligado a este perfil
-    const organizer = await prisma.organizer.findFirst({
-      where: { userId: profile.id },
-    });
+    // 3) Encontrar o organizer ligado a este perfil (membership > legacy)
+    const { organizer } = await getActiveOrganizerForUser(profile.id);
 
     if (!organizer) {
       return NextResponse.json(

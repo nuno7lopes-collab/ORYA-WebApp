@@ -4,12 +4,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
+import { getActiveOrganizerForUser } from "@/lib/organizerContext";
+import { normalizeAndValidateUsername, setUsernameForOwner, UsernameTakenError } from "@/lib/globalUsernames";
 
 type OrganizerPayload = {
   entityType?: string | null;
   businessName?: string | null;
   city?: string | null;
   payoutIban?: string | null;
+  username?: string | null;
 };
 
 function sanitizeString(value: unknown) {
@@ -43,23 +46,26 @@ export async function GET() {
       );
     }
 
-    const organizer = await prisma.organizer.findFirst({
-      where: { userId: profile.id },
-    });
+    const { organizer: activeOrganizer } = await getActiveOrganizerForUser(profile.id);
+    const fallbackOrganizer =
+      activeOrganizer ??
+      (await prisma.organizer.findFirst({
+        where: { userId: profile.id },
+      }));
 
     return NextResponse.json(
       {
         ok: true,
-        organizer: organizer
+        organizer: fallbackOrganizer
           ? {
-              id: organizer.id,
-              displayName: organizer.displayName,
-              status: organizer.status,
-              stripeAccountId: organizer.stripeAccountId,
-              entityType: organizer.entityType,
-              businessName: organizer.businessName,
-              city: organizer.city,
-              payoutIban: organizer.payoutIban,
+              id: fallbackOrganizer.id,
+              displayName: fallbackOrganizer.displayName,
+              status: fallbackOrganizer.status,
+              stripeAccountId: fallbackOrganizer.stripeAccountId,
+              entityType: fallbackOrganizer.entityType,
+              businessName: fallbackOrganizer.businessName,
+              city: fallbackOrganizer.city,
+              payoutIban: fallbackOrganizer.payoutIban,
             }
           : null,
       },
@@ -114,6 +120,7 @@ export async function POST(req: NextRequest) {
           businessName: form.get("businessName") as string | null,
           city: form.get("city") as string | null,
           payoutIban: form.get("payoutIban") as string | null,
+          username: form.get("username") as string | null,
         };
       }
     } catch {
@@ -124,11 +131,15 @@ export async function POST(req: NextRequest) {
     const businessName = sanitizeString(payload.businessName);
     const city = sanitizeString(payload.city);
     const payoutIban = sanitizeString(payload.payoutIban);
+    const usernameRaw = sanitizeString(payload.username);
 
-    // Procurar organizer existente para este user
-    let organizer = await prisma.organizer.findFirst({
-      where: { userId: profile.id },
-    });
+    // Procurar organizer existente para este user (por membership ou campo legacy)
+    const { organizer: activeOrganizer } = await getActiveOrganizerForUser(profile.id);
+    let organizer =
+      activeOrganizer ??
+      (await prisma.organizer.findFirst({
+        where: { userId: profile.id },
+      }));
 
     const displayName =
       businessName ||
@@ -136,30 +147,76 @@ export async function POST(req: NextRequest) {
       profile.username ||
       "Organizador";
 
-    if (!organizer) {
-      organizer = await prisma.organizer.create({
-        data: {
+    const usernameCandidate = usernameRaw ?? organizer?.username ?? null;
+    const validatedUsername = usernameCandidate
+      ? normalizeAndValidateUsername(usernameCandidate)
+      : { ok: false as const, error: "Escolhe um username ORYA para a organização." };
+
+    if (!validatedUsername.ok) {
+      return NextResponse.json({ ok: false, error: validatedUsername.error }, { status: 400 });
+    }
+
+    const username = validatedUsername.username;
+
+    organizer = await prisma.$transaction(async (tx) => {
+      const nextOrganizer = organizer
+        ? await tx.organizer.update({
+            where: { id: organizer!.id },
+            data: {
+              status: "ACTIVE",
+              displayName,
+              entityType,
+              businessName,
+              city,
+              payoutIban,
+              username,
+            },
+          })
+        : await tx.organizer.create({
+            data: {
+              userId: profile.id,
+              displayName,
+              status: "ACTIVE", // self-serve aberto
+              entityType,
+              businessName,
+              city,
+              payoutIban,
+              username,
+            },
+          });
+
+      await setUsernameForOwner({
+        username,
+        ownerType: "organizer",
+        ownerId: nextOrganizer.id,
+        tx,
+      });
+
+      return nextOrganizer;
+    });
+
+    // Garante membership OWNER para o utilizador
+    try {
+      await prisma.organizerMember.upsert({
+        where: {
+          organizerId_userId: {
+            organizerId: organizer.id,
+            userId: profile.id,
+          },
+        },
+        update: { role: "OWNER" },
+        create: {
+          organizerId: organizer.id,
           userId: profile.id,
-          displayName,
-          status: "ACTIVE", // self-serve aberto
-          entityType,
-          businessName,
-          city,
-          payoutIban,
+          role: "OWNER",
         },
       });
-    } else {
-      organizer = await prisma.organizer.update({
-        where: { id: organizer.id },
-        data: {
-          status: "ACTIVE",
-          displayName,
-          entityType,
-          businessName,
-          city,
-          payoutIban,
-        },
-      });
+    } catch (err: unknown) {
+      if (typeof err === "object" && err && "code" in err && (err as { code?: string }).code === "P2021") {
+        console.warn("[organizador/become] organizer_members table missing; created organizer without membership");
+      } else {
+        throw err;
+      }
     }
 
     // Garante que o perfil tem role de organizer
@@ -183,11 +240,18 @@ export async function POST(req: NextRequest) {
           businessName: organizer.businessName,
           city: organizer.city,
           payoutIban: organizer.payoutIban,
+          username: organizer.username,
         },
       },
       { status: 200 },
     );
   } catch (err) {
+    if (err instanceof UsernameTakenError) {
+      return NextResponse.json(
+        { ok: false, error: "Este @ já está a ser usado — escolhe outro.", code: "USERNAME_TAKEN" },
+        { status: 409 },
+      );
+    }
     console.error("POST /api/organizador/become error:", err);
     return NextResponse.json(
       { ok: false, error: "Erro interno ao enviar candidatura de organizador." },

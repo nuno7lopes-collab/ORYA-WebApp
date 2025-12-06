@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
+import { getActiveOrganizerForUser } from "@/lib/organizerContext";
 import { TicketStatus } from "@prisma/client";
 
 type SegmentKeys = "frequent" | "newLast60d" | "highSpenders" | "groups" | "dormant90d" | "local";
@@ -17,9 +18,7 @@ export async function GET(_req: NextRequest) {
       return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
 
-    const organizer = await prisma.organizer.findFirst({
-      where: { userId: user.id, status: "ACTIVE" },
-    });
+    const { organizer } = await getActiveOrganizerForUser(user.id);
 
     if (!organizer) {
       return NextResponse.json({ ok: false, error: "NOT_ORGANIZER" }, { status: 403 });

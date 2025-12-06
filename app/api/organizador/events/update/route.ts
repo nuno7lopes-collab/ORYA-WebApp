@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, assertOrganizer } from "@/lib/security";
 import { TicketTypeStatus, Prisma, EventTemplateType } from "@prisma/client";
+import { getActiveOrganizerForUser } from "@/lib/organizerContext";
 
 type TicketTypeUpdate = {
   id: number;
@@ -63,9 +64,7 @@ export async function POST(req: NextRequest) {
     }
     assertOrganizer(user, profile);
 
-    const organizer = await prisma.organizer.findFirst({
-      where: { userId: profile.id, status: "ACTIVE" },
-    });
+    const { organizer } = await getActiveOrganizerForUser(profile.id, { roles: ["OWNER", "ADMIN"] });
 
     if (!organizer) {
       return NextResponse.json(

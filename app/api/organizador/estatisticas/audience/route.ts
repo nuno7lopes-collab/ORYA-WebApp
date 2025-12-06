@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { TicketStatus } from "@prisma/client";
+import { getActiveOrganizerForUser } from "@/lib/organizerContext";
 
 function getDateRangeFromSearchParams(searchParams: URLSearchParams) {
   const range = searchParams.get("range") || "30d";
@@ -55,11 +56,7 @@ export async function GET(req: NextRequest) {
     const { from, to } = getDateRangeFromSearchParams(searchParams);
 
     // Garantir que o utilizador é organizador e obter o(s) organizer(s)
-    const organizer = await prisma.organizer.findFirst({
-      where: {
-        userId: user.id,
-      },
-    });
+    const { organizer } = await getActiveOrganizerForUser(user.id);
 
     if (!organizer) {
       return NextResponse.json(

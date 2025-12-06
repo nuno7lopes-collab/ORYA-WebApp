@@ -552,10 +552,12 @@ export async function POST(req: NextRequest) {
       totalQuantity: String(totalQuantity),
     };
 
+    const allowedPaymentMethods = ["card", "link", "apple_pay", "mb_way"] as const;
+
     const intentParams: Parameters<typeof stripe.paymentIntents.create>[0] = {
       amount: totalAmountInCents,
       currency,
-      automatic_payment_methods: { enabled: true },
+      payment_method_types: [...allowedPaymentMethods],
       metadata,
     };
 

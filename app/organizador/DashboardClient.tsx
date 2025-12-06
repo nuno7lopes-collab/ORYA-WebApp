@@ -6,6 +6,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import { useUser } from "@/app/hooks/useUser";
 import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
+import { OrganizationActions } from "./OrganizationActions";
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
@@ -974,7 +975,7 @@ export default function OrganizadorPage() {
     {
       label: "Cria o teu primeiro evento",
       done: (events?.items?.length ?? 0) > 0,
-      href: "/organizador/eventos/novo",
+      href: "/organizador/(dashboard)/eventos/novo",
     },
     {
       label: "Configura promo codes",
@@ -984,7 +985,7 @@ export default function OrganizadorPage() {
     {
       label: "Convida staff para check-in",
       done: false,
-      href: "/organizador/staff",
+      href: "/organizador/(dashboard)/staff",
     },
   ];
 
@@ -1007,7 +1008,7 @@ export default function OrganizadorPage() {
               </div>
               <div className="flex flex-wrap gap-2 text-[11px]">
                 <Link
-                  href="/organizador/eventos/novo"
+                  href="/organizador/(dashboard)/eventos/novo"
                   className="px-4 py-2 rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] font-semibold text-black shadow-lg"
                 >
                   Criar evento
@@ -1027,35 +1028,41 @@ export default function OrganizadorPage() {
               </div>
             </div>
 
-            {((profileStatus === "MISSING_CONTACT") || !stripeReady) && (
+            {profileStatus === "MISSING_CONTACT" && (
               <div className="mt-4 rounded-2xl border border-amber-400/40 bg-amber-400/10 p-3 text-sm text-amber-100 space-y-2">
-                {profileStatus === "MISSING_CONTACT" && (
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="font-semibold">Completa os dados básicos do organizador (nome, tipo, cidade, email).</p>
-                    <Link
-                      href="/organizador/settings"
-                      className="rounded-full bg-white/10 px-3 py-1 text-[11px] text-white hover:bg-white/20"
-                    >
-                      Preencher dados
-                    </Link>
-                  </div>
-                )}
-                {!stripeReady && (
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="font-semibold">
-                      Podes publicar eventos gratuitos. Para bilhetes pagos, liga a tua conta Stripe.
-                    </p>
-                    <Link
-                      href="/organizador/pagamentos"
-                      className="rounded-full bg-white/10 px-3 py-1 text-[11px] text-white hover:bg-white/20"
-                    >
-                      Ligar Stripe
-                    </Link>
-                  </div>
-                )}
+                <div className="flex items-center justify-between gap-2">
+                  <p className="font-semibold">Completa os dados básicos do organizador (nome, tipo, cidade, email).</p>
+                  <Link
+                    href="/organizador/settings"
+                    className="rounded-full bg-white/10 px-3 py-1 text-[11px] text-white hover:bg-white/20"
+                  >
+                    Preencher dados
+                  </Link>
+                </div>
+              </div>
+            )}
+            {!stripeReady && (
+              <div className="mt-4 rounded-2xl border border-amber-400/40 bg-amber-400/10 p-3 text-sm text-amber-100 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="font-semibold">
+                    Podes publicar eventos gratuitos. Para bilhetes pagos, liga a tua conta Stripe.
+                  </p>
+                  <Link
+                    href="/organizador/pagamentos"
+                    className="rounded-full bg-white/10 px-3 py-1 text-[11px] text-white hover:bg-white/20"
+                  >
+                    Ligar Stripe
+                  </Link>
+                </div>
               </div>
             )}
           </div>
+
+          {organizer?.id ? (
+            <div className="mt-4">
+              <OrganizationActions organizerId={organizer.id} />
+            </div>
+          ) : null}
 
           <div className="grid gap-4 xl:grid-cols-4 md:grid-cols-2">
             {statsCards.map((card, idx) => (
@@ -1131,7 +1138,7 @@ export default function OrganizadorPage() {
                 <p className="text-[11px] text-white/60">Próximos e passados ligados à tua conta de organizador.</p>
               </div>
               <Link
-                href="/organizador/eventos/novo"
+                href="/organizador/(dashboard)/eventos/novo"
                 className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-3 py-1.5 text-[11px] font-semibold text-black shadow"
               >
                 Novo evento
@@ -1239,7 +1246,7 @@ export default function OrganizadorPage() {
                 className="w-full rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF] sm:min-w-[260px]"
               />
               <Link
-                href="/organizador/eventos/novo"
+                href="/organizador/(dashboard)/eventos/novo"
                 className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-4 py-2 text-sm font-semibold text-black shadow transition hover:scale-[1.01]"
               >
                 + Criar evento
@@ -1487,13 +1494,13 @@ export default function OrganizadorPage() {
                   <p className="text-base font-semibold text-white">Ainda não tens eventos criados.</p>
                   <p>Começa com um torneio de padel, um jantar de grupo ou um evento solidário.</p>
                   <div className="flex flex-wrap justify-center gap-2 text-[12px]">
-                    <Link href="/organizador/eventos/novo" className="rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-3 py-1.5 font-semibold text-black shadow">
+                    <Link href="/organizador/(dashboard)/eventos/novo" className="rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-3 py-1.5 font-semibold text-black shadow">
                       Criar evento
                     </Link>
-                    <Link href="/organizador/eventos/novo" className="rounded-full border border-white/20 px-3 py-1.5 text-white/80 hover:bg-white/10">
+                    <Link href="/organizador/(dashboard)/eventos/novo" className="rounded-full border border-white/20 px-3 py-1.5 text-white/80 hover:bg-white/10">
                       Criar torneio de padel
                     </Link>
-                    <Link href="/organizador/eventos/novo" className="rounded-full border border-white/20 px-3 py-1.5 text-white/80 hover:bg-white/10">
+                    <Link href="/organizador/(dashboard)/eventos/novo" className="rounded-full border border-white/20 px-3 py-1.5 text-white/80 hover:bg-white/10">
                       Criar jantar
                     </Link>
                   </div>
@@ -1520,7 +1527,7 @@ export default function OrganizadorPage() {
                       Limpar filtros
                     </button>
                     <Link
-                      href="/organizador/eventos/novo"
+                      href="/organizador/(dashboard)/eventos/novo"
                       className="rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-3 py-1.5 font-semibold text-black shadow"
                     >
                       Criar novo evento

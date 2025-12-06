@@ -7,55 +7,34 @@ datasource db {
   schemas  = ["app_v3", "auth"]
 }
 
-enum OtpPurpose {
-  SIGNUP
-  LOGIN
-
-  @@schema("app_v3")
-}
-
-/// Armazena OTP de email gerado pela app (hash + expiração)
-model EmailOtp {
-  id        String     @id @default(uuid())
-  email     String
-  codeHash  String     @map("code_hash")
-  purpose   OtpPurpose
-  expiresAt DateTime   @map("expires_at")
-  createdAt DateTime   @default(now()) @map("created_at")
-  consumedAt DateTime? @map("consumed_at")
-
-  @@index([email])
-  @@schema("app_v3")
-  @@map("email_otps")
-}
-
 /// Perfil base do utilizador ORYA (1-1 com auth.users)
 model Profile {
-  id        String  @id @db.Uuid
-  username  String? @unique
-  fullName  String? @map("full_name")
-  avatarUrl String? @map("avatar_url")
-  bio       String?
-  city      String?
-  contactPhone String? @map("contact_phone")
-
-  favouriteCategories String[] @default([]) @map("favourite_categories") @db.Text
-  onboardingDone      Boolean  @default(false) @map("onboarding_done")
-
+  id                                     String      @id @db.Uuid
+  username                               String?     @unique @db.Citext
+  fullName                               String?     @map("full_name")
+  avatarUrl                              String?     @map("avatar_url")
+  bio                                    String?
+  city                                   String?
+  favouriteCategories                    String[]    @default([]) @map("favourite_categories")
+  onboardingDone                         Boolean     @default(false) @map("onboarding_done")
   /// roles do user: ["user"], ["user","organizer"], ["user","admin"], etc.
-  roles String[] @default(["user"]) @db.Text
-  visibility Visibility @default(PUBLIC)
-  allowEmailNotifications Boolean @default(true) @map("allow_email_notifications")
-  allowEventReminders     Boolean @default(true) @map("allow_event_reminders")
-  allowFriendRequests     Boolean @default(true) @map("allow_friend_requests")
-  isDeleted               Boolean @default(false) @map("is_deleted")
-  deletedAt               DateTime? @map("deleted_at")
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  organizers Organizer[]
-  events     Event[]   @relation("UserEvents")
+  roles                                  String[]    @default(["user"])
+  createdAt                              DateTime    @default(now()) @map("created_at")
+  updatedAt                              DateTime    @default(now()) @updatedAt @map("updated_at")
+  allowEmailNotifications                Boolean     @default(true) @map("allow_email_notifications")
+  allowEventReminders                    Boolean     @default(true) @map("allow_event_reminders")
+  allowFriendRequests                    Boolean     @default(true) @map("allow_friend_requests")
+  deletedAt                              DateTime?   @map("deleted_at") @db.Timestamp(6)
+  isDeleted                              Boolean     @default(false) @map("is_deleted")
+  visibility                             Visibility  @default(PUBLIC)
+  is_verified                            Boolean     @default(false)
+  contactPhone                           String?     @map("contact_phone")
+  follows_follows_follower_idToprofiles  follows[]   @relation("follows_follower_idToprofiles")
+  follows_follows_following_idToprofiles follows[]   @relation("follows_following_idToprofiles")
+  organizers                             Organizer[]
+  organizerMembers                       OrganizerMember[]
+  eventsOwned                            Event[]     @relation("EventOwner")
+  users                                  users       @relation(fields: [id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@map("profiles")
   @@schema("app_v3")
@@ -63,31 +42,836 @@ model Profile {
 
 /// Entidade organizadora (marca, página de eventos)
 model Organizer {
-  id     Int      @id @default(autoincrement())
-  userId String?  @map("user_id") @db.Uuid
-  user   Profile? @relation(fields: [userId], references: [id], onDelete: SetNull)
-
-  displayName     String          @map("display_name")
-  entityType      String?         @map("entity_type")
-  businessName    String?         @map("business_name")
-  city            String?         @map("city")
-  payoutIban      String?         @map("payout_iban")
-  stripeAccountId String?         @map("stripe_account_id")
-  status          OrganizerStatus @default(PENDING)
-  feeMode         FeeMode?        @map("fee_mode")
-  platformFeeBps          Int?    @map("platform_fee_bps")
-  platformFeeFixedCents    Int?    @map("platform_fee_fixed_cents")
-  stripeChargesEnabled     Boolean @default(false) @map("stripe_charges_enabled")
-  stripePayoutsEnabled     Boolean @default(false) @map("stripe_payouts_enabled")
-  createdAt       DateTime        @default(now()) @map("created_at")
-  updatedAt       DateTime        @updatedAt @map("updated_at")
-
-  events           Event[]
-  staffAssignments StaffAssignment[]
+  id                    Int               @id @default(autoincrement())
+  displayName           String            @map("display_name")
+  username              String?           @unique @db.Citext
+  stripeAccountId       String?           @map("stripe_account_id")
+  status                OrganizerStatus   @default(PENDING)
+  createdAt             DateTime          @default(now()) @map("created_at")
+  updatedAt             DateTime          @default(now()) @updatedAt @map("updated_at")
+  userId                String?           @map("user_id") @db.Uuid
+  feeMode               FeeMode           @default(ADDED) @map("fee_mode")
+  platformFeeBps        Int               @default(200) @map("platform_fee_bps")
+  platformFeeFixedCents Int               @default(0) @map("platform_fee_fixed_cents")
+  stripeChargesEnabled  Boolean           @default(false) @map("stripe_charges_enabled")
+  stripePayoutsEnabled  Boolean           @default(false) @map("stripe_payouts_enabled")
+  entityType            String?           @map("entity_type")
+  businessName          String?           @map("business_name")
+  city                  String?           @map("city")
+  payoutIban            String?           @map("payout_iban")
+  events                Event[]
+  user                  Profile?          @relation(fields: [userId], references: [id], onUpdate: NoAction)
+  staffAssignments      StaffAssignment[]
+  members               OrganizerMember[]
 
   @@index([userId])
   @@map("organizers")
   @@schema("app_v3")
+}
+
+model GlobalUsername {
+  username  String   @id @db.Citext
+  ownerType String   @map("owner_type")
+  ownerId   String   @map("owner_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@unique([ownerType, ownerId])
+  @@map("global_usernames")
+  @@schema("app_v3")
+}
+
+enum OrganizerMemberRole {
+  OWNER
+  ADMIN
+  STAFF
+  CHECKIN_ONLY
+
+  @@schema("app_v3")
+}
+
+model OrganizerMember {
+  id              String               @id @default(uuid()) @db.Uuid
+  organizerId     Int                  @map("organizer_id")
+  userId          String               @map("user_id") @db.Uuid
+  role            OrganizerMemberRole
+  invitedByUserId String?              @map("invited_by_user_id") @db.Uuid
+  lastUsedAt      DateTime?            @map("last_used_at")
+  createdAt       DateTime             @default(now()) @map("created_at")
+  updatedAt       DateTime             @default(now()) @map("updated_at")
+
+  organizer Organizer @relation(fields: [organizerId], references: [id], onDelete: Cascade)
+  user      Profile   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([organizerId, role])
+  @@unique([organizerId, userId])
+  @@map("organizer_members")
+  @@schema("app_v3")
+}
+
+/// Evento/Experiência — único tipo com campo `type` a separar
+model Event {
+  id                                Int                     @id @default(autoincrement())
+  slug                              String                  @unique
+  title                             String
+  description                       String
+  /// "EXPERIENCE" (user) ou "ORGANIZER_EVENT" (organizador)
+  type                              EventType               @default(EXPERIENCE)
+  /// Template de apoio (festa, desporto, voluntariado, palestra...)
+  templateType                      EventTemplateType?      @map("template_type")
+  /// Liga ao Organizer quando é evento de organizador
+  organizerId                       Int?                    @map("organizer_id")
+  startsAt                          DateTime                @map("starts_at")
+  endsAt                            DateTime                @map("ends_at")
+  locationName                      String                  @map("location_name")
+  locationCity                      String?                 @map("location_city")
+  address                           String?
+  latitude                          Float?                  @map("lat")
+  longitude                         Float?                  @map("lng")
+  isFree                            Boolean                 @default(false) @map("is_free")
+  status                            EventStatus             @default(DRAFT)
+  timezone                          String                  @default("Europe/Lisbon")
+  coverImageUrl                     String?                 @map("cover_image_url")
+  createdAt                         DateTime                @default(now()) @map("created_at")
+  updatedAt                         DateTime                @updatedAt @map("updated_at")
+  /// auth.users.id de quem criou (user base)
+  ownerUserId                       String                  @map("owner_user_id") @db.Uuid
+  deletedAt                         DateTime?               @map("deleted_at") @db.Timestamp(6)
+  isDeleted                         Boolean                 @default(false) @map("is_deleted")
+  resaleMode                        ResaleMode              @default(ALWAYS) @map("resale_mode")
+  fee_mode_override                 FeeMode?
+  platform_fee_bps_override         Int?
+  platform_fee_fixed_cents_override Int?
+  feeMode                           FeeMode                 @default(INCLUDED) @map("fee_mode")
+  isTest                            Boolean                 @default(false) @map("is_test")
+  payoutMode                        PayoutMode              @default(ORGANIZER) @map("payout_mode")
+  categories                        EventCategory[]
+  interests                         EventInterest[]
+  salesAgg                          EventSalesAgg?
+  views                             EventView[]
+  organizer                         Organizer?              @relation(fields: [organizerId], references: [id])
+  owner                             Profile                 @relation("EventOwner", fields: [ownerUserId], references: [id])
+  participants                      ExperienceParticipant[]
+  promoCodes                        PromoCode[]
+  staffAssignments                  StaffAssignment[]
+  reservations                      TicketReservation[]
+  ticketTypes                       TicketType[]
+  tickets                           Ticket[]
+
+  @@index([type, status])
+  @@index([ownerUserId])
+  @@index([ownerUserId, startsAt])
+  @@index([organizerId])
+  @@map("events")
+  @@schema("app_v3")
+}
+
+/// Junção N-N de eventos a categorias
+model EventCategory {
+  id        Int               @id @default(autoincrement())
+  eventId   Int               @map("event_id")
+  category  EventCategoryType
+  createdAt DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  event     Event             @relation(fields: [eventId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "event_categories_event_fk")
+
+  @@unique([eventId, category], map: "event_categories_unique")
+  @@index([category])
+  @@map("event_categories")
+  @@schema("app_v3")
+}
+
+/// Tipos de bilhete (antigas "waves")
+model TicketType {
+  id            Int                 @id @default(autoincrement())
+  eventId       Int
+  name          String
+  description   String?
+  price         Int
+  currency      String              @default("EUR")
+  totalQuantity Int?                @map("total_quantity")
+  soldQuantity  Int                 @default(0) @map("sold_quantity")
+  status        TicketTypeStatus    @default(ON_SALE)
+  startsAt      DateTime?           @map("starts_at")
+  endsAt        DateTime?           @map("ends_at")
+  sortOrder     Int                 @default(0) @map("sort_order")
+  createdAt     DateTime            @default(now()) @map("created_at")
+  updatedAt     DateTime            @updatedAt @map("updated_at")
+  reservations  TicketReservation[]
+  event         Event               @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  tickets       Ticket[]
+
+  @@index([eventId])
+  @@map("ticket_types")
+  @@schema("app_v3")
+}
+
+/// Bilhete individual (por utilizador)
+model Ticket {
+  id                    String           @id @default(cuid())
+  eventId               Int
+  ticketTypeId          Int              @map("ticket_type_id")
+  purchasedAt           DateTime         @default(now()) @map("purchased_at")
+  status                TicketStatus     @default(ACTIVE)
+  qrSecret              String           @unique @map("qr_secret")
+  rotatingSeed          String?          @map("rotating_seed") @db.Uuid
+  pricePaid             Int              @map("price_paid")
+  currency              String           @default("EUR")
+  stripePaymentIntentId String?          @map("stripe_payment_intent_id")
+  usedAt                DateTime?        @map("used_at")
+  userId                String?          @map("user_id") @db.Uuid
+  platformFeeCents      Int              @default(0) @map("platform_fee_cents")
+  totalPaidCents        Int              @default(0) @map("total_paid_cents")
+  guestLink             GuestTicketLink?
+  resales               TicketResale[]
+  transfers             TicketTransfer[]
+  event                 Event            @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  ticketType            TicketType       @relation(fields: [ticketTypeId], references: [id], onDelete: Cascade)
+
+  @@index([eventId])
+  @@index([userId])
+  @@index([ticketTypeId])
+  @@index([stripePaymentIntentId])
+  @@map("tickets")
+  @@schema("app_v3")
+}
+
+/// Ligação de bilhetes comprados como convidado
+/// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
+model GuestTicketLink {
+  ticketId         String    @id @map("ticket_id")
+  guestEmail       String    @map("guest_email")
+  guestName        String    @map("guest_name")
+  guestPhone       String?   @map("guest_phone")
+  migratedToUserId String?   @map("migrated_to_user_id") @db.Uuid
+  migratedAt       DateTime? @map("migrated_at") @db.Timestamptz(6)
+  createdAt        DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime? @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  users            users?    @relation(fields: [migratedToUserId], references: [id], onUpdate: NoAction)
+  ticket           Ticket    @relation(fields: [ticketId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([migratedToUserId], map: "guest_ticket_links_migrated_idx")
+  @@map("guest_ticket_links")
+  @@schema("app_v3")
+}
+
+/// Reservas temporárias de stock de bilhetes
+model TicketReservation {
+  id           String            @id @default(cuid())
+  eventId      Int
+  ticketTypeId Int               @map("ticket_type_id")
+  quantity     Int
+  status       ReservationStatus @default(ACTIVE)
+  expiresAt    DateTime          @map("expires_at")
+  createdAt    DateTime          @default(now()) @map("created_at")
+  updatedAt    DateTime          @updatedAt @map("updated_at")
+  userId       String?           @map("user_id") @db.Uuid
+  event        Event             @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  ticketType   TicketType        @relation(fields: [ticketTypeId], references: [id], onDelete: Cascade)
+
+  @@index([eventId])
+  @@index([ticketTypeId])
+  @@index([userId])
+  @@index([status, expiresAt])
+  @@map("ticket_reservations")
+  @@schema("app_v3")
+}
+
+/// Participantes em experiências (sem QR / bilhete)
+model ExperienceParticipant {
+  id                String   @id @default(cuid())
+  eventId           Int
+  createdAt         DateTime @default(now()) @map("created_at")
+  userId            String   @db.Uuid
+  volunteer_minutes Int?
+  event             Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, userId])
+  @@index([userId])
+  @@map("experience_participants")
+  @@schema("app_v3")
+}
+
+/// Interesse / "quero ir" em eventos de organizador
+model EventInterest {
+  id        String   @id @default(cuid())
+  eventId   Int
+  createdAt DateTime @default(now()) @map("created_at")
+  userId    String   @db.Uuid
+  event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, userId])
+  @@index([userId])
+  @@map("event_interests")
+  @@schema("app_v3")
+}
+
+/// Staff associado a organizadores / eventos
+model StaffAssignment {
+  id          Int         @id @default(autoincrement())
+  organizerId Int         @map("organizer_id")
+  scope       StaffScope
+  eventId     Int?        @map("event_id")
+  createdAt   DateTime    @default(now()) @map("created_at")
+  revokedAt   DateTime?   @map("revoked_at")
+  userId      String      @map("user_id") @db.Uuid
+  acceptedAt  DateTime?   @map("accepted_at") @db.Timestamp(6)
+  status      StaffStatus @default(PENDING)
+  role        StaffRole   @default(STAFF)
+  event       Event?      @relation(fields: [eventId], references: [id])
+  organizer   Organizer   @relation(fields: [organizerId], references: [id], onDelete: Cascade)
+
+  @@index([organizerId])
+  @@index([userId])
+  @@index([eventId])
+  @@map("staff_assignments")
+  @@schema("app_v3")
+}
+
+/// Transferência de bilhetes entre utilizadores
+model TicketTransfer {
+  id          String         @id @default(cuid())
+  ticketId    String         @map("ticket_id")
+  status      TransferStatus @default(PENDING)
+  createdAt   DateTime       @default(now()) @map("created_at")
+  completedAt DateTime?      @map("completed_at")
+  fromUserId  String         @map("from_user_id") @db.Uuid
+  toUserId    String         @map("to_user_id") @db.Uuid
+  ticket      Ticket         @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId])
+  @@index([fromUserId])
+  @@index([toUserId])
+  @@map("ticket_transfers")
+  @@schema("app_v3")
+}
+
+/// Revenda de bilhetes pelo utilizador
+model TicketResale {
+  id           String       @id @default(cuid())
+  ticketId     String       @map("ticket_id")
+  price        Int
+  currency     String       @default("EUR")
+  status       ResaleStatus @default(LISTED)
+  createdAt    DateTime     @default(now()) @map("created_at")
+  completedAt  DateTime?    @map("completed_at")
+  sellerUserId String       @map("seller_user_id") @db.Uuid
+  ticket       Ticket       @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId])
+  @@index([sellerUserId])
+  @@map("ticket_resales")
+  @@schema("app_v3")
+}
+
+/// Pageviews por evento (simples, para futuras stats)
+model EventView {
+  id        String   @id @default(cuid())
+  eventId   Int
+  sessionId String?  @map("session_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  userId    String?  @db.Uuid
+  event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([eventId])
+  @@index([userId])
+  @@map("event_views")
+  @@schema("app_v3")
+}
+
+/// Agregado diário de vendas por evento
+model EventSalesAgg {
+  id          Int      @id @default(autoincrement())
+  eventId     Int      @unique
+  date        DateTime @map("date")
+  ticketsSold Int      @default(0) @map("tickets_sold")
+  revenue     Int      @default(0) @map("revenue")
+  event       Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@map("event_sales_agg")
+  @@schema("app_v3")
+}
+
+/// Registo de eventos de pagamento (auditoria webhooks/intent)
+model PaymentEvent {
+  id                    Int       @id @default(autoincrement())
+  stripePaymentIntentId String    @unique @map("stripe_payment_intent_id")
+  status                String    @default("PROCESSING")
+  eventId               Int?      @map("event_id")
+  userId                String?   @map("user_id") @db.Uuid
+  amountCents           Int?      @map("amount_cents")
+  platformFeeCents      Int?      @map("platform_fee_cents")
+  errorMessage          String?   @map("error_message")
+  createdAt             DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime? @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([stripePaymentIntentId])
+  @@index([eventId])
+  @@map("payment_events")
+  @@schema("app_v3")
+}
+
+/// Configurações simples chave-valor (taxas, etc.)
+model PlatformSetting {
+  id        Int       @id @default(autoincrement())
+  key       String    @unique(map: "platform_settings_key_idx")
+  value     String
+  createdAt DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime? @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("platform_settings")
+  @@schema("app_v3")
+}
+
+/// Códigos promocionais simples
+/// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
+model PromoCode {
+  id            Int               @id @default(autoincrement())
+  code          String
+  type          PromoType
+  value         Int
+  maxUses       Int?              @map("max_uses")
+  perUserLimit  Int?              @map("per_user_limit")
+  validFrom     DateTime?         @map("valid_from") @db.Timestamptz(6)
+  validUntil    DateTime?         @map("valid_until") @db.Timestamptz(6)
+  active        Boolean           @default(true)
+  eventId       Int?              @map("event_id")
+  createdAt     DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  autoApply     Boolean?          @default(false) @map("auto_apply")
+  minQuantity   Int?              @map("min_quantity")
+  minTotalCents Int?              @map("min_total_cents")
+  event         Event?            @relation(fields: [eventId], references: [id], onUpdate: NoAction, map: "promo_codes_event_fk")
+  redemptions   PromoRedemption[]
+
+  @@index([eventId])
+  @@index([eventId, active], map: "promo_codes_event_active_idx")
+  @@index([validFrom, validUntil], map: "promo_codes_valid_idx")
+  @@map("promo_codes")
+  @@schema("app_v3")
+}
+
+/// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
+model PromoRedemption {
+  id          Int       @id @default(autoincrement())
+  promoCodeId Int       @map("promo_code_id")
+  userId      String?   @map("user_id") @db.Uuid
+  guestEmail  String?   @map("guest_email")
+  usedAt      DateTime  @default(now()) @map("used_at") @db.Timestamptz(6)
+  promoCode   PromoCode @relation(fields: [promoCodeId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([promoCodeId], map: "promo_redemptions_code_idx")
+  @@index([promoCodeId], map: "promo_redemptions_promo_idx")
+  @@index([userId], map: "promo_redemptions_user_idx")
+  @@map("promo_redemptions")
+  @@schema("app_v3")
+}
+
+model follows {
+  id                                      Int      @id @default(autoincrement())
+  follower_id                             String   @db.Uuid
+  following_id                            String   @db.Uuid
+  created_at                              DateTime @default(now()) @db.Timestamptz(6)
+  profiles_follows_follower_idToprofiles  Profile  @relation("follows_follower_idToprofiles", fields: [follower_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  profiles_follows_following_idToprofiles Profile  @relation("follows_following_idToprofiles", fields: [following_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([follower_id, following_id], map: "follows_unique")
+  @@index([follower_id], map: "idx_follows_follower")
+  @@index([following_id], map: "idx_follows_following")
+  @@schema("app_v3")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model audit_log_entries {
+  instance_id String?   @db.Uuid
+  id          String    @id @db.Uuid
+  payload     Json?     @db.Json
+  created_at  DateTime? @db.Timestamptz(6)
+  ip_address  String    @default("") @db.VarChar(64)
+
+  @@index([instance_id], map: "audit_logs_instance_id_idx")
+  @@schema("auth")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model flow_state {
+  id                     String                @id @db.Uuid
+  user_id                String?               @db.Uuid
+  auth_code              String
+  code_challenge_method  code_challenge_method
+  code_challenge         String
+  provider_type          String
+  provider_access_token  String?
+  provider_refresh_token String?
+  created_at             DateTime?             @db.Timestamptz(6)
+  updated_at             DateTime?             @db.Timestamptz(6)
+  authentication_method  String
+  auth_code_issued_at    DateTime?             @db.Timestamptz(6)
+  saml_relay_states      saml_relay_states[]
+
+  @@index([created_at(sort: Desc)])
+  @@index([auth_code], map: "idx_auth_code")
+  @@index([user_id, authentication_method], map: "idx_user_id_auth_method")
+  @@schema("auth")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model identities {
+  provider_id     String
+  user_id         String    @db.Uuid
+  identity_data   Json
+  provider        String
+  last_sign_in_at DateTime? @db.Timestamptz(6)
+  created_at      DateTime? @db.Timestamptz(6)
+  updated_at      DateTime? @db.Timestamptz(6)
+  email           String?   @default(dbgenerated("lower((identity_data ->> 'email'::text))"))
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  users           users     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([provider_id, provider], map: "identities_provider_id_provider_unique")
+  @@index([email])
+  @@index([user_id])
+  @@schema("auth")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model instances {
+  id              String    @id @db.Uuid
+  uuid            String?   @db.Uuid
+  raw_base_config String?
+  created_at      DateTime? @db.Timestamptz(6)
+  updated_at      DateTime? @db.Timestamptz(6)
+
+  @@schema("auth")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model mfa_amr_claims {
+  session_id            String   @db.Uuid
+  created_at            DateTime @db.Timestamptz(6)
+  updated_at            DateTime @db.Timestamptz(6)
+  authentication_method String
+  id                    String   @id(map: "amr_id_pk") @db.Uuid
+  sessions              sessions @relation(fields: [session_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([session_id, authentication_method], map: "mfa_amr_claims_session_id_authentication_method_pkey")
+  @@schema("auth")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model mfa_challenges {
+  id                     String      @id @db.Uuid
+  factor_id              String      @db.Uuid
+  created_at             DateTime    @db.Timestamptz(6)
+  verified_at            DateTime?   @db.Timestamptz(6)
+  ip_address             String      @db.Inet
+  otp_code               String?
+  web_authn_session_data Json?
+  mfa_factors            mfa_factors @relation(fields: [factor_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "mfa_challenges_auth_factor_id_fkey")
+
+  @@index([created_at(sort: Desc)], map: "mfa_challenge_created_at_idx")
+  @@schema("auth")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model mfa_factors {
+  id                           String           @id @db.Uuid
+  user_id                      String           @db.Uuid
+  friendly_name                String?
+  factor_type                  factor_type
+  status                       factor_status
+  created_at                   DateTime         @db.Timestamptz(6)
+  updated_at                   DateTime         @db.Timestamptz(6)
+  secret                       String?
+  phone                        String?
+  last_challenged_at           DateTime?        @unique @db.Timestamptz(6)
+  web_authn_credential         Json?
+  web_authn_aaguid             String?          @db.Uuid
+  last_webauthn_challenge_data Json?
+  mfa_challenges               mfa_challenges[]
+  users                        users            @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([user_id, phone], map: "unique_phone_factor_per_user")
+  @@index([user_id, created_at], map: "factor_id_created_at_idx")
+  @@index([user_id])
+  @@schema("auth")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model oauth_authorizations {
+  id                    String                     @id @db.Uuid
+  authorization_id      String                     @unique
+  client_id             String                     @db.Uuid
+  user_id               String?                    @db.Uuid
+  redirect_uri          String
+  scope                 String
+  state                 String?
+  resource              String?
+  code_challenge        String?
+  code_challenge_method code_challenge_method?
+  response_type         oauth_response_type        @default(code)
+  status                oauth_authorization_status @default(pending)
+  authorization_code    String?                    @unique
+  created_at            DateTime                   @default(now()) @db.Timestamptz(6)
+  expires_at            DateTime                   @default(dbgenerated("(now() + '00:03:00'::interval)")) @db.Timestamptz(6)
+  approved_at           DateTime?                  @db.Timestamptz(6)
+  nonce                 String?
+  oauth_clients         oauth_clients              @relation(fields: [client_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users                 users?                     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@schema("auth")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model oauth_clients {
+  id                   String                  @id @db.Uuid
+  client_secret_hash   String?
+  registration_type    oauth_registration_type
+  redirect_uris        String
+  grant_types          String
+  client_name          String?
+  client_uri           String?
+  logo_uri             String?
+  created_at           DateTime                @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime                @default(now()) @db.Timestamptz(6)
+  deleted_at           DateTime?               @db.Timestamptz(6)
+  client_type          oauth_client_type       @default(confidential)
+  oauth_authorizations oauth_authorizations[]
+  oauth_consents       oauth_consents[]
+  sessions             sessions[]
+
+  @@index([deleted_at])
+  @@schema("auth")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model oauth_consents {
+  id            String        @id @db.Uuid
+  user_id       String        @db.Uuid
+  client_id     String        @db.Uuid
+  scopes        String
+  granted_at    DateTime      @default(now()) @db.Timestamptz(6)
+  revoked_at    DateTime?     @db.Timestamptz(6)
+  oauth_clients oauth_clients @relation(fields: [client_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users         users         @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([user_id, client_id], map: "oauth_consents_user_client_unique")
+  @@index([user_id, granted_at(sort: Desc)], map: "oauth_consents_user_order_idx")
+  @@schema("auth")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model one_time_tokens {
+  id         String              @id @db.Uuid
+  user_id    String              @db.Uuid
+  token_type one_time_token_type
+  token_hash String
+  relates_to String
+  created_at DateTime            @default(now()) @db.Timestamp(6)
+  updated_at DateTime            @default(now()) @db.Timestamp(6)
+  users      users               @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([user_id, token_type])
+  @@index([relates_to], map: "one_time_tokens_relates_to_hash_idx", type: Hash)
+  @@index([token_hash], map: "one_time_tokens_token_hash_hash_idx", type: Hash)
+  @@schema("auth")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model refresh_tokens {
+  instance_id String?   @db.Uuid
+  id          BigInt    @id @default(autoincrement())
+  token       String?   @unique(map: "refresh_tokens_token_unique") @db.VarChar(255)
+  user_id     String?   @db.VarChar(255)
+  revoked     Boolean?
+  created_at  DateTime? @db.Timestamptz(6)
+  updated_at  DateTime? @db.Timestamptz(6)
+  parent      String?   @db.VarChar(255)
+  session_id  String?   @db.Uuid
+  sessions    sessions? @relation(fields: [session_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([instance_id])
+  @@index([instance_id, user_id])
+  @@index([parent])
+  @@index([session_id, revoked])
+  @@index([updated_at(sort: Desc)])
+  @@schema("auth")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model saml_providers {
+  id                String        @id @db.Uuid
+  sso_provider_id   String        @db.Uuid
+  entity_id         String        @unique
+  metadata_xml      String
+  metadata_url      String?
+  attribute_mapping Json?
+  created_at        DateTime?     @db.Timestamptz(6)
+  updated_at        DateTime?     @db.Timestamptz(6)
+  name_id_format    String?
+  sso_providers     sso_providers @relation(fields: [sso_provider_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([sso_provider_id])
+  @@schema("auth")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model saml_relay_states {
+  id              String        @id @db.Uuid
+  sso_provider_id String        @db.Uuid
+  request_id      String
+  for_email       String?
+  redirect_to     String?
+  created_at      DateTime?     @db.Timestamptz(6)
+  updated_at      DateTime?     @db.Timestamptz(6)
+  flow_state_id   String?       @db.Uuid
+  flow_state      flow_state?   @relation(fields: [flow_state_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  sso_providers   sso_providers @relation(fields: [sso_provider_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([created_at(sort: Desc)])
+  @@index([for_email])
+  @@index([sso_provider_id])
+  @@schema("auth")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model schema_migrations {
+  version String @id @db.VarChar(255)
+
+  @@schema("auth")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model sessions {
+  id                     String           @id @db.Uuid
+  user_id                String           @db.Uuid
+  created_at             DateTime?        @db.Timestamptz(6)
+  updated_at             DateTime?        @db.Timestamptz(6)
+  factor_id              String?          @db.Uuid
+  aal                    aal_level?
+  not_after              DateTime?        @db.Timestamptz(6)
+  refreshed_at           DateTime?        @db.Timestamp(6)
+  user_agent             String?
+  ip                     String?          @db.Inet
+  tag                    String?
+  oauth_client_id        String?          @db.Uuid
+  refresh_token_hmac_key String?
+  refresh_token_counter  BigInt?
+  scopes                 String?
+  mfa_amr_claims         mfa_amr_claims[]
+  refresh_tokens         refresh_tokens[]
+  oauth_clients          oauth_clients?   @relation(fields: [oauth_client_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users                  users            @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([not_after(sort: Desc)])
+  @@index([oauth_client_id])
+  @@index([user_id])
+  @@index([user_id, created_at], map: "user_id_created_at_idx")
+  @@schema("auth")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+/// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
+model sso_domains {
+  id              String        @id @db.Uuid
+  sso_provider_id String        @db.Uuid
+  domain          String
+  created_at      DateTime?     @db.Timestamptz(6)
+  updated_at      DateTime?     @db.Timestamptz(6)
+  sso_providers   sso_providers @relation(fields: [sso_provider_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([sso_provider_id])
+  @@schema("auth")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+/// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
+model sso_providers {
+  id                String              @id @db.Uuid
+  resource_id       String?
+  created_at        DateTime?           @db.Timestamptz(6)
+  updated_at        DateTime?           @db.Timestamptz(6)
+  disabled          Boolean?
+  saml_providers    saml_providers[]
+  saml_relay_states saml_relay_states[]
+  sso_domains       sso_domains[]
+
+  @@index([resource_id], map: "sso_providers_resource_id_pattern_idx")
+  @@schema("auth")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+/// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
+model users {
+  instance_id                 String?                @db.Uuid
+  id                          String                 @id @db.Uuid
+  aud                         String?                @db.VarChar(255)
+  role                        String?                @db.VarChar(255)
+  email                       String?                @db.VarChar(255)
+  encrypted_password          String?                @db.VarChar(255)
+  email_confirmed_at          DateTime?              @db.Timestamptz(6)
+  invited_at                  DateTime?              @db.Timestamptz(6)
+  confirmation_token          String?                @db.VarChar(255)
+  confirmation_sent_at        DateTime?              @db.Timestamptz(6)
+  recovery_token              String?                @db.VarChar(255)
+  recovery_sent_at            DateTime?              @db.Timestamptz(6)
+  email_change_token_new      String?                @db.VarChar(255)
+  email_change                String?                @db.VarChar(255)
+  email_change_sent_at        DateTime?              @db.Timestamptz(6)
+  last_sign_in_at             DateTime?              @db.Timestamptz(6)
+  raw_app_meta_data           Json?
+  raw_user_meta_data          Json?
+  is_super_admin              Boolean?
+  created_at                  DateTime?              @db.Timestamptz(6)
+  updated_at                  DateTime?              @db.Timestamptz(6)
+  phone                       String?                @unique
+  phone_confirmed_at          DateTime?              @db.Timestamptz(6)
+  phone_change                String?                @default("")
+  phone_change_token          String?                @default("") @db.VarChar(255)
+  phone_change_sent_at        DateTime?              @db.Timestamptz(6)
+  confirmed_at                DateTime?              @default(dbgenerated("LEAST(email_confirmed_at, phone_confirmed_at)")) @db.Timestamptz(6)
+  email_change_token_current  String?                @default("") @db.VarChar(255)
+  email_change_confirm_status Int?                   @default(0) @db.SmallInt
+  banned_until                DateTime?              @db.Timestamptz(6)
+  reauthentication_token      String?                @default("") @db.VarChar(255)
+  reauthentication_sent_at    DateTime?              @db.Timestamptz(6)
+  is_sso_user                 Boolean                @default(false)
+  deleted_at                  DateTime?              @db.Timestamptz(6)
+  is_anonymous                Boolean                @default(false)
+  guest_ticket_links          GuestTicketLink[]
+  profiles                    Profile?
+  identities                  identities[]
+  mfa_factors                 mfa_factors[]
+  oauth_authorizations        oauth_authorizations[]
+  oauth_consents              oauth_consents[]
+  one_time_tokens             one_time_tokens[]
+  sessions                    sessions[]
+
+  @@index([instance_id])
+  @@index([is_anonymous])
+  @@schema("auth")
 }
 
 enum OrganizerStatus {
@@ -95,71 +879,6 @@ enum OrganizerStatus {
   ACTIVE
   SUSPENDED
 
-  @@schema("app_v3")
-}
-
-/// Evento/Experiência — único tipo com campo `type` a separar
-model Event {
-  id          Int    @id @default(autoincrement())
-  slug        String @unique
-  title       String
-  description String
-
-  /// "EXPERIENCE" (user) ou "ORGANIZER_EVENT" (organizador)
-  type EventType @default(EXPERIENCE)
-
-  /// Template de apoio (festa, desporto, voluntariado, palestra...)
-  templateType EventTemplateType? @map("template_type")
-
-  /// auth.users.id de quem criou (user base)
-  ownerUserId String @map("owner_user_id") @db.Uuid
-  owner       Profile @relation("UserEvents", fields: [ownerUserId], references: [id])
-
-  /// Liga ao Organizer quando é evento de organizador
-  organizerId Int?       @map("organizer_id")
-  organizer   Organizer? @relation(fields: [organizerId], references: [id])
-  promoCodes  PromoCode[]
-
-  startsAt DateTime @map("starts_at")
-  endsAt   DateTime @map("ends_at")
-
-  locationName String  @map("location_name")
-  locationCity String? @map("location_city")
-  address      String?
-  latitude     Float?  @map("lat")
-  longitude    Float?  @map("lng")
-
-  isFree Boolean     @default(false) @map("is_free")
-  status EventStatus @default(DRAFT)
-  resaleMode ResaleMode @default(ALWAYS) @map("resale_mode")
-  feeMode   FeeMode   @default(ON_TOP) @map("fee_mode")
-  payoutMode PayoutMode @default(ORGANIZER) @map("payout_mode")
-
-  timezone      String  @default("Europe/Lisbon")
-  coverImageUrl String? @map("cover_image_url")
-  isDeleted     Boolean @default(false) @map("is_deleted")
-  deletedAt     DateTime? @map("deleted_at")
-  isTest        Boolean  @default(false) @map("is_test")
-
-  // Relações
-  ticketTypes      TicketType[]
-  tickets          Ticket[]
-  reservations     TicketReservation[]
-  interests        EventInterest[]
-  participants     ExperienceParticipant[]
-  views            EventView[]
-  salesAgg         EventSalesAgg?
-  staffAssignments StaffAssignment[]
-  categories       EventCategory[]
-  paymentEvents    PaymentEvent[]
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  @@index([type, status])
-  @@index([ownerUserId])
-  @@index([organizerId])
-  @@map("events")
   @@schema("app_v3")
 }
 
@@ -186,21 +905,6 @@ enum EventCategoryType {
   COMIDA
   DRINKS
 
-  @@schema("app_v3")
-}
-
-/// Junção N-N de eventos a categorias
-model EventCategory {
-  id        Int               @id @default(autoincrement())
-  eventId   Int               @map("event_id")
-  category  EventCategoryType
-  createdAt DateTime          @default(now()) @map("created_at")
-
-  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
-
-  @@unique([eventId, category])
-  @@index([category])
-  @@map("event_categories")
   @@schema("app_v3")
 }
 
@@ -232,9 +936,9 @@ enum ResaleMode {
 }
 
 enum FeeMode {
-  ON_TOP
   INCLUDED
-  ADDED // legacy valor existente na BD; tratar como ON_TOP
+  ADDED
+  ON_TOP
 
   @@schema("app_v3")
 }
@@ -253,95 +957,12 @@ enum PromoType {
   @@schema("app_v3")
 }
 
-/// Tipos de bilhete (antigas "waves")
-model TicketType {
-  id          Int     @id @default(autoincrement())
-  eventId     Int
-  name        String
-  description String?
-  price       Int
-  currency    String  @default("EUR")
-
-  totalQuantity Int?             @map("total_quantity")
-  soldQuantity  Int              @default(0) @map("sold_quantity")
-  status        TicketTypeStatus @default(ON_SALE)
-  startsAt      DateTime?        @map("starts_at")
-  endsAt        DateTime?        @map("ends_at")
-  sortOrder     Int              @default(0) @map("sort_order")
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  event        Event               @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  tickets      Ticket[]
-  reservations TicketReservation[]
-
-  @@index([eventId])
-  @@map("ticket_types")
-  @@schema("app_v3")
-}
-
 enum TicketTypeStatus {
   ON_SALE
   UPCOMING
   CLOSED
   SOLD_OUT
 
-  @@schema("app_v3")
-}
-
-/// Bilhete individual (por utilizador)
-model Ticket {
-  id           String @id @default(cuid())
-  eventId      Int
-  ticketTypeId Int    @map("ticket_type_id")
-  userId       String? @map("user_id") @db.Uuid
-
-  purchasedAt DateTime     @default(now()) @map("purchased_at")
-  status      TicketStatus @default(ACTIVE)
-
-  qrSecret     String  @map("qr_secret")
-  rotatingSeed String? @map("rotating_seed") @db.Uuid
-
-  pricePaid             Int     @map("price_paid")
-  currency              String  @default("EUR")
-  stripePaymentIntentId String? @map("stripe_payment_intent_id")
-  platformFeeCents      Int?    @map("platform_fee_cents")
-  totalPaidCents        Int?    @map("total_paid_cents")
-
-  usedAt DateTime? @map("used_at")
-
-  event      Event      @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  ticketType TicketType @relation(fields: [ticketTypeId], references: [id], onDelete: Cascade)
-  guestLink  GuestTicketLink?
-
-  transfers TicketTransfer[]
-  resales   TicketResale[]
-
-  @@unique([qrSecret])
-  @@index([eventId])
-  @@index([userId])
-  @@index([ticketTypeId])
-  @@index([stripePaymentIntentId])
-  @@map("tickets")
-  @@schema("app_v3")
-}
-
-/// Ligação de bilhetes comprados como convidado
-model GuestTicketLink {
-  ticketId        String  @id @map("ticket_id")
-  ticket          Ticket  @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-  guestEmail      String  @map("guest_email")
-  guestName       String  @map("guest_name")
-  guestPhone      String? @map("guest_phone")
-  migratedToUserId String? @map("migrated_to_user_id") @db.Uuid
-  migratedAt      DateTime? @map("migrated_at")
-  createdAt       DateTime  @default(now()) @map("created_at")
-  updatedAt       DateTime  @updatedAt @map("updated_at")
-
-  @@index([guestEmail])
-  @@index([migratedToUserId])
-  @@map("guest_ticket_links")
   @@schema("app_v3")
 }
 
@@ -355,89 +976,12 @@ enum TicketStatus {
   @@schema("app_v3")
 }
 
-/// Reservas temporárias de stock de bilhetes
-model TicketReservation {
-  id           String            @id @default(cuid())
-  eventId      Int
-  ticketTypeId Int               @map("ticket_type_id")
-  userId       String?           @map("user_id") @db.Uuid
-  quantity     Int
-  status       ReservationStatus @default(ACTIVE)
-  expiresAt    DateTime          @map("expires_at")
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  event      Event      @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  ticketType TicketType @relation(fields: [ticketTypeId], references: [id], onDelete: Cascade)
-
-  @@index([eventId])
-  @@index([ticketTypeId])
-  @@index([userId])
-  @@index([status, expiresAt])
-  @@map("ticket_reservations")
-  @@schema("app_v3")
-}
-
 enum ReservationStatus {
   ACTIVE
   COMPLETED
   EXPIRED
   CANCELED
 
-  @@schema("app_v3")
-}
-
-/// Participantes em experiências (sem QR / bilhete)
-model ExperienceParticipant {
-  id        String   @id @default(cuid())
-  eventId   Int
-  userId    String   @db.Uuid
-  createdAt DateTime @default(now()) @map("created_at")
-
-  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
-
-  @@unique([eventId, userId])
-  @@index([userId])
-  @@map("experience_participants")
-  @@schema("app_v3")
-}
-
-/// Interesse / "quero ir" em eventos de organizador
-model EventInterest {
-  id        String   @id @default(cuid())
-  eventId   Int
-  userId    String   @db.Uuid
-  createdAt DateTime @default(now()) @map("created_at")
-
-  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
-
-  @@unique([eventId, userId])
-  @@index([userId])
-  @@map("event_interests")
-  @@schema("app_v3")
-}
-
-/// Staff associado a organizadores / eventos
-model StaffAssignment {
-  id          Int        @id @default(autoincrement())
-  organizerId Int        @map("organizer_id")
-  userId      String     @map("user_id") @db.Uuid
-  role        StaffRole  @default(STAFF)
-  scope       StaffScope
-  eventId     Int?       @map("event_id")
-  createdAt   DateTime   @default(now()) @map("created_at")
-  revokedAt   DateTime?  @map("revoked_at")
-  acceptedAt  DateTime?  @map("accepted_at")
-  status      StaffStatus @default(PENDING)
-
-  organizer Organizer @relation(fields: [organizerId], references: [id], onDelete: Cascade)
-  event     Event?    @relation(fields: [eventId], references: [id])
-
-  @@index([organizerId])
-  @@index([userId])
-  @@index([eventId])
-  @@map("staff_assignments")
   @@schema("app_v3")
 }
 
@@ -465,49 +1009,11 @@ enum StaffStatus {
   @@schema("app_v3")
 }
 
-/// Transferência de bilhetes entre utilizadores
-model TicketTransfer {
-  id          String         @id @default(cuid())
-  ticketId    String         @map("ticket_id")
-  fromUserId  String         @map("from_user_id") @db.Uuid
-  toUserId    String         @map("to_user_id") @db.Uuid
-  status      TransferStatus @default(PENDING)
-  createdAt   DateTime       @default(now()) @map("created_at")
-  completedAt DateTime?      @map("completed_at")
-
-  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-
-  @@index([ticketId])
-  @@index([fromUserId])
-  @@index([toUserId])
-  @@map("ticket_transfers")
-  @@schema("app_v3")
-}
-
 enum TransferStatus {
   PENDING
   ACCEPTED
   CANCELLED
 
-  @@schema("app_v3")
-}
-
-/// Revenda de bilhetes pelo utilizador
-model TicketResale {
-  id           String       @id @default(cuid())
-  ticketId     String       @map("ticket_id")
-  sellerUserId String       @map("seller_user_id") @db.Uuid
-  price        Int
-  currency     String       @default("EUR")
-  status       ResaleStatus @default(LISTED)
-  createdAt    DateTime     @default(now()) @map("created_at")
-  completedAt  DateTime?    @map("completed_at")
-
-  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-
-  @@index([ticketId])
-  @@index([sellerUserId])
-  @@map("ticket_resales")
   @@schema("app_v3")
 }
 
@@ -519,105 +1025,72 @@ enum ResaleStatus {
   @@schema("app_v3")
 }
 
-/// Pageviews por evento (simples, para futuras stats)
-model EventView {
-  id        String   @id @default(cuid())
-  eventId   Int
-  userId    String?  @db.Uuid
-  sessionId String?  @map("session_id")
-  createdAt DateTime @default(now()) @map("created_at")
+enum aal_level {
+  aal1
+  aal2
+  aal3
 
-  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
-
-  @@index([eventId])
-  @@index([userId])
-  @@map("event_views")
-  @@schema("app_v3")
+  @@schema("auth")
 }
 
-/// Agregado diário de vendas por evento
-model EventSalesAgg {
-  id          Int      @id @default(autoincrement())
-  eventId     Int      @unique
-  date        DateTime @map("date")
-  ticketsSold Int      @default(0) @map("tickets_sold")
-  revenue     Int      @default(0) @map("revenue")
+enum code_challenge_method {
+  s256
+  plain
 
-  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
-
-  @@map("event_sales_agg")
-  @@schema("app_v3")
+  @@schema("auth")
 }
 
-/// Registo de eventos de pagamento (auditoria webhooks/intent)
-model PaymentEvent {
-  id                   Int      @id @default(autoincrement())
-  stripePaymentIntentId String?  @map("stripe_payment_intent_id")
-  status               String?
-  eventId              Int?     @map("event_id")
-  amountCents          Int?     @map("amount_cents")
-  platformFeeCents     Int?     @map("platform_fee_cents")
-  userId               String?  @map("user_id") @db.Uuid
-  errorMessage         String?  @map("error_message")
-  createdAt            DateTime @default(now()) @map("created_at")
-  updatedAt            DateTime @updatedAt @map("updated_at")
+enum factor_status {
+  unverified
+  verified
 
-  event Event? @relation(fields: [eventId], references: [id], onDelete: SetNull)
-
-  @@index([stripePaymentIntentId])
-  @@index([eventId])
-  @@map("payment_events")
-  @@schema("app_v3")
+  @@schema("auth")
 }
 
-/// Configurações simples chave-valor (taxas, etc.)
-model PlatformSetting {
-  id        Int      @id @default(autoincrement())
-  key       String   @unique
-  value     String
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+enum factor_type {
+  totp
+  webauthn
+  phone
 
-  @@map("platform_settings")
-  @@schema("app_v3")
+  @@schema("auth")
 }
 
-/// Códigos promocionais simples
-model PromoCode {
-  id                Int        @id @default(autoincrement())
-  code              String
-  type              PromoType
-  value             Int         // percent em bps se PERCENTAGE; cêntimos se FIXED
-  maxUses           Int?        @map("max_uses")
-  perUserLimit      Int?        @map("per_user_limit")
-  validFrom         DateTime?   @map("valid_from")
-  validUntil        DateTime?   @map("valid_until")
-  active            Boolean     @default(true)
-  eventId           Int?        @map("event_id")
-  autoApply         Boolean     @default(false) @map("auto_apply")
-  minQuantity       Int?        @map("min_quantity")
-  minTotalCents     Int?        @map("min_total_cents")
-  createdAt         DateTime    @default(now()) @map("created_at")
-  updatedAt         DateTime    @updatedAt @map("updated_at")
+enum oauth_authorization_status {
+  pending
+  approved
+  denied
+  expired
 
-  event        Event?             @relation(fields: [eventId], references: [id], onDelete: SetNull)
-  redemptions  PromoRedemption[]
-
-  @@index([eventId])
-  @@map("promo_codes")
-  @@schema("app_v3")
+  @@schema("auth")
 }
 
-model PromoRedemption {
-  id           Int       @id @default(autoincrement())
-  promoCodeId  Int       @map("promo_code_id")
-  userId       String?   @map("user_id") @db.Uuid
-  guestEmail   String?   @map("guest_email")
-  usedAt       DateTime  @default(now()) @map("used_at")
+enum oauth_client_type {
+  public
+  confidential
 
-  promoCode PromoCode @relation(fields: [promoCodeId], references: [id], onDelete: Cascade)
+  @@schema("auth")
+}
 
-  @@index([promoCodeId])
-  @@map("promo_redemptions")
-  @@schema("app_v3")
+enum oauth_registration_type {
+  dynamic
+  manual
+
+  @@schema("auth")
+}
+
+enum oauth_response_type {
+  code
+
+  @@schema("auth")
+}
+
+enum one_time_token_type {
+  confirmation_token
+  reauthentication_token
+  recovery_token
+  email_change_token_new
+  email_change_token_current
+  phone_change_token
+
+  @@schema("auth")
 }

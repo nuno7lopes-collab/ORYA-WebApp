@@ -14,18 +14,11 @@ import {
 } from "@stripe/stripe-js";
 import { useCheckout } from "./contextoCheckout";
 import { supabaseBrowser } from "@/lib/supabaseBrowser";
+import { isValidPhone, sanitizePhone } from "@/lib/phone";
+import { sanitizeUsername, validateUsername } from "@/lib/username";
 
 function isValidEmail(email: string) {
   return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email);
-}
-
-function sanitizePhone(input: string) {
-  let cleaned = input.replace(/[^\d+]/g, "");
-  if (cleaned.includes("+")) {
-    const firstPlus = cleaned.indexOf("+");
-    cleaned = "+" + cleaned.slice(firstPlus + 1).replace(/\+/g, "");
-  }
-  return cleaned;
 }
 
 type CheckoutItem = {
@@ -222,6 +215,28 @@ export default function Step2Pagamento() {
         promoCode: promoCode.trim() || undefined,
       };
   }, [safeDados, promoCode]);
+
+  const checkUsernameAvailability = async (value: string) => {
+    const cleaned = sanitizeUsername(value);
+    const validation = validateUsername(cleaned);
+    if (!validation.valid) {
+      setError(validation.error);
+      return { ok: false, username: cleaned };
+    }
+    try {
+      const res = await fetch(`/api/username/check?username=${encodeURIComponent(cleaned)}`);
+      const json = await res.json().catch(() => null);
+      if (!res.ok || json?.available === false) {
+        setError("Esse @ já está a ser usado.");
+        return { ok: false, username: cleaned };
+      }
+      return { ok: true, username: validation.normalized };
+    } catch (err) {
+      console.error("[Step2Pagamento] erro a verificar username", err);
+      setError("Não foi possível verificar o username. Tenta novamente.");
+      return { ok: false, username: cleaned };
+    }
+  };
 
   useEffect(() => {
     // Se não houver dados de checkout, mandamos de volta
@@ -446,8 +461,7 @@ const options: StripeElementsOptions | undefined = clientSecret
 
     const phoneNormalized = sanitizePhone(guestPhone);
     if (phoneNormalized) {
-      const isValidPhone = /^\+?\d{6,15}$/.test(phoneNormalized);
-      if (!isValidPhone) {
+      if (!isValidPhone(phoneNormalized)) {
         localErrors.phone = "Telemóvel inválido. Usa apenas dígitos e opcional + no início.";
       }
     }
@@ -738,8 +752,8 @@ function PaymentForm({ total, discount = 0 }: PaymentFormProps) {
       <div className="rounded-xl bg-black/40 px-3 py-3 text-sm min-h-[320px] max-h-[400px] overflow-y-auto pr-1">
         <PaymentElement
           options={{
-            // Ordem preferida; os métodos efectivamente mostrados dependem do PaymentIntent
-            paymentMethodOrder: ["card", "mb_way"],
+            // Ordem preferida; apenas métodos autorizados (Stripe: Card, Apple Pay/Link, MB WAY)
+            paymentMethodOrder: ["card", "link", "apple_pay", "mb_way"],
           }}
         />
       </div>
@@ -934,16 +948,21 @@ function AuthWall({ onAuthenticated }: AuthWallProps) {
           setError("Nome é obrigatório para criar conta.");
           return;
         }
-        const usernameClean = username.trim();
-        if (usernameClean.length < 3 || !/^[a-zA-Z0-9_.-]+$/.test(usernameClean)) {
-          setError("Escolhe um username com pelo menos 3 caracteres (letras/números/-._).");
+        const usernameCheck = await checkUsernameAvailability(username);
+        if (!usernameCheck.ok) {
+          setSubmitting(false);
           return;
         }
 
         const res = await fetch("/api/auth/send-otp", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email: emailToUse, password }),
+          body: JSON.stringify({
+            email: emailToUse,
+            password,
+            username: usernameCheck.username,
+            fullName: fullName.trim(),
+          }),
         });
         const data = await res.json().catch(() => null);
         if (!res.ok || !data?.ok) {

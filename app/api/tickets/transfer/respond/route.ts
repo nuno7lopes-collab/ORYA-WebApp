@@ -25,6 +25,18 @@ export async function POST(req: NextRequest) {
         { status: 401 }
       );
     }
+    const profile = await prisma.profile.findUnique({
+      where: { id: user.id },
+      select: { roles: true },
+    });
+    const roles = Array.isArray(profile?.roles) ? (profile?.roles as string[]) : [];
+    const isAdmin = roles.some((r) => r?.toLowerCase() === "admin");
+    if (!isAdmin) {
+      return NextResponse.json(
+        { ok: false, error: "FORBIDDEN" },
+        { status: 403 },
+      );
+    }
 
     const body = await req.json().catch(() => null) as
       | { transferId?: string; action?: "ACCEPT" | "DECLINE" }

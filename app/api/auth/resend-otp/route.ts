@@ -90,12 +90,20 @@ export async function POST(req: NextRequest) {
       </table>
     `;
 
-    await resend.emails.send({
-      from: env.resendFrom,
-      to: email,
-      subject: `Código ORYA: ${code}`,
-      html,
-    });
+    try {
+      await resend.emails.send({
+        from: env.resendFrom,
+        to: email,
+        subject: `Código ORYA: ${code}`,
+        html,
+      });
+    } catch (mailErr) {
+      console.error("[resend-otp] resend error", { mailErr, email, env: process.env.NODE_ENV });
+      return NextResponse.json(
+        { error: "Não foi possível reenviar o código. Tenta mais tarde." },
+        { status: 502 },
+      );
+    }
 
     return NextResponse.json({ success: true });
   } catch (err) {

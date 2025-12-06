@@ -4,6 +4,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getPlatformFees } from "@/lib/platformSettings";
+import { isValidPhone, normalizePhone } from "@/lib/phone";
+import { getActiveOrganizerForUser } from "@/lib/organizerContext";
 
 export async function GET(req: NextRequest) {
   try {
@@ -36,9 +38,7 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    const organizer = await prisma.organizer.findFirst({
-      where: { userId: profile.id },
-    });
+    const { organizer, membership } = await getActiveOrganizerForUser(profile.id);
     const platformFees = await getPlatformFees();
 
     const profilePayload = {
@@ -96,6 +96,7 @@ export async function GET(req: NextRequest) {
         contactEmail: user.email,
         profileStatus,
         paymentsStatus,
+        membershipRole: membership?.role ?? null,
       },
       { status: 200 }
     );
@@ -130,12 +131,26 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "Payload inválido." }, { status: 400 });
     }
 
-    const { displayName, businessName, entityType, city, payoutIban, fullName, contactPhone } = body as Record<string, unknown>;
+    const { displayName, businessName, entityType, city, payoutIban, fullName, contactPhone } = body as Record<
+      string,
+      unknown
+    >;
+
+    // Validação de telefone (opcional, mas consistente com checkout)
+    if (typeof contactPhone === "string" && contactPhone.trim()) {
+      const phoneRaw = contactPhone.trim();
+      if (!isValidPhone(phoneRaw)) {
+        return NextResponse.json(
+          { ok: false, error: "Telefone inválido. Usa um número real (podes incluir indicativo, ex.: +351...)." },
+          { status: 400 },
+        );
+      }
+    }
 
     const profileUpdates: Record<string, unknown> = {};
     if (typeof fullName === "string") profileUpdates.fullName = fullName.trim() || null;
     if (typeof city === "string") profileUpdates.city = city.trim() || null;
-    if (typeof contactPhone === "string") profileUpdates.contactPhone = contactPhone.trim() || null;
+    if (typeof contactPhone === "string") profileUpdates.contactPhone = normalizePhone(contactPhone.trim()) || null;
 
     const organizerUpdates: Record<string, unknown> = {};
     if (typeof displayName === "string") organizerUpdates.displayName = displayName.trim() || null;
@@ -144,10 +159,11 @@ export async function PATCH(req: NextRequest) {
     if (typeof city === "string") organizerUpdates.city = city.trim() || null;
     if (typeof payoutIban === "string") organizerUpdates.payoutIban = payoutIban.trim() || null;
 
-    // Garantir que existe organizer
-    const organizer = await prisma.organizer.findFirst({
-      where: { userId: user.id },
+    // Garantir que existe organizer (via membership ou legacy userId)
+    const { organizer } = await getActiveOrganizerForUser(user.id, {
+      roles: ["OWNER", "ADMIN"],
     });
+
     if (!organizer) {
       return NextResponse.json({ ok: false, error: "Ainda não és organizador." }, { status: 403 });
     }

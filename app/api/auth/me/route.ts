@@ -3,11 +3,13 @@ import { NextResponse } from "next/server";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import type { User } from "@supabase/supabase-js";
+import { setUsernameForOwner, UsernameTakenError } from "@/lib/globalUsernames";
 
 type SupabaseUserMetadata = {
   full_name?: string;
   name?: string;
   avatar_url?: string;
+  pending_username?: string;
 };
 
 type ApiAuthMeResponse = {
@@ -67,6 +69,8 @@ export async function GET() {
       where: { id: userId },
     });
 
+    const pendingUsername = typeof userMetadata.pending_username === "string" ? userMetadata.pending_username : null;
+
     if (!profile) {
       profile = await prisma.profile.create({
         data: {
@@ -81,6 +85,32 @@ export async function GET() {
           allowFriendRequests: true,
         },
       });
+    }
+
+    // Atribuir username pendente se ainda não existir
+    if (!profile.username && pendingUsername) {
+      try {
+        await prisma.$transaction(async (tx) => {
+          await setUsernameForOwner({
+            username: pendingUsername,
+            ownerType: "user",
+            ownerId: userId,
+            tx,
+          });
+          await tx.profile.update({
+            where: { id: userId },
+            data: { username: pendingUsername },
+          });
+        });
+        profile = await prisma.profile.findUnique({ where: { id: userId } });
+      } catch (err) {
+        if (err instanceof UsernameTakenError) {
+          // outro utilizador já registou o @ entretanto; deixa username nulo
+          console.warn("[auth/me] pending_username já ocupado");
+        } else {
+          console.error("[auth/me] erro ao aplicar pending_username:", err);
+        }
+      }
     }
 
     const safeProfile = {

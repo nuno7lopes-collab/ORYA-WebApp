@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { resend } from "@/lib/resend";
 import { env } from "@/lib/env";
+import { normalizeAndValidateUsername, checkUsernameAvailability } from "@/lib/globalUsernames";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -41,11 +42,13 @@ function buildEmailHtml(code: string) {
 export async function POST(req: NextRequest) {
   try {
     const body = (await req.json().catch(() => null)) as
-      | { email?: string; password?: string | null }
+      | { email?: string; password?: string | null; username?: string | null; fullName?: string | null }
       | null;
 
     const rawEmail = body?.email?.toLowerCase().trim() ?? "";
     const password = body?.password ?? null;
+    const rawUsername = body?.username?.trim() ?? "";
+    const rawFullName = body?.fullName ?? "";
 
     if (!rawEmail || !EMAIL_REGEX.test(rawEmail)) {
       return NextResponse.json(
@@ -59,6 +62,25 @@ export async function POST(req: NextRequest) {
         { status: 400 },
       );
     }
+    let usernameNormalized: string | null = null;
+    if (rawUsername) {
+      const usernameValidation = normalizeAndValidateUsername(rawUsername);
+      if (!usernameValidation.ok) {
+        return NextResponse.json(
+          { ok: false, error: usernameValidation.error, code: "USERNAME_INVALID" },
+          { status: 400 },
+        );
+      }
+      const availability = await checkUsernameAvailability(usernameValidation.username);
+      if (availability.ok && availability.available === false) {
+        return NextResponse.json(
+          { ok: false, error: "Este @ já está a ser usado — escolhe outro.", code: "USERNAME_TAKEN" },
+          { status: 409 },
+        );
+      }
+      usernameNormalized = usernameValidation.username;
+    }
+    const fullName = rawFullName?.trim() || null;
 
     const siteUrl =
       process.env.NEXT_PUBLIC_SITE_URL ??
@@ -73,6 +95,10 @@ export async function POST(req: NextRequest) {
       password: password ?? undefined,
       options: {
         emailRedirectTo: `${siteUrl}/auth/callback`,
+        data: {
+          ...(usernameNormalized ? { pending_username: usernameNormalized } : {}),
+          full_name: fullName || undefined,
+        },
       },
     });
 
@@ -93,7 +119,11 @@ export async function POST(req: NextRequest) {
       }
       console.error("[send-otp] generateLink error:", error);
       return NextResponse.json(
-        { ok: false, error: "Não foi possível gerar o código. Tenta novamente." },
+        {
+          ok: false,
+          error: "Não foi possível gerar o código. Tenta novamente dentro de alguns minutos.",
+          details: typeof error === "object" ? (error as Record<string, unknown>) : undefined,
+        },
         { status: 500 },
       );
     }
@@ -107,12 +137,23 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    await resend.emails.send({
-      from: env.resendFrom,
-      to: rawEmail,
-      subject: `Código ORYA: ${otp}`,
-      html: buildEmailHtml(otp),
-    });
+    try {
+      await resend.emails.send({
+        from: env.resendFrom,
+        to: rawEmail,
+        subject: `Código ORYA: ${otp}`,
+        html: buildEmailHtml(otp),
+      });
+    } catch (mailErr) {
+      console.error("[send-otp] resend error", { mailErr, email: rawEmail, env: process.env.NODE_ENV });
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "Não foi possível enviar o código. Tenta novamente dentro de alguns minutos.",
+        },
+        { status: 502 },
+      );
+    }
 
     return NextResponse.json({ ok: true });
   } catch (err) {

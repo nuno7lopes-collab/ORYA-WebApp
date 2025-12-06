@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
 import { useUser } from "@/app/hooks/useUser";
 import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
+import { isValidPhone, sanitizePhone } from "@/lib/phone";
 
 type OrganizerMeResponse = {
   ok: boolean;
@@ -42,6 +43,7 @@ export default function OrganizerSettingsPage() {
   const [city, setCity] = useState("");
   const [contactEmail, setContactEmail] = useState("");
   const [contactPhone, setContactPhone] = useState("");
+  const [phoneError, setPhoneError] = useState<string | null>(null);
   const [payoutIban, setPayoutIban] = useState("");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -86,6 +88,10 @@ export default function OrganizerSettingsPage() {
   async function handleSave() {
     if (!user) {
       openModal({ mode: "login", redirectTo: "/organizador/settings", showGoogle: true });
+      return;
+    }
+    if (contactPhone && !isValidPhone(contactPhone)) {
+      setPhoneError("Telefone inválido. Introduz um número válido (podes incluir indicativo, ex.: +351...).");
       return;
     }
     setSaving(true);
@@ -227,10 +233,24 @@ export default function OrganizerSettingsPage() {
             <label className="text-[12px] text-white/70">Telefone (opcional)</label>
             <input
               value={contactPhone}
-              onChange={(e) => setContactPhone(e.target.value)}
-              className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
-              placeholder="+351 ..."
+              onChange={(e) => {
+                const sanitized = sanitizePhone(e.target.value);
+                setContactPhone(sanitized);
+                if (sanitized && !isValidPhone(sanitized)) {
+                  setPhoneError("Telefone inválido. Introduz um número válido (podes incluir indicativo, ex.: +351...).");
+                } else {
+                  setPhoneError(null);
+                }
+              }}
+              inputMode="tel"
+              pattern="\\+?\\d{6,15}"
+              maxLength={18}
+              className={`w-full rounded-xl border bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF] ${
+                phoneError ? "border-red-400/60" : "border-white/15"
+              }`}
+              placeholder="+351912345678"
             />
+            {phoneError && <p className="text-[11px] text-red-300">{phoneError}</p>}
           </div>
         </div>
         {message && <p className="text-[12px] text-white/70">{message}</p>}

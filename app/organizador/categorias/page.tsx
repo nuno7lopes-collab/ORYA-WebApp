@@ -126,7 +126,7 @@ export default function OrganizerCategoriesPage() {
                 Ver eventos
               </Link>
               <Link
-                href={`/organizador/eventos/novo?preset=${cat.preset}`}
+                href={`/organizador/(dashboard)/eventos/novo?preset=${cat.preset}`}
                 className="flex-1 rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-3 py-1.5 text-[12px] font-semibold text-black shadow text-center"
               >
                 Criar {cat.preset === "restaurante" ? "jantar" : cat.preset === "padel" ? "torneio" : "evento"}

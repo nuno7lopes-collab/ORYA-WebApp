@@ -84,7 +84,7 @@ export default function EventosFeedPage() {
           </div>
 
           <Link
-            href="/organizador/eventos/novo"
+            href="/organizador/(dashboard)/eventos/novo"
             className="hidden sm:inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-4 py-1.5 text-xs font-semibold text-black shadow-[0_0_22px_rgba(107,255,255,0.45)] hover:scale-105 active:scale-95 transition"
           >
             + Criar evento

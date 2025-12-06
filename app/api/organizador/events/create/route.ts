@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, assertOrganizer } from "@/lib/security";
+import { getActiveOrganizerForUser } from "@/lib/organizerContext";
 
 // Tipos esperados no body do pedido
 type TicketTypeInput = {
@@ -73,12 +74,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Buscar organizer associado a este profile
-    const organizer = await prisma.organizer.findFirst({
-      where: {
-        userId: profile.id,
-        status: "ACTIVE",
-      },
+    // Buscar organizer associado a este profile (membership > legacy)
+    const { organizer, membership } = await getActiveOrganizerForUser(profile.id, {
+      roles: ["OWNER", "ADMIN"],
     });
 
     // Garante que o user tem role de organizer e que este organizer pertence-lhe

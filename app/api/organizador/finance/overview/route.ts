@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { TicketStatus } from "@prisma/client";
+import { getActiveOrganizerForUser } from "@/lib/organizerContext";
 
 type Aggregate = {
   grossCents: number;
@@ -22,9 +23,7 @@ export async function GET() {
       return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
 
-    const organizer = await prisma.organizer.findFirst({
-      where: { userId: user.id, status: "ACTIVE" },
-    });
+    const { organizer } = await getActiveOrganizerForUser(user.id);
 
     if (!organizer) {
       return NextResponse.json({ ok: false, error: "NOT_ORGANIZER" }, { status: 403 });

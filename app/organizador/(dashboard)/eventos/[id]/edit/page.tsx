@@ -1,8 +1,8 @@
-// app/organizador/eventos/[id]/edit/page.tsx
+// app/organizador/(dashboard)/eventos/[id]/edit/page.tsx
 import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { EventEditClient } from "@/app/organizador/eventos/EventEditClient";
+import { EventEditClient } from "@/app/organizador/(dashboard)/eventos/EventEditClient";
 
 type PageProps = {
   params: Promise<{ id: string }>;
@@ -16,7 +16,7 @@ export default async function OrganizerEventEditPage({ params }: PageProps) {
   const supabase = await createSupabaseServer();
   const { data, error } = await supabase.auth.getUser();
   if (error || !data?.user) {
-    redirect("/login?redirectTo=/organizador/eventos");
+    redirect("/login?redirectTo=/organizador/(dashboard)/eventos");
   }
 
   const organizer = await prisma.organizer.findFirst({

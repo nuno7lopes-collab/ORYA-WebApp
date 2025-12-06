@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { Prisma, TicketStatus } from "@prisma/client";
+import { getActiveOrganizerForUser } from "@/lib/organizerContext";
 
 function parseRangeParams(url: URL) {
   const range = url.searchParams.get("range");
@@ -96,12 +97,7 @@ export async function GET(req: NextRequest) {
     }
 
     // 1) Garantir que o user é um organizador ativo
-    const organizer = await prisma.organizer.findFirst({
-      where: {
-        userId: user.id,
-        status: "ACTIVE",
-      },
-    });
+    const { organizer } = await getActiveOrganizerForUser(user.id);
 
     if (!organizer) {
       return NextResponse.json(
