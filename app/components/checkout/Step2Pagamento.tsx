@@ -750,12 +750,12 @@ function PaymentForm({ total, discount = 0 }: PaymentFormProps) {
       )}
 
       <div className="rounded-xl bg-black/40 px-3 py-3 text-sm min-h-[320px] max-h-[400px] overflow-y-auto pr-1">
-        <PaymentElement
-          options={{
-            // Ordem preferida; apenas métodos autorizados (Stripe: Card, Apple Pay/Link, MB WAY)
-            paymentMethodOrder: ["card", "link", "apple_pay", "mb_way"],
-          }}
-        />
+          <PaymentElement
+            options={{
+              // Ordem preferida; apenas métodos autorizados (Stripe: Card/Link/MB WAY — Apple Pay vem via Card)
+            paymentMethodOrder: ["card", "link", "mb_way"],
+            }}
+          />
       </div>
 
       {error && (
