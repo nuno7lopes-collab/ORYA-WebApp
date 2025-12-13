@@ -60,7 +60,7 @@ export function isValidWebsiteOrInstagram(value: string): boolean {
   const normalized = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
   try {
     // Valida hostname e URL globalmente
-    // eslint-disable-next-line no-new
+     
     new URL(normalized);
     return true;
   } catch {

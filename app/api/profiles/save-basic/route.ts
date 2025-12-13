@@ -11,6 +11,11 @@ interface SaveBasicBody {
   fullName?: string;
   username?: string;
   contactPhone?: string | null;
+  avatarUrl?: string | null;
+  visibility?: "PUBLIC" | "PRIVATE";
+  allowEmailNotifications?: boolean;
+  allowEventReminders?: boolean;
+  allowFriendRequests?: boolean;
 }
 
 export async function POST(req: NextRequest) {
@@ -43,6 +48,11 @@ export async function POST(req: NextRequest) {
     const rawFullName = body.fullName ?? "";
     const rawUsername = body.username ?? "";
     const rawPhone = body.contactPhone;
+    const avatarUrl = body.avatarUrl ?? undefined;
+    const visibility = body.visibility === "PRIVATE" ? "PRIVATE" : body.visibility === "PUBLIC" ? "PUBLIC" : undefined;
+    const allowEmailNotifications = typeof body.allowEmailNotifications === "boolean" ? body.allowEmailNotifications : undefined;
+    const allowEventReminders = typeof body.allowEventReminders === "boolean" ? body.allowEventReminders : undefined;
+    const allowFriendRequests = typeof body.allowFriendRequests === "boolean" ? body.allowFriendRequests : undefined;
 
     const fullName = rawFullName.trim();
     const username = rawUsername.trim();
@@ -96,6 +106,11 @@ export async function POST(req: NextRequest) {
           username: usernameNormalized,
           onboardingDone: true,
           ...(normalizedPhone !== undefined ? { contactPhone: normalizedPhone } : {}),
+          ...(avatarUrl !== undefined ? { avatarUrl: avatarUrl || null } : {}),
+          ...(visibility ? { visibility } : {}),
+          ...(allowEmailNotifications !== undefined ? { allowEmailNotifications } : {}),
+          ...(allowEventReminders !== undefined ? { allowEventReminders } : {}),
+          ...(allowFriendRequests !== undefined ? { allowFriendRequests } : {}),
         },
         create: {
           id: userId,
@@ -104,6 +119,11 @@ export async function POST(req: NextRequest) {
           onboardingDone: true,
           roles: ["user"],
           contactPhone: normalizedPhone ?? null,
+          avatarUrl: avatarUrl ?? null,
+          visibility: visibility ?? "PUBLIC",
+          allowEmailNotifications: allowEmailNotifications ?? true,
+          allowEventReminders: allowEventReminders ?? true,
+          allowFriendRequests: allowFriendRequests ?? true,
         },
       });
     });
@@ -118,6 +138,10 @@ export async function POST(req: NextRequest) {
       favouriteCategories: profile.favouriteCategories,
       onboardingDone: profile.onboardingDone,
       roles: profile.roles,
+      visibility: profile.visibility,
+      allowEmailNotifications: profile.allowEmailNotifications,
+      allowEventReminders: profile.allowEventReminders,
+      allowFriendRequests: profile.allowFriendRequests,
     };
 
     return NextResponse.json(

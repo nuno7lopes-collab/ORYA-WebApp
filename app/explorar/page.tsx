@@ -6,6 +6,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { defaultBlurDataURL, optimizeImageUrl } from "@/lib/image";
+import { PORTUGAL_CITIES } from "@/config/cities";
+import { clampWithGap } from "@/lib/filters";
+import { trackEvent } from "@/lib/analytics";
 
 type ExploreItem = {
   id: number;
@@ -39,13 +42,13 @@ type ApiResponse = {
   };
 };
 
-type DateFilter = "all" | "today" | "upcoming";
+type DateFilter = "all" | "today" | "weekend" | "custom";
 type TypeFilter = "all" | "event" | "experience";
 
 const DATE_FILTER_OPTIONS = [
   { value: "all", label: "Todas as datas" },
   { value: "today", label: "Hoje" },
-  { value: "upcoming", label: "Próximos dias" },
+  { value: "weekend", label: "Este fim de semana" },
 ] as const;
 
 const TYPE_OPTIONS: { value: TypeFilter; label: string }[] = [
@@ -55,13 +58,8 @@ const TYPE_OPTIONS: { value: TypeFilter; label: string }[] = [
 ];
 
 const CATEGORY_OPTIONS = [
-  { value: "FESTA", label: "Festa", accent: "from-[#FF00C8] to-[#FF8AD9]" },
   { value: "DESPORTO", label: "Desporto", accent: "from-[#6BFFFF] to-[#4ADE80]" },
-  { value: "CONCERTO", label: "Concerto", accent: "from-[#9B8CFF] to-[#6BFFFF]" },
-  { value: "PALESTRA", label: "Palestra", accent: "from-[#FDE68A] to-[#F472B6]" },
-  { value: "ARTE", label: "Arte", accent: "from-[#F472B6] to-[#A855F7]" },
-  { value: "COMIDA", label: "Comida", accent: "from-[#F97316] to-[#FACC15]" },
-  { value: "DRINKS", label: "Drinks", accent: "from-[#34D399] to-[#6BFFFF]" },
+  { value: "GERAL", label: "Eventos gerais", accent: "from-[#FF00C8] via-[#9B8CFF] to-[#1646F5]" },
 ] as const;
 
 function formatDateRange(start: string, end: string) {
@@ -112,12 +110,21 @@ function ExplorarContent() {
   const [search, setSearch] = useState("");
 
   const [dateFilter, setDateFilter] = useState<DateFilter>("all");
+  const [customDate, setCustomDate] = useState("");
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [cityInput, setCityInput] = useState("");
   const [city, setCity] = useState("");
+  const [citySearch, setCitySearch] = useState("");
   const [priceMin, setPriceMin] = useState(0);
   const [priceMax, setPriceMax] = useState(100); // 100 = "sem limite" (100+)
+  const [filtersTick, setFiltersTick] = useState(0);
+  const [isMobile, setIsMobile] = useState(false);
+  const [calendarMonth, setCalendarMonth] = useState<Date>(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return today;
+  });
 
   const [nextCursor, setNextCursor] = useState<number | null>(null);
   const [hasMore, setHasMore] = useState(false);
@@ -126,31 +133,274 @@ function ExplorarContent() {
   const [isCityOpen, setIsCityOpen] = useState(false);
   const [isDateOpen, setIsDateOpen] = useState(false);
   const [isPriceOpen, setIsPriceOpen] = useState(false);
+  const cityRef = useRef<HTMLDivElement | null>(null);
+  const dateRef = useRef<HTMLDivElement | null>(null);
+  const priceRef = useRef<HTMLDivElement | null>(null);
 
   const [likedItems, setLikedItems] = useState<number[]>([]);
   const searchParams = useSearchParams();
   const requestController = useRef<AbortController | null>(null);
+  const [hydratedFromParams, setHydratedFromParams] = useState(false);
 
   // City via geolocation + Mapbox (opcional)
   // Geolocation desativada para evitar preencher com valores inválidos
 
   const effectiveMaxParam = priceMax >= 100 ? null : priceMax;
+  const filteredCities = useMemo(() => {
+    const needle = citySearch.trim().toLowerCase();
+    if (!needle) return PORTUGAL_CITIES;
+    return PORTUGAL_CITIES.filter((c) => c.toLowerCase().includes(needle));
+  }, [citySearch]);
 
   const hasActiveFilters = useMemo(
     () =>
       search.trim().length > 0 ||
       dateFilter !== "all" ||
+      (dateFilter === "custom" && !!customDate) ||
       typeFilter !== "all" ||
       selectedCategories.length > 0 ||
       city.trim().length > 0 ||
       priceMin > 0 ||
       effectiveMaxParam !== null,
-    [city, dateFilter, effectiveMaxParam, priceMin, search, selectedCategories.length, typeFilter],
+    [city, customDate, dateFilter, effectiveMaxParam, priceMin, search, selectedCategories.length, typeFilter],
   );
 
   function toggleLike(id: number) {
     setLikedItems((prev) => (prev.includes(id) ? prev.filter((v) => v !== id) : [...prev, id]));
   }
+
+  const CityPanel = () => (
+    <>
+      {isMobile && (
+        <div className="mb-2">
+          <input
+            value={citySearch}
+            onChange={(e) => setCitySearch(e.target.value)}
+            placeholder="Procurar cidade"
+            className="w-full rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-[12px] text-white placeholder:text-white/40 focus:border-white/35 focus:outline-none"
+          />
+        </div>
+      )}
+      <div className="max-h-52 overflow-auto space-y-1.5 pr-1">
+        {filteredCities.map((c) => {
+          const active = city === c;
+          return (
+            <button
+              key={c}
+              type="button"
+              onClick={() => {
+                setCity(c);
+                setCityInput(c);
+                setIsCityOpen(false);
+              }}
+              className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-[12px] ${
+                active
+                  ? "border-[#6BFFFF]/70 bg-[#6BFFFF]/15 text-white"
+                  : "border-white/12 bg-white/5 text-white/80 hover:border-white/30"
+              }`}
+            >
+              {c}
+              {active && <span className="text-[10px] text-[#E5FFFF]">Selecionada</span>}
+            </button>
+          );
+        })}
+      </div>
+      <div className="flex items-center justify-between pt-2">
+        <button
+          type="button"
+          onClick={() => setIsCityOpen(false)}
+          className="text-[11px] text-white/70 hover:text-white/90"
+        >
+          Fechar
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setCityInput("");
+            setCity("");
+            setIsCityOpen(false);
+          }}
+          className="px-2.5 py-1 rounded-full bg-transparent border border-white/15 text-[11px] text-white/70 hover:bg-white/5"
+        >
+          Limpar cidade
+        </button>
+      </div>
+    </>
+  );
+
+  const calendarDays = useMemo(() => {
+    const firstOfMonth = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), 1);
+    const startWeekday = firstOfMonth.getDay(); // domingo = 0
+    const daysInMonth = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 0).getDate();
+    const list: Array<{ date: Date | null }> = [];
+    for (let i = 0; i < startWeekday; i++) {
+      list.push({ date: null });
+    }
+    for (let d = 1; d <= daysInMonth; d++) {
+      list.push({ date: new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), d) });
+    }
+    return list;
+  }, [calendarMonth]);
+
+  const monthLabel = useMemo(
+    () =>
+      calendarMonth.toLocaleString("pt-PT", {
+        month: "long",
+        year: "numeric",
+      }),
+    [calendarMonth],
+  );
+
+  const DatePanel = () => (
+    <>
+      <p className="text-[11px] text-white/60 mb-1.5">Quando queres sair?</p>
+      <div className="flex flex-wrap gap-1.5">
+        {DATE_FILTER_OPTIONS.map((opt) => (
+          <button
+            key={opt.value}
+            type="button"
+            onClick={() => {
+              setCustomDate("");
+              setDateFilter(opt.value as DateFilter);
+            }}
+            className={`px-2.5 py-1 rounded-full text-[11px] ${
+              dateFilter === opt.value && !customDate
+                ? "bg-[#6BFFFF]/25 border border-[#6BFFFF]/70 text-[#E5FFFF]"
+                : "bg-white/5 border border-white/18 text-white/75 hover:bg-white/10"
+            }`}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+      <div className="mt-3 rounded-2xl border border-white/12 bg-white/5 p-3 shadow-[0_16px_40px_rgba(0,0,0,0.4)]">
+        <div className="mb-2 flex items-center justify-between text-[12px] text-white/80">
+          <button
+            type="button"
+            onClick={() => {
+              const prev = new Date(calendarMonth);
+              prev.setMonth(prev.getMonth() - 1);
+              setCalendarMonth(prev);
+            }}
+            className="rounded-full px-2 py-1 hover:bg-white/10"
+          >
+            ←
+          </button>
+          <span className="font-semibold capitalize">{monthLabel}</span>
+          <button
+            type="button"
+            onClick={() => {
+              const next = new Date(calendarMonth);
+              next.setMonth(next.getMonth() + 1);
+              setCalendarMonth(next);
+            }}
+            className="rounded-full px-2 py-1 hover:bg-white/10"
+          >
+            →
+          </button>
+        </div>
+        <div className="mb-1 grid grid-cols-7 gap-1 text-[10px] text-white/45">
+          {["D", "S", "T", "Q", "Q", "S", "S"].map((d, idx) => (
+            <span key={`${d}-${idx}`} className="text-center uppercase tracking-wide">
+              {d}
+            </span>
+          ))}
+        </div>
+        <div className="grid grid-cols-7 gap-1 text-[12px]">
+          {calendarDays.map((d, idx) => {
+            if (!d.date) return <span key={`blank-${idx}`} />;
+            const iso = d.date.toISOString().slice(0, 10);
+            const isSelected = customDate ? iso === customDate : false;
+            return (
+              <button
+                key={iso}
+                type="button"
+                onClick={() => {
+                  setCustomDate(iso);
+                  setDateFilter("custom");
+                }}
+                className={`h-9 w-9 rounded-full transition ${
+                  isSelected
+                    ? "bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] text-black font-semibold shadow-[0_0_16px_rgba(107,255,255,0.55)]"
+                    : "text-white/80 hover:bg-white/10"
+                }`}
+              >
+                {d.date.getDate()}
+              </button>
+            );
+          })}
+        </div>
+        <p className="mt-2 text-[10px] text-white/45">Sem input livre: escolhe pelo calendário ou chips.</p>
+      </div>
+      <div className="flex items-center justify-between pt-1">
+        <button
+          type="button"
+          onClick={() => setIsDateOpen(false)}
+          className="text-[11px] text-white/70 hover:text-white/90"
+        >
+          Fechar
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setCustomDate("");
+            setDateFilter("all");
+            setIsDateOpen(false);
+          }}
+          className="px-2.5 py-1 rounded-full bg-transparent border border-white/15 text-[11px] text-white/70 hover:bg-white/5"
+        >
+          Limpar datas
+        </button>
+      </div>
+    </>
+  );
+
+  const PricePanel = () => (
+    <>
+      <p className="text-[11px] text-white/60">Intervalo de preço</p>
+      <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-[#0b162c] via-[#0a1227] to-[#060b18] px-3 py-4 space-y-3 shadow-[0_12px_40px_rgba(0,0,0,0.5)]">
+        <DoubleRange
+          min={0}
+          max={100}
+          step={5}
+          valueMin={priceMin}
+          valueMax={priceMax}
+          onChange={(min, max) => {
+            setPriceMin(min);
+            setPriceMax(max);
+          }}
+        />
+        <div className="flex items-center justify-between text-[11px] text-white/80">
+          <span>Mín: € {priceMin}</span>
+          <span>Máx: {priceMax >= 100 ? "100+ (sem limite)" : `€ ${priceMax}`}</span>
+        </div>
+        <div className="flex items-center justify-between text-[11px] text-white/60">
+          <button
+            type="button"
+            onClick={() => {
+              setPriceMin(0);
+              setPriceMax(100);
+            }}
+            className="rounded-full border border-white/15 px-3 py-1 text-white/75 hover:border-white/35 hover:bg-white/5"
+          >
+            Limpar filtro de preço
+          </button>
+          <span className="text-[10px] text-white/50">Debounce 250ms</span>
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={() => {
+          setPriceMin(0);
+          setPriceMax(100);
+          setIsPriceOpen(false);
+        }}
+        className="text-[11px] text-white/60 hover:text-white/90"
+      >
+        Limpar filtro de preço
+      </button>
+    </>
+  );
 
   async function fetchItems(opts?: { append?: boolean; cursor?: number | null }) {
     const append = opts?.append ?? false;
@@ -175,7 +425,12 @@ function ExplorarContent() {
 
       const params = new URLSearchParams();
       if (search.trim()) params.set("q", search.trim());
-      if (dateFilter !== "all") params.set("date", dateFilter);
+      if (dateFilter === "custom" && customDate) {
+        params.set("date", "day");
+        params.set("day", customDate);
+      } else if (dateFilter !== "all") {
+        params.set("date", dateFilter);
+      }
       if (typeFilter !== "all") params.set("type", typeFilter);
       if (selectedCategories.length > 0) params.set("categories", selectedCategories.join(","));
       if (city.trim()) params.set("city", city.trim());
@@ -231,29 +486,144 @@ function ExplorarContent() {
   }
 
   useEffect(() => {
+    const handle = setTimeout(() => setFiltersTick((v) => v + 1), 250);
+    return () => clearTimeout(handle);
+  }, [search, dateFilter, customDate, typeFilter, selectedCategories, city, priceMin, effectiveMaxParam]);
+
+  useEffect(() => {
+    trackEvent("explore_filter_price_changed", {
+      min: priceMin,
+      max: effectiveMaxParam ?? "100_plus",
+    });
+  }, [priceMin, effectiveMaxParam]);
+
+  useEffect(() => {
+    trackEvent("explore_filter_date_changed", {
+      dateFilter,
+      customDate: customDate || null,
+    });
+  }, [dateFilter, customDate]);
+
+  useEffect(() => {
+    if (!city && !cityInput) return;
+    trackEvent("explore_filter_location_changed", { city: city || cityInput });
+  }, [city, cityInput]);
+
+  useEffect(() => {
     fetchItems({ append: false, cursor: null });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, dateFilter, typeFilter, selectedCategories, city, priceMin, effectiveMaxParam]);
+  }, [filtersTick]);
 
   useEffect(() => {
     const handle = setTimeout(() => setSearch(searchInput.trim()), 350);
     return () => clearTimeout(handle);
   }, [searchInput]);
 
+  useEffect(() => {
+    if (!customDate) return;
+    const parsed = new Date(customDate);
+    if (Number.isNaN(parsed.getTime())) return;
+    parsed.setHours(0, 0, 0, 0);
+    setCalendarMonth(parsed);
+  }, [customDate]);
+
+  useEffect(() => {
+    const updateIsMobile = () => setIsMobile(typeof window !== "undefined" ? window.innerWidth < 640 : false);
+    updateIsMobile();
+    window.addEventListener("resize", updateIsMobile);
+    return () => window.removeEventListener("resize", updateIsMobile);
+  }, []);
+
+  useEffect(() => {
+    const handle = setTimeout(() => {
+      const normalized = cityInput.trim();
+      if (!normalized) {
+        setCity("");
+        return;
+      }
+      const match = PORTUGAL_CITIES.find((c) => c.toLowerCase() === normalized.toLowerCase());
+      setCity(match ?? "");
+    }, 300);
+    return () => clearTimeout(handle);
+  }, [cityInput]);
+
   // Atualiza pesquisa ao entrar via query da Navbar (/explorar?query=)
   useEffect(() => {
+    if (hydratedFromParams) return;
     const qp = searchParams.get("query") ?? searchParams.get("q") ?? "";
-    setSearchInput(qp);
-    setSearch(qp);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams]);
+    const cityQ = searchParams.get("city") ?? "";
+    const priceMinQ = searchParams.get("priceMin");
+    const priceMaxQ = searchParams.get("priceMax");
+    const dateQ = searchParams.get("date");
+    const dayQ = searchParams.get("day");
+    const typeQ = searchParams.get("type") as TypeFilter | null;
+    const catsQ = searchParams.get("categories");
+
+    if (qp) {
+      setSearchInput(qp);
+      setSearch(qp);
+    }
+    if (cityQ) {
+      setCityInput(cityQ);
+      setCity(cityQ);
+    }
+    if (priceMinQ) setPriceMin(Math.max(0, Number(priceMinQ)));
+    if (priceMaxQ) {
+      const maxVal = Math.max(0, Number(priceMaxQ));
+      setPriceMax(Number.isFinite(maxVal) ? maxVal : 100);
+    }
+    if (dateQ === "today" || dateQ === "upcoming" || dateQ === "weekend") {
+      setDateFilter(dateQ);
+    } else if (dateQ === "day" && dayQ) {
+      setDateFilter("custom");
+      setCustomDate(dayQ);
+    }
+    if (typeQ === "event" || typeQ === "experience") {
+      setTypeFilter(typeQ);
+    }
+    if (catsQ) {
+      const arr = catsQ
+        .split(",")
+        .map((c) => c.trim())
+        .filter(Boolean);
+      setSelectedCategories(arr);
+    }
+    setHydratedFromParams(true);
+     
+  }, [searchParams, hydratedFromParams]);
 
   useEffect(() => {
     const handle = setTimeout(() => setCity(cityInput.trim()), 350);
     return () => clearTimeout(handle);
   }, [cityInput]);
 
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent | TouchEvent) => {
+      const target = event.target as Node | null;
+      if (!target) return;
+      if (isCityOpen && cityRef.current && !cityRef.current.contains(target)) {
+        setIsCityOpen(false);
+      }
+      if (isDateOpen && dateRef.current && !dateRef.current.contains(target)) {
+        setIsDateOpen(false);
+      }
+      if (isPriceOpen && priceRef.current && !priceRef.current.contains(target)) {
+        setIsPriceOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("touchstart", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("touchstart", handleClickOutside);
+    };
+  }, [isCityOpen, isDateOpen, isPriceOpen]);
+
   const headingCity = city.trim() || "Portugal";
+  const dateLabel =
+    dateFilter === "custom" && customDate
+      ? new Date(customDate).toLocaleDateString("pt-PT", { day: "2-digit", month: "short" })
+      : DATE_FILTER_OPTIONS.find((d) => d.value === dateFilter)?.label;
   const resultsLabel = items.length === 1 ? "1 resultado" : `${items.length} resultados`;
   const showSkeleton = loading || (error && items.length === 0);
 
@@ -264,7 +634,7 @@ function ExplorarContent() {
         <div className="flex flex-col gap-4">
           <div className="flex flex-wrap items-center gap-3">
             {/* Localização */}
-            <div className="relative">
+            <div className="relative" ref={cityRef}>
               <button
                 type="button"
                 onClick={() => {
@@ -278,33 +648,35 @@ function ExplorarContent() {
                 <span className="font-medium">{headingCity}</span>
               </button>
               {isCityOpen && (
-                <div className="mt-2 w-full rounded-2xl border border-white/15 bg-black/85 p-3 backdrop-blur md:absolute md:w-64 md:shadow-2xl">
-                  <p className="text-[11px] text-white/60 mb-2">
-                    Escreve a cidade (autocomplete de morada liga depois ao Mapbox)
-                  </p>
-                  <input
-                    value={cityInput}
-                    onChange={(e) => setCityInput(e.target.value)}
-                    placeholder="Porto, Lisboa, Braga..."
-                    className="mb-2 w-full rounded-xl bg-white/5 border border-white/15 px-3 py-1.5 text-[11px] outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]/70"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setCityInput("");
-                      setCity("");
-                      setIsCityOpen(false);
-                    }}
-                    className="mt-1 px-2.5 py-1 rounded-full bg-transparent border border-white/15 text-[11px] text-white/70 hover:bg-white/5"
-                  >
-                    Limpar cidade
-                  </button>
-                </div>
+                <>
+                  {isMobile && (
+                    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex justify-center p-4">
+                      <div className="w-full max-w-sm rounded-2xl border border-white/15 bg-black/90 p-4 space-y-3 shadow-2xl">
+                        <div className="flex items-center justify-between">
+                          <h3 className="text-sm font-semibold text-white">Escolhe cidade</h3>
+                          <button
+                            type="button"
+                            onClick={() => setIsCityOpen(false)}
+                            className="text-white/60 hover:text-white"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                        <CityPanel />
+                      </div>
+                    </div>
+                  )}
+                  {!isMobile && (
+                    <div className="mt-2 w-full rounded-2xl border border-white/15 bg-black/90 p-3 backdrop-blur md:absolute md:w-72 md:shadow-2xl md:z-50">
+                      <CityPanel />
+                    </div>
+                  )}
+                </>
               )}
             </div>
 
             {/* Data */}
-            <div className="relative">
+            <div className="relative" ref={dateRef}>
               <button
                 type="button"
                 onClick={() => {
@@ -315,38 +687,28 @@ function ExplorarContent() {
                 className="inline-flex items-center gap-2 rounded-2xl border border-white/18 bg-black/40 px-3.5 py-2 text-xs md:text-sm hover:border-[#6BFFFF]/70 hover:bg-black/60 transition"
               >
                 <span className="text-base">📅</span>
-                <span className="font-medium">
-                  {DATE_FILTER_OPTIONS.find((d) => d.value === dateFilter)?.label}
-                </span>
+                <span className="font-medium">{dateLabel}</span>
               </button>
               {isDateOpen && (
-                <div className="mt-2 w-full rounded-2xl border border-white/15 bg-black/85 p-3 backdrop-blur md:absolute md:w-64 md:shadow-2xl">
-                  <p className="text-[11px] text-white/60 mb-2">Quando queres sair?</p>
-                  <div className="flex flex-wrap gap-1.5 mb-3">
-                    {DATE_FILTER_OPTIONS.map((opt) => (
-                      <button
-                        key={opt.value}
-                        type="button"
-                        onClick={() => setDateFilter(opt.value)}
-                        className={`px-2.5 py-1 rounded-full text-[11px] ${
-                          dateFilter === opt.value
-                            ? "bg-[#6BFFFF]/25 border border-[#6BFFFF]/70 text-[#E5FFFF]"
-                            : "bg-white/5 border border-white/18 text-white/75 hover:bg-white/10"
-                        }`}
-                      >
-                        {opt.label}
-                      </button>
-                    ))}
-                  </div>
-                  <p className="text-[10px] text-white/45">
-                    Em breve: calendário completo com intervalos personalizados.
-                  </p>
-                </div>
+                <>
+                  {isMobile && (
+                    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex justify-center p-4">
+                      <div className="w-full max-w-sm rounded-2xl border border-white/15 bg-black/90 p-4 space-y-3 shadow-2xl">
+                        <DatePanel />
+                      </div>
+                    </div>
+                  )}
+                  {!isMobile && (
+                    <div className="mt-2 w-full rounded-2xl border border-white/15 bg-black/90 p-3 backdrop-blur space-y-3 md:absolute md:w-72 md:shadow-2xl md:z-50">
+                      <DatePanel />
+                    </div>
+                  )}
+                </>
               )}
             </div>
 
             {/* Preço */}
-            <div className="relative">
+            <div className="relative" ref={priceRef}>
               <button
                 type="button"
                 onClick={() => {
@@ -364,35 +726,20 @@ function ExplorarContent() {
                 </span>
               </button>
               {isPriceOpen && (
-                <div className="mt-2 w-full rounded-2xl border border-white/15 bg-black/85 p-3 backdrop-blur space-y-3 md:absolute md:w-80 md:shadow-2xl">
-                  <p className="text-[11px] text-white/60">Intervalo de preço</p>
-                  <DoubleRange
-                    min={0}
-                    max={100}
-                    step={5}
-                    valueMin={priceMin}
-                    valueMax={priceMax}
-                    onChange={(min, max) => {
-                      setPriceMin(min);
-                      setPriceMax(max);
-                    }}
-                  />
-                  <div className="flex items-center justify-between text-[11px] text-white/70">
-                    <span>Mín: € {priceMin}</span>
-                    <span>Máx: {priceMax >= 100 ? "100+ (sem limite)" : `€ ${priceMax}`}</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setPriceMin(0);
-                      setPriceMax(100);
-                      setIsPriceOpen(false);
-                    }}
-                    className="text-[11px] text-white/60 hover:text-white/90"
-                  >
-                    Limpar filtro de preço
-                  </button>
-                </div>
+                <>
+                  {isMobile && (
+                    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex justify-center p-4">
+                      <div className="w-full max-w-sm rounded-2xl border border-white/15 bg-black/90 p-4 space-y-3 shadow-2xl">
+                        <PricePanel />
+                      </div>
+                    </div>
+                  )}
+                  {!isMobile && (
+                    <div className="mt-2 w-full rounded-2xl border border-white/15 bg-black/90 p-3 backdrop-blur space-y-3 md:absolute md:w-80 md:shadow-2xl md:z-50">
+                      <PricePanel />
+                    </div>
+                  )}
+                </>
               )}
             </div>
 
@@ -632,19 +979,6 @@ function PriceBadge({ item }: { item: ExploreItem }) {
   return <span>Preço a anunciar</span>;
 }
 
-function clampWithGap(
-  minValue: number,
-  maxValue: number,
-  step: number,
-  gap: number,
-  bounds: { min: number; max: number }
-) {
-  const quantize = (v: number) => Math.round(v / step) * step;
-  const snappedMin = Math.max(bounds.min, Math.min(minValue, maxValue - gap));
-  const snappedMax = Math.min(bounds.max, Math.max(maxValue, snappedMin + gap));
-  return { min: quantize(snappedMin), max: quantize(snappedMax) };
-}
-
 type DoubleRangeProps = {
   min: number;
   max: number;
@@ -659,12 +993,37 @@ const doubleRangeStyles = `
 .price-range-thumb::-webkit-slider-runnable-track { pointer-events: none; }
 .price-range-thumb::-moz-range-track { pointer-events: none; }
 .price-range-thumb::-ms-track { pointer-events: none; }
-.price-range-thumb::-webkit-slider-thumb { pointer-events: auto; }
-.price-range-thumb::-moz-range-thumb { pointer-events: auto; }
-.price-range-thumb::-ms-thumb { pointer-events: auto; }
+.price-range-thumb::-webkit-slider-thumb {
+  pointer-events: auto;
+  height: 18px;
+  width: 18px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, #E5FFFF, #6BFFFF 55%, #1646F5 100%);
+  box-shadow: 0 0 12px rgba(107,255,255,0.6);
+  border: 2px solid rgba(255,255,255,0.6);
+  margin-top: -8px;
+}
+.price-range-thumb::-moz-range-thumb {
+  pointer-events: auto;
+  height: 18px;
+  width: 18px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, #E5FFFF, #6BFFFF 55%, #1646F5 100%);
+  box-shadow: 0 0 12px rgba(107,255,255,0.6);
+  border: 2px solid rgba(255,255,255,0.6);
+}
+.price-range-thumb::-ms-thumb {
+  pointer-events: auto;
+  height: 18px;
+  width: 18px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, #E5FFFF, #6BFFFF 55%, #1646F5 100%);
+  box-shadow: 0 0 12px rgba(107,255,255,0.6);
+  border: 2px solid rgba(255,255,255,0.6);
+}
 `;
 
-// eslint-disable-next-line @next/next/no-css-tags
+ 
 if (typeof document !== "undefined") {
   const existing = document.getElementById("double-range-styles");
   if (!existing) {
@@ -681,9 +1040,9 @@ function DoubleRange({ min, max, step, valueMin, valueMax, onChange }: DoubleRan
 
   return (
     <div className="space-y-3">
-      <div className="relative h-1.5 rounded-full bg-white/10">
+      <div className="relative h-2 rounded-full bg-gradient-to-r from-[#FF00C8] via-[#9B8CFF] to-[#6BFFFF]">
         <div
-          className="absolute h-full rounded-full bg-gradient-to-r from-[#6BFFFF] to-[#FF00C8]"
+          className="absolute h-full rounded-full bg-black/30"
           style={{
             left: `${(valueMin / max) * 100}%`,
             right: `${100 - (valueMax / max) * 100}%`,
@@ -700,7 +1059,7 @@ function DoubleRange({ min, max, step, valueMin, valueMax, onChange }: DoubleRan
             const { min: cMin, max: cMax } = clampWithGap(next, valueMax, step, gap, bounds);
             onChange(cMin, cMax);
           }}
-          className="price-range-thumb pointer-events-auto absolute -top-2 h-5 w-full appearance-none bg-transparent z-30"
+          className="price-range-thumb pointer-events-auto absolute -top-3 h-7 w-full appearance-none bg-transparent z-20"
           style={{ touchAction: "none" }}
         />
         <input
@@ -714,7 +1073,7 @@ function DoubleRange({ min, max, step, valueMin, valueMax, onChange }: DoubleRan
             const { min: cMin, max: cMax } = clampWithGap(valueMin, next, step, gap, bounds);
             onChange(cMin, cMax);
           }}
-          className="price-range-thumb pointer-events-auto absolute -top-2 h-5 w-full appearance-none bg-transparent z-20"
+          className="price-range-thumb pointer-events-auto absolute -top-3 h-7 w-full appearance-none bg-transparent z-30"
           style={{ touchAction: "none" }}
         />
       </div>

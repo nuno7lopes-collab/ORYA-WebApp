@@ -11,6 +11,10 @@ type ResaleMode = "ALWAYS" | "AFTER_SOLD_OUT" | "DISABLED";
 type TicketFromApi = {
   id: string;
   pricePaid?: number | null; // cêntimos
+  grossCents?: number | null;
+  discountCents?: number | null;
+  platformFeeCents?: number | null;
+  netCents?: number | null;
   currency?: string | null;
   purchasedAt: string;
   event?: {
@@ -45,6 +49,10 @@ type UITicket = {
   eventId: number;
   ticketTypeId: string;
   priceCents: number;
+  grossCents: number;
+  discountCents: number;
+  platformFeeCents: number;
+  netCents: number;
   priceEur: number;
   currency: string;
   createdAt: string;
@@ -178,6 +186,10 @@ export default function MyTicketsPage() {
         // Normalizar tickets individuais (1 entrada = 1 registo)
         const singles: UITicket[] = json.tickets.map((p: TicketFromApi) => {
           const priceCents = Number(p.pricePaid ?? 0);
+          const grossCents = Number(p.grossCents ?? priceCents);
+          const discountCents = Number(p.discountCents ?? 0);
+          const platformFeeCents = Number(p.platformFeeCents ?? 0);
+          const netCents = Number(p.netCents ?? priceCents);
           const eventId = Number(p.event?.id ?? -1);
           const ticketTypeId = (p.ticket?.id ?? "").toString();
 
@@ -186,6 +198,10 @@ export default function MyTicketsPage() {
             eventId,
             ticketTypeId,
             priceCents,
+            grossCents,
+            discountCents,
+            platformFeeCents,
+            netCents,
             priceEur: priceCents / 100,
             currency: p.currency ?? "EUR",
             createdAt: p.purchasedAt,
@@ -276,7 +292,7 @@ export default function MyTicketsPage() {
     return () => {
       cancelled = true;
     };
-  }, [router]);
+  }, [router, openModal]);
 
   const hasTickets = ticketGroups.length > 0;
 
@@ -624,6 +640,12 @@ export default function MyTicketsPage() {
             className="hidden sm:inline-flex text-[11px] px-3 py-1.5 rounded-xl border border-white/15 text-white/75 hover:bg-white/5 transition-colors"
           >
             &larr; Voltar à conta
+          </Link>
+          <Link
+            href="/padel/duplas"
+            className="text-[11px] px-3 py-1.5 rounded-xl border border-white/15 text-white/80 hover:bg-white/5 transition-colors"
+          >
+            Gerir duplas Padel
           </Link>
         </div>
       </header>
@@ -1005,6 +1027,28 @@ export default function MyTicketsPage() {
                                       <p className="text-white/80">
                                         Preço pago: {formatPrice(t.priceEur, t.currency)}
                                       </p>
+                                      <div className="space-y-1 text-white/60">
+                                        <div className="flex gap-2 text-[10px]">
+                                          <span className="w-24 text-white/50">Bruto</span>
+                                          <span>{formatPrice(t.grossCents / 100, t.currency)}</span>
+                                        </div>
+                                        {t.discountCents > 0 && (
+                                          <div className="flex gap-2 text-[10px] text-emerald-300">
+                                            <span className="w-24 text-white/50">Desconto</span>
+                                            <span>-{formatPrice(t.discountCents / 100, t.currency)}</span>
+                                          </div>
+                                        )}
+                                        {t.platformFeeCents > 0 && (
+                                          <div className="flex gap-2 text-[10px] text-orange-200">
+                                            <span className="w-24 text-white/50">Taxa</span>
+                                            <span>-{formatPrice(t.platformFeeCents / 100, t.currency)}</span>
+                                          </div>
+                                        )}
+                                        <div className="flex gap-2 text-[10px] text-white">
+                                          <span className="w-24 text-white/50">Líquido</span>
+                                          <span>{formatPrice(t.netCents / 100, t.currency)}</span>
+                                        </div>
+                                      </div>
                                       <div className="flex flex-wrap gap-2">
                                         {isAdmin && (
                                           <>

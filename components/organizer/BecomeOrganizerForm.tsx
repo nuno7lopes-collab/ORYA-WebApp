@@ -618,7 +618,7 @@ export default function BecomeOrganizerForm() {
             </p>
             <div className="flex w-full flex-col gap-2 md:w-auto md:flex-row md:items-center md:gap-4">
               <Link
-                href="/organizador/(dashboard)/organizations"
+                href="/organizador/organizations"
                 className="text-sm text-white/75 underline-offset-4 transition hover:text-white hover:underline"
               >
                 Já tens uma organização? Ver lista

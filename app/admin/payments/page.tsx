@@ -10,6 +10,8 @@ type PaymentEvent = {
   id: number;
   stripePaymentIntentId: string | null;
   status: string;
+  mode?: "LIVE" | "TEST" | null;
+  isTest?: boolean;
   eventId: number | null;
   userId: string | null;
   amountCents: number | null;
@@ -49,16 +51,18 @@ function formatDate(value?: string | null) {
 
 export default function AdminPaymentsPage() {
   const [status, setStatus] = useState<string>("ALL");
+  const [mode, setMode] = useState<string>("ALL");
   const [q, setQ] = useState("");
   const [cursor, setCursor] = useState<number | null>(null);
 
   const queryParams = useMemo(() => {
     const params = new URLSearchParams();
     if (status !== "ALL") params.set("status", status);
+    if (mode !== "ALL") params.set("mode", mode);
     if (q.trim()) params.set("q", q.trim());
     if (cursor) params.set("cursor", String(cursor));
     return params.toString() ? `?${params.toString()}` : "";
-  }, [status, q, cursor]);
+  }, [status, mode, q, cursor]);
 
   const { data, isLoading, mutate } = useSWR<ApiResponse>(
     `/api/admin/payments/list${queryParams}`,
@@ -82,6 +86,12 @@ export default function AdminPaymentsPage() {
       default:
         return "bg-white/10 text-white/80 border border-white/20";
     }
+  }
+
+  function modeBadgeClass(m?: string | null) {
+    if (m === "TEST") return "bg-rose-500/15 text-rose-100 border border-rose-400/30";
+    if (m === "LIVE") return "bg-white/10 text-white/80 border border-white/20";
+    return "bg-white/5 text-white/60 border border-white/10";
   }
 
   async function handleReprocess(pi: string | null | undefined) {
@@ -119,9 +129,9 @@ export default function AdminPaymentsPage() {
 
         {/* Filtros */}
         <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur">
-          <div className="grid gap-3 md:grid-cols-[1.5fr_1fr_1fr]">
-            <div>
-              <label className="mb-1 block text-[11px] text-white/70">Pesquisa</label>
+            <div className="grid gap-3 md:grid-cols-[1.5fr_1fr_1fr]">
+              <div>
+                <label className="mb-1 block text-[11px] text-white/70">Pesquisa</label>
               <input
                 type="text"
                 value={q}
@@ -145,6 +155,21 @@ export default function AdminPaymentsPage() {
                 <option value="OK">OK</option>
                 <option value="REFUNDED">Refunded</option>
                 <option value="ERROR">Error</option>
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-[11px] text-white/70">Modo</label>
+              <select
+                value={mode}
+                onChange={(e) => {
+                  setMode(e.target.value);
+                  setCursor(null);
+                }}
+                className="w-full rounded-xl border border-white/15 bg-black/50 px-3 py-2 text-sm text-white outline-none focus:border-white/30"
+              >
+                <option value="ALL">Todos</option>
+                <option value="LIVE">Live</option>
+                <option value="TEST">Test</option>
               </select>
             </div>
             <div className="flex items-end gap-2">
@@ -210,6 +235,11 @@ export default function AdminPaymentsPage() {
                         <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] ${badgeClass(p.status)}`}>
                           {p.status}
                         </span>
+                        <div className="mt-1">
+                          <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] uppercase tracking-wide ${modeBadgeClass(p.mode || (p.isTest ? "TEST" : "LIVE"))}`}>
+                            {p.mode || (p.isTest ? "TEST" : "LIVE")}
+                          </span>
+                        </div>
                         {p.errorMessage && (
                           <p className="mt-1 text-[10px] text-rose-200">{p.errorMessage}</p>
                         )}

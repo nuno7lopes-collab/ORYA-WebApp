@@ -144,7 +144,7 @@ export default async function HomePage() {
                 Ainda não tens eventos criados.
                 <br />
                 <Link
-                  href="/organizador/(dashboard)/eventos/novo"
+                  href="/organizador/eventos/novo"
                   className="mt-2 inline-flex text-[13px] font-medium text-[#6BFFFF] underline underline-offset-4"
                 >
                   Cria o teu primeiro evento →

@@ -7,6 +7,9 @@ import { OrganizationSwitcher, type OrganizationSwitcherOption } from "../Organi
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizerForUser } from "@/lib/organizerContext";
 import { prisma } from "@/lib/prisma";
+import { OrganizerLangSetter } from "../OrganizerLangSetter";
+import { featureFlags } from "@/lib/flags";
+import { OrganizerTourTrigger } from "../OrganizerTourTrigger";
 
 /**
  * Layout do dashboard do organizador (sidebar + topbar).
@@ -21,10 +24,34 @@ export default async function OrganizerDashboardLayout({ children }: { children:
 
   let currentId: number | null = null;
   let orgOptions: OrganizationSwitcherOption[] = [];
+  let activeOrganizer: {
+    id: number;
+    displayName: string | null;
+    publicName?: string | null;
+    businessName: string | null;
+    username: string | null;
+    brandingAvatarUrl?: string | null;
+    brandingPrimaryColor?: string | null;
+    brandingSecondaryColor?: string | null;
+    language?: string | null;
+  } | null = null;
   if (user) {
     try {
       const { organizer } = await getActiveOrganizerForUser(user.id);
       currentId = organizer?.id ?? null;
+      if (organizer) {
+        activeOrganizer = {
+          id: organizer.id,
+          displayName: organizer.displayName,
+          publicName: (organizer as { publicName?: string | null }).publicName ?? null,
+          businessName: organizer.businessName,
+          username: (organizer as { username?: string | null }).username ?? null,
+          brandingAvatarUrl: (organizer as { brandingAvatarUrl?: string | null }).brandingAvatarUrl ?? null,
+          brandingPrimaryColor: (organizer as { brandingPrimaryColor?: string | null }).brandingPrimaryColor ?? null,
+          brandingSecondaryColor: (organizer as { brandingSecondaryColor?: string | null }).brandingSecondaryColor ?? null,
+          language: (organizer as { language?: string | null }).language ?? null,
+        };
+      }
     } catch {
       currentId = null;
     }
@@ -41,14 +68,16 @@ export default async function OrganizerDashboardLayout({ children }: { children:
         .map((m) => ({
           organizerId: m.organizerId,
           role: m.role,
-          organizer: {
-            id: m.organizer!.id,
-            username: m.organizer!.username,
-            displayName: m.organizer!.displayName,
-            businessName: m.organizer!.businessName,
-            city: m.organizer!.city,
-            entityType: m.organizer!.entityType,
-            status: m.organizer!.status,
+            organizer: {
+              id: m.organizer!.id,
+              username: m.organizer!.username,
+              displayName: m.organizer!.displayName,
+              publicName: (m.organizer as { publicName?: string | null }).publicName ?? null,
+              businessName: m.organizer!.businessName,
+              city: m.organizer!.city,
+              entityType: m.organizer!.entityType,
+              status: m.organizer!.status,
+              brandingAvatarUrl: (m.organizer as { brandingAvatarUrl?: string | null }).brandingAvatarUrl ?? null,
           },
         }));
     } catch (err: unknown) {
@@ -60,51 +89,47 @@ export default async function OrganizerDashboardLayout({ children }: { children:
     }
   }
 
-  const organizerName = "Organizador";
+  const organizerName =
+    activeOrganizer?.publicName || activeOrganizer?.displayName || activeOrganizer?.businessName || "Organizador";
+  const organizerAvatarUrl = activeOrganizer?.brandingAvatarUrl ?? null;
+  const organizerUsername = activeOrganizer?.username ?? null;
+  const brandPrimary = activeOrganizer?.brandingPrimaryColor ?? undefined;
+  const brandSecondary = activeOrganizer?.brandingSecondaryColor ?? undefined;
+  const organizerLanguage = activeOrganizer?.language ?? "pt";
   const stripeState = { label: "Stripe", tone: "neutral" as const };
 
   return (
-    <div className="orya-body-bg min-h-screen text-white flex">
-      <OrganizerSidebar />
+    <div
+      className="orya-body-bg h-screen text-white flex overflow-hidden"
+      style={
+        {
+          "--brand-primary": brandPrimary,
+          "--brand-secondary": brandSecondary,
+        } as React.CSSProperties
+      }
+    >
+      <OrganizerLangSetter language={organizerLanguage} />
+      <OrganizerSidebar organizerName={organizerName} organizerAvatarUrl={organizerAvatarUrl} />
 
-      <div className="flex-1 flex flex-col">
+      <div className="flex-1 flex flex-col min-h-0">
         {/* Top bar */}
-        <header className="sticky top-0 z-30 border-b border-white/10 bg-[#050915]/80 px-4 py-3 backdrop-blur-xl md:px-6 lg:px-8">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-[10px] uppercase tracking-[0.22em] text-white/60">Dashboard de organizador</p>
-              <p className="text-sm font-semibold text-white">{organizerName}</p>
-            </div>
+        <header className="sticky top-0 z-30 border-b border-white/10 bg-[#050915]/80 px-4 py-3 backdrop-blur-xl md:px-6 lg:px-8 shrink-0">
+          <div className="flex items-center justify-end gap-3">
             <div className="flex items-center gap-2 text-[11px]">
-              <OrganizationSwitcher currentId={currentId} initialOrgs={orgOptions} />
-              <Link
-                href="/organizador/(dashboard)/organizations"
-                className="rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-white/80 hover:bg-white/10"
-              >
-                Gerir organizações
-              </Link>
-              <span
-                className={`rounded-full border px-3 py-1 ${
-                  stripeState.tone === "success"
-                    ? "border-emerald-400/40 bg-emerald-400/10 text-emerald-100"
-                    : stripeState.tone === "warning"
-                      ? "border-amber-400/40 bg-amber-400/10 text-amber-100"
-                    : "border-white/20 bg-white/10 text-white/70"
-                }`}
-              >
-                {stripeState.label}
-              </span>
               <Link
                 href="/explorar"
                 className="rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-white/80 hover:bg-white/10"
+                data-tour="user-experience"
               >
                 Voltar à experiência de utilizador
               </Link>
+              {featureFlags.NEW_NAVBAR() && <OrganizerTourTrigger />}
+              <OrganizationSwitcher currentId={currentId} initialOrgs={orgOptions} />
             </div>
           </div>
         </header>
 
-        <main className="flex-1 pb-0 pt-0">{children}</main>
+        <main className="flex-1 overflow-y-auto pb-0 pt-0 min-h-0">{children}</main>
       </div>
     </div>
   );

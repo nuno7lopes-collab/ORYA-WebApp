@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { TransferStatus, TicketStatus } from "@prisma/client";
+import { NotificationType, TransferStatus, TicketStatus } from "@prisma/client";
+import { createNotification, shouldNotify } from "@/lib/notifications";
 
 /**
  * F5-3 – Responder à transferência (aceitar / recusar)
@@ -27,7 +28,7 @@ export async function POST(req: NextRequest) {
     }
     const profile = await prisma.profile.findUnique({
       where: { id: user.id },
-      select: { roles: true },
+      select: { roles: true, username: true, fullName: true },
     });
     const roles = Array.isArray(profile?.roles) ? (profile?.roles as string[]) : [];
     const isAdmin = roles.some((r) => r?.toLowerCase() === "admin");
@@ -61,7 +62,7 @@ export async function POST(req: NextRequest) {
     const transfer = await prisma.ticketTransfer.findUnique({
       where: { id: transferId },
       include: {
-        ticket: true,
+        ticket: { include: { event: { select: { id: true, title: true, organizerId: true } } } },
       },
     });
 
@@ -95,6 +96,21 @@ export async function POST(req: NextRequest) {
           completedAt: new Date(),
         },
       });
+
+      if (await shouldNotify(transfer.fromUserId, NotificationType.TICKET_TRANSFER_DECLINED)) {
+        const actorName = profile?.username || profile?.fullName || "Um utilizador";
+        await createNotification({
+          userId: transfer.fromUserId,
+          fromUserId: userId,
+          organizerId: transfer.ticket.event?.organizerId ?? null,
+          eventId: transfer.ticket.event?.id ?? null,
+          ticketId: transfer.ticketId,
+          type: NotificationType.TICKET_TRANSFER_DECLINED,
+          title: "Transferência recusada",
+          body: `${actorName} recusou o teu bilhete.`,
+          payload: { ticketId: transfer.ticketId, eventId: transfer.ticket.event?.id },
+        }).catch((err) => console.warn("[notification][transfer_declined] falhou", err));
+      }
 
       return NextResponse.json(
         {
@@ -150,6 +166,21 @@ export async function POST(req: NextRequest) {
 
       return { updatedTicket, updatedTransfer };
     });
+
+    if (await shouldNotify(transfer.fromUserId, NotificationType.TICKET_TRANSFER_ACCEPTED)) {
+      const actorName = profile?.username || profile?.fullName || "Um utilizador";
+      await createNotification({
+        userId: transfer.fromUserId,
+        fromUserId: userId,
+        organizerId: transfer.ticket.event?.organizerId ?? null,
+        eventId: transfer.ticket.event?.id ?? null,
+        ticketId: transfer.ticketId,
+        type: NotificationType.TICKET_TRANSFER_ACCEPTED,
+        title: "Transferência aceite",
+        body: `${actorName} aceitou o bilhete que enviaste.`,
+        payload: { ticketId: transfer.ticketId, eventId: transfer.ticket.event?.id },
+      }).catch((err) => console.warn("[notification][transfer_accepted] falhou", err));
+    }
 
     return NextResponse.json(
       {

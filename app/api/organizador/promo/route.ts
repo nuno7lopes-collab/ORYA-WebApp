@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
+import { isOrgAdminOrAbove } from "@/lib/organizerPermissions";
+import { OrganizerMemberRole } from "@prisma/client";
 
 async function requireOrganizer() {
   const supabase = await createSupabaseServer();
@@ -16,13 +18,20 @@ async function requireOrganizer() {
   const profile = await prisma.profile.findUnique({ where: { id: user.id } });
   if (!profile) return { error: "PROFILE_NOT_FOUND" as const };
 
-  const organizer = await prisma.organizer.findFirst({
-    where: { userId: profile.id },
+  const membership = await prisma.organizerMember.findFirst({
+    where: {
+      userId: user.id,
+      organizer: { status: "ACTIVE" },
+    },
+    include: { organizer: true },
+    orderBy: [{ lastUsedAt: "desc" }, { createdAt: "asc" }],
   });
 
-  if (!organizer) return { error: "ORGANIZER_NOT_FOUND" as const };
+  if (!membership || !membership.organizer || !isOrgAdminOrAbove(membership.role as OrganizerMemberRole)) {
+    return { error: "ORGANIZER_NOT_FOUND" as const };
+  }
 
-  return { organizer, profile };
+  return { organizer: membership.organizer, profile, membership };
 }
 
 export async function GET() {
@@ -65,13 +74,80 @@ export async function GET() {
       },
     });
 
+    const promoIds = promoCodes.map((p) => p.id);
+    const promoCodesList = promoCodes.map((p) => p.code);
+
+    const lines = await prisma.saleLine.findMany({
+      where: {
+        eventId: { in: eventIds },
+        OR: [
+          { promoCodeId: { in: promoIds } },
+          { promoCodeSnapshot: { in: promoCodesList } },
+        ],
+      },
+      select: {
+        promoCodeId: true,
+        promoCodeSnapshot: true,
+        quantity: true,
+        grossCents: true,
+        netCents: true,
+        discountPerUnitCents: true,
+        platformFeeCents: true,
+      },
+    });
+
+    type PromoAgg = {
+      tickets: number;
+      grossCents: number;
+      discountCents: number;
+      platformFeeCents: number;
+      netCents: number;
+    };
+
+    const statsMap = new Map<string | number, PromoAgg>();
+    const ensureAgg = (key: string | number) => {
+      const existing = statsMap.get(key);
+      if (existing) return existing;
+      const base: PromoAgg = { tickets: 0, grossCents: 0, discountCents: 0, platformFeeCents: 0, netCents: 0 };
+      statsMap.set(key, base);
+      return base;
+    };
+
+    for (const l of lines) {
+      const key = l.promoCodeId ?? l.promoCodeSnapshot ?? "unknown";
+      const agg = ensureAgg(key);
+      const qty = l.quantity ?? 0;
+      const discountLine = (l.discountPerUnitCents ?? 0) * qty;
+      agg.tickets += qty;
+      agg.grossCents += l.grossCents ?? 0;
+      agg.discountCents += discountLine;
+      agg.platformFeeCents += l.platformFeeCents ?? 0;
+      agg.netCents += l.netCents ?? 0;
+    }
+
     return NextResponse.json({
       ok: true,
       promoCodes: promoCodes.map((p) => ({
         ...p,
-        redemptionsCount: p.redemptions.length,
+        status:
+          !p.active
+            ? "INACTIVE"
+            : p.validUntil && new Date(p.validUntil) < new Date()
+              ? "EXPIRED"
+              : "ACTIVE",
+        redemptionsCount: statsMap.get(p.id)?.tickets ?? p.redemptions.length,
       })),
       events: organizerEvents,
+      promoStats: promoCodes.map((p) => {
+        const agg = statsMap.get(p.id) ?? statsMap.get(p.code) ?? {
+          tickets: 0,
+          grossCents: 0,
+          discountCents: 0,
+          platformFeeCents: 0,
+          netCents: 0,
+        };
+        return { promoCodeId: p.id, ...agg };
+      }),
     });
   } catch (err) {
     console.error("[organizador/promo][GET]", err);

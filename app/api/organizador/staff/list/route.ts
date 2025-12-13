@@ -2,7 +2,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { ensureAuthenticated, assertOrganizer } from "@/lib/security";
+import { ensureAuthenticated } from "@/lib/security";
+import { getActiveOrganizerForUser } from "@/lib/organizerContext";
+import { isOrgAdminOrAbove } from "@/lib/organizerPermissions";
 
 export async function GET(_req: NextRequest) {
   try {
@@ -19,13 +21,12 @@ export async function GET(_req: NextRequest) {
         { status: 400 },
       );
     }
-    assertOrganizer(user, organizerProfile);
 
-    const organizer = await prisma.organizer.findFirst({
-      where: { userId: organizerProfile.id },
+    const { organizer, membership } = await getActiveOrganizerForUser(user.id, {
+      roles: ["OWNER", "CO_OWNER", "ADMIN"],
     });
 
-    if (!organizer) {
+    if (!organizer || !membership || !isOrgAdminOrAbove(membership.role)) {
       return NextResponse.json(
         { ok: false, error: "Ainda não és organizador." },
         { status: 403 },

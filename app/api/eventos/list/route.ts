@@ -54,6 +54,10 @@ export async function GET(req: NextRequest) {
     const where: Prisma.EventWhereInput = {
       status: "PUBLISHED",
     };
+    const visibilityFilter: Prisma.EventWhereInput = {
+      OR: [{ organizerId: null }, { organizer: { publicListingEnabled: true } }],
+    };
+    where.AND = where.AND ? [...where.AND, visibilityFilter] : [visibilityFilter];
 
     if (category && category !== "all") {
       where.templateType = category.toUpperCase() as Prisma.EventWhereInput["templateType"];

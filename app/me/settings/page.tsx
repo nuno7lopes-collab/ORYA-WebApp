@@ -14,6 +14,8 @@ export default function SettingsPage() {
   const [allowEmailNotifications, setAllowEmailNotifications] = useState(true);
   const [allowEventReminders, setAllowEventReminders] = useState(true);
   const [allowFriendRequests, setAllowFriendRequests] = useState(true);
+  const [allowSalesAlerts, setAllowSalesAlerts] = useState(true);
+  const [allowSystemAnnouncements, setAllowSystemAnnouncements] = useState(true);
 
   const [savingSettings, setSavingSettings] = useState(false);
   const [savingEmail, setSavingEmail] = useState(false);
@@ -38,6 +40,29 @@ export default function SettingsPage() {
     }
   }, [profile?.allowEmailNotifications, profile?.allowEventReminders, profile?.allowFriendRequests, profile?.visibility, user?.email]);
 
+  useEffect(() => {
+    let cancelled = false;
+    async function loadPrefs() {
+      try {
+        const res = await fetch("/api/notifications/prefs");
+        const json = await res.json().catch(() => null);
+        if (!cancelled && res.ok && json?.prefs) {
+          setAllowEmailNotifications(Boolean(json.prefs.allowEmailNotifications));
+          setAllowEventReminders(Boolean(json.prefs.allowEventReminders));
+          setAllowFriendRequests(Boolean(json.prefs.allowFriendRequests));
+          setAllowSalesAlerts(Boolean(json.prefs.allowSalesAlerts));
+          setAllowSystemAnnouncements(Boolean(json.prefs.allowSystemAnnouncements));
+        }
+      } catch (err) {
+        console.warn("[settings] load prefs failed", err);
+      }
+    }
+    if (user) loadPrefs();
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+
   async function handleSaveSettings() {
     if (!user) return;
     setSavingSettings(true);
@@ -53,12 +78,27 @@ export default function SettingsPage() {
           allowEmailNotifications,
           allowEventReminders,
           allowFriendRequests,
+          allowSalesAlerts,
+          allowSystemAnnouncements,
         }),
       });
       const json = await res.json();
       if (!res.ok || !json.ok) {
         throw new Error(json.error || "Erro ao guardar definições.");
       }
+      // Sincronizar prefs de notificações
+      await fetch("/api/notifications/prefs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          allowEmailNotifications,
+          allowEventReminders,
+          allowFriendRequests,
+          allowSalesAlerts,
+          allowSystemAnnouncements,
+        }),
+      });
+
       setFeedback("Definições guardadas.");
       await mutate();
     } catch (err) {
@@ -280,6 +320,24 @@ export default function SettingsPage() {
                 className="h-3 w-3 accent-[#6BFFFF]"
               />
               <span>Pedidos de amizade / convites</span>
+            </label>
+            <label className="inline-flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={allowSalesAlerts}
+                onChange={(e) => setAllowSalesAlerts(e.target.checked)}
+                className="h-3 w-3 accent-[#6BFFFF]"
+              />
+              <span>Alertas de vendas / estado Stripe</span>
+            </label>
+            <label className="inline-flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={allowSystemAnnouncements}
+                onChange={(e) => setAllowSystemAnnouncements(e.target.checked)}
+                className="h-3 w-3 accent-[#6BFFFF]"
+              />
+              <span>Anúncios do sistema / updates críticos</span>
             </label>
           </div>
           <button

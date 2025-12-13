@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizerForUser } from "@/lib/organizerContext";
 import OrganizationsHubClient from "../../organizations/OrganizationsHubClient";
+import { cookies } from "next/headers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -71,8 +72,13 @@ export default async function OrganizationsHubPage() {
     redirect("/organizador/become");
   }
 
-  const { organizer: activeOrganizer } = await getActiveOrganizerForUser(user.id);
-  const activeId = activeOrganizer?.id ?? null;
+  const cookieStore = await cookies();
+  const cookieOrgId = cookieStore.get("orya_org")?.value;
+  const forcedOrgId = cookieOrgId ? Number(cookieOrgId) : undefined;
+  const { organizer: activeOrganizer } = await getActiveOrganizerForUser(user.id, {
+    organizerId: Number.isFinite(forcedOrgId) ? forcedOrgId : undefined,
+  });
+  const activeId = activeOrganizer?.id ?? (Number.isFinite(forcedOrgId) ? forcedOrgId! : null);
 
   return <OrganizationsHubClient initialOrgs={orgs} activeId={activeId} />;
 }

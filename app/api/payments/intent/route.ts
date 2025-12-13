@@ -3,10 +3,15 @@ export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import crypto from "crypto";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { stripe } from "@/lib/stripeClient";
 import { getPlatformFees } from "@/lib/platformSettings";
+import { shouldNotify, createNotification } from "@/lib/notifications";
+import { NotificationType } from "@prisma/client";
 import { parsePhoneNumberFromString } from "libphonenumber-js/min";
+import { computePromoDiscountCents } from "@/lib/promoMath";
+import { computePricing } from "@/lib/pricing";
 
 type CheckoutItem = {
   ticketId: string;
@@ -49,6 +54,54 @@ function normalizePhone(phone: string | null | undefined, defaultCountry: string
   }
 
   return null;
+}
+
+async function upsertPadelPlayerProfile(params: {
+  organizerId: number;
+  fullName: string;
+  email?: string | null;
+  phone?: string | null;
+  gender?: string | null;
+  level?: string | null;
+}) {
+  const { organizerId, fullName, email, phone, gender, level } = params;
+  if (!fullName.trim()) return;
+  const emailClean = email?.trim().toLowerCase() || null;
+  const phoneClean = phone?.trim() || null;
+
+  try {
+    if (emailClean) {
+      await prisma.padelPlayerProfile.upsert({
+        where: { organizerId_email: { organizerId, email: emailClean } },
+        update: {
+          fullName,
+          phone: phoneClean ?? undefined,
+          gender: gender ?? undefined,
+          level: level ?? undefined,
+        },
+        create: {
+          organizerId,
+          fullName,
+          email: emailClean,
+          phone: phoneClean ?? undefined,
+          gender: gender ?? undefined,
+          level: level ?? undefined,
+        },
+      });
+    } else {
+      await prisma.padelPlayerProfile.create({
+        data: {
+          organizerId,
+          fullName,
+          phone: phoneClean ?? undefined,
+          gender: gender ?? undefined,
+          level: level ?? undefined,
+        },
+      });
+    }
+  } catch (err) {
+    console.warn("[padel] upsertPadelPlayerProfile falhou (ignorado)", err);
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -109,14 +162,17 @@ export async function POST(req: NextRequest) {
         is_test: boolean;
         ends_at: Date | null;
         fee_mode: string | null;
+        fee_mode_override: string | null;
         organizer_id: number | null;
-        org_user_id: string | null;
+        org_type: string | null;
         org_stripe_account_id: string | null;
         org_stripe_charges_enabled: boolean | null;
         org_stripe_payouts_enabled: boolean | null;
         org_fee_mode: string | null;
         org_platform_fee_bps: number | null;
         org_platform_fee_fixed_cents: number | null;
+        platform_fee_bps_override: number | null;
+        platform_fee_fixed_cents_override: number | null;
         payout_mode: string | null;
       }[]
     >`
@@ -130,14 +186,17 @@ export async function POST(req: NextRequest) {
         e.is_test,
         e.ends_at,
         e.fee_mode,
+        e.fee_mode_override,
         e.organizer_id,
-        o.user_id AS org_user_id,
+        o.org_type AS org_type,
         o.stripe_account_id AS org_stripe_account_id,
         o.stripe_charges_enabled AS org_stripe_charges_enabled,
         o.stripe_payouts_enabled AS org_stripe_payouts_enabled,
         o.fee_mode AS org_fee_mode,
         o.platform_fee_bps AS org_platform_fee_bps,
         o.platform_fee_fixed_cents AS org_platform_fee_fixed_cents,
+        e.platform_fee_bps_override,
+        e.platform_fee_fixed_cents_override,
         e.payout_mode
       FROM app_v3.events e
       LEFT JOIN app_v3.organizers o ON o.id = e.organizer_id
@@ -176,6 +235,11 @@ export async function POST(req: NextRequest) {
     if (event.ends_at && event.ends_at < new Date()) {
       return NextResponse.json({ ok: false, error: "Vendas encerradas: evento já terminou." }, { status: 400 });
     }
+
+    const padelConfig = await prisma.padelTournamentConfig.findUnique({
+      where: { eventId: event.id },
+      select: { organizerId: true },
+    });
 
     const ticketTypeIds = Array.from(
       new Set(
@@ -245,9 +309,15 @@ export async function POST(req: NextRequest) {
     let amountInCents = 0;
     let totalQuantity = 0;
     let currency: string | null = null;
-    const ticketTypeMap = new Map<number, (typeof ticketTypes)[number]>(
-      ticketTypes.map((t) => [t.id, t]),
-    );
+    const ticketTypeMap = new Map<number, (typeof ticketTypes)[number]>(ticketTypes.map((t) => [t.id, t]));
+    const lines: {
+      ticketTypeId: number;
+      name: string;
+      quantity: number;
+      unitPriceCents: number;
+      currency: string;
+      lineTotalCents: number;
+    }[] = [];
 
     for (const item of items) {
       const ticketTypeId = Number(item.ticketId);
@@ -309,7 +379,17 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      amountInCents += priceCents * qty;
+      const lineTotal = priceCents * qty;
+      lines.push({
+        ticketTypeId,
+        name: ticketType.name ?? "Bilhete",
+        quantity: qty,
+        unitPriceCents: priceCents,
+        currency: ticketCurrency.toUpperCase(),
+        lineTotalCents: lineTotal,
+      });
+
+      amountInCents += lineTotal;
       totalQuantity += qty;
     }
 
@@ -320,11 +400,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (amountInCents <= 0) {
-      return NextResponse.json(
-        { ok: false, error: "Montante inválido." },
-        { status: 400 },
-      );
+    // Garantir que não temos montantes negativos após descontos
+    if (amountInCents < 0) {
+      amountInCents = 0;
     }
 
     const promoRepo = (prisma as unknown as {
@@ -404,12 +482,16 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      if (promo.type === "PERCENTAGE") {
-        discountCents = Math.floor((amountInCents * promo.value) / 10_000);
-      } else {
-        discountCents = Math.max(0, promo.value);
-      }
-      discountCents = Math.min(discountCents, amountInCents);
+      discountCents = computePromoDiscountCents({
+        promo: {
+          type: promo.type as "PERCENTAGE" | "FIXED",
+          value: promo.value,
+          minQuantity: promo.minQuantity,
+          minTotalCents: promo.minTotalCents,
+        },
+        totalQuantity,
+        amountInCents,
+      });
       promoCodeId = promo.id;
       amountInCents = amountInCents - discountCents;
     };
@@ -473,18 +555,25 @@ export async function POST(req: NextRequest) {
 
     const { feeBps: defaultFeeBps, feeFixedCents: defaultFeeFixed } = await getPlatformFees();
 
-    const feeModeRaw = (event.org_fee_mode ?? event.fee_mode ?? "ON_TOP").toString();
-    const feeMode = feeModeRaw === "ADDED" ? "ON_TOP" : (feeModeRaw as "ON_TOP" | "INCLUDED");
+    // Org da plataforma? (org_type = PLATFORM → não cobra application fee)
+    const isPlatformOrg = (event.org_type || "").toString().toUpperCase() === "PLATFORM";
 
-    // Organizer admin? (conta oficial)
-    const orgProfile =
-      event.org_user_id
-        ? await prisma.profile.findUnique({ where: { id: event.org_user_id } })
-        : null;
-    const isOrganizerAdmin =
-      Array.isArray(orgProfile?.roles) && orgProfile.roles.includes("admin");
+    const pricing = computePricing(amountInCents + discountCents, discountCents, {
+      eventFeeModeOverride: event.fee_mode_override as any,
+      eventFeeMode: event.fee_mode as any,
+      organizerFeeMode: event.org_fee_mode as any,
+      platformDefaultFeeMode: "ADDED",
+      eventPlatformFeeBpsOverride: event.platform_fee_bps_override,
+      eventPlatformFeeFixedCentsOverride: event.platform_fee_fixed_cents_override,
+      organizerPlatformFeeBps: event.org_platform_fee_bps,
+      organizerPlatformFeeFixedCents: event.org_platform_fee_fixed_cents,
+      platformDefaultFeeBps: defaultFeeBps,
+      platformDefaultFeeFixedCents: defaultFeeFixed,
+      isPlatformOrg,
+    });
+    const platformFeeCents = pricing.platformFeeCents;
 
-    const stripeAccountId = event.org_stripe_account_id ?? null;
+    let stripeAccountId = event.org_stripe_account_id ?? null;
     const payoutModeRaw = (event.payout_mode || "ORGANIZER").toString().toUpperCase();
     // Hotfix: se não existir conta Connect, tratamos como payout na plataforma
     const payoutMode =
@@ -496,38 +585,152 @@ export async function POST(req: NextRequest) {
       : "NO_STRIPE";
 
     if (payoutMode === "ORGANIZER" && paymentsStatus !== "READY") {
+      // Bloqueia checkout se o organizer quis receber diretamente mas não tem Stripe pronto
       return NextResponse.json(
         {
           ok: false,
-          code: "ORGANIZER_STRIPE_INACTIVE",
-          error: "Ocorreu um problema com este evento. Tenta novamente mais tarde.",
+          error: "Este evento não pode aceitar pagamentos enquanto a conta Stripe do organizador não estiver ligada.",
+          code: "ORGANIZER_STRIPE_REQUIRED",
         },
         { status: 409 },
       );
     }
+    // Se payoutMode for PLATFORM por falta de Stripe, seguimos com a conta da plataforma
+    if (payoutMode === "PLATFORM") {
+      stripeAccountId = null;
+    }
 
     const isPartnerEvent = payoutMode === "ORGANIZER" && Boolean(stripeAccountId);
 
-    const platformFeeBps = isOrganizerAdmin
-      ? 0
-      : event.org_platform_fee_bps ?? defaultFeeBps;
-    const platformFeeFixedCents = isOrganizerAdmin
-      ? 0
-      : event.org_platform_fee_fixed_cents ?? defaultFeeFixed;
+    const platformFeeCents = pricing.platformFeeCents;
+    const totalAmountInCents = pricing.totalCents;
 
-    const platformFeeCents = Math.max(
-      0,
-      Math.round((amountInCents * platformFeeBps) / 10_000) + platformFeeFixedCents,
-    );
-
-    const totalAmountInCents =
-      feeMode === "ON_TOP" ? amountInCents + platformFeeCents : amountInCents;
-
-    if (totalAmountInCents <= 0 || platformFeeCents > totalAmountInCents) {
+    if (totalAmountInCents < 0 || platformFeeCents > Math.max(totalAmountInCents, 0)) {
       return NextResponse.json(
         { ok: false, error: "Montante total inválido para este checkout." },
         { status: 400 },
       );
+    }
+
+    // --------------------------
+    // CHECKOUT GRATUITO (0 €)
+    // --------------------------
+    if (totalAmountInCents === 0) {
+      let createdTicketsCount = 0;
+      await prisma.$transaction(async (tx) => {
+        for (const line of lines) {
+          const ticketType = ticketTypeMap.get(line.ticketTypeId);
+          if (!ticketType) continue;
+
+          // Stock check novamente por segurança
+          if (ticketType.totalQuantity !== null && ticketType.totalQuantity !== undefined) {
+            const remaining = ticketType.totalQuantity - ticketType.soldQuantity;
+            if (remaining <= 0 || line.quantity > remaining) {
+              throw new Error("Sem stock suficiente para um dos bilhetes.");
+            }
+          }
+
+          for (let i = 0; i < line.quantity; i++) {
+            const token = crypto.randomUUID();
+            const ticket = await tx.ticket.create({
+              data: {
+                userId,
+                eventId: event.id,
+                ticketTypeId: ticketType.id,
+                status: "ACTIVE",
+                purchasedAt: new Date(),
+                qrSecret: token,
+                pricePaid: 0,
+                currency: (ticketType.currency || "EUR").toUpperCase(),
+                platformFeeCents: 0,
+                totalPaidCents: 0,
+                stripePaymentIntentId: null,
+              },
+            });
+
+            if (!userId && guestEmail) {
+              await tx.guestTicketLink.upsert({
+                where: { ticketId: ticket.id },
+                update: {
+                  guestEmail,
+                  guestName: guestName || "Convidado",
+                  guestPhone: guestPhone || null,
+                },
+                create: {
+                  ticketId: ticket.id,
+                  guestEmail,
+                  guestName: guestName || "Convidado",
+                  guestPhone: guestPhone || null,
+                },
+              });
+            }
+            createdTicketsCount += 1;
+          }
+
+          await tx.ticketType.update({
+            where: { id: ticketType.id },
+            data: { soldQuantity: { increment: line.quantity } },
+          });
+        }
+      });
+
+      if (padelConfig) {
+        const fullName = userData?.user?.user_metadata?.full_name || guestName || "Jogador Padel";
+        const emailToSave = userData?.user?.email || guestEmail || null;
+        const phoneToSave = userData?.user?.phone || contact || guestPhone || null;
+        await upsertPadelPlayerProfile({
+          organizerId: padelConfig.organizerId,
+          fullName,
+          email: emailToSave,
+          phone: phoneToSave,
+        });
+      }
+
+      // Notificação para o organizer (se existir) — respeita prefs
+      if (event.organizerId) {
+        try {
+          const ownerMembers = await prisma.organizerMember.findMany({
+            where: { organizerId: event.organizerId, role: { in: ["OWNER", "CO_OWNER", "ADMIN"] } },
+            select: { userId: true },
+          });
+          const uniqOwners = Array.from(new Set(ownerMembers.map((m) => m.userId)));
+          await Promise.all(
+            uniqOwners.map((uid) =>
+              (async () => {
+                if (!(await shouldNotify(uid, NotificationType.EVENT_SALE))) return;
+                await createNotification({
+                  userId: uid,
+                  type: NotificationType.EVENT_SALE,
+                  title: "Nova reserva gratuita",
+                  body: `Recebeste uma reserva para ${event.title}.`,
+                  ctaUrl: `/organizador?tab=sales&eventId=${event.id}`,
+                  ctaLabel: "Ver vendas",
+                  payload: { eventId: event.id, title: event.title },
+                });
+              })(),
+            ),
+          );
+        } catch (err) {
+          console.warn("[notification][free_checkout] falhou", err);
+        }
+      }
+
+      return NextResponse.json({
+        ok: true,
+        freeCheckout: true,
+        ticketsCreated: createdTicketsCount,
+        amount: 0,
+        currency: currency.toUpperCase(),
+        discountCents,
+        breakdown: {
+          lines,
+          subtotalCents: pricing.subtotalCents,
+          feeMode: pricing.feeMode,
+          platformFeeCents: pricing.platformFeeCents,
+          totalCents: 0,
+          currency: currency.toUpperCase(),
+        },
+      });
     }
 
     const metadata = {
@@ -535,12 +738,12 @@ export async function POST(req: NextRequest) {
       eventSlug: String(event.slug),
       userId: userId ? String(userId) : "",
       items: JSON.stringify(items),
-      baseAmountCents: String(amountInCents),
+      baseAmountCents: String(pricing.subtotalCents - discountCents),
       discountCents: String(discountCents),
-      platformFeeMode: feeMode,
-      platformFeeBps: String(platformFeeBps),
-      platformFeeFixedCents: String(platformFeeFixedCents),
-      platformFeeCents: String(platformFeeCents),
+      platformFeeMode: pricing.feeMode,
+      platformFeeBps: String(pricing.feeBpsApplied),
+      platformFeeFixedCents: String(pricing.feeFixedApplied),
+      platformFeeCents: String(pricing.platformFeeCents),
       contact: contact?.trim() ?? "",
       stripeAccountId: stripeAccountId ?? "orya",
       guestName: guestName ?? "",
@@ -550,6 +753,14 @@ export async function POST(req: NextRequest) {
       promoCode: promoCodeId ? String(promoCodeId) : "",
       promoCodeRaw: promoCodeInput,
       totalQuantity: String(totalQuantity),
+      breakdown: JSON.stringify({
+        lines,
+        subtotalCents: pricing.subtotalCents,
+        feeMode: pricing.feeMode,
+        platformFeeCents: pricing.platformFeeCents,
+        totalCents: pricing.totalCents,
+        currency: currency.toUpperCase(),
+      }),
     };
 
     const allowedPaymentMethods = ["card", "link", "mb_way"] as const;
@@ -570,12 +781,24 @@ export async function POST(req: NextRequest) {
         destination: stripeAccountId,
       };
       // Apenas aplica application_fee se não for organizer admin
-      if (!isOrganizerAdmin) {
+      if (!isPlatformOrg) {
         intentParams.application_fee_amount = platformFeeCents;
       }
     }
 
     const paymentIntent = await stripe.paymentIntents.create(intentParams);
+
+    if (padelConfig) {
+      const fullName = userData?.user?.user_metadata?.full_name || guestName || "Jogador Padel";
+      const emailToSave = userData?.user?.email || guestEmail || null;
+      const phoneToSave = userData?.user?.phone || contact || guestPhone || null;
+      await upsertPadelPlayerProfile({
+        organizerId: padelConfig.organizerId,
+        fullName,
+        email: emailToSave,
+        phone: phoneToSave,
+      });
+    }
 
     return NextResponse.json({
       ok: true,
@@ -584,6 +807,14 @@ export async function POST(req: NextRequest) {
       currency,
       discountCents,
       paymentIntentId: paymentIntent.id,
+      breakdown: {
+        lines,
+        subtotalCents: pricing.subtotalCents,
+        feeMode: pricing.feeMode,
+        platformFeeCents: pricing.platformFeeCents,
+        totalCents: totalAmountInCents,
+        currency: currency.toUpperCase(),
+      },
     });
   } catch (err) {
     console.error("Erro PaymentIntent:", err);

@@ -25,6 +25,39 @@ export async function getActiveOrganizerForUser(userId: string, opts: Options = 
   let memberships: Array<
     Awaited<ReturnType<typeof prisma.organizerMember.findMany>>[number]
   > | null = null;
+
+  // 1) Se organizerId foi especificado, tenta buscar diretamente essa membership primeiro
+  if (organizerId) {
+    try {
+      const direct = await client.organizerMember!.findFirst({
+        where: {
+          userId,
+          organizerId,
+          ...(roles ? { role: { in: roles } } : {}),
+          organizer: { status: "ACTIVE" },
+        },
+        include: { organizer: true },
+      });
+      if (direct?.organizer) {
+        return { organizer: direct.organizer, membership: direct };
+      }
+      // fallback: se não houver membership mas o org existe, devolve só o org
+      if (!direct) {
+        const orgOnly = await client.organizer?.findFirst({
+          where: { id: organizerId, status: "ACTIVE" },
+        });
+        if (orgOnly) return { organizer: orgOnly as any, membership: null };
+      }
+    } catch (err) {
+      // se falhar, continua para os fallbacks
+      const code = typeof err === "object" && err && "code" in err ? (err as { code?: string }).code : undefined;
+      const msg = typeof err === "object" && err && "message" in err ? String((err as { message?: unknown }).message) : "";
+      if (!(code === "P2021" || msg.includes("does not exist"))) {
+        throw err;
+      }
+    }
+  }
+
   try {
     memberships = await client.organizerMember!.findMany({
       where: {
@@ -80,7 +113,7 @@ export async function getActiveOrganizerForUser(userId: string, opts: Options = 
     }
   }
 
-  // 3) Legacy fallback (organizers.user_id) — apenas se a tabela de memberships estiver em falta
+  // 3) Legacy fallback (organizers.user_id) — apenas se a tabela de memberships estiver em falta. Não usar para autorização.
   if (memberships === null && membershipsFallbackAllowed && typeof client.organizer?.findFirst === "function") {
     const organizer = await client.organizer.findFirst({
       where: { userId, status: "ACTIVE" },

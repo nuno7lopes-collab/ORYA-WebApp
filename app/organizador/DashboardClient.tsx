@@ -4,9 +4,16 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import useSWR from "swr";
+import { ConfirmDestructiveActionDialog } from "@/app/components/ConfirmDestructiveActionDialog";
+import { trackEvent } from "@/lib/analytics";
 import { useUser } from "@/app/hooks/useUser";
 import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
-import { OrganizationActions } from "./OrganizationActions";
+import PromoCodesPage from "./promo/PromoCodesClient";
+import OrganizerSettingsPage from "./(dashboard)/settings/page";
+import OrganizerStaffPage from "./(dashboard)/staff/page";
+import { BackButton } from "./BackButton";
+import PadelHubClient from "./(dashboard)/padel/PadelHubClient";
+import { SalesLineChart } from "@/app/components/charts/SalesLineChart";
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
@@ -14,6 +21,10 @@ type OverviewResponse = {
   ok: boolean;
   totalTickets: number;
   totalRevenueCents: number;
+  grossCents?: number;
+  discountCents?: number;
+  platformFeeCents?: number;
+  netRevenueCents?: number;
   eventsWithSalesCount: number;
   activeEventsCount: number;
 };
@@ -33,6 +44,10 @@ type EventItem = {
   revenueCents?: number;
   capacity?: number | null;
   categories?: string[];
+  padelClubId?: number | null;
+  padelPartnerClubIds?: number[];
+  padelClubName?: string | null;
+  padelPartnerClubNames?: Array<string | null>;
 };
 
 type EventsResponse = { ok: boolean; items: EventItem[] };
@@ -150,6 +165,7 @@ type AudienceSummaryResponse =
   | { ok: false; error?: string };
 type OrganizerStatus = {
   paymentsStatus?: "NO_STRIPE" | "PENDING" | "READY";
+  paymentsMode?: "CONNECT" | "PLATFORM";
   profileStatus?: "MISSING_CONTACT" | "OK";
   contactEmail?: string | null;
 };
@@ -160,7 +176,36 @@ type OrganizerLite = {
   displayName?: string | null;
   city?: string | null;
   payoutIban?: string | null;
+  officialEmail?: string | null;
+  officialEmailVerifiedAt?: string | null;
 };
+
+type TabKey =
+  | "overview"
+  | "events"
+  | "sales"
+  | "finance"
+  | "marketing"
+  | "padel"
+  | "restaurants"
+  | "volunteer"
+  | "night"
+  | "staff"
+  | "settings";
+
+const ALL_TABS: TabKey[] = [
+  "overview",
+  "events",
+  "sales",
+  "finance",
+  "marketing",
+  "padel",
+  "restaurants",
+  "volunteer",
+  "night",
+  "staff",
+  "settings",
+];
 
 export default function OrganizadorPage() {
   const { user, profile, isLoading: userLoading, mutate: mutateUser } = useUser();
@@ -182,21 +227,22 @@ export default function OrganizadorPage() {
   const [eventTypeFilter, setEventTypeFilter] = useState<string>("all");
   const [eventCategoryFilter, setEventCategoryFilter] = useState<string>("all");
   const [eventDateFilter, setEventDateFilter] = useState<"any" | "today" | "week" | "month" | "weekend">("any");
+  const [eventPartnerClubFilter, setEventPartnerClubFilter] = useState<string>("all");
   const [salesMetric, setSalesMetric] = useState<"tickets" | "revenue">("revenue");
   const [salesEventId, setSalesEventId] = useState<number | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [timeScope, setTimeScope] = useState<"all" | "upcoming" | "ongoing" | "past">("all");
   const [viewMode, setViewMode] = useState<"cards" | "table">("cards");
+  const [eventActionLoading, setEventActionLoading] = useState<number | null>(null);
+  const [eventDialog, setEventDialog] = useState<{ mode: "archive" | "delete"; ev: EventItem } | null>(null);
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const [marketingSection, setMarketingSection] = useState<"overview" | "campaigns" | "audience" | "promoters" | "content" | "automation">("overview");
+  const [marketingSection, setMarketingSection] = useState<"overview" | "promos" | "promoters" | "content">("overview");
   const [salesRange, setSalesRange] = useState<"7d" | "30d" | "all">("30d");
 
   const tabParam = searchParams?.get("tab") || undefined;
-  const activeTab = ["overview", "events", "sales", "finance", "marketing"].includes(tabParam || "")
-    ? (tabParam as "overview" | "events" | "sales" | "finance" | "marketing")
-    : "overview";
+  const activeTab: TabKey = ALL_TABS.includes((tabParam as TabKey) || "overview") ? ((tabParam as TabKey) || "overview") : "overview";
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -227,6 +273,7 @@ export default function OrganizadorPage() {
     const typeParam = searchParams?.get("type");
     const catParam = searchParams?.get("cat");
     const dateParam = searchParams?.get("date");
+    const clubParam = searchParams?.get("club");
     const searchParam = searchParams?.get("search");
     const scopeParam = searchParams?.get("scope");
     const viewParam = searchParams?.get("view");
@@ -237,29 +284,68 @@ export default function OrganizadorPage() {
     if (typeParam) setEventTypeFilter(typeParam);
     if (catParam) setEventCategoryFilter(catParam);
     if (dateParam) setEventDateFilter(dateParam as typeof eventDateFilter);
+    if (clubParam) setEventPartnerClubFilter(clubParam);
     if (searchParam) setSearchTerm(searchParam);
     if (scopeParam) setTimeScope(scopeParam as typeof timeScope);
     if (viewParam === "table" || viewParam === "cards") setViewMode(viewParam);
     if (eventIdParam) setSalesEventId(Number(eventIdParam));
     if (marketingSectionParam) {
-      const allowed = ["overview", "campaigns", "audience", "promoters", "content", "automation"] as const;
+      const allowed = ["overview", "promos", "promoters", "content"] as const;
       if (allowed.includes(marketingSectionParam as (typeof allowed)[number])) {
         setMarketingSection(marketingSectionParam as typeof marketingSection);
       }
     }
   }, [searchParams]);
 
+  const orgParam = searchParams?.get("org");
+  const orgMeUrl = useMemo(() => {
+    if (!user) return null;
+    return orgParam ? `/api/organizador/me?org=${orgParam}` : "/api/organizador/me";
+  }, [user, orgParam]);
+
   const { data: organizerData, isLoading: organizerLoading, mutate: mutateOrganizer } = useSWR<
-    OrganizerStatus & { profile?: { fullName?: string | null; city?: string | null } | null; organizer?: OrganizerLite | null; ok?: boolean }
-  >(
-    user ? "/api/organizador/me" : null,
-    fetcher
-  );
+    OrganizerStatus & {
+      profile?: { fullName?: string | null; city?: string | null } | null;
+      organizer?: OrganizerLite | null;
+      ok?: boolean;
+      orgTransferEnabled?: boolean | null;
+    }
+  >(orgMeUrl, fetcher);
 
   const organizer = organizerData?.organizer ?? null;
   const loading = userLoading || organizerLoading;
   const paymentsStatus = organizerData?.paymentsStatus ?? "NO_STRIPE";
+  const paymentsMode = organizerData?.paymentsMode ?? "CONNECT";
   const profileStatus = organizerData?.profileStatus ?? "MISSING_CONTACT";
+  const officialEmail = (organizer as { officialEmail?: string | null })?.officialEmail ?? null;
+  const officialEmailVerifiedAtRaw = (organizer as { officialEmailVerifiedAt?: string | null })?.officialEmailVerifiedAt ?? null;
+  const officialEmailVerifiedAt = officialEmailVerifiedAtRaw ? new Date(officialEmailVerifiedAtRaw) : null;
+  const showOfficialEmailWarning = Boolean(organizer) && !officialEmailVerifiedAt;
+  const onboardingParam = searchParams?.get("onboarding");
+  const [stripeRequirements, setStripeRequirements] = useState<string[]>([]);
+  const [stripeSuccessMessage, setStripeSuccessMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    const refreshStripe = async () => {
+      try {
+        const res = await fetch("/api/organizador/payouts/status");
+        const data = await res.json().catch(() => null);
+        if (res.ok && data?.status) {
+          setStripeRequirements(Array.isArray(data.requirements_due) ? data.requirements_due : []);
+          if (data.status === "CONNECTED" && onboardingParam === "done") {
+            setStripeSuccessMessage("Conta Stripe ligada. Já podes vender bilhetes pagos.");
+            setTimeout(() => setStripeSuccessMessage(null), 3200);
+          }
+        }
+        mutateOrganizer();
+      } catch (err) {
+        console.error("[stripe][refresh-status] err", err);
+      }
+    };
+    if (activeTab === "finance") {
+      refreshStripe();
+    }
+  }, [onboardingParam, activeTab, mutateOrganizer]);
 
   // Prefill onboarding fields quando já existirem dados
   useEffect(() => {
@@ -325,6 +411,39 @@ export default function OrganizadorPage() {
     fetcher,
     { revalidateOnFocus: false }
   );
+
+  const archiveEvent = useCallback(
+    async (target: EventItem, mode: "archive" | "delete") => {
+      setEventActionLoading(target.id);
+      setCtaError(null);
+      try {
+        const res = await fetch("/api/organizador/events/update", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ eventId: target.id, archive: true }),
+        });
+        const json = await res.json().catch(() => null);
+        if (!res.ok || json?.ok === false) {
+          setCtaError(json?.error || "Não foi possível concluir esta ação.");
+        } else {
+          mutateEvents();
+          setCtaSuccess(mode === "delete" ? "Rascunho apagado." : "Evento arquivado.");
+          trackEvent(mode === "delete" ? "event_draft_deleted" : "event_archived", {
+            eventId: target.id,
+            status: target.status,
+          });
+          setTimeout(() => setCtaSuccess(null), 3000);
+        }
+      } catch (err) {
+        console.error("[events][archive]", err);
+        setCtaError("Erro inesperado ao processar a ação.");
+      } finally {
+        setEventActionLoading(null);
+        setEventDialog(null);
+      }
+    },
+    [mutateEvents],
+  );
   const { data: marketingOverview } = useSWR<MarketingOverviewResponse>(
     organizer?.status === "ACTIVE" && activeTab === "marketing" ? "/api/organizador/marketing/overview" : null,
     fetcher,
@@ -342,6 +461,16 @@ export default function OrganizadorPage() {
     fetcher,
     { revalidateOnFocus: false }
   );
+  const { data: padelClubs } = useSWR<{ ok: boolean; items: any[] }>(
+    organizer?.status === "ACTIVE" && activeTab === "padel" ? "/api/padel/clubs" : null,
+    fetcher,
+    { revalidateOnFocus: false }
+  );
+  const { data: padelPlayers } = useSWR<{ ok: boolean; items: any[] }>(
+    organizer?.status === "ACTIVE" && activeTab === "padel" ? "/api/padel/players" : null,
+    fetcher,
+    { revalidateOnFocus: false }
+  );
 
   const currentQuery = searchParams?.toString() || "";
 
@@ -355,6 +484,7 @@ export default function OrganizadorPage() {
     setParam("type", eventTypeFilter, "all");
     setParam("cat", eventCategoryFilter, "all");
     setParam("date", eventDateFilter, "any");
+    setParam("club", eventPartnerClubFilter, "all");
     setParam("search", searchTerm, "");
     setParam("scope", timeScope, "all");
     setParam("view", viewMode, "cards");
@@ -421,6 +551,9 @@ export default function OrganizadorPage() {
   }
 
   async function handleStripeConnect() {
+    import("@/lib/analytics").then(({ trackEvent }) =>
+      trackEvent("connect_stripe_clicked", { status: paymentsStatus }),
+    );
     setStripeCtaError(null);
     setStripeCtaLoading(true);
     try {
@@ -476,7 +609,10 @@ export default function OrganizadorPage() {
   }, [refundPolicy, vatRate]);
 
   const statsCards = useMemo(() => {
-    const revenueEuros = (overview?.totalRevenueCents ?? 0) / 100;
+    const grossEuros = (overview?.grossCents ?? overview?.totalRevenueCents ?? 0) / 100;
+    const netEuros = (overview?.netRevenueCents ?? overview?.totalRevenueCents ?? 0) / 100;
+    const discountEuros = (overview?.discountCents ?? 0) / 100;
+    const feeEuros = (overview?.platformFeeCents ?? 0) / 100;
     return [
       {
         label: "Bilhetes 30d",
@@ -484,9 +620,11 @@ export default function OrganizadorPage() {
         hint: "Bilhetes vendidos nos últimos 30 dias",
       },
       {
-        label: "Receita 30d",
-        value: overview ? `${revenueEuros.toFixed(2)} €` : "—",
-        hint: "Valor bruto em cêntimos convertidos",
+        label: "Receita líquida 30d",
+        value: overview ? `${netEuros.toFixed(2)} €` : "—",
+        hint: overview
+          ? `Bruto ${grossEuros.toFixed(2)}€ · Descontos -${discountEuros.toFixed(2)}€ · Taxas -${feeEuros.toFixed(2)}€`
+          : "—",
       },
       {
         label: "Eventos com vendas",
@@ -509,7 +647,24 @@ export default function OrganizadorPage() {
   ];
 
   const containerClasses = "mx-auto max-w-7xl px-4 pb-12 pt-6 md:pt-8 md:px-6 lg:px-8";
-    const eventsList = useMemo(() => events?.items ?? [], [events]);
+  const eventsList = useMemo(() => events?.items ?? [], [events]);
+  const eventsListLoading = organizer?.status === "ACTIVE" && activeTab === "events" && !events;
+  const overviewLoading = organizer?.status === "ACTIVE" && !overview;
+  const partnerClubOptions = useMemo(() => {
+    const map = new Map<number, string>();
+    eventsList.forEach((ev) => {
+      if (ev.templateType !== "SPORT" && ev.templateType !== "PADEL") return;
+      if (Number.isFinite(ev.padelClubId as number)) {
+        map.set(ev.padelClubId as number, ev.padelClubName || `Clube ${ev.padelClubId}`);
+      }
+      (ev.padelPartnerClubIds || []).forEach((id, idx) => {
+        if (!Number.isFinite(id)) return;
+        const label = ev.padelPartnerClubNames?.[idx] || `Clube ${id}`;
+        map.set(id as number, label);
+      });
+    });
+    return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
+  }, [eventsList]);
   const persistFilters = useCallback(
     (params: URLSearchParams) => {
       const paramString = params.toString();
@@ -521,6 +676,7 @@ export default function OrganizadorPage() {
         type: eventTypeFilter,
         cat: eventCategoryFilter,
         date: eventDateFilter,
+        club: eventPartnerClubFilter,
         search: searchTerm,
         scope: timeScope,
         view: viewMode,
@@ -533,6 +689,7 @@ export default function OrganizadorPage() {
     [
       eventCategoryFilter,
       eventDateFilter,
+      eventPartnerClubFilter,
       eventStatusFilter,
       eventTypeFilter,
       pathname,
@@ -554,6 +711,7 @@ export default function OrganizadorPage() {
     setParam("type", eventTypeFilter, "all");
     setParam("cat", eventCategoryFilter, "all");
     setParam("date", eventDateFilter, "any");
+    setParam("club", eventPartnerClubFilter, "all");
     setParam("search", searchTerm, "");
     setParam("scope", timeScope, "all");
     setParam("view", viewMode, "cards");
@@ -564,6 +722,7 @@ export default function OrganizadorPage() {
   }, [
     eventCategoryFilter,
     eventDateFilter,
+    eventPartnerClubFilter,
     eventStatusFilter,
     eventTypeFilter,
     marketingSection,
@@ -586,6 +745,7 @@ export default function OrganizadorPage() {
         type?: string;
         cat?: string;
         date?: string;
+        club?: string;
         search?: string;
         scope?: string;
         view?: string;
@@ -595,6 +755,7 @@ export default function OrganizadorPage() {
       if (parsed.type) setEventTypeFilter(parsed.type);
       if (parsed.cat) setEventCategoryFilter(parsed.cat);
       if (parsed.date) setEventDateFilter(parsed.date as typeof eventDateFilter);
+      if (parsed.club) setEventPartnerClubFilter(parsed.club);
       if (parsed.search) setSearchTerm(parsed.search);
       if (parsed.scope) setTimeScope(parsed.scope as typeof timeScope);
       if (parsed.view === "cards" || parsed.view === "table") setViewMode(parsed.view);
@@ -654,6 +815,14 @@ export default function OrganizadorPage() {
         const cats = ev.categories ?? [];
         if (!cats.includes(eventCategoryFilter)) return false;
       }
+      if (eventPartnerClubFilter !== "all") {
+        const clubId = Number(eventPartnerClubFilter);
+        if (Number.isFinite(clubId)) {
+          const partners = ev.padelPartnerClubIds ?? [];
+          const mainClub = ev.padelClubId ?? null;
+          if (mainClub !== clubId && !partners.includes(clubId)) return false;
+        }
+      }
       if (search) {
         if (!ev.title.toLowerCase().includes(search)) return false;
       }
@@ -683,24 +852,34 @@ export default function OrganizadorPage() {
         eventTypeFilter !== "all",
         eventCategoryFilter !== "all",
         eventDateFilter !== "any",
+        eventPartnerClubFilter !== "all",
         timeScope !== "all",
         searchTerm.trim() !== "",
       ].filter(Boolean).length,
-    [eventCategoryFilter, eventDateFilter, eventStatusFilter, eventTypeFilter, searchTerm, timeScope]
+    [eventCategoryFilter, eventDateFilter, eventPartnerClubFilter, eventStatusFilter, eventTypeFilter, searchTerm, timeScope]
   );
 
   const selectedSalesEvent = salesEventId ? eventsList.find((ev) => ev.id === salesEventId) ?? null : null;
   const financeData = financeOverview && financeOverview.ok ? financeOverview : null;
   const financeSummary = payoutSummary && "ok" in payoutSummary && payoutSummary.ok ? payoutSummary : null;
   const stripeState = useMemo(() => {
+    const hasReqs = stripeRequirements.length > 0;
     if (paymentsStatus === "READY") {
       return { badge: "Ativo", tone: "success", title: "Conta Stripe ligada ✅", desc: "Já podes vender bilhetes pagos e receber os teus payouts normalmente.", cta: "Abrir painel Stripe" };
     }
     if (paymentsStatus === "PENDING") {
-      return { badge: "Onboarding incompleto", tone: "warning", title: "Conta Stripe em configuração", desc: "Conclui o onboarding no Stripe para começares a receber os pagamentos dos teus bilhetes.", cta: "Continuar configuração no Stripe" };
+      return {
+        badge: hasReqs ? "Requer atenção" : "Onboarding incompleto",
+        tone: hasReqs ? "error" : "warning",
+        title: hasReqs ? "Falta concluir dados no Stripe" : "Conta Stripe em configuração",
+        desc: hasReqs
+          ? "A tua conta Stripe precisa de dados antes de ativar pagamentos."
+          : "Conclui o onboarding no Stripe para começares a receber os pagamentos dos teus bilhetes.",
+        cta: hasReqs ? "Rever ligação Stripe" : "Continuar configuração no Stripe",
+      };
     }
     return { badge: "Por ligar", tone: "neutral", title: "Ainda não ligaste a tua conta Stripe", desc: "Podes criar eventos gratuitos, mas para vender bilhetes pagos precisas de ligar uma conta Stripe.", cta: "Ligar conta Stripe" };
-  }, [paymentsStatus]);
+  }, [paymentsStatus, stripeRequirements]);
 
   const marketingPromos = useMemo(() => promoData?.promoCodes ?? [], [promoData]);
   const marketingEvents = useMemo(() => promoData?.events ?? [], [promoData]);
@@ -734,6 +913,8 @@ export default function OrganizadorPage() {
     };
   }, [marketingOverview, marketingPromos, overview]);
   const buyersItems = buyers && buyers.ok !== false ? buyers.items : [];
+  const salesLoading = !!salesEventId && !salesSeries;
+  const buyersLoading = !!salesEventId && !buyers;
   const salesKpis = useMemo(() => {
     const tickets = salesSeries?.points?.reduce((sum, p) => sum + p.tickets, 0) ?? 0;
     const revenueCents = salesSeries?.points?.reduce((sum, p) => sum + p.revenueCents, 0) ?? 0;
@@ -753,6 +934,26 @@ export default function OrganizadorPage() {
       .sort((a, b) => (b.revenueCents ?? 0) - (a.revenueCents ?? 0) || (b.ticketsSold ?? 0) - (a.ticketsSold ?? 0))
       .slice(0, 5);
   }, [eventsList]);
+
+  const formatEuros = (val: number) => `${(val / 100).toFixed(2)} €`;
+
+  const overviewSeriesBreakdown = useMemo(() => {
+    if (!timeSeries?.points?.length) return null;
+    const gross = timeSeries.points.reduce((acc, p) => acc + (p.grossCents ?? 0), 0);
+    const discount = timeSeries.points.reduce((acc, p) => acc + (p.discountCents ?? 0), 0);
+    const fees = timeSeries.points.reduce((acc, p) => acc + (p.platformFeeCents ?? 0), 0);
+    const net = timeSeries.points.reduce((acc, p) => acc + (p.netCents ?? p.revenueCents ?? 0), 0);
+    return { gross, discount, fees, net };
+  }, [timeSeries?.points]);
+
+  const salesSeriesBreakdown = useMemo(() => {
+    if (!salesSeries?.points?.length) return null;
+    const gross = salesSeries.points.reduce((acc, p) => acc + (p.grossCents ?? 0), 0);
+    const discount = salesSeries.points.reduce((acc, p) => acc + (p.discountCents ?? 0), 0);
+    const fees = salesSeries.points.reduce((acc, p) => acc + (p.platformFeeCents ?? 0), 0);
+    const net = salesSeries.points.reduce((acc, p) => acc + (p.netCents ?? p.revenueCents ?? 0), 0);
+    return { gross, discount, fees, net };
+  }, [salesSeries?.points]);
 
   const exportFinanceCsv = useCallback(() => {
     if (!financeData || !financeData.events.length) return;
@@ -779,10 +980,21 @@ export default function OrganizadorPage() {
 
   const handleExportSalesCsv = useCallback(() => {
     if (!salesSeries?.points?.length || !selectedSalesEvent) return;
-    const header = ["Data", "Bilhetes", "Receita (€)"];
+    const header = ["Data", "Bilhetes", "Bruto (€)", "Desconto (€)", "Taxas (€)", "Líquido (€)"];
     const rows = salesSeries.points.map((p) => {
       const date = new Date(p.date).toLocaleDateString("pt-PT");
-      return [date, p.tickets, (p.revenueCents / 100).toFixed(2)];
+      const gross = (p.grossCents ?? p.revenueCents ?? 0) / 100;
+      const discount = (p.discountCents ?? 0) / 100;
+      const fees = (p.platformFeeCents ?? 0) / 100;
+      const net = (p.netCents ?? p.revenueCents ?? 0) / 100;
+      return [
+        date,
+        p.tickets,
+        gross.toFixed(2),
+        (-discount).toFixed(2),
+        (-fees).toFixed(2),
+        net.toFixed(2),
+      ];
     });
     const csv = [header.join(";"), ...rows.map((r) => r.join(";"))].join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
@@ -965,27 +1177,24 @@ export default function OrganizadorPage() {
     );
   }
 
-  const stripeReady = paymentsStatus === "READY";
+  const isPlatformStripe = paymentsMode === "PLATFORM";
+  const stripeReady = isPlatformStripe || paymentsStatus === "READY";
+  const stripeIncomplete = !isPlatformStripe && paymentsStatus === "PENDING";
   const quickTasks = [
     {
       label: "Liga Stripe para vender",
       done: stripeReady,
-      href: "/organizador/pagamentos",
+      href: "/organizador?tab=finance",
     },
     {
       label: "Cria o teu primeiro evento",
       done: (events?.items?.length ?? 0) > 0,
-      href: "/organizador/(dashboard)/eventos/novo",
-    },
-    {
-      label: "Configura promo codes",
-      done: false,
-      href: "/organizador/promo",
+      href: "/organizador/eventos/novo",
     },
     {
       label: "Convida staff para check-in",
       done: false,
-      href: "/organizador/(dashboard)/staff",
+      href: "/organizador?tab=staff",
     },
   ];
 
@@ -994,10 +1203,36 @@ export default function OrganizadorPage() {
 
   return (
     <div className={`${containerClasses} space-y-6 text-white`}>
+      {showOfficialEmailWarning && (
+        <div className="rounded-2xl border border-amber-400/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-50">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="space-y-1">
+              <p className="font-semibold">
+                {officialEmail
+                  ? "Email oficial pendente de verificação."
+                  : "Define o email oficial da organização para faturação e alertas críticos."}
+              </p>
+              <p className="text-[12px] text-amber-100/80">
+                Usamos este email para invoices, alertas de vendas/payouts e transferências de Owner.
+              </p>
+            </div>
+            <Link
+              href="/organizador/settings"
+              className="rounded-full bg-white px-3 py-1.5 text-[12px] font-semibold text-black shadow hover:scale-[1.01]"
+            >
+              Atualizar email oficial
+            </Link>
+          </div>
+        </div>
+      )}
+      {activeTab !== "overview" && <BackButton className="mb-2" />}
       {activeTab === "overview" && (
         <>
           {/* Header + alerta onboarding */}
-          <div className="rounded-3xl border border-white/10 bg-black/40 backdrop-blur-xl p-4 md:p-5 shadow-[0_18px_60px_rgba(0,0,0,0.65)]">
+          <div
+            className="rounded-3xl border border-white/10 bg-black/40 backdrop-blur-xl p-4 md:p-5 shadow-[0_18px_60px_rgba(0,0,0,0.65)]"
+            data-tour="overview"
+          >
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div>
                 <p className="text-[11px] uppercase tracking-[0.3em] text-white/50">Resumo</p>
@@ -1005,26 +1240,6 @@ export default function OrganizadorPage() {
                   Olá, {organizer.displayName || profile?.fullName || "organizador"} 👋
                 </h1>
                 <p className="text-sm text-white/70">Aqui está o resumo dos teus eventos e vendas.</p>
-              </div>
-              <div className="flex flex-wrap gap-2 text-[11px]">
-                <Link
-                  href="/organizador/(dashboard)/eventos/novo"
-                  className="px-4 py-2 rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] font-semibold text-black shadow-lg"
-                >
-                  Criar evento
-                </Link>
-                <Link
-                  href="/organizador/pagamentos"
-                  className="px-4 py-2 rounded-full border border-white/15 text-white/80 hover:bg-white/10 transition"
-                >
-                  Pagamentos
-                </Link>
-                <Link
-                  href="/organizador/promo"
-                  className="px-4 py-2 rounded-full border border-white/15 text-white/80 hover:bg-white/10 transition"
-                >
-                  Promo codes
-                </Link>
               </div>
             </div>
 
@@ -1041,14 +1256,14 @@ export default function OrganizadorPage() {
                 </div>
               </div>
             )}
-            {!stripeReady && (
+            {!stripeReady && paymentsMode === "CONNECT" && (
               <div className="mt-4 rounded-2xl border border-amber-400/40 bg-amber-400/10 p-3 text-sm text-amber-100 space-y-2">
                 <div className="flex items-center justify-between gap-2">
                   <p className="font-semibold">
                     Podes publicar eventos gratuitos. Para bilhetes pagos, liga a tua conta Stripe.
                   </p>
                   <Link
-                    href="/organizador/pagamentos"
+                    href="/organizador?tab=finance"
                     className="rounded-full bg-white/10 px-3 py-1 text-[11px] text-white hover:bg-white/20"
                   >
                     Ligar Stripe
@@ -1056,33 +1271,64 @@ export default function OrganizadorPage() {
                 </div>
               </div>
             )}
+            {isPlatformStripe && (
+              <div className="mt-4 rounded-2xl border border-emerald-400/40 bg-emerald-500/10 p-3 text-sm text-emerald-50 space-y-1">
+                <p className="font-semibold">Conta interna ORYA</p>
+                <p className="text-white/80 text-xs">
+                  Este organizador usa a conta Stripe principal da ORYA. Não é necessário onboarding em Connect.
+                </p>
+              </div>
+            )}
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              <Link
+                href="/organizador/scan"
+                className="rounded-2xl border border-white/15 bg-white/5 p-4 shadow-[0_18px_50px_rgba(0,0,0,0.6)] transition hover:border-white/30 hover:bg-white/10"
+              >
+                <p className="text-[11px] uppercase tracking-[0.24em] text-white/50">Check-in rápido</p>
+                <p className="text-lg font-semibold">Abrir scanner</p>
+                <p className="text-sm text-white/70">Valida bilhetes com feedback imediato. Otimizado para telemóvel.</p>
+              </Link>
+              <Link
+                href="/organizador/staff"
+                className="rounded-2xl border border-white/15 bg-white/5 p-4 shadow-[0_18px_50px_rgba(0,0,0,0.6)] transition hover:border-white/30 hover:bg-white/10"
+              >
+                <p className="text-[11px] uppercase tracking-[0.24em] text-white/50">Equipa & acessos</p>
+                <p className="text-lg font-semibold">Gerir staff</p>
+                <p className="text-sm text-white/70">Convida staff e controla quem pode fazer check-in.</p>
+              </Link>
+            </div>
           </div>
 
-          {organizer?.id ? (
-            <div className="mt-4">
-              <OrganizationActions organizerId={organizer.id} />
-            </div>
-          ) : null}
-
           <div className="grid gap-4 xl:grid-cols-4 md:grid-cols-2">
-            {statsCards.map((card, idx) => (
-              <div
-                key={card.label}
-                className="rounded-3xl border border-white/10 bg-white/5 p-4 shadow-[0_18px_50px_rgba(0,0,0,0.6)]"
-              >
-                <p className="text-white/60 text-xs">{card.label}</p>
-                <p className="text-2xl font-bold text-white mt-1">{card.value}</p>
-                <p className="text-[11px] text-white/45">{card.hint}</p>
-                {idx === 0 && nextEvent && (
-                  <Link
-                    href={`/eventos/${nextEvent.slug}`}
-                    className="mt-2 inline-flex text-[11px] text-[#6BFFFF] hover:underline"
+            {overviewLoading
+              ? [...Array(4)].map((_, idx) => (
+                  <div
+                    key={idx}
+                    className="rounded-3xl border border-white/10 bg-white/5 p-4 shadow-[0_18px_50px_rgba(0,0,0,0.6)] animate-pulse space-y-2"
                   >
-                    Ver evento →
-                  </Link>
-                )}
-              </div>
-            ))}
+                    <div className="h-3 w-24 rounded bg-white/15" />
+                    <div className="h-6 w-20 rounded bg-white/20" />
+                    <div className="h-3 w-32 rounded bg-white/10" />
+                  </div>
+                ))
+              : statsCards.map((card, idx) => (
+                  <div
+                    key={card.label}
+                    className="rounded-3xl border border-white/10 bg-white/5 p-4 shadow-[0_18px_50px_rgba(0,0,0,0.6)]"
+                  >
+                    <p className="text-white/60 text-xs">{card.label}</p>
+                    <p className="text-2xl font-bold text-white mt-1">{card.value}</p>
+                    <p className="text-[11px] text-white/45">{card.hint}</p>
+                    {idx === 0 && nextEvent && (
+                      <Link
+                        href={`/eventos/${nextEvent.slug}`}
+                        className="mt-2 inline-flex text-[11px] text-[#6BFFFF] hover:underline"
+                      >
+                        Ver evento →
+                      </Link>
+                    )}
+                  </div>
+                ))}
           </div>
 
           <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
@@ -1093,13 +1339,28 @@ export default function OrganizadorPage() {
                   Receita · 30 dias
                 </div>
               </div>
-              <div className="h-40 rounded-2xl border border-white/10 bg-gradient-to-br from-white/5 to-white/0 shadow-inner flex items-center justify-center text-white/70 text-sm">
+              <div className="h-48 rounded-2xl border border-white/10 bg-gradient-to-br from-white/5 to-white/0 shadow-inner overflow-hidden px-2 py-3">
                 {timeSeries?.points?.length ? (
-                  <ChartLine points={timeSeries.points} />
+                  <SalesLineChart
+                    className="h-full"
+                    data={timeSeries.points.map((p) => ({ date: p.date, value: p.revenueCents / 100 }))}
+                    unit="eur"
+                    periodLabel="Últimos 30 dias"
+                    metricLabel="Receita"
+                    rangeDays={30}
+                  />
                 ) : (
                   <span className="text-white/40 text-xs">Sem dados suficientes.</span>
                 )}
               </div>
+              {overviewSeriesBreakdown && (
+                <div className="flex flex-wrap gap-3 text-[11px] text-white/70">
+                  <span>Bruto: {formatEuros(overviewSeriesBreakdown.gross)}</span>
+                  <span>Desconto: -{formatEuros(overviewSeriesBreakdown.discount)}</span>
+                  <span>Taxas: -{formatEuros(overviewSeriesBreakdown.fees)}</span>
+                  <span>Líquido: {formatEuros(overviewSeriesBreakdown.net)}</span>
+                </div>
+              )}
             </div>
 
             <div className="rounded-3xl border border-white/10 bg-black/30 p-4 space-y-3 shadow-[0_18px_60px_rgba(0,0,0,0.65)]">
@@ -1137,12 +1398,6 @@ export default function OrganizadorPage() {
                 <h3 className="text-lg font-semibold text-white">Os teus eventos</h3>
                 <p className="text-[11px] text-white/60">Próximos e passados ligados à tua conta de organizador.</p>
               </div>
-              <Link
-                href="/organizador/(dashboard)/eventos/novo"
-                className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-3 py-1.5 text-[11px] font-semibold text-black shadow"
-              >
-                Novo evento
-              </Link>
             </div>
             <div className="space-y-2">
               {!events?.items && (
@@ -1205,10 +1460,10 @@ export default function OrganizadorPage() {
                             Página pública
                           </Link>
                           <Link
-                            href={`/organizador/estatisticas?eventId=${ev.id}`}
+                            href={`/organizador?tab=sales&eventId=${ev.id}`}
                             className="rounded-full border border-white/20 px-2.5 py-1 text-white/80 hover:bg-white/10"
                           >
-                            Estatísticas
+                            Vendas
                           </Link>
                         </div>
                       </div>
@@ -1239,20 +1494,14 @@ export default function OrganizadorPage() {
                   const normalized = val.toLowerCase();
                   setSearchTerm(val);
                   if (normalized.includes("padel") || normalized.includes("pádel")) setEventTypeFilter("SPORT");
-                  if (normalized.includes("jantar") || normalized.includes("restaurante")) setEventTypeFilter("COMIDA");
-                  if (normalized.includes("solid")) setEventTypeFilter("VOLUNTEERING");
-                  if (normalized.includes("festa")) setEventTypeFilter("PARTY");
-                }}
-                className="w-full rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF] sm:min-w-[260px]"
-              />
-              <Link
-                href="/organizador/(dashboard)/eventos/novo"
-                className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-4 py-2 text-sm font-semibold text-black shadow transition hover:scale-[1.01]"
-              >
-                + Criar evento
-              </Link>
-            </div>
+                if (normalized.includes("jantar") || normalized.includes("restaurante")) setEventTypeFilter("COMIDA");
+                if (normalized.includes("solid")) setEventTypeFilter("VOLUNTEERING");
+                if (normalized.includes("festa")) setEventTypeFilter("PARTY");
+              }}
+              className="w-full rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF] sm:min-w-[260px]"
+            />
           </div>
+        </div>
 
           {/* Filtros em faixa única */}
           <div className="rounded-2xl border border-white/15 bg-gradient-to-r from-white/10 via-black/50 to-[#0c1a2d] backdrop-blur-xl px-3 py-3 space-y-2 shadow-[0_12px_40px_rgba(0,0,0,0.45)]">
@@ -1275,6 +1524,7 @@ export default function OrganizadorPage() {
                   setEventTypeFilter("all");
                   setEventCategoryFilter("all");
                   setEventDateFilter("any");
+                  setEventPartnerClubFilter("all");
                   setSearchTerm("");
                   setTimeScope("all");
                 }}
@@ -1283,7 +1533,7 @@ export default function OrganizadorPage() {
                 Limpar filtros
               </button>
             </div>
-            <div className="grid w-full gap-2 md:grid-cols-2 lg:grid-cols-4">
+            <div className="grid w-full gap-2 md:grid-cols-2 lg:grid-cols-5">
               <select
                 value={eventStatusFilter}
                 onChange={(e) => setEventStatusFilter(e.target.value as typeof eventStatusFilter)}
@@ -1340,6 +1590,20 @@ export default function OrganizadorPage() {
                 <option value="weekend">Este fim-de-semana</option>
                 <option value="week">Esta semana</option>
                 <option value="month">Este mês</option>
+              </select>
+              <select
+                value={eventPartnerClubFilter}
+                onChange={(e) => setEventPartnerClubFilter(e.target.value)}
+                className={`w-full rounded-xl border px-3 py-2 text-[12px] text-white outline-none focus:border-[#6BFFFF] ${
+                  eventPartnerClubFilter !== "all" ? "border-[#6BFFFF]/60 bg-[#0b1224]" : "border-white/15 bg-black/40"
+                }`}
+              >
+                <option value="all">Clube parceiro: Todos</option>
+                {partnerClubOptions.map((opt) => (
+                  <option key={opt.id} value={opt.id}>
+                    {opt.name}
+                  </option>
+                ))}
               </select>
             </div>
           </div>
@@ -1422,6 +1686,15 @@ export default function OrganizadorPage() {
                   Categoria: {eventCategoryFilter} ×
                 </button>
               )}
+              {eventPartnerClubFilter !== "all" && (
+                <button
+                  type="button"
+                  onClick={() => setEventPartnerClubFilter("all")}
+                  className="inline-flex items-center gap-1 rounded-full border border-white/25 bg-white/10 px-2 py-0.5 hover:border-white/40"
+                >
+                  Clube: {partnerClubOptions.find((o) => `${o.id}` === eventPartnerClubFilter)?.name ?? eventPartnerClubFilter} ×
+                </button>
+              )}
               {eventDateFilter !== "any" && (
                 <button
                   type="button"
@@ -1465,7 +1738,7 @@ export default function OrganizadorPage() {
                 </div>
               </div>
 
-              {eventsLoading && (
+              {eventsListLoading && (
                 <div className="grid gap-2 md:grid-cols-2">
                   {[1, 2, 3].map((i) => (
                     <div key={i} className="h-28 rounded-2xl border border-white/10 bg-white/5 animate-pulse" />
@@ -1489,25 +1762,14 @@ export default function OrganizadorPage() {
                 </div>
               )}
 
-              {!eventsLoading && events?.items?.length === 0 && (
+              {!eventsListLoading && events?.items?.length === 0 && (
                 <div className="rounded-2xl border border-dashed border-white/15 bg-white/5 px-4 py-6 text-center text-sm text-white/70 space-y-2">
                   <p className="text-base font-semibold text-white">Ainda não tens eventos criados.</p>
-                  <p>Começa com um torneio de padel, um jantar de grupo ou um evento solidário.</p>
-                  <div className="flex flex-wrap justify-center gap-2 text-[12px]">
-                    <Link href="/organizador/(dashboard)/eventos/novo" className="rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-3 py-1.5 font-semibold text-black shadow">
-                      Criar evento
-                    </Link>
-                    <Link href="/organizador/(dashboard)/eventos/novo" className="rounded-full border border-white/20 px-3 py-1.5 text-white/80 hover:bg-white/10">
-                      Criar torneio de padel
-                    </Link>
-                    <Link href="/organizador/(dashboard)/eventos/novo" className="rounded-full border border-white/20 px-3 py-1.5 text-white/80 hover:bg-white/10">
-                      Criar jantar
-                    </Link>
-                  </div>
+                  <p>Começa por criar o teu primeiro evento e acompanha tudo a partir daqui.</p>
                 </div>
               )}
 
-              {!eventsLoading && events?.items && events.items.length > 0 && filteredEvents.length === 0 && (
+              {!eventsListLoading && events?.items && events.items.length > 0 && filteredEvents.length === 0 && (
                 <div className="rounded-2xl border border-white/15 bg-white/5 px-4 py-6 text-center text-sm text-white/70 space-y-2">
                   <p className="text-base font-semibold text-white">Nenhum evento corresponde a estes filtros.</p>
                   <p className="text-white/65">Alarga as datas, limpa filtros ou procura por outro nome.</p>
@@ -1527,7 +1789,7 @@ export default function OrganizadorPage() {
                       Limpar filtros
                     </button>
                     <Link
-                      href="/organizador/(dashboard)/eventos/novo"
+                      href="/organizador/eventos/novo"
                       className="rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-3 py-1.5 font-semibold text-black shadow"
                     >
                       Criar novo evento
@@ -1607,7 +1869,7 @@ export default function OrganizadorPage() {
                                   <button
                                     type="button"
                                     className="text-left hover:underline"
-                                    onClick={() => router.push(`/organizador/estatisticas?eventId=${ev.id}`)}
+                                    onClick={() => goToTab("sales")}
                                   >
                                     {ev.title}
                                   </button>
@@ -1618,20 +1880,20 @@ export default function OrganizadorPage() {
                                 <td className="px-4 py-3 text-[12px]">
                                   {ticketsSold} / {capacity ?? "—"}
                                 </td>
-                                <td className="px-4 py-3 text-[12px]">{revenue} €</td>
-                                <td className="px-4 py-3 text-right text-[11px]">
-                                  <div className="flex flex-wrap items-center justify-end gap-2">
-                                    <button
-                                      type="button"
-                                      onClick={() => goToTab("sales")}
-                                      className="rounded-full border border-white/20 px-2 py-1 hover:bg-white/10"
-                                    >
-                                      Vendas
-                                    </button>
-                                    <Link
-                                      href={`/organizador/eventos/${ev.id}/edit`}
-                                      className="rounded-full border border-white/20 px-2 py-1 hover:bg-white/10"
-                                    >
+                        <td className="px-4 py-3 text-[12px]">{revenue} €</td>
+                        <td className="px-4 py-3 text-right text-[11px]">
+                          <div className="flex flex-wrap items-center justify-end gap-2">
+                            <button
+                              type="button"
+                              onClick={() => goToTab("sales")}
+                              className="rounded-full border border-white/20 px-2 py-1 hover:bg-white/10"
+                            >
+                              Vendas
+                            </button>
+                            <Link
+                              href={`/organizador/eventos/${ev.id}/edit`}
+                              className="rounded-full border border-white/20 px-2 py-1 hover:bg-white/10"
+                            >
                                       Editar
                                     </Link>
                                   </div>
@@ -1696,7 +1958,7 @@ export default function OrganizadorPage() {
                                   : { label: ev.status, classes: "border-white/20 bg-white/5 text-white/70" };
 
                       const handlePrimaryOpen = () => {
-                        router.push(`/organizador/estatisticas?eventId=${ev.id}`);
+                        router.push(`/organizador?tab=sales&eventId=${ev.id}`);
                       };
 
                       const goToTab = (tab: string) => {
@@ -1790,6 +2052,17 @@ export default function OrganizadorPage() {
                               >
                                 Página pública
                               </Link>
+                              <button
+                                type="button"
+                                disabled={eventActionLoading === ev.id}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setEventDialog({ mode: ev.status === "DRAFT" ? "delete" : "archive", ev });
+                                }}
+                                className="rounded-full border border-red-200/30 px-2.5 py-1 text-red-100/90 hover:bg-red-500/10 disabled:opacity-60"
+                              >
+                                {ev.status === "DRAFT" ? "Apagar rascunho" : "Arquivar"}
+                              </button>
                             </div>
                           </div>
                         </div>
@@ -1849,46 +2122,81 @@ export default function OrganizadorPage() {
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            <label className="text-sm text-white/70">
-              Seleciona evento:
-              <select
-                value={salesEventId ?? ""}
-                onChange={(e) => setSalesEventId(e.target.value ? Number(e.target.value) : null)}
-                className="ml-2 rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF]"
-              >
-                {eventsList.map((ev) => (
-                  <option key={ev.id} value={ev.id}>
-                    {ev.title}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <div className="w-full max-w-md">
+              <label className="text-xs uppercase tracking-[0.18em] text-white/60 block mb-1">Seleciona o evento</label>
+              <div className="flex rounded-2xl border border-white/15 bg-black/40 px-3 py-2">
+                <input
+                  type="text"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder="Procurar por título ou cidade"
+                  className="flex-1 bg-transparent text-sm text-white outline-none placeholder:text-white/40"
+                />
+                <select
+                  value={salesEventId ?? ""}
+                  onChange={(e) => setSalesEventId(e.target.value ? Number(e.target.value) : null)}
+                  className="ml-2 w-48 rounded-xl border border-white/15 bg-black/60 px-2 py-2 text-sm text-white outline-none focus:border-[#6BFFFF]"
+                >
+                  <option value="">Escolhe</option>
+                  {eventsList.map((ev) => (
+                    <option key={ev.id} value={ev.id}>
+                      {ev.title}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
             {!eventsList.length && <span className="text-[12px] text-white/60">Sem eventos para analisar.</span>}
           </div>
 
           <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-              <p className="text-[11px] text-white/60">Receita no período</p>
-              <p className="text-2xl font-bold text-white mt-1">{(salesKpis.revenueCents / 100).toFixed(2)} €</p>
-              <p className="text-[11px] text-white/50">{salesRange === "all" ? "Total" : `Últimos ${salesRange === "7d" ? "7" : "30"} dias`}</p>
-            </div>
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-              <p className="text-[11px] text-white/60">Bilhetes vendidos</p>
-              <p className="text-2xl font-bold text-white mt-1">{salesKpis.tickets}</p>
-              <p className="text-[11px] text-white/50">No período selecionado</p>
-            </div>
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-              <p className="text-[11px] text-white/60">Eventos com vendas</p>
-              <p className="text-2xl font-bold text-white mt-1">{salesKpis.eventsWithSales}</p>
-              <p className="text-[11px] text-white/50">Eventos com pelo menos 1 venda</p>
-            </div>
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-              <p className="text-[11px] text-white/60">Ocupação média</p>
-              <p className="text-2xl font-bold text-white mt-1">
-                {salesKpis.avgOccupancy !== null ? `${salesKpis.avgOccupancy}%` : "—"}
-              </p>
-              <p className="text-[11px] text-white/50">Calculado nos eventos com capacidade</p>
-            </div>
+            {!salesEventId && (
+              <div className="col-span-full rounded-2xl border border-dashed border-white/20 bg-black/30 p-4 text-white/70 text-sm">
+                Seleciona um evento para ver as métricas de vendas.
+              </div>
+            )}
+            {salesLoading && (
+              <>
+                {[...Array(4)].map((_, idx) => (
+                  <div key={idx} className="rounded-2xl border border-white/10 bg-white/5 p-3 animate-pulse space-y-2">
+                    <div className="h-3 w-24 rounded bg-white/15" />
+                    <div className="h-7 w-20 rounded bg-white/20" />
+                    <div className="h-3 w-28 rounded bg-white/10" />
+                  </div>
+                ))}
+              </>
+            )}
+            {!salesLoading && salesSeries && salesSeries.points?.length === 0 && (
+              <div className="col-span-full rounded-2xl border border-dashed border-white/20 bg-black/30 p-4 text-white/70 text-sm">
+                Sem dados de vendas neste período. Escolhe outro evento ou intervalo.
+              </div>
+            )}
+            {!salesLoading && salesSeries && salesSeries.points?.length !== 0 && (
+              <>
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                  <p className="text-[11px] text-white/60">Receita no período</p>
+                  <p className="text-2xl font-bold text-white mt-1">{(salesKpis.revenueCents / 100).toFixed(2)} €</p>
+                  <p className="text-[11px] text-white/50">{salesRange === "all" ? "Total" : `Últimos ${salesRange === "7d" ? "7" : "30"} dias`}</p>
+                </div>
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                  <p className="text-[11px] text-white/60">Bilhetes vendidos</p>
+                  <p className="text-2xl font-bold text-white mt-1">{salesKpis.tickets}</p>
+                  <p className="text-[11px] text-white/50">No período selecionado</p>
+                </div>
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                  <p className="text-[11px] text-white/60">Eventos com vendas</p>
+                  <p className="text-2xl font-bold text-white mt-1">{salesKpis.eventsWithSales}</p>
+                  <p className="text-[11px] text-white/50">Eventos com pelo menos 1 venda</p>
+                </div>
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                  <p className="text-[11px] text-white/60">Ocupação média</p>
+                  <p className="text-2xl font-bold text-white mt-1">
+                    {salesKpis.avgOccupancy !== null ? `${salesKpis.avgOccupancy}%` : "—"}
+                  </p>
+                  <p className="text-[11px] text-white/50">Calculado nos eventos com capacidade</p>
+                </div>
+              </>
+            )}
           </div>
 
           <div className="rounded-3xl border border-white/10 bg-black/40 p-4 space-y-3 shadow-[0_18px_60px_rgba(0,0,0,0.65)]">
@@ -1908,13 +2216,40 @@ export default function OrganizadorPage() {
                 </div>
               )}
             </div>
-            <div className="h-44 rounded-2xl border border-white/10 bg-gradient-to-br from-white/5 to-white/0 shadow-inner flex items-center justify-center text-white/70 text-sm">
-              {salesSeries?.points?.length ? (
-                <ChartLine points={salesSeries.points} mode={salesMetric === "tickets" ? "tickets" : "revenue"} />
+            <div className="h-48 rounded-2xl border border-white/10 bg-gradient-to-br from-white/5 to-white/0 shadow-inner overflow-hidden px-2 py-3">
+              {salesLoading ? (
+                <div className="flex w-full items-center gap-3 px-4">
+                  <div className="h-28 flex-1 rounded-xl bg-white/10 animate-pulse" />
+                  <div className="hidden h-28 w-20 rounded-xl bg-white/10 animate-pulse md:block" />
+                </div>
+                ) : !salesEventId ? (
+                  <span className="text-white/40 text-xs">Escolhe um evento para ver a evolução.</span>
+                ) : salesSeries?.points?.length ? (
+                  <SalesLineChart
+                    className="h-full"
+                    data={salesSeries.points.map((p) => ({
+                      date: p.date,
+                      value: salesMetric === "tickets" ? p.tickets : p.revenueCents / 100,
+                    }))}
+                    unit={salesMetric === "tickets" ? "tickets" : "eur"}
+                    rangeDays={salesRange === "all" ? "all" : salesRange === "7d" ? 7 : 30}
+                    periodLabel={
+                      salesRange === "all" ? "Todo o histórico" : salesRange === "7d" ? "Últimos 7 dias" : "Últimos 30 dias"
+                    }
+                    metricLabel={salesMetric === "tickets" ? "Bilhetes" : "Receita"}
+                  />
               ) : (
                 <span className="text-white/40 text-xs">Sem dados de vendas para este evento.</span>
               )}
             </div>
+            {salesMetric === "revenue" && salesSeriesBreakdown && (
+              <div className="flex flex-wrap gap-3 text-[11px] text-white/70">
+                <span>Bruto: {formatEuros(salesSeriesBreakdown.gross)}</span>
+                <span>Desconto: -{formatEuros(salesSeriesBreakdown.discount)}</span>
+                <span>Taxas: -{formatEuros(salesSeriesBreakdown.fees)}</span>
+                <span>Líquido: {formatEuros(salesSeriesBreakdown.net)}</span>
+              </div>
+            )}
           </div>
 
           <div className="rounded-3xl border border-white/10 bg-black/40 p-4 space-y-3 shadow-[0_18px_60px_rgba(0,0,0,0.65)]">
@@ -1964,10 +2299,10 @@ export default function OrganizadorPage() {
                                 Ver vendas
                               </button>
                               <Link
-                                href={`/organizador/estatisticas?eventId=${ev.id}`}
+                                href={`/organizador?tab=sales&eventId=${ev.id}`}
                                 className="rounded-full border border-white/20 px-2.5 py-1 text-white/80 hover:bg-white/10"
                               >
-                                Dashboard
+                                Dashboard de vendas
                               </Link>
                             </div>
                           </td>
@@ -2021,12 +2356,32 @@ export default function OrganizadorPage() {
               </button>
             </div>
 
-            {!buyers && <p className="text-sm text-white/60">A carregar compradores…</p>}
-            {buyers && buyers.ok === false && <p className="text-sm text-red-400">Não foi possível carregar os compradores.</p>}
-            {buyers && buyers.ok !== false && buyersItems.length === 0 && (
+            {buyersLoading && (
+              <div className="space-y-2">
+                {[...Array(4)].map((_, idx) => (
+                  <div
+                    key={idx}
+                    className="flex items-center justify-between rounded-xl border border-white/10 bg-black/25 p-3 animate-pulse"
+                  >
+                    <div className="space-y-2">
+                      <div className="h-3 w-32 rounded bg-white/10" />
+                      <div className="h-3 w-20 rounded bg-white/5" />
+                    </div>
+                    <div className="h-3 w-16 rounded bg-white/10" />
+                  </div>
+                ))}
+              </div>
+            )}
+            {!buyersLoading && !salesEventId && (
+              <p className="text-sm text-white/60">Escolhe um evento para ver compradores.</p>
+            )}
+            {!buyersLoading && salesEventId && buyers && buyers.ok === false && (
+              <p className="text-sm text-red-400">Não foi possível carregar os compradores.</p>
+            )}
+            {!buyersLoading && salesEventId && buyers && buyers.ok !== false && buyersItems.length === 0 && (
               <p className="text-sm text-white/60">Sem compras registadas para este evento.</p>
             )}
-            {buyers && buyers.ok !== false && buyersItems.length > 0 && (
+            {!buyersLoading && salesEventId && buyers && buyers.ok !== false && buyersItems.length > 0 && (
               <div className="overflow-auto">
                 <table className="min-w-full text-sm">
                   <thead className="text-left text-[11px] text-white/60">
@@ -2067,43 +2422,95 @@ export default function OrganizadorPage() {
       {activeTab === "finance" && (
         <section className="space-y-4">
           <div className="flex flex-col gap-2">
-            <p className="text-[11px] uppercase tracking-[0.3em] text-white/60">Finanças &amp; Payouts</p>
-            <h2 className="text-2xl font-semibold">Cashflow, Stripe e próximos pagamentos</h2>
-            <p className="text-sm text-white/65">Resumo financeiro real, pronto para saber o que vais receber.</p>
+            <p className="text-[11px] uppercase tracking-[0.3em] text-white/60">Finanças</p>
+            <h2 className="text-2xl font-semibold">Receita, bilhetes e Stripe</h2>
+            <p className="text-sm text-white/65">Visão simples do dinheiro e estado da conta Stripe.</p>
           </div>
+
+          {paymentsMode === "CONNECT" && paymentsStatus !== "READY" && (
+            <div
+              className={`rounded-2xl px-4 py-3 text-sm ${
+                stripeIncomplete
+                  ? "border border-amber-400/40 bg-amber-400/10 text-amber-50"
+                  : "border border-amber-400/30 bg-amber-400/10 text-amber-50"
+              }`}
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="space-y-1">
+                  <p className="font-semibold">
+                    {stripeIncomplete ? "Onboarding incompleto no Stripe." : "Liga o Stripe para começar a receber."}
+                  </p>
+                  <p className="text-[12px] text-amber-100/80">
+                    {paymentsStatus === "NO_STRIPE"
+                      ? "Sem ligação Stripe não há payouts. O resto da gestão continua disponível."
+                      : stripeRequirements.length > 0
+                        ? `Falta concluir no Stripe: ${stripeRequirements.join(", ")}.`
+                        : "Conclui o onboarding no Stripe para ativares payouts."}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleStripeConnect}
+                  disabled={stripeCtaLoading}
+                  className="rounded-full bg-white px-3 py-1.5 text-[12px] font-semibold text-black shadow hover:scale-[1.01] disabled:opacity-60"
+                >
+                  {stripeCtaLoading ? "A ligar..." : stripeIncomplete ? "Continuar configuração" : "Ligar conta Stripe"}
+                </button>
+              </div>
+            </div>
+          )}
+          {paymentsMode === "PLATFORM" && (
+            <div className="rounded-2xl border border-emerald-400/40 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-50">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="space-y-1">
+                  <p className="font-semibold">Conta interna ORYA</p>
+                  <p className="text-[12px] text-emerald-50/80">
+                    Pagamentos processados na conta principal da ORYA. Não precisas de ligar Stripe Connect.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+          {stripeSuccessMessage && (
+            <div className="rounded-2xl border border-emerald-400/40 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-50">
+              {stripeSuccessMessage}
+            </div>
+          )}
 
           <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
             {[
               {
-                label: "Saldo líquido estimado",
+                label: "Receita líquida total",
                 value:
                   financeData?.totals.netCents !== undefined
                     ? `${(financeData.totals.netCents / 100).toFixed(2)} €`
                     : financeSummary
                       ? `${(financeSummary.estimatedPayoutCents / 100).toFixed(2)} €`
                       : "—",
-                hint: "Vendas após taxas (estimativa).",
+                hint: "Valor que fica para ti (bruto - taxas).",
               },
               {
-                label: "Receita bruta (30d)",
+                label: "Receita últimos 30d",
                 value:
-                  financeData?.rolling.last30.grossCents !== undefined
-                    ? `${(financeData.rolling.last30.grossCents / 100).toFixed(2)} €`
+                  financeData?.rolling.last30.netCents !== undefined
+                    ? `${(financeData.rolling.last30.netCents / 100).toFixed(2)} €`
                     : "—",
-                hint: "Receita total dos últimos 30 dias.",
+                hint: "Líquido nos últimos 30 dias.",
               },
               {
-                label: "Taxas ORYA (30d)",
+                label: "Taxas plataforma",
                 value:
-                  financeData?.rolling.last30.feesCents !== undefined
-                    ? `${(financeData.rolling.last30.feesCents / 100).toFixed(2)} €`
-                    : "—",
-                hint: "Taxas deduzidas (30d).",
+                  financeData?.totals.feesCents !== undefined
+                    ? `${(financeData.totals.feesCents / 100).toFixed(2)} €`
+                    : financeSummary
+                      ? `${(financeSummary.platformFeesCents / 100).toFixed(2)} €`
+                      : "—",
+                hint: "Total de fees cobrados pela ORYA.",
               },
               {
-                label: "Bilhetes (30d)",
-                value: financeData?.rolling.last30.tickets ?? "—",
-                hint: "Bilhetes vendidos em 30 dias.",
+                label: "Eventos com vendas",
+                value: financeData?.totals.eventsWithSales ?? financeSummary?.eventsWithSales ?? "—",
+                hint: "Eventos pagos com pelo menos 1 bilhete.",
               },
             ].map((card) => (
               <div key={card.label} className="rounded-2xl border border-white/10 bg-white/5 p-3">
@@ -2125,7 +2532,9 @@ export default function OrganizadorPage() {
                         ? "border-emerald-400/50 bg-emerald-500/10 text-emerald-100"
                         : stripeState.tone === "warning"
                           ? "border-amber-400/50 bg-amber-500/10 text-amber-100"
-                          : "border-white/20 bg-white/5 text-white/70"
+                          : stripeState.tone === "error"
+                            ? "border-red-400/50 bg-red-500/10 text-red-100"
+                            : "border-white/20 bg-white/5 text-white/70"
                     }`}
                   >
                     {stripeState.badge}
@@ -2151,12 +2560,6 @@ export default function OrganizadorPage() {
                       {stripeState.cta}
                     </button>
                   )}
-                  <Link
-                    href="/organizador/pagamentos"
-                    className="text-[11px] rounded-full border border-white/20 px-3 py-1 text-white/80 hover:bg-white/10"
-                  >
-                    Abrir pagamentos
-                  </Link>
                 </div>
               </div>
               <div className="rounded-2xl border border-white/10 bg-black/40 p-3 text-sm space-y-1">
@@ -2164,8 +2567,18 @@ export default function OrganizadorPage() {
                 <p className="text-white/60">Cobranças: {organizer.stripeChargesEnabled ? "Ativo" : "Inativo"}</p>
                 <p className="text-white/60">Payouts: {organizer.stripePayoutsEnabled ? "Ativo" : "Inativo"}</p>
               </div>
-              <div className="text-[11px] text-white/70">
-                {stripeState.desc}
+              <div className="text-[11px] text-white/70 space-y-2">
+                <p>{stripeState.desc}</p>
+                {stripeRequirements.length > 0 && (
+                  <ul className="space-y-1 text-white/65">
+                    {stripeRequirements.map((req) => (
+                      <li key={req} className="flex items-center gap-2">
+                        <span className="text-red-300">•</span>
+                        <span>{req}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
               {stripeCtaError && <div className="text-xs text-red-300">{stripeCtaError}</div>}
             </div>
@@ -2173,7 +2586,7 @@ export default function OrganizadorPage() {
             <div className="rounded-3xl border border-white/10 bg-black/30 backdrop-blur-xl p-4 space-y-3 shadow-[0_18px_60px_rgba(0,0,0,0.65)]">
               <div className="flex items-center justify-between">
                 <h3 className="text-lg font-semibold">Payouts</h3>
-                <span className="text-[11px] text-white/65">Estimativa</span>
+                <span className="text-[11px] text-white/65">Informativo</span>
               </div>
               <div className="grid gap-2 sm:grid-cols-2 text-sm">
                 <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
@@ -2181,7 +2594,7 @@ export default function OrganizadorPage() {
                   <p className="text-xl font-semibold text-white">
                     {financeData ? (financeData.upcomingPayoutCents / 100).toFixed(2) : financeSummary ? (financeSummary.estimatedPayoutCents / 100).toFixed(2) : "—"} €
                   </p>
-                  <p className="text-[11px] text-white/55">Baseado nas vendas dos últimos 7 dias.</p>
+                  <p className="text-[11px] text-white/55">Baseado em vendas recentes. Funcionalidade de payouts automáticos em breve.</p>
                 </div>
                 <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
                   <p className="text-white/60 text-xs">Receita bruta (total)</p>
@@ -2205,113 +2618,18 @@ export default function OrganizadorPage() {
                   </p>
                 </div>
               </div>
-            </div>
-          </div>
-
-          <div className="grid gap-4 lg:grid-cols-2">
-            <div className="rounded-3xl border border-white/10 bg-black/35 p-4 space-y-3 shadow-[0_18px_60px_rgba(0,0,0,0.65)]">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-lg font-semibold text-white">Dados de faturação</h3>
-                  <p className="text-[12px] text-white/65">Nome legal, tipo de entidade e IBAN para recebimentos.</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleSaveBilling}
-                  disabled={billingSaving}
-                  className="rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-3 py-1.5 text-[12px] font-semibold text-black shadow disabled:opacity-60"
-                >
-                  {billingSaving ? "A guardar..." : "Guardar"}
-                </button>
-              </div>
-              <div className="grid gap-3 md:grid-cols-2">
-                <div className="space-y-1">
-                  <label className="text-[12px] text-white/70">Nome legal / negócio</label>
-                  <input
-                    value={businessName}
-                    onChange={(e) => setBusinessName(e.target.value)}
-                    className="w-full rounded-xl bg-black/40 border border-white/15 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
-                    placeholder="Ex.: Clube XPTO"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[12px] text-white/70">Tipo de entidade / NIF</label>
-                  <input
-                    value={entityType}
-                    onChange={(e) => setEntityType(e.target.value)}
-                    className="w-full rounded-xl bg-black/40 border border-white/15 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
-                    placeholder="Empresa, associação..."
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[12px] text-white/70">Cidade / morada curta</label>
-                  <input
-                    value={city}
-                    onChange={(e) => setCity(e.target.value)}
-                    className="w-full rounded-xl bg-black/40 border border-white/15 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
-                    placeholder="Lisboa, Porto..."
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[12px] text-white/70">IBAN para payouts</label>
-                  <input
-                    value={payoutIban}
-                    onChange={(e) => setPayoutIban(e.target.value)}
-                    className="w-full rounded-xl bg-black/40 border border-white/15 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
-                    placeholder="PT50..."
-                  />
-                </div>
-              </div>
-              {billingMessage && <p className="text-[12px] text-white/70">{billingMessage}</p>}
-            </div>
-
-            <div className="rounded-3xl border border-white/10 bg-black/30 p-4 space-y-3 shadow-[0_18px_60px_rgba(0,0,0,0.65)]">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-lg font-semibold text-white">Impostos &amp; reembolsos</h3>
-                  <p className="text-[12px] text-white/65">Prepara o texto a mostrar nas faturas e bilhetes.</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleSavePolicy}
-                  className="rounded-full border border-white/20 px-3 py-1.5 text-[12px] text-white/80 hover:bg-white/10"
-                >
-                  Guardar
-                </button>
-              </div>
-              <div className="grid gap-3 md:grid-cols-[0.4fr_1fr]">
-                <div className="space-y-1">
-                  <label className="text-[12px] text-white/70">IVA (% aproximado)</label>
-                  <input
-                    value={vatRate}
-                    onChange={(e) => setVatRate(e.target.value)}
-                    className="w-full rounded-xl bg-black/40 border border-white/15 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
-                    placeholder="Ex.: 23"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[12px] text-white/70">Política de reembolso</label>
-                  <textarea
-                    value={refundPolicy}
-                    onChange={(e) => setRefundPolicy(e.target.value)}
-                    rows={3}
-                    className="w-full rounded-xl bg-black/40 border border-white/15 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF] resize-none"
-                    placeholder="Ex.: Reembolsos até 48h antes do evento..."
-                  />
-                </div>
-              </div>
-              <p className="text-[11px] text-white/55">
-                Guardado no painel. Liga o Stripe para refletir estas regras nas transações.
+              <p className="text-[11px] text-white/60">
+                Payouts automáticos e gestão avançada de taxas chegam em breve. Estes valores são informativos.
               </p>
             </div>
           </div>
 
-          <div className="rounded-3xl border border-white/10 bg-black/35 backdrop-blur-xl p-4 space-y-3 shadow-[0_18px_60px_rgba(0,0,0,0.65)]">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-semibold text-white">Por evento</h3>
-                <p className="text-[12px] text-white/65">Bruto, taxas e líquido por evento.</p>
-              </div>
+            <div className="rounded-3xl border border-white/10 bg-black/35 backdrop-blur-xl p-4 space-y-3 shadow-[0_18px_60px_rgba(0,0,0,0.65)]">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold text-white">Por evento</h3>
+                  <p className="text-[12px] text-white/65">Bruto, taxas e líquido por evento.</p>
+                </div>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
@@ -2321,12 +2639,6 @@ export default function OrganizadorPage() {
                 >
                   Exportar CSV
                 </button>
-                <Link
-                  href="/organizador/estatisticas"
-                  className="rounded-full border border-white/20 px-3 py-1 text-[12px] text-white/80 hover:bg-white/10"
-                >
-                  Ver estatísticas
-                </Link>
               </div>
             </div>
 
@@ -2336,6 +2648,11 @@ export default function OrganizadorPage() {
                 Sem vendas ainda. Assim que venderes bilhetes, verás aqui os totais por evento.
               </div>
             )}
+          {stripeSuccessMessage && (
+            <div className="rounded-2xl border border-emerald-400/40 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-50">
+              {stripeSuccessMessage}
+            </div>
+          )}
 
             {financeData && financeData.events.length > 0 && (
               <div className="overflow-auto">
@@ -2384,14 +2701,14 @@ export default function OrganizadorPage() {
             <div>
               <p className="text-[11px] uppercase tracking-[0.3em] text-white/60">Marketing &amp; Crescimento</p>
               <h2 className="text-2xl font-semibold">Marketing · {marketingSection === "overview" ? "Visão geral" : "Painel"}</h2>
-              <p className="text-sm text-white/65">Preenche a sala: visão, campanhas, audiência e automações.</p>
+              <p className="text-sm text-white/65">Receita atribuída a códigos e ações rápidas.</p>
             </div>
             <div className="flex flex-wrap gap-2 text-[11px]">
               <Link
-                href="/organizador/promo"
+                href="/organizador?tab=marketing&section=promos"
                 className="rounded-full border border-white/20 px-4 py-2 text-sm text-white/80 hover:bg-white/10"
               >
-                Abrir gestão completa
+              Ver todos os códigos
               </Link>
             </div>
           </div>
@@ -2399,11 +2716,9 @@ export default function OrganizadorPage() {
           <div className="flex flex-wrap gap-2 rounded-2xl border border-white/10 bg-black/30 px-2 py-2 text-sm">
             {[
               { key: "overview", label: "Visão geral" },
-              { key: "campaigns", label: "Campanhas" },
-              { key: "audience", label: "Audiência" },
+              { key: "promos", label: "Códigos promocionais" },
               { key: "promoters", label: "Promotores & Parcerias" },
               { key: "content", label: "Conteúdo & Kits" },
-              { key: "automation", label: "Automação & Boost" },
             ].map((opt) => (
               <button
                 key={opt.key}
@@ -2423,32 +2738,44 @@ export default function OrganizadorPage() {
           {marketingSection === "overview" && (
             <div className="space-y-4">
                 <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
-                  <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-                    <p className="text-[11px] text-white/60">Receita atribuída a marketing</p>
-                    <p className="text-2xl font-bold text-white mt-1">
-                      {marketingKpis.marketingRevenueCents ? `${(marketingKpis.marketingRevenueCents / 100).toFixed(2)} €` : "—"}
-                    </p>
-                    <p className="text-[11px] text-white/50">Receita estimada através de códigos.</p>
-                  </div>
-                  <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-                    <p className="text-[11px] text-white/60">Bilhetes via marketing</p>
-                    <p className="text-2xl font-bold text-white mt-1">{marketingKpis.ticketsWithPromo}</p>
-                    <p className="text-[11px] text-white/50">Contagem de utilizações de códigos.</p>
-                  </div>
-                  <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-                    <p className="text-[11px] text-white/60">Top código</p>
-                    <p className="text-2xl font-bold text-white mt-1">
-                    {marketingKpis.topPromo ? marketingKpis.topPromo.code : "—"}
-                    </p>
-                    <p className="text-[11px] text-white/50">
-                    {marketingKpis.topPromo ? `${marketingKpis.topPromo.redemptionsCount ?? 0} utilizações` : "Sem dados ainda."}
-                    </p>
-                  </div>
-                  <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-                    <p className="text-[11px] text-white/60">Promo codes ativos</p>
-                    <p className="text-2xl font-bold text-white mt-1">{marketingKpis.activePromos}</p>
-                    <p className="text-[11px] text-white/50">Disponíveis para vender agora.</p>
-                  </div>
+                  {marketingOverview
+                    ? (
+                      <>
+                        <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                          <p className="text-[11px] text-white/60">Receita atribuída a marketing</p>
+                          <p className="text-2xl font-bold text-white mt-1">
+                            {marketingKpis.marketingRevenueCents ? `${(marketingKpis.marketingRevenueCents / 100).toFixed(2)} €` : "—"}
+                          </p>
+                          <p className="text-[11px] text-white/50">Receita estimada através de códigos.</p>
+                        </div>
+                        <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                          <p className="text-[11px] text-white/60">Bilhetes via marketing</p>
+                          <p className="text-2xl font-bold text-white mt-1">{marketingKpis.ticketsWithPromo}</p>
+                          <p className="text-[11px] text-white/50">Contagem de utilizações de códigos.</p>
+                        </div>
+                        <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                          <p className="text-[11px] text-white/60">Top código</p>
+                          <p className="text-2xl font-bold text-white mt-1">
+                          {marketingKpis.topPromo ? marketingKpis.topPromo.code : "—"}
+                          </p>
+                          <p className="text-[11px] text-white/50">
+                          {marketingKpis.topPromo ? `${marketingKpis.topPromo.redemptionsCount ?? 0} utilizações` : "Sem dados ainda."}
+                          </p>
+                        </div>
+                        <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                          <p className="text-[11px] text-white/60">Promo codes ativos</p>
+                          <p className="text-2xl font-bold text-white mt-1">{marketingKpis.activePromos}</p>
+                          <p className="text-[11px] text-white/50">Disponíveis para vender agora.</p>
+                        </div>
+                      </>
+                    )
+                    : [...Array(4)].map((_, idx) => (
+                        <div key={idx} className="rounded-2xl border border-white/10 bg-white/5 p-3 space-y-2 animate-pulse">
+                          <div className="h-3 w-24 rounded bg-white/15" />
+                          <div className="h-6 w-20 rounded bg-white/20" />
+                          <div className="h-3 w-32 rounded bg-white/10" />
+                        </div>
+                      ))}
                 </div>
 
               <div className="rounded-3xl border border-white/10 bg-black/35 p-4 space-y-3">
@@ -2458,7 +2785,7 @@ export default function OrganizadorPage() {
                     <p className="text-[12px] text-white/65">Próximos eventos com ocupação, urgência e sugestões.</p>
                   </div>
                   <Link
-                    href="/organizador/promo"
+                    href="/organizador?tab=marketing&section=promos"
                     className="rounded-full border border-white/20 px-3 py-1 text-[12px] text-white/80 hover:bg-white/10"
                   >
                     Ver todas as ações
@@ -2514,7 +2841,7 @@ export default function OrganizadorPage() {
                           </div>
                           <div className="flex flex-wrap justify-end gap-2 text-[11px]">
                             <Link
-                              href="/organizador/promo"
+                              href="/organizador?tab=marketing&section=promos"
                               className="rounded-full border border-white/20 px-2.5 py-1 text-white/80 hover:bg-white/10"
                             >
                               {ev.tag.suggestion}
@@ -2563,194 +2890,8 @@ export default function OrganizadorPage() {
             </div>
           )}
 
-          {marketingSection === "campaigns" && (
-            <div className="space-y-3">
-              <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                <div>
-                  <h3 className="text-xl font-semibold text-white">Campanhas</h3>
-                  <p className="text-[12px] text-white/65">Códigos e links como campanhas. Ativa, pausa, mede impacto.</p>
-                </div>
-                <Link
-                  href="/organizador/promo"
-                  className="rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-4 py-2 text-sm font-semibold text-black shadow"
-                >
-                  + Criar campanha
-                </Link>
-              </div>
-
-              <div className="flex flex-wrap gap-2 text-[11px]">
-                <select
-                  value={marketingFilters.eventId}
-                  onChange={(e) => setMarketingFilters((f) => ({ ...f, eventId: e.target.value }))}
-                  className="rounded-full border border-white/15 bg-black/40 px-3 py-1 text-white/80 outline-none"
-                >
-                  <option value="all">Todos os eventos</option>
-                  <option value="global">Globais</option>
-                  {marketingEvents.map((ev) => (
-                    <option key={ev.id} value={`${ev.id}`}>
-                      {ev.title}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  value={marketingFilters.status}
-                  onChange={(e) => setMarketingFilters((f) => ({ ...f, status: e.target.value as typeof f.status }))}
-                  className="rounded-full border border-white/15 bg-black/40 px-3 py-1 text-white/80 outline-none"
-                >
-                  <option value="all">Todos</option>
-                  <option value="active">Ativos</option>
-                  <option value="inactive">Inativos</option>
-                </select>
-                <button
-                  type="button"
-                  onClick={() => mutatePromos()}
-                  className="text-[11px] rounded-full border border-white/20 px-3 py-1 text-white/80 hover:bg-white/10"
-                >
-                  Atualizar
-                </button>
-              </div>
-
-              <div className="rounded-3xl border border-white/10 bg-black/35 backdrop-blur-xl p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <p className="text-sm text-white/80">Campanhas ({filteredPromos.length})</p>
-                  <Link
-                    href="/organizador/promo"
-                    className="text-[11px] rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-3 py-1.5 font-semibold text-black shadow"
-                  >
-                    + Criar código
-                  </Link>
-                </div>
-
-                {!promoData && <p className="text-sm text-white/60">A carregar promo codes…</p>}
-                {promoData?.ok === false && <p className="text-sm text-red-400">{promoData.error || "Erro ao carregar promo codes."}</p>}
-                {promoData?.promoCodes && filteredPromos.length === 0 && (
-                  <p className="text-sm text-white/60">Sem promo codes com os filtros atuais.</p>
-                )}
-
-                {filteredPromos.length > 0 && (
-                  <div className="overflow-auto rounded-2xl border border-white/10">
-                    <table className="min-w-full text-sm text-white/80">
-                      <thead className="text-left text-[11px] uppercase tracking-wide text-white/60">
-                        <tr>
-                          <th className="px-4 py-3">Campanha</th>
-                          <th className="px-4 py-3">Evento</th>
-                          <th className="px-4 py-3">Tipo</th>
-                          <th className="px-4 py-3">Valor</th>
-                          <th className="px-4 py-3">Utilizações</th>
-                          <th className="px-4 py-3">Estado</th>
-                          <th className="px-4 py-3 text-right">Ações</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-white/5">
-                        {filteredPromos.map((promo) => {
-                          const badgeClass = promo.active ? "text-emerald-200" : "text-white/60";
-                          const eventTitle =
-                            promo.eventId && marketingEvents.find((ev) => ev.id === promo.eventId)?.title
-                              ? marketingEvents.find((ev) => ev.id === promo.eventId)?.title
-                              : promo.eventId
-                                ? `Evento ${promo.eventId}`
-                                : "Global";
-                          return (
-                            <tr key={promo.id} className="hover:bg-white/5 transition">
-                              <td className="px-4 py-3 font-semibold text-white">
-                                {promo.code}
-                                {promo.autoApply && <span className="ml-2 rounded-full bg-white/10 px-2 py-0.5 text-[10px] text-white/70">Auto</span>}
-                              </td>
-                              <td className="px-4 py-3 text-[12px]">{eventTitle}</td>
-                              <td className="px-4 py-3 text-[12px]">{promo.type === "PERCENTAGE" ? "%" : "€"}</td>
-                              <td className="px-4 py-3 text-[12px]">
-                                {promo.type === "PERCENTAGE" ? `${promo.value / 100}%` : `${(promo.value / 100).toFixed(2)} €`}
-                              </td>
-                              <td className="px-4 py-3 text-[12px]">{promo.redemptionsCount ?? 0}{promo.maxUses ? ` / ${promo.maxUses}` : ""}</td>
-                              <td className={`px-4 py-3 text-[12px] ${badgeClass}`}>{promo.active ? "Ativo" : "Inativo"}</td>
-                              <td className="px-4 py-3 text-right text-[11px]">
-                                <div className="flex flex-wrap items-center justify-end gap-2">
-                                  <button
-                                    type="button"
-                                    onClick={async () => {
-                                      await fetch("/api/organizador/promo", {
-                                        method: "PATCH",
-                                        headers: { "Content-Type": "application/json" },
-                                        body: JSON.stringify({ id: promo.id, active: !promo.active }),
-                                      });
-                                      mutatePromos();
-                                    }}
-                                    className="rounded-full border border-white/20 px-2 py-1 hover:bg-white/10"
-                                  >
-                                    {promo.active ? "Pausar" : "Ativar"}
-                                  </button>
-                                  <Link
-                                    href={`/organizador/promo?edit=${promo.id}`}
-                                    className="rounded-full border border-white/20 px-2 py-1 hover:bg-white/10"
-                                  >
-                                    Editar
-                                  </Link>
-                                  <button
-                                    type="button"
-                                    onClick={async () => {
-                                      await fetch("/api/organizador/promo", {
-                                        method: "DELETE",
-                                        headers: { "Content-Type": "application/json" },
-                                        body: JSON.stringify({ id: promo.id }),
-                                      });
-                                      mutatePromos();
-                                    }}
-                                    className="rounded-full border border-red-400/30 px-2 py-1 text-red-200 hover:bg-red-500/10"
-                                  >
-                                    Apagar
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {marketingSection === "audience" && (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-xl font-semibold text-white">Audiência</h3>
-                  <p className="text-[12px] text-white/65">Segmentos rápidos para vender mais sem CRM gigante.</p>
-                </div>
-                <span className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[11px] text-white/70">
-                  {audienceSummary && audienceSummary.ok !== false ? "Dados reais" : "Em breve dados reais"}
-                </span>
-              </div>
-              <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-                {[
-                  { key: "frequent", title: "Clientes frequentes", desc: "3+ eventos contigo", cta: "FREQUENTE10" },
-                  { key: "newLast60d", title: "Novos (60 dias)", desc: "Primeiras compras recentes", cta: "BEMVINDO" },
-                  { key: "highSpenders", title: "High spenders / VIP", desc: "Gastaram +100€ no total", cta: "VIP10" },
-                  { key: "groups", title: "Grupos / jantares", desc: "Reservas 4+ pessoas", cta: "GRUPO" },
-                  { key: "dormant90d", title: "Dormant", desc: "Não compram há 90 dias", cta: "REATIVAR10" },
-                  { key: "local", title: "Público local", desc: "Cidade do evento", cta: "LOCAL" },
-                ].map((seg) => (
-                  <div key={seg.key} className="rounded-2xl border border-white/10 bg-white/5 p-4 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <h4 className="text-sm font-semibold text-white">{seg.title}</h4>
-                      <span className="rounded-full bg-white/10 px-2 py-0.5 text-[11px] text-white/70">
-                        {audienceSummary && audienceSummary.ok !== false ? audienceSummary.segments[seg.key as keyof typeof audienceSummary.segments] : "—"}{" "}
-                        pessoas
-                      </span>
-                    </div>
-                    <p className="text-[12px] text-white/65">{seg.desc}</p>
-                    <Link
-                      href={`/organizador/promo?name=${encodeURIComponent(seg.cta)}&suggestedCode=${encodeURIComponent(seg.cta)}`}
-                      className="inline-flex items-center rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10"
-                    >
-                      Criar código {seg.cta}
-                    </Link>
-                  </div>
-                ))}
-              </div>
-            </div>
+          {marketingSection === "promos" && (
+            <PromoCodesPage />
           )}
 
           {marketingSection === "promoters" && (
@@ -2760,20 +2901,17 @@ export default function OrganizadorPage() {
                   <h3 className="text-xl font-semibold text-white">Promotores &amp; Parcerias</h3>
                   <p className="text-[12px] text-white/65">Quem te ajuda a vender (pessoas, grupos, parceiros).</p>
                 </div>
-                <Link
-                  href="/organizador/promo?view=promoters"
-                  className="rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-4 py-2 text-sm font-semibold text-black shadow"
+                <button
+                  type="button"
+                  className="rounded-full border border-white/20 px-4 py-2 text-sm font-semibold text-white/70 cursor-not-allowed"
+                  disabled
                 >
-                  + Novo promotor
-                </Link>
+                  Em breve
+                </button>
               </div>
               <div className="rounded-3xl border border-white/10 bg-black/35 p-4 text-sm text-white/70 space-y-3">
                 <p className="text-white/80 font-semibold">Em breve</p>
-                <ul className="list-disc pl-5 space-y-1 text-white/70 text-[12px]">
-                  <li>Dashboard de vendas por promotor/link com comissão estimada.</li>
-                  <li>Copiar link/código do promotor e ver redemptions.</li>
-                  <li>Export rápido para CSV.</li>
-                </ul>
+                <p className="text-[12px] text-white/65">Dashboard de vendas por promotor e links com comissão estimada.</p>
               </div>
             </div>
           )}
@@ -2785,100 +2923,124 @@ export default function OrganizadorPage() {
                   <h3 className="text-xl font-semibold text-white">Conteúdo &amp; Kits</h3>
                   <p className="text-[12px] text-white/65">Copiar e partilhar: textos rápidos por evento.</p>
                 </div>
-                <span className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[11px] text-white/70">v1 em preparação</span>
+                <span className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[11px] text-white/70">Em breve</span>
               </div>
               <div className="rounded-3xl border border-white/10 bg-black/35 p-4 text-sm text-white/70">
-                Em breve: textos para Instagram, WhatsApp e email para cada evento, com botões de copiar e links com promo aplicadas.
-              </div>
-            </div>
-          )}
-
-          {marketingSection === "automation" && (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-xl font-semibold text-white">Automação &amp; Boost</h3>
-                  <p className="text-[12px] text-white/65">Regras simples para nunca deixar uma sala vazia.</p>
-                </div>
-                <span className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[11px] text-white/70">Sugestões v1</span>
-              </div>
-              <div className="grid gap-3 md:grid-cols-2">
-                {[
-                  { title: "Faltam 3 dias e ocupação <50%", action: "Sugerir código LASTMINUTE10" },
-                  { title: "Ocupação >90%", action: "Fechar códigos e abrir lista de espera" },
-                  { title: "Jantar slot vazio", action: "Promo para horário com pouca ocupação" },
-                  { title: "Zero vendas em 48h", action: "Enviar push/email para público local" },
-                ].map((rule) => (
-                  <div key={rule.title} className="rounded-2xl border border-white/10 bg-white/5 p-4 space-y-2">
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <p className="text-sm font-semibold text-white">{rule.title}</p>
-                        <p className="text-[12px] text-white/65">{rule.action}</p>
-                      </div>
-                      <span className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[11px] text-white/70">Em breve</span>
-                    </div>
-                    <button className="text-[11px] rounded-full border border-white/20 px-3 py-1 text-white/80 hover:bg-white/10">
-                      Guardar regra
-                    </button>
-                  </div>
-                ))}
+                Em breve: kits rápidos para Instagram, WhatsApp e email por evento, com botões de copiar.
               </div>
             </div>
           )}
         </section>
       )}
-    </div>
-  );
-}
 
-type TimeSeriesPoint = { date: string; tickets: number; revenueCents: number };
+      {activeTab === "padel" && (
+        <section className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-[11px] uppercase tracking-[0.3em] text-white/60">Categorias</p>
+              <h2 className="text-2xl font-semibold">Padel</h2>
+              <p className="text-sm text-white/65">Clubes, courts, staff e jogadores num só sítio.</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Link
+                href="/organizador/eventos/novo?templateType=PADEL"
+                className="rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-4 py-2 text-sm font-semibold text-black shadow-[0_0_16px_rgba(107,255,255,0.35)] hover:scale-[1.02] transition"
+              >
+                Criar torneio
+              </Link>
+              <Link
+                href="/organizador?tab=events&type=PADEL"
+                className="rounded-full border border-white/20 px-4 py-2 text-sm text-white/80 hover:bg-white/10"
+              >
+                Ver torneios
+              </Link>
+            </div>
+          </div>
 
-function ChartLine({ points, mode = "revenue" }: { points: TimeSeriesPoint[]; mode?: "revenue" | "tickets" }) {
-  const width = 320;
-  const height = 120;
-  const pad = 10;
-  const xs = points.length > 1 ? (width - pad * 2) / (points.length - 1) : 0;
-  const valueAccessor = (p: TimeSeriesPoint) => (mode === "tickets" ? p.tickets : p.revenueCents);
-  const maxY = Math.max(...points.map((p) => valueAccessor(p)), 1);
-  const path = points
-    .map((p, i) => {
-      const x = pad + i * xs;
-      const norm = valueAccessor(p) / maxY;
-      const y = height - pad - norm * (height - pad * 2);
-      return `${i === 0 ? "M" : "L"} ${x.toFixed(1)} ${y.toFixed(1)}`;
-    })
-    .join(" ");
+          {!organizer?.id && <p className="text-sm text-white/70">Sem organização ativa.</p>}
+          {organizer?.id && (
+            <PadelHubClient
+              organizerId={organizer.id}
+              organizationKind={(organizer as { organizationKind?: string | null }).organizationKind ?? "PESSOA_SINGULAR"}
+              initialClubs={padelClubs?.items ?? []}
+              initialPlayers={padelPlayers?.items ?? []}
+            />
+          )}
+        </section>
+      )}
 
-  const last = points[points.length - 1];
-  const lastLabel =
-    mode === "tickets" ? `${last.tickets} bilhetes` : `${(last.revenueCents / 100).toFixed(2)} €`;
+      {activeTab === "restaurants" && (
+        <section className="space-y-3">
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+            <p className="text-[11px] uppercase tracking-[0.3em] text-white/60">Categorias</p>
+            <h2 className="text-xl font-semibold text-white">Restaurantes &amp; Jantares</h2>
+            <p className="text-sm text-white/65">Em breve — reservas e menus fixos.</p>
+          </div>
+        </section>
+      )}
 
-  return (
-    <div className="flex w-full items-center gap-3 px-2">
-      <svg width="100%" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
-        <defs>
-          <linearGradient id="lineFill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#6BFFFF" stopOpacity="0.35" />
-            <stop offset="100%" stopColor="#6BFFFF" stopOpacity="0.05" />
-          </linearGradient>
-        </defs>
-        <path
-          d={`${path} L ${pad + (points.length - 1) * xs} ${height - pad} L ${pad} ${height - pad} Z`}
-          fill="url(#lineFill)"
-          stroke="none"
+      {activeTab === "volunteer" && (
+        <section className="space-y-3">
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+            <p className="text-[11px] uppercase tracking-[0.3em] text-white/60">Categorias</p>
+            <h2 className="text-xl font-semibold text-white">Solidário / Voluntariado</h2>
+            <p className="text-sm text-white/65">Em breve — inscrições de voluntários e donativos.</p>
+          </div>
+        </section>
+      )}
+
+      {activeTab === "night" && (
+        <section className="space-y-3">
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+            <p className="text-[11px] uppercase tracking-[0.3em] text-white/60">Categorias</p>
+            <h2 className="text-xl font-semibold text-white">Festas &amp; Noite</h2>
+            <p className="text-sm text-white/65">Em breve — guest lists, packs e consumo mínimo.</p>
+          </div>
+        </section>
+      )}
+
+      {activeTab === "staff" && (
+        <section className="space-y-3">
+          <OrganizerStaffPage />
+        </section>
+      )}
+
+      {activeTab === "settings" && (
+        <section className="space-y-3">
+          <OrganizerSettingsPage />
+        </section>
+      )}
+
+      {eventDialog && (
+        <ConfirmDestructiveActionDialog
+          open
+          title={eventDialog.mode === "delete" ? "Apagar rascunho?" : "Arquivar evento?"}
+          description={
+            eventDialog.mode === "delete"
+              ? "Esta ação remove o rascunho e bilhetes associados."
+              : "O evento deixa de estar visível para o público. Vendas e relatórios mantêm-se."
+          }
+          consequences={
+            eventDialog.mode === "delete"
+              ? ["Podes criar outro evento quando quiseres."]
+              : ["Sai de /explorar e das listas do dashboard.", "Mantém histórico para relatórios/finanças."]
+          }
+          confirmLabel={eventDialog.mode === "delete" ? "Apagar rascunho" : "Arquivar evento"}
+          dangerLevel="high"
+          onConfirm={() => archiveEvent(eventDialog.ev, eventDialog.mode)}
+          onClose={() => setEventDialog(null)}
         />
-        <path d={path} fill="none" stroke="#6BFFFF" strokeWidth="2" />
-        {points.map((p, i) => {
-          const x = pad + i * xs;
-          const norm = p.revenueCents / maxY;
-          const y = height - pad - norm * (height - pad * 2);
-          return <circle key={p.date} cx={x} cy={y} r={3} fill="#6BFFFF" />;
-        })}
-      </svg>
-      <div className="text-[11px] text-white/70 min-w-[80px]">
-        <p className="text-white font-semibold">{lastLabel}</p>
-        <p>Último dia</p>
-      </div>
+      )}
     </div>
   );
 }
+
+type TimeSeriesPoint = {
+  date: string;
+  tickets: number;
+  revenueCents: number; // líquido (net)
+  netCents?: number; // alias
+  grossCents?: number;
+  discountCents?: number;
+  platformFeeCents?: number;
+};

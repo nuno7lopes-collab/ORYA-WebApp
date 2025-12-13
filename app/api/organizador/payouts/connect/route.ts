@@ -5,6 +5,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { stripe } from "@/lib/stripeClient";
+import { OrganizerMemberRole } from "@prisma/client";
+import { isOrgOwner } from "@/lib/organizerPermissions";
 
 const DEFAULT_BASE_URL = "http://localhost:3000";
 
@@ -46,16 +48,20 @@ export async function POST(_req: NextRequest) {
       );
     }
 
-    const organizer = await prisma.organizer.findFirst({
-      where: { userId: profile.id },
+    const membership = await prisma.organizerMember.findFirst({
+      where: { userId: profile.id, organizer: { status: "ACTIVE" } },
+      include: { organizer: true },
+      orderBy: [{ lastUsedAt: "desc" }, { createdAt: "asc" }],
     });
 
-    if (!organizer) {
+    if (!membership || !membership.organizer || !isOrgOwner(membership.role as OrganizerMemberRole)) {
       return NextResponse.json(
-        { ok: false, error: "Ainda não és organizador." },
+        { ok: false, error: "APENAS_OWNER" },
         { status: 403 },
       );
     }
+
+    const organizer = membership.organizer;
 
     if (organizer.status !== "ACTIVE") {
       return NextResponse.json(
@@ -101,8 +107,8 @@ export async function POST(_req: NextRequest) {
     const baseUrl = getBaseUrl();
     const link = await stripe.accountLinks.create({
       account: accountId,
-      refresh_url: `${baseUrl}/organizador/pagamentos?refresh=1`,
-      return_url: `${baseUrl}/organizador/pagamentos?onboarding=done`,
+      refresh_url: `${baseUrl}/organizador?tab=finance&onboarding=refresh`,
+      return_url: `${baseUrl}/organizador?tab=finance&onboarding=done`,
       type: "account_onboarding",
     });
 

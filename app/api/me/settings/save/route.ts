@@ -7,6 +7,9 @@ type Body = {
   allowEmailNotifications?: boolean;
   allowEventReminders?: boolean;
   allowFriendRequests?: boolean;
+  allowSalesAlerts?: boolean;
+  allowSystemAnnouncements?: boolean;
+  hardDelete?: boolean;
 };
 
 export async function PATCH(req: NextRequest) {
@@ -29,6 +32,7 @@ export async function PATCH(req: NextRequest) {
     }
 
     const visibility = body.visibility;
+    const wantsHardDelete = body.hardDelete === true;
     if (visibility && visibility !== "PUBLIC" && visibility !== "PRIVATE") {
       return NextResponse.json({ ok: false, error: "Visibilidade inválida." }, { status: 400 });
     }
@@ -43,6 +47,38 @@ export async function PATCH(req: NextRequest) {
     }
     if (typeof body.allowFriendRequests === "boolean") {
       dataToUpdate.allowFriendRequests = body.allowFriendRequests;
+    }
+
+    if (wantsHardDelete) {
+      // Libera username e marca soft-delete
+      const existing = await prisma.profile.findUnique({ where: { id: user.id }, select: { username: true } });
+      if (existing?.username) {
+        await prisma.profile.update({
+          where: { id: user.id },
+          data: {
+            username: null,
+            isDeleted: true,
+            deletedAt: new Date(),
+            fullName: "Conta apagada",
+            bio: null,
+            city: null,
+            avatarUrl: null,
+          },
+        });
+      } else {
+        await prisma.profile.update({
+          where: { id: user.id },
+          data: {
+            isDeleted: true,
+            deletedAt: new Date(),
+            fullName: "Conta apagada",
+            bio: null,
+            city: null,
+            avatarUrl: null,
+          },
+        });
+      }
+      return NextResponse.json({ ok: true, deleted: true });
     }
 
     const profile = await prisma.profile.upsert({
@@ -60,6 +96,24 @@ export async function PATCH(req: NextRequest) {
       },
     });
 
+    // Sincronizar prefs de notificação (notification_preferences)
+    const notificationPrefsUpdate: Record<string, boolean> = {};
+    const assign = (key: keyof Body, target: string) => {
+      if (typeof body[key] === "boolean") notificationPrefsUpdate[target] = body[key] as boolean;
+    };
+    assign("allowEmailNotifications", "allowEmailNotifications");
+    assign("allowEventReminders", "allowEventReminders");
+    assign("allowFriendRequests", "allowFriendRequests");
+    assign("allowSalesAlerts", "allowSalesAlerts");
+    assign("allowSystemAnnouncements", "allowSystemAnnouncements");
+    if (Object.keys(notificationPrefsUpdate).length > 0) {
+      await prisma.notificationPreference.upsert({
+        where: { userId: user.id },
+        update: notificationPrefsUpdate,
+        create: { userId: user.id, ...notificationPrefsUpdate },
+      });
+    }
+
     return NextResponse.json({
       ok: true,
       profile: {
@@ -67,6 +121,14 @@ export async function PATCH(req: NextRequest) {
         allowEmailNotifications: profile.allowEmailNotifications,
         allowEventReminders: profile.allowEventReminders,
         allowFriendRequests: profile.allowFriendRequests,
+        allowSalesAlerts:
+          typeof body.allowSalesAlerts === "boolean"
+            ? body.allowSalesAlerts
+            : undefined,
+        allowSystemAnnouncements:
+          typeof body.allowSystemAnnouncements === "boolean"
+            ? body.allowSystemAnnouncements
+            : undefined,
       },
     });
   } catch (err) {

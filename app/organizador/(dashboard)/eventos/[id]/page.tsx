@@ -3,6 +3,7 @@
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { notFound, redirect } from "next/navigation";
+import PadelTournamentTabs from "./PadelTournamentTabs";
 import type { Event, TicketType } from "@prisma/client";
 
 type PageProps = {
@@ -42,19 +43,22 @@ export default async function OrganizerEventDetailPage({ params }: PageProps) {
   }
 
   // 2) Buscar evento + tipos de bilhete (waves)
-  const event = (await prisma.event.findFirst({
-    where: {
-      id: eventId,
-      organizerId: organizer.id,
-    },
-    include: {
-      ticketTypes: {
-        orderBy: {
-          sortOrder: "asc",
+      const event = (await prisma.event.findFirst({
+        where: {
+          id: eventId,
+          organizerId: organizer.id,
         },
-      },
-    },
-  })) as EventWithTickets | null;
+        include: {
+          ticketTypes: {
+            orderBy: {
+              sortOrder: "asc",
+            },
+          },
+          padelTournamentConfig: {
+            include: { club: true },
+          },
+        },
+      })) as (EventWithTickets & { padelTournamentConfig: { numberOfCourts: number; club?: { name: string; city: string | null; address: string | null } | null; partnerClubIds?: number[]; advancedSettings?: Record<string, unknown> | null } | null }) | null;
 
   if (!event) {
     notFound();
@@ -109,6 +113,43 @@ export default async function OrganizerEventDetailPage({ params }: PageProps) {
   const startDateFormatted = formatDateTime(event.startsAt);
   const endDateFormatted = formatDateTime(event.endsAt);
 
+  const tournamentState =
+    event.status === "CANCELLED"
+      ? "Cancelado"
+      : event.status === "FINISHED"
+        ? "Terminado"
+      : event.status === "DRAFT"
+        ? "Oculto"
+        : "Público";
+
+  const partnerClubs =
+    event.padelTournamentConfig?.partnerClubIds?.length
+      ? await prisma.padelClub.findMany({
+          where: { id: { in: event.padelTournamentConfig.partnerClubIds as number[] } },
+          select: { id: true, name: true, city: true },
+        })
+      : [];
+  const advancedSettings = event.padelTournamentConfig?.advancedSettings as
+    | {
+        maxEntriesTotal?: number | null;
+        waitlistEnabled?: boolean;
+        allowSecondCategory?: boolean;
+        allowCancelGames?: boolean;
+        gameDurationMinutes?: number | null;
+        courtsFromClubs?: Array<{ id?: number; clubId?: number | null; clubName?: string | null; name?: string | null; indoor?: boolean }>;
+        staffFromClubs?: Array<{ clubName?: string | null; email?: string | null; role?: string | null }>;
+        categoriesMeta?: Array<{ name?: string; categoryId?: number | null; capacity?: number | null; registrationType?: string | null }>;
+      }
+    | null;
+  const categoriesMeta = advancedSettings?.categoriesMeta ?? [];
+
+  const timeline = [
+    { key: "OCULTO", label: "Oculto", active: ["DRAFT"].includes(event.status), done: event.status !== "DRAFT" },
+    { key: "INSCRICOES", label: "Inscrições", active: event.status === "PUBLISHED", done: ["PUBLISHED", "FINISHED", "CANCELLED"].includes(event.status) },
+    { key: "PUBLICO", label: "Público", active: event.status === "PUBLISHED", done: ["PUBLISHED", "FINISHED", "CANCELLED"].includes(event.status) },
+    { key: "TERMINADO", label: "Terminado", active: event.status === "FINISHED", done: event.status === "FINISHED" },
+  ];
+
   return (
     <div className="mx-auto max-w-6xl px-4 py-8 md:px-6 lg:px-8 space-y-7 text-white">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -161,6 +202,25 @@ export default async function OrganizerEventDetailPage({ params }: PageProps) {
             )}
           </div>
 
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">
+            {timeline.map((step, idx) => (
+              <div key={step.key} className="flex items-center gap-2">
+                <span
+                  className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 ${
+                    step.done
+                      ? "border-emerald-400/60 bg-emerald-400/15 text-emerald-100"
+                      : step.active
+                        ? "border-white/30 bg-white/10 text-white"
+                        : "border-white/15 bg-black/30 text-white/60"
+                  }`}
+                >
+                  {step.label}
+                </span>
+                {idx < timeline.length - 1 && <span className="text-white/25">→</span>}
+              </div>
+            ))}
+          </div>
+
           {cheapestWave && (
             <p className="mt-1 text-[11px] text-white/70">
               Preço a partir de{" "}
@@ -178,6 +238,75 @@ export default async function OrganizerEventDetailPage({ params }: PageProps) {
           <p className="mt-2 text-[10px] text-white/40 font-mono">
             ID: {event.id} • Slug: {event.slug}
           </p>
+
+          {event.padelTournamentConfig && (
+            <div className="mt-3 grid gap-2 rounded-xl border border-white/10 bg-white/5 p-3 text-sm">
+              <div className="flex items-center justify-between">
+                <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Torneio de Padel</p>
+                <span className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[12px]">
+                  {tournamentState}
+                </span>
+              </div>
+              <p className="font-semibold">
+                {event.padelTournamentConfig.club?.name ?? "Clube não definido"}
+              </p>
+              <p className="text-white/70">
+                {event.padelTournamentConfig.club?.city ?? "Cidade —"} ·{" "}
+                {event.padelTournamentConfig.club?.address ?? "Morada em falta"}
+              </p>
+              <p className="text-white/75">
+                Courts usados: {event.padelTournamentConfig.numberOfCourts}
+              </p>
+              {partnerClubs.length > 0 && (
+                <div className="text-[12px] text-white/70">
+                  <p className="text-[11px] uppercase tracking-[0.16em] text-white/55 mt-2">Clubes parceiros</p>
+                  <div className="flex flex-wrap gap-2">
+                    {partnerClubs.map((c) => (
+                      <span key={c.id} className="rounded-full border border-white/15 bg-white/10 px-2 py-1">
+                        {c.name} {c.city ? `· ${c.city}` : ""}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {advancedSettings && (
+                <div className="text-[12px] text-white/70">
+                  <p className="text-[11px] uppercase tracking-[0.16em] text-white/55 mt-2">Opções avançadas</p>
+                  <p className="text-white/75">
+                    Limite total: {advancedSettings.maxEntriesTotal ?? "—"} · Waitlist:{" "}
+                    {advancedSettings.waitlistEnabled ? "on" : "off"} · 2ª categoria:{" "}
+                    {advancedSettings.allowSecondCategory ? "sim" : "não"} · Cancelar jogos:{" "}
+                    {advancedSettings.allowCancelGames ? "sim" : "não"} · Jogo padrão:{" "}
+                    {advancedSettings.gameDurationMinutes ?? "—"} min
+                  </p>
+                  {advancedSettings.courtsFromClubs?.length ? (
+                    <div className="mt-2 space-y-1">
+                      <p className="text-[11px] uppercase tracking-[0.14em] text-white/55">Courts incluídos</p>
+                      <div className="flex flex-wrap gap-2">
+                        {advancedSettings.courtsFromClubs.map((c, idx) => (
+                          <span key={`${c.id}-${idx}`} className="rounded-full border border-white/15 bg-white/10 px-2 py-1">
+                            {c.name || "Court"} · {c.clubName || `Clube ${c.clubId ?? ""}`} {c.indoor ? "(Indoor)" : ""}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                  {advancedSettings.staffFromClubs?.length ? (
+                    <div className="mt-2 space-y-1">
+                      <p className="text-[11px] uppercase tracking-[0.14em] text-white/55">Staff herdado</p>
+                      <div className="flex flex-wrap gap-2">
+                        {advancedSettings.staffFromClubs.map((s, idx) => (
+                          <span key={`${s.email}-${idx}`} className="rounded-full border border-white/15 bg-white/10 px-2 py-1">
+                            {s.email || s.role || "Staff"} · {s.role || "Role"} · {s.clubName || "Clube"}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -398,6 +527,10 @@ export default async function OrganizerEventDetailPage({ params }: PageProps) {
           </div>
         )}
       </section>
+
+      {event.templateType === "PADEL" && (
+        <PadelTournamentTabs eventId={event.id} categoriesMeta={categoriesMeta} />
+      )}
     </div>
   );
 }

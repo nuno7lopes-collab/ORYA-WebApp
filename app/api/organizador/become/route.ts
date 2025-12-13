@@ -47,11 +47,7 @@ export async function GET() {
     }
 
     const { organizer: activeOrganizer } = await getActiveOrganizerForUser(profile.id);
-    const fallbackOrganizer =
-      activeOrganizer ??
-      (await prisma.organizer.findFirst({
-        where: { userId: profile.id },
-      }));
+    const fallbackOrganizer = activeOrganizer ?? null;
 
     return NextResponse.json(
       {
@@ -135,11 +131,7 @@ export async function POST(req: NextRequest) {
 
     // Procurar organizer existente para este user (por membership ou campo legacy)
     const { organizer: activeOrganizer } = await getActiveOrganizerForUser(profile.id);
-    let organizer =
-      activeOrganizer ??
-      (await prisma.organizer.findFirst({
-        where: { userId: profile.id },
-      }));
+    let organizer = activeOrganizer ?? null;
 
     const displayName =
       businessName ||
@@ -159,24 +151,14 @@ export async function POST(req: NextRequest) {
     const username = validatedUsername.username;
 
     organizer = await prisma.$transaction(async (tx) => {
-      const nextOrganizer = organizer
-        ? await tx.organizer.update({
+      async function upsertOrganizer(includePublicName: boolean) {
+        if (organizer) {
+          return tx.organizer.update({
             where: { id: organizer!.id },
             data: {
               status: "ACTIVE",
               displayName,
-              entityType,
-              businessName,
-              city,
-              payoutIban,
-              username,
-            },
-          })
-        : await tx.organizer.create({
-            data: {
-              userId: profile.id,
-              displayName,
-              status: "ACTIVE", // self-serve aberto
+              ...(includePublicName ? { publicName: displayName } : {}),
               entityType,
               businessName,
               city,
@@ -184,13 +166,38 @@ export async function POST(req: NextRequest) {
               username,
             },
           });
+        }
+        return tx.organizer.create({
+          data: {
+            // userId fica como legacy "created_by" histórico
+            userId: profile.id,
+            displayName,
+            ...(includePublicName ? { publicName: displayName } : {}),
+            status: "ACTIVE", // self-serve aberto
+            entityType,
+            businessName,
+            city,
+            payoutIban,
+            username,
+          },
+        });
+      }
 
-      await setUsernameForOwner({
-        username,
-        ownerType: "organizer",
-        ownerId: nextOrganizer.id,
-        tx,
-      });
+      const nextOrganizer = organizer
+        ? await upsertOrganizer(true).catch((err) => {
+            const code = (err as { code?: string })?.code;
+            const message = err instanceof Error ? err.message : "";
+            const missingColumn = code === "P2022" && message.toLowerCase().includes("public_name");
+            if (!missingColumn) throw err;
+            return upsertOrganizer(false);
+          })
+        : await upsertOrganizer(true).catch((err) => {
+            const code = (err as { code?: string })?.code;
+            const message = err instanceof Error ? err.message : "";
+            const missingColumn = code === "P2022" && message.toLowerCase().includes("public_name");
+            if (!missingColumn) throw err;
+            return upsertOrganizer(false);
+          });
 
       return nextOrganizer;
     });
@@ -217,6 +224,23 @@ export async function POST(req: NextRequest) {
       } else {
         throw err;
       }
+    }
+
+    // Reservar username global fora da transação para não abortar criação
+    try {
+      await setUsernameForOwner({
+        username,
+        ownerType: "organizer",
+        ownerId: organizer.id,
+      });
+    } catch (err) {
+      if (err instanceof UsernameTakenError) {
+        return NextResponse.json(
+          { ok: false, error: "Este @ já está a ser usado — escolhe outro.", code: "USERNAME_TAKEN" },
+          { status: 409 },
+        );
+      }
+      console.warn("[organizador/become] username global falhou (ignorado)", err);
     }
 
     // Garante que o perfil tem role de organizer

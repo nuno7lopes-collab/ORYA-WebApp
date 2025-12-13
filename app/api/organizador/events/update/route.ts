@@ -2,9 +2,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { ensureAuthenticated, assertOrganizer } from "@/lib/security";
+import { ensureAuthenticated } from "@/lib/security";
 import { TicketTypeStatus, Prisma, EventTemplateType } from "@prisma/client";
-import { getActiveOrganizerForUser } from "@/lib/organizerContext";
+import { isOrgAdminOrAbove } from "@/lib/organizerPermissions";
+import { PORTUGAL_CITIES } from "@/config/cities";
 
 type TicketTypeUpdate = {
   id: number;
@@ -22,6 +23,7 @@ type NewTicketType = {
 
 type UpdateEventBody = {
   eventId?: number;
+  archive?: boolean;
   title?: string | null;
   description?: string | null;
   startsAt?: string | null;
@@ -54,7 +56,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "eventId é obrigatório." }, { status: 400 });
     }
 
-    // Autorização: perfil + organizer ativo
+    // Autorização: perfil + membership no organizer do evento
     const profile = await prisma.profile.findUnique({ where: { id: user.id } });
     if (!profile) {
       return NextResponse.json(
@@ -62,28 +64,25 @@ export async function POST(req: NextRequest) {
         { status: 400 },
       );
     }
-    assertOrganizer(user, profile);
-
-    const { organizer } = await getActiveOrganizerForUser(profile.id, { roles: ["OWNER", "ADMIN"] });
-
-    if (!organizer) {
-      return NextResponse.json(
-        { ok: false, error: "Não tens uma conta de organizador ativa." },
-        { status: 403 },
-      );
-    }
-
-    const event = await prisma.event.findFirst({
-      where: { id: eventId, organizerId: organizer.id },
-      include: { ticketTypes: true },
+    const event = await prisma.event.findUnique({
+      where: { id: eventId },
+      include: { ticketTypes: true, organizer: true },
     });
 
     if (!event) {
       return NextResponse.json({ ok: false, error: "Evento não encontrado." }, { status: 404 });
     }
 
+    const membership = await prisma.organizerMember.findUnique({
+      where: { organizerId_userId: { organizerId: event.organizerId, userId: user.id } },
+    });
+    if (!membership || !isOrgAdminOrAbove(membership.role)) {
+      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    }
+
     const isAdmin = Array.isArray(profile.roles) ? profile.roles.includes("admin") : false;
 
+    const organizer = event.organizer;
     const paymentsStatus = organizer
       ? organizer.stripeAccountId
         ? organizer.stripeChargesEnabled && organizer.stripePayoutsEnabled
@@ -93,6 +92,10 @@ export async function POST(req: NextRequest) {
       : "NO_STRIPE";
 
     const dataUpdate: Partial<Prisma.EventUncheckedUpdateInput> = {};
+    if (body.archive === true) {
+      dataUpdate.isDeleted = true;
+      dataUpdate.deletedAt = new Date();
+    }
     if (body.title !== undefined) dataUpdate.title = body.title?.trim() ?? "";
     if (body.description !== undefined) dataUpdate.description = body.description ?? "";
     if (body.startsAt) {
@@ -110,7 +113,16 @@ export async function POST(req: NextRequest) {
       dataUpdate.endsAt = d;
     }
     if (body.locationName !== undefined) dataUpdate.locationName = body.locationName ?? "";
-    if (body.locationCity !== undefined) dataUpdate.locationCity = body.locationCity ?? "";
+    if (body.locationCity !== undefined) {
+      const city = body.locationCity ?? "";
+      if (city && !PORTUGAL_CITIES.includes(city as (typeof PORTUGAL_CITIES)[number])) {
+        return NextResponse.json(
+          { ok: false, error: "Cidade inválida. Escolhe uma cidade da lista disponível na ORYA." },
+          { status: 400 },
+        );
+      }
+      dataUpdate.locationCity = city;
+    }
     if (body.address !== undefined) dataUpdate.address = body.address ?? null;
     if (body.templateType) {
       const tpl = body.templateType.toUpperCase();

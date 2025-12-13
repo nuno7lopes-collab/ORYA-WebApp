@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 
 export type OrganizationSwitcherOption = {
@@ -10,11 +9,13 @@ export type OrganizationSwitcherOption = {
   organizer: {
     id: number;
     username: string | null;
+    publicName?: string | null;
     displayName: string | null;
     businessName: string | null;
     city: string | null;
     entityType: string | null;
     status: string | null;
+    brandingAvatarUrl?: string | null;
   };
 };
 
@@ -24,11 +25,7 @@ type Props = {
 };
 
 export function OrganizationSwitcher({ currentId, initialOrgs = [] }: Props) {
-  const router = useRouter();
-
   const [options, setOptions] = useState<OrganizationSwitcherOption[]>(initialOrgs);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [activeId, setActiveId] = useState<number | null>(currentId);
 
   useEffect(() => {
@@ -41,35 +38,10 @@ export function OrganizationSwitcher({ currentId, initialOrgs = [] }: Props) {
     [activeId, options],
   );
 
-  const handleSwitch = async (id: number) => {
-    if (id === activeId || saving) return;
-    setSaving(true);
-    setError(null);
-    try {
-      const res = await fetch("/api/organizador/organizations/switch", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ organizerId: id }),
-      });
-      const json = await res.json().catch(() => null);
-      if (!res.ok || json?.ok === false) {
-        setError(json?.error || "Erro ao mudar de organização.");
-      } else {
-        setActiveId(id);
-        router.refresh();
-      }
-    } catch (err) {
-      console.error("[OrganizationSwitcher] switch error", err);
-      setError("Erro inesperado ao mudar de organização.");
-    } finally {
-      setSaving(false);
-    }
-  };
-
   if (!current) {
     return (
       <Link
-        href="/organizador/(dashboard)/organizations"
+        href="/organizador/organizations"
         className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-2 text-[12px] text-white/80 hover:border-white/20"
       >
         Escolher organização
@@ -80,47 +52,42 @@ export function OrganizationSwitcher({ currentId, initialOrgs = [] }: Props) {
   return (
     <div className="relative">
       <details className="group">
-        <summary className="flex cursor-pointer select-none items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-2 text-[12px] text-white/85 transition hover:border-white/20">
-          <span className="truncate max-w-[180px]">{current.organizer.displayName || current.organizer.businessName || "Organização"}</span>
-          <span className="rounded-full border border-white/15 bg-white/10 px-2 py-[2px] text-[10px] uppercase tracking-[0.16em] text-white/60">
-            {current.role}
-          </span>
-          <span className="text-white/60 group-open:rotate-180 transition-transform">▾</span>
+        <summary className="flex cursor-pointer select-none items-center gap-2 rounded-full border border-white/15 bg-white/5 px-2 py-1 text-[12px] text-white/85 transition hover:border-white/30">
+          {current.organizer.brandingAvatarUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={current.organizer.brandingAvatarUrl}
+              alt={current.organizer.publicName || current.organizer.displayName || "Organização"}
+              className="h-8 w-8 rounded-full border border-white/10 object-cover"
+            />
+          ) : (
+            <span className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/5 text-[11px] font-semibold">
+              {(current.organizer.publicName || current.organizer.displayName || current.organizer.businessName || "O")[0]}
+            </span>
+          )}
+          <span className="text-white/70 group-open:rotate-180 transition-transform pr-1">▾</span>
         </summary>
-        <div className="absolute right-0 z-40 mt-2 w-64 rounded-2xl border border-white/10 bg-black/80 p-2 shadow-[0_20px_40px_rgba(0,0,0,0.55)] backdrop-blur-xl">
-          <div className="max-h-80 overflow-auto space-y-1">
-            {options.map((org) => (
-              <button
-                key={org.organizerId}
-                type="button"
-                onClick={() => handleSwitch(org.organizerId)}
-                className={`w-full rounded-xl px-3 py-2 text-left text-sm transition ${
-                  org.organizerId === activeId
-                    ? "bg-white/10 text-white font-semibold"
-                    : "hover:bg-white/10 text-white/80"
-                }`}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="truncate">
-                    {org.organizer.displayName || org.organizer.businessName || "Organização"}
-                  </span>
-                  <span className="text-[10px] uppercase tracking-[0.16em] text-white/50">{org.role}</span>
-                </div>
-                {org.organizer.city && (
-                  <p className="text-[11px] text-white/50 truncate">{org.organizer.city}</p>
-                )}
-              </button>
-            ))}
-          </div>
-          <div className="mt-2 border-t border-white/10 pt-2 text-right">
+        <div className="absolute right-0 z-40 mt-2 w-56 rounded-2xl border border-white/10 bg-black/85 p-2 shadow-[0_20px_40px_rgba(0,0,0,0.55)] backdrop-blur-xl">
+          <div className="space-y-1">
             <Link
-              href="/organizador/become"
-              className="text-[12px] text-white/70 hover:text-white transition"
+              href="/organizador/organizations"
+              className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm text-white hover:bg-white/10"
             >
-              Criar nova organização
+              <span>Gerir organizações</span>
+              <span className="text-[10px] text-white/60">↗</span>
             </Link>
+            {current.organizer.username && (
+            <Link
+              href={`/org/${current.organizer.username}`}
+              target="_blank"
+              rel="noreferrer"
+              className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm text-white hover:bg-white/10"
+            >
+              <span>Página pública</span>
+              <span className="text-[10px] text-white/60">↗</span>
+            </Link>
+            )}
           </div>
-          {error && <p className="mt-2 text-[11px] text-red-300">{error}</p>}
         </div>
       </details>
     </div>

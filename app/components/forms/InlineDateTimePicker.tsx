@@ -132,94 +132,110 @@ export function InlineDateTimePicker({
       <label className="block text-sm font-medium mb-1">{label}</label>
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => setOpen(true)}
         className="flex w-full items-center justify-between rounded-md border border-white/15 bg-black/20 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]/60"
       >
         <span>{parsedValue ? parsedValue.toLocaleString("pt-PT") : "Escolher data e hora"}</span>
         <span className="text-[11px] text-white/60">📅</span>
       </button>
       {open && (
-        <div className="mt-2 rounded-2xl border border-white/15 bg-[#040712]/95 p-3 shadow-[0_20px_60px_rgba(0,0,0,0.6)] space-y-3">
-          <div className="flex items-center justify-between text-sm text-white/80">
-            <button
-              type="button"
-              onClick={() => {
-                const prev = new Date(viewMonth);
-                prev.setMonth(prev.getMonth() - 1);
-                if (startOfDay(prev) < minDate) return;
-                setViewMonth(prev);
-              }}
-              className="rounded-full px-2 py-1 text-xs hover:bg-white/10 disabled:opacity-40"
-            >
-              ←
-            </button>
-            <span className="font-semibold capitalize">{monthLabel}</span>
-            <button
-              type="button"
-              onClick={() => {
-                const next = new Date(viewMonth);
-                next.setMonth(next.getMonth() + 1);
-                setViewMonth(next);
-              }}
-              className="rounded-full px-2 py-1 text-xs hover:bg-white/10"
-            >
-              →
-            </button>
-          </div>
-          <div className="grid grid-cols-7 gap-1 text-[11px] text-white/60">
-            {["D", "S", "T", "Q", "Q", "S", "S"].map((d, idx) => (
-              <span key={`${d}-${idx}`} className="text-center py-1">
-                {d}
-              </span>
-            ))}
-            {days.map((d, idx) => {
-              if (Number.isNaN(d.date.getTime())) {
-                return <span key={`blank-${idx}`} />;
-              }
-              const isSelected = selectedDate ? isSameDay(selectedDate, d.date) : false;
-              return (
-                <button
-                  key={d.date.toISOString()}
-                  type="button"
-                  disabled={d.disabled}
-                  onClick={() => {
-                    setSelectedDate(d.date);
-                    setOpen(true);
-                  }}
-                  className={`h-9 w-9 rounded-full text-[12px] ${
-                    d.disabled
-                      ? "text-white/25 cursor-not-allowed"
-                      : isSelected
-                        ? "bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] text-black font-semibold shadow-[0_0_14px_rgba(107,255,255,0.6)]"
-                        : "text-white/80 hover:bg-white/10"
-                  }`}
-                >
-                  {d.date.getDate()}
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="space-y-2">
-            <p className="text-[11px] text-white/60">Hora (15 em 15 min)</p>
-            <div className="grid grid-cols-4 gap-2 max-h-40 overflow-y-auto pr-1">
-              {timeOptions.map((opt) => (
-                <button
-                  key={opt.value}
-                  type="button"
-                  disabled={opt.disabled}
-                  onClick={() => setSelectedTime(opt.value)}
-                  className={`rounded-lg px-2 py-1 text-xs ${
-                    opt.disabled
-                      ? "text-white/30 cursor-not-allowed"
-                      : selectedTime === opt.value
-                        ? "bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] text-black font-semibold shadow-[0_0_12px_rgba(107,255,255,0.5)]"
-                        : "bg-white/5 text-white/80 hover:bg-white/10"
-                  }`}
-                >
-                  {opt.label}
-                </button>
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4"
+          onClick={() => setOpen(false)}
+        >
+          <div
+            className="w-full max-w-3xl rounded-2xl border border-white/15 bg-[#040712]/95 p-4 shadow-[0_20px_60px_rgba(0,0,0,0.7)] space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between text-sm text-white/80">
+              <button
+                type="button"
+                onClick={() => {
+                  const prev = new Date(viewMonth);
+                  prev.setMonth(prev.getMonth() - 1);
+                  if (startOfDay(prev) < minDate) return;
+                  setViewMonth(prev);
+                }}
+                className="rounded-full px-2 py-1 text-xs hover:bg-white/10 disabled:opacity-40"
+              >
+                ←
+              </button>
+              <span className="font-semibold capitalize">{monthLabel}</span>
+              <button
+                type="button"
+                onClick={() => {
+                  const next = new Date(viewMonth);
+                  next.setMonth(next.getMonth() + 1);
+                  setViewMonth(next);
+                }}
+                className="rounded-full px-2 py-1 text-xs hover:bg-white/10"
+              >
+                →
+              </button>
+            </div>
+            <div className="grid grid-cols-7 gap-1 text-[11px] text-white/60">
+              {["D", "S", "T", "Q", "Q", "S", "S"].map((d, idx) => (
+                <span key={`${d}-${idx}`} className="text-center py-1">
+                  {d}
+                </span>
               ))}
+              {days.map((d, idx) => {
+                if (Number.isNaN(d.date.getTime())) {
+                  return <span key={`blank-${idx}`} />;
+                }
+                const isSelected = selectedDate ? isSameDay(selectedDate, d.date) : false;
+                return (
+                  <button
+                    key={d.date.toISOString()}
+                    type="button"
+                    disabled={d.disabled}
+                    onClick={() => {
+                      setSelectedDate(d.date);
+                    }}
+                    className={`h-9 w-9 rounded-full text-[12px] ${
+                      d.disabled
+                        ? "text-white/25 cursor-not-allowed"
+                        : isSelected
+                          ? "bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] text-black font-semibold shadow-[0_0_14px_rgba(107,255,255,0.6)]"
+                          : "text-white/80 hover:bg-white/10"
+                    }`}
+                  >
+                    {d.date.getDate()}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="space-y-2">
+              <p className="text-[11px] text-white/60">Hora (15 em 15 min)</p>
+              <div className="grid grid-cols-4 gap-2 max-h-40 overflow-y-auto pr-1">
+                {timeOptions.map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    disabled={opt.disabled}
+                    onClick={() => setSelectedTime(opt.value)}
+                    className={`rounded-lg px-2 py-1 text-xs ${
+                      opt.disabled
+                        ? "text-white/30 cursor-not-allowed"
+                        : selectedTime === opt.value
+                          ? "bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] text-black font-semibold shadow-[0_0_12px_rgba(107,255,255,0.5)]"
+                          : "bg-white/5 text-white/80 hover:bg-white/10"
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                className="rounded-full border border-white/20 px-4 py-2 text-[12px] text-white hover:bg-white/10"
+              >
+                Confirmar
+              </button>
             </div>
           </div>
         </div>

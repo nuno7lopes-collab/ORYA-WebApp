@@ -16,11 +16,6 @@ type EventCard = {
   priceFrom: number | null;
 };
 
-type ApiResponse = {
-  ok: boolean;
-  items: EventCard[];
-};
-
 export default function EventosFeedPage() {
   const [events, setEvents] = useState<EventCard[]>([]);
   const [loading, setLoading] = useState(false);
@@ -46,8 +41,22 @@ export default function EventosFeedPage() {
         throw new Error("Falha ao carregar eventos");
       }
 
-      const data: ApiResponse = await res.json();
-      setEvents(data.items);
+      const data = await res.json();
+      const items: EventCard[] = Array.isArray(data.events)
+        ? data.events.map((ev: any) => ({
+            id: ev.id,
+            slug: ev.slug,
+            title: ev.title,
+            description: ev.shortDescription ?? ev.description ?? null,
+            startsAt: ev.startDate ?? ev.startsAt ?? "",
+            endsAt: ev.endDate ?? null,
+            locationName: ev.venue?.name ?? ev.locationName ?? null,
+            locationCity: ev.venue?.city ?? ev.locationCity ?? null,
+            isFree: Boolean(ev.isFree),
+            priceFrom: ev.priceFrom ?? null,
+          }))
+        : [];
+      setEvents(items);
     } catch (err: unknown) {
       console.error(err);
       const message =
@@ -84,7 +93,7 @@ export default function EventosFeedPage() {
           </div>
 
           <Link
-            href="/organizador/(dashboard)/eventos/novo"
+            href="/organizador/eventos/novo"
             className="hidden sm:inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-4 py-1.5 text-xs font-semibold text-black shadow-[0_0_22px_rgba(107,255,255,0.45)] hover:scale-105 active:scale-95 transition"
           >
             + Criar evento

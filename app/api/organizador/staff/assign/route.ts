@@ -4,14 +4,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { ensureAuthenticated, assertOrganizer } from "@/lib/security";
+import { ensureAuthenticated } from "@/lib/security";
 import { StaffRole } from "@prisma/client";
+import { isOrgAdminOrAbove } from "@/lib/organizerPermissions";
 
 type AssignStaffBody = {
   userId?: string;
   emailOrUsername?: string;
   scope?: "GLOBAL" | "EVENT";
   eventId?: number;
+  organizerId?: number;
   role?: StaffRole;
 };
 
@@ -31,7 +33,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { userId, emailOrUsername, scope, eventId, role } = body || {};
+    const { userId, emailOrUsername, scope, eventId, role, organizerId: organizerIdRaw } = body || {};
 
     if (!scope || (scope !== "GLOBAL" && scope !== "EVENT")) {
       return NextResponse.json(
@@ -68,24 +70,46 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
-    assertOrganizer(user, profile);
 
-    // Garantir que é um organizador ativo
-    const organizer = await prisma.organizer.findFirst({
-      where: {
-        userId: profile.id,
-        status: "ACTIVE",
-      },
-    });
+    // Resolver organizerId: vir no payload ou através do evento
+    let organizerId = Number(organizerIdRaw);
+    if (scope === "EVENT" && eventId) {
+      const event = await prisma.event.findUnique({
+        where: { id: Number(eventId) },
+        select: { id: true, organizerId: true, status: true, endsAt: true },
+      });
+      if (!event) {
+        return NextResponse.json({ ok: false, error: "Evento não encontrado." }, { status: 404 });
+      }
+      organizerId = event.organizerId;
+      if (event.status !== "PUBLISHED" || (event.endsAt && event.endsAt < new Date())) {
+        return NextResponse.json({ ok: false, error: "Evento inativo para atribuir staff." }, { status: 400 });
+      }
+    }
 
-    if (!organizer) {
+    if (!Number.isFinite(organizerId)) {
       return NextResponse.json(
-        {
-          ok: false,
-          error:
-            "Ainda não és organizador ativo. Vai à área de organizador para começares.",
-        },
-        { status: 403 }
+        { ok: false, error: "organizerId é obrigatório." },
+        { status: 400 }
+      );
+    }
+
+    // Validar membership do caller
+    const callerMembership = await prisma.organizerMember.findUnique({
+      where: { organizerId_userId: { organizerId, userId: user.id } },
+    });
+    if (!callerMembership || !isOrgAdminOrAbove(callerMembership.role)) {
+      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    }
+
+    const organizer = await prisma.organizer.findUnique({
+      where: { id: organizerId },
+      select: { id: true, status: true },
+    });
+    if (!organizer || organizer.status !== "ACTIVE") {
+      return NextResponse.json(
+        { ok: false, error: "Organização inativa ou inexistente." },
+        { status: 404 }
       );
     }
 
@@ -128,28 +152,30 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      const event = await prisma.event.findFirst({
-        where: {
-          id: targetEventId,
-          organizerId: organizer.id,
-          status: "PUBLISHED",
-          endsAt: { gte: new Date() },
-        },
-        select: { id: true },
-      });
+      if (targetEventId) {
+        const event = await prisma.event.findFirst({
+          where: {
+            id: targetEventId,
+            organizerId,
+            status: "PUBLISHED",
+            endsAt: { gte: new Date() },
+          },
+          select: { id: true },
+        });
 
-      if (!event) {
-        return NextResponse.json(
-          { ok: false, error: "Evento não encontrado ou inativo para este organizador." },
-          { status: 404 },
-        );
+        if (!event) {
+          return NextResponse.json(
+            { ok: false, error: "Evento não encontrado ou inativo para este organizador." },
+            { status: 404 },
+          );
+        }
       }
     }
 
     // Procurar assignment existente (para não duplicar)
     const existing = await prisma.staffAssignment.findFirst({
       where: {
-        organizerId: organizer.id,
+        organizerId,
         userId: targetUserId,
         scope,
         ...(scope === "EVENT" ? { eventId: targetEventId ?? undefined } : {}),
@@ -174,7 +200,7 @@ export async function POST(req: NextRequest) {
     } else {
       assignment = await prisma.staffAssignment.create({
         data: {
-          organizerId: organizer.id,
+          organizerId,
           userId: targetUserId,
           scope,
           eventId: scope === "EVENT" ? targetEventId ?? null : null,

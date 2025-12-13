@@ -86,37 +86,79 @@ export async function GET(req: NextRequest) {
       toDate = undefined;
     }
 
-    // Construir where para tickets (eventos do organizador + estado do bilhete + intervalo)
-    const ticketWhere: Prisma.TicketWhereInput = {
-      status: {
-        in: [TicketStatus.ACTIVE, TicketStatus.USED],
-      },
-      event: {
-        organizerId: organizer.id,
-      },
-    };
+    // Fonte preferencial: sale_summaries + sale_lines
+    const createdAtFilter: Prisma.DateTimeFilter<"SaleSummary"> = {};
+    if (fromDate) createdAtFilter.gte = fromDate;
+    if (toDate) createdAtFilter.lte = toDate;
 
-    if (fromDate && toDate) {
-      ticketWhere.purchasedAt = {
-        gte: fromDate,
-        lte: toDate,
-      };
-    }
-
-    // Buscar todos os tickets relevantes para o período
-    const tickets = await prisma.ticket.findMany({
-      where: ticketWhere,
+    const summaries = await prisma.saleSummary.findMany({
+      where: {
+        ...(Object.keys(createdAtFilter).length > 0
+          ? { createdAt: createdAtFilter }
+          : {}),
+        event: { organizerId: organizer.id },
+      },
       select: {
-        pricePaid: true,
+        id: true,
         eventId: true,
+        netCents: true,
+        discountCents: true,
+        platformFeeCents: true,
+        subtotalCents: true,
+        lines: {
+          select: { quantity: true },
+        },
       },
     });
 
-    const totalTickets = tickets.length;
-    const totalRevenueCents = tickets.reduce((sum, t) => sum + (t.pricePaid ?? 0), 0);
+    let totalTickets = summaries.reduce(
+      (acc, s) => acc + s.lines.reduce((q, l) => q + (l.quantity ?? 0), 0),
+      0,
+    );
+    let grossCents = summaries.reduce((acc, s) => acc + (s.subtotalCents ?? 0), 0);
+    let discountCents = summaries.reduce((acc, s) => acc + (s.discountCents ?? 0), 0);
+    let platformFeeCents = summaries.reduce(
+      (acc, s) => acc + (s.platformFeeCents ?? 0),
+      0,
+    );
+    let netRevenueCents = summaries.reduce((acc, s) => acc + (s.netCents ?? 0), 0);
 
-    const uniqueEventIds = Array.from(new Set(tickets.map((t) => t.eventId)));
-    const eventsWithSalesCount = uniqueEventIds.length;
+    let eventsWithSalesCount = new Set(summaries.map((s) => s.eventId)).size;
+
+    // Fallback para legacy (caso ainda não haja sale_summaries)
+    if (summaries.length === 0) {
+      const ticketWhere: Prisma.TicketWhereInput = {
+        status: {
+          in: [TicketStatus.ACTIVE, TicketStatus.USED],
+        },
+        event: {
+          organizerId: organizer.id,
+        },
+      };
+
+      if (fromDate && toDate) {
+        ticketWhere.purchasedAt = {
+          gte: fromDate,
+          lte: toDate,
+        };
+      }
+
+      const tickets = await prisma.ticket.findMany({
+        where: ticketWhere,
+        select: {
+          pricePaid: true,
+          eventId: true,
+        },
+      });
+
+      totalTickets = tickets.length;
+      grossCents = tickets.reduce((sum, t) => sum + (t.pricePaid ?? 0), 0);
+      // sem breakdown legacy: assumimos sem desconto/fee explícito
+      discountCents = 0;
+      platformFeeCents = 0;
+      netRevenueCents = grossCents;
+      eventsWithSalesCount = new Set(tickets.map((t) => t.eventId)).size;
+    }
 
     // Contar eventos publicados do organizador (no geral, não só no período)
     const activeEventsCount = await prisma.event.count({
@@ -131,7 +173,11 @@ export async function GET(req: NextRequest) {
         ok: true,
         range,
         totalTickets,
-        totalRevenueCents,
+        totalRevenueCents: netRevenueCents,
+        grossCents,
+        discountCents,
+        platformFeeCents,
+        netRevenueCents,
         eventsWithSalesCount,
         activeEventsCount,
       },

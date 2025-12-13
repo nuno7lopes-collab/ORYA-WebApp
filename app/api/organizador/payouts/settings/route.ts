@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { FeeMode } from "@prisma/client";
 import { getActiveOrganizerForUser } from "@/lib/organizerContext";
+import { isOrgOwner } from "@/lib/organizerPermissions";
 
 function isValidFeeMode(value: string | null | undefined): value is FeeMode {
   if (!value) return false;
@@ -24,12 +25,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
 
-    const { organizer } = await getActiveOrganizerForUser(user.id, {
-      roles: ["OWNER", "ADMIN"],
+    const { organizer, membership } = await getActiveOrganizerForUser(user.id, {
+      roles: ["OWNER", "CO_OWNER", "ADMIN"],
     });
 
-    if (!organizer) {
-      return NextResponse.json({ ok: false, error: "NOT_ORGANIZER" }, { status: 403 });
+    if (!organizer || !membership || !isOrgOwner(membership.role)) {
+      return NextResponse.json({ ok: false, error: "APENAS_OWNER" }, { status: 403 });
     }
     if (organizer.status !== "ACTIVE") {
       return NextResponse.json({ ok: false, error: "ORGANIZER_NOT_ACTIVE" }, { status: 403 });

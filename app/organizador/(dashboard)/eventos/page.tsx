@@ -1,4 +1,5 @@
 // app/organizador/eventos/page.tsx
+// LEGACY – não usar na UI; manter apenas enquanto migramos tudo para as tabs do Dashboard.
 /* eslint-disable @next/next/no-html-link-for-pages */
 
 import { redirect } from "next/navigation";
@@ -142,7 +143,7 @@ export default async function OrganizerEventsPage() {
                 </p>
               </div>
               <a
-                href="/organizador/(dashboard)/eventos/novo"
+                href="/organizador/eventos/novo"
                 className="inline-flex px-3 py-1.5 rounded-xl bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] text-[11px] font-semibold text-black hover:scale-[1.03] active:scale-95 transition-transform shadow-[0_0_24px_rgba(107,255,255,0.6)]"
               >
                 Criar evento

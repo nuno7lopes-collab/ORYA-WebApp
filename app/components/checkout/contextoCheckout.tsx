@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useState } from "react";
+import React, { createContext, useContext, useMemo, useState, useCallback } from "react";
 
 export type DadosCheckout = {
   slug: string;
@@ -14,10 +14,30 @@ export type DadosCheckout = {
   additional?: Record<string, unknown>;
 };
 
+export type CheckoutBreakdown = {
+  lines: {
+    ticketTypeId: number;
+    name: string;
+    quantity: number;
+    unitPriceCents: number;
+    currency: string;
+    lineTotalCents: number;
+  }[];
+  subtotalCents: number;
+  feeMode: string | null;
+  platformFeeCents: number;
+  totalCents: number;
+  currency: string;
+  discountCents?: number;
+  feeBpsApplied?: number;
+  feeFixedApplied?: number;
+} | null;
+
 type CheckoutContextType = {
   isOpen: boolean;
   passo: 1 | 2 | 3;
   dados: DadosCheckout | null;
+  breakdown: CheckoutBreakdown;
   abrirCheckout: (params: {
     slug: string;
     ticketId: string;
@@ -31,6 +51,7 @@ type CheckoutContextType = {
   fecharCheckout: () => void;
   irParaPasso: (passo: 1 | 2 | 3) => void;
   atualizarDados: (patch: Partial<DadosCheckout>) => void;
+  setBreakdown: (b: CheckoutContextType["breakdown"]) => void;
 };
 
 const CheckoutContext = createContext<CheckoutContextType | undefined>(
@@ -41,69 +62,87 @@ export function CheckoutProvider({ children }: { children: React.ReactNode }) {
   const [isOpen, setIsOpen] = useState(false);
   const [passo, setPasso] = useState<1 | 2 | 3>(1);
   const [dados, setDados] = useState<DadosCheckout | null>(null);
+  const [breakdown, setBreakdown] = useState<CheckoutBreakdown>(null);
 
-  function abrirCheckout({
-    slug,
-    ticketId,
-    quantity = 1,
-    price = null,
-    ticketName = null,
-    eventId = null,
-    userId = null,
-    waves,
-  }: {
-    slug: string;
-    ticketId: string;
-    quantity?: number;
-    price?: number | null;
-    ticketName?: string | null;
-    eventId?: string | null;
-    userId?: string | null;
-    waves?: unknown[];
-  }) {
-    setDados((prev) => {
-      const safeWaves =
-        Array.isArray(waves)
-          ? waves
-          : prev?.waves && Array.isArray(prev.waves)
-          ? prev.waves
-          : [];
+  const abrirCheckout = useCallback(
+    ({
+      slug,
+      ticketId,
+      quantity = 1,
+      price = null,
+      ticketName = null,
+      eventId = null,
+      userId = null,
+      waves,
+    }: {
+      slug: string;
+      ticketId: string;
+      quantity?: number;
+      price?: number | null;
+      ticketName?: string | null;
+      eventId?: string | null;
+      userId?: string | null;
+      waves?: unknown[];
+    }) => {
+      setDados((prev) => {
+        const safeWaves =
+          Array.isArray(waves)
+            ? waves
+            : prev?.waves && Array.isArray(prev.waves)
+            ? prev.waves
+            : [];
 
-      return {
-        slug,
-        ticketId,
-        quantity,
-        price,
-        ticketName,
-        eventId,
-        userId,
-        waves: safeWaves,
-        additional: prev?.additional ?? {},
-      };
-    });
+        return {
+          slug,
+          ticketId,
+          quantity,
+          price,
+          ticketName,
+          eventId,
+          userId,
+          waves: safeWaves,
+          additional: prev?.additional ?? {},
+        };
+      });
 
-    setPasso(1);
-    setIsOpen(true);
-  }
+      setPasso(1);
+      setIsOpen(true);
+    },
+    [],
+  );
 
-  function fecharCheckout() {
+  const fecharCheckout = useCallback(() => {
     setIsOpen(false);
     setPasso(1);
     setDados(null);
-  }
+    setBreakdown(null);
+  }, []);
 
-  function irParaPasso(novoPasso: 1 | 2 | 3) {
+  const irParaPasso = useCallback((novoPasso: 1 | 2 | 3) => {
     setPasso(novoPasso);
-  }
+  }, []);
 
-  function atualizarDados(patch: Partial<DadosCheckout>) {
+  const atualizarDados = useCallback((patch: Partial<DadosCheckout>) => {
     setDados((prev) => (prev ? { ...prev, ...patch } : prev));
-  }
+  }, []);
+
+  const value = useMemo(
+    () => ({
+      isOpen,
+      passo,
+      dados,
+      breakdown,
+      setBreakdown,
+      abrirCheckout,
+      fecharCheckout,
+      irParaPasso,
+      atualizarDados,
+    }),
+    [isOpen, passo, dados, breakdown, abrirCheckout, fecharCheckout, irParaPasso, atualizarDados],
+  );
 
   return (
-    <CheckoutContext.Provider
-      value={{ isOpen, passo, dados, abrirCheckout, fecharCheckout, irParaPasso, atualizarDados }}
-    >
+    <CheckoutContext.Provider value={value}>
       {children}
     </CheckoutContext.Provider>
   );

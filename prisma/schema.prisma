@@ -1,40 +1,88 @@
 generator client {
   provider = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
   provider = "postgresql"
   schemas  = ["app_v3", "auth"]
+  extensions = [citext()]
+}
+
+enum NotificationType {
+  ORGANIZER_INVITE
+  ORGANIZER_TRANSFER
+  STAFF_INVITE
+  STAFF_ROLE_CHANGE
+  EVENT_SALE
+  EVENT_PAYOUT_STATUS
+  STRIPE_STATUS
+  FRIEND_REQUEST
+  FRIEND_ACCEPT
+  EVENT_REMINDER
+  CHECKIN_READY
+  TICKET_SHARED
+  MARKETING_PROMO_ALERT
+  SYSTEM_ANNOUNCE
+  FOLLOWED_YOU
+  TICKET_TRANSFER_RECEIVED
+  TICKET_TRANSFER_ACCEPTED
+  TICKET_TRANSFER_DECLINED
+  CLUB_INVITE
+  NEW_EVENT_FROM_FOLLOWED_ORGANIZER
+
+  @@schema("app_v3")
+}
+
+enum NotificationPriority {
+  LOW
+  NORMAL
+  HIGH
+
+  @@schema("app_v3")
+}
+
+enum OrgType {
+  PLATFORM
+  EXTERNAL
+
+  @@schema("app_v3")
 }
 
 /// Perfil base do utilizador ORYA (1-1 com auth.users)
 model Profile {
-  id                                     String      @id @db.Uuid
-  username                               String?     @unique @db.Citext
-  fullName                               String?     @map("full_name")
-  avatarUrl                              String?     @map("avatar_url")
+  id                                     String                  @id @db.Uuid
+  username                               String?                 @unique @db.Citext
+  fullName                               String?                 @map("full_name")
+  avatarUrl                              String?                 @map("avatar_url")
   bio                                    String?
   city                                   String?
-  favouriteCategories                    String[]    @default([]) @map("favourite_categories")
-  onboardingDone                         Boolean     @default(false) @map("onboarding_done")
+  favouriteCategories                    String[]                @default([]) @map("favourite_categories")
+  onboardingDone                         Boolean                 @default(false) @map("onboarding_done")
   /// roles do user: ["user"], ["user","organizer"], ["user","admin"], etc.
-  roles                                  String[]    @default(["user"])
-  createdAt                              DateTime    @default(now()) @map("created_at")
-  updatedAt                              DateTime    @default(now()) @updatedAt @map("updated_at")
-  allowEmailNotifications                Boolean     @default(true) @map("allow_email_notifications")
-  allowEventReminders                    Boolean     @default(true) @map("allow_event_reminders")
-  allowFriendRequests                    Boolean     @default(true) @map("allow_friend_requests")
-  deletedAt                              DateTime?   @map("deleted_at") @db.Timestamp(6)
-  isDeleted                              Boolean     @default(false) @map("is_deleted")
-  visibility                             Visibility  @default(PUBLIC)
-  is_verified                            Boolean     @default(false)
-  contactPhone                           String?     @map("contact_phone")
-  follows_follows_follower_idToprofiles  follows[]   @relation("follows_follower_idToprofiles")
-  follows_follows_following_idToprofiles follows[]   @relation("follows_following_idToprofiles")
+  roles                                  String[]                @default(["user"])
+  createdAt                              DateTime                @default(now()) @map("created_at")
+  updatedAt                              DateTime                @default(now()) @updatedAt @map("updated_at")
+  allowEmailNotifications                Boolean                 @default(true) @map("allow_email_notifications")
+  allowEventReminders                    Boolean                 @default(true) @map("allow_event_reminders")
+  allowFriendRequests                    Boolean                 @default(true) @map("allow_friend_requests")
+  deletedAt                              DateTime?               @map("deleted_at") @db.Timestamp(6)
+  isDeleted                              Boolean                 @default(false) @map("is_deleted")
+  visibility                             Visibility              @default(PUBLIC)
+  is_verified                            Boolean                 @default(false)
+  contactPhone                           String?                 @map("contact_phone")
+  follows_follows_follower_idToprofiles  follows[]               @relation("follows_follower_idToprofiles")
+  follows_follows_following_idToprofiles follows[]               @relation("follows_following_idToprofiles")
   organizers                             Organizer[]
   organizerMembers                       OrganizerMember[]
-  eventsOwned                            Event[]     @relation("EventOwner")
-  users                                  users       @relation(fields: [id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  organizerInvitesSent                   OrganizerMemberInvite[] @relation("OrganizerMemberInviteInviter")
+  organizerInvitesReceived               OrganizerMemberInvite[] @relation("OrganizerMemberInviteTarget")
+  eventsOwned                            Event[]                 @relation("EventOwner")
+  padelPairingSlots                      PadelPairingSlot[]
+  notifications                          Notification[]
+  notificationsSent                      Notification[]         @relation("NotificationSender")
+  notificationPreference                 NotificationPreference?
+  saleSummaries                          SaleSummary[]
 
   @@map("profiles")
   @@schema("app_v3")
@@ -42,27 +90,63 @@ model Profile {
 
 /// Entidade organizadora (marca, página de eventos)
 model Organizer {
-  id                    Int               @id @default(autoincrement())
-  displayName           String            @map("display_name")
-  username              String?           @unique @db.Citext
-  stripeAccountId       String?           @map("stripe_account_id")
-  status                OrganizerStatus   @default(PENDING)
-  createdAt             DateTime          @default(now()) @map("created_at")
-  updatedAt             DateTime          @default(now()) @updatedAt @map("updated_at")
-  userId                String?           @map("user_id") @db.Uuid
-  feeMode               FeeMode           @default(ADDED) @map("fee_mode")
-  platformFeeBps        Int               @default(200) @map("platform_fee_bps")
-  platformFeeFixedCents Int               @default(0) @map("platform_fee_fixed_cents")
-  stripeChargesEnabled  Boolean           @default(false) @map("stripe_charges_enabled")
-  stripePayoutsEnabled  Boolean           @default(false) @map("stripe_payouts_enabled")
-  entityType            String?           @map("entity_type")
-  businessName          String?           @map("business_name")
-  city                  String?           @map("city")
-  payoutIban            String?           @map("payout_iban")
-  events                Event[]
-  user                  Profile?          @relation(fields: [userId], references: [id], onUpdate: NoAction)
-  staffAssignments      StaffAssignment[]
-  members               OrganizerMember[]
+  id                     Int                     @id @default(autoincrement())
+  displayName            String                  @map("display_name")
+  username               String?                 @unique @db.Citext
+  stripeAccountId        String?                 @map("stripe_account_id")
+  status                 OrganizerStatus         @default(PENDING)
+  createdAt              DateTime                @default(now()) @map("created_at")
+  updatedAt              DateTime                @default(now()) @updatedAt @map("updated_at")
+  userId                 String?                 @map("user_id") @db.Uuid
+  feeMode                FeeMode                 @default(ADDED) @map("fee_mode")
+  platformFeeBps         Int                     @default(200) @map("platform_fee_bps")
+  platformFeeFixedCents  Int                     @default(0) @map("platform_fee_fixed_cents")
+  stripeChargesEnabled   Boolean                 @default(false) @map("stripe_charges_enabled")
+  stripePayoutsEnabled   Boolean                 @default(false) @map("stripe_payouts_enabled")
+  entityType             String?                 @map("entity_type")
+  businessName           String?                 @map("business_name")
+  publicName             String?                 @map("public_name")
+  city                   String?                 @map("city")
+  address                String?                 @map("address")
+  showAddressPublicly    Boolean                 @default(false) @map("show_address_publicly")
+  payoutIban             String?                 @map("payout_iban")
+  language               String?                 @default("pt")
+  publicListingEnabled   Boolean                 @default(true) @map("public_listing_enabled")
+  alertsEmail            String?                 @map("alerts_email")
+  alertsSalesEnabled     Boolean                 @default(true) @map("alerts_sales_enabled")
+  alertsPayoutEnabled    Boolean                 @default(false) @map("alerts_payout_enabled")
+  orgType                OrgType                 @default(EXTERNAL) @map("org_type")
+  officialEmail          String?                 @map("official_email")
+  officialEmailVerifiedAt DateTime?              @map("official_email_verified_at")
+  refundFeePayer         RefundFeePayer          @default(CUSTOMER) @map("refund_fee_payer")
+  brandingAvatarUrl      String?                 @map("branding_avatar_url")
+  brandingPrimaryColor   String?                 @map("branding_primary_color")
+  brandingSecondaryColor String?                 @map("branding_secondary_color")
+  organizationKind       OrganizationKind        @default(PESSOA_SINGULAR) @map("organization_kind")
+  padelDefaultShortName  String?                 @map("padel_default_short_name")
+  padelDefaultCity       String?                 @map("padel_default_city")
+  padelDefaultAddress    String?                 @map("padel_default_address")
+  padelDefaultCourts     Int                     @default(0) @map("padel_default_courts")
+  padelDefaultHours      String?                 @map("padel_default_hours")
+  padelDefaultRuleSetId  Int?                    @map("padel_default_rule_set_id")
+  padelFavoriteCategories Int[]                  @default([]) @map("padel_favorite_categories")
+  events                 Event[]
+  user                   Profile?                @relation(fields: [userId], references: [id], onUpdate: NoAction)
+  staffAssignments       StaffAssignment[]
+  members                OrganizerMember[]
+  ownerTransfers         OrganizerOwnerTransfer[]
+  officialEmailRequests  OrganizerOfficialEmailRequest[]
+  auditLogs              OrganizationAuditLog[]
+  padelPlayers           PadelPlayerProfile[]
+  padelCategories        PadelCategory[]
+  padelRuleSets          PadelRuleSet[]          @relation("OrganizerPadelRuleSets")
+  padelTournaments       PadelTournamentConfig[]
+  padelRankingEntries    PadelRankingEntry[]
+  padelPairings          PadelPairing[]
+  padelClubs             PadelClub[]
+  memberInvites          OrganizerMemberInvite[]
+  notifications          Notification[]          @relation("NotificationOrganizer")
+  padelDefaultRuleSet    PadelRuleSet?           @relation("OrganizerPadelDefaultRuleSet", fields: [padelDefaultRuleSetId], references: [id], onDelete: SetNull)
 
   @@index([userId])
   @@map("organizers")
@@ -81,32 +165,194 @@ model GlobalUsername {
   @@schema("app_v3")
 }
 
+model Notification {
+  id        String               @id @default(uuid()) @db.Uuid
+  userId    String               @map("user_id") @db.Uuid
+  type      NotificationType
+  title     String?
+  body      String?
+  payload   Json?                @default("{}")
+  ctaUrl    String?              @map("cta_url")
+  ctaLabel  String?              @map("cta_label")
+  priority  NotificationPriority @default(NORMAL)
+  fromUserId String?             @map("from_user_id") @db.Uuid
+  organizerId Int?               @map("organizer_id")
+  eventId    Int?                @map("event_id")
+  ticketId   String?             @map("ticket_id")
+  inviteId   String?             @map("invite_id") @db.Uuid
+  isRead     Boolean             @default(false) @map("is_read")
+  readAt     DateTime?           @map("read_at")
+  seenAt     DateTime?           @map("seen_at")
+  expiresAt  DateTime?           @map("expires_at")
+  createdAt  DateTime            @default(now()) @map("created_at")
+
+  user      Profile                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fromUser  Profile?                 @relation("NotificationSender", fields: [fromUserId], references: [id], onDelete: SetNull)
+  organizer Organizer?               @relation("NotificationOrganizer", fields: [organizerId], references: [id], onDelete: SetNull)
+  event     Event?                   @relation("NotificationEvent", fields: [eventId], references: [id], onDelete: SetNull)
+  ticket    Ticket?                  @relation("NotificationTicket", fields: [ticketId], references: [id], onDelete: SetNull)
+  invite    OrganizerMemberInvite?   @relation("NotificationInvite", fields: [inviteId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([userId, readAt])
+  @@index([fromUserId])
+  @@index([organizerId])
+  @@index([eventId])
+  @@index([ticketId])
+  @@index([inviteId])
+  @@map("notifications")
+  @@schema("app_v3")
+}
+
+model NotificationPreference {
+  userId                   String   @id @db.Uuid
+  allowEmailNotifications  Boolean  @default(true) @map("allow_email_notifications")
+  allowEventReminders      Boolean  @default(true) @map("allow_event_reminders")
+  allowFriendRequests      Boolean  @default(true) @map("allow_friend_requests")
+  allowSalesAlerts         Boolean  @default(true) @map("allow_sales_alerts")
+  allowSystemAnnouncements Boolean  @default(true) @map("allow_system_announcements")
+  createdAt                DateTime @default(now()) @map("created_at")
+  updatedAt                DateTime @default(now()) @updatedAt @map("updated_at")
+
+  user Profile @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notification_preferences")
+  @@schema("app_v3")
+}
+
 enum OrganizerMemberRole {
   OWNER
+  CO_OWNER
   ADMIN
   STAFF
-  CHECKIN_ONLY
+  VIEWER
+
+  @@schema("app_v3")
+}
+
+enum OrganizerOwnerTransferStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  EXPIRED
+
+  @@schema("app_v3")
+}
+
+enum OrganizerEmailRequestStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  EXPIRED
 
   @@schema("app_v3")
 }
 
 model OrganizerMember {
-  id              String               @id @default(uuid()) @db.Uuid
-  organizerId     Int                  @map("organizer_id")
-  userId          String               @map("user_id") @db.Uuid
+  id              String              @id @default(uuid()) @db.Uuid
+  organizerId     Int                 @map("organizer_id")
+  userId          String              @map("user_id") @db.Uuid
   role            OrganizerMemberRole
-  invitedByUserId String?              @map("invited_by_user_id") @db.Uuid
-  lastUsedAt      DateTime?            @map("last_used_at")
-  createdAt       DateTime             @default(now()) @map("created_at")
-  updatedAt       DateTime             @default(now()) @map("updated_at")
+  invitedByUserId String?             @map("invited_by_user_id") @db.Uuid
+  lastUsedAt      DateTime?           @map("last_used_at")
+  createdAt       DateTime            @default(now()) @map("created_at")
+  updatedAt       DateTime            @default(now()) @map("updated_at")
 
   organizer Organizer @relation(fields: [organizerId], references: [id], onDelete: Cascade)
   user      Profile   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@unique([organizerId, userId])
   @@index([userId])
   @@index([organizerId, role])
-  @@unique([organizerId, userId])
   @@map("organizer_members")
+  @@schema("app_v3")
+}
+
+model OrganizerMemberInvite {
+  id               String              @id @default(uuid()) @db.Uuid
+  organizerId      Int                 @map("organizer_id")
+  invitedByUserId  String              @map("invited_by_user_id") @db.Uuid
+  targetIdentifier String              @map("target_identifier") @db.Citext
+  targetUserId     String?             @map("target_user_id") @db.Uuid
+  role             OrganizerMemberRole
+  token            String              @unique @db.Uuid
+  expiresAt        DateTime            @map("expires_at")
+  acceptedAt       DateTime?           @map("accepted_at")
+  declinedAt       DateTime?           @map("declined_at")
+  cancelledAt      DateTime?           @map("cancelled_at")
+  createdAt        DateTime            @default(now()) @map("created_at")
+  updatedAt        DateTime            @default(now()) @updatedAt @map("updated_at")
+
+  organizer  Organizer @relation(fields: [organizerId], references: [id], onDelete: Cascade)
+  invitedBy  Profile   @relation("OrganizerMemberInviteInviter", fields: [invitedByUserId], references: [id], onDelete: Cascade)
+  targetUser Profile?  @relation("OrganizerMemberInviteTarget", fields: [targetUserId], references: [id], onDelete: Cascade)
+  notifications Notification[] @relation("NotificationInvite")
+
+  @@index([organizerId])
+  @@index([targetUserId])
+  @@index([targetIdentifier])
+  @@map("organizer_member_invites")
+  @@schema("app_v3")
+}
+
+model OrganizerOwnerTransfer {
+  id           String                         @id @default(uuid()) @db.Uuid
+  organizerId  Int                            @map("organizer_id")
+  fromUserId   String                         @map("from_user_id") @db.Uuid
+  toUserId     String                         @map("to_user_id") @db.Uuid
+  status       OrganizerOwnerTransferStatus   @default(PENDING)
+  token        String                         @unique
+  expiresAt    DateTime                       @map("expires_at")
+  createdAt    DateTime                       @default(now()) @map("created_at")
+  confirmedAt  DateTime?                      @map("confirmed_at")
+  cancelledAt  DateTime?                      @map("cancelled_at")
+
+  organizer    Organizer                      @relation(fields: [organizerId], references: [id], onDelete: Cascade)
+
+  @@index([organizerId])
+  @@index([fromUserId])
+  @@index([toUserId])
+  @@map("organization_owner_transfers")
+  @@schema("app_v3")
+}
+
+model OrganizerOfficialEmailRequest {
+  id                 String                        @id @default(uuid()) @db.Uuid
+  organizerId        Int                           @map("organizer_id")
+  requestedByUserId  String                        @map("requested_by_user_id") @db.Uuid
+  newEmail           String                        @map("new_email")
+  token              String                        @unique
+  status             OrganizerEmailRequestStatus   @default(PENDING)
+  expiresAt          DateTime                      @map("expires_at")
+  createdAt          DateTime                      @default(now()) @map("created_at")
+  confirmedAt        DateTime?                     @map("confirmed_at")
+  cancelledAt        DateTime?                     @map("cancelled_at")
+
+  organizer          Organizer                     @relation(fields: [organizerId], references: [id], onDelete: Cascade)
+
+  @@index([organizerId])
+  @@index([requestedByUserId])
+  @@map("organizer_official_email_requests")
+  @@schema("app_v3")
+}
+
+model OrganizationAuditLog {
+  id           String   @id @default(uuid()) @db.Uuid
+  organizerId  Int      @map("organizer_id")
+  actorUserId  String?  @map("actor_user_id") @db.Uuid
+  action       String
+  fromUserId   String?  @map("from_user_id") @db.Uuid
+  toUserId     String?  @map("to_user_id") @db.Uuid
+  metadata     Json?    @default("{}")
+  ip           String?
+  userAgent    String?  @map("user_agent")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  organizer    Organizer @relation(fields: [organizerId], references: [id], onDelete: Cascade)
+
+  @@index([organizerId])
+  @@index([actorUserId])
+  @@map("organization_audit_logs")
   @@schema("app_v3")
 }
 
@@ -158,6 +404,15 @@ model Event {
   reservations                      TicketReservation[]
   ticketTypes                       TicketType[]
   tickets                           Ticket[]
+  ticketCheckins                    TicketCheckin[]
+  padelTournamentConfig             PadelTournamentConfig?
+  padelTeams                        PadelTeam[]
+  padelMatches                      PadelMatch[]
+  padelRankingEntries               PadelRankingEntry[]
+  padelPairings                     PadelPairing[]
+  saleSummaries                     SaleSummary[]
+  saleLines                         SaleLine[]
+  notifications                     Notification[]          @relation("NotificationEvent")
 
   @@index([type, status])
   @@index([ownerUserId])
@@ -200,6 +455,7 @@ model TicketType {
   reservations  TicketReservation[]
   event         Event               @relation(fields: [eventId], references: [id], onDelete: Cascade)
   tickets       Ticket[]
+  saleLines     SaleLine[]
 
   @@index([eventId])
   @@map("ticket_types")
@@ -208,31 +464,58 @@ model TicketType {
 
 /// Bilhete individual (por utilizador)
 model Ticket {
-  id                    String           @id @default(cuid())
+  id                    String            @id @default(cuid())
   eventId               Int
-  ticketTypeId          Int              @map("ticket_type_id")
-  purchasedAt           DateTime         @default(now()) @map("purchased_at")
-  status                TicketStatus     @default(ACTIVE)
-  qrSecret              String           @unique @map("qr_secret")
-  rotatingSeed          String?          @map("rotating_seed") @db.Uuid
-  pricePaid             Int              @map("price_paid")
-  currency              String           @default("EUR")
-  stripePaymentIntentId String?          @map("stripe_payment_intent_id")
-  usedAt                DateTime?        @map("used_at")
-  userId                String?          @map("user_id") @db.Uuid
-  platformFeeCents      Int              @default(0) @map("platform_fee_cents")
-  totalPaidCents        Int              @default(0) @map("total_paid_cents")
+  ticketTypeId          Int               @map("ticket_type_id")
+  purchasedAt           DateTime          @default(now()) @map("purchased_at")
+  status                TicketStatus      @default(ACTIVE)
+  qrSecret              String            @unique @map("qr_secret")
+  rotatingSeed          String?           @map("rotating_seed") @db.Uuid
+  pricePaid             Int               @map("price_paid")
+  currency              String            @default("EUR")
+  stripePaymentIntentId String?           @map("stripe_payment_intent_id")
+  usedAt                DateTime?         @map("used_at")
+  userId                String?           @map("user_id") @db.Uuid
+  platformFeeCents      Int               @default(0) @map("platform_fee_cents")
+  totalPaidCents        Int               @default(0) @map("total_paid_cents")
+  pairingId             Int?              @map("pairing_id")
+  padelSplitShareCents  Int?              @map("padel_split_share_cents")
+  padelPairingVersion   Int?              @map("padel_pairing_version")
   guestLink             GuestTicketLink?
   resales               TicketResale[]
   transfers             TicketTransfer[]
-  event                 Event            @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  ticketType            TicketType       @relation(fields: [ticketTypeId], references: [id], onDelete: Cascade)
+  createdPadelPairings  PadelPairing[]    @relation("PadelPairingCreatedByTicket")
+  pairing               PadelPairing?     @relation("PairingTickets", fields: [pairingId], references: [id], onDelete: SetNull)
+  pairingSlot           PadelPairingSlot? @relation("TicketPairingSlot")
+  event                 Event             @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  ticketType            TicketType        @relation(fields: [ticketTypeId], references: [id], onDelete: Cascade)
+  notifications         Notification[]    @relation("NotificationTicket")
+  checkins              TicketCheckin[]
 
   @@index([eventId])
   @@index([userId])
   @@index([ticketTypeId])
   @@index([stripePaymentIntentId])
+  @@index([pairingId])
   @@map("tickets")
+  @@schema("app_v3")
+}
+
+model TicketCheckin {
+  id           String    @id @default(uuid()) @db.Uuid
+  ticketId     String    @map("ticket_id")
+  eventId      Int       @map("event_id")
+  staffUserId  String?   @map("staff_user_id") @db.Uuid
+  deviceId     String?   @map("device_id")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  ticket       Ticket    @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  event        Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([eventId])
+  @@index([ticketId])
+  @@index([staffUserId])
+  @@map("ticket_checkins")
   @@schema("app_v3")
 }
 
@@ -247,7 +530,6 @@ model GuestTicketLink {
   migratedAt       DateTime? @map("migrated_at") @db.Timestamptz(6)
   createdAt        DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt        DateTime? @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  users            users?    @relation(fields: [migratedToUserId], references: [id], onUpdate: NoAction)
   ticket           Ticket    @relation(fields: [ticketId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([migratedToUserId], map: "guest_ticket_links_migrated_idx")
@@ -397,6 +679,8 @@ model PaymentEvent {
   id                    Int       @id @default(autoincrement())
   stripePaymentIntentId String    @unique @map("stripe_payment_intent_id")
   status                String    @default("PROCESSING")
+  mode                  PaymentMode @default(LIVE)
+  isTest                Boolean   @default(false) @map("is_test")
   eventId               Int?      @map("event_id")
   userId                String?   @map("user_id") @db.Uuid
   amountCents           Int?      @map("amount_cents")
@@ -408,6 +692,13 @@ model PaymentEvent {
   @@index([stripePaymentIntentId])
   @@index([eventId])
   @@map("payment_events")
+  @@schema("app_v3")
+}
+
+enum PaymentMode {
+  LIVE
+  TEST
+
   @@schema("app_v3")
 }
 
@@ -443,6 +734,8 @@ model PromoCode {
   minTotalCents Int?              @map("min_total_cents")
   event         Event?            @relation(fields: [eventId], references: [id], onUpdate: NoAction, map: "promo_codes_event_fk")
   redemptions   PromoRedemption[]
+  saleSummaries SaleSummary[]
+  saleLines     SaleLine[]
 
   @@index([eventId])
   @@index([eventId, active], map: "promo_codes_event_active_idx")
@@ -467,6 +760,395 @@ model PromoRedemption {
   @@schema("app_v3")
 }
 
+/// Venda agregada por PaymentIntent (fonte de verdade de valores)
+model SaleSummary {
+  id                Int       @id @default(autoincrement())
+  paymentIntentId   String    @unique @map("payment_intent_id")
+  eventId           Int       @map("event_id")
+  userId            String?   @map("user_id") @db.Uuid
+  promoCodeId       Int?      @map("promo_code_id")
+  promoCodeSnapshot String?   @map("promo_code_snapshot")
+  promoLabelSnapshot String?  @map("promo_label_snapshot")
+  promoTypeSnapshot  PromoType? @map("promo_type_snapshot")
+  promoValueSnapshot Int?     @map("promo_value_snapshot")
+  subtotalCents     Int       @map("subtotal_cents")
+  discountCents     Int       @map("discount_cents")
+  platformFeeCents  Int       @map("platform_fee_cents")
+  totalCents        Int       @map("total_cents")
+  netCents          Int       @map("net_cents")
+  feeMode           FeeMode?  @map("fee_mode")
+  currency          String    @default("EUR")
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  promoCode         PromoCode? @relation(fields: [promoCodeId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  event             Event      @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user              Profile?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+  lines             SaleLine[]
+
+  @@index([eventId])
+  @@index([userId])
+  @@index([promoCodeId])
+  @@map("sale_summaries")
+  @@schema("app_v3")
+}
+
+/// Linhas de venda por tipo de bilhete (para analytics, promo e fees)
+model SaleLine {
+  id                    Int       @id @default(autoincrement())
+  saleSummaryId         Int       @map("sale_summary_id")
+  eventId               Int       @map("event_id")
+  ticketTypeId          Int       @map("ticket_type_id")
+  promoCodeId           Int?      @map("promo_code_id")
+  promoCodeSnapshot     String?   @map("promo_code_snapshot")
+  promoLabelSnapshot    String?   @map("promo_label_snapshot")
+  promoTypeSnapshot     PromoType? @map("promo_type_snapshot")
+  promoValueSnapshot    Int?      @map("promo_value_snapshot")
+  quantity              Int
+  unitPriceCents        Int       @map("unit_price_cents")
+  discountPerUnitCents  Int       @default(0) @map("discount_per_unit_cents")
+  grossCents            Int       @map("gross_cents")
+  netCents              Int       @map("net_cents")
+  platformFeeCents      Int       @default(0) @map("platform_fee_cents")
+  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  saleSummary           SaleSummary @relation(fields: [saleSummaryId], references: [id], onDelete: Cascade)
+  event                 Event       @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  ticketType            TicketType  @relation(fields: [ticketTypeId], references: [id], onDelete: Cascade)
+  promoCode             PromoCode?  @relation(fields: [promoCodeId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([saleSummaryId])
+  @@index([eventId])
+  @@index([ticketTypeId])
+  @@index([promoCodeId])
+  @@map("sale_lines")
+  @@schema("app_v3")
+}
+
+/// Padel MVP: perfis de jogadores do clube
+model PadelPlayerProfile {
+  id          Int      @id @default(autoincrement())
+  organizerId Int      @map("organizer_id")
+  userId      String?  @map("user_id") @db.Uuid
+  displayName String?  @map("display_name")
+  fullName    String   @map("full_name")
+  email       String?  @db.Citext
+  phone       String?
+  gender      String?
+  level       String?
+  preferredSide PadelPreferredSide? @map("preferred_side")
+  clubName    String?  @map("club_name")
+  birthDate   DateTime? @map("birth_date")
+  isActive    Boolean  @default(true) @map("is_active")
+  notes       String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at")
+
+  organizer Organizer           @relation(fields: [organizerId], references: [id], onDelete: Cascade)
+  teams1    PadelTeam[]         @relation("PadelTeamPlayer1")
+  teams2    PadelTeam[]         @relation("PadelTeamPlayer2")
+  rankings  PadelRankingEntry[]
+  pairingSlots PadelPairingSlot[]
+
+  @@unique([organizerId, email], map: "padel_player_profiles_uniq_email")
+  @@map("padel_player_profiles")
+  @@schema("app_v3")
+}
+
+/// Clubes de Padel por organizador
+model PadelClub {
+  id                   Int      @id @default(autoincrement())
+  organizerId          Int      @map("organizer_id")
+  name                 String
+  shortName            String?  @map("short_name")
+  city                 String?
+  address              String?
+  courtsCount          Int      @default(1) @map("courts_count")
+  hours                String?
+  favoriteCategoryIds  Int[]    @default([]) @map("favorite_category_ids")
+  slug                 String?  @unique
+  isActive             Boolean  @default(true) @map("is_active")
+  isDefault            Boolean  @default(false) @map("is_default")
+  deletedAt            DateTime? @map("deleted_at") @db.Timestamp(6)
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @default(now()) @updatedAt @map("updated_at")
+
+  organizer            Organizer             @relation(fields: [organizerId], references: [id], onDelete: Cascade)
+  tournaments          PadelTournamentConfig[]
+  courts               PadelClubCourt[]
+  staff                PadelClubStaff[]
+
+  @@index([organizerId])
+  @@map("padel_clubs")
+  @@schema("app_v3")
+}
+
+model PadelClubCourt {
+  id            Int      @id @default(autoincrement())
+  padelClubId   Int      @map("padel_club_id")
+  name          String
+  description   String?
+  surface       String?
+  indoor        Boolean  @default(false)
+  isActive      Boolean  @default(true) @map("is_active")
+  displayOrder  Int      @default(0) @map("display_order")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @default(now()) @updatedAt @map("updated_at")
+
+  club PadelClub @relation(fields: [padelClubId], references: [id], onDelete: Cascade)
+
+  @@index([padelClubId])
+  @@map("padel_club_courts")
+  @@schema("app_v3")
+}
+
+model PadelClubStaff {
+  id           Int      @id @default(autoincrement())
+  padelClubId  Int      @map("padel_club_id")
+  userId       String?  @map("user_id") @db.Uuid
+  email        String?  @db.Citext
+  role         String
+  inheritToEvents Boolean @default(true) @map("inherit_to_events")
+  isActive     Boolean  @default(true) @map("is_active")
+  deletedAt    DateTime? @map("deleted_at") @db.Timestamp(6)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at")
+
+  club PadelClub @relation(fields: [padelClubId], references: [id], onDelete: Cascade)
+
+  @@index([padelClubId])
+  @@map("padel_club_staff")
+  @@schema("app_v3")
+}
+
+enum PadelPreferredSide {
+  ESQUERDA
+  DIREITA
+  QUALQUER
+
+  @@schema("app_v3")
+}
+
+/// Categorias / níveis de Padel
+model PadelCategory {
+  id                Int      @id @default(autoincrement())
+  organizerId       Int      @map("organizer_id")
+  label             String
+  genderRestriction String?  @map("gender_restriction")
+  minLevel          String?  @map("min_level")
+  maxLevel          String?  @map("max_level")
+  isDefault         Boolean  @default(false) @map("is_default")
+  isActive          Boolean  @default(true) @map("is_active")
+  season            String?
+  year              Int?
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @default(now()) @updatedAt @map("updated_at")
+
+  organizer         Organizer               @relation(fields: [organizerId], references: [id], onDelete: Cascade)
+  tournamentConfigs PadelTournamentConfig[]
+  teams             PadelTeam[]
+  matches           PadelMatch[]
+  pairings          PadelPairing[]
+
+  @@map("padel_categories")
+  @@schema("app_v3")
+}
+
+/// Regras base + tabela de pontos por clube
+model PadelRuleSet {
+  id             Int      @id @default(autoincrement())
+  organizerId    Int      @map("organizer_id")
+  name           String
+  tieBreakRules  Json     @default("{}") @map("tie_break_rules")
+  pointsTable    Json     @default("{}") @map("points_table")
+  enabledFormats String[] @default(["TODOS_CONTRA_TODOS", "QUADRO_ELIMINATORIO"]) @map("enabled_formats")
+  season         String?
+  year           Int?
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at")
+
+  organizer   Organizer               @relation("OrganizerPadelRuleSets", fields: [organizerId], references: [id], onDelete: Cascade)
+  defaultForOrganizers Organizer[]    @relation("OrganizerPadelDefaultRuleSet")
+  tournaments PadelTournamentConfig[]
+
+  @@map("padel_rule_sets")
+  @@schema("app_v3")
+}
+
+/// Configuração específica do torneio Padel (por evento)
+model PadelTournamentConfig {
+  id                 Int               @id @default(autoincrement())
+  eventId            Int               @map("event_id")
+  organizerId        Int               @map("organizer_id")
+  padelClubId        Int?              @map("padel_club_id")
+  partnerClubIds     Int[]             @default([]) @map("partner_club_ids")
+  format             PadelFormat
+  numberOfCourts     Int               @default(1) @map("number_of_courts")
+  clubHours          String?           @map("club_hours")
+  ruleSetId          Int?              @map("rule_set_id")
+  defaultCategoryId  Int?              @map("default_category_id")
+  enabledFormats     String[]          @default([]) @map("enabled_formats")
+  padelV2Enabled     Boolean           @default(false) @map("padel_v2_enabled")
+  advancedSettings   Json?             @map("advanced_settings")
+  splitDeadlineHours Int?              @map("split_deadline_hours")
+  autoCancelUnpaid   Boolean           @default(true) @map("auto_cancel_unpaid")
+  allowCaptainAssume Boolean           @default(true) @map("allow_captain_assume")
+  defaultPaymentMode PadelPaymentMode? @map("default_payment_mode")
+  refundFeePayer     RefundFeePayer?   @map("refund_fee_payer")
+  createdAt          DateTime          @default(now()) @map("created_at")
+  updatedAt          DateTime          @default(now()) @updatedAt @map("updated_at")
+
+  event     Event          @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  organizer Organizer      @relation(fields: [organizerId], references: [id], onDelete: Cascade)
+  club      PadelClub?     @relation(fields: [padelClubId], references: [id], onDelete: SetNull)
+  ruleSet   PadelRuleSet?  @relation(fields: [ruleSetId], references: [id], onDelete: SetNull)
+  category  PadelCategory? @relation(fields: [defaultCategoryId], references: [id], onDelete: SetNull)
+
+  @@unique([eventId])
+  @@index([padelClubId])
+  @@map("padel_tournament_configs")
+  @@schema("app_v3")
+}
+
+/// Pairings (duplas) para Padel v2
+model PadelPairing {
+  id                Int                @id @default(autoincrement())
+  eventId           Int                @map("event_id")
+  organizerId       Int                @map("organizer_id")
+  categoryId        Int?               @map("category_id")
+  paymentMode       PadelPaymentMode
+  pairingStatus     PadelPairingStatus @default(INCOMPLETE) @map("pairing_status")
+  createdByUserId   String?            @map("created_by_user_id") @db.Uuid
+  createdByTicketId String?            @map("created_by_ticket_id")
+  inviteToken       String?            @unique @map("invite_token")
+  inviteExpiresAt   DateTime?          @map("invite_expires_at")
+  lockedUntil       DateTime?          @map("locked_until")
+  isPublicOpen      Boolean            @default(false) @map("is_public_open")
+  createdAt         DateTime           @default(now()) @map("created_at")
+  updatedAt         DateTime           @default(now()) @updatedAt @map("updated_at")
+
+  event           Event              @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  organizer       Organizer          @relation(fields: [organizerId], references: [id], onDelete: Cascade)
+  category        PadelCategory?     @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  createdByTicket Ticket?            @relation("PadelPairingCreatedByTicket", fields: [createdByTicketId], references: [id], onDelete: SetNull)
+  slots           PadelPairingSlot[]
+  tickets         Ticket[]           @relation("PairingTickets")
+  matchesA        PadelMatch[]       @relation("MatchPairingA")
+  matchesB        PadelMatch[]       @relation("MatchPairingB")
+  matchesWinner   PadelMatch[]       @relation("MatchWinnerPairing")
+
+  @@index([eventId])
+  @@index([organizerId])
+  @@index([categoryId])
+  @@map("padel_pairings")
+  @@schema("app_v3")
+}
+
+/// Slots de cada pairing (um por jogador)
+model PadelPairingSlot {
+  id             Int                       @id @default(autoincrement())
+  pairingId      Int                       @map("pairing_id")
+  ticketId       String?                   @map("ticket_id")
+  profileId      String?                   @map("profile_id") @db.Uuid
+  playerProfileId Int?                     @map("player_profile_id")
+  slotRole       PadelPairingSlotRole
+  slotStatus     PadelPairingSlotStatus    @default(PENDING) @map("slot_status")
+  paymentStatus  PadelPairingPaymentStatus @default(UNPAID) @map("payment_status")
+  invitedContact String?                   @map("invited_contact")
+  isPublicOpen   Boolean                   @default(false) @map("is_public_open")
+  createdAt      DateTime                  @default(now()) @map("created_at")
+  updatedAt      DateTime                  @default(now()) @updatedAt @map("updated_at")
+
+  pairing        PadelPairing       @relation(fields: [pairingId], references: [id], onDelete: Cascade)
+  ticket         Ticket?            @relation("TicketPairingSlot", fields: [ticketId], references: [id], onDelete: SetNull)
+  profile        Profile?           @relation(fields: [profileId], references: [id], onDelete: SetNull)
+  playerProfile  PadelPlayerProfile? @relation(fields: [playerProfileId], references: [id], onDelete: SetNull)
+
+  @@unique([ticketId])
+  @@index([pairingId])
+  @@index([profileId])
+  @@index([playerProfileId])
+  @@map("padel_pairing_slots")
+  @@schema("app_v3")
+}
+
+/// Equipas / duplas
+model PadelTeam {
+  id                Int      @id @default(autoincrement())
+  eventId           Int      @map("event_id")
+  categoryId        Int?     @map("category_id")
+  player1Id         Int?     @map("player1_id")
+  player2Id         Int?     @map("player2_id")
+  isFromMatchmaking Boolean  @default(false) @map("is_from_matchmaking")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @default(now()) @updatedAt @map("updated_at")
+
+  event    Event               @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  category PadelCategory?      @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  player1  PadelPlayerProfile? @relation("PadelTeamPlayer1", fields: [player1Id], references: [id], onDelete: SetNull)
+  player2  PadelPlayerProfile? @relation("PadelTeamPlayer2", fields: [player2Id], references: [id], onDelete: SetNull)
+  matchesA PadelMatch[]        @relation("PadelMatchTeamA")
+  matchesB PadelMatch[]        @relation("PadelMatchTeamB")
+
+  @@map("padel_teams")
+  @@schema("app_v3")
+}
+
+/// Jogos
+model PadelMatch {
+  id          Int              @id @default(autoincrement())
+  eventId     Int              @map("event_id")
+  categoryId  Int?             @map("category_id")
+  courtNumber Int?             @map("court_number")
+  courtName   String?          @map("court_name")
+  startTime   DateTime?        @map("start_time")
+  roundLabel  String?          @map("round_label")
+  teamAId     Int?             @map("team_a_id")
+  teamBId     Int?             @map("team_b_id")
+  score       Json             @default("{}")
+  scoreSets   Json?            @map("score_sets")
+  pairingAId  Int?             @map("pairing_a_id")
+  pairingBId  Int?             @map("pairing_b_id")
+  winnerPairingId Int?         @map("winner_pairing_id")
+  groupLabel  String?          @map("group_label")
+  roundType   String?          @map("round_type")
+  status      PadelMatchStatus @default(PENDING)
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @default(now()) @updatedAt @map("updated_at")
+
+  event    Event          @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  category PadelCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  teamA    PadelTeam?     @relation("PadelMatchTeamA", fields: [teamAId], references: [id], onDelete: SetNull)
+  teamB    PadelTeam?     @relation("PadelMatchTeamB", fields: [teamBId], references: [id], onDelete: SetNull)
+  pairingA PadelPairing?  @relation("MatchPairingA", fields: [pairingAId], references: [id], onDelete: SetNull)
+  pairingB PadelPairing?  @relation("MatchPairingB", fields: [pairingBId], references: [id], onDelete: SetNull)
+  winnerPairing PadelPairing? @relation("MatchWinnerPairing", fields: [winnerPairingId], references: [id], onDelete: SetNull)
+
+  @@map("padel_matches")
+  @@schema("app_v3")
+}
+
+/// Ranking básico por torneio/clube
+model PadelRankingEntry {
+  id          Int      @id @default(autoincrement())
+  organizerId Int      @map("organizer_id")
+  playerId    Int      @map("player_id")
+  eventId     Int      @map("event_id")
+  points      Int      @default(0)
+  position    Int?
+  level       String?
+  season      String?
+  year        Int?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  organizer Organizer          @relation(fields: [organizerId], references: [id], onDelete: Cascade)
+  player    PadelPlayerProfile @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  event     Event              @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@map("padel_ranking_entries")
+  @@schema("app_v3")
+}
+
 model follows {
   id                                      Int      @id @default(autoincrement())
   follower_id                             String   @db.Uuid
@@ -483,397 +1165,6 @@ model follows {
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
-model audit_log_entries {
-  instance_id String?   @db.Uuid
-  id          String    @id @db.Uuid
-  payload     Json?     @db.Json
-  created_at  DateTime? @db.Timestamptz(6)
-  ip_address  String    @default("") @db.VarChar(64)
-
-  @@index([instance_id], map: "audit_logs_instance_id_idx")
-  @@schema("auth")
-}
-
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
-model flow_state {
-  id                     String                @id @db.Uuid
-  user_id                String?               @db.Uuid
-  auth_code              String
-  code_challenge_method  code_challenge_method
-  code_challenge         String
-  provider_type          String
-  provider_access_token  String?
-  provider_refresh_token String?
-  created_at             DateTime?             @db.Timestamptz(6)
-  updated_at             DateTime?             @db.Timestamptz(6)
-  authentication_method  String
-  auth_code_issued_at    DateTime?             @db.Timestamptz(6)
-  saml_relay_states      saml_relay_states[]
-
-  @@index([created_at(sort: Desc)])
-  @@index([auth_code], map: "idx_auth_code")
-  @@index([user_id, authentication_method], map: "idx_user_id_auth_method")
-  @@schema("auth")
-}
-
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
-model identities {
-  provider_id     String
-  user_id         String    @db.Uuid
-  identity_data   Json
-  provider        String
-  last_sign_in_at DateTime? @db.Timestamptz(6)
-  created_at      DateTime? @db.Timestamptz(6)
-  updated_at      DateTime? @db.Timestamptz(6)
-  email           String?   @default(dbgenerated("lower((identity_data ->> 'email'::text))"))
-  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  users           users     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-
-  @@unique([provider_id, provider], map: "identities_provider_id_provider_unique")
-  @@index([email])
-  @@index([user_id])
-  @@schema("auth")
-}
-
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
-model instances {
-  id              String    @id @db.Uuid
-  uuid            String?   @db.Uuid
-  raw_base_config String?
-  created_at      DateTime? @db.Timestamptz(6)
-  updated_at      DateTime? @db.Timestamptz(6)
-
-  @@schema("auth")
-}
-
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
-model mfa_amr_claims {
-  session_id            String   @db.Uuid
-  created_at            DateTime @db.Timestamptz(6)
-  updated_at            DateTime @db.Timestamptz(6)
-  authentication_method String
-  id                    String   @id(map: "amr_id_pk") @db.Uuid
-  sessions              sessions @relation(fields: [session_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-
-  @@unique([session_id, authentication_method], map: "mfa_amr_claims_session_id_authentication_method_pkey")
-  @@schema("auth")
-}
-
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
-model mfa_challenges {
-  id                     String      @id @db.Uuid
-  factor_id              String      @db.Uuid
-  created_at             DateTime    @db.Timestamptz(6)
-  verified_at            DateTime?   @db.Timestamptz(6)
-  ip_address             String      @db.Inet
-  otp_code               String?
-  web_authn_session_data Json?
-  mfa_factors            mfa_factors @relation(fields: [factor_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "mfa_challenges_auth_factor_id_fkey")
-
-  @@index([created_at(sort: Desc)], map: "mfa_challenge_created_at_idx")
-  @@schema("auth")
-}
-
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
-model mfa_factors {
-  id                           String           @id @db.Uuid
-  user_id                      String           @db.Uuid
-  friendly_name                String?
-  factor_type                  factor_type
-  status                       factor_status
-  created_at                   DateTime         @db.Timestamptz(6)
-  updated_at                   DateTime         @db.Timestamptz(6)
-  secret                       String?
-  phone                        String?
-  last_challenged_at           DateTime?        @unique @db.Timestamptz(6)
-  web_authn_credential         Json?
-  web_authn_aaguid             String?          @db.Uuid
-  last_webauthn_challenge_data Json?
-  mfa_challenges               mfa_challenges[]
-  users                        users            @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-
-  @@unique([user_id, phone], map: "unique_phone_factor_per_user")
-  @@index([user_id, created_at], map: "factor_id_created_at_idx")
-  @@index([user_id])
-  @@schema("auth")
-}
-
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-model oauth_authorizations {
-  id                    String                     @id @db.Uuid
-  authorization_id      String                     @unique
-  client_id             String                     @db.Uuid
-  user_id               String?                    @db.Uuid
-  redirect_uri          String
-  scope                 String
-  state                 String?
-  resource              String?
-  code_challenge        String?
-  code_challenge_method code_challenge_method?
-  response_type         oauth_response_type        @default(code)
-  status                oauth_authorization_status @default(pending)
-  authorization_code    String?                    @unique
-  created_at            DateTime                   @default(now()) @db.Timestamptz(6)
-  expires_at            DateTime                   @default(dbgenerated("(now() + '00:03:00'::interval)")) @db.Timestamptz(6)
-  approved_at           DateTime?                  @db.Timestamptz(6)
-  nonce                 String?
-  oauth_clients         oauth_clients              @relation(fields: [client_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  users                 users?                     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-
-  @@schema("auth")
-}
-
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-model oauth_clients {
-  id                   String                  @id @db.Uuid
-  client_secret_hash   String?
-  registration_type    oauth_registration_type
-  redirect_uris        String
-  grant_types          String
-  client_name          String?
-  client_uri           String?
-  logo_uri             String?
-  created_at           DateTime                @default(now()) @db.Timestamptz(6)
-  updated_at           DateTime                @default(now()) @db.Timestamptz(6)
-  deleted_at           DateTime?               @db.Timestamptz(6)
-  client_type          oauth_client_type       @default(confidential)
-  oauth_authorizations oauth_authorizations[]
-  oauth_consents       oauth_consents[]
-  sessions             sessions[]
-
-  @@index([deleted_at])
-  @@schema("auth")
-}
-
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-model oauth_consents {
-  id            String        @id @db.Uuid
-  user_id       String        @db.Uuid
-  client_id     String        @db.Uuid
-  scopes        String
-  granted_at    DateTime      @default(now()) @db.Timestamptz(6)
-  revoked_at    DateTime?     @db.Timestamptz(6)
-  oauth_clients oauth_clients @relation(fields: [client_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  users         users         @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-
-  @@unique([user_id, client_id], map: "oauth_consents_user_client_unique")
-  @@index([user_id, granted_at(sort: Desc)], map: "oauth_consents_user_order_idx")
-  @@schema("auth")
-}
-
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
-model one_time_tokens {
-  id         String              @id @db.Uuid
-  user_id    String              @db.Uuid
-  token_type one_time_token_type
-  token_hash String
-  relates_to String
-  created_at DateTime            @default(now()) @db.Timestamp(6)
-  updated_at DateTime            @default(now()) @db.Timestamp(6)
-  users      users               @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-
-  @@unique([user_id, token_type])
-  @@index([relates_to], map: "one_time_tokens_relates_to_hash_idx", type: Hash)
-  @@index([token_hash], map: "one_time_tokens_token_hash_hash_idx", type: Hash)
-  @@schema("auth")
-}
-
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
-model refresh_tokens {
-  instance_id String?   @db.Uuid
-  id          BigInt    @id @default(autoincrement())
-  token       String?   @unique(map: "refresh_tokens_token_unique") @db.VarChar(255)
-  user_id     String?   @db.VarChar(255)
-  revoked     Boolean?
-  created_at  DateTime? @db.Timestamptz(6)
-  updated_at  DateTime? @db.Timestamptz(6)
-  parent      String?   @db.VarChar(255)
-  session_id  String?   @db.Uuid
-  sessions    sessions? @relation(fields: [session_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-
-  @@index([instance_id])
-  @@index([instance_id, user_id])
-  @@index([parent])
-  @@index([session_id, revoked])
-  @@index([updated_at(sort: Desc)])
-  @@schema("auth")
-}
-
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
-model saml_providers {
-  id                String        @id @db.Uuid
-  sso_provider_id   String        @db.Uuid
-  entity_id         String        @unique
-  metadata_xml      String
-  metadata_url      String?
-  attribute_mapping Json?
-  created_at        DateTime?     @db.Timestamptz(6)
-  updated_at        DateTime?     @db.Timestamptz(6)
-  name_id_format    String?
-  sso_providers     sso_providers @relation(fields: [sso_provider_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-
-  @@index([sso_provider_id])
-  @@schema("auth")
-}
-
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
-model saml_relay_states {
-  id              String        @id @db.Uuid
-  sso_provider_id String        @db.Uuid
-  request_id      String
-  for_email       String?
-  redirect_to     String?
-  created_at      DateTime?     @db.Timestamptz(6)
-  updated_at      DateTime?     @db.Timestamptz(6)
-  flow_state_id   String?       @db.Uuid
-  flow_state      flow_state?   @relation(fields: [flow_state_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  sso_providers   sso_providers @relation(fields: [sso_provider_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-
-  @@index([created_at(sort: Desc)])
-  @@index([for_email])
-  @@index([sso_provider_id])
-  @@schema("auth")
-}
-
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
-model schema_migrations {
-  version String @id @db.VarChar(255)
-
-  @@schema("auth")
-}
-
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
-model sessions {
-  id                     String           @id @db.Uuid
-  user_id                String           @db.Uuid
-  created_at             DateTime?        @db.Timestamptz(6)
-  updated_at             DateTime?        @db.Timestamptz(6)
-  factor_id              String?          @db.Uuid
-  aal                    aal_level?
-  not_after              DateTime?        @db.Timestamptz(6)
-  refreshed_at           DateTime?        @db.Timestamp(6)
-  user_agent             String?
-  ip                     String?          @db.Inet
-  tag                    String?
-  oauth_client_id        String?          @db.Uuid
-  refresh_token_hmac_key String?
-  refresh_token_counter  BigInt?
-  scopes                 String?
-  mfa_amr_claims         mfa_amr_claims[]
-  refresh_tokens         refresh_tokens[]
-  oauth_clients          oauth_clients?   @relation(fields: [oauth_client_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  users                  users            @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-
-  @@index([not_after(sort: Desc)])
-  @@index([oauth_client_id])
-  @@index([user_id])
-  @@index([user_id, created_at], map: "user_id_created_at_idx")
-  @@schema("auth")
-}
-
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
-/// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
-model sso_domains {
-  id              String        @id @db.Uuid
-  sso_provider_id String        @db.Uuid
-  domain          String
-  created_at      DateTime?     @db.Timestamptz(6)
-  updated_at      DateTime?     @db.Timestamptz(6)
-  sso_providers   sso_providers @relation(fields: [sso_provider_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-
-  @@index([sso_provider_id])
-  @@schema("auth")
-}
-
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
-/// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
-model sso_providers {
-  id                String              @id @db.Uuid
-  resource_id       String?
-  created_at        DateTime?           @db.Timestamptz(6)
-  updated_at        DateTime?           @db.Timestamptz(6)
-  disabled          Boolean?
-  saml_providers    saml_providers[]
-  saml_relay_states saml_relay_states[]
-  sso_domains       sso_domains[]
-
-  @@index([resource_id], map: "sso_providers_resource_id_pattern_idx")
-  @@schema("auth")
-}
-
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
-/// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
-model users {
-  instance_id                 String?                @db.Uuid
-  id                          String                 @id @db.Uuid
-  aud                         String?                @db.VarChar(255)
-  role                        String?                @db.VarChar(255)
-  email                       String?                @db.VarChar(255)
-  encrypted_password          String?                @db.VarChar(255)
-  email_confirmed_at          DateTime?              @db.Timestamptz(6)
-  invited_at                  DateTime?              @db.Timestamptz(6)
-  confirmation_token          String?                @db.VarChar(255)
-  confirmation_sent_at        DateTime?              @db.Timestamptz(6)
-  recovery_token              String?                @db.VarChar(255)
-  recovery_sent_at            DateTime?              @db.Timestamptz(6)
-  email_change_token_new      String?                @db.VarChar(255)
-  email_change                String?                @db.VarChar(255)
-  email_change_sent_at        DateTime?              @db.Timestamptz(6)
-  last_sign_in_at             DateTime?              @db.Timestamptz(6)
-  raw_app_meta_data           Json?
-  raw_user_meta_data          Json?
-  is_super_admin              Boolean?
-  created_at                  DateTime?              @db.Timestamptz(6)
-  updated_at                  DateTime?              @db.Timestamptz(6)
-  phone                       String?                @unique
-  phone_confirmed_at          DateTime?              @db.Timestamptz(6)
-  phone_change                String?                @default("")
-  phone_change_token          String?                @default("") @db.VarChar(255)
-  phone_change_sent_at        DateTime?              @db.Timestamptz(6)
-  confirmed_at                DateTime?              @default(dbgenerated("LEAST(email_confirmed_at, phone_confirmed_at)")) @db.Timestamptz(6)
-  email_change_token_current  String?                @default("") @db.VarChar(255)
-  email_change_confirm_status Int?                   @default(0) @db.SmallInt
-  banned_until                DateTime?              @db.Timestamptz(6)
-  reauthentication_token      String?                @default("") @db.VarChar(255)
-  reauthentication_sent_at    DateTime?              @db.Timestamptz(6)
-  is_sso_user                 Boolean                @default(false)
-  deleted_at                  DateTime?              @db.Timestamptz(6)
-  is_anonymous                Boolean                @default(false)
-  guest_ticket_links          GuestTicketLink[]
-  profiles                    Profile?
-  identities                  identities[]
-  mfa_factors                 mfa_factors[]
-  oauth_authorizations        oauth_authorizations[]
-  oauth_consents              oauth_consents[]
-  one_time_tokens             one_time_tokens[]
-  sessions                    sessions[]
-
-  @@index([instance_id])
-  @@index([is_anonymous])
-  @@schema("auth")
-}
-
 enum OrganizerStatus {
   PENDING
   ACTIVE
@@ -911,9 +1202,20 @@ enum EventCategoryType {
 enum EventTemplateType {
   PARTY
   SPORT
+  PADEL
   VOLUNTEERING
   TALK
   OTHER
+
+  @@schema("app_v3")
+}
+
+enum OrganizationKind {
+  CLUBE_PADEL
+  RESTAURANTE
+  EMPRESA_EVENTOS
+  ASSOCIACAO
+  PESSOA_SINGULAR
 
   @@schema("app_v3")
 }
@@ -931,6 +1233,70 @@ enum ResaleMode {
   ALWAYS
   AFTER_SOLD_OUT
   DISABLED
+
+  @@schema("app_v3")
+}
+
+enum PadelFormat {
+  TODOS_CONTRA_TODOS
+  QUADRO_ELIMINATORIO
+  GRUPOS_ELIMINATORIAS
+  CAMPEONATO_LIGA
+  QUADRO_AB
+  NON_STOP
+
+  @@schema("app_v3")
+}
+
+enum RefundFeePayer {
+  ORGANIZER
+  CUSTOMER
+
+  @@schema("app_v3")
+}
+
+enum PadelPaymentMode {
+  FULL
+  SPLIT
+
+  @@schema("app_v3")
+}
+
+enum PadelPairingStatus {
+  INCOMPLETE
+  COMPLETE
+  CANCELLED
+
+  @@schema("app_v3")
+}
+
+enum PadelPairingSlotStatus {
+  PENDING
+  FILLED
+  CANCELLED
+
+  @@schema("app_v3")
+}
+
+enum PadelPairingPaymentStatus {
+  UNPAID
+  PAID
+
+  @@schema("app_v3")
+}
+
+enum PadelPairingSlotRole {
+  CAPTAIN
+  PARTNER
+
+  @@schema("app_v3")
+}
+
+enum PadelMatchStatus {
+  PENDING
+  IN_PROGRESS
+  DONE
+  CANCELLED
 
   @@schema("app_v3")
 }
@@ -1023,74 +1389,4 @@ enum ResaleStatus {
   CANCELLED
 
   @@schema("app_v3")
-}
-
-enum aal_level {
-  aal1
-  aal2
-  aal3
-
-  @@schema("auth")
-}
-
-enum code_challenge_method {
-  s256
-  plain
-
-  @@schema("auth")
-}
-
-enum factor_status {
-  unverified
-  verified
-
-  @@schema("auth")
-}
-
-enum factor_type {
-  totp
-  webauthn
-  phone
-
-  @@schema("auth")
-}
-
-enum oauth_authorization_status {
-  pending
-  approved
-  denied
-  expired
-
-  @@schema("auth")
-}
-
-enum oauth_client_type {
-  public
-  confidential
-
-  @@schema("auth")
-}
-
-enum oauth_registration_type {
-  dynamic
-  manual
-
-  @@schema("auth")
-}
-
-enum oauth_response_type {
-  code
-
-  @@schema("auth")
-}
-
-enum one_time_token_type {
-  confirmation_token
-  reauthentication_token
-  recovery_token
-  email_change_token_new
-  email_change_token_current
-  phone_change_token
-
-  @@schema("auth")
 }

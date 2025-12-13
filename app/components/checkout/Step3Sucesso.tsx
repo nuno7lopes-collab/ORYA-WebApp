@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useCheckout } from "./contextoCheckout";
+import { formatMoney } from "@/lib/money";
 
 export default function Step3Sucesso() {
   const { dados, fecharCheckout } = useCheckout();
@@ -54,6 +55,29 @@ export default function Step3Sucesso() {
       ? dados.additional.guestEmail
       : null;
 
+  const breakdown = (() => {
+    if (!dados.additional || typeof dados.additional !== "object") return null;
+    const subtotalCents = Number(dados.additional.subtotalCents ?? 0);
+    const discountCents = Number(dados.additional.discountCents ?? 0);
+    const platformFeeCents = Number(dados.additional.platformFeeCents ?? 0);
+    const totalCents = Number(
+      dados.additional.totalCents ?? dados.additional.total ?? 0,
+    );
+    const code =
+      typeof dados.additional.promoCodeRaw === "string"
+        ? dados.additional.promoCodeRaw
+        : typeof dados.additional.promoCode === "string"
+          ? dados.additional.promoCode
+          : null;
+    return {
+      subtotalCents,
+      discountCents,
+      platformFeeCents,
+      totalCents,
+      code,
+    };
+  })();
+
   return (
     <div className="flex flex-col items-center text-center gap-8 py-6 px-4 text-white">
 
@@ -80,13 +104,31 @@ export default function Step3Sucesso() {
           </p>
         </div>
 
-        {/* Total Pago */}
-        {dados.additional?.total !== undefined && (
-          <div className="space-y-1">
-            <p className="text-[11px] uppercase tracking-widest text-white/50">Total Pago</p>
-            <p className="text-xl font-semibold">
-              {Number(dados.additional.total).toFixed(2)} €
-            </p>
+        {/* Breakdown */}
+        {breakdown && (
+          <div className="space-y-2 text-sm text-white/80">
+            <div className="flex items-center justify-between border-b border-white/10 pb-2">
+              <span className="text-white/60 text-[11px] uppercase tracking-widest">Total dos bilhetes</span>
+              <span className="font-semibold">{formatMoney(breakdown.subtotalCents, "EUR")}</span>
+            </div>
+            {breakdown.discountCents > 0 && (
+              <div className="flex items-center justify-between">
+                <span className="text-white/60">Desconto {breakdown.code ? `(${breakdown.code})` : ""}</span>
+                <span className="text-emerald-300">-{formatMoney(breakdown.discountCents, "EUR")}</span>
+              </div>
+            )}
+            {breakdown.platformFeeCents > 0 && (
+              <div className="flex items-center justify-between">
+                <span className="text-white/60">Taxa da plataforma</span>
+                <span className="text-orange-200">{formatMoney(breakdown.platformFeeCents, "EUR")}</span>
+              </div>
+            )}
+            <div className="flex items-center justify-between border-t border-white/10 pt-2">
+              <span className="text-white text-[12px] font-semibold uppercase tracking-widest">Total Pago</span>
+              <span className="text-xl font-semibold">
+                {formatMoney(breakdown.totalCents, "EUR")}
+              </span>
+            </div>
           </div>
         )}
 

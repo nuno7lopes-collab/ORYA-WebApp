@@ -1,8 +1,11 @@
 import { redirect } from "next/navigation";
+import { OrganizerMemberRole } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizerForUser } from "@/lib/organizerContext";
 import DashboardClient from "../DashboardClient";
+import { OrganizerTour } from "../OrganizerTour";
+import { cookies } from "next/headers";
 
 export const runtime = "nodejs";
 
@@ -33,6 +36,33 @@ export default async function OrganizerRouterPage() {
     }
   }
 
+  // Backfill automático para contas antigas (organizer.userId)
+  if (membershipCount === 0) {
+    try {
+      const legacyOrganizers = await prisma.organizer.findMany({
+        where: { userId: user.id, status: "ACTIVE" },
+        select: { id: true },
+      });
+      if (legacyOrganizers.length > 0) {
+        await prisma.organizerMember.createMany({
+          data: legacyOrganizers.map((org) => ({
+            organizerId: org.id,
+            userId: user.id,
+            role: OrganizerMemberRole.OWNER,
+          })),
+          skipDuplicates: true,
+        });
+        membershipCount = legacyOrganizers.length;
+      }
+    } catch (err: unknown) {
+      const msg =
+        typeof err === "object" && err && "message" in err ? String((err as { message?: unknown }).message) : "";
+      if (!(msg.includes("does not exist") || msg.includes("organizer_members"))) {
+        throw err;
+      }
+    }
+  }
+
   // Sem organizações → onboarding
   if (membershipCount === 0) {
     redirect("/organizador/become");
@@ -41,7 +71,12 @@ export default async function OrganizerRouterPage() {
   // 2) Existe organização ativa?
   let activeOrganizerId: number | null = null;
   try {
-    const { organizer } = await getActiveOrganizerForUser(user.id);
+    const cookieStore = await cookies();
+    const cookieOrgId = cookieStore.get("orya_org")?.value;
+    const forcedOrgId = cookieOrgId ? Number(cookieOrgId) : undefined;
+    const { organizer } = await getActiveOrganizerForUser(user.id, {
+      organizerId: Number.isFinite(forcedOrgId) ? forcedOrgId : undefined,
+    });
     activeOrganizerId = organizer?.id ?? null;
   } catch (err: unknown) {
     const msg =
@@ -57,5 +92,10 @@ export default async function OrganizerRouterPage() {
   }
 
   // Tem org ativa → dashboard
-  return <DashboardClient />;
+  return (
+    <>
+      <DashboardClient />
+      <OrganizerTour />
+    </>
+  );
 }

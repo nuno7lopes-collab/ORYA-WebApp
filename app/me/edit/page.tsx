@@ -25,6 +25,14 @@ export default function EditProfilePage() {
 
   const [fullName, setFullName] = useState("");
   const [username, setUsername] = useState("");
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const [profileVisibility, setProfileVisibility] = useState<"PUBLIC" | "PRIVATE">("PUBLIC");
+  const [allowEmailNotifications, setAllowEmailNotifications] = useState(true);
+  const [allowEventReminders, setAllowEventReminders] = useState(true);
+  const [allowFriendRequests, setAllowFriendRequests] = useState(true);
+  const [allowSalesAlerts, setAllowSalesAlerts] = useState(true);
+  const [allowSystemAnnouncements, setAllowSystemAnnouncements] = useState(true);
 
   const [checkingUsername, setCheckingUsername] = useState(false);
   const [usernameAvailable, setUsernameAvailable] = useState<boolean | null>(
@@ -35,6 +43,29 @@ export default function EditProfilePage() {
   const [saving, setSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
+  async function handleAvatarUpload(file: File | null) {
+    if (!file) return;
+    setUploadError(null);
+    setAvatarUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch("/api/upload", { method: "POST", body: formData });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.url) {
+        throw new Error(json?.error || "Falha no upload.");
+      }
+      setAvatarUrl(json.url);
+      setSuccessMsg("Foto atualizada. Não te esqueças de guardar.");
+    } catch (err) {
+      console.error("[me/edit] upload avatar", err);
+      setUploadError("Não foi possível enviar a foto. Tenta outra vez.");
+    } finally {
+      setAvatarUploading(false);
+    }
+  }
 
   // Preenche o formulário quando o perfil estiver carregado
   useEffect(() => {
@@ -48,8 +79,35 @@ export default function EditProfilePage() {
     if (profile) {
       setFullName(profile.fullName ?? "");
       setUsername(sanitizeUsername(profile.username ?? ""));
+      setAvatarUrl(profile.avatarUrl ?? null);
+      setProfileVisibility(profile.profileVisibility === "PRIVATE" ? "PRIVATE" : "PUBLIC");
+      setAllowEmailNotifications(Boolean(profile.allowEmailNotifications));
+      setAllowEventReminders(Boolean(profile.allowEventReminders));
+      setAllowFriendRequests(Boolean(profile.allowFriendRequests));
     }
   }, [isLoading, user, profile, openModal, router]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadPrefs = async () => {
+      try {
+        const res = await fetch("/api/notifications/prefs");
+        const json = await res.json().catch(() => null);
+        if (!res.ok || !json?.prefs || cancelled) return;
+        setAllowEmailNotifications(Boolean(json.prefs.allowEmailNotifications));
+        setAllowEventReminders(Boolean(json.prefs.allowEventReminders));
+        setAllowFriendRequests(Boolean(json.prefs.allowFriendRequests));
+        setAllowSalesAlerts(Boolean(json.prefs.allowSalesAlerts));
+        setAllowSystemAnnouncements(Boolean(json.prefs.allowSystemAnnouncements));
+      } catch (err) {
+        console.warn("[me/edit] prefs fetch failed", err);
+      }
+    };
+    loadPrefs();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function checkUsernameAvailability(value: string) {
     const trimmed = sanitizeUsername(value);
@@ -132,6 +190,11 @@ export default function EditProfilePage() {
         body: JSON.stringify({
           fullName: fullName.trim() || null,
           username: validation.normalized,
+          avatarUrl: avatarUrl ?? null,
+          visibility: profileVisibility,
+          allowEmailNotifications,
+          allowEventReminders,
+          allowFriendRequests,
         }),
       });
 
@@ -148,6 +211,18 @@ export default function EditProfilePage() {
         setSaving(false);
         return;
       }
+
+      await fetch("/api/notifications/prefs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          allowEmailNotifications,
+          allowEventReminders,
+          allowFriendRequests,
+          allowSalesAlerts,
+          allowSystemAnnouncements,
+        }),
+      }).catch(() => null);
 
       setSuccessMsg("Perfil atualizado!");
 
@@ -208,10 +283,47 @@ export default function EditProfilePage() {
           </div>
         )}
 
-        <section className="rounded-2xl border border-white/15 bg-gradient-to-br from-white/[0.04] via-slate-950/85 to-slate-950 backdrop-blur-xl p-6 shadow-[0_14px_34px_rgba(15,23,42,0.8)]">
+        <section className="rounded-2xl border border-white/15 bg-gradient-to-br from-white/[0.04] via-slate-950/85 to-slate-950 backdrop-blur-xl p-6 shadow-[0_14px_34px_rgba(15,23,42,0.8)] space-y-4">
+          <div className="flex items-center gap-4">
+            <div className="relative h-16 w-16 rounded-full border border-white/15 bg-white/5 overflow-hidden flex items-center justify-center shadow-[0_0_18px_rgba(107,255,255,0.35)]">
+              {avatarUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={avatarUrl} alt="Avatar" className="h-full w-full object-cover" />
+              ) : (
+                <span className="text-lg font-semibold text-white/70">
+                  {fullName?.[0]?.toUpperCase() || "?"}
+                </span>
+              )}
+              <span className="pointer-events-none absolute inset-0 rounded-full ring-1 ring-white/10" />
+            </div>
+            <div className="flex flex-col gap-2 text-sm">
+              <div className="flex gap-2 flex-wrap">
+                <label className="cursor-pointer rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-medium text-white/85 hover:border-white/35">
+                  {avatarUploading ? "A enviar..." : "Carregar nova foto"}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => handleAvatarUpload(e.target.files?.[0] ?? null)}
+                    disabled={avatarUploading}
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setAvatarUrl(null)}
+                  className="rounded-full border border-white/20 px-3 py-1.5 text-xs text-white/75 hover:border-red-400 hover:text-red-200"
+                >
+                  Remover foto
+                </button>
+              </div>
+              <p className="text-[11px] text-white/55">Foto circular, idealmente quadrada (ex.: 800x800).</p>
+              {uploadError && <p className="text-[11px] text-red-300">{uploadError}</p>}
+            </div>
+          </div>
+
           <form className="space-y-4" onSubmit={handleSubmit}>
             <div className="flex flex-col gap-1">
-              <label className="text-white/70 text-sm">Nome completo</label>
+              <label className="text-white/70 text-sm">Nome público</label>
               <input
                 type="text"
                 value={fullName}
@@ -262,6 +374,101 @@ export default function EditProfilePage() {
                   Username disponível ✔
                 </p>
               )}
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 rounded-xl border border-white/10 bg-black/30 p-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <p className="text-sm font-semibold text-white">Visibilidade do perfil</p>
+                <div className="space-y-2 text-sm text-white/75">
+                  {[
+                    {
+                      key: "PUBLIC" as const,
+                      title: "Público",
+                      desc: "Visível em listas públicas, convites e páginas de evento.",
+                    },
+                    {
+                      key: "PRIVATE" as const,
+                      title: "Privado",
+                      desc: "Mostra só avatar, nome e username. Sem email/telefone.",
+                    },
+                  ].map((opt) => (
+                    <label
+                      key={opt.key}
+                      className={`flex cursor-pointer flex-col gap-1 rounded-lg border px-3 py-2 transition ${
+                        profileVisibility === opt.key
+                          ? "border-white/60 bg-white/10"
+                          : "border-white/15 bg-black/30 hover:border-white/35"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-semibold">{opt.title}</span>
+                        <input
+                          type="radio"
+                          name="visibility"
+                          className="accent-white"
+                          checked={profileVisibility === opt.key}
+                          onChange={() => setProfileVisibility(opt.key)}
+                        />
+                      </div>
+                      <p className="text-xs text-white/65">{opt.desc}</p>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-sm font-semibold text-white">Notificações</p>
+                <div className="space-y-2 text-sm text-white/75">
+                  {[
+                    {
+                      key: "allowEmailNotifications" as const,
+                      label: "Emails de novidades e segurança",
+                      value: allowEmailNotifications,
+                      setter: setAllowEmailNotifications,
+                    },
+                    {
+                      key: "allowEventReminders" as const,
+                      label: "Lembretes de eventos/experiências",
+                      value: allowEventReminders,
+                      setter: setAllowEventReminders,
+                    },
+                    {
+                      key: "allowFriendRequests" as const,
+                      label: "Pedidos de amizade / convites",
+                      value: allowFriendRequests,
+                      setter: setAllowFriendRequests,
+                    },
+                    {
+                      key: "allowSalesAlerts" as const,
+                      label: "Alertas de vendas/promoções",
+                      value: allowSalesAlerts,
+                      setter: setAllowSalesAlerts,
+                    },
+                    {
+                      key: "allowSystemAnnouncements" as const,
+                      label: "Anúncios do sistema",
+                      value: allowSystemAnnouncements,
+                      setter: setAllowSystemAnnouncements,
+                    },
+                  ].map((opt) => (
+                    <label
+                      key={opt.key}
+                      className="flex items-center justify-between rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-xs"
+                    >
+                      <span className="text-white/80">{opt.label}</span>
+                      <button
+                        type="button"
+                        onClick={() => opt.setter(!opt.value)}
+                        className={`rounded-full px-3 py-1 text-[11px] font-semibold transition ${
+                          opt.value ? "bg-white text-black" : "border border-white/25 text-white/70 hover:border-white/60"
+                        }`}
+                      >
+                        {opt.value ? "On" : "Off"}
+                      </button>
+                    </label>
+                  ))}
+                </div>
+              </div>
             </div>
 
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-2">

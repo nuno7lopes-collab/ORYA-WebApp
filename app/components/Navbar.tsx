@@ -4,7 +4,13 @@ import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
 import { useUser } from "@/app/hooks/useUser";
+import Link from "next/link";
 import MobileBottomNav from "./MobileBottomNav";
+import { NotificationBell } from "./notifications/NotificationBell";
+import { featureFlags } from "@/lib/flags";
+import { supabaseBrowser } from "@/lib/supabaseBrowser";
+import { OryaPortal } from "./OryaPortal";
+import Link from "next/link";
 
 type Suggestion = {
   id: number;
@@ -36,7 +42,27 @@ export function Navbar() {
   const profileMenuRef = useRef<HTMLDivElement | null>(null);
   const lastScrollYRef = useRef(0);
   const pathname = hydratedPathname ?? "";
+  const useNewNavbar = featureFlags.NEW_NAVBAR();
   const shouldHide = rawPathname?.startsWith("/organizador");
+
+  const LogoNew = () => {
+    const [logoState, setLogoState] = useState<"idle" | "hover" | "press">("idle");
+    return (
+      <button
+        type="button"
+        onClick={() => router.push("/")}
+        onMouseEnter={() => setLogoState("hover")}
+        onMouseLeave={() => setLogoState("idle")}
+        onMouseDown={() => setLogoState("press")}
+        onMouseUp={() => setLogoState("hover")}
+        className="flex items-center gap-2"
+        aria-label="Voltar à homepage ORYA"
+      >
+        <OryaPortal size={44} state={logoState} variant="full" />
+        <span className="hidden text-sm font-semibold tracking-wide text-white sm:inline">ORYA</span>
+      </button>
+    );
+  };
 
   useEffect(() => {
     setHasMounted(true);
@@ -154,6 +180,18 @@ export function Navbar() {
     router.push(`/explorar?query=${encodeURIComponent(value)}`);
   };
 
+  const handleLogout = async () => {
+    try {
+      await supabaseBrowser.auth.signOut();
+    } catch (err) {
+      console.warn("[navbar] signOut falhou", err);
+    } finally {
+      setIsProfileMenuOpen(false);
+      router.push("/");
+      router.refresh();
+    }
+  };
+
   const buildSlug = (item: Pick<Suggestion, "type" | "slug">) =>
     item.type === "EXPERIENCE" ? `/experiencias/${item.slug}` : `/eventos/${item.slug}`;
 
@@ -251,31 +289,35 @@ export function Navbar() {
         >
           {/* Logo + link explorar */}
           <div className="flex flex-1 items-center gap-3">
-            <button
-              type="button"
-              onClick={() => router.push("/")}
-              className="flex items-center gap-2"
-            >
-              <div className="relative flex h-9 w-9 items-center justify-center rounded-2xl bg-gradient-to-br from-[#0f172a] via-[#111827] to-[#0b1224] text-xs font-black tracking-[0.2em] shadow-[0_0_18px_rgba(107,255,255,0.25)]">
-                <span className="absolute inset-0 rounded-2xl border border-white/10" />
-                <span className="absolute inset-0 rounded-2xl bg-gradient-to-tr from-[#FF00C8]/35 via-[#6BFFFF]/20 to-transparent animate-[spin_9s_linear_infinite]" />
-                <span className="relative z-10 bg-gradient-to-r from-[#FF9CF2] to-[#6BFFFF] bg-clip-text text-transparent">
-                  OY
+            {useNewNavbar ? (
+              <LogoNew />
+            ) : (
+              <button
+                type="button"
+                onClick={() => router.push("/")}
+                className="flex items-center gap-2"
+              >
+                <div className="relative flex h-9 w-9 items-center justify-center rounded-2xl bg-gradient-to-br from-[#0f172a] via-[#111827] to-[#0b1224] text-xs font-black tracking-[0.2em] shadow-[0_0_18px_rgba(107,255,255,0.25)]">
+                  <span className="absolute inset-0 rounded-2xl border border-white/10" />
+                  <span className="absolute inset-0 rounded-2xl bg-gradient-to-tr from-[#FF00C8]/35 via-[#6BFFFF]/20 to-transparent animate-[spin_9s_linear_infinite]" />
+                  <span className="relative z-10 bg-gradient-to-r from-[#FF9CF2] to-[#6BFFFF] bg-clip-text text-transparent">
+                    OY
+                  </span>
+                </div>
+                <span className="hidden text-sm font-semibold uppercase tracking-[0.22em] text-zinc-100 sm:inline">
+                  ORYA
                 </span>
-              </div>
-              <span className="hidden text-sm font-semibold uppercase tracking-[0.22em] text-zinc-100 sm:inline">
-                ORYA
-              </span>
-            </button>
+              </button>
+            )}
 
             <nav className="hidden items-center gap-3 text-xs text-zinc-300 md:flex">
               <button
                 type="button"
                 onClick={() => router.push("/explorar")}
-                className={`rounded-full px-3 py-1.5 transition-colors ${
+                className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
                   pathname?.startsWith("/explorar")
-                    ? "bg-white/10 text-white"
-                    : "text-zinc-300 hover:bg-white/5 hover:text-white"
+                    ? "bg-white/12 text-white border border-white/25 shadow-[0_0_18px_rgba(255,255,255,0.18)]"
+                    : "text-zinc-200 hover:bg-white/5 hover:text-white border border-white/10"
                 }`}
               >
                 Explorar
@@ -283,14 +325,27 @@ export function Navbar() {
               <button
                 type="button"
                 onClick={() => router.push("/organizador")}
-                className={`rounded-full px-3 py-1.5 transition-colors ${
+                className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
                   pathname?.startsWith("/organizador")
-                    ? "bg-white/10 text-white border border-white/15"
-                    : "text-zinc-300 hover:bg-white/5 hover:text-white border border-transparent"
+                    ? "bg-white/12 text-white border border-white/25 shadow-[0_0_18px_rgba(107,255,255,0.25)]"
+                    : "text-zinc-200 hover:bg-white/5 hover:text-white border border-white/10"
                 }`}
               >
                 Organizar
               </button>
+              {isAuthenticated && (
+                <button
+                  type="button"
+                  onClick={() => router.push("/me/compras")}
+                  className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
+                    pathname?.startsWith("/me/compras")
+                      ? "bg-white/12 text-white border border-white/25 shadow-[0_0_18px_rgba(107,255,255,0.25)]"
+                      : "text-zinc-200 hover:bg-white/5 hover:text-white border border-white/10"
+                  }`}
+                >
+                  Compras
+                </button>
+              )}
             </nav>
           </div>
 
@@ -313,24 +368,8 @@ export function Navbar() {
             </button>
           </div>
 
-          {/* Lado direito: instalar app + auth/profile */}
+          {/* Lado direito: auth/profile */}
           <div className="flex flex-1 items-center justify-end gap-2 md:gap-3">
-            <button
-              type="button"
-              onClick={() => {
-                const target = document.getElementById("instalar-app");
-                if (target) {
-                  target.scrollIntoView({ behavior: "smooth", block: "start" });
-                } else {
-                  router.push("/#instalar-app");
-                }
-              }}
-              className="hidden items-center gap-1 rounded-full border border-[#6BFFFF]/40 bg-[#020617]/80 px-3 py-1.5 text-[11px] font-medium text-[#D6FEFF] shadow-[0_0_20px_rgba(107,255,255,0.35)] hover:bg-[#020617] md:inline-flex"
-            >
-              <span className="text-[12px]">⬇</span>
-              <span>Instalar app</span>
-            </button>
-
             {isLoading ? (
               <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[11px] text-white/60 animate-pulse">
                 <div className="h-7 w-7 rounded-full bg-white/20" />
@@ -348,19 +387,22 @@ export function Navbar() {
                 Entrar / Registar
               </button>
             ) : (
-              <div className="relative" ref={profileMenuRef}>
+              <div className="relative flex items-center gap-2" ref={profileMenuRef}>
+                {useNewNavbar && <NotificationBell />}
                 <button
                   type="button"
-                  onClick={() =>
-                    setIsProfileMenuOpen((open) => !open)
-                  }
-                  className="flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-2.5 py-1 text-[11px] text-white/85 hover:bg-white/15"
-                  aria-haspopup="menu"
-                  aria-expanded={isProfileMenuOpen}
-                  aria-label="Abrir menu de conta"
-                >
-                  <div className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] text-[11px] font-bold text-black shadow-[0_0_18px_rgba(107,255,255,0.7)]">
-                    {userInitial}
+                  onClick={() => setIsProfileMenuOpen((open) => !open)}
+            className="flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-2.5 py-1 text-[11px] text-white/85 hover:bg-white/15"
+            aria-haspopup="menu"
+            aria-expanded={isProfileMenuOpen}
+            aria-label="Abrir menu de conta"
+          >
+            <div className="relative h-9 w-9 overflow-hidden rounded-full border border-white/20 bg-gradient-to-br from-[#0f172a] via-[#111827] to-[#0b1224] text-[11px] font-bold text-white shadow-[0_0_22px_rgba(107,255,255,0.55)]">
+                    <span className="pointer-events-none absolute inset-0 rounded-full border border-white/10" />
+                    <span className="pointer-events-none absolute inset-0 rounded-full bg-gradient-to-tr from-[#FF00C8]/35 via-[#6BFFFF]/25 to-transparent animate-[spin_14s_linear_infinite]" />
+                    <span className="relative z-10 flex h-full w-full items-center justify-center bg-gradient-to-r from-[#FF9CF2] to-[#6BFFFF] bg-clip-text text-transparent">
+                      {userInitial}
+                    </span>
                   </div>
                   <span className="hidden max-w-[120px] truncate text-[11px] sm:inline">
                     {userLabel || "Conta ORYA"}
@@ -369,7 +411,7 @@ export function Navbar() {
 
                 {isProfileMenuOpen && (
                   <div
-                    className="absolute right-0 mt-2 w-52 rounded-2xl border border-white/14 bg-black/80 p-2 text-[11px] text-white/80 shadow-[0_18px_45px_rgba(0,0,0,0.85)] backdrop-blur-2xl"
+                    className="absolute right-0 top-full mt-2 w-56 origin-top-right rounded-2xl border border-white/14 bg-black/85 p-2 text-[11px] text-white/80 shadow-[0_22px_60px_rgba(0,0,0,0.85)] backdrop-blur-2xl"
                     role="menu"
                     aria-label="Menu de conta ORYA"
                   >
@@ -427,6 +469,14 @@ export function Navbar() {
                           Em breve
                         </span>
                       )}
+                    </button>
+                    <div className="my-1 h-px w-full bg-white/10" />
+                    <button
+                      type="button"
+                      onClick={handleLogout}
+                      className="mt-1 w-full rounded-xl bg-white/10 px-3 py-2 text-left text-red-100 hover:bg-white/15"
+                    >
+                      Terminar sessão
                     </button>
                   </div>
                 )}

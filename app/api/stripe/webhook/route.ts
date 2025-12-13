@@ -7,12 +7,13 @@ import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
 import { prisma } from "@/lib/prisma";
 import { env } from "@/lib/env";
-import { Prisma } from "@prisma/client";
+import { Prisma, PadelPairingPaymentStatus, PadelPairingSlotStatus, PadelPaymentMode, TicketStatus, FeeMode } from "@prisma/client";
 import { stripe } from "@/lib/stripeClient";
 import crypto from "crypto";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { sendPurchaseConfirmationEmail } from "@/lib/emailSender";
 import { parsePhoneNumberFromString } from "libphonenumber-js/min";
+import { computePricing } from "@/lib/pricing";
 
 const webhookSecret = env.stripeWebhookSecret;
 
@@ -164,15 +165,67 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ received: true });
 }
 
+type PromoSnapshot = { code: string; label?: string | null; type: PromoType | null; value: number | null };
+async function loadPromoSnapshots(ids: number[]) {
+  const promos = await prisma.promoCode.findMany({
+    where: { id: { in: ids } },
+    select: { id: true, code: true, type: true, value: true },
+  });
+  const map = new Map<number, PromoSnapshot>();
+  promos.forEach((p) => {
+    map.set(p.id, { code: p.code, label: p.code, type: p.type, value: p.value });
+  });
+  return map;
+}
 type EventWithTickets = Prisma.EventGetPayload<{
   include: { ticketTypes: true };
 }>;
 
 type ParsedItem = { ticketId: number; quantity: number };
+type BreakdownLine = {
+  ticketTypeId: number;
+  quantity: number;
+  unitPriceCents: number;
+  discountPerUnitCents?: number;
+  lineGrossCents: number;
+  lineNetCents: number;
+  platformFeeCents?: number;
+  promoCodeId?: number;
+};
+type BreakdownPayload = {
+  lines: BreakdownLine[];
+  subtotalCents: number;
+  discountCents: number;
+  platformFeeCents: number;
+  totalCents: number;
+  feeMode?: string;
+  currency?: string;
+  feeBpsApplied?: number;
+  feeFixedApplied?: number;
+};
 
 export async function fulfillPayment(intent: Stripe.PaymentIntent) {
   // [ORYA PATCH v1] Webhook reforçado e preparado para múltiplos bilhetes com total segurança.
   const meta = intent.metadata ?? {};
+  let parsedBreakdown: BreakdownPayload | null = null;
+  if (typeof meta.breakdown === "string") {
+    try {
+      const parsed = JSON.parse(meta.breakdown);
+      if (parsed && Array.isArray(parsed.lines)) {
+        parsedBreakdown = {
+          lines: parsed.lines as BreakdownLine[],
+          subtotalCents: Number(parsed.subtotalCents ?? 0),
+          discountCents: Number(parsed.discountCents ?? 0),
+          platformFeeCents: Number(parsed.platformFeeCents ?? 0),
+          totalCents: Number(parsed.totalCents ?? 0),
+          feeMode: parsed.feeMode,
+          currency: parsed.currency ?? "EUR",
+        };
+      }
+    } catch (err) {
+      console.warn("[fulfillPayment] breakdown inválido no metadata", err);
+    }
+  }
 
   // Se por algum motivo um PaymentIntent de revenda vier parar aqui, ignoramos
   if (meta.mode === "RESALE") {
@@ -197,6 +250,16 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent) {
     typeof meta.promoCode === "string" && meta.promoCode.trim() !== ""
       ? meta.promoCode.trim()
       : "";
+  // Padel SPLIT/FULL: tratar logo aqui e sair
+  if (meta.mode === "PADEL_SPLIT") {
+    await handlePadelSplitPayment(intent);
+    return;
+  }
+  if (meta.mode === "PADEL_FULL") {
+    await handlePadelFullPayment(intent);
+    return;
+  }
+
   const promoCodeRaw =
     typeof meta.promoCodeRaw === "string" && meta.promoCodeRaw.trim() !== ""
       ? meta.promoCodeRaw.trim()
@@ -357,7 +420,13 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent) {
     try {
       await prisma.paymentEvent.updateMany({
         where: { stripePaymentIntentId: intent.id },
-        data: { status: "OK", updatedAt: new Date(), errorMessage: null },
+        data: {
+          status: "OK",
+          updatedAt: new Date(),
+          errorMessage: null,
+          mode: intent.livemode ? "LIVE" : "TEST",
+          isTest: !intent.livemode,
+        },
       });
     } catch (logErr) {
       console.warn("[fulfillPayment] Falha ao marcar paymentEvent como OK num retry", logErr);
@@ -377,6 +446,8 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent) {
         userId,
         errorMessage: null,
         updatedAt: new Date(),
+        mode: intent.livemode ? "LIVE" : "TEST",
+        isTest: !intent.livemode,
       },
     });
     if (updated.count === 0) {
@@ -388,6 +459,8 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent) {
           userId,
           amountCents: intent.amount ?? null,
           platformFeeCents: platformFeeTotal ?? null,
+          mode: intent.livemode ? "LIVE" : "TEST",
+          isTest: !intent.livemode,
         },
       });
     }
@@ -406,23 +479,138 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent) {
         },
       });
     } catch (err) {
-      console.warn("[fulfillPayment] Não foi possível registar promo redemption", {
-        intentId: intent.id,
-        promoCodeId,
-        promoCodeRaw,
-        err,
-      });
+      const isP2002 =
+        err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002";
+      if (isP2002) {
+        console.warn("[fulfillPayment] promoRedemption já existente para este user/código — a ignorar");
+        // Opcional: se quisermos contar usos, poderíamos incrementar usageCount aqui (campo inexistente por agora)
+      } else {
+        console.warn("[fulfillPayment] Não foi possível registar promo redemption", {
+          intentId: intent.id,
+          promoCodeId,
+          promoCodeRaw,
+          err,
+        });
+      }
     }
   }
 
   // --------- PREPARAR CRIAÇÃO DE BILHETES + STOCK ---------
   let createdTicketsCount = 0;
+  let saleSummaryId: number | null = null;
+
+  // Sanity-check opcional: garantir que breakdown bate com o amount recebido
+  if (parsedBreakdown && typeof intent.amount_received === "number") {
+    const recalculated = computePricing(parsedBreakdown.subtotalCents, parsedBreakdown.discountCents, {
+      eventFeeModeOverride: null,
+      eventFeeMode: parsedBreakdown.feeMode as FeeMode | null,
+      organizerFeeMode: parsedBreakdown.feeMode as FeeMode | null,
+      platformDefaultFeeMode: parsedBreakdown.feeMode as FeeMode | null,
+      eventPlatformFeeBpsOverride: parsedBreakdown.feeBpsApplied ?? null,
+      eventPlatformFeeFixedCentsOverride: parsedBreakdown.feeFixedApplied ?? null,
+      organizerPlatformFeeBps: parsedBreakdown.feeBpsApplied ?? null,
+      organizerPlatformFeeFixedCents: parsedBreakdown.feeFixedApplied ?? null,
+      platformDefaultFeeBps: parsedBreakdown.feeBpsApplied ?? 0,
+      platformDefaultFeeFixedCents: parsedBreakdown.feeFixedApplied ?? 0,
+    });
+
+    if (recalculated.totalCents !== intent.amount_received) {
+      console.warn("[fulfillPayment] Divergência entre breakdown.totalCents e amount_received", {
+        intentId: intent.id,
+        breakdownTotal: parsedBreakdown.totalCents,
+        recalculatedTotal: recalculated.totalCents,
+        amountReceived: intent.amount_received,
+      });
+    }
+  }
 
   await prisma.$transaction(async (tx) => {
+    // Persistir breakdown se existir
+    if (parsedBreakdown) {
+      const promoIds = new Set<number>();
+      parsedBreakdown.lines.forEach((l) => {
+        if (l.promoCodeId) promoIds.add(l.promoCodeId);
+      });
+      if (promoCodeId && Number.isFinite(Number(promoCodeId))) {
+        promoIds.add(Number(promoCodeId));
+      }
+      const promoSnapshots =
+        promoIds.size > 0 ? await loadPromoSnapshots(Array.from(promoIds)) : new Map<number, PromoSnapshot>();
+      const summaryPromo =
+        promoCodeId && Number.isFinite(Number(promoCodeId))
+          ? promoSnapshots.get(Number(promoCodeId)) ?? null
+          : null;
+
+      try {
+        const feeMode = parsedBreakdown.feeMode as FeeMode | undefined;
+        const summary = await tx.saleSummary.upsert({
+          where: { paymentIntentId: intent.id },
+          update: {
+            eventId: eventRecord.id,
+            userId,
+            promoCodeId: promoCodeId ? Number(promoCodeId) : null,
+            promoCodeSnapshot: summaryPromo?.code ?? null,
+            promoLabelSnapshot: summaryPromo?.label ?? summaryPromo?.code ?? null,
+            promoTypeSnapshot: summaryPromo?.type ?? null,
+            promoValueSnapshot: summaryPromo?.value ?? null,
+            subtotalCents: parsedBreakdown.subtotalCents,
+            discountCents: parsedBreakdown.discountCents,
+            platformFeeCents: parsedBreakdown.platformFeeCents,
+            totalCents: parsedBreakdown.totalCents,
+            netCents: parsedBreakdown.totalCents - parsedBreakdown.platformFeeCents,
+            feeMode: feeMode,
+            currency: parsedBreakdown.currency ?? "EUR",
+          },
+          create: {
+            paymentIntentId: intent.id,
+            eventId: eventRecord.id,
+            userId,
+            promoCodeId: promoCodeId ? Number(promoCodeId) : null,
+            promoCodeSnapshot: summaryPromo?.code ?? null,
+            promoLabelSnapshot: summaryPromo?.label ?? summaryPromo?.code ?? null,
+            promoTypeSnapshot: summaryPromo?.type ?? null,
+            promoValueSnapshot: summaryPromo?.value ?? null,
+            subtotalCents: parsedBreakdown.subtotalCents,
+            discountCents: parsedBreakdown.discountCents,
+            platformFeeCents: parsedBreakdown.platformFeeCents,
+            totalCents: parsedBreakdown.totalCents,
+            netCents: parsedBreakdown.totalCents - parsedBreakdown.platformFeeCents,
+            feeMode: feeMode,
+            currency: parsedBreakdown.currency ?? "EUR",
+          },
+        });
+        saleSummaryId = summary.id;
+
+        // limpar linhas anteriores e regravar
+        await tx.saleLine.deleteMany({ where: { saleSummaryId: summary.id } });
+        for (const line of parsedBreakdown.lines) {
+          const linePromo = line.promoCodeId ? promoSnapshots.get(line.promoCodeId) ?? null : summaryPromo;
+          await tx.saleLine.create({
+            data: {
+              saleSummaryId: summary.id,
+              eventId: eventRecord.id,
+              ticketTypeId: line.ticketTypeId,
+              promoCodeId: line.promoCodeId ?? (promoCodeId ? Number(promoCodeId) : null),
+              promoCodeSnapshot: linePromo?.code ?? null,
+              promoLabelSnapshot: linePromo?.label ?? linePromo?.code ?? null,
+              promoTypeSnapshot: linePromo?.type ?? null,
+              promoValueSnapshot: linePromo?.value ?? null,
+              quantity: line.quantity,
+              unitPriceCents: line.unitPriceCents,
+              discountPerUnitCents: line.discountPerUnitCents ?? 0,
+              grossCents: line.lineGrossCents,
+              netCents: line.lineNetCents,
+              platformFeeCents: line.platformFeeCents ?? 0,
+            },
+          });
+        }
+      } catch (err) {
+        console.warn("[fulfillPayment] Falha ao persistir saleSummary/saleLines", err);
+      }
+    }
+
     for (const item of items) {
-      const ticketType = eventRecord.ticketTypes.find(
-        (t) => t.id === item.ticketId
-      );
+      const ticketType = eventRecord.ticketTypes.find((t) => t.id === item.ticketId);
       if (!ticketType) {
         console.warn("[fulfillPayment] TicketType not found:", item.ticketId);
         continue;
@@ -461,10 +649,21 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent) {
             status: "ACTIVE",
             purchasedAt: new Date(),
             qrSecret: token,
-            pricePaid: ticketType.price,
+            pricePaid: parsedBreakdown
+              ? Math.round(
+                  (parsedBreakdown.lines.find((l) => l.ticketTypeId === ticketType.id)?.lineNetCents ?? ticketType.price) /
+                    Math.max(1, parsedBreakdown.lines.find((l) => l.ticketTypeId === ticketType.id)?.quantity ?? 1)
+                )
+              : ticketType.price,
             currency: ticketType.currency,
             platformFeeCents: feeForThisTicket,
-            totalPaidCents: ticketType.price + feeForThisTicket,
+            totalPaidCents:
+              (parsedBreakdown
+                ? Math.round(
+                    (parsedBreakdown.lines.find((l) => l.ticketTypeId === ticketType.id)?.lineNetCents ?? ticketType.price) /
+                      Math.max(1, parsedBreakdown.lines.find((l) => l.ticketTypeId === ticketType.id)?.quantity ?? 1)
+                  )
+                : ticketType.price) + feeForThisTicket,
             stripePaymentIntentId: intent.id,
           },
         });
@@ -583,6 +782,257 @@ async function fetchUserEmail(userId: string) {
   }
 }
 
+async function handlePadelSplitPayment(intent: Stripe.PaymentIntent) {
+  const meta = intent.metadata ?? {};
+  const pairingId = Number(meta.pairingId);
+  const slotId = Number(meta.slotId);
+  const ticketTypeId = Number(meta.ticketTypeId);
+  const eventId = Number(meta.eventId);
+  const userId = typeof meta.userId === "string" ? meta.userId : null;
+
+  if (!Number.isFinite(pairingId) || !Number.isFinite(slotId) || !Number.isFinite(ticketTypeId) || !Number.isFinite(eventId)) {
+    console.warn("[handlePadelSplitPayment] metadata incompleta", meta);
+    return;
+  }
+
+  const ticketType = await prisma.ticketType.findUnique({
+    where: { id: ticketTypeId },
+    select: { id: true, price: true, currency: true, soldQuantity: true, eventId: true },
+  });
+  if (!ticketType || ticketType.eventId !== eventId) {
+    console.warn("[handlePadelSplitPayment] ticketType inválido", { ticketTypeId, eventId });
+    return;
+  }
+
+  const qrSecret = crypto.randomUUID();
+  const rotatingSeed = crypto.randomUUID();
+  await prisma.$transaction(async (tx) => {
+    const pairing = await tx.padelPairing.findUnique({
+      where: { id: pairingId },
+      include: { slots: true },
+    });
+    if (!pairing || pairing.paymentMode !== PadelPaymentMode.SPLIT) {
+      throw new Error("PAIRING_NOT_SPLIT");
+    }
+    if (pairing.pairingStatus === "CANCELLED") {
+      throw new Error("PAIRING_CANCELLED");
+    }
+    const slot = pairing.slots.find((s) => s.id === slotId);
+    if (!slot) throw new Error("SLOT_NOT_FOUND");
+    if (slot.paymentStatus === PadelPairingPaymentStatus.PAID) {
+      // já processado
+      return;
+    }
+
+    // cria ticket para o slot
+    const ticket = await tx.ticket.create({
+      data: {
+        eventId,
+        ticketTypeId,
+        pricePaid: ticketType.price,
+        totalPaidCents: intent.amount,
+        currency: ticketType.currency || intent.currency.toUpperCase(),
+        stripePaymentIntentId: intent.id,
+        status: "ACTIVE",
+        qrSecret,
+        rotatingSeed,
+        userId: userId ?? undefined,
+        pairingId,
+        padelSplitShareCents: ticketType.price,
+      },
+    });
+
+    await tx.ticketType.update({
+      where: { id: ticketTypeId },
+      data: { soldQuantity: ticketType.soldQuantity + 1 },
+    });
+
+    const updated = await tx.padelPairing.update({
+      where: { id: pairingId },
+      data: {
+        slots: {
+          update: {
+            where: { id: slotId },
+            data: {
+              ticketId: ticket.id,
+              profileId: userId ?? undefined,
+              paymentStatus: PadelPairingPaymentStatus.PAID,
+              slotStatus: userId ? PadelPairingSlotStatus.FILLED : slot.slotStatus,
+            },
+          },
+        },
+      },
+      include: { slots: true },
+    });
+
+    const stillPending = updated.slots.some((s) => s.slotStatus === "PENDING" || s.paymentStatus === "UNPAID");
+    if (!stillPending && updated.pairingStatus !== "COMPLETE") {
+      await tx.padelPairing.update({
+        where: { id: pairingId },
+        data: { pairingStatus: "COMPLETE" },
+      });
+    }
+
+    // log payment_event
+    await tx.paymentEvent.upsert({
+      where: { stripePaymentIntentId: intent.id },
+      update: {
+        status: "OK",
+        amountCents: intent.amount,
+        eventId,
+        userId: userId ?? undefined,
+        updatedAt: new Date(),
+        errorMessage: null,
+        mode: intent.livemode ? "LIVE" : "TEST",
+        isTest: !intent.livemode,
+      },
+      create: {
+        stripePaymentIntentId: intent.id,
+        status: "OK",
+        amountCents: intent.amount,
+        eventId,
+        userId: userId ?? undefined,
+        mode: intent.livemode ? "LIVE" : "TEST",
+        isTest: !intent.livemode,
+      },
+    });
+  });
+}
+
+async function handlePadelFullPayment(intent: Stripe.PaymentIntent) {
+  const meta = intent.metadata ?? {};
+  const pairingId = Number(meta.pairingId);
+  const ticketTypeId = Number(meta.ticketTypeId);
+  const eventId = Number(meta.eventId);
+  const userId = typeof meta.userId === "string" ? meta.userId : null;
+
+  if (!Number.isFinite(pairingId) || !Number.isFinite(ticketTypeId) || !Number.isFinite(eventId)) {
+    console.warn("[handlePadelFullPayment] metadata incompleta", meta);
+    return;
+  }
+
+  const ticketType = await prisma.ticketType.findUnique({
+    where: { id: ticketTypeId },
+    select: { id: true, price: true, currency: true, soldQuantity: true, eventId: true },
+  });
+  if (!ticketType || ticketType.eventId !== eventId) {
+    console.warn("[handlePadelFullPayment] ticketType inválido", { ticketTypeId, eventId });
+    return;
+  }
+
+  const qr1 = crypto.randomUUID();
+  const qr2 = crypto.randomUUID();
+  const rot1 = crypto.randomUUID();
+  const rot2 = crypto.randomUUID();
+
+  await prisma.$transaction(async (tx) => {
+    const pairing = await tx.padelPairing.findUnique({
+      where: { id: pairingId },
+      include: { slots: true },
+    });
+    if (!pairing || pairing.paymentMode !== PadelPaymentMode.FULL) {
+      throw new Error("PAIRING_NOT_FULL");
+    }
+    if (pairing.pairingStatus === "CANCELLED") {
+      throw new Error("PAIRING_CANCELLED");
+    }
+
+    const captainSlot = pairing.slots.find((s) => s.slotRole === "CAPTAIN");
+    const partnerSlot = pairing.slots.find((s) => s.slotRole === "PARTNER");
+    if (!captainSlot || !partnerSlot) throw new Error("SLOTS_INVALID");
+
+    // Cria 2 tickets (capitão e parceiro vazio)
+    const ticketCaptain = await tx.ticket.create({
+      data: {
+        eventId,
+        ticketTypeId,
+        pricePaid: ticketType.price,
+        totalPaidCents: ticketType.price,
+        currency: ticketType.currency || intent.currency.toUpperCase(),
+        stripePaymentIntentId: intent.id,
+        status: "ACTIVE",
+        qrSecret: qr1,
+        rotatingSeed: rot1,
+        userId: userId ?? undefined,
+        pairingId,
+        padelSplitShareCents: ticketType.price,
+      },
+    });
+
+    const ticketPartner = await tx.ticket.create({
+      data: {
+        eventId,
+        ticketTypeId,
+        pricePaid: ticketType.price,
+        totalPaidCents: ticketType.price,
+        currency: ticketType.currency || intent.currency.toUpperCase(),
+        stripePaymentIntentId: intent.id,
+        status: "ACTIVE",
+        qrSecret: qr2,
+        rotatingSeed: rot2,
+        pairingId,
+        padelSplitShareCents: ticketType.price,
+      },
+    });
+
+    await tx.ticketType.update({
+      where: { id: ticketTypeId },
+      data: { soldQuantity: ticketType.soldQuantity + 2 },
+    });
+
+    await tx.padelPairing.update({
+      where: { id: pairingId },
+      data: {
+        pairingStatus: "INCOMPLETE",
+        slots: {
+          update: [
+            {
+              where: { id: captainSlot.id },
+              data: {
+                ticketId: ticketCaptain.id,
+                profileId: userId ?? captainSlot.profileId ?? undefined,
+                paymentStatus: PadelPairingPaymentStatus.PAID,
+                slotStatus: PadelPairingSlotStatus.FILLED,
+              },
+            },
+            {
+              where: { id: partnerSlot.id },
+              data: {
+                ticketId: ticketPartner.id,
+                paymentStatus: PadelPairingPaymentStatus.PAID,
+                slotStatus: PadelPairingSlotStatus.PENDING,
+              },
+            },
+          ],
+        },
+      },
+    });
+
+    await tx.paymentEvent.upsert({
+      where: { stripePaymentIntentId: intent.id },
+      update: {
+        status: "OK",
+        amountCents: intent.amount,
+        eventId,
+        userId: userId ?? undefined,
+        updatedAt: new Date(),
+        errorMessage: null,
+        mode: intent.livemode ? "LIVE" : "TEST",
+        isTest: !intent.livemode,
+      },
+      create: {
+        stripePaymentIntentId: intent.id,
+        status: "OK",
+        amountCents: intent.amount,
+        eventId,
+        userId: userId ?? undefined,
+        mode: intent.livemode ? "LIVE" : "TEST",
+        isTest: !intent.livemode,
+      },
+    });
+  });
+}
+
 async function handleRefund(charge: Stripe.Charge) {
   const paymentIntentId =
     typeof charge.payment_intent === "string"
@@ -594,13 +1044,22 @@ async function handleRefund(charge: Stripe.Charge) {
     return;
   }
 
+  // Obter metadata do payment intent para identificar PADEL_SPLIT
+  const intent = await stripe.paymentIntents.retrieve(paymentIntentId, { expand: ["latest_charge"] }).catch(() => null);
+
+  const isPadelSplit = intent?.metadata?.mode === "PADEL_SPLIT";
   const tickets = await prisma.ticket.findMany({
     where: { stripePaymentIntentId: paymentIntentId },
-    select: { id: true, ticketTypeId: true, eventId: true, status: true },
+    select: { id: true, ticketTypeId: true, eventId: true, status: true, pairingId: true },
   });
 
   if (!tickets.length) {
     console.warn("[handleRefund] Nenhum ticket associado ao payment_intent", paymentIntentId);
+    return;
+  }
+
+  if (isPadelSplit) {
+    await handlePadelSplitRefund(paymentIntentId, tickets);
     return;
   }
 
@@ -634,12 +1093,70 @@ async function handleRefund(charge: Stripe.Charge) {
     ...stockUpdates,
     prisma.paymentEvent.updateMany({
       where: { stripePaymentIntentId: paymentIntentId },
-      data: { status: "REFUNDED", errorMessage: null, updatedAt: new Date() },
+      data: {
+        status: "REFUNDED",
+        errorMessage: null,
+        updatedAt: new Date(),
+        mode: charge.livemode ? "LIVE" : "TEST",
+        isTest: !charge.livemode,
+      },
     }),
   ]);
 
   console.log("[handleRefund] Tickets marcados como REFUNDED", {
     paymentIntentId,
     ticketCount: tickets.length,
+  });
+}
+
+async function handlePadelSplitRefund(paymentIntentId: string, tickets: Array<{ id: string; pairingId: number | null }>) {
+  const pairingIds = Array.from(new Set(tickets.map((t) => t.pairingId).filter(Boolean))) as number[];
+  if (!pairingIds.length) return;
+
+  await prisma.$transaction(async (tx) => {
+    await tx.ticket.updateMany({
+      where: { stripePaymentIntentId: paymentIntentId },
+      data: { status: TicketStatus.REFUNDED },
+    });
+
+    for (const pairingId of pairingIds) {
+      const pairing = await tx.padelPairing.findUnique({
+        where: { id: pairingId },
+        include: { slots: true },
+      });
+      if (!pairing) continue;
+
+      const affectedSlots = pairing.slots.filter((s) => tickets.some((t) => t.id === s.ticketId));
+      for (const slot of affectedSlots) {
+        await tx.padelPairingSlot.update({
+          where: { id: slot.id },
+          data: { slotStatus: PadelPairingSlotStatus.CANCELLED, paymentStatus: PadelPairingPaymentStatus.UNPAID, ticketId: null },
+        });
+      }
+
+      const hasPaid = pairing.slots.some(
+        (s) => s.paymentStatus === PadelPairingPaymentStatus.PAID && !tickets.some((t) => t.id === s.ticketId),
+      );
+      const newStatus = hasPaid ? "INCOMPLETE" : "CANCELLED";
+
+      await tx.padelPairing.update({
+        where: { id: pairingId },
+        data: {
+          pairingStatus: newStatus,
+          inviteToken: newStatus === "CANCELLED" ? null : pairing.inviteToken,
+        },
+      });
+    }
+
+    await tx.paymentEvent.updateMany({
+      where: { stripePaymentIntentId: paymentIntentId },
+      data: {
+        status: "REFUNDED",
+        updatedAt: new Date(),
+        errorMessage: null,
+        mode: charge.livemode ? "LIVE" : "TEST",
+        isTest: !charge.livemode,
+      },
+    });
   });
 }

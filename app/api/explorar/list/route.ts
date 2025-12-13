@@ -71,7 +71,8 @@ export async function GET(req: NextRequest) {
   const limitParam = searchParams.get("limit");
   const priceMinParam = searchParams.get("priceMin");
   const priceMaxParam = searchParams.get("priceMax");
-  const dateParam = searchParams.get("date"); // today | upcoming | all
+  const dateParam = searchParams.get("date"); // today | upcoming | all | day | weekend
+  const dayParam = searchParams.get("day"); // YYYY-MM-DD opcional
 
   const take = clampTake(limitParam ? parseInt(limitParam, 10) : DEFAULT_PAGE_SIZE);
   const cursorId = cursorParam ? Number(cursorParam) : null;
@@ -129,6 +130,7 @@ export async function GET(req: NextRequest) {
       ARTE: "OTHER",
       COMIDA: "OTHER",
       DRINKS: "OTHER",
+      GERAL: "OTHER",
     };
     const templateTypes = categoryFilters
       .map((c) => mapToTemplate[c])
@@ -148,6 +150,33 @@ export async function GET(req: NextRequest) {
   } else if (dateParam === "upcoming") {
     const now = new Date();
     where.startsAt = { gte: now };
+  } else if (dateParam === "weekend") {
+    const now = new Date();
+    const day = now.getDay(); // 0 domingo ... 6 sábado
+    let start = new Date(now);
+    let end = new Date(now);
+    if (day === 0) {
+      // domingo: só hoje a partir de agora
+      start = now;
+      end.setHours(23, 59, 59, 999);
+    } else {
+      const daysToSaturday = (6 - day + 7) % 7;
+      start.setDate(now.getDate() + daysToSaturday);
+      start.setHours(0, 0, 0, 0);
+      end = new Date(start);
+      end.setDate(start.getDate() + 1); // domingo
+      end.setHours(23, 59, 59, 999);
+    }
+    where.startsAt = { gte: start, lte: end };
+  } else if (dateParam === "day" && dayParam) {
+    const day = new Date(dayParam);
+    if (!Number.isNaN(day.getTime())) {
+      const startOfDay = new Date(day);
+      startOfDay.setHours(0, 0, 0, 0);
+      const endOfDay = new Date(day);
+      endOfDay.setHours(23, 59, 59, 999);
+      where.startsAt = { gte: startOfDay, lte: endOfDay };
+    }
   }
 
   // Filtro de preço (priceMax === null significa sem limite superior)

@@ -50,66 +50,95 @@ export default function MePage() {
 
   const isAdmin = Array.isArray(profile?.roles) && profile.roles.includes("admin");
 
+  const fetchTickets = async () => {
+    setTicketsLoading(true);
+    setTicketsError(null);
+
+    try {
+      const res = await fetch("/api/me/tickets", {
+        credentials: "include",
+        cache: "no-store",
+      });
+
+      if (!res.ok) {
+        if (res.status === 401) {
+          setTicketsError(
+            "Precisas de iniciar sessão para ver os teus bilhetes.",
+          );
+          setTickets([]);
+          return;
+        }
+
+        const text = await res.text();
+        console.error("Erro /api/me/tickets:", text);
+        setTicketsError("Erro ao carregar os teus bilhetes.");
+        return;
+      }
+
+      const data: TicketsApiResponse = await res.json();
+
+      if ("error" in data) {
+        setTicketsError("Erro ao carregar os teus bilhetes.");
+        return;
+      }
+
+      const mappedTickets =
+        data.tickets?.map((t) => ({
+          id: t.id,
+          qrToken: t.qrToken ?? "",
+          eventId: t.event?.id ?? 0,
+          eventSlug: t.event?.slug ?? "",
+          eventTitle: t.event?.title ?? "Evento",
+          eventStartDate: t.event?.startDate ?? t.purchasedAt,
+          eventLocationName: t.event?.locationName ?? null,
+          eventCoverImageUrl: t.event?.coverImageUrl ?? null,
+          ticketName: t.ticket?.name ?? "Bilhete",
+          quantity: t.quantity ?? 1,
+          pricePaid: t.pricePaid ?? 0,
+          currency: t.currency ?? "EUR",
+          createdAt: t.purchasedAt ?? new Date().toISOString(),
+        })) ?? [];
+
+      setTickets(mappedTickets);
+    } catch (err) {
+      console.error("Erro inesperado em /api/me/tickets:", err);
+      setTicketsError("Erro inesperado ao carregar os teus bilhetes.");
+    } finally {
+      setTicketsLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const fetchTickets = async () => {
+    if (!user) {
+      setTickets([]);
+      setTicketsLoading(false);
+      return;
+    }
+
+    fetchTickets();
+  }, [user?.id]);
+
+  useEffect(() => {
+    const onFocus = () => {
+      if (user) fetchTickets();
+    };
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [user]);
+
+  useEffect(() => {
+    const fetchInitial = async () => {
       setTicketsLoading(true);
       setTicketsError(null);
 
       try {
-        const res = await fetch("/api/me/tickets", {
-          credentials: "include",
-          cache: "no-store",
-        });
-
-        if (!res.ok) {
-          if (res.status === 401) {
-            setTicketsError(
-              "Precisas de iniciar sessão para ver os teus bilhetes.",
-            );
-            setTickets([]);
-            return;
-          }
-
-          const text = await res.text();
-          console.error("Erro /api/me/tickets:", text);
-          setTicketsError("Erro ao carregar os teus bilhetes.");
-          return;
-        }
-
-        const data: TicketsApiResponse = await res.json();
-
-        if ("error" in data) {
-          setTicketsError("Erro ao carregar os teus bilhetes.");
-          return;
-        }
-
-        const mappedTickets =
-          data.tickets?.map((t) => ({
-            id: t.id,
-            qrToken: t.qrToken ?? "",
-            eventId: t.event?.id ?? 0,
-            eventSlug: t.event?.slug ?? "",
-            eventTitle: t.event?.title ?? "Evento",
-            eventStartDate: t.event?.startDate ?? t.purchasedAt,
-            eventLocationName: t.event?.locationName ?? null,
-            eventCoverImageUrl: t.event?.coverImageUrl ?? null,
-            ticketName: t.ticket?.name ?? "Bilhete",
-            quantity: t.quantity ?? 1,
-            pricePaid: t.pricePaid ?? 0,
-            currency: t.currency ?? "EUR",
-            createdAt: t.purchasedAt ?? new Date().toISOString(),
-          })) ?? [];
-
-        setTickets(mappedTickets);
+        await fetchTickets();
       } catch (err) {
-        console.error("Erro inesperado em /api/me/tickets:", err);
-        setTicketsError("Erro inesperado ao carregar os teus bilhetes.");
-      } finally {
-        setTicketsLoading(false);
+        console.error("[me] fetch initial tickets error", err);
       }
     };
 
-    fetchTickets();
+    fetchInitial();
   }, []);
 
   const displayName =

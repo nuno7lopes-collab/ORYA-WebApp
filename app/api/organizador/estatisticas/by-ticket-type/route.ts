@@ -105,43 +105,33 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    // 2) Agrupar tickets por ticketTypeId para este evento
-    const ticketsGrouped = await prisma.ticket.groupBy({
-      by: ["ticketTypeId"],
-      where: {
-        eventId: event.id,
-        status: {
-          in: [TicketStatus.ACTIVE, TicketStatus.USED],
-        },
+    // 2) Agrupar por ticketType usando SaleLine (fonte de verdade)
+    const saleLineWhere = {
+      eventId: event.id,
+      saleSummary: {
         ...(fromDate || toDate
           ? {
-              purchasedAt: {
+              createdAt: {
                 ...(fromDate ? { gte: fromDate } : {}),
                 ...(toDate ? { lte: toDate } : {}),
               },
             }
           : {}),
       },
-      _count: {
-        _all: true,
-      },
+    };
+
+    const saleLinesGrouped = await prisma.saleLine.groupBy({
+      by: ["ticketTypeId"],
+      where: saleLineWhere,
       _sum: {
-        pricePaid: true,
+        quantity: true,
+        netCents: true,
+        grossCents: true,
+        platformFeeCents: true,
       },
     });
 
-    if (ticketsGrouped.length === 0) {
-      return NextResponse.json(
-        {
-          ok: true,
-          eventId: event.id,
-          items: [],
-        },
-        { status: 200 }
-      );
-    }
-
-    const ticketTypeIds = ticketsGrouped
+    const ticketTypeIds = saleLinesGrouped
       .map((g) => g.ticketTypeId)
       .filter((id): id is number => id != null);
 
@@ -152,21 +142,83 @@ export async function GET(req: NextRequest) {
       },
     });
 
-    const ticketTypeMap = new Map(
-      ticketTypes.map((tt) => [tt.id, tt] as const)
-    );
+    const ticketTypeMap = new Map(ticketTypes.map((tt) => [tt.id, tt] as const));
 
-    const items = ticketsGrouped.map((g) => {
+    let items = saleLinesGrouped.map((g) => {
       const tt = g.ticketTypeId ? ticketTypeMap.get(g.ticketTypeId) : null;
-
+      const gross = g._sum.grossCents ?? 0;
+      const fees = g._sum.platformFeeCents ?? 0;
+      const net = g._sum.netCents ?? 0;
+      const discount = Math.max(0, gross - fees - net);
       return {
         ticketTypeId: g.ticketTypeId,
         ticketTypeName: tt?.name ?? null,
-        soldTickets: g._count._all,
-        revenueCents: g._sum.pricePaid ?? 0,
+        soldTickets: g._sum.quantity ?? 0,
+        revenueCents: net,
+        grossCents: gross,
+        discountCents: discount,
+        platformFeeCents: fees,
+        netCents: net,
         currency: tt?.currency ?? null,
       };
     });
+
+    // Fallback para legacy se não houver linhas em SaleLine
+    if (items.length === 0) {
+      const ticketsGrouped = await prisma.ticket.groupBy({
+        by: ["ticketTypeId"],
+        where: {
+          eventId: event.id,
+          status: {
+            in: [TicketStatus.ACTIVE, TicketStatus.USED],
+          },
+          ...(fromDate || toDate
+            ? {
+                purchasedAt: {
+                  ...(fromDate ? { gte: fromDate } : {}),
+                  ...(toDate ? { lte: toDate } : {}),
+                },
+              }
+            : {}),
+        },
+        _count: {
+          _all: true,
+        },
+        _sum: {
+          pricePaid: true,
+        },
+      });
+
+      const fallbackIds = ticketsGrouped
+        .map((g) => g.ticketTypeId)
+        .filter((id): id is number => id != null);
+
+      const fallbackTypes = await prisma.ticketType.findMany({
+        where: {
+          id: { in: fallbackIds },
+          eventId: event.id,
+        },
+      });
+      const fallbackMap = new Map(fallbackTypes.map((tt) => [tt.id, tt] as const));
+
+      items = ticketsGrouped.map((g) => {
+        const tt = g.ticketTypeId ? fallbackMap.get(g.ticketTypeId) : null;
+        const gross = g._sum.pricePaid ?? 0;
+        const fees = 0;
+        const discount = 0;
+        return {
+          ticketTypeId: g.ticketTypeId,
+          ticketTypeName: tt?.name ?? null,
+          soldTickets: g._count._all,
+          revenueCents: gross,
+          grossCents: gross,
+          discountCents: discount,
+          platformFeeCents: fees,
+          netCents: gross - fees,
+          currency: tt?.currency ?? null,
+        };
+      });
+    }
 
     return NextResponse.json(
       {

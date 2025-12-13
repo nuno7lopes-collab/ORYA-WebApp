@@ -16,7 +16,7 @@ export default async function OrganizerEventEditPage({ params }: PageProps) {
   const supabase = await createSupabaseServer();
   const { data, error } = await supabase.auth.getUser();
   if (error || !data?.user) {
-    redirect("/login?redirectTo=/organizador/(dashboard)/eventos");
+    redirect("/login?redirectTo=/organizador/eventos");
   }
 
   const organizer = await prisma.organizer.findFirst({

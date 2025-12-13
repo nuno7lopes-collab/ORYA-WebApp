@@ -1,6 +1,7 @@
 // app/api/auth/me/route.ts
 import { NextResponse } from "next/server";
 import { createSupabaseServer } from "@/lib/supabaseServer";
+import { getNotificationPrefs } from "@/lib/notifications";
 import { prisma } from "@/lib/prisma";
 import type { User } from "@supabase/supabase-js";
 import { setUsernameForOwner, UsernameTakenError } from "@/lib/globalUsernames";
@@ -33,6 +34,9 @@ type ApiAuthMeResponse = {
     allowEmailNotifications: boolean;
     allowEventReminders: boolean;
     allowFriendRequests: boolean;
+    allowSalesAlerts?: boolean;
+    allowSystemAnnouncements?: boolean;
+    profileVisibility: "PUBLIC" | "PRIVATE";
   } | null;
   needsEmailConfirmation?: boolean;
 };
@@ -64,10 +68,14 @@ export async function GET() {
 
     const userId = user.id;
 
-    // Garantir Profile 1-1 com auth.users
-    let profile = await prisma.profile.findUnique({
-      where: { id: userId },
-    });
+    // Garantir Profile 1-1 com auth.users e prefs
+    const [profileFromDb, notificationPrefs] = await Promise.all([
+      prisma.profile.findUnique({
+        where: { id: userId },
+      }),
+      getNotificationPrefs(userId).catch(() => null),
+    ]);
+    let profile = profileFromDb;
 
     const pendingUsername = typeof userMetadata.pending_username === "string" ? userMetadata.pending_username : null;
 
@@ -128,6 +136,9 @@ export async function GET() {
       allowEmailNotifications: profile.allowEmailNotifications,
       allowEventReminders: profile.allowEventReminders,
       allowFriendRequests: profile.allowFriendRequests,
+      allowSalesAlerts: notificationPrefs?.allowSalesAlerts ?? true,
+      allowSystemAnnouncements: notificationPrefs?.allowSystemAnnouncements ?? true,
+      profileVisibility: profile.visibility === "PRIVATE" ? "PRIVATE" : "PUBLIC",
     };
 
     // Se email não está confirmado, força o frontend a continuar em modo "verify"

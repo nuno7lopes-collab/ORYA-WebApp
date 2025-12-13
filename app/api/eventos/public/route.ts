@@ -5,6 +5,10 @@ import { prisma } from "@/lib/prisma";
 export async function GET(_req: NextRequest) {
   try {
     const events = await prisma.event.findMany({
+      where: {
+        status: "PUBLISHED",
+        OR: [{ organizerId: null }, { organizer: { publicListingEnabled: true } }],
+      },
       orderBy: { startsAt: "asc" },
     });
 

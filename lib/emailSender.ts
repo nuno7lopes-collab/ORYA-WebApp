@@ -4,6 +4,8 @@ import { sendEmail, assertResendReady } from "@/lib/resendClient";
 import {
   renderPurchaseConfirmationEmail,
   renderTournamentScheduleEmail,
+  renderOwnerTransferEmail,
+  renderOfficialEmailVerificationEmail,
 } from "@/lib/emailTemplates";
 
 type PurchaseEmailInput = {
@@ -52,6 +54,68 @@ export async function sendTournamentScheduleEmail(input: TournamentEmailInput) {
     scheduleHtml: input.scheduleHtml,
     scheduleText: input.scheduleText,
     ticketUrl: input.ticketUrl,
+  });
+
+  return sendEmail({
+    to: input.to,
+    subject,
+    html,
+    text,
+  });
+}
+
+function getAppBaseUrl() {
+  return (
+    process.env.NEXT_PUBLIC_BASE_URL ??
+    process.env.NEXT_PUBLIC_APP_URL ??
+    "https://orya.pt"
+  );
+}
+
+type OwnerTransferEmailInput = {
+  to: string;
+  organizerName: string;
+  actorName: string;
+  token: string;
+  expiresAt?: Date | null;
+};
+
+export async function sendOwnerTransferEmail(input: OwnerTransferEmailInput) {
+  assertResendReady();
+  const baseUrl = getAppBaseUrl();
+  const confirmUrl = `${baseUrl}/organizador/owner/confirm?token=${encodeURIComponent(input.token)}`;
+  const { subject, html, text } = renderOwnerTransferEmail({
+    organizerName: input.organizerName,
+    actorName: input.actorName,
+    confirmUrl,
+    expiresAt: input.expiresAt,
+  });
+
+  return sendEmail({
+    to: input.to,
+    subject,
+    html,
+    text,
+  });
+}
+
+type OfficialEmailVerificationInput = {
+  to: string;
+  organizerName: string;
+  token: string;
+  pendingEmail: string;
+  expiresAt?: Date | null;
+};
+
+export async function sendOfficialEmailVerificationEmail(input: OfficialEmailVerificationInput) {
+  assertResendReady();
+  const baseUrl = getAppBaseUrl();
+  const confirmUrl = `${baseUrl}/organizador/settings/verify?token=${encodeURIComponent(input.token)}`;
+  const { subject, html, text } = renderOfficialEmailVerificationEmail({
+    organizerName: input.organizerName,
+    confirmUrl,
+    expiresAt: input.expiresAt,
+    pendingEmail: input.pendingEmail,
   });
 
   return sendEmail({

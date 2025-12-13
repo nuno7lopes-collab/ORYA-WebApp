@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Elements,
   PaymentElement,
@@ -12,13 +12,22 @@ import {
   type Appearance,
   type StripeElementsOptions,
 } from "@stripe/stripe-js";
-import { useCheckout } from "./contextoCheckout";
+import { type CheckoutBreakdown, useCheckout } from "./contextoCheckout";
 import { supabaseBrowser } from "@/lib/supabaseBrowser";
 import { isValidPhone, sanitizePhone } from "@/lib/phone";
 import { sanitizeUsername, validateUsername } from "@/lib/username";
 
 function isValidEmail(email: string) {
   return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email);
+}
+
+function formatMoney(cents: number, currency = "EUR") {
+  return new Intl.NumberFormat("pt-PT", {
+    style: "currency",
+    currency,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(cents / 100);
 }
 
 type CheckoutItem = {
@@ -50,7 +59,7 @@ type GuestInfo = {
 };
 
 export default function Step2Pagamento() {
-  const { dados, irParaPasso, atualizarDados } = useCheckout();
+  const { dados, irParaPasso, atualizarDados, breakdown, setBreakdown } = useCheckout();
 
   const [clientSecret, setClientSecret] = useState<string | null>(null);
   const [serverAmount, setServerAmount] = useState<number | null>(null);
@@ -76,6 +85,16 @@ export default function Step2Pagamento() {
   const [promoCode, setPromoCode] = useState("");
   const [appliedDiscount, setAppliedDiscount] = useState<number>(0);
   const [promoWarning, setPromoWarning] = useState<string | null>(null);
+  const lastIntentKeyRef = useRef<string | null>(null);
+  const inFlightIntentRef = useRef<string | null>(null);
+  const [cachedIntent, setCachedIntent] = useState<{
+    key: string;
+    clientSecret: string | null;
+    amount: number | null;
+    breakdown: CheckoutBreakdown;
+    discount: number;
+    freeCheckout: boolean;
+  } | null>(null);
 
   useEffect(() => {
     if (!promoCode.trim()) {
@@ -273,12 +292,57 @@ export default function Step2Pagamento() {
         }
       : null;
 
+    // Chave estável para não recriar PaymentIntent sem necessidade
+    const intentKey = JSON.stringify({
+      payload,
+      guest: guestPayload,
+      userId: userId ?? "guest",
+      mode: purchaseMode,
+    });
+
+    // Se já temos um intent em cache com a mesma key, reaproveitamos
+    if (cachedIntent?.key === intentKey) {
+      setClientSecret(cachedIntent.clientSecret);
+      setServerAmount(cachedIntent.amount);
+      setBreakdown(cachedIntent.breakdown);
+      setAppliedDiscount(cachedIntent.discount);
+      lastIntentKeyRef.current = intentKey;
+      setLoading(false);
+      if (cachedIntent.freeCheckout) {
+        irParaPasso(3);
+        return;
+      }
+      return;
+    }
+
+    // Se já temos clientSecret para o mesmo payload, não refazemos
+    if (clientSecret && lastIntentKeyRef.current === intentKey) {
+      setLoading(false);
+      return;
+    }
+
+    // Evita requests paralelos com o mesmo payload; se detectarmos que estamos presos
+    // (ex.: Strict Mode cancela a primeira run e deixa loading a true), limpamos o ref
+    // para voltar a tentar.
+    if (inFlightIntentRef.current === intentKey) {
+      const stuck =
+        loading &&
+        !clientSecret &&
+        lastIntentKeyRef.current !== intentKey;
+      if (!stuck) {
+        return;
+      }
+      inFlightIntentRef.current = null;
+    }
+
     let cancelled = false;
 
     async function createIntent() {
       try {
+        inFlightIntentRef.current = intentKey;
         setLoading(true);
         setError(null);
+        setBreakdown(null);
 
         console.log(
           "[Step2Pagamento] A enviar payload para /api/payments/intent:",
@@ -305,6 +369,7 @@ export default function Step2Pagamento() {
         if (res.status === 401) {
           if (purchaseMode === "guest") {
             if (!cancelled) {
+              setBreakdown(null);
               setError(
                 typeof data?.error === "string"
                   ? data.error
@@ -317,16 +382,25 @@ export default function Step2Pagamento() {
             setUserId(null);
             setClientSecret(null);
             setServerAmount(null);
+            setBreakdown(null);
             setError(null);
           }
           return;
         }
 
-        if (!res.ok || !data?.ok || !data.clientSecret) {
+        if (!res.ok || !data?.ok || (!data.clientSecret && !data.freeCheckout)) {
+          setBreakdown(null);
           const msg =
             typeof data?.error === "string"
               ? data.error
               : "Não foi possível preparar o pagamento.";
+
+          if (data?.code === "ORGANIZER_STRIPE_REQUIRED") {
+            if (!cancelled) {
+              setError("Pagamentos desativados para este evento enquanto o organizador não ligar o Stripe.");
+            }
+            return;
+          }
 
           const promoFail =
             payload?.promoCode && typeof data?.error === "string" && data.error.toLowerCase().includes("código");
@@ -336,6 +410,7 @@ export default function Step2Pagamento() {
             setPromoCode("");
             setAppliedDiscount(0);
             setError(null);
+            setBreakdown(null);
             return;
           }
 
@@ -344,11 +419,66 @@ export default function Step2Pagamento() {
         }
 
         if (!cancelled) {
+          if (data.freeCheckout) {
+            const totalCents =
+              data.breakdown && typeof data.breakdown === "object"
+                ? (data.breakdown as CheckoutBreakdown).totalCents ?? 0
+                : 0;
+            setBreakdown(
+              data.breakdown && typeof data.breakdown === "object"
+                ? (data.breakdown as CheckoutBreakdown)
+                : null,
+            );
+            setAppliedDiscount(
+              typeof data.discountCents === "number"
+                ? data.discountCents / 100
+                : typeof data.breakdown?.discountCents === "number"
+                  ? data.breakdown.discountCents / 100
+                  : 0,
+            );
+            setClientSecret(null);
+            setServerAmount(0);
+            atualizarDados({
+              additional: {
+                ...(safeDados?.additional ?? {}),
+                paymentIntentId: "FREE_CHECKOUT",
+                total: totalCents / 100,
+                freeCheckout: true,
+                promoCode: payload?.promoCode,
+              },
+            });
+            lastIntentKeyRef.current = intentKey;
+            irParaPasso(3);
+            return;
+          }
           setClientSecret(data.clientSecret as string);
           setServerAmount(
             typeof data.amount === "number" ? data.amount : null,
           );
-          setAppliedDiscount(typeof data.discountCents === "number" ? data.discountCents / 100 : 0);
+          setBreakdown(
+            data.breakdown && typeof data.breakdown === "object"
+              ? (data.breakdown as CheckoutBreakdown)
+              : null,
+          );
+          setAppliedDiscount(
+            typeof data.discountCents === "number"
+              ? data.discountCents / 100
+              : typeof data.breakdown?.discountCents === "number"
+                ? data.breakdown.discountCents / 100
+                : 0,
+          );
+          lastIntentKeyRef.current = intentKey;
+          setCachedIntent({
+            key: intentKey,
+            clientSecret: data.clientSecret as string,
+            amount: typeof data.amount === "number" ? data.amount : null,
+            breakdown:
+              data.breakdown && typeof data.breakdown === "object"
+                ? (data.breakdown as CheckoutBreakdown)
+                : null,
+            discount: typeof data.discountCents === "number" ? data.discountCents / 100 : 0,
+            freeCheckout: false,
+          });
         }
       } catch (err) {
         console.error("Erro ao criar PaymentIntent:", err);
@@ -357,6 +487,9 @@ export default function Step2Pagamento() {
         }
       } finally {
         if (!cancelled) setLoading(false);
+        if (inFlightIntentRef.current === intentKey) {
+          inFlightIntentRef.current = null;
+        }
       }
     }
 
@@ -364,6 +497,7 @@ export default function Step2Pagamento() {
 
     return () => {
       cancelled = true;
+      inFlightIntentRef.current = null;
     };
   }, [
     payload,
@@ -373,6 +507,7 @@ export default function Step2Pagamento() {
     stripePromise,
     purchaseMode,
     guestSubmitVersion,
+    cachedIntent,
   ]);
 
   if (!safeDados) {
@@ -388,15 +523,19 @@ export default function Step2Pagamento() {
     safeDados.additional && typeof safeDados.additional === "object"
       ? safeDados.additional
       : {};
-  const totalFromContext =
-    typeof additional.total === "number" ? additional.total : null;
+  const totalFromContext = typeof additional.total === "number" ? additional.total : null;
+
+  const breakdownTotal =
+    breakdown && typeof breakdown.totalCents === "number" ? breakdown.totalCents / 100 : null;
 
   const total =
-    totalFromContext !== null
-      ? totalFromContext
-      : serverAmount !== null
-      ? serverAmount / 100
-      : null;
+    breakdownTotal !== null
+      ? breakdownTotal
+      : totalFromContext !== null
+        ? totalFromContext
+        : serverAmount !== null
+          ? serverAmount / 100
+          : null;
 
   const appearance: Appearance = {
     theme: "night",
@@ -609,7 +748,7 @@ const options: StripeElementsOptions | undefined = clientSecret
                 )}
               </div>
               <Elements stripe={stripePromise} options={options}>
-                <PaymentForm total={total} discount={appliedDiscount} />
+                <PaymentForm total={total} discount={appliedDiscount} breakdown={breakdown ?? undefined} />
               </Elements>
             </div>
           )}
@@ -683,14 +822,24 @@ const options: StripeElementsOptions | undefined = clientSecret
 type PaymentFormProps = {
   total: number | null;
   discount?: number;
+  breakdown?: CheckoutBreakdown;
 };
 
-function PaymentForm({ total, discount = 0 }: PaymentFormProps) {
+function PaymentForm({ total, discount = 0, breakdown }: PaymentFormProps) {
   const stripe = useStripe();
   const elements = useElements();
   const { irParaPasso, atualizarDados, dados } = useCheckout();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const currency = breakdown?.currency ?? "EUR";
+  const discountCents = Math.max(0, Math.round(discount * 100));
+  const hasInvoice = Boolean(breakdown?.lines?.length);
+  const platformFeeCents =
+    breakdown && breakdown.feeMode === "ADDED" ? breakdown.platformFeeCents : 0;
+  const subtotalCents = breakdown?.subtotalCents ?? 0;
+  const baseSubtotalCents =
+    hasInvoice && discountCents > 0 ? subtotalCents + discountCents : subtotalCents;
+  const promoApplied = discountCents > 0;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -717,6 +866,17 @@ function PaymentForm({ total, discount = 0 }: PaymentFormProps) {
             paymentIntentId: paymentIntent.id,
           },
         });
+        try {
+          const { trackEvent } = await import("@/lib/analytics");
+          trackEvent("checkout_payment_confirmed", {
+            eventId: dados?.eventId,
+            promoApplied,
+            currency,
+            totalCents: total ? Math.round(total * 100) : null,
+          });
+        } catch (err) {
+          console.warn("[trackEvent] checkout_payment_confirmed falhou", err);
+        }
         irParaPasso(3);
       }
     } catch (err) {
@@ -729,21 +889,83 @@ function PaymentForm({ total, discount = 0 }: PaymentFormProps) {
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-5">
-      {total !== null && (
-        <div className="rounded-xl bg-black/50 px-5 py-3 text-sm shadow-inner shadow-black/40 border border-white/10 space-y-1">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-white/75">
-              <span className="text-xs">🔒</span>
-              <span>Total a pagar</span>
-            </div>
-            <span className="text-lg font-semibold tracking-tight text-white">
-              {total.toFixed(2)} €
+      {(hasInvoice || total !== null) && (
+        <div className="rounded-2xl border border-white/10 bg-black/40 px-5 py-4 shadow-inner shadow-black/40 space-y-3">
+          <div className="flex items-center justify-between text-xs text-white/70">
+            <span className="uppercase tracking-[0.14em]">Resumo</span>
+            <span className="inline-flex items-center gap-1 rounded-full bg-white/5 px-3 py-1 border border-white/10 text-[11px] text-white/70">
+              🔒 Pagamento seguro
             </span>
           </div>
-          {discount > 0 && (
-            <div className="flex items-center justify-between text-xs text-emerald-300">
-              <span>Desconto aplicado</span>
-              <span>-{discount.toFixed(2)} €</span>
+
+          {hasInvoice && (
+            <div className="space-y-2">
+              {breakdown?.lines?.map((line) => (
+                <div
+                  key={`${line.ticketTypeId}-${line.name}-${line.quantity}`}
+                  className="flex items-center justify-between text-sm text-white/80"
+                >
+                  <div className="flex flex-col">
+                    <span className="font-medium">{line.name}</span>
+                    <span className="text-[11px] text-white/55">x{line.quantity}</span>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-[13px] font-semibold">
+                      {formatMoney(line.lineTotalCents, line.currency || currency)}
+                    </p>
+                    <p className="text-[11px] text-white/45">
+                      {formatMoney(line.unitPriceCents, line.currency || currency)} / bilhete
+                    </p>
+                  </div>
+                </div>
+              ))}
+
+              <div className="h-px w-full bg-white/10" />
+
+              {discountCents > 0 && (
+                <>
+                  <div className="flex items-center justify-between text-sm text-white/70">
+                    <span>Subtotal (antes de desconto)</span>
+                    <span className="font-semibold">
+                      {formatMoney(baseSubtotalCents, currency)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-sm text-emerald-300">
+                    <span>Desconto aplicado</span>
+                    <span>-{formatMoney(discountCents, currency)}</span>
+                  </div>
+                </>
+              )}
+
+              <div className="flex items-center justify-between text-sm text-white/80">
+                <span>Subtotal</span>
+                <span className="font-semibold">
+                  {formatMoney(subtotalCents, currency)}
+                </span>
+              </div>
+
+              {platformFeeCents > 0 && (
+                <div className="flex items-center justify-between text-sm text-white/70">
+                  <span>Taxas de serviço</span>
+                  <span>{formatMoney(platformFeeCents, currency)}</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {total !== null && (
+            <div className="flex items-center justify-between rounded-xl bg-white/5 px-4 py-3 border border-white/10">
+              <div className="flex flex-col text-white/80">
+                <span className="text-[12px]">Total a pagar</span>
+                {breakdown?.feeMode === "INCLUDED" && (
+                  <span className="text-[11px] text-white/55">
+                    Taxas já incluídas
+                  </span>
+                )}
+              </div>
+              <span className="text-xl font-semibold text-white">
+                {formatMoney(Math.round(total * 100), currency)}
+              </span>
             </div>
           )}
         </div>

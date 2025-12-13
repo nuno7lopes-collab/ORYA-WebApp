@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { TicketStatus, TransferStatus } from "@prisma/client";
+import { TicketStatus, TransferStatus, NotificationType } from "@prisma/client";
+import { createNotification, shouldNotify } from "@/lib/notifications";
 
 export async function POST(req: NextRequest) {
   try {
@@ -19,7 +20,7 @@ export async function POST(req: NextRequest) {
     }
     const profile = await prisma.profile.findUnique({
       where: { id: user.id },
-      select: { roles: true },
+      select: { roles: true, username: true, fullName: true },
     });
     const roles = Array.isArray(profile?.roles) ? (profile?.roles as string[]) : [];
     const isAdmin = roles.some((r) => r?.toLowerCase() === "admin");
@@ -144,6 +145,24 @@ export async function POST(req: NextRequest) {
         status: TransferStatus.PENDING,
       },
     });
+
+    if (await shouldNotify(targetProfile.id, NotificationType.TICKET_TRANSFER_RECEIVED)) {
+      await createNotification({
+        userId: targetProfile.id,
+        fromUserId: userId,
+        organizerId: ticket.event?.organizerId ?? null,
+        eventId: ticket.eventId,
+        ticketId: ticket.id,
+        type: NotificationType.TICKET_TRANSFER_RECEIVED,
+        title: "Tens um bilhete à tua espera",
+        body: `Aceita o bilhete para ${ticket.event?.title ?? "este evento"}.`,
+        payload: {
+          ticketId: ticket.id,
+          eventId: ticket.eventId,
+          actor: { id: user.id, username: profile?.username, fullName: profile?.fullName },
+        },
+      }).catch((err) => console.warn("[notification][ticket_transfer_received] falhou", err));
+    }
 
     return NextResponse.json(
       {

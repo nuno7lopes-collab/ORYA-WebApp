@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { sanitizeUsername, validateUsername, USERNAME_RULES_HINT } from "@/lib/username";
 
@@ -16,6 +16,7 @@ type OrgItem = {
     city: string | null;
     entityType: string | null;
     status: string | null;
+    brandingAvatarUrl?: string | null;
   };
 };
 
@@ -40,13 +41,7 @@ export default function OrganizationsHubClient({ initialOrgs, activeId }: Props)
   const [error, setError] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [loadingSwitch, setLoadingSwitch] = useState(false);
-  const formRef = useRef<HTMLDivElement | null>(null);
-
-  const scrollToForm = () => {
-    if (formRef.current) {
-      formRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
-  };
+  const [showForm, setShowForm] = useState(false);
 
   const checkUsernameAvailability = async (value: string) => {
     const cleaned = sanitizeUsername(value);
@@ -103,7 +98,19 @@ export default function OrganizationsHubClient({ initialOrgs, activeId }: Props)
       }
       setCurrentActive(organizerId);
       if (redirectToDashboard) {
-        router.push("/organizador?tab=overview");
+        // força cookie no browser e navegação direta com org na query
+        try {
+          document.cookie = `orya_org=${organizerId}; path=/; SameSite=Lax`;
+        } catch (err) {
+          console.warn("[org switch] não foi possível escrever cookie no browser", err);
+        }
+        // usa router para evitar cache, depois fallback para reload completo
+        router.replace(`/organizador?tab=overview&org=${organizerId}`);
+        setTimeout(() => {
+          if (window?.location?.href.includes(`org=${organizerId}`) === false) {
+            window.location.href = `/organizador?tab=overview&org=${organizerId}`;
+          }
+        }, 50);
       } else {
         setActionMessage("Organização ativa atualizada.");
       }
@@ -190,72 +197,106 @@ export default function OrganizationsHubClient({ initialOrgs, activeId }: Props)
 
   const renderOrgCard = (item: OrgItem) => {
     const isActive = currentActive === item.organizerId;
-    const isOwnerOrAdmin = ["OWNER", "ADMIN"].includes(item.role.toUpperCase());
+    const normalizedRole = item.role.toUpperCase();
+    const isOwnerOrAdmin = ["OWNER", "CO_OWNER", "ADMIN"].includes(normalizedRole);
     const cityLine = item.organizer.city || "Cidade não definida";
     const typeLine = item.organizer.entityType || "Tipo não definido";
     const handle = item.organizer.username ? `@${item.organizer.username}` : "Sem username";
+      const roleLabel = normalizedRole;
+    const statusLabel = (item.organizer.status || "—").toUpperCase();
+
+    const badgeClass = (kind: "status" | "role", value: string) => {
+      if (kind === "status" && value === "ACTIVE") {
+        return "border-emerald-400/50 bg-emerald-400/15 text-emerald-50";
+      }
+      if (kind === "status" && value === "PENDING") {
+        return "border-amber-400/50 bg-amber-400/15 text-amber-50";
+      }
+      if (kind === "status" && value === "SUSPENDED") {
+        return "border-red-400/50 bg-red-400/15 text-red-50";
+      }
+      if (kind === "role" && value === "OWNER") {
+        return "border-cyan-300/60 bg-cyan-300/15 text-cyan-50";
+      }
+      if (kind === "role" && value === "ADMIN") {
+        return "border-sky-300/60 bg-sky-300/15 text-sky-50";
+      }
+      return "border-white/20 bg-white/10 text-white/70";
+    };
 
     return (
       <div
         key={item.organizerId}
-        className={`rounded-2xl border p-4 shadow-[0_16px_50px_rgba(0,0,0,0.45)] transition hover:border-white/20 hover:bg-white/8 ${
-          isActive ? "border-[#6BFFFF]/40 bg-[#0b152d]/40" : "border-white/10 bg-white/5"
+        className={`rounded-2xl border p-4 shadow-[0_16px_50px_rgba(0,0,0,0.45)] transition hover:-translate-y-[3px] hover:border-[#6BFFFF]/50 hover:bg-white/8 ${
+          isActive ? "border-[#6BFFFF]/60 bg-[#0b152d]/50" : "border-white/10 bg-white/5"
         }`}
       >
         <div className="flex items-start justify-between gap-2">
-          <div className="space-y-1">
-            <h3 className="text-lg font-semibold">
-              {item.organizer.displayName || item.organizer.businessName || "Organização"}
-            </h3>
-            <p className="text-[12px] text-white/60">
-              {cityLine} · {typeLine}
-            </p>
-            <p className="text-[11px] text-white/55">{handle}</p>
+          <div className="flex items-start gap-3">
+            <div className="h-10 w-10 rounded-full border border-white/15 bg-white/10 overflow-hidden">
+              {item.organizer.brandingAvatarUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={item.organizer.brandingAvatarUrl}
+                  alt={item.organizer.displayName || "Organização"}
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center text-sm font-semibold">
+                  {(item.organizer.displayName || item.organizer.businessName || "O")[0]}
+                </div>
+              )}
+            </div>
+            <div className="space-y-1">
+              <h3 className="text-lg font-semibold">
+                {item.organizer.displayName || item.organizer.businessName || "Organização"}
+              </h3>
+              <p className="text-[12px] text-white/60">
+                {handle} · {typeLine}
+              </p>
+            </div>
           </div>
           <div className="flex flex-col items-end gap-1 text-[11px]">
-            {isActive && (
-              <span className="rounded-full border border-[#6BFFFF]/50 bg-[#6BFFFF]/15 px-2 py-0.5 text-[#CFFAFE]">
-                Ativa
-              </span>
-            )}
-            <span className="rounded-full border border-white/20 bg-white/10 px-2 py-0.5 uppercase tracking-[0.16em] text-white/60">
-              {item.role}
+            <span
+              className={`rounded-full border px-3 py-[5px] uppercase tracking-[0.2em] text-[10px] ${badgeClass("status", statusLabel)}`}
+            >
+              {statusLabel}
+            </span>
+            <span
+              className={`rounded-full border px-3 py-[5px] uppercase tracking-[0.2em] text-[10px] ${badgeClass("role", roleLabel)}`}
+            >
+              {roleLabel}
             </span>
           </div>
         </div>
 
-        <div className="mt-3 flex items-center justify-between text-[12px] text-white/70">
-          <span className="rounded-full border border-white/15 bg-white/5 px-2 py-1">
-            Estado: {item.organizer.status || "—"}
-          </span>
-          <div className="flex items-center gap-2">
-            {isOwnerOrAdmin && (
-              <button
-                type="button"
-                onClick={() => router.push(`/organizador/(dashboard)/staff?organizerId=${item.organizerId}`)}
-                className="text-white/70 hover:text-white underline-offset-2"
-              >
-                Gerir equipa
-              </button>
-            )}
-            {isActive ? (
-              <button
-                type="button"
-                onClick={() => router.push("/organizador?tab=overview")}
-                className="rounded-full bg-white text-black px-4 py-2 text-sm font-semibold shadow hover:opacity-90"
-              >
-                Ver dashboard
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => handleSwitch(item.organizerId, true)}
-                className="rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-4 py-2 text-sm font-semibold text-black shadow hover:brightness-110"
-              >
-                Entrar no dashboard
-              </button>
-            )}
-          </div>
+        <div className="mt-4 flex flex-wrap items-center gap-2 text-[12px] text-white/80">
+          {isActive ? (
+            <button
+              type="button"
+              disabled
+              className="rounded-full border border-emerald-400/50 bg-emerald-400/15 px-5 py-2 text-sm font-semibold text-emerald-50"
+            >
+              Já estás neste dashboard
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => handleSwitch(item.organizerId, true)}
+              className="rounded-full border border-white/25 bg-white/10 px-5 py-2 text-sm font-semibold text-white hover:bg-white/15 transition"
+            >
+              Entrar no dashboard de {item.organizer.displayName || "organização"}
+            </button>
+          )}
+          {isOwnerOrAdmin && (
+            <button
+              type="button"
+              onClick={() => router.push(`/organizador/staff?organizerId=${item.organizerId}`)}
+              className="rounded-full border border-white/20 bg-white/5 px-5 py-2 text-sm text-white hover:bg-white/10 transition"
+            >
+              Gerir equipa
+            </button>
+          )}
         </div>
       </div>
     );
@@ -268,23 +309,6 @@ export default function OrganizationsHubClient({ initialOrgs, activeId }: Props)
   return (
     <div className="orya-body-bg min-h-screen text-white px-4 py-10 md:px-8 lg:px-12">
       <div className="mx-auto max-w-6xl space-y-8">
-        <header className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div className="space-y-2">
-            <p className="text-[11px] uppercase tracking-[0.32em] text-white/60">Organizações</p>
-            <h1 className="text-3xl font-semibold">As tuas organizações</h1>
-            <p className="text-sm text-white/65 max-w-2xl">
-              Cria e gere as organizações com que trabalhas na ORYA. Escolhe uma para entrares no dashboard do organizador.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={scrollToForm}
-            className="self-start rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-4 py-2 text-sm font-semibold text-black shadow hover:brightness-110"
-          >
-            Criar organização
-          </button>
-        </header>
-
         {hasError && (
           <div className="rounded-2xl border border-red-400/40 bg-red-900/30 p-4 text-sm text-red-100">
             Não foi possível carregar as organizações neste momento.
@@ -304,30 +328,26 @@ export default function OrganizationsHubClient({ initialOrgs, activeId }: Props)
 
         {!loading && !hasError && !emptyState && (
           <section className="space-y-3">
-            <div>
+            <div className="space-y-1">
               <h2 className="text-lg font-semibold">As tuas organizações</h2>
-              <p className="text-[12px] text-white/65">
-                Escolhe em que organização estás a trabalhar. Podes alternar a qualquer momento.
-              </p>
+              <p className="text-[12px] text-white/65">Escolhe em que organização estás a trabalhar.</p>
             </div>
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
               {orgs.map(renderOrgCard)}
-              <div className="flex flex-col justify-between rounded-2xl border border-dashed border-white/20 bg-white/5 p-4 shadow-[0_16px_50px_rgba(0,0,0,0.35)]">
-                <div className="space-y-1">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-full border border-white/20 bg-white/10 text-lg font-bold">
-                    +
+              <button
+                type="button"
+                onClick={() => router.push("/organizador/become")}
+                className="flex flex-col justify-between rounded-2xl border border-dashed border-white/20 bg-white/5 p-4 shadow-[0_16px_50px_rgba(0,0,0,0.35)] hover:-translate-y-[3px] hover:border-white/30 transition text-left"
+              >
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-full border border-white/20 bg-white/10 text-xl font-bold">
+                      +
+                    </div>
+                    <h3 className="text-lg font-semibold">Adicionar nova organização</h3>
                   </div>
-                  <h3 className="text-lg font-semibold">Criar nova organização</h3>
-                  <p className="text-[12px] text-white/65">Clubes, espaços, marcas, promotores ou equipas.</p>
                 </div>
-                <button
-                  type="button"
-                  onClick={scrollToForm}
-                  className="self-start rounded-full border border-white/25 px-4 py-2 text-sm text-white hover:bg-white/10"
-                >
-                  Abrir formulário
-                </button>
-              </div>
+              </button>
             </div>
           </section>
         )}
@@ -347,100 +367,118 @@ export default function OrganizationsHubClient({ initialOrgs, activeId }: Props)
             </div>
             <button
               type="button"
-              onClick={scrollToForm}
+              onClick={() => router.push("/organizador/become")}
               className="rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-5 py-2 text-sm font-semibold text-black shadow hover:brightness-110"
             >
               Criar primeira organização
             </button>
           </div>
         )}
-
-        <section ref={formRef} className="rounded-2xl border border-white/10 bg-white/5 p-5 space-y-3 shadow-[0_18px_60px_rgba(0,0,0,0.45)]">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="text-lg font-semibold">Criar nova organização</h3>
-              <p className="text-[12px] text-white/65">Define nome, tipo de entidade e cidade base para começares.</p>
-            </div>
-            {actionMessage && <p className="text-[12px] text-emerald-200">{actionMessage}</p>}
-          </div>
-          <div className="grid gap-3 md:grid-cols-3">
-            <div className="space-y-1 md:col-span-1">
-              <label className="text-[12px] text-white/70">Nome da organização</label>
-              <input
-                value={businessName}
-                onChange={(e) => setBusinessName(e.target.value)}
-                className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
-                placeholder="Ex.: ORYA TEAM, Casa Guedes"
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-[12px] text-white/70">Cidade base</label>
-              <input
-                value={city}
-                onChange={(e) => setCity(e.target.value)}
-                className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
-                placeholder="Lisboa, Porto..."
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-[12px] text-white/70">Tipo de entidade</label>
-              <select
-                value={entityType}
-                onChange={(e) => setEntityType(e.target.value)}
-                className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
-              >
-                <option value="">Seleciona</option>
-                <option value="PESSOA_SINGULAR">Pessoa singular</option>
-                <option value="EMPRESA">Empresa</option>
-                <option value="ASSOCIACAO">Associação</option>
-              </select>
-            </div>
-            <div className="space-y-1">
-              <label className="text-[12px] text-white/70">Username ORYA</label>
-              <div className="relative">
-                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-white/50 text-sm">@</span>
-                <input
-                  value={orgUsername}
-                  onChange={(e) => {
-                    const cleaned = sanitizeUsername(e.target.value);
-                    setOrgUsername(cleaned);
-                    const validation = validateUsername(cleaned);
-                    setUsernameHint(validation.valid ? null : validation.error);
-                    setUsernameStatus("idle");
-                  }}
-                  onBlur={(e) => checkUsernameAvailability(e.target.value)}
-                  className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 pl-7 text-sm outline-none focus:border-[#6BFFFF]"
-                  maxLength={30}
-                  placeholder="casaguedes"
-                />
-              </div>
-              <p className="text-[11px] text-white/55">@ é único na ORYA (3-30 chars, letras/números/_ ou .)</p>
-              {usernameHint && <p className="text-[11px] text-amber-300">{usernameHint}</p>}
-              {checkingUsername && <p className="text-[11px] text-white/60">A verificar disponibilidade…</p>}
-              {usernameStatus === "taken" && !checkingUsername && (
-                <p className="text-[11px] text-red-300">Este @ já está a ser usado.</p>
-              )}
-              {usernameStatus === "available" && !checkingUsername && (
-                <p className="text-[11px] text-emerald-300">Disponível ✔</p>
-              )}
-            </div>
-          </div>
-          {error && <p className="text-sm text-red-300">{error}</p>}
-          <button
-            type="button"
-            onClick={handleCreate}
-            disabled={
-              saving ||
-              !businessName.trim() ||
-              !entityType.trim() ||
-              !city.trim() ||
-              !validateUsername(sanitizeUsername(orgUsername)).valid
-            }
-            className="self-start rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-5 py-2 text-sm font-semibold text-black shadow hover:brightness-110 disabled:opacity-60"
+        {showForm && (
+          <div
+            className={`${
+              emptyState ? "" : "fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 backdrop-blur"
+            }`}
           >
-            {saving ? "A criar…" : "Criar organização"}
-          </button>
-        </section>
+            <section className="w-full max-w-4xl rounded-2xl border border-white/10 bg-white/5 p-5 space-y-3 shadow-[0_18px_60px_rgba(0,0,0,0.45)]">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold">Criar nova organização</h3>
+                  <p className="text-[12px] text-white/65">Define nome, tipo de entidade e cidade base para começares.</p>
+                </div>
+                <div className="flex items-center gap-3">
+                  {actionMessage && <p className="text-[12px] text-emerald-200">{actionMessage}</p>}
+                  {!emptyState && (
+                    <button
+                      type="button"
+                      onClick={() => setShowForm(false)}
+                      className="rounded-full border border-white/20 bg-white/5 px-3 py-1 text-[12px] text-white hover:bg-white/10"
+                    >
+                      Fechar
+                    </button>
+                  )}
+                </div>
+              </div>
+              <div className="grid gap-3 md:grid-cols-3">
+                <div className="space-y-1 md:col-span-1">
+                  <label className="text-[12px] text-white/70">Nome da organização</label>
+                  <input
+                    value={businessName}
+                    onChange={(e) => setBusinessName(e.target.value)}
+                    className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
+                    placeholder="Ex.: ORYA TEAM, Casa Guedes"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[12px] text-white/70">Cidade base</label>
+                  <input
+                    value={city}
+                    onChange={(e) => setCity(e.target.value)}
+                    className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
+                    placeholder="Lisboa, Porto..."
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[12px] text-white/70">Tipo de entidade</label>
+                  <select
+                    value={entityType}
+                    onChange={(e) => setEntityType(e.target.value)}
+                    className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
+                  >
+                    <option value="">Seleciona</option>
+                    <option value="PESSOA_SINGULAR">Pessoa singular</option>
+                    <option value="EMPRESA">Empresa</option>
+                    <option value="ASSOCIACAO">Associação</option>
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[12px] text-white/70">Username ORYA</label>
+                  <div className="relative">
+                    <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-white/50 text-sm">@</span>
+                    <input
+                      value={orgUsername}
+                      onChange={(e) => {
+                        const cleaned = sanitizeUsername(e.target.value);
+                        setOrgUsername(cleaned);
+                        const validation = validateUsername(cleaned);
+                        setUsernameHint(validation.valid ? null : validation.error);
+                        setUsernameStatus("idle");
+                      }}
+                      onBlur={(e) => checkUsernameAvailability(e.target.value)}
+                      className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 pl-7 text-sm outline-none focus:border-[#6BFFFF]"
+                      maxLength={30}
+                      placeholder="casaguedes"
+                    />
+                  </div>
+                  <p className="text-[11px] text-white/55">@ é único na ORYA (3-30 chars, letras/números/_ ou .)</p>
+                  {usernameHint && <p className="text-[11px] text-amber-300">{usernameHint}</p>}
+                  {checkingUsername && <p className="text-[11px] text-white/60">A verificar disponibilidade…</p>}
+                  {usernameStatus === "taken" && !checkingUsername && (
+                    <p className="text-[11px] text-red-300">Este @ já está a ser usado.</p>
+                  )}
+                  {usernameStatus === "available" && !checkingUsername && (
+                    <p className="text-[11px] text-emerald-300">Disponível ✔</p>
+                  )}
+                </div>
+              </div>
+              {error && <p className="text-sm text-red-300">{error}</p>}
+              <button
+                type="button"
+                onClick={handleCreate}
+                disabled={
+                  saving ||
+                  !businessName.trim() ||
+                  !entityType.trim() ||
+                  !city.trim() ||
+                  !validateUsername(sanitizeUsername(orgUsername)).valid
+                }
+                className="self-start rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-5 py-2 text-sm font-semibold text-black shadow hover:brightness-110 disabled:opacity-60"
+              >
+                {saving ? "A criar…" : "Criar organização"}
+              </button>
+            </section>
+          </div>
+        )}
       </div>
     </div>
   );

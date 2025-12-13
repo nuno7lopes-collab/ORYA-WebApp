@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { TicketStatus } from "@prisma/client";
 import { getActiveOrganizerForUser } from "@/lib/organizerContext";
+import { isOrgAdminOrAbove } from "@/lib/organizerPermissions";
 
 type Aggregate = {
   grossCents: number;
@@ -23,10 +24,10 @@ export async function GET() {
       return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
 
-    const { organizer } = await getActiveOrganizerForUser(user.id);
+    const { organizer, membership } = await getActiveOrganizerForUser(user.id);
 
-    if (!organizer) {
-      return NextResponse.json({ ok: false, error: "NOT_ORGANIZER" }, { status: 403 });
+    if (!organizer || !membership || !isOrgAdminOrAbove(membership.role)) {
+      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
     const events = await prisma.event.findMany({
@@ -62,16 +63,22 @@ export async function GET() {
     const last7 = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
     const last30 = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
-    const tickets = await prisma.ticket.findMany({
+    // Fonte preferencial: SaleSummary/SaleLine
+    const summaries = await prisma.saleSummary.findMany({
       where: {
-        status: { in: [TicketStatus.ACTIVE, TicketStatus.USED] },
         eventId: { in: eventIds },
       },
       select: {
-        pricePaid: true,
-        platformFeeCents: true,
-        purchasedAt: true,
+        id: true,
         eventId: true,
+        createdAt: true,
+        subtotalCents: true,
+        discountCents: true,
+        platformFeeCents: true,
+        netCents: true,
+        lines: {
+          select: { quantity: true },
+        },
       },
     });
 
@@ -87,31 +94,68 @@ export async function GET() {
       }
     >();
 
-    const addTo = (target: Aggregate, gross: number, fees: number) => {
+    const addTo = (target: Aggregate, gross: number, fees: number, qty: number) => {
       target.grossCents += gross;
       target.feesCents += fees;
       target.netCents += Math.max(0, gross - fees);
-      target.tickets += 1;
+      target.tickets += qty;
     };
 
-    for (const t of tickets) {
-      const gross = t.pricePaid ?? 0;
-      const fees = t.platformFeeCents ?? 0;
-      addTo(totals, gross, fees);
+    for (const s of summaries) {
+      const qty = s.lines.reduce((q, l) => q + (l.quantity ?? 0), 0);
+      const gross = s.subtotalCents ?? 0;
+      const fees = s.platformFeeCents ?? 0;
 
-      if (t.purchasedAt >= last30) addTo(agg30, gross, fees);
-      if (t.purchasedAt >= last7) addTo(agg7, gross, fees);
+      addTo(totals, gross, fees, qty);
+      if (s.createdAt >= last30) addTo(agg30, gross, fees, qty);
+      if (s.createdAt >= last7) addTo(agg7, gross, fees, qty);
 
-      const current = eventStats.get(t.eventId) ?? {
+      const current = eventStats.get(s.eventId) ?? {
         grossCents: 0,
         netCents: 0,
         feesCents: 0,
         tickets: 0,
-        status: events.find((e) => e.id === t.eventId)?.status,
-        startsAt: events.find((e) => e.id === t.eventId)?.startsAt ?? null,
+        status: events.find((e) => e.id === s.eventId)?.status,
+        startsAt: events.find((e) => e.id === s.eventId)?.startsAt ?? null,
       };
-      addTo(current, gross, fees);
-      eventStats.set(t.eventId, current);
+      addTo(current, gross, fees, qty);
+      eventStats.set(s.eventId, current);
+    }
+
+    // Fallback se não existir SaleSummary: usar tickets legacy
+    if (summaries.length === 0) {
+      const tickets = await prisma.ticket.findMany({
+        where: {
+          status: { in: [TicketStatus.ACTIVE, TicketStatus.USED] },
+          eventId: { in: eventIds },
+        },
+        select: {
+          pricePaid: true,
+          platformFeeCents: true,
+          purchasedAt: true,
+          eventId: true,
+        },
+      });
+
+      for (const t of tickets) {
+        const gross = t.pricePaid ?? 0;
+        const fees = t.platformFeeCents ?? 0;
+        addTo(totals, gross, fees, 1);
+
+        if (t.purchasedAt >= last30) addTo(agg30, gross, fees, 1);
+        if (t.purchasedAt >= last7) addTo(agg7, gross, fees, 1);
+
+        const current = eventStats.get(t.eventId) ?? {
+          grossCents: 0,
+          netCents: 0,
+          feesCents: 0,
+          tickets: 0,
+          status: events.find((e) => e.id === t.eventId)?.status,
+          startsAt: events.find((e) => e.id === t.eventId)?.startsAt ?? null,
+        };
+        addTo(current, gross, fees, 1);
+        eventStats.set(t.eventId, current);
+      }
     }
 
     const eventsWithSales = Array.from(eventStats.keys()).length;

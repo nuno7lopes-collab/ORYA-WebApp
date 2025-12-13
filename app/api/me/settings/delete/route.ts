@@ -52,20 +52,17 @@ export async function POST(req: NextRequest) {
     const now = new Date();
 
     await prisma.$transaction([
-      prisma.profile.upsert({
+      prisma.profile.updateMany({
         where: { id: user.id },
-        update: {
+        data: {
           isDeleted: true,
           deletedAt: now,
           visibility: "PRIVATE",
-        },
-        create: {
-          id: user.id,
-          roles: ["user"],
-          visibility: "PRIVATE",
-          isDeleted: true,
-          deletedAt: now,
-          favouriteCategories: [],
+          username: null,
+          fullName: "Conta apagada",
+          bio: null,
+          city: null,
+          avatarUrl: null,
         },
       }),
       prisma.event.updateMany({

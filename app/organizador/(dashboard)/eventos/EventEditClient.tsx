@@ -7,6 +7,9 @@ import { InlineDateTimePicker } from "@/app/components/forms/InlineDateTimePicke
 import { TicketTypeStatus } from "@prisma/client";
 import { useUser } from "@/app/hooks/useUser";
 
+type ToastTone = "success" | "error";
+type Toast = { id: number; message: string; tone: ToastTone };
+
 type TicketTypeUI = {
   id: number;
   name: string;
@@ -93,6 +96,13 @@ export function EventEditClient({ event, tickets, eventHasTickets }: EventEditCl
   const titleRef = useRef<HTMLInputElement | null>(null);
   const startsRef = useRef<HTMLDivElement | null>(null);
   const cityRef = useRef<HTMLInputElement | null>(null);
+  const [toasts, setToasts] = useState<Toast[]>([]);
+
+  const pushToast = (message: string, tone: ToastTone = "error") => {
+    const id = Date.now() + Math.random();
+    setToasts((prev) => [...prev, { id, message, tone }]);
+    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 4200);
+  };
   const roles = Array.isArray(profile?.roles) ? (profile?.roles as string[]) : [];
   const isAdmin = roles.some((r) => r?.toLowerCase() === "admin");
   const payoutMode = (event.payoutMode ?? "ORGANIZER").toUpperCase();
@@ -266,6 +276,7 @@ export function EventEditClient({ event, tickets, eventHasTickets }: EventEditCl
       }
 
       setMessage("Evento atualizado com sucesso.");
+      pushToast("Evento atualizado com sucesso.", "success");
       setEndingIds([]);
       if (ticketTypeUpdates.length > 0) {
         setTicketList((prev) =>
@@ -305,6 +316,7 @@ export function EventEditClient({ event, tickets, eventHasTickets }: EventEditCl
     } catch (err) {
       console.error("Erro ao atualizar evento", err);
       setBackendAlert(err instanceof Error ? err.message : "Erro ao atualizar evento.");
+      pushToast(err instanceof Error ? err.message : "Erro ao atualizar evento.");
       scrollTo(ctaRef.current);
     } finally {
       setIsSaving(false);
@@ -341,9 +353,11 @@ export function EventEditClient({ event, tickets, eventHasTickets }: EventEditCl
         prev.map((t) => (t.id === confirmId ? { ...t, status: TicketTypeStatus.CLOSED } : t)),
       );
       setMessage("Venda terminada para este bilhete.");
+      pushToast("Venda terminada para este bilhete.", "success");
     } catch (err) {
       console.error("Erro ao terminar venda", err);
       setError(err instanceof Error ? err.message : "Erro ao terminar venda.");
+      pushToast(err instanceof Error ? err.message : "Erro ao terminar venda.");
     } finally {
       setIsSaving(false);
       setConfirmId(null);
@@ -352,6 +366,7 @@ export function EventEditClient({ event, tickets, eventHasTickets }: EventEditCl
   };
 
   return (
+    <>
     <div className="space-y-6">
       {confirmId && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/70 backdrop-blur">
@@ -564,8 +579,8 @@ export function EventEditClient({ event, tickets, eventHasTickets }: EventEditCl
           <h2 className="text-sm font-semibold uppercase tracking-wide text-white/70">
             Bilhetes (não removemos, só terminamos venda)
           </h2>
-          <Link href={`/organizador/estatisticas?eventId=${event.id}`} className="text-[11px] text-[#6BFFFF]">
-            Ver estatísticas →
+          <Link href={`/organizador?tab=sales&eventId=${event.id}`} className="text-[11px] text-[#6BFFFF]">
+            Ver vendas →
           </Link>
         </div>
 
@@ -702,5 +717,22 @@ export function EventEditClient({ event, tickets, eventHasTickets }: EventEditCl
         </div>
       </div>
     </div>
+    {toasts.length > 0 && (
+      <div className="pointer-events-none fixed bottom-6 right-6 z-40 flex flex-col gap-2">
+        {toasts.map((toast) => (
+          <div
+            key={toast.id}
+            className={`pointer-events-auto min-w-[240px] rounded-lg border px-4 py-3 text-sm shadow-lg ${
+              toast.tone === "success"
+                ? "border-emerald-400/50 bg-emerald-500/15 text-emerald-50"
+                : "border-red-400/50 bg-red-500/15 text-red-50"
+            }`}
+          >
+            {toast.message}
+          </div>
+        ))}
+      </div>
+    )}
+    </>
   );
 }

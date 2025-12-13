@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
+import FollowClient from "./FollowClient";
 
 type Params = { username: string };
 
@@ -26,6 +27,13 @@ export default async function PublicProfilePage({ params }: { params: Promise<Pa
       fullName: true,
       avatarUrl: true,
       city: true,
+      visibility: true,
+      followers: {
+        select: { id: true },
+      },
+      following: {
+        select: { id: true },
+      },
     },
   });
 
@@ -33,7 +41,7 @@ export default async function PublicProfilePage({ params }: { params: Promise<Pa
     notFound();
   }
 
-  const visibility = (profile as { visibility?: string } | null)?.visibility ?? "PUBLIC";
+  const visibility = profile.visibility ?? "PUBLIC";
   const isOwner = viewer?.id === profile.id;
   const isPrivate = visibility === "PRIVATE" && !isOwner;
   const displayName = profile.fullName || profile.username || "Utilizador ORYA";
@@ -60,11 +68,14 @@ export default async function PublicProfilePage({ params }: { params: Promise<Pa
         take: 30,
       });
 
+  const followersCount = profile.followers?.length ?? 0;
+  const followingCount = profile.following?.length ?? 0;
+
   return (
     <main className="orya-body-bg min-h-screen text-white">
       <section className="max-w-5xl mx-auto px-5 py-10 space-y-4">
         <div className="flex items-center gap-3">
-          <div className="h-16 w-16 rounded-full bg-gradient-to-br from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] flex items-center justify-center text-black font-semibold text-xl overflow-hidden shadow-[0_10px_28px_rgba(0,0,0,0.35)]">
+          <div className="relative h-16 w-16 rounded-full bg-gradient-to-br from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] flex items-center justify-center text-black font-semibold text-xl overflow-hidden shadow-[0_10px_28px_rgba(0,0,0,0.35)] ring-1 ring-white/10">
             {profile.avatarUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
@@ -76,21 +87,20 @@ export default async function PublicProfilePage({ params }: { params: Promise<Pa
               <span>{displayName.charAt(0).toUpperCase()}</span>
             )}
           </div>
-          <div>
+          <div className="space-y-1">
             <h1 className="text-2xl font-semibold">{displayName}</h1>
             <p className="text-sm text-white/70">@{usernameLabel}</p>
+            {!isOwner && !isPrivate && (
+              <FollowClient targetUserId={profile.id} initialIsFollowing={false} />
+            )}
+            {!isPrivate && (
+              <div className="flex gap-3 text-[12px] text-white/70">
+                <span>{followingCount} a seguir</span>
+                <span>{followersCount} seguidores</span>
+              </div>
+            )}
           </div>
         </div>
-        {isPrivate ? (
-          <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/70">
-            Este perfil é privado. Vês apenas avatar, nome e username.
-          </div>
-        ) : (
-          <div className="space-y-2 text-sm text-white/65">
-            {profile.city && <p>📍 {profile.city}</p>}
-            <p>Perfil público em breve terá mais detalhes e eventos associados.</p>
-          </div>
-        )}
         {isPrivate ? (
           <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/70">
             Este perfil é privado. Vês apenas avatar, nome e username.

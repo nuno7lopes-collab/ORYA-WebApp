@@ -128,27 +128,53 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Guardar username reservado em outras entidades
+    const existingOrganizer = await prisma.organizer.findFirst({
+      where: { username: { equals: validatedUsername.username, mode: "insensitive" } },
+      select: { id: true },
+    });
+    if (existingOrganizer) {
+      return NextResponse.json(
+        { ok: false, error: "Este @ já está a ser usado — escolhe outro.", code: "USERNAME_TAKEN" },
+        { status: 409 },
+      );
+    }
+    const existingProfile = await prisma.profile.findFirst({
+      where: { username: { equals: validatedUsername.username, mode: "insensitive" } },
+      select: { id: true },
+    });
+    if (existingProfile) {
+      return NextResponse.json(
+        { ok: false, error: "Este @ já está a ser usado — escolhe outro.", code: "USERNAME_TAKEN" },
+        { status: 409 },
+      );
+    }
+
     const organizer = await prisma.$transaction(async (tx) => {
-      const created = await tx.organizer.create({
-        data: {
-          userId: user.id, // legacy compat
-          displayName: dName,
-          businessName: bName,
-          entityType: eType,
-          city: cityClean,
-          status: OrganizerStatus.ACTIVE,
-          username: validatedUsername.username,
-        },
-      });
+      async function createOrganizer(includePublicName: boolean) {
+        return tx.organizer.create({
+          data: {
+            userId: user.id, // legacy compat
+            displayName: dName,
+            ...(includePublicName ? { publicName: dName } : {}),
+            businessName: bName,
+            entityType: eType,
+            city: cityClean,
+            status: OrganizerStatus.ACTIVE,
+            username: validatedUsername.username,
+          },
+        });
+      }
 
-      await setUsernameForOwner({
-        username: validatedUsername.username,
-        ownerType: "organizer",
-        ownerId: created.id,
-        tx,
-      });
-
-      return created;
+      try {
+        return await createOrganizer(true);
+      } catch (err) {
+        const code = (err as { code?: string })?.code;
+        const message = err instanceof Error ? err.message : "";
+        const missingColumn = code === "P2022" && message.toLowerCase().includes("public_name");
+        if (!missingColumn) throw err;
+        return createOrganizer(false);
+      }
     });
 
     try {
@@ -162,6 +188,23 @@ export async function POST(req: NextRequest) {
         throw err;
       }
       console.warn("[organizador/organizations][POST] organizer_members em falta; criámos org sem membership");
+    }
+
+    // Reservar username global fora da transação para não abortar criação
+    try {
+      await setUsernameForOwner({
+        username: validatedUsername.username,
+        ownerType: "organizer",
+        ownerId: organizer.id,
+      });
+    } catch (err) {
+      if (err instanceof UsernameTakenError) {
+        return NextResponse.json(
+          { ok: false, error: "Este @ já está a ser usado — escolhe outro.", code: "USERNAME_TAKEN" },
+          { status: 409 },
+        );
+      }
+      console.warn("[organizador/organizations][POST] username global falhou (ignorado)", err);
     }
 
     return NextResponse.json(

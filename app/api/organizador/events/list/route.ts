@@ -1,13 +1,17 @@
 // app/api/organizador/events/list/route.ts
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated } from "@/lib/security";
 import { TicketStatus } from "@prisma/client";
 import { getActiveOrganizerForUser } from "@/lib/organizerContext";
+import { isOrgAdminOrAbove } from "@/lib/organizerPermissions";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
+    const url = new URL(req.url);
+    const limit = Math.min(Number(url.searchParams.get("limit") ?? 100), 500);
+
     const supabase = await createSupabaseServer();
 
     // 1) Garante que o utilizador está autenticado
@@ -30,9 +34,11 @@ export async function GET() {
     }
 
     // 3) Encontrar o organizer ligado a este perfil (membership > legacy)
-    const { organizer } = await getActiveOrganizerForUser(profile.id);
+    const { organizer, membership } = await getActiveOrganizerForUser(profile.id, {
+      roles: ["OWNER", "CO_OWNER", "ADMIN"],
+    });
 
-    if (!organizer) {
+    if (!organizer || !membership || !isOrgAdminOrAbove(membership.role)) {
       return NextResponse.json(
         {
           ok: false,
@@ -44,13 +50,17 @@ export async function GET() {
     }
 
     const events = await prisma.event.findMany({
-      where: { organizerId: organizer.id },
+      where: { organizerId: organizer.id, isDeleted: false },
       orderBy: {
         startsAt: "asc",
       },
       include: {
         categories: true,
+        padelTournamentConfig: {
+          select: { padelClubId: true, partnerClubIds: true },
+        },
       },
+      take: limit,
     });
 
     const capacityAgg = await prisma.ticketType.groupBy({
@@ -94,6 +104,22 @@ export async function GET() {
       });
     });
 
+    const padelClubIds = new Set<number>();
+    events.forEach((ev) => {
+      const cfg = ev.padelTournamentConfig;
+      if (cfg?.padelClubId) padelClubIds.add(cfg.padelClubId);
+      (cfg?.partnerClubIds || []).forEach((id) => padelClubIds.add(id));
+    });
+    const padelClubs =
+      padelClubIds.size > 0
+        ? await prisma.padelClub.findMany({
+            where: { id: { in: Array.from(padelClubIds) } },
+            select: { id: true, name: true },
+          })
+        : [];
+    const padelClubMap = new Map<number, string>();
+    padelClubs.forEach((c) => padelClubMap.set(c.id, c.name || `Clube ${c.id}`));
+
     const items = events.map((event) => ({
       id: event.id,
       slug: event.slug,
@@ -112,6 +138,10 @@ export async function GET() {
       platformFeeCents: statsMap.get(event.id)?.platformFeeCents ?? 0,
       capacity: capacityMap.get(event.id) ?? null,
       categories: event.categories.map((c) => c.category),
+      padelClubId: event.padelTournamentConfig?.padelClubId ?? null,
+      padelPartnerClubIds: event.padelTournamentConfig?.partnerClubIds ?? [],
+      padelClubName: event.padelTournamentConfig?.padelClubId ? padelClubMap.get(event.padelTournamentConfig.padelClubId) ?? null : null,
+      padelPartnerClubNames: (event.padelTournamentConfig?.partnerClubIds || []).map((id) => padelClubMap.get(id) ?? null),
     }));
 
     return NextResponse.json(

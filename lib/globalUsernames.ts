@@ -24,11 +24,22 @@ export async function checkUsernameAvailability(username: string, tx: Tx = prism
   const normalizedResult = normalizeAndValidateUsername(username);
   if (!normalizedResult.ok) return normalizedResult;
 
-  const existing = await tx.globalUsername.findUnique({
-    where: { username: normalizedResult.username },
-    select: { ownerType: true, ownerId: true },
-  });
-  return { ok: true as const, available: !existing, username: normalizedResult.username };
+  try {
+    const existing = await tx.globalUsername.findUnique({
+      where: { username: normalizedResult.username },
+      select: { ownerType: true, ownerId: true },
+    });
+    return { ok: true as const, available: !existing, username: normalizedResult.username };
+  } catch (err) {
+    const code = (err as { code?: string })?.code;
+    const msg = err instanceof Error ? err.message : "";
+    const missingTable = code === "P2021" || code === "P2022" || msg.toLowerCase().includes("does not exist");
+    if (missingTable) {
+      console.warn("[globalUsernames] table/column missing while checking availability");
+      return { ok: true as const, available: true, username: normalizedResult.username };
+    }
+    throw err;
+  }
 }
 
 export async function setUsernameForOwner(options: {
@@ -80,10 +91,32 @@ export async function setUsernameForOwner(options: {
   };
 
   if (providedTx) {
-    return run(providedTx);
+    try {
+      return await run(providedTx);
+    } catch (err) {
+      const code = (err as { code?: string })?.code;
+      const msg = err instanceof Error ? err.message : "";
+      const missingTable = code === "P2021" || code === "P2022" || msg.toLowerCase().includes("relation") || msg.toLowerCase().includes("does not exist");
+      if (missingTable) {
+        console.warn("[globalUsernames] table/column missing, skipping username reservation");
+        return { ok: false as const, error: "USERNAME_TABLE_MISSING" as const };
+      }
+      throw err;
+    }
   }
 
-  return prisma.$transaction(run);
+  try {
+    return await prisma.$transaction(run);
+  } catch (err) {
+    const code = (err as { code?: string })?.code;
+    const msg = err instanceof Error ? err.message : "";
+    const missingTable = code === "P2021" || code === "P2022" || msg.toLowerCase().includes("relation") || msg.toLowerCase().includes("does not exist");
+    if (missingTable) {
+      console.warn("[globalUsernames] table/column missing, skipping username reservation");
+      return { ok: false as const, error: "USERNAME_TABLE_MISSING" as const };
+    }
+    throw err;
+  }
 }
 
 /**

@@ -4,8 +4,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { ensureAuthenticated, assertOrganizer } from "@/lib/security";
+import { ensureAuthenticated } from "@/lib/security";
 import { getActiveOrganizerForUser } from "@/lib/organizerContext";
+import { PORTUGAL_CITIES } from "@/config/cities";
+import { isOrgAdminOrAbove } from "@/lib/organizerPermissions";
 
 // Tipos esperados no body do pedido
 type TicketTypeInput = {
@@ -32,6 +34,12 @@ type CreateOrganizerEventBody = {
   feeMode?: string;
   platformFeeBps?: number;
   platformFeeFixedCents?: number;
+  padel?: {
+    format?: string;
+    numberOfCourts?: number;
+    ruleSetId?: number | null;
+    defaultCategoryId?: number | null;
+  } | null;
 };
 
 function slugify(input: string): string {
@@ -76,11 +84,11 @@ export async function POST(req: NextRequest) {
 
     // Buscar organizer associado a este profile (membership > legacy)
     const { organizer, membership } = await getActiveOrganizerForUser(profile.id, {
-      roles: ["OWNER", "ADMIN"],
+      roles: ["OWNER", "CO_OWNER", "ADMIN"],
     });
-
-    // Garante que o user tem role de organizer e que este organizer pertence-lhe
-    assertOrganizer(user, profile, organizer ?? undefined);
+    if (!organizer || !membership || !isOrgAdminOrAbove(membership.role)) {
+      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    }
     const isAdmin = Array.isArray(profile.roles) ? profile.roles.includes("admin") : false;
 
     const title = body.title?.trim();
@@ -121,6 +129,13 @@ export async function POST(req: NextRequest) {
     if (!locationCity) {
       return NextResponse.json(
         { ok: false, error: "Cidade é obrigatória." },
+        { status: 400 },
+      );
+    }
+    const cityAllowed = PORTUGAL_CITIES.includes(locationCity as (typeof PORTUGAL_CITIES)[number]);
+    if (!cityAllowed) {
+      return NextResponse.json(
+        { ok: false, error: "Cidade inválida. Escolhe uma cidade da lista disponível na ORYA." },
         { status: 400 },
       );
     }
@@ -267,6 +282,51 @@ export async function POST(req: NextRequest) {
         payoutMode,
       },
     });
+
+    if (templateType === "SPORT" && body.padel && organizer) {
+      const padelConfig = body.padel as {
+        padelClubId?: number | null;
+        partnerClubIds?: number[];
+        format?: string;
+        numberOfCourts?: number;
+        ruleSetId?: number | null;
+        defaultCategoryId?: number | null;
+        advancedSettings?: unknown;
+      };
+      const padelClubId =
+        typeof padelConfig.padelClubId === "number" && Number.isFinite(padelConfig.padelClubId)
+          ? padelConfig.padelClubId
+          : null;
+      const partnerClubIds = Array.isArray(padelConfig.partnerClubIds)
+        ? padelConfig.partnerClubIds.filter((id) => typeof id === "number" && Number.isFinite(id))
+        : [];
+      const advancedSettings = padelConfig.advancedSettings ?? null;
+      try {
+        await prisma.padelTournamentConfig.upsert({
+          where: { eventId: event.id },
+          create: {
+            eventId: event.id,
+            organizerId: organizer.id,
+            padelClubId,
+            partnerClubIds,
+            numberOfCourts: Math.max(1, padelConfig.numberOfCourts || 1),
+            ruleSetId: padelConfig.ruleSetId || undefined,
+            defaultCategoryId: padelConfig.defaultCategoryId || undefined,
+            advancedSettings: advancedSettings as any,
+          },
+          update: {
+            padelClubId,
+            partnerClubIds,
+            numberOfCourts: Math.max(1, padelConfig.numberOfCourts || 1),
+            ruleSetId: padelConfig.ruleSetId || undefined,
+            defaultCategoryId: padelConfig.defaultCategoryId || undefined,
+            advancedSettings: advancedSettings as any,
+          },
+        });
+      } catch (padelErr) {
+        console.warn("[organizador/events/create] padel config falhou", padelErr);
+      }
+    }
 
     // Criar os tipos de bilhete associados a este evento
     await prisma.ticketType.createMany({

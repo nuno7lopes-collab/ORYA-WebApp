@@ -1,0 +1,98 @@
+export const runtime = "nodejs";
+
+import { NextRequest, NextResponse } from "next/server";
+import { OrganizerMemberRole } from "@prisma/client";
+import { prisma } from "@/lib/prisma";
+import { createSupabaseServer } from "@/lib/supabaseServer";
+import { getActiveOrganizerForUser } from "@/lib/organizerContext";
+
+const allowedRoles: OrganizerMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
+
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const clubId = Number(id);
+  if (!Number.isFinite(clubId)) return NextResponse.json({ ok: false, error: "INVALID_CLUB" }, { status: 400 });
+
+  const supabase = await createSupabaseServer();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+
+  const { organizer } = await getActiveOrganizerForUser(user.id, { roles: allowedRoles });
+  if (!organizer) return NextResponse.json({ ok: false, error: "NO_ORGANIZER" }, { status: 403 });
+
+  const club = await prisma.padelClub.findFirst({ where: { id: clubId, organizerId: organizer.id, deletedAt: null } });
+  if (!club) return NextResponse.json({ ok: false, error: "CLUB_NOT_FOUND" }, { status: 404 });
+
+  const courts = await prisma.padelClubCourt.findMany({
+    where: { padelClubId: club.id },
+    orderBy: [{ displayOrder: "asc" }, { id: "asc" }],
+  });
+
+  return NextResponse.json({ ok: true, items: courts }, { status: 200 });
+}
+
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const clubId = Number(id);
+  if (!Number.isFinite(clubId)) return NextResponse.json({ ok: false, error: "INVALID_CLUB" }, { status: 400 });
+
+  const supabase = await createSupabaseServer();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+
+  const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
+  if (!body) return NextResponse.json({ ok: false, error: "INVALID_BODY" }, { status: 400 });
+
+  const { organizer } = await getActiveOrganizerForUser(user.id, { roles: allowedRoles });
+  if (!organizer) return NextResponse.json({ ok: false, error: "NO_ORGANIZER" }, { status: 403 });
+
+  const club = await prisma.padelClub.findFirst({ where: { id: clubId, organizerId: organizer.id, deletedAt: null } });
+  if (!club) return NextResponse.json({ ok: false, error: "CLUB_NOT_FOUND" }, { status: 404 });
+
+  const courtId = typeof body.id === "number" ? body.id : null;
+  const name = typeof body.name === "string" ? body.name.trim() : "";
+  const description = typeof body.description === "string" ? body.description.trim() : "";
+  const surface = typeof body.surface === "string" ? body.surface.trim() : "";
+  const indoor = typeof body.indoor === "boolean" ? body.indoor : false;
+  const isActive = typeof body.isActive === "boolean" ? body.isActive : true;
+  const displayOrderRaw =
+    typeof body.displayOrder === "number"
+      ? body.displayOrder
+      : typeof body.displayOrder === "string"
+        ? Number(body.displayOrder)
+        : null;
+  const displayOrder = Number.isFinite(displayOrderRaw)
+    ? Math.min(10000, Math.max(0, Math.floor(displayOrderRaw as number)))
+    : 0;
+
+  try {
+    let finalName = name;
+    if (!finalName) {
+      // Gera nome sequencial quando vazio (Court 1, Court 2, ...)
+      const count = await prisma.padelClubCourt.count({ where: { padelClubId: club.id } });
+      finalName = `Court ${count + 1}`;
+    }
+
+    const data = {
+      padelClubId: club.id,
+      name: finalName,
+      description: description || null,
+      surface: surface || null,
+      indoor,
+      isActive,
+      displayOrder,
+    };
+
+    const court = courtId
+      ? await prisma.padelClubCourt.update({
+          where: { id: courtId, padelClubId: club.id },
+          data,
+        })
+      : await prisma.padelClubCourt.create({ data });
+
+    return NextResponse.json({ ok: true, court }, { status: courtId ? 200 : 201 });
+  } catch (err) {
+    console.error("[padel/clubs/courts] error", err);
+    return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+  }
+}

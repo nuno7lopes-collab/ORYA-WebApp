@@ -11,6 +11,8 @@ import type { Metadata } from "next";
 import type { Prisma } from "@prisma/client";
 import Image from "next/image";
 import { defaultBlurDataURL, optimizeImageUrl } from "@/lib/image";
+import PadelSignupInline from "./PadelSignupInline";
+import { buildPadelEventSnapshot } from "@/lib/padel/eventSnapshot";
 
 type EventPageParams = { slug: string };
 type EventPageParamsInput = EventPageParams | Promise<EventPageParams>;
@@ -55,10 +57,6 @@ export async function generateMetadata(
         : `Descobre o evento ${baseTitle} em ${location} na ORYA.`,
   };
 }
-
-type EventPageProps = {
-  params: { slug?: string };
-};
 
 type EventResale = {
   id: string;
@@ -106,8 +104,6 @@ export default async function EventPage({ params }: { params: EventPageParamsInp
     return notFound();
   }
 
-  const now = new Date();
-
   type EventWithTickets = Prisma.EventGetPayload<{
     include: { ticketTypes: true };
   }>;
@@ -126,7 +122,7 @@ export default async function EventPage({ params }: { params: EventPageParamsInp
 
   const event = await prisma.event.findUnique({
     where: { slug },
-    include: { ticketTypes: true },
+    include: { ticketTypes: true, padelTournamentConfig: true },
   });
   if (!event) {
     notFound();
@@ -134,17 +130,12 @@ export default async function EventPage({ params }: { params: EventPageParamsInp
   if (event.isTest && !isAdmin) {
     notFound();
   }
+  const padelSnapshot = event.templateType === "PADEL" ? await buildPadelEventSnapshot(event.id) : null;
 
   // Buscar bilhetes ligados a este evento (para contagem de pessoas)
-  const tickets = await prisma.ticket.findMany({
-    where: { eventId: event.id },
-  });
-
   const safeLocationName = event.locationName || "Local a anunciar";
   const safeTimezone = event.timezone || "Europe/Lisbon";
   const safeOrganizer = "ORYA";
-
-  const goingCount = tickets.length;
 
   // Nota: no modelo atual, não determinamos o utilizador autenticado neste
   // Server Component para evitar erros de escrita de cookies.
@@ -294,6 +285,22 @@ export default async function EventPage({ params }: { params: EventPageParamsInp
 
   const showPriceFrom = !event.isFree && minTicketPrice !== null;
 
+  const padelV2Enabled = Boolean(event.padelTournamentConfig?.padelV2Enabled);
+  const defaultPadelTicketId = (() => {
+    const eligible = orderedTickets.filter((t) => {
+      const remaining =
+        t.totalQuantity === null || t.totalQuantity === undefined
+          ? null
+          : t.totalQuantity - t.soldQuantity;
+      const onSale = String(t.status || "").toUpperCase() === "ON_SALE";
+      const hasStock = remaining === null ? true : remaining > 0;
+      return onSale && hasStock;
+    });
+    if (!eligible.length) return null;
+    const cheapest = eligible.reduce((min, cur) => (cur.price < min.price ? cur : min), eligible[0]);
+    return cheapest.id ?? null;
+  })();
+
   return (
     <main className="relative orya-body-bg min-h-screen w-full text-white">
       <CheckoutProvider>
@@ -393,7 +400,7 @@ export default async function EventPage({ params }: { params: EventPageParamsInp
                     href="#bilhetes"
                     className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-1.5 text-xs font-semibold text-black shadow-[0_0_30px_rgba(255,255,255,0.25)] transition-transform hover:scale-105 active:scale-95 md:text-sm"
                   >
-                    Ver bilhetes
+                    {event.isFree ? "Garantir lugar" : "Ver bilhetes"}
                     <span className="text-xs">↓</span>
                   </a>
                 )}
@@ -596,6 +603,81 @@ export default async function EventPage({ params }: { params: EventPageParamsInp
             <div className="mt-4 rounded-xl border border-white/15 bg-black/60 px-4 py-3 text-sm text-white/85">
               Este evento já terminou. Bilhetes e inscrições deixaram de estar
               disponíveis.
+            </div>
+          )}
+          {padelSnapshot && (
+            <div className="mt-4 space-y-3 rounded-xl border border-white/15 bg-black/40 px-4 py-3 text-white">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">Padel</p>
+                  <h3 className="text-base font-semibold">{padelSnapshot.title}</h3>
+                  <p className="text-[12px] text-white/65">
+                    {padelSnapshot.clubName || "Clube a anunciar"} · {padelSnapshot.clubCity || "Cidade em breve"}
+                  </p>
+                </div>
+                <span className="rounded-full border border-white/20 bg-white/10 px-2 py-1 text-[11px] text-white/75">
+                  Estado: {padelSnapshot.status}
+                </span>
+              </div>
+              {padelSnapshot.timeline && (
+                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                  {padelSnapshot.timeline.map((step) => (
+                    <div
+                      key={step.key}
+                      className={`rounded-lg border px-3 py-2 text-sm ${
+                        step.state === "done"
+                          ? "border-emerald-400/40 bg-emerald-500/10 text-emerald-50"
+                          : step.state === "active"
+                            ? "border-[#6BFFFF]/60 bg-[#0b1224] text-white"
+                            : "border-white/15 bg-white/5 text-white/70"
+                      }`}
+                    >
+                      <p className="font-semibold">{step.label}</p>
+                      <p className="text-[12px] opacity-80">{step.cancelled ? "Cancelado" : step.date ? dateFormatter.format(new Date(step.date)) : "Data a anunciar"}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="grid gap-2 md:grid-cols-2 text-[13px]">
+                <div className="rounded-lg border border-white/10 bg-white/5 p-3">
+                  <p className="text-[11px] uppercase tracking-[0.12em] text-white/60">Clubes</p>
+                  <p className="text-white/80">
+                    Principal: <span className="font-semibold text-white">{padelSnapshot.clubName || "A anunciar"}</span>
+                  </p>
+                  <p className="text-white/70">
+                    Parceiros:{" "}
+                    {padelSnapshot.partnerClubs && padelSnapshot.partnerClubs.length > 0
+                      ? padelSnapshot.partnerClubs.map((c) => c.name || `Clube ${c.id}`).join(" · ")
+                      : "—"}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-white/10 bg-white/5 p-3">
+                  <p className="text-[11px] uppercase tracking-[0.12em] text-white/60">Courts</p>
+                  {padelSnapshot.courts && padelSnapshot.courts.length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
+                      {padelSnapshot.courts.map((c, idx) => (
+                        <span key={`${c.name}-${idx}`} className="rounded-full border border-white/15 bg-black/30 px-2 py-1 text-[12px]">
+                          {c.name} {c.clubName ? `· ${c.clubName}` : ""} {c.indoor ? "· Indoor" : ""}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-white/70 text-[12px]">Courts a definir.</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+          {event.templateType === "PADEL" && padelV2Enabled && defaultPadelTicketId && (
+            <div className="border-t border-white/15 pt-6">
+              <PadelSignupInline
+                eventId={event.id}
+                organizerId={event.organizerId ?? null}
+                ticketTypeId={defaultPadelTicketId as number}
+                categoryId={event.padelTournamentConfig?.defaultCategoryId ?? null}
+                padelV2Enabled={padelV2Enabled}
+                templateType={event.templateType}
+              />
             </div>
           )}
         </div>

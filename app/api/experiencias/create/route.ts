@@ -2,7 +2,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { Prisma } from "@prisma/client"; // 👈 ADICIONADO
+import { Prisma } from "@prisma/client";
+import { PORTUGAL_CITIES } from "@/config/cities";
 
 // Tipo esperado no body do pedido
 type CreateExperienceBody = {
@@ -79,6 +80,13 @@ export async function POST(req: NextRequest) {
     if (!locationCity) {
       return NextResponse.json(
         { ok: false, error: "Cidade é obrigatória." },
+        { status: 400 },
+      );
+    }
+    const cityAllowed = PORTUGAL_CITIES.includes(locationCity as (typeof PORTUGAL_CITIES)[number]);
+    if (!cityAllowed) {
+      return NextResponse.json(
+        { ok: false, error: "Cidade inválida. Escolhe uma cidade da lista disponível na ORYA." },
         { status: 400 },
       );
     }

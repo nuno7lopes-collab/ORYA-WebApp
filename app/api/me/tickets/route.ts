@@ -1,5 +1,5 @@
 // app/api/me/tickets/route.ts
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 
@@ -7,7 +7,11 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 export type UserTicket = {
   id: string;
   quantity: number; // sempre 1 (um registo por bilhete)
-  pricePaid: number; // em cêntimos
+  pricePaid: number; // líquido em cêntimos
+  grossCents?: number;
+  discountCents?: number;
+  platformFeeCents?: number;
+  netCents?: number;
   currency: string; // ex: EUR
   purchasedAt: string;
 
@@ -36,8 +40,13 @@ export type UserTicket = {
   };
 };
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
+    const url = new URL(req.url);
+    const limit = Math.min(Number(url.searchParams.get("limit") ?? 100), 500);
+    const cursorParam = url.searchParams.get("cursor");
+    const cursorDate = cursorParam ? new Date(cursorParam) : null;
+
     // 1) Obter utilizador autenticado via Supabase (cookies de server)
     const supabase = await createSupabaseServer();
     const { data: userData, error: userError } = await supabase.auth.getUser();
@@ -53,8 +62,14 @@ export async function GET() {
 
     // 2) Buscar bilhetes desse utilizador na tabela Ticket
     const userTickets = await prisma.ticket.findMany({
-      where: { userId },
+      where: {
+        userId,
+        ...(cursorDate && !Number.isNaN(cursorDate.getTime())
+          ? { purchasedAt: { lt: cursorDate } }
+          : {}),
+      },
       orderBy: { purchasedAt: "desc" },
+      take: limit + 1,
       include: {
         event: {
           include: {
@@ -68,6 +83,42 @@ export async function GET() {
         },
       },
     });
+
+    const hasMore = userTickets.length > limit;
+    const trimmedTickets = hasMore ? userTickets.slice(0, limit) : userTickets;
+
+    // Buscar sale_summaries/lines por PaymentIntent para preencher breakdown
+    const paymentIntentIds = Array.from(
+      new Set(
+        trimmedTickets
+          .map((t) => t.stripePaymentIntentId)
+          .filter((id): id is string => Boolean(id))
+      )
+    );
+    const saleSummaries = paymentIntentIds.length
+      ? await prisma.saleSummary.findMany({
+          where: { paymentIntentId: { in: paymentIntentIds } },
+          select: {
+            paymentIntentId: true,
+            subtotalCents: true,
+            discountCents: true,
+            platformFeeCents: true,
+            netCents: true,
+            lines: {
+              select: {
+                ticketTypeId: true,
+                quantity: true,
+                grossCents: true,
+                netCents: true,
+                discountPerUnitCents: true,
+                platformFeeCents: true,
+              },
+            },
+          },
+        })
+      : [];
+    const summaryMap = new Map<string, (typeof saleSummaries)[number]>();
+    saleSummaries.forEach((s) => summaryMap.set(s.paymentIntentId, s));
 
     // Pré-calcular sold out por evento para suportar o modo AFTER_SOLD_OUT
     const eventSoldOutMap = new Map<number, boolean>();
@@ -97,7 +148,7 @@ export async function GET() {
     };
 
     // 3) Devolver 1 registo por bilhete (sem agrupar) para não perder QR únicos
-    const tickets: UserTicket[] = userTickets
+    const tickets: UserTicket[] = trimmedTickets
       .filter((t) => t.event && t.ticketType)
       .map((t) => {
         const event = t.event!;
@@ -114,11 +165,39 @@ export async function GET() {
               }))
             : [];
         const soldOut = isEventSoldOut(event.id, ticketTypesForSoldOut);
+        let grossCents = t.pricePaid ?? 0;
+        let discountCents = 0;
+        let feeCents = t.platformFeeCents ?? 0;
+        let netCents = t.pricePaid ?? 0;
+
+        if (t.stripePaymentIntentId) {
+          const summary = summaryMap.get(t.stripePaymentIntentId);
+          if (summary) {
+            const line = summary.lines.find((l) => l.ticketTypeId === t.ticketTypeId);
+            if (line && (line.quantity ?? 0) > 0) {
+              const qty = line.quantity || 1;
+              grossCents = Math.round(line.grossCents / qty);
+              netCents = Math.round(line.netCents / qty);
+              feeCents = Math.round((line.platformFeeCents ?? 0) / qty);
+              discountCents = line.discountPerUnitCents ?? Math.max(0, grossCents - netCents - feeCents);
+            } else {
+              // fallback proporcional simples: usar net/fees do summary quando não há line match
+              grossCents = summary.subtotalCents;
+              discountCents = summary.discountCents;
+              feeCents = summary.platformFeeCents;
+              netCents = summary.netCents;
+            }
+          }
+        }
 
         return {
           id: t.id,
           quantity: 1,
           pricePaid: t.pricePaid ?? 0,
+          grossCents,
+          discountCents,
+          platformFeeCents: feeCents,
+          netCents,
           currency: t.currency ?? "EUR",
           purchasedAt: t.purchasedAt.toISOString(),
           qrToken: t.qrSecret ?? null,
@@ -149,6 +228,7 @@ export async function GET() {
       {
         success: true,
         tickets,
+        nextCursor: hasMore ? tickets[tickets.length - 1]?.purchasedAt ?? null : null,
       },
       { status: 200 }
     );

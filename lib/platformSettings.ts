@@ -11,6 +11,8 @@ type FeeKeys =
   | "stripe_fee_bps_eu"
   | "stripe_fee_fixed_cents_eu";
 
+type PlatformSettingKey = FeeKeys | "org_transfer_enabled";
+
 const envPlatformFeeBps = process.env.PLATFORM_FEE_BPS ?? process.env.NEXT_PUBLIC_PLATFORM_FEE_BPS;
 const envPlatformFeePercent = process.env.PLATFORM_FEE_PERCENT ?? process.env.NEXT_PUBLIC_PLATFORM_FEE_PERCENT;
 const envPlatformFeeFixedCents =
@@ -37,7 +39,17 @@ function parseNumber(raw: unknown, fallback: number) {
   return Number.isFinite(n) ? n : fallback;
 }
 
-async function getSettingsMap(keys: FeeKeys[]): Promise<Record<string, string>> {
+function parseBoolean(raw: unknown, fallback: boolean) {
+  if (typeof raw === "boolean") return raw;
+  if (typeof raw === "string") {
+    const normalized = raw.trim().toLowerCase();
+    if (["1", "true", "yes", "on"].includes(normalized)) return true;
+    if (["0", "false", "no", "off"].includes(normalized)) return false;
+  }
+  return fallback;
+}
+
+async function getSettingsMap(keys: PlatformSettingKey[]): Promise<Record<string, string>> {
   const rows = await prisma.platformSetting.findMany({
     where: {
       key: {
@@ -52,7 +64,7 @@ async function getSettingsMap(keys: FeeKeys[]): Promise<Record<string, string>> 
   }, {});
 }
 
-async function upsertSettings(values: { key: FeeKeys; value: string }[]) {
+async function upsertSettings(values: { key: PlatformSettingKey; value: string }[]) {
   const tasks = values.map(({ key, value }) =>
     prisma.platformSetting.upsert({
       where: { key },
@@ -128,4 +140,9 @@ export async function setStripeBaseFees(config: Partial<PlatformFeeConfig>) {
 export async function getPlatformAndStripeFees() {
   const [orya, stripe] = await Promise.all([getPlatformFees(), getStripeBaseFees()]);
   return { orya, stripe };
+}
+
+export async function getOrgTransferEnabled(): Promise<boolean> {
+  const map = await getSettingsMap(["org_transfer_enabled"]);
+  return parseBoolean(map["org_transfer_enabled"], false);
 }

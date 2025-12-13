@@ -27,6 +27,7 @@ type ApiMeResponse = {
     allowEmailNotifications: boolean;
     allowEventReminders: boolean;
     allowFriendRequests: boolean;
+    profileVisibility: "PUBLIC" | "PRIVATE";
   } | null;
 };
 

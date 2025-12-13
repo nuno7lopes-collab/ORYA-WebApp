@@ -30,6 +30,7 @@ export default function MobileBottomNav({
     if (pathname.startsWith("/explorar")) return "explorar";
     if (pathname.startsWith("/buscar")) return "search";
     if (pathname.startsWith("/me/tickets")) return "tickets";
+    if (pathname.startsWith("/me/compras")) return "purchases";
     if (pathname.startsWith("/me")) return "profile";
     return "home";
   })();
@@ -60,6 +61,16 @@ export default function MobileBottomNav({
       icon: "🎫",
       path: "/me/tickets",
       active: (p) => p.startsWith("/me/tickets"),
+    }),
+    [],
+  );
+
+  const itemCompras: Item = useMemo(
+    () => ({
+      label: "Compras",
+      icon: "🧾",
+      path: "/me/compras",
+      active: (p) => p.startsWith("/me/compras"),
     }),
     [],
   );
@@ -101,6 +112,7 @@ export default function MobileBottomNav({
               />
               <div />
               <NavItem item={itemBilhetes} isActive={derivedTab === "tickets"} onClick={go} />
+              <NavItem item={itemCompras} isActive={derivedTab === "purchases"} onClick={go} />
               <NavItem item={itemPerfil} isActive={derivedTab === "profile"} onClick={go} />
             </div>
 

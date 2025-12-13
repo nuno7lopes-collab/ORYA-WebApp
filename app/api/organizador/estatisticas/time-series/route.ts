@@ -106,59 +106,118 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    // 2) Buscar tickets dos eventos deste organizer no intervalo de datas
-    const purchasedAtFilter: Prisma.DateTimeFilter<"Ticket"> = {};
-    if (from) purchasedAtFilter.gte = from;
-    if (to) purchasedAtFilter.lte = to;
+    // 2) Preferir fonte de verdade: sale_summaries + sale_lines
+    const createdAtFilter: Prisma.DateTimeFilter<"SaleSummary"> = {};
+    if (from) createdAtFilter.gte = from;
+    if (to) createdAtFilter.lte = to;
 
-    const where: Prisma.TicketWhereInput = {
-      status: {
-        in: [TicketStatus.ACTIVE, TicketStatus.USED],
+    const saleSummaries = await prisma.saleSummary.findMany({
+      where: {
+        ...(Object.keys(createdAtFilter).length > 0
+          ? { createdAt: createdAtFilter }
+          : {}),
+        event: {
+          organizerId: organizer.id,
+        },
+        eventId: eventId ?? undefined,
       },
-      purchasedAt:
-        Object.keys(purchasedAtFilter).length > 0 ? purchasedAtFilter : undefined,
-      event: {
-        organizerId: organizer.id,
-      },
-      eventId: eventId ?? undefined,
-    };
-
-    const tickets = await prisma.ticket.findMany({
-      where,
       select: {
-        purchasedAt: true,
-        pricePaid: true,
+        createdAt: true,
+        netCents: true,
         currency: true,
+        lines: {
+          select: {
+            quantity: true,
+          },
+        },
       },
     });
 
-    // 3) Agregar por dia
     type DayBucket = {
       date: string; // YYYY-MM-DD
       tickets: number;
       revenueCents: number;
+      grossCents: number;
+      discountCents: number;
+      platformFeeCents: number;
       currency: string | null;
     };
 
     const buckets: Record<string, DayBucket> = {};
 
-    for (const t of tickets) {
-      if (!t.purchasedAt) continue;
-
-      const key = formatDayKey(t.purchasedAt);
-
+    for (const s of saleSummaries) {
+      const key = formatDayKey(s.createdAt);
       if (!buckets[key]) {
         buckets[key] = {
           date: key,
           tickets: 0,
           revenueCents: 0,
-          currency: t.currency ?? null,
+          grossCents: 0,
+          discountCents: 0,
+          platformFeeCents: 0,
+          currency: s.currency ?? null,
         };
       }
+      const qty = s.lines.reduce((acc, l) => acc + (l.quantity ?? 0), 0);
+      buckets[key].tickets += qty;
+      buckets[key].revenueCents += s.netCents ?? 0;
+      buckets[key].grossCents += s.subtotalCents ?? 0;
+      buckets[key].discountCents += s.discountCents ?? 0;
+      buckets[key].platformFeeCents += s.platformFeeCents ?? 0;
+    }
 
-      buckets[key].tickets += 1;
-      buckets[key].revenueCents += t.pricePaid ?? 0;
-      // se por alguma razão tiver currencies diferentes, mantemos a primeira
+    // Fallback: se ainda não houver sale_summaries (ex.: legacy), usa tickets
+    if (Object.keys(buckets).length === 0) {
+      const purchasedAtFilter: Prisma.DateTimeFilter<"Ticket"> = {};
+      if (from) purchasedAtFilter.gte = from;
+      if (to) purchasedAtFilter.lte = to;
+
+      const ticketWhere: Prisma.TicketWhereInput = {
+        status: {
+          in: [TicketStatus.ACTIVE, TicketStatus.USED],
+        },
+        purchasedAt:
+          Object.keys(purchasedAtFilter).length > 0
+            ? purchasedAtFilter
+            : undefined,
+        event: {
+          organizerId: organizer.id,
+        },
+        eventId: eventId ?? undefined,
+      };
+
+      const tickets = await prisma.ticket.findMany({
+        where: ticketWhere,
+        select: {
+          purchasedAt: true,
+          pricePaid: true,
+          currency: true,
+          platformFeeCents: true,
+        },
+      });
+
+      for (const t of tickets) {
+        if (!t.purchasedAt) continue;
+        const key = formatDayKey(t.purchasedAt);
+        if (!buckets[key]) {
+          buckets[key] = {
+            date: key,
+            tickets: 0,
+            revenueCents: 0,
+            grossCents: 0,
+            discountCents: 0,
+            platformFeeCents: 0,
+            currency: t.currency ?? null,
+          };
+        }
+        buckets[key].tickets += 1;
+        const gross = t.pricePaid ?? 0;
+        const fees = t.platformFeeCents ?? 0;
+        buckets[key].grossCents += gross;
+        buckets[key].platformFeeCents += fees;
+        buckets[key].revenueCents += gross - fees;
+        // desconto não disponível em legacy
+      }
     }
 
     const points = Object.values(buckets).sort((a, b) =>
@@ -172,7 +231,10 @@ export async function GET(req: NextRequest) {
           from: from ? from.toISOString() : null,
           to: to ? to.toISOString() : null,
         },
-        points,
+        points: points.map((p) => ({
+          ...p,
+          netCents: p.revenueCents,
+        })),
       },
       { status: 200 }
     );
