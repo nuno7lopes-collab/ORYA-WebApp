@@ -7,7 +7,7 @@ import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
 import { prisma } from "@/lib/prisma";
 import { env } from "@/lib/env";
-import { Prisma, PadelPairingPaymentStatus, PadelPairingSlotStatus, PadelPaymentMode, TicketStatus, FeeMode, PromoType, PaymentEventSource, PadelPairingLifecycleStatus, PadelPairingStatus } from "@prisma/client";
+import { Prisma, PadelPairingPaymentStatus, PadelPairingSlotStatus, PadelPaymentMode, TicketStatus, FeeMode, PromoType, PaymentEventSource, PadelPairingLifecycleStatus, PadelPairingStatus, SaleSummaryStatus } from "@prisma/client";
 import { stripe } from "@/lib/stripeClient";
 import crypto from "crypto";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
@@ -1489,6 +1489,10 @@ async function handleRefund(charge: Stripe.Charge) {
             where: { saleSummaryId: saleSummary.id },
             data: { cancelledAt: new Date() },
           }),
+          prisma.saleSummary.update({
+            where: { id: saleSummary.id },
+            data: { status: SaleSummaryStatus.REFUNDED, updatedAt: new Date() },
+          }),
         ]
       : []),
   ]);
@@ -1504,6 +1508,10 @@ async function handlePadelSplitRefund(
   tickets: Array<{ id: string; pairingId: number | null }>,
   livemode: boolean,
 ) {
+  const saleSummary = await prisma.saleSummary.findUnique({
+    where: { paymentIntentId },
+    select: { id: true },
+  });
   const pairingIds = Array.from(new Set(tickets.map((t) => t.pairingId).filter(Boolean))) as number[];
   if (!pairingIds.length) return;
 
@@ -1554,5 +1562,12 @@ async function handlePadelSplitRefund(
         isTest: !livemode,
       },
     });
+
+    if (saleSummary?.id) {
+      await tx.saleSummary.update({
+        where: { id: saleSummary.id },
+        data: { status: SaleSummaryStatus.REFUNDED, updatedAt: new Date() },
+      });
+    }
   });
 }
