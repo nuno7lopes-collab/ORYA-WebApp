@@ -12,7 +12,7 @@ export async function POST() {
         store.set({
           name: c.name,
           value: "",
-          path: c.path ?? "/",
+          path: "/",
           maxAge: 0,
         });
       } catch (err) {

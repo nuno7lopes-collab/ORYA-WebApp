@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 
 type Props = {
   label: string;
@@ -64,6 +65,11 @@ export function InlineDateTimePicker({
     const pad = (n: number) => n.toString().padStart(2, "0");
     return `${pad(parsedValue.getHours())}:${pad(parsedValue.getMinutes())}`;
   });
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
@@ -138,9 +144,9 @@ export function InlineDateTimePicker({
         <span>{parsedValue ? parsedValue.toLocaleString("pt-PT") : "Escolher data e hora"}</span>
         <span className="text-[11px] text-white/60">📅</span>
       </button>
-      {open && (
+      {open && mounted && createPortal(
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4"
+          className="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center bg-black/70 px-4"
           onClick={() => setOpen(false)}
         >
           <div
@@ -238,7 +244,8 @@ export function InlineDateTimePicker({
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
       {required && !value && <p className="text-xs text-red-400">Obrigatório</p>}
     </div>

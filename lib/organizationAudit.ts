@@ -22,7 +22,10 @@ export async function recordOrganizationAudit(
   client: TxLike,
   input: OrganizationAuditInput,
 ) {
-  return client.organizationAuditLog.create({
+  // Alguns schemas podem não ter a tabela de audit; nesse caso, faz no-op.
+  const auditModel = (client as any).organizationAuditLog;
+  if (!auditModel?.create) return null;
+  return auditModel.create({
     data: {
       organizerId: input.organizerId,
       actorUserId: input.actorUserId ?? null,

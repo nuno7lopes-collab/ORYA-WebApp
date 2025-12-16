@@ -51,16 +51,22 @@ function formatPriceLabel(event: EventCardDTO) {
 }
 
 export default async function HomePage() {
-  const eventsRaw = await prisma.event.findMany({
-    where: { status: "PUBLISHED", isTest: false },
-    orderBy: { startsAt: "asc" },
-    include: {
-      ticketTypes: {
-        orderBy: { sortOrder: "asc" },
+  let eventsRaw: Awaited<ReturnType<typeof prisma.event.findMany>> = [];
+
+  try {
+    eventsRaw = await prisma.event.findMany({
+      where: { status: "PUBLISHED", isTest: false },
+      orderBy: { startsAt: "asc" },
+      include: {
+        ticketTypes: {
+          orderBy: { sortOrder: "asc" },
+        },
       },
-    },
-    take: 12,
-  });
+      take: 12,
+    });
+  } catch (err) {
+    console.error("[home] falha ao ligar à BD para listar eventos", err);
+  }
 
   const events: EventCardDTO[] = eventsRaw
     .map(mapEventToCardDTO)

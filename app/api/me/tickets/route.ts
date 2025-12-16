@@ -14,6 +14,10 @@ export type UserTicket = {
   netCents?: number;
   currency: string; // ex: EUR
   purchasedAt: string;
+  badge: "FREE" | "RESALE" | "SPLIT" | "FULL" | "SINGLE";
+  nextAction: "NONE" | "PAY_PARTNER" | "CONFIRM_GUARANTEE";
+  purchaseId: string | null;
+  isTournament?: boolean;
 
   qrToken: string | null;
   resaleId?: string | null;
@@ -60,17 +64,48 @@ export async function GET(req: NextRequest) {
 
     const userId = userData.user.id;
 
-    // 2) Buscar bilhetes desse utilizador na tabela Ticket
+    const identities = await prisma.emailIdentity.findMany({
+      where: { userId },
+      select: { id: true },
+    });
+    const identityIds = identities.map((i) => i.id);
+
+    // 2) Buscar bilhetes desse utilizador (ou associados ao seu email identity)
     const userTickets = await prisma.ticket.findMany({
       where: {
-        userId,
+        OR: [
+          { userId },
+          { ownerUserId: userId },
+          identityIds.length ? { ownerIdentityId: { in: identityIds } } : undefined,
+        ].filter(Boolean) as object[],
         ...(cursorDate && !Number.isNaN(cursorDate.getTime())
           ? { purchasedAt: { lt: cursorDate } }
           : {}),
       },
       orderBy: { purchasedAt: "desc" },
       take: limit + 1,
-      include: {
+      select: {
+        id: true,
+        eventId: true,
+        ticketTypeId: true,
+        purchasedAt: true,
+        pricePaid: true,
+        totalPaidCents: true,
+        currency: true,
+        qrSecret: true,
+        resalePrice: true,
+        resaleCurrency: true,
+        resaleMode: true,
+        platformFeeCents: true,
+        qrCode: true,
+        stripePaymentIntentId: true,
+        totalPaid: true,
+        resaleId: true,
+        resaleStatus: true,
+        qrSecretUnprotected: true,
+        resalePayoutId: true,
+        padelSplitShareCents: true,
+        tournamentEntryId: true,
         event: {
           include: {
             ticketTypes: true,
@@ -81,6 +116,15 @@ export async function GET(req: NextRequest) {
           orderBy: { createdAt: "desc" },
           take: 1,
         },
+        pairing: {
+          select: {
+            payment_mode: true,
+            lifecycleStatus: true,
+            guaranteeStatus: true,
+            deadlineAt: true,
+            graceUntilAt: true,
+          },
+        },
       },
     });
 
@@ -88,13 +132,13 @@ export async function GET(req: NextRequest) {
     const trimmedTickets = hasMore ? userTickets.slice(0, limit) : userTickets;
 
     // Buscar sale_summaries/lines por PaymentIntent para preencher breakdown
-    const paymentIntentIds = Array.from(
-      new Set(
-        trimmedTickets
-          .map((t) => t.stripePaymentIntentId)
-          .filter((id): id is string => Boolean(id))
-      )
-    );
+  const paymentIntentIds = Array.from(
+    new Set(
+      trimmedTickets
+        .map((t) => t.stripePaymentIntentId)
+        .filter((id): id is string => Boolean(id))
+    )
+  );
     const saleSummaries = paymentIntentIds.length
       ? await prisma.saleSummary.findMany({
           where: { paymentIntentId: { in: paymentIntentIds } },
@@ -104,6 +148,8 @@ export async function GET(req: NextRequest) {
             discountCents: true,
             platformFeeCents: true,
             netCents: true,
+            promoLabelSnapshot: true,
+            promoCodeSnapshot: true,
             lines: {
               select: {
                 ticketTypeId: true,
@@ -154,6 +200,7 @@ export async function GET(req: NextRequest) {
         const event = t.event!;
         const ticketType = t.ticketType!;
         const resale = t.resales?.[0];
+        const pairing = t.pairing ?? null;
         const resaleMode =
           (event as { resaleMode?: "ALWAYS" | "AFTER_SOLD_OUT" | "DISABLED" | null }).resaleMode ??
           "ALWAYS";
@@ -189,6 +236,22 @@ export async function GET(req: NextRequest) {
             }
           }
         }
+        const summaryPromo =
+          (t.stripePaymentIntentId ? summaryMap.get(t.stripePaymentIntentId)?.promoLabelSnapshot : null) ??
+          (t.stripePaymentIntentId ? summaryMap.get(t.stripePaymentIntentId)?.promoCodeSnapshot : null) ??
+          null;
+        const summaryPurchaseId =
+          t.stripePaymentIntentId ? summaryMap.get(t.stripePaymentIntentId)?.paymentIntentId : null;
+
+        let badge: UserTicket["badge"] = "SINGLE";
+        if ((t.totalPaidCents ?? t.pricePaid ?? 0) === 0) badge = "FREE";
+        if (resale) badge = "RESALE";
+        if (pairing?.payment_mode === "SPLIT") badge = "SPLIT";
+        if (pairing?.payment_mode === "FULL") badge = "FULL";
+
+        let nextAction: UserTicket["nextAction"] = "NONE";
+        if (pairing?.lifecycleStatus === "PENDING_PARTNER_PAYMENT") nextAction = "PAY_PARTNER";
+        if (pairing?.guaranteeStatus === "REQUIRES_ACTION") nextAction = "CONFIRM_GUARANTEE";
 
         return {
           id: t.id,
@@ -199,7 +262,12 @@ export async function GET(req: NextRequest) {
           platformFeeCents: feeCents,
           netCents,
           currency: t.currency ?? "EUR",
+          promoLabel: summaryPromo,
           purchasedAt: t.purchasedAt.toISOString(),
+          purchaseId: summaryPurchaseId ?? t.stripePaymentIntentId ?? null,
+          badge,
+          nextAction,
+          isTournament: Boolean((t as { tournamentEntryId?: number | null }).tournamentEntryId),
           qrToken: t.qrSecret ?? null,
           resaleId: resale?.id ?? null,
           resaleStatus: resale?.status ?? null,

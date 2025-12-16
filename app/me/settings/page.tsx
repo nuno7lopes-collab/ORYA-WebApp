@@ -167,14 +167,12 @@ export default function SettingsPage() {
       if (!res.ok || !json?.ok) {
         throw new Error(json?.error || "Erro ao apagar conta.");
       }
-      if (json.warning) {
-        setFeedback(json.warning);
-      }
+      setFeedback(json.message || "Conta marcada para eliminação. Podes reverter dentro de 30 dias.");
       setShowDeleteConfirm(false);
-      router.push("/login");
+      router.push("/login?pending_delete=1");
     } catch (err) {
       console.error(err);
-      setErrorMsg("Não foi possível apagar a conta. Tenta mais tarde.");
+      setErrorMsg("Não foi possível marcar a eliminação. Tenta mais tarde.");
     } finally {
       setDeleting(false);
     }
@@ -354,8 +352,7 @@ export default function SettingsPage() {
           <div className="space-y-1">
             <h2 className="text-sm font-semibold text-white/90">Sessão e conta</h2>
             <p className="text-xs text-white/60">
-              Termina sessão ou apaga a tua conta. Apagar é definitivo (events ficam marcados como
-              apagados).
+              Termina sessão ou marca a tua conta para eliminação. Tens 30 dias para reverter; depois desse prazo, a conta é anonimizada.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -417,9 +414,8 @@ export default function SettingsPage() {
             </div>
 
             <p className="mt-3 text-sm text-white/70 leading-relaxed">
-              Esta ação é definitiva. Os teus eventos e dados serão marcados como apagados. Para
-              continuares, escreve <span className="font-semibold text-white">APAGAR CONTA</span>{" "}
-              e confirma.
+              Vamos marcar a tua conta para eliminação e desativá-la de imediato. Tens 30 dias para reativar fazendo login ou clicando no link do email de cancelamento. Após esse prazo, os dados pessoais são anonimizados.
+              Para continuares, escreve <span className="font-semibold text-white">APAGAR CONTA</span> e confirma.
             </p>
 
             <div className="mt-4 space-y-2">

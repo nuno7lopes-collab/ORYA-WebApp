@@ -17,6 +17,6 @@ test("clampWithGap respects bounds and quantizes step", () => {
 
 test("clampWithGap prevents overlap when handles cross", () => {
   const { min, max } = clampWithGap(90, 95, 5, 10, { min: 0, max: 100 });
-  assert.strictEqual(min, 90);
-  assert.strictEqual(max, 100); // clamped to bounds
+  assert.strictEqual(min, 85);
+  assert.strictEqual(max, 95); // recua o min para manter gap
 });

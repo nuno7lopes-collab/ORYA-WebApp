@@ -28,12 +28,6 @@ export default async function PublicProfilePage({ params }: { params: Promise<Pa
       avatarUrl: true,
       city: true,
       visibility: true,
-      followers: {
-        select: { id: true },
-      },
-      following: {
-        select: { id: true },
-      },
     },
   });
 
@@ -68,8 +62,10 @@ export default async function PublicProfilePage({ params }: { params: Promise<Pa
         take: 30,
       });
 
-  const followersCount = profile.followers?.length ?? 0;
-  const followingCount = profile.following?.length ?? 0;
+  const [followersCount, followingCount] = await Promise.all([
+    prisma.follows.count({ where: { following_id: profile.id } }),
+    prisma.follows.count({ where: { follower_id: profile.id } }),
+  ]);
 
   return (
     <main className="orya-body-bg min-h-screen text-white">

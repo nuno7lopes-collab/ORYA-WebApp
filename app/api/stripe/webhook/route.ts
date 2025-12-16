@@ -7,13 +7,33 @@ import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
 import { prisma } from "@/lib/prisma";
 import { env } from "@/lib/env";
-import { Prisma, PadelPairingPaymentStatus, PadelPairingSlotStatus, PadelPaymentMode, TicketStatus, FeeMode } from "@prisma/client";
+import { Prisma, PadelPairingPaymentStatus, PadelPairingSlotStatus, PadelPaymentMode, TicketStatus, FeeMode, PromoType, PaymentEventSource, PadelPairingLifecycleStatus, PadelPairingStatus } from "@prisma/client";
 import { stripe } from "@/lib/stripeClient";
 import crypto from "crypto";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { sendPurchaseConfirmationEmail } from "@/lib/emailSender";
 import { parsePhoneNumberFromString } from "libphonenumber-js/min";
 import { computePricing } from "@/lib/pricing";
+import { getStripeBaseFees } from "@/lib/platformSettings";
+import { normalizePaymentScenario } from "@/lib/paymentScenario";
+import { checkoutMetadataSchema, normalizeItemsForMetadata, parseCheckoutItems } from "@/lib/checkoutSchemas";
+import { computeGraceUntil } from "@/domain/padelDeadlines";
+import { ensureEntriesForConfirmedPairing } from "@/domain/tournaments/ensureEntriesForConfirmedPairing";
+import { resolveOwner } from "@/lib/ownership/resolveOwner";
+import {
+  queuePartnerPaid,
+  queueDeadlineExpired,
+  queueOffsessionActionRequired,
+} from "@/domain/notifications/splitPayments";
+import {
+  queueMatchChanged,
+  queueMatchResult,
+  queueNextOpponent,
+  queueBracketPublished,
+  queueTournamentEve,
+  queueEliminated,
+  queueChampion,
+} from "@/domain/notifications/tournament";
 
 const webhookSecret = env.stripeWebhookSecret;
 
@@ -47,18 +67,18 @@ export async function POST(req: NextRequest) {
       /**
        * F5-13 – checkout.session.completed (REVENDAS)
        *
-       * Aqui tratamos apenas o caso em que a sessão tem metadata.mode === "RESALE",
-       * ou seja, compra de um bilhete em revenda entre utilizadores.
+       * Aqui tratamos apenas sessões com paymentScenario=RESALE
+       * (revenda de bilhetes entre utilizadores).
        */
       case "checkout.session.completed": {
         const session = event.data.object as Stripe.Checkout.Session;
         const metadata = session.metadata || {};
-        const mode = metadata["mode"];
+        const paymentScenario = normalizePaymentScenario(
+          typeof metadata["paymentScenario"] === "string" ? metadata["paymentScenario"] : null
+        );
 
-        if (mode !== "RESALE") {
-          console.log(
-            "[Webhook] checkout.session.completed sem mode=RESALE, a ignorar neste fluxo."
-          );
+        if (paymentScenario !== "RESALE") {
+          console.log("[Webhook] checkout.session.completed sem RESALE, a ignorar neste fluxo.");
           break;
         }
 
@@ -137,7 +157,7 @@ export async function POST(req: NextRequest) {
           currency: intent.currency,
           metadata: intent.metadata,
         });
-        await fulfillPayment(intent);
+        await fulfillPayment(intent, event.id);
         break;
       }
 
@@ -181,14 +201,15 @@ type EventWithTickets = Prisma.EventGetPayload<{
   include: { ticketTypes: true };
 }>;
 
-type ParsedItem = { ticketId: number; quantity: number };
+type ParsedItem = { ticketTypeId: number; quantity: number };
 type BreakdownLine = {
   ticketTypeId: number;
   quantity: number;
   unitPriceCents: number;
   discountPerUnitCents?: number;
-  lineGrossCents: number;
-  lineNetCents: number;
+  lineTotalCents?: number;
+  lineGrossCents?: number;
+  lineNetCents?: number;
   platformFeeCents?: number;
   promoCodeId?: number;
 };
@@ -204,7 +225,7 @@ type BreakdownPayload = {
   feeFixedApplied?: number;
 };
 
-export async function fulfillPayment(intent: Stripe.PaymentIntent) {
+export async function fulfillPayment(intent: Stripe.PaymentIntent, stripeEventId?: string) {
   // [ORYA PATCH v1] Webhook reforçado e preparado para múltiplos bilhetes com total segurança.
   const meta = intent.metadata ?? {};
   let parsedBreakdown: BreakdownPayload | null = null;
@@ -227,8 +248,16 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent) {
     }
   }
 
+  const paymentScenario = normalizePaymentScenario(
+    typeof meta.paymentScenario === "string" ? meta.paymentScenario : null,
+  );
+  const scenario = typeof (meta as Record<string, unknown>)?.scenario === "string" ? (meta as Record<string, unknown>).scenario : null;
+  const hasPadelPairingMeta =
+    Number.isFinite(Number((meta as Record<string, unknown>)?.pairingId)) ||
+    Number.isFinite(Number((meta as Record<string, unknown>)?.slotId));
+
   // Se por algum motivo um PaymentIntent de revenda vier parar aqui, ignoramos
-  if (meta.mode === "RESALE") {
+  if (paymentScenario === "RESALE") {
     console.log(
       "[fulfillPayment] Intent de revenda recebido em fulfillPayment, a ignorar (tratado via checkout.session.completed).",
       { intentId: intent.id }
@@ -237,7 +266,10 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent) {
   }
 
   const rawUserId = typeof meta.userId === "string" ? meta.userId.trim() : "";
-  const userId = rawUserId !== "" ? rawUserId : null;
+  const rawOwnerUserId = typeof (meta as Record<string, unknown>)?.ownerUserId === "string"
+    ? (meta as Record<string, unknown>)?.ownerUserId?.trim()
+    : "";
+  const userId = rawUserId !== "" ? rawUserId : rawOwnerUserId !== "" ? rawOwnerUserId : null;
   const guestEmail =
     typeof meta.guestEmail === "string"
       ? meta.guestEmail.trim().toLowerCase()
@@ -251,19 +283,19 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent) {
       ? meta.promoCode.trim()
       : "";
   // Padel SPLIT/FULL: tratar logo aqui e sair
-  if (meta.mode === "PADEL_SPLIT") {
+  if (paymentScenario === "GROUP_SPLIT" && hasPadelPairingMeta) {
     await handlePadelSplitPayment(intent);
     return;
   }
-  if (meta.mode === "PADEL_FULL") {
+  if (paymentScenario === "GROUP_FULL" && hasPadelPairingMeta) {
     await handlePadelFullPayment(intent);
     return;
   }
+  if (scenario === "GROUP_SPLIT_SECOND_CHARGE") {
+    await handleSecondCharge(intent);
+    return;
+  }
 
-  const promoCodeRaw =
-    typeof meta.promoCodeRaw === "string" && meta.promoCodeRaw.trim() !== ""
-      ? meta.promoCodeRaw.trim()
-      : "";
   const normalizePhone = (phone: string | null | undefined, defaultCountry = "PT") => {
     if (!phone) return null;
     const cleaned = phone.trim();
@@ -280,10 +312,16 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent) {
     return null;
   };
   const guestPhone = normalizePhone(guestPhoneRaw);
+  const purchaseId =
+    typeof meta.purchaseId === "string" && meta.purchaseId.trim() !== ""
+      ? meta.purchaseId.trim()
+      : null;
 
   console.log("[fulfillPayment] Início", {
     intentId: intent.id,
+    stripeEventId,
     userId,
+    purchaseId,
     meta,
   });
 
@@ -299,61 +337,29 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent) {
   // --------- PARSE DOS ITENS ---------
   let items: ParsedItem[] = [];
 
-  if (typeof meta.items === "string") {
+  const parseItemsString = (value: string) => {
     try {
-      const parsed = JSON.parse(meta.items);
-      if (Array.isArray(parsed)) {
-        items = parsed
-          .map((entry) => {
-            const rawId =
-              (entry as { ticketId?: unknown })?.ticketId ??
-              (entry as { ticketTypeId?: unknown })?.ticketTypeId;
-            const ticketId = Number(rawId);
-            const quantity = Number(
-              (entry as { quantity?: unknown })?.quantity ?? 1,
-            );
-            if (!Number.isFinite(ticketId) || !Number.isFinite(quantity)) {
-              return null;
-            }
-            return { ticketId, quantity: Math.max(1, quantity) };
-          })
-          .filter(Boolean) as ParsedItem[];
+      const parsed = JSON.parse(value);
+      const normalized = parseCheckoutItems(parsed);
+      if (normalized.length) {
+        items = normalized.map((it) => ({
+          ticketTypeId: it.ticketTypeId,
+          quantity: it.quantity,
+        }));
       }
     } catch (err) {
       console.error("[Webhook] Failed to parse metadata.items:", err);
     }
-  }
+  };
 
-  if (items.length === 0 && typeof meta.itemsJson === "string") {
-    try {
-      const parsed = JSON.parse(meta.itemsJson);
-      if (Array.isArray(parsed)) {
-        items = parsed
-          .map((entry) => {
-            const rawId =
-              (entry as { ticketId?: unknown })?.ticketId ??
-              (entry as { ticketTypeId?: unknown })?.ticketTypeId;
-            const ticketId = Number(rawId);
-            const quantity = Number(
-              (entry as { quantity?: unknown })?.quantity ?? 1,
-            );
-            if (!Number.isFinite(ticketId) || !Number.isFinite(quantity)) {
-              return null;
-            }
-            return { ticketId, quantity: Math.max(1, quantity) };
-          })
-          .filter(Boolean) as ParsedItem[];
-      }
-    } catch (err) {
-      console.error("[Webhook] Failed to parse metadata.itemsJson:", err);
-    }
-  }
+  if (typeof meta.items === "string") parseItemsString(meta.items);
+  if (items.length === 0 && typeof meta.itemsJson === "string") parseItemsString(meta.itemsJson);
 
   if (items.length === 0 && typeof meta.ticketId === "string") {
     const qty = Math.max(1, Number(meta.quantity ?? 1));
-    const ticketId = Number(meta.ticketId);
-    if (!Number.isNaN(ticketId)) {
-      items = [{ ticketId, quantity: qty }];
+    const ticketTypeId = Number(meta.ticketId);
+    if (!Number.isNaN(ticketTypeId)) {
+      items = [{ ticketTypeId, quantity: qty }];
     }
   }
 
@@ -394,6 +400,82 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent) {
     title: eventRecord.title,
   });
 
+  const ticketTypeMap = new Map<number, { price: number; currency: string | null }>(
+    eventRecord.ticketTypes.map((t) => [t.id, { price: t.price, currency: t.currency }]),
+  );
+
+  let normalizedItems = parsedBreakdown?.lines?.length
+    ? normalizeItemsForMetadata(
+        parsedBreakdown.lines.map((line) => ({
+          ticketTypeId: line.ticketTypeId,
+          quantity: Math.max(1, Number(line.quantity ?? 1)),
+          unitPriceCents:
+            Number(line.unitPriceCents ?? 0) ||
+            (ticketTypeMap.get(line.ticketTypeId)?.price ?? 0),
+          currency:
+            (line as { currency?: string })?.currency ??
+            ticketTypeMap.get(line.ticketTypeId)?.currency ??
+            "EUR",
+        })),
+      )
+    : [];
+
+  if (!normalizedItems.length) {
+    normalizedItems = normalizeItemsForMetadata(
+      items.map((item) => {
+        const tt = ticketTypeMap.get(item.ticketTypeId);
+        return {
+          ticketTypeId: item.ticketTypeId,
+          quantity: item.quantity,
+          unitPriceCents: tt?.price ?? 0,
+          currency: tt?.currency ?? "EUR",
+        };
+      }),
+    );
+  }
+
+  const metadataValidation = checkoutMetadataSchema.safeParse({
+    paymentScenario,
+    purchaseId: purchaseId ?? intent.id,
+    items: normalizedItems,
+    eventId: eventRecord.id,
+    eventSlug: eventRecord.slug,
+    pairingId: hasPadelPairingMeta ? Number((meta as Record<string, unknown>)?.pairingId ?? 0) || undefined : undefined,
+    owner: {
+      userId: userId ?? undefined,
+      guestEmail: guestEmail || undefined,
+      guestName: guestName || undefined,
+      guestPhone: guestPhone || undefined,
+      ownerUserId: typeof (meta as Record<string, unknown>)?.ownerUserId === "string" ? (meta as Record<string, unknown>)?.ownerUserId : undefined,
+      ownerIdentityId:
+        typeof (meta as Record<string, unknown>)?.ownerIdentityId === "string"
+          ? (meta as Record<string, unknown>)?.ownerIdentityId
+          : undefined,
+      emailNormalized:
+        typeof (meta as Record<string, unknown>)?.emailNormalized === "string"
+          ? (meta as Record<string, unknown>)?.emailNormalized
+          : undefined,
+    },
+  });
+
+  if (!metadataValidation.success) {
+    console.warn("[fulfillPayment] INVALID_METADATA", {
+      intentId: intent.id,
+      purchaseId,
+      errors: metadataValidation.error.flatten(),
+    });
+    return;
+  }
+
+  const purchaseAnchor = metadataValidation.data.purchaseId;
+  const ownerMeta = metadataValidation.data.owner;
+  const ownerResolved = await resolveOwner({
+    sessionUserId: ownerMeta?.ownerUserId ?? ownerMeta?.userId ?? userId ?? undefined,
+    guestEmail: ownerMeta?.emailNormalized ?? ownerMeta?.guestEmail ?? guestEmail ?? undefined,
+  });
+  const ownerUserId = ownerResolved.ownerUserId ?? ownerMeta?.ownerUserId ?? ownerMeta?.userId ?? userId ?? null;
+  const ownerIdentityId = ownerResolved.ownerIdentityId ?? ownerMeta?.ownerIdentityId ?? null;
+
   const platformFeeTotal = Number(meta.platformFeeCents ?? 0);
   const totalTicketsRequested = items.reduce(
     (sum, item) => sum + Math.max(1, Number(item.quantity ?? 0)),
@@ -406,6 +488,57 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent) {
       : 0;
   let feeRemainder =
     totalTicketsRequested > 0 ? platformFeeTotal % totalTicketsRequested : 0;
+
+  // Pré-calcular valores por linha (gross/net/desconto) para gravar SaleLines e tickets de forma consistente
+  const computedLineMap = new Map<
+    number,
+    {
+      grossCents: number;
+      netCents: number;
+      discountAllocCents: number;
+      discountPerUnitCents: number;
+      platformFeeCents: number;
+      quantity: number;
+      unitPriceCents: number;
+    }
+  >();
+  if (parsedBreakdown?.lines?.length) {
+    const subtotal = Math.max(0, parsedBreakdown.subtotalCents ?? 0);
+    const totalDiscount = Math.max(0, parsedBreakdown.discountCents ?? 0);
+    let remainingDiscount = totalDiscount;
+
+    parsedBreakdown.lines.forEach((line, idx) => {
+      const qty = Math.max(1, Number(line.quantity ?? 1));
+      const linePlatformFee = Number(line.platformFeeCents ?? 0);
+      const gross = Number(
+        line.lineTotalCents ??
+          line.lineGrossCents ??
+          (line.unitPriceCents != null ? line.unitPriceCents * qty : 0),
+      );
+
+      let alloc = 0;
+      if (subtotal > 0 && totalDiscount > 0) {
+        const proportional = Math.floor((gross * totalDiscount) / subtotal);
+        const isLast = idx === parsedBreakdown.lines.length - 1;
+        alloc = isLast ? Math.max(0, remainingDiscount) : Math.min(remainingDiscount, proportional);
+      }
+      remainingDiscount -= alloc;
+
+      const net = Math.max(0, gross - alloc);
+      const unitPrice = Number(line.unitPriceCents ?? Math.round(gross / qty));
+      const discountPerUnit = Math.floor(alloc / qty);
+
+      computedLineMap.set(line.ticketTypeId, {
+        grossCents: gross,
+        netCents: net,
+        discountAllocCents: alloc,
+        discountPerUnitCents: discountPerUnit,
+        platformFeeCents: linePlatformFee,
+        quantity: qty,
+        unitPriceCents: unitPrice,
+      });
+    });
+  }
 
   // --------- IDEMPOTÊNCIA (permite múltiplos bilhetes por pagamento) ---------
   const already = await prisma.ticket.findFirst({
@@ -422,6 +555,11 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent) {
         where: { stripePaymentIntentId: intent.id },
         data: {
           status: "OK",
+          purchaseId: purchaseAnchor,
+          stripeEventId: stripeEventId ?? undefined,
+          source: PaymentEventSource.WEBHOOK,
+          dedupeKey: purchaseAnchor ?? stripeEventId ?? intent.id,
+          attempt: { increment: 1 },
           updatedAt: new Date(),
           errorMessage: null,
           mode: intent.livemode ? "LIVE" : "TEST",
@@ -441,6 +579,11 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent) {
       data: {
         status: "PROCESSING",
         eventId: eventRecord.id,
+        purchaseId: purchaseAnchor,
+        stripeEventId: stripeEventId ?? undefined,
+        source: PaymentEventSource.WEBHOOK,
+        dedupeKey: purchaseAnchor ?? stripeEventId ?? intent.id,
+        attempt: { increment: 1 },
         amountCents: intent.amount ?? null,
         platformFeeCents: platformFeeTotal ?? null,
         userId,
@@ -455,6 +598,11 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent) {
         data: {
           stripePaymentIntentId: intent.id,
           status: "PROCESSING",
+          purchaseId: purchaseAnchor,
+          stripeEventId: stripeEventId ?? undefined,
+          source: PaymentEventSource.WEBHOOK,
+          dedupeKey: purchaseAnchor ?? stripeEventId ?? intent.id,
+          attempt: 1,
           eventId: eventRecord.id,
           userId,
           amountCents: intent.amount ?? null,
@@ -468,36 +616,12 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent) {
     console.warn("[fulfillPayment] Não foi possível registar paymentEvent", logErr);
   }
 
-  // --------- Redemptions de promo (best-effort) ---------
-  if (promoCodeId) {
-    try {
-      await prisma.promoRedemption.create({
-        data: {
-          promoCodeId: Number(promoCodeId),
-          userId: userId ?? null,
-          guestEmail: guestEmail || null,
-        },
-      });
-    } catch (err) {
-      const isP2002 =
-        err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002";
-      if (isP2002) {
-        console.warn("[fulfillPayment] promoRedemption já existente para este user/código — a ignorar");
-        // Opcional: se quisermos contar usos, poderíamos incrementar usageCount aqui (campo inexistente por agora)
-      } else {
-        console.warn("[fulfillPayment] Não foi possível registar promo redemption", {
-          intentId: intent.id,
-          promoCodeId,
-          promoCodeRaw,
-          err,
-        });
-      }
-    }
-  }
-
   // --------- PREPARAR CRIAÇÃO DE BILHETES + STOCK ---------
   let createdTicketsCount = 0;
   let saleSummaryId: number | null = null;
+  const stripeBaseFees = await getStripeBaseFees();
+  const estimateStripeFee = (amountCents: number) =>
+    Math.max(0, Math.round((amountCents * (stripeBaseFees.feeBps ?? 0)) / 10_000) + (stripeBaseFees.feeFixedCents ?? 0));
 
   // Sanity-check opcional: garantir que breakdown bate com o amount recebido
   if (parsedBreakdown && typeof intent.amount_received === "number") {
@@ -524,6 +648,25 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent) {
     }
   }
 
+  // Tentar obter a fee real do Stripe via balance_transaction
+  let stripeFeeCents: number | null = null;
+  try {
+    if (intent.latest_charge) {
+      const charge = await stripe.charges.retrieve(intent.latest_charge as string, {
+        expand: ["balance_transaction"],
+      });
+      const balanceTx = charge.balance_transaction as Stripe.BalanceTransaction | null;
+      if (balanceTx?.fee != null) stripeFeeCents = balanceTx.fee;
+    }
+  } catch (err) {
+    console.warn("[fulfillPayment] Não foi possível obter balance_transaction; a usar estimativa", err);
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const stripeFeeForIntentValue =
+    stripeFeeCents ??
+    estimateStripeFee(parsedBreakdown?.totalCents ?? intent.amount_received ?? intent.amount ?? 0);
+
   await prisma.$transaction(async (tx) => {
     // Persistir breakdown se existir
     if (parsedBreakdown) {
@@ -543,11 +686,19 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent) {
 
       try {
         const feeMode = parsedBreakdown.feeMode as FeeMode | undefined;
+        const stripeFee = stripeFeeCents ?? estimateStripeFee(parsedBreakdown.totalCents ?? 0);
+        const netCents = Math.max(
+          0,
+          (parsedBreakdown.totalCents ?? 0) - (parsedBreakdown.platformFeeCents ?? 0) - stripeFee,
+        );
         const summary = await tx.saleSummary.upsert({
           where: { paymentIntentId: intent.id },
           update: {
             eventId: eventRecord.id,
-            userId,
+            userId: ownerUserId ?? null,
+            ownerUserId: ownerUserId ?? null,
+            ownerIdentityId: ownerIdentityId ?? null,
+            purchaseId: purchaseAnchor,
             promoCodeId: promoCodeId ? Number(promoCodeId) : null,
             promoCodeSnapshot: summaryPromo?.code ?? null,
             promoLabelSnapshot: summaryPromo?.label ?? summaryPromo?.code ?? null,
@@ -556,15 +707,19 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent) {
             subtotalCents: parsedBreakdown.subtotalCents,
             discountCents: parsedBreakdown.discountCents,
             platformFeeCents: parsedBreakdown.platformFeeCents,
+            stripeFeeCents: stripeFee,
             totalCents: parsedBreakdown.totalCents,
-            netCents: parsedBreakdown.totalCents - parsedBreakdown.platformFeeCents,
+            netCents,
             feeMode: feeMode,
             currency: parsedBreakdown.currency ?? "EUR",
           },
           create: {
             paymentIntentId: intent.id,
             eventId: eventRecord.id,
-            userId,
+            userId: ownerUserId ?? null,
+            ownerUserId: ownerUserId ?? null,
+            ownerIdentityId: ownerIdentityId ?? null,
+            purchaseId: purchaseAnchor,
             promoCodeId: promoCodeId ? Number(promoCodeId) : null,
             promoCodeSnapshot: summaryPromo?.code ?? null,
             promoLabelSnapshot: summaryPromo?.label ?? summaryPromo?.code ?? null,
@@ -573,8 +728,9 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent) {
             subtotalCents: parsedBreakdown.subtotalCents,
             discountCents: parsedBreakdown.discountCents,
             platformFeeCents: parsedBreakdown.platformFeeCents,
+            stripeFeeCents: stripeFee,
             totalCents: parsedBreakdown.totalCents,
-            netCents: parsedBreakdown.totalCents - parsedBreakdown.platformFeeCents,
+            netCents,
             feeMode: feeMode,
             currency: parsedBreakdown.currency ?? "EUR",
           },
@@ -585,6 +741,24 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent) {
         await tx.saleLine.deleteMany({ where: { saleSummaryId: summary.id } });
         for (const line of parsedBreakdown.lines) {
           const linePromo = line.promoCodeId ? promoSnapshots.get(line.promoCodeId) ?? null : summaryPromo;
+          const computed = computedLineMap.get(line.ticketTypeId);
+          const grossCents =
+            computed?.grossCents ??
+            line.lineGrossCents ??
+            line.lineTotalCents ??
+            (line.unitPriceCents != null && line.quantity != null ? line.unitPriceCents * line.quantity : 0);
+          const netCents =
+            computed?.netCents ??
+            (grossCents != null && parsedBreakdown.discountCents != null && parsedBreakdown.subtotalCents
+              ? Math.max(
+                  0,
+                  grossCents -
+                    Math.floor(
+                      (grossCents * parsedBreakdown.discountCents) /
+                        Math.max(1, parsedBreakdown.subtotalCents),
+                    ),
+                )
+              : grossCents);
           await tx.saleLine.create({
             data: {
               saleSummaryId: summary.id,
@@ -596,11 +770,11 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent) {
               promoTypeSnapshot: linePromo?.type ?? null,
               promoValueSnapshot: linePromo?.value ?? null,
               quantity: line.quantity,
-              unitPriceCents: line.unitPriceCents,
-              discountPerUnitCents: line.discountPerUnitCents ?? 0,
-              grossCents: line.lineGrossCents,
-              netCents: line.lineNetCents,
-              platformFeeCents: line.platformFeeCents ?? 0,
+              unitPriceCents: computed?.unitPriceCents ?? line.unitPriceCents,
+              discountPerUnitCents: computed?.discountPerUnitCents ?? line.discountPerUnitCents ?? 0,
+              grossCents: grossCents,
+              netCents: netCents,
+              platformFeeCents: computed?.platformFeeCents ?? line.platformFeeCents ?? 0,
             },
           });
         }
@@ -609,10 +783,49 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent) {
       }
     }
 
+    if (promoCodeId && saleSummaryId) {
+      try {
+        const promo = await tx.promoCode.findUnique({
+          where: { id: Number(promoCodeId) },
+          select: { id: true, maxUses: true, perUserLimit: true },
+        });
+        // Re-check limites em transação (best-effort contra race)
+        const totalUses = await tx.promoRedemption.count({ where: { promoCodeId: Number(promoCodeId) } });
+        const userUses =
+          ownerUserId || guestEmail
+            ? await tx.promoRedemption.count({
+                where: {
+                  promoCodeId: Number(promoCodeId),
+                  OR: [{ userId: ownerUserId ?? undefined }, { guestEmail: guestEmail || undefined }],
+                },
+              })
+            : 0;
+        const exceedsGlobal = promo?.maxUses != null && totalUses >= promo.maxUses;
+        const exceedsUser = promo?.perUserLimit != null && userUses >= promo.perUserLimit;
+        if (!exceedsGlobal && !exceedsUser) {
+          await tx.promoRedemption.create({
+            data: {
+              promoCodeId: Number(promoCodeId),
+              userId: ownerUserId ?? null,
+              guestEmail: guestEmail || null,
+            },
+          });
+        } else {
+          console.warn("[fulfillPayment] promoRedemption não criada por limite atingido", {
+            promoCodeId,
+            totalUses,
+            userUses,
+          });
+        }
+      } catch (err) {
+        console.warn("[fulfillPayment] Não foi possível registar promo redemption (tx)", err);
+      }
+    }
+
     for (const item of items) {
-      const ticketType = eventRecord.ticketTypes.find((t) => t.id === item.ticketId);
+      const ticketType = eventRecord.ticketTypes.find((t) => t.id === item.ticketTypeId);
       if (!ticketType) {
-        console.warn("[fulfillPayment] TicketType not found:", item.ticketId);
+        console.warn("[fulfillPayment] TicketType not found:", item.ticketTypeId);
         continue;
       }
 
@@ -641,34 +854,39 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent) {
           perTicketPlatformFee + (feeRemainder > 0 ? 1 : 0);
         if (feeRemainder > 0) feeRemainder -= 1;
 
+        const lineFromBreakdown = parsedBreakdown?.lines.find(
+          (l) => l.ticketTypeId === ticketType.id,
+        );
+        const computedLine = computedLineMap.get(ticketType.id);
+        const lineQty = computedLine?.quantity ?? lineFromBreakdown?.quantity ?? qty;
+        const lineNetCents =
+          computedLine?.netCents ??
+          lineFromBreakdown?.lineNetCents ??
+          lineFromBreakdown?.lineTotalCents ??
+          ticketType.price * lineQty;
+        const pricePerTicketCents = Math.round(
+          lineNetCents / Math.max(1, lineQty),
+        );
+
         const ticket = await tx.ticket.create({
           data: {
-            userId,
+            userId: ownerUserId ?? null,
+            ownerUserId: ownerUserId ?? null,
+            ownerIdentityId: ownerIdentityId ?? null,
             eventId: eventRecord.id,
             ticketTypeId: ticketType.id,
             status: "ACTIVE",
             purchasedAt: new Date(),
             qrSecret: token,
-            pricePaid: parsedBreakdown
-              ? Math.round(
-                  (parsedBreakdown.lines.find((l) => l.ticketTypeId === ticketType.id)?.lineNetCents ?? ticketType.price) /
-                    Math.max(1, parsedBreakdown.lines.find((l) => l.ticketTypeId === ticketType.id)?.quantity ?? 1)
-                )
-              : ticketType.price,
+            pricePaid: pricePerTicketCents,
             currency: ticketType.currency,
             platformFeeCents: feeForThisTicket,
-            totalPaidCents:
-              (parsedBreakdown
-                ? Math.round(
-                    (parsedBreakdown.lines.find((l) => l.ticketTypeId === ticketType.id)?.lineNetCents ?? ticketType.price) /
-                      Math.max(1, parsedBreakdown.lines.find((l) => l.ticketTypeId === ticketType.id)?.quantity ?? 1)
-                  )
-                : ticketType.price) + feeForThisTicket,
+            totalPaidCents: pricePerTicketCents + feeForThisTicket,
             stripePaymentIntentId: intent.id,
           },
         });
 
-        if (!userId && guestEmail) {
+        if (!ownerUserId && guestEmail) {
           await tx.guestTicketLink.upsert({
             where: { ticketId: ticket.id },
             update: {
@@ -703,6 +921,11 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent) {
         data: {
           status: "ERROR",
           errorMessage: "Nenhum bilhete processado (stock/itens inválidos).",
+          purchaseId: purchaseAnchor,
+          stripeEventId: stripeEventId ?? undefined,
+          source: PaymentEventSource.WEBHOOK,
+          dedupeKey: purchaseAnchor ?? stripeEventId ?? intent.id,
+          attempt: { increment: 1 },
           updatedAt: new Date(),
         },
       });
@@ -710,11 +933,11 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent) {
     }
 
     // Reservas apenas se a compra foi feita com sessão (guest não cria reservas)
-    if (userId) {
+    if (ownerUserId) {
       await tx.ticketReservation.updateMany({
         where: {
           eventId: eventRecord.id,
-          userId,
+          userId: ownerUserId,
           status: "ACTIVE",
         },
         data: { status: "COMPLETED" },
@@ -723,7 +946,16 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent) {
 
     await tx.paymentEvent.updateMany({
       where: { stripePaymentIntentId: intent.id },
-      data: { status: "OK", updatedAt: new Date(), errorMessage: null },
+      data: {
+        status: "OK",
+        updatedAt: new Date(),
+        errorMessage: null,
+        purchaseId: purchaseAnchor,
+        stripeEventId: stripeEventId ?? undefined,
+        source: PaymentEventSource.WEBHOOK,
+        dedupeKey: purchaseAnchor ?? stripeEventId ?? intent.id,
+        attempt: { increment: 1 },
+      },
     });
   });
 
@@ -789,6 +1021,10 @@ async function handlePadelSplitPayment(intent: Stripe.PaymentIntent) {
   const ticketTypeId = Number(meta.ticketTypeId);
   const eventId = Number(meta.eventId);
   const userId = typeof meta.userId === "string" ? meta.userId : null;
+  const purchaseId =
+    typeof meta.purchaseId === "string" && meta.purchaseId.trim() !== ""
+      ? meta.purchaseId.trim()
+      : null;
 
   if (!Number.isFinite(pairingId) || !Number.isFinite(slotId) || !Number.isFinite(ticketTypeId) || !Number.isFinite(eventId)) {
     console.warn("[handlePadelSplitPayment] metadata incompleta", meta);
@@ -837,6 +1073,8 @@ async function handlePadelSplitPayment(intent: Stripe.PaymentIntent) {
         qrSecret,
         rotatingSeed,
         userId: userId ?? undefined,
+        ownerUserId: userId ?? null,
+        ownerIdentityId: null,
         pairingId,
         padelSplitShareCents: ticketType.price,
       },
@@ -867,10 +1105,16 @@ async function handlePadelSplitPayment(intent: Stripe.PaymentIntent) {
 
     const stillPending = updated.slots.some((s) => s.slotStatus === "PENDING" || s.paymentStatus === "UNPAID");
     if (!stillPending && updated.pairingStatus !== "COMPLETE") {
-      await tx.padelPairing.update({
+      const confirmed = await tx.padelPairing.update({
         where: { id: pairingId },
         data: { pairingStatus: "COMPLETE" },
+        select: { id: true, player1UserId: true, player2UserId: true },
       });
+      await ensureEntriesForConfirmedPairing(confirmed.id);
+      const captainUserId = confirmed.player1UserId ?? userId ?? undefined;
+      if (captainUserId) {
+        await queuePartnerPaid(pairingId, captainUserId, userId ?? undefined);
+      }
     }
 
     // log payment_event
@@ -885,6 +1129,11 @@ async function handlePadelSplitPayment(intent: Stripe.PaymentIntent) {
         errorMessage: null,
         mode: intent.livemode ? "LIVE" : "TEST",
         isTest: !intent.livemode,
+        stripeFeeCents: stripeFeeForIntentValue,
+        purchaseId: purchaseId ?? intent.id,
+        source: PaymentEventSource.WEBHOOK,
+        dedupeKey: purchaseId ?? intent.id,
+        attempt: { increment: 1 },
       },
       create: {
         stripePaymentIntentId: intent.id,
@@ -894,9 +1143,123 @@ async function handlePadelSplitPayment(intent: Stripe.PaymentIntent) {
         userId: userId ?? undefined,
         mode: intent.livemode ? "LIVE" : "TEST",
         isTest: !intent.livemode,
+        stripeFeeCents: stripeFeeForIntentValue,
+        purchaseId: purchaseId ?? intent.id,
+        source: PaymentEventSource.WEBHOOK,
+        dedupeKey: purchaseId ?? intent.id,
+        attempt: 1,
       },
     });
   });
+}
+
+async function handleSecondCharge(intent: Stripe.PaymentIntent) {
+  const meta = intent.metadata ?? {};
+  const pairingId = Number(meta.pairingId);
+  if (!Number.isFinite(pairingId)) {
+    console.warn("[handleSecondCharge] pairingId ausente no metadata", meta);
+    return;
+  }
+  const now = new Date();
+
+  if (intent.status === "succeeded") {
+    await prisma.$transaction(async (tx) => {
+      await tx.padelPairingSlot.updateMany({
+        where: { pairingId, slotStatus: { in: ["PENDING", "FILLED"] } },
+        data: { paymentStatus: PadelPairingPaymentStatus.PAID },
+      });
+      const confirmed = await tx.padelPairing.update({
+        where: { id: pairingId },
+        data: {
+          lifecycleStatus: PadelPairingLifecycleStatus.CONFIRMED_CAPTAIN_FULL,
+          pairingStatus: PadelPairingStatus.COMPLETE,
+          guaranteeStatus: "SUCCEEDED",
+          secondChargePaymentIntentId: intent.id,
+          captainSecondChargedAt: now,
+          partnerPaidAt: now,
+          graceUntilAt: null,
+          partnerInviteToken: null,
+          partnerLinkToken: null,
+          partnerLinkExpiresAt: null,
+        },
+      });
+      await ensureEntriesForConfirmedPairing(confirmed.id);
+      await tx.padelPairingHold.updateMany({
+        where: { pairingId, status: "ACTIVE" },
+        data: { status: "CANCELLED" },
+      });
+      await tx.paymentEvent.upsert({
+        where: { stripePaymentIntentId: intent.id },
+        update: {
+          status: "OK",
+          updatedAt: now,
+          amountCents: intent.amount,
+          purchaseId: (meta as Record<string, unknown>)?.purchaseId as string | undefined ?? intent.id,
+          stripeFeeCents: 0,
+          source: PaymentEventSource.WEBHOOK,
+          dedupeKey: (meta as Record<string, unknown>)?.purchaseId as string | undefined ?? intent.id,
+          attempt: { increment: 1 },
+        },
+        create: {
+          stripePaymentIntentId: intent.id,
+          status: "OK",
+          amountCents: intent.amount,
+          eventId: Number(meta.eventId) || undefined,
+          userId: typeof meta.userId === "string" ? meta.userId : undefined,
+          purchaseId: (meta as Record<string, unknown>)?.purchaseId as string | undefined ?? intent.id,
+          source: PaymentEventSource.WEBHOOK,
+          dedupeKey: (meta as Record<string, unknown>)?.purchaseId as string | undefined ?? intent.id,
+          attempt: 1,
+          stripeFeeCents: 0,
+          mode: intent.livemode ? "LIVE" : "TEST",
+          isTest: !intent.livemode,
+        },
+      });
+    });
+    return;
+  }
+
+  if (intent.status === "requires_action") {
+    await prisma.padelPairing.update({
+      where: { id: pairingId },
+      data: {
+        guaranteeStatus: "REQUIRES_ACTION",
+        graceUntilAt: computeGraceUntil(now),
+        secondChargePaymentIntentId: intent.id,
+      },
+    });
+    // Notificar capitão que precisa de ação (SCA)
+    const pairing = await prisma.padelPairing.findUnique({ where: { id: pairingId }, select: { player1UserId: true, player2UserId: true } });
+    const targets = [pairing?.player1UserId, pairing?.player2UserId].filter(Boolean) as string[];
+    if (targets.length) {
+      await queueOffsessionActionRequired(pairingId, targets);
+    }
+    return;
+  }
+
+  if (intent.status === "requires_payment_method" || intent.status === "canceled") {
+    await prisma.$transaction(async (tx) => {
+      await tx.padelPairing.update({
+        where: { id: pairingId },
+        data: {
+          guaranteeStatus: "FAILED",
+          lifecycleStatus: PadelPairingLifecycleStatus.CANCELLED_INCOMPLETE,
+          pairingStatus: PadelPairingStatus.CANCELLED,
+          graceUntilAt: null,
+        },
+      });
+      await tx.padelPairingHold.updateMany({
+        where: { pairingId, status: "ACTIVE" },
+        data: { status: "CANCELLED" },
+      });
+    });
+    const pairing = await prisma.padelPairing.findUnique({ where: { id: pairingId }, select: { player1UserId: true, player2UserId: true } });
+    const targets = [pairing?.player1UserId, pairing?.player2UserId].filter(Boolean) as string[];
+    if (targets.length) {
+      await queueDeadlineExpired(pairingId, targets);
+    }
+    return;
+  }
 }
 
 async function handlePadelFullPayment(intent: Stripe.PaymentIntent) {
@@ -954,6 +1317,8 @@ async function handlePadelFullPayment(intent: Stripe.PaymentIntent) {
         qrSecret: qr1,
         rotatingSeed: rot1,
         userId: userId ?? undefined,
+        ownerUserId: userId ?? null,
+        ownerIdentityId: null,
         pairingId,
         padelSplitShareCents: ticketType.price,
       },
@@ -972,6 +1337,8 @@ async function handlePadelFullPayment(intent: Stripe.PaymentIntent) {
         rotatingSeed: rot2,
         pairingId,
         padelSplitShareCents: ticketType.price,
+        ownerUserId: userId ?? null,
+        ownerIdentityId: null,
       },
     });
 
@@ -1019,6 +1386,10 @@ async function handlePadelFullPayment(intent: Stripe.PaymentIntent) {
         errorMessage: null,
         mode: intent.livemode ? "LIVE" : "TEST",
         isTest: !intent.livemode,
+        purchaseId: purchaseId ?? intent.id,
+        source: PaymentEventSource.WEBHOOK,
+        dedupeKey: purchaseId ?? intent.id,
+        attempt: { increment: 1 },
       },
       create: {
         stripePaymentIntentId: intent.id,
@@ -1028,6 +1399,10 @@ async function handlePadelFullPayment(intent: Stripe.PaymentIntent) {
         userId: userId ?? undefined,
         mode: intent.livemode ? "LIVE" : "TEST",
         isTest: !intent.livemode,
+        purchaseId: purchaseId ?? intent.id,
+        source: PaymentEventSource.WEBHOOK,
+        dedupeKey: purchaseId ?? intent.id,
+        attempt: 1,
       },
     });
   });
@@ -1047,7 +1422,10 @@ async function handleRefund(charge: Stripe.Charge) {
   // Obter metadata do payment intent para identificar PADEL_SPLIT
   const intent = await stripe.paymentIntents.retrieve(paymentIntentId, { expand: ["latest_charge"] }).catch(() => null);
 
-  const isPadelSplit = intent?.metadata?.mode === "PADEL_SPLIT";
+  const paymentScenario = normalizePaymentScenario(
+    typeof intent?.metadata?.paymentScenario === "string" ? intent?.metadata?.paymentScenario : null,
+  );
+  const isPadelSplit = paymentScenario === "GROUP_SPLIT";
   const tickets = await prisma.ticket.findMany({
     where: { stripePaymentIntentId: paymentIntentId },
     select: { id: true, ticketTypeId: true, eventId: true, status: true, pairingId: true },
@@ -1059,7 +1437,7 @@ async function handleRefund(charge: Stripe.Charge) {
   }
 
   if (isPadelSplit) {
-    await handlePadelSplitRefund(paymentIntentId, tickets);
+    await handlePadelSplitRefund(paymentIntentId, tickets, charge.livemode);
     return;
   }
 
@@ -1069,6 +1447,10 @@ async function handleRefund(charge: Stripe.Charge) {
   }, {});
 
   const ticketTypeIds = Object.keys(byType).map((id) => Number(id));
+  const saleSummary = await prisma.saleSummary.findUnique({
+    where: { paymentIntentId },
+    select: { id: true, promoCodeId: true },
+  });
   const ticketTypes = await prisma.ticketType.findMany({
     where: { id: { in: ticketTypeIds } },
     select: { id: true, soldQuantity: true },
@@ -1101,6 +1483,14 @@ async function handleRefund(charge: Stripe.Charge) {
         isTest: !charge.livemode,
       },
     }),
+    ...(saleSummary?.id
+      ? [
+          prisma.promoRedemption.updateMany({
+            where: { saleSummaryId: saleSummary.id },
+            data: { cancelledAt: new Date() },
+          }),
+        ]
+      : []),
   ]);
 
   console.log("[handleRefund] Tickets marcados como REFUNDED", {
@@ -1109,7 +1499,11 @@ async function handleRefund(charge: Stripe.Charge) {
   });
 }
 
-async function handlePadelSplitRefund(paymentIntentId: string, tickets: Array<{ id: string; pairingId: number | null }>) {
+async function handlePadelSplitRefund(
+  paymentIntentId: string,
+  tickets: Array<{ id: string; pairingId: number | null }>,
+  livemode: boolean,
+) {
   const pairingIds = Array.from(new Set(tickets.map((t) => t.pairingId).filter(Boolean))) as number[];
   if (!pairingIds.length) return;
 
@@ -1143,7 +1537,9 @@ async function handlePadelSplitRefund(paymentIntentId: string, tickets: Array<{ 
         where: { id: pairingId },
         data: {
           pairingStatus: newStatus,
-          inviteToken: newStatus === "CANCELLED" ? null : pairing.inviteToken,
+          partnerInviteToken: newStatus === "CANCELLED" ? null : pairing.partnerInviteToken,
+          partnerLinkToken: newStatus === "CANCELLED" ? null : pairing.partnerLinkToken,
+          partnerLinkExpiresAt: newStatus === "CANCELLED" ? null : pairing.partnerLinkExpiresAt,
         },
       });
     }
@@ -1154,8 +1550,8 @@ async function handlePadelSplitRefund(paymentIntentId: string, tickets: Array<{ 
         status: "REFUNDED",
         updatedAt: new Date(),
         errorMessage: null,
-        mode: charge.livemode ? "LIVE" : "TEST",
-        isTest: !charge.livemode,
+        mode: livemode ? "LIVE" : "TEST",
+        isTest: !livemode,
       },
     });
   });

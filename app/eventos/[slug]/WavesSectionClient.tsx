@@ -30,6 +30,7 @@ type WavesSectionClientProps = {
   tickets: WaveTicket[];
   // para sabermos se devemos ir para checkout ou fazer “join” direto
   isFreeEvent?: boolean;
+  checkoutUiVariant?: "EVENT_DEFAULT" | "PADEL_TOURNAMENT";
 };
 
 type FeedbackType = "success" | "error";
@@ -97,6 +98,7 @@ export default function WavesSectionClient({
   slug,
   tickets: initialTickets,
   isFreeEvent,
+  checkoutUiVariant = "EVENT_DEFAULT",
 }: WavesSectionClientProps) {
   const router = useRouter();
   const { abrirCheckout, atualizarDados } = useCheckout();
@@ -278,6 +280,9 @@ export default function WavesSectionClient({
             atualizarDados({
               slug,
               waves: visibleTickets,
+              additional: {
+                checkoutUiVariant,
+              },
             });
 
             const defaultTicket = purchasableTickets[0];
@@ -287,6 +292,9 @@ export default function WavesSectionClient({
               ticketId: defaultTicket.id,
               price: defaultTicket.price,
               ticketName: defaultTicket.name,
+              additional: {
+                checkoutUiVariant,
+              },
               waves: visibleTickets,
             });
 

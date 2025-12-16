@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import useSWR from "swr";
 import { InlineDateTimePicker } from "@/app/components/forms/InlineDateTimePicker";
@@ -47,7 +47,7 @@ type EventEditClientProps = {
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
-export function EventEditClient({ event, tickets, eventHasTickets }: EventEditClientProps) {
+export function EventEditClient({ event, tickets }: EventEditClientProps) {
   const { user, profile } = useUser();
   const { data: organizerStatus } = useSWR<{ paymentsStatus?: string }>(
     user ? "/api/organizador/me" : null,
@@ -61,17 +61,37 @@ export function EventEditClient({ event, tickets, eventHasTickets }: EventEditCl
   const [locationName, setLocationName] = useState(event.locationName ?? "");
   const [locationCity, setLocationCity] = useState(event.locationCity ?? "");
   const [address, setAddress] = useState(event.address ?? "");
-  const [templateType, setTemplateType] = useState(event.templateType ?? "OTHER");
-  const [isFree, setIsFree] = useState(event.isFree);
+  const [templateType] = useState(event.templateType ?? "OTHER");
+  const [isFree] = useState(event.isFree);
   const [coverUrl, setCoverUrl] = useState<string | null>(event.coverImageUrl);
   const [uploadingCover, setUploadingCover] = useState(false);
-  const [feeMode, setFeeMode] = useState<string>(event.feeModeOverride ?? "INHERIT");
-  const [feeBpsOverride, setFeeBpsOverride] = useState<string>(
-    event.platformFeeBpsOverride != null ? String(event.platformFeeBpsOverride) : "",
+  const [ticketList, setTicketList] = useState<TicketTypeUI[]>(tickets);
+  const [currentStep, setCurrentStep] = useState(0);
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<"title" | "startsAt" | "endsAt" | "locationCity" | "locationName", string>>>({});
+  const [errorSummary, setErrorSummary] = useState<{ field: string; message: string }[]>([]);
+  const steps = useMemo(
+    () =>
+      isFree
+        ? [
+            { key: "base", label: "Essenciais", desc: "Imagem e localização" },
+            { key: "dates", label: "Datas & Local", desc: "Início e fim" },
+            { key: "summary", label: "Revisão", desc: "Confirmar e guardar" },
+          ]
+        : [
+            { key: "base", label: "Essenciais", desc: "Imagem e localização" },
+            { key: "dates", label: "Datas & Local", desc: "Início e fim" },
+            { key: "tickets", label: "Bilhetes / Inscrições", desc: "Gestão e vendas" },
+          ],
+    [isFree],
   );
-  const [feeFixedOverride, setFeeFixedOverride] = useState<string>(
-    event.platformFeeFixedCentsOverride != null ? String(event.platformFeeFixedCentsOverride) : "",
-  );
+  const freeCapacity = useMemo(() => {
+    if (!isFree) return null;
+    const total = ticketList.reduce((sum, t) => {
+      if (t.totalQuantity == null) return sum;
+      return sum + t.totalQuantity;
+    }, 0);
+    return total > 0 ? total : null;
+  }, [isFree, ticketList]);
 
   const [newTicket, setNewTicket] = useState({
     name: "",
@@ -88,14 +108,16 @@ export function EventEditClient({ event, tickets, eventHasTickets }: EventEditCl
   const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [ticketList, setTicketList] = useState<TicketTypeUI[]>(tickets);
   const [stripeAlert, setStripeAlert] = useState<string | null>(null);
   const [validationAlert, setValidationAlert] = useState<string | null>(null);
   const [backendAlert, setBackendAlert] = useState<string | null>(null);
   const ctaRef = useRef<HTMLDivElement | null>(null);
   const titleRef = useRef<HTMLInputElement | null>(null);
   const startsRef = useRef<HTMLDivElement | null>(null);
+  const endsRef = useRef<HTMLDivElement | null>(null);
   const cityRef = useRef<HTMLInputElement | null>(null);
+  const locationNameRef = useRef<HTMLInputElement | null>(null);
+  const errorSummaryRef = useRef<HTMLDivElement | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
 
   const pushToast = (message: string, tone: ToastTone = "error") => {
@@ -138,6 +160,126 @@ export function EventEditClient({ event, tickets, eventHasTickets }: EventEditCl
     );
   };
 
+  const focusField = (field: string) => {
+    const target =
+      field === "title"
+        ? titleRef.current
+        : field === "startsAt"
+          ? (startsRef.current?.querySelector("button") as HTMLElement | null)
+        : field === "endsAt"
+            ? (endsRef.current?.querySelector("button") as HTMLElement | null)
+            : field === "locationCity"
+              ? cityRef.current
+              : field === "locationName"
+                ? locationNameRef.current
+                : null;
+    target?.scrollIntoView({ behavior: "smooth", block: "center" });
+    target?.focus({ preventScroll: true });
+  };
+
+  const applyErrors = (issues: { field: string; message: string }[]) => {
+    setFieldErrors((prev) => {
+      const next = { ...prev };
+      issues.forEach((issue) => {
+        next[issue.field as keyof typeof next] = issue.message;
+      });
+      return next;
+    });
+    setErrorSummary(issues);
+    if (issues.length > 0) {
+      setTimeout(() => errorSummaryRef.current?.focus({ preventScroll: false }), 40);
+    }
+  };
+
+  const clearErrorsForFields = (fields: string[]) => {
+    setFieldErrors((prev) => {
+      const next = { ...prev };
+      fields.forEach((f) => delete next[f as keyof typeof next]);
+      return next;
+    });
+    setErrorSummary((prev) => prev.filter((err) => !fields.includes(err.field)));
+  };
+
+  const collectErrors = (step: number | "all") => {
+    const stepsToCheck = step === "all" ? [0, 1] : [step];
+    const issues: { field: string; message: string }[] = [];
+
+    stepsToCheck.forEach((idx) => {
+      if (idx === 0) {
+        if (!title.trim()) issues.push({ field: "title", message: "Título obrigatório." });
+        if (!locationName.trim()) issues.push({ field: "locationName", message: "Local obrigatório." });
+        if (!locationCity.trim()) issues.push({ field: "locationCity", message: "Cidade obrigatória." });
+      }
+      if (idx === 1) {
+        if (!startsAt) issues.push({ field: "startsAt", message: "Data/hora de início obrigatória." });
+        if (endsAt && startsAt && new Date(endsAt).getTime() < new Date(startsAt).getTime()) {
+          issues.push({ field: "endsAt", message: "A data/hora de fim tem de ser depois do início." });
+        }
+      }
+    });
+
+    return issues;
+  };
+
+  const validateStep = (step: number) => {
+    const issues = collectErrors(step);
+    if (issues.length > 0) {
+      applyErrors(issues);
+      setValidationAlert("Revê os campos assinalados antes de continuar.");
+      setError(issues[0]?.message ?? null);
+      return false;
+    }
+    clearErrorsForFields(step === 0 ? ["title", "locationCity", "locationName"] : ["startsAt", "endsAt"]);
+    setValidationAlert(null);
+    setError(null);
+    return true;
+  };
+
+  useEffect(() => {
+    if (title.trim()) clearErrorsForFields(["title"]);
+  }, [title]);
+
+  useEffect(() => {
+    if (locationName.trim()) clearErrorsForFields(["locationName"]);
+  }, [locationName]);
+
+  useEffect(() => {
+    if (locationCity.trim()) clearErrorsForFields(["locationCity"]);
+  }, [locationCity]);
+
+  useEffect(() => {
+    if (startsAt) clearErrorsForFields(["startsAt"]);
+  }, [startsAt]);
+
+  useEffect(() => {
+    if (!endsAt) {
+      clearErrorsForFields(["endsAt"]);
+      return;
+    }
+    if (startsAt && new Date(endsAt).getTime() >= new Date(startsAt).getTime()) {
+      clearErrorsForFields(["endsAt"]);
+    }
+  }, [endsAt, startsAt]);
+
+  const goNext = () => {
+    const ok = validateStep(currentStep);
+    if (!ok) return;
+    if (currentStep < steps.length - 1) {
+      setValidationAlert(null);
+      setError(null);
+      setErrorSummary([]);
+      setCurrentStep((s) => s + 1);
+    } else {
+      handleSave();
+    }
+  };
+
+  const goPrev = () => {
+    setValidationAlert(null);
+    setError(null);
+    setCurrentStep((s) => Math.max(0, s - 1));
+  };
+
   const handleCoverUpload = async (file: File | null) => {
     if (!file) return;
     setUploadingCover(true);
@@ -166,40 +308,19 @@ export function EventEditClient({ event, tickets, eventHasTickets }: EventEditCl
     setError(null);
     setMessage(null);
 
-    const scrollTo = (el?: HTMLElement | null) =>
-      el?.scrollIntoView({ behavior: "smooth", block: "center" });
-
-    if (!title.trim()) {
-      setValidationAlert("Revê os campos em destaque antes de guardar o evento.");
-      setError("O título é obrigatório.");
-      scrollTo(titleRef.current);
-      titleRef.current?.classList.add("ring-1", "ring-red-400");
-      setTimeout(() => titleRef.current?.classList.remove("ring-1", "ring-red-400"), 800);
+    const issues = collectErrors("all");
+    if (issues.length > 0) {
+      applyErrors(issues);
+      setValidationAlert("Revê os campos assinalados antes de guardar o evento.");
+      setError(issues[0]?.message ?? null);
       return;
     }
-
-    if (!startsAt) {
-      setValidationAlert("Revê os campos em destaque antes de guardar o evento.");
-      setError("A data/hora de início é obrigatória.");
-      scrollTo(startsRef.current);
-      startsRef.current?.classList.add("ring-1", "ring-red-400");
-      setTimeout(() => startsRef.current?.classList.remove("ring-1", "ring-red-400"), 800);
-      return;
-    }
-
-    if (!locationCity.trim()) {
-      setValidationAlert("Revê os campos em destaque antes de guardar o evento.");
-      setError("A cidade é obrigatória.");
-      scrollTo(cityRef.current);
-      cityRef.current?.classList.add("ring-1", "ring-red-400");
-      setTimeout(() => cityRef.current?.classList.remove("ring-1", "ring-red-400"), 800);
-      return;
-    }
+    clearErrorsForFields(["title", "locationCity", "locationName", "startsAt", "endsAt"]);
 
     if (hasPaidTicket && paymentsStatus !== "READY") {
       setStripeAlert("Podes gerir o evento, mas só vender bilhetes pagos depois de ligares o Stripe.");
-      setError("Para vender bilhetes pagos, liga a tua conta Stripe em Finanças & Payouts.");
-      scrollTo(ctaRef.current);
+      setError("Liga o Stripe em Finanças & Payouts para vender bilhetes pagos.");
+      ctaRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
       return;
     }
 
@@ -209,27 +330,6 @@ export function EventEditClient({ event, tickets, eventHasTickets }: EventEditCl
         id,
         status: TicketTypeStatus.CLOSED,
       }));
-
-      const normalizedFeeMode = feeMode === "INHERIT" ? null : feeMode;
-      const feeBps =
-        feeBpsOverride.trim() === "" ? null : Number(feeBpsOverride.replace(",", "."));
-      const feeFixed =
-        feeFixedOverride.trim() === "" ? null : Number(feeFixedOverride.replace(",", "."));
-
-      if (feeBps !== null && (!Number.isFinite(feeBps) || feeBps < 0)) {
-        setValidationAlert("Revê os campos em destaque antes de guardar o evento.");
-        setError("Fee (%) inválido.");
-        scrollTo(ctaRef.current);
-        setIsSaving(false);
-        return;
-      }
-      if (feeFixed !== null && (!Number.isFinite(feeFixed) || feeFixed < 0)) {
-        setValidationAlert("Revê os campos em destaque antes de guardar o evento.");
-        setError("Fee fixa inválida.");
-        scrollTo(ctaRef.current);
-        setIsSaving(false);
-        return;
-      }
 
       const newTicketsPayload =
         newTicket.name.trim() && newTicket.priceEuro
@@ -262,9 +362,9 @@ export function EventEditClient({ event, tickets, eventHasTickets }: EventEditCl
           templateType,
           isFree,
           coverImageUrl: coverUrl,
-          feeModeOverride: normalizedFeeMode,
-          platformFeeBpsOverride: feeBps === null ? null : Math.floor(feeBps),
-          platformFeeFixedCentsOverride: feeFixed === null ? null : Math.floor(feeFixed),
+          feeModeOverride: null,
+          platformFeeBpsOverride: null,
+          platformFeeFixedCentsOverride: null,
           ticketTypeUpdates,
           newTicketTypes: newTicketsPayload,
         }),
@@ -312,12 +412,14 @@ export function EventEditClient({ event, tickets, eventHasTickets }: EventEditCl
         startsAt: "",
         endsAt: "",
       });
+      setErrorSummary([]);
+      setFieldErrors({});
       setMessage("Evento atualizado com sucesso.");
     } catch (err) {
       console.error("Erro ao atualizar evento", err);
       setBackendAlert(err instanceof Error ? err.message : "Erro ao atualizar evento.");
       pushToast(err instanceof Error ? err.message : "Erro ao atualizar evento.");
-      scrollTo(ctaRef.current);
+      ctaRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
     } finally {
       setIsSaving(false);
     }
@@ -365,51 +467,11 @@ export function EventEditClient({ event, tickets, eventHasTickets }: EventEditCl
     }
   };
 
-  return (
-    <>
-    <div className="space-y-6">
-      {confirmId && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/70 backdrop-blur">
-          <div className="w-full max-w-sm rounded-2xl border border-white/15 bg-black/90 p-5 shadow-[0_20px_60px_rgba(0,0,0,0.85)] space-y-3">
-            <h3 className="text-lg font-semibold">Terminar venda do bilhete?</h3>
-            <p className="text-sm text-white/70">
-              Esta ação é definitiva para este tipo de bilhete. Escreve{" "}
-              <span className="font-semibold">TERMINAR VENDA</span> para confirmar.
-            </p>
-            <input
-              value={confirmText}
-              onChange={(e) => setConfirmText(e.target.value)}
-              className="w-full rounded-md border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-white/50"
-              placeholder="TERMINAR VENDA"
-            />
-            <div className="flex justify-end gap-2 text-[12px]">
-              <button
-                type="button"
-                onClick={() => {
-                  setConfirmId(null);
-                  setConfirmText("");
-                }}
-                className="rounded-full border border-white/20 px-3 py-1 text-white/75 hover:bg-white/10"
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={confirmEnd}
-                className="rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-3 py-1 font-semibold text-black shadow"
-              >
-                Confirmar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+  const progress = steps.length > 1 ? Math.min(100, (currentStep / (steps.length - 1)) * 100) : 100;
 
-      <div className="rounded-2xl border border-white/10 bg-white/5 p-4 space-y-4">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-white/70">
-          Dados do evento
-        </h2>
-
+  const renderStepContent = () => {
+    const baseBlock = (
+      <div className="space-y-4">
         <div className="space-y-2">
           <label className="text-sm font-medium">Imagem de capa</label>
           <div className="flex flex-col sm:flex-row gap-3 items-start">
@@ -447,13 +509,20 @@ export function EventEditClient({ event, tickets, eventHasTickets }: EventEditCl
         </div>
 
         <div className="space-y-2">
-          <label className="text-sm font-medium">Título</label>
+          <label className="text-sm font-medium">Título *</label>
           <input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             ref={titleRef}
+            aria-invalid={Boolean(fieldErrors.title)}
             className="w-full rounded-md border border-white/15 bg-black/20 px-3 py-2 text-sm outline-none focus:border-white/60"
           />
+          {fieldErrors.title && (
+            <p className="flex items-center gap-2 text-xs font-semibold text-amber-100">
+              <span aria-hidden>⚠️</span>
+              {fieldErrors.title}
+            </p>
+          )}
         </div>
         <div className="space-y-2">
           <label className="text-sm font-medium">Descrição</label>
@@ -466,38 +535,37 @@ export function EventEditClient({ event, tickets, eventHasTickets }: EventEditCl
         </div>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div ref={startsRef}>
-            <InlineDateTimePicker
-              label="Data/hora início"
-              value={startsAt}
-              onChange={(v) => setStartsAt(v)}
-            />
-          </div>
-          <InlineDateTimePicker
-            label="Data/hora fim"
-            value={endsAt}
-            onChange={(v) => setEndsAt(v)}
-            minDateTime={startsAt ? new Date(startsAt) : undefined}
-          />
-        </div>
-
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="space-y-1">
-            <label className="text-sm font-medium">Local</label>
+            <label className="text-sm font-medium">Local *</label>
             <input
               value={locationName}
               onChange={(e) => setLocationName(e.target.value)}
+              ref={locationNameRef}
+              aria-invalid={Boolean(fieldErrors.locationName)}
               className="w-full rounded-md border border-white/15 bg-black/20 px-3 py-2 text-sm outline-none focus:border-white/60"
             />
+            {fieldErrors.locationName && (
+              <p className="flex items-center gap-2 text-xs font-semibold text-amber-100">
+                <span aria-hidden>⚠️</span>
+                {fieldErrors.locationName}
+              </p>
+            )}
           </div>
           <div className="space-y-1">
-            <label className="text-sm font-medium">Cidade</label>
+            <label className="text-sm font-medium">Cidade *</label>
             <input
               value={locationCity}
               onChange={(e) => setLocationCity(e.target.value)}
               ref={cityRef}
+              aria-invalid={Boolean(fieldErrors.locationCity)}
               className="w-full rounded-md border border-white/15 bg-black/20 px-3 py-2 text-sm outline-none focus:border-white/60"
             />
+            {fieldErrors.locationCity && (
+              <p className="flex items-center gap-2 text-xs font-semibold text-amber-100">
+                <span aria-hidden>⚠️</span>
+                {fieldErrors.locationCity}
+              </p>
+            )}
           </div>
         </div>
         <div className="space-y-1">
@@ -510,71 +578,76 @@ export function EventEditClient({ event, tickets, eventHasTickets }: EventEditCl
         </div>
         <div className="space-y-1">
           <label className="text-sm font-medium">Template</label>
-          <select
-            value={templateType}
-            onChange={(e) => setTemplateType(e.target.value)}
-            className="w-full rounded-md border border-white/15 bg-black/20 px-3 py-2 text-sm outline-none focus:border-white/60"
-          >
-            <option value="PARTY">Festa</option>
-            <option value="SPORT">Desporto</option>
-            <option value="VOLUNTEERING">Voluntariado</option>
-            <option value="TALK">Palestra / Talk</option>
-            <option value="OTHER">Outro</option>
-          </select>
+          <div className="rounded-md border border-white/15 bg-black/20 px-3 py-2 text-sm text-white/80">
+            {templateType === "PARTY"
+              ? "Festa"
+              : templateType === "SPORT"
+                ? "Desporto"
+                : templateType === "VOLUNTEERING"
+                  ? "Voluntariado"
+                  : templateType === "TALK"
+                    ? "Palestra / Talk"
+                    : "Outro"}
+          </div>
+          <p className="text-[11px] text-white/55">O template não pode ser alterado depois de criar o evento.</p>
         </div>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <div className="space-y-1">
-            <label className="text-sm font-medium">Modo de fee</label>
-            <select
-              value={feeMode}
-              onChange={(e) => setFeeMode(e.target.value)}
-              className="w-full rounded-md border border-white/15 bg-black/20 px-3 py-2 text-sm outline-none focus:border-white/60"
-            >
-              <option value="INHERIT">Usar padrão do organizador</option>
-              <option value="ADDED">Taxa adicionada ao bilhete</option>
-              <option value="INCLUDED">Taxa incluída no preço</option>
-            </select>
-            <p className="text-[11px] text-white/60">Leave em “padrão” para herdar o configurado no painel.</p>
-          </div>
-          <div className="space-y-1">
-            <label className="text-sm font-medium">Fee % (bps)</label>
-            <input
-              value={feeBpsOverride}
-              onChange={(e) => setFeeBpsOverride(e.target.value)}
-              placeholder="ex.: 200"
-              className="w-full rounded-md border border-white/15 bg-black/20 px-3 py-2 text-sm outline-none focus:border-white/60"
-            />
-            <p className="text-[11px] text-white/60">Em basis points (200 = 2%). Vazio = usar padrão.</p>
-          </div>
-          <div className="space-y-1">
-            <label className="text-sm font-medium">Fee fixa (cêntimos)</label>
-            <input
-              value={feeFixedOverride}
-              onChange={(e) => setFeeFixedOverride(e.target.value)}
-              placeholder="ex.: 0"
-              className="w-full rounded-md border border-white/15 bg-black/20 px-3 py-2 text-sm outline-none focus:border-white/60"
-            />
-            <p className="text-[11px] text-white/60">Valor em cêntimos. Vazio = usar padrão.</p>
-          </div>
+        <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-3 text-sm text-white/75">
+          <p className="font-semibold text-white">Taxas</p>
+          <p className="text-[12px] text-white/65">
+            As taxas são definidas pela ORYA. O organizador não altera fee mode nem valores (para orgs de plataforma, taxa
+            ORYA é zero; apenas taxa Stripe aplica).
+          </p>
         </div>
-        <label className="inline-flex items-center gap-2 text-sm text-white/80">
-          <input
-            type="checkbox"
-            checked={isFree}
-            onChange={(e) => setIsFree(e.target.checked)}
-            disabled={eventHasTickets}
-            className="h-4 w-4 rounded border-white/30 bg-black/30 disabled:opacity-50"
-          />
-          Evento grátis
-          {eventHasTickets && (
-            <span className="text-[11px] text-red-300">
-              Não podes tornar grátis: já existem bilhetes neste evento.
-            </span>
-          )}
-        </label>
+        <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-3 text-sm text-white/75">
+          <p className="font-semibold text-white">Evento grátis</p>
+          <p className="text-[12px] text-white/65">
+            Só é possível definir se é grátis no momento da criação. Estado atual: {isFree ? "grátis" : "pago"}.
+            {isFree && (
+              <span className="block text-[12px] text-white/60 mt-1">
+                Vagas/inscrições: {freeCapacity != null ? freeCapacity : "Sem limite definido"}.
+              </span>
+            )}
+          </p>
+        </div>
       </div>
+    );
 
-      <div className="rounded-2xl border border-white/10 bg-white/5 p-4 space-y-3">
+    const datesBlock = (
+      <div className="space-y-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div ref={startsRef} className="space-y-1">
+            <InlineDateTimePicker
+              label="Data/hora início"
+              value={startsAt}
+              onChange={(v) => setStartsAt(v)}
+            />
+            {fieldErrors.startsAt && (
+              <p className="flex items-center gap-2 text-xs font-semibold text-amber-100">
+                <span aria-hidden>⚠️</span>
+                {fieldErrors.startsAt}
+              </p>
+            )}
+          </div>
+          <div ref={endsRef} className="space-y-1">
+            <InlineDateTimePicker
+              label="Data/hora fim"
+              value={endsAt}
+              onChange={(v) => setEndsAt(v)}
+              minDateTime={startsAt ? new Date(startsAt) : undefined}
+            />
+            {fieldErrors.endsAt && (
+              <p className="flex items-center gap-2 text-xs font-semibold text-amber-100">
+                <span aria-hidden>⚠️</span>
+                {fieldErrors.endsAt}
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+
+    const ticketsBlock = (
+      <div className="space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-white/70">
             Bilhetes (não removemos, só terminamos venda)
@@ -680,59 +753,250 @@ export function EventEditClient({ event, tickets, eventHasTickets }: EventEditCl
           </p>
         </div>
       </div>
+    );
 
-      <div ref={ctaRef} className="space-y-3">
-        {stripeAlert && (
-          <FormAlert
-            variant={hasPaidTicket ? "error" : "warning"}
-            title="Stripe incompleto"
-            message={stripeAlert}
-          />
-        )}
-        {validationAlert && <FormAlert variant="warning" message={validationAlert} />}
-        {error && <FormAlert variant="error" message={error} />}
-        {backendAlert && (
-          <FormAlert
-            variant="error"
-            title="Algo correu mal ao guardar o evento"
-            message={backendAlert}
-          />
-        )}
-        {message && <FormAlert variant="success" message={message} />}
-        <div className="flex gap-3">
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={isSaving}
-            className="rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-4 py-2 text-sm font-semibold text-black shadow disabled:opacity-60"
-          >
-            {isSaving ? "A gravar…" : "Guardar alterações"}
-          </button>
-          <Link
-            href={`/organizador/eventos/${event.id}`}
-            className="rounded-full border border-white/20 px-4 py-2 text-sm text-white/80 hover:bg-white/10"
-          >
-            Voltar
-          </Link>
+    const summaryBlock = (
+      <div className="space-y-4">
+        <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+          <p className="text-sm font-semibold text-white">Resumo rápido</p>
+          <p className="text-white/70 text-sm mt-1">Confirma os detalhes antes de guardar.</p>
+          <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3 text-sm text-white/80">
+            <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+              <p className="text-[11px] uppercase tracking-wide text-white/60">Evento</p>
+              <p className="font-semibold">{title || "Sem título"}</p>
+              <p className="text-white/60 text-sm line-clamp-2">{description || "Sem descrição"}</p>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-black/20 p-3 space-y-1">
+              <p className="text-[11px] uppercase tracking-wide text-white/60">Local e datas</p>
+              <p>{locationName || "Local a definir"}</p>
+              <p className="text-white/70">{locationCity || "Cidade a definir"}</p>
+              <p className="text-white/70">
+                {startsAt ? new Date(startsAt).toLocaleString() : "Início por definir"}{" "}
+                {endsAt ? `→ ${new Date(endsAt).toLocaleString()}` : ""}
+              </p>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-black/20 p-3 space-y-1">
+              <p className="text-[11px] uppercase tracking-wide text-white/60">Estado</p>
+              <p className="font-semibold">{isFree ? "Evento grátis" : "Evento pago"}</p>
+              {isFree && (
+                <p className="text-white/70">
+                  Vagas/inscrições: {freeCapacity != null ? freeCapacity : "Sem limite definido"}.
+                </p>
+              )}
+            </div>
+          </div>
         </div>
       </div>
-    </div>
-    {toasts.length > 0 && (
-      <div className="pointer-events-none fixed bottom-6 right-6 z-40 flex flex-col gap-2">
-        {toasts.map((toast) => (
-          <div
-            key={toast.id}
-            className={`pointer-events-auto min-w-[240px] rounded-lg border px-4 py-3 text-sm shadow-lg ${
-              toast.tone === "success"
-                ? "border-emerald-400/50 bg-emerald-500/15 text-emerald-50"
-                : "border-red-400/50 bg-red-500/15 text-red-50"
-            }`}
-          >
-            {toast.message}
+    );
+
+    switch (steps[currentStep].key) {
+      case "base":
+        return baseBlock;
+      case "dates":
+        return datesBlock;
+      case "tickets":
+        return ticketsBlock;
+      case "summary":
+        return summaryBlock;
+      default:
+        return null;
+    }
+  };
+
+  return (
+    <>
+      <div className="space-y-6">
+        {confirmId && (
+          <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/70 backdrop-blur">
+            <div className="w-full max-w-sm rounded-2xl border border-white/15 bg-black/90 p-5 shadow-[0_20px_60px_rgba(0,0,0,0.85)] space-y-3">
+              <h3 className="text-lg font-semibold">Terminar venda do bilhete?</h3>
+              <p className="text-sm text-white/70">
+                Esta ação é definitiva para este tipo de bilhete. Escreve{" "}
+                <span className="font-semibold">TERMINAR VENDA</span> para confirmar.
+              </p>
+              <input
+                value={confirmText}
+                onChange={(e) => setConfirmText(e.target.value)}
+                className="w-full rounded-md border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-white/50"
+                placeholder="TERMINAR VENDA"
+              />
+              <div className="flex justify-end gap-2 text-[12px]">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setConfirmId(null);
+                    setConfirmText("");
+                  }}
+                  className="rounded-full border border-white/20 px-3 py-1 text-white/75 hover:bg-white/10"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={confirmEnd}
+                  className="rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-3 py-1 font-semibold text-black shadow"
+                >
+                  Confirmar
+                </button>
+              </div>
+            </div>
           </div>
-        ))}
+        )}
+
+        <div className="rounded-2xl border border-white/10 bg-white/5 p-4 space-y-5">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-[11px] uppercase tracking-wide text-white/60">Edição em passos</p>
+              <p className="text-lg font-semibold text-white">Editar evento</p>
+              <p className="text-sm text-white/60">
+                Define o teu evento passo a passo. Podes guardar como rascunho em qualquer momento.
+              </p>
+            </div>
+            <div className="text-right text-[12px] text-white/60">
+              <p>Estado: {isFree ? "Grátis" : "Pago"}</p>
+              <p>Template: {templateType}</p>
+            </div>
+          </div>
+
+          {errorSummary.length > 0 && (
+            <div
+              ref={errorSummaryRef}
+              tabIndex={-1}
+              className="rounded-xl border border-amber-400/40 bg-amber-500/10 p-3 text-sm text-amber-50 focus:outline-none focus:ring-2 focus:ring-amber-200/70"
+            >
+              <div className="flex items-center gap-2 font-semibold">
+                <span aria-hidden>⚠️</span>
+                <span>Revê estes campos antes de continuar</span>
+              </div>
+              <ul className="mt-2 space-y-1 text-[13px]">
+                {errorSummary.map((err) => (
+                  <li key={`${err.field}-${err.message}`}>
+                    <button
+                      type="button"
+                      onClick={() => focusField(err.field)}
+                      className="inline-flex items-center gap-2 text-left font-semibold text-white underline decoration-amber-200 underline-offset-4 hover:text-amber-50"
+                    >
+                      <span aria-hidden>↘</span>
+                      <span>{err.message}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          <div className="space-y-3">
+            <div className="relative h-1 rounded-full bg-white/10">
+              <div
+                className="absolute left-0 top-0 h-1 rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5]"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 md:grid-cols-5">
+              {steps.map((step, idx) => {
+                const state = idx === currentStep ? "active" : idx < currentStep ? "done" : "future";
+                const allowClick = idx < currentStep;
+                return (
+                  <button
+                    key={step.key}
+                    type="button"
+                    onClick={() => allowClick && setCurrentStep(idx)}
+                    className={`flex flex-col items-start rounded-xl border px-3 py-3 text-left transition ${
+                      state === "active"
+                        ? "border-white/40 bg-white/10 shadow"
+                        : state === "done"
+                          ? "border-white/15 bg-white/5 text-white/80"
+                          : "border-white/10 bg-black/10 text-white/60"
+                    } ${!allowClick ? "cursor-default" : "hover:border-white/30 hover:bg-white/5"}`}
+                    disabled={!allowClick}
+                  >
+                    <div
+                      className={`mb-2 flex h-9 w-9 items-center justify-center rounded-full border ${
+                        state === "active"
+                          ? "border-white bg-white text-black shadow-[0_0_0_6px_rgba(255,255,255,0.08)]"
+                          : state === "done"
+                            ? "border-emerald-300/70 bg-emerald-400/20 text-emerald-100"
+                            : "border-white/30 text-white/70"
+                      }`}
+                    >
+                      {state === "done" ? "✔" : idx + 1}
+                    </div>
+                    <p className="text-sm font-semibold text-white">{step.label}</p>
+                    <p className="text-[12px] text-white/60">{step.desc}</p>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+            {renderStepContent()}
+          </div>
+
+          <div ref={ctaRef} className="space-y-3">
+            {stripeAlert && (
+              <FormAlert
+                variant={hasPaidTicket ? "error" : "warning"}
+                title="Stripe incompleto"
+                message={stripeAlert}
+              />
+            )}
+            {validationAlert && <FormAlert variant="warning" message={validationAlert} />}
+            {error && <FormAlert variant="error" message={error} />}
+            {backendAlert && (
+              <FormAlert
+                variant="error"
+                title="Algo correu mal ao guardar o evento"
+                message={backendAlert}
+              />
+            )}
+            {message && <FormAlert variant="success" message={message} />}
+
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex gap-2 text-sm">
+                <button
+                  type="button"
+                  onClick={goPrev}
+                  disabled={currentStep === 0 || isSaving}
+                  className="rounded-full border border-white/20 px-4 py-2 text-white/80 hover:bg-white/10 disabled:opacity-50"
+                >
+                  Anterior
+                </button>
+                <Link
+                  href={`/organizador/eventos/${event.id}`}
+                  className="rounded-full border border-white/20 px-4 py-2 text-white/80 hover:bg-white/10"
+                >
+                  Voltar
+                </Link>
+              </div>
+              <button
+                type="button"
+                onClick={goNext}
+                disabled={isSaving}
+                className="rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-5 py-2 text-sm font-semibold text-black shadow disabled:opacity-60"
+              >
+                {currentStep === steps.length - 1 ? (isSaving ? "A gravar…" : "Guardar alterações") : "Continuar"}
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
-    )}
+      {toasts.length > 0 && (
+        <div className="pointer-events-none fixed bottom-6 right-6 z-40 flex flex-col gap-2">
+          {toasts.map((toast) => (
+            <div
+              key={toast.id}
+              className={`pointer-events-auto min-w-[240px] rounded-lg border px-4 py-3 text-sm shadow-lg ${
+                toast.tone === "success"
+                  ? "border-emerald-400/50 bg-emerald-500/15 text-emerald-50"
+                  : "border-red-400/50 bg-red-500/15 text-red-50"
+              }`}
+            >
+              {toast.message}
+            </div>
+          ))}
+        </div>
+      )}
     </>
   );
 }

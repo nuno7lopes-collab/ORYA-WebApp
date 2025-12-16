@@ -3,6 +3,7 @@ import { Suspense, useEffect, useState } from "react";
 import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
 import { useSearchParams, useRouter } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabaseBrowser";
+import { PendingDeleteBanner } from "./pending-delete-banner";
 
 function LoginContent() {
   const { openModal, isOpen } = useAuthModal();
@@ -75,7 +76,8 @@ function LoginContent() {
 
   return (
     <main className="min-h-screen flex items-center justify-center text-white">
-      <div className="text-center space-y-2">
+      <div className="w-full max-w-md text-center space-y-4 px-4">
+        <PendingDeleteBanner />
         <p>{checked ? "Se o modal não abriu," : "A preparar sessão..."}</p>
         {checked && (
           <div className="flex items-center justify-center gap-3">

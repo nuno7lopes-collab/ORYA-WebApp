@@ -17,6 +17,8 @@ type TicketFromApi = {
   netCents?: number | null;
   currency?: string | null;
   purchasedAt: string;
+  badge?: "FREE" | "RESALE" | "SPLIT" | "FULL" | "SINGLE";
+  nextAction?: "NONE" | "PAY_PARTNER" | "CONFIRM_GUARANTEE";
   event?: {
     id?: number | null;
     slug?: string | null;
@@ -54,8 +56,11 @@ type UITicket = {
   platformFeeCents: number;
   netCents: number;
   priceEur: number;
+  promoLabel?: string | null;
   currency: string;
   createdAt: string;
+  badge: TicketFromApi["badge"];
+  nextAction: TicketFromApi["nextAction"];
   qrToken: string | null;
   resaleId?: string | null;
   resaleStatus?: "LISTED" | "SOLD" | "CANCELLED" | null;
@@ -67,7 +72,12 @@ type UITicketGroup = {
   key: string;
   quantity: number;
   totalPaidEur: number;
+  totalGrossEur: number;
+  totalDiscountEur: number;
+  promoLabel?: string | null;
   currency: string;
+  badge?: TicketFromApi["badge"];
+  nextAction?: TicketFromApi["nextAction"];
   event: {
     id: number;
     slug: string;
@@ -205,6 +215,8 @@ export default function MyTicketsPage() {
             priceEur: priceCents / 100,
             currency: p.currency ?? "EUR",
             createdAt: p.purchasedAt,
+            badge: p.badge,
+            nextAction: p.nextAction,
             qrToken: p.qrToken ?? null,
             resaleId: p.resaleId ?? null,
             resaleStatus:
@@ -222,6 +234,8 @@ export default function MyTicketsPage() {
           const source = apiTicketMap.get(single.id) as TicketFromApi | undefined;
           const event = source?.event ?? {};
           const ticket = source?.ticket ?? {};
+          const badge = source?.badge;
+          const nextAction = source?.nextAction;
 
           const eventData = {
             id: Number(event.id ?? single.eventId ?? -1),
@@ -248,7 +262,12 @@ export default function MyTicketsPage() {
               key,
               quantity: 1,
               totalPaidEur: single.priceEur,
+              totalGrossEur: single.grossCents / 100,
+              totalDiscountEur: single.discountCents / 100,
+              promoLabel: single.promoLabel ?? null,
               currency: single.currency,
+              badge,
+              nextAction,
               event: eventData,
               ticket: ticketData,
               tickets: [single],
@@ -257,6 +276,11 @@ export default function MyTicketsPage() {
             const existing = groupsMap.get(key)!;
             existing.quantity += 1;
             existing.totalPaidEur += single.priceEur;
+            existing.totalGrossEur += single.grossCents / 100;
+            existing.totalDiscountEur += single.discountCents / 100;
+            if (!existing.promoLabel && single.promoLabel) existing.promoLabel = single.promoLabel;
+            if (!existing.badge && badge) existing.badge = badge;
+            if (existing.nextAction === undefined && nextAction) existing.nextAction = nextAction;
             existing.tickets.push(single);
           }
         }
@@ -328,6 +352,7 @@ export default function MyTicketsPage() {
       return date < now;
     }
 
+    if (activeTab === "all") return true;
     return true;
   });
 
@@ -800,11 +825,6 @@ export default function MyTicketsPage() {
                   const ticket = group.ticket;
                   const dateLabel = formatDate(event.startDate);
                   const totalLabel = formatPrice(group.totalPaidEur, group.currency);
-                  const unitPrice =
-                    group.quantity > 0
-                      ? group.totalPaidEur / group.quantity
-                      : group.totalPaidEur;
-
                   const eventDateObj = event.startDate ? new Date(event.startDate) : null;
                   let statusLabel = "Confirmado";
                   let statusClass =
@@ -935,11 +955,19 @@ export default function MyTicketsPage() {
                             <p className="text-white/90">{totalLabel}</p>
                           </div>
                           <div className="space-y-1">
-                            <p className="text-white/50">Preço médio</p>
+                            <p className="text-white/50">Preço bilhete (bruto)</p>
                             <p className="text-white/90">
-                              {formatPrice(unitPrice, group.currency)}
+                              {formatPrice(unitGross, group.currency)}
                             </p>
                           </div>
+                          {unitDiscount > 0 && (
+                            <div className="space-y-1 col-span-2">
+                              <p className="text-white/50">Desconto aplicado {group.promoLabel ? `(${group.promoLabel})` : ""}</p>
+                              <p className="text-emerald-300">
+                                -{formatPrice(unitDiscount, group.currency)} por bilhete
+                              </p>
+                            </div>
+                          )}
                           <div className="space-y-1">
                             <p className="text-white/50">Tipo de bilhete</p>
                             <p className="text-white/90 line-clamp-1">

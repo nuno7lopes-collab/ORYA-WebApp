@@ -10,7 +10,6 @@ import { NotificationBell } from "./notifications/NotificationBell";
 import { featureFlags } from "@/lib/flags";
 import { supabaseBrowser } from "@/lib/supabaseBrowser";
 import { OryaPortal } from "./OryaPortal";
-import Link from "next/link";
 
 type Suggestion = {
   id: number;
@@ -333,19 +332,6 @@ export function Navbar() {
               >
                 Organizar
               </button>
-              {isAuthenticated && (
-                <button
-                  type="button"
-                  onClick={() => router.push("/me/compras")}
-                  className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
-                    pathname?.startsWith("/me/compras")
-                      ? "bg-white/12 text-white border border-white/25 shadow-[0_0_18px_rgba(107,255,255,0.25)]"
-                      : "text-zinc-200 hover:bg-white/5 hover:text-white border border-white/10"
-                  }`}
-                >
-                  Compras
-                </button>
-              )}
             </nav>
           </div>
 
@@ -434,6 +420,16 @@ export function Navbar() {
                       className="flex w-full items-center justify-between rounded-xl px-2.5 py-1.5 text-left hover:bg-white/8"
                     >
                       <span>Os meus bilhetes</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsProfileMenuOpen(false);
+                        router.push("/me/compras");
+                      }}
+                      className="flex w-full items-center justify-between rounded-xl px-2.5 py-1.5 text-left hover:bg-white/8"
+                    >
+                      <span>Minhas compras</span>
                     </button>
                     <button
                       type="button"

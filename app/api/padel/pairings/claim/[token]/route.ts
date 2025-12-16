@@ -1,10 +1,19 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
-import { PadelPairingPaymentStatus, PadelPairingSlotStatus, PadelPaymentMode } from "@prisma/client";
+import {
+  Gender,
+  PadelEligibilityType,
+  PadelPairingLifecycleStatus,
+  PadelPairingPaymentStatus,
+  PadelPairingSlotStatus,
+  PadelPaymentMode,
+} from "@prisma/client";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { buildPadelEventSnapshot } from "@/lib/padel/eventSnapshot";
+import { validateEligibility } from "@/domain/padelEligibility";
+import { PairingAction, transition } from "@/domain/padelPairingStateMachine";
 
 async function ensurePlayerProfile(params: { organizerId: number; userId: string }) {
   const { organizerId, userId } = params;
@@ -35,22 +44,29 @@ export async function GET(_: NextRequest, { params }: { params: { token: string 
   if (!token) return NextResponse.json({ ok: false, error: "INVALID_TOKEN" }, { status: 400 });
 
   const pairing = await prisma.padelPairing.findFirst({
-    where: { inviteToken: token },
+    where: { partnerInviteToken: token },
     select: {
       id: true,
       pairingStatus: true,
-      inviteExpiresAt: true,
+      lifecycleStatus: true,
+      partnerLinkExpiresAt: true,
       lockedUntil: true,
       paymentMode: true,
       eventId: true,
       organizerId: true,
+      player1UserId: true,
+      player2UserId: true,
+      deadlineAt: true,
     },
   });
 
   if (!pairing) return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
 
-  if (pairing.inviteExpiresAt && pairing.inviteExpiresAt.getTime() < Date.now()) {
+  if (pairing.partnerLinkExpiresAt && pairing.partnerLinkExpiresAt.getTime() < Date.now()) {
     return NextResponse.json({ ok: false, error: "INVITE_EXPIRED" }, { status: 410 });
+  }
+  if (pairing.player2UserId) {
+    return NextResponse.json({ ok: false, error: "INVITE_ALREADY_USED" }, { status: 409 });
   }
 
   const ticketTypes = await prisma.ticketType.findMany({
@@ -79,16 +95,19 @@ export async function POST(_: NextRequest, { params }: { params: { token: string
   if (!token) return NextResponse.json({ ok: false, error: "INVALID_TOKEN" }, { status: 400 });
 
   const pairing = await prisma.padelPairing.findFirst({
-    where: { inviteToken: token },
+    where: { partnerInviteToken: token },
     include: { slots: true },
   });
 
   if (!pairing) return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
-  if (pairing.inviteExpiresAt && pairing.inviteExpiresAt.getTime() < Date.now()) {
+  if (pairing.partnerLinkExpiresAt && pairing.partnerLinkExpiresAt.getTime() < Date.now()) {
     return NextResponse.json({ ok: false, error: "INVITE_EXPIRED" }, { status: 410 });
   }
-  if (pairing.pairingStatus === "CANCELLED") {
+  if (pairing.lifecycleStatus === "CANCELLED_INCOMPLETE" || pairing.pairingStatus === "CANCELLED") {
     return NextResponse.json({ ok: false, error: "PAIRING_CANCELLED" }, { status: 400 });
+  }
+  if (pairing.player2UserId) {
+    return NextResponse.json({ ok: false, error: "INVITE_ALREADY_USED" }, { status: 409 });
   }
 
   const pendingSlot = pairing.slots.find((s) => s.slotStatus === "PENDING");
@@ -99,6 +118,47 @@ export async function POST(_: NextRequest, { params }: { params: { token: string
   // SPLIT sem pagamento do parceiro: devolve ação para checkout
   if (pairing.paymentMode === PadelPaymentMode.SPLIT && pendingSlot.paymentStatus !== PadelPairingPaymentStatus.PAID) {
     return NextResponse.json({ ok: false, error: "PAYMENT_REQUIRED", action: "CHECKOUT_PARTNER" }, { status: 402 });
+  }
+  if (pairing.deadlineAt && pairing.deadlineAt.getTime() < Date.now()) {
+    return NextResponse.json({ ok: false, error: "PAIRING_EXPIRED" }, { status: 410 });
+  }
+
+  // Guard: utilizador já tem pairing ativo no torneio?
+  const existingActive = await prisma.padelPairing.findFirst({
+    where: {
+      eventId: pairing.eventId,
+      lifecycleStatus: { not: "CANCELLED_INCOMPLETE" },
+      OR: [{ player1UserId: user.id }, { player2UserId: user.id }],
+      NOT: { id: pairing.id },
+    },
+    select: { id: true },
+  });
+  if (existingActive) {
+    return NextResponse.json({ ok: false, error: "PAIRING_ALREADY_ACTIVE" }, { status: 409 });
+  }
+
+  const config = await prisma.padelTournamentConfig.findUnique({
+    where: { eventId: pairing.eventId },
+    select: { eligibilityType: true },
+  });
+
+  const [captainProfile, partnerProfile] = await Promise.all([
+    pairing.player1UserId
+      ? prisma.profile.findUnique({ where: { id: pairing.player1UserId }, select: { gender: true } })
+      : Promise.resolve(null),
+    prisma.profile.findUnique({ where: { id: user.id }, select: { gender: true } }),
+  ]);
+
+  const eligibility = validateEligibility(
+    (config?.eligibilityType as PadelEligibilityType) ?? PadelEligibilityType.OPEN,
+    (captainProfile?.gender as Gender | null) ?? null,
+    partnerProfile?.gender as Gender | null,
+  );
+  if (!eligibility.ok) {
+    return NextResponse.json(
+      { ok: false, error: eligibility.code },
+      { status: eligibility.code === "GENDER_REQUIRED_FOR_TOURNAMENT" ? 403 : 409 },
+    );
   }
 
   try {
@@ -116,9 +176,30 @@ export async function POST(_: NextRequest, { params }: { params: { token: string
         });
       }
 
+      const action: PairingAction =
+        pendingSlot.paymentStatus === PadelPairingPaymentStatus.PAID ? "PARTNER_PAID" : "PARTNER_ASSIGNED";
+      const nextStatus = transition(
+        (pairing.lifecycleStatus as PadelPairingLifecycleStatus) ?? "PENDING_ONE_PAID",
+        action,
+      );
+      const partnerAcceptedAt = new Date();
+      const partnerPaidAt =
+        pendingSlot.paymentStatus === PadelPairingPaymentStatus.PAID ? new Date() : null;
+
       const updatedPairing = await tx.padelPairing.update({
         where: { id: pairing.id },
         data: {
+          player2UserId: user.id,
+          partnerInviteToken: null,
+          partnerLinkToken: null,
+          partnerInviteUsedAt: partnerAcceptedAt,
+          partnerAcceptedAt,
+          partnerPaidAt,
+          lifecycleStatus: nextStatus,
+          guaranteeStatus:
+            pendingSlot.paymentStatus === PadelPairingPaymentStatus.PAID ? "SUCCEEDED" : pairing.guaranteeStatus,
+          graceUntilAt:
+            pendingSlot.paymentStatus === PadelPairingPaymentStatus.PAID ? null : pairing.graceUntilAt,
           slots: {
             update: {
               where: { id: pendingSlot.id },

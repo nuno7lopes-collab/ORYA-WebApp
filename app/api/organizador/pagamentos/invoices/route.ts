@@ -65,7 +65,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ ok: true, items: sales, summary }, { status: 200 });
   } catch (err) {
-    console.error("[organizador/invoices]", err);
+    console.error("[api/organizador/pagamentos/invoices]", err);
     return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }

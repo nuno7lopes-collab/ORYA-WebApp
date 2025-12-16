@@ -3,7 +3,11 @@ import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
-async function getAdminProfile() {
+type AdminProfileResult =
+  | { user: { id: string } | null; error: "UNAUTHENTICATED" | "FORBIDDEN" }
+  | { user: { id: string }; error: null };
+
+async function getAdminProfile(): Promise<AdminProfileResult> {
   const supabase = await createSupabaseServer();
   const {
     data: { user },
@@ -11,15 +15,15 @@ async function getAdminProfile() {
   } = await supabase.auth.getUser();
 
   if (error || !user) {
-    return { user: null, error: "UNAUTHENTICATED" as const };
+    return { user: null, error: "UNAUTHENTICATED" };
   }
 
   const profile = await prisma.profile.findUnique({ where: { id: user.id } });
   if (!profile || !Array.isArray(profile.roles) || !profile.roles.includes("admin")) {
-    return { user: null, error: "FORBIDDEN" as const };
+    return { user: null, error: "FORBIDDEN" };
   }
 
-  return { user, error: null as const };
+  return { user, error: null };
 }
 
 type Action = "ban" | "unban" | "hard_delete";
@@ -93,8 +97,8 @@ export async function POST(req: NextRequest) {
     if (action === "ban") {
       // Banir no Auth e marcar profile como inativo
       const { error: banErr } = await supabaseAdmin.auth.admin.updateUserById(userId, {
-        banDuration: "87600h", // ~10 anos
-      });
+        ban_duration: "87600h", // ~10 anos
+      } as any);
       if (banErr) throw banErr;
       await prisma.profile.updateMany({
         where: { id: userId },
@@ -105,8 +109,8 @@ export async function POST(req: NextRequest) {
 
     if (action === "unban") {
       const { error: unbanErr } = await supabaseAdmin.auth.admin.updateUserById(userId, {
-        banDuration: "0h",
-      });
+        ban_duration: "0h",
+      } as any);
       if (unbanErr) throw unbanErr;
       await prisma.profile.updateMany({
         where: { id: userId },

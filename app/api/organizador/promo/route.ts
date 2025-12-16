@@ -77,6 +77,13 @@ export async function GET() {
     const promoIds = promoCodes.map((p) => p.id);
     const promoCodesList = promoCodes.map((p) => p.code);
 
+    const validRedemptionSummaryIds = new Set<number>();
+    promoCodes.forEach((p) => {
+      p.redemptions.forEach((r) => {
+        if (r.saleSummaryId) validRedemptionSummaryIds.add(r.saleSummaryId);
+      });
+    });
+
     const lines = await prisma.saleLine.findMany({
       where: {
         eventId: { in: eventIds },
@@ -84,6 +91,9 @@ export async function GET() {
           { promoCodeId: { in: promoIds } },
           { promoCodeSnapshot: { in: promoCodesList } },
         ],
+        ...(validRedemptionSummaryIds.size > 0
+          ? { saleSummaryId: { in: Array.from(validRedemptionSummaryIds) } }
+          : {}),
       },
       select: {
         promoCodeId: true,
@@ -104,11 +114,22 @@ export async function GET() {
       netCents: number;
     };
 
-    const statsMap = new Map<string | number, PromoAgg>();
+    const statsMap = new Map<
+      string | number,
+      PromoAgg & { users: Set<string>; redemptions: number }
+    >();
     const ensureAgg = (key: string | number) => {
       const existing = statsMap.get(key);
       if (existing) return existing;
-      const base: PromoAgg = { tickets: 0, grossCents: 0, discountCents: 0, platformFeeCents: 0, netCents: 0 };
+      const base: PromoAgg & { users: Set<string>; redemptions: number } = {
+        tickets: 0,
+        grossCents: 0,
+        discountCents: 0,
+        platformFeeCents: 0,
+        netCents: 0,
+        users: new Set(),
+        redemptions: 0,
+      };
       statsMap.set(key, base);
       return base;
     };
@@ -125,6 +146,16 @@ export async function GET() {
       agg.netCents += l.netCents ?? 0;
     }
 
+    // Contar redemptions (uses) e users únicos
+    promoCodes.forEach((p) => {
+      const agg = ensureAgg(p.id);
+      agg.redemptions += p.redemptions.length;
+      p.redemptions.forEach((r) => {
+        if (r.userId) agg.users.add(r.userId);
+        else if (r.guestEmail) agg.users.add(r.guestEmail.toLowerCase());
+      });
+    });
+
     return NextResponse.json({
       ok: true,
       promoCodes: promoCodes.map((p) => ({
@@ -139,14 +170,28 @@ export async function GET() {
       })),
       events: organizerEvents,
       promoStats: promoCodes.map((p) => {
-        const agg = statsMap.get(p.id) ?? statsMap.get(p.code) ?? {
-          tickets: 0,
-          grossCents: 0,
-          discountCents: 0,
-          platformFeeCents: 0,
-          netCents: 0,
+        const agg =
+          statsMap.get(p.id) ??
+          statsMap.get(p.code) ?? {
+            tickets: 0,
+            grossCents: 0,
+            discountCents: 0,
+            platformFeeCents: 0,
+            netCents: 0,
+            users: new Set<string>(),
+            redemptions: 0,
+          };
+        return {
+          promoCodeId: p.id,
+          tickets: agg.tickets,
+          grossCents: agg.grossCents,
+          discountCents: agg.discountCents,
+          platformFeeCents: agg.platformFeeCents,
+          netCents: agg.netCents,
+          usesTotal: agg.redemptions,
+          usersUnique: agg.users.size,
+          totalSavedCents: agg.discountCents,
         };
-        return { promoCodeId: p.id, ...agg };
       }),
     });
   } catch (err) {
@@ -194,6 +239,9 @@ export async function POST(req: NextRequest) {
       autoApply,
       minQuantity,
       minTotalCents,
+      name,
+      description,
+      minCartValueCents,
     } = body as {
       code?: string;
       type?: "PERCENTAGE" | "FIXED";
@@ -207,6 +255,9 @@ export async function POST(req: NextRequest) {
       autoApply?: boolean;
       minQuantity?: number | null;
       minTotalCents?: number | null;
+      name?: string | null;
+      description?: string | null;
+      minCartValueCents?: number | null;
     };
 
     const cleanCode = (code || "").trim();
@@ -331,6 +382,9 @@ export async function PATCH(req: NextRequest) {
       eventId,
       minQuantity,
       minTotalCents,
+      minCartValueCents,
+      name,
+      description,
     } = body as {
       active?: boolean;
       autoApply?: boolean;
@@ -344,6 +398,9 @@ export async function PATCH(req: NextRequest) {
       eventId?: number | null;
       minQuantity?: number | null;
       minTotalCents?: number | null;
+      minCartValueCents?: number | null;
+      name?: string | null;
+      description?: string | null;
     };
 
     let targetEventId: number | null | undefined = undefined;
@@ -384,6 +441,9 @@ export async function PATCH(req: NextRequest) {
     if (targetEventId !== undefined) dataUpdate.eventId = targetEventId;
     if (minQuantity !== undefined) dataUpdate.minQuantity = minQuantity;
     if (minTotalCents !== undefined) dataUpdate.minTotalCents = minTotalCents;
+    if (minCartValueCents !== undefined) dataUpdate.minCartValueCents = minCartValueCents;
+    if (typeof name === "string") dataUpdate.name = name.trim() || null;
+    if (typeof description === "string") dataUpdate.description = description.trim() || null;
 
     const updated = await prisma.promoCode.update({
       where: { id: promo.id },
@@ -424,7 +484,9 @@ export async function DELETE(req: NextRequest) {
       }
     }
 
-    await prisma.promoCode.delete({ where: { id: promo.id } });
+    await prisma.promoCode.delete({
+      where: { id: promo.id },
+    });
     return NextResponse.json({ ok: true }, { status: 200 });
   } catch (err) {
     console.error("[organizador/promo][DELETE]", err);

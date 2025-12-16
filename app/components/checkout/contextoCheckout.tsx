@@ -12,6 +12,7 @@ export type DadosCheckout = {
   userId: string | null;
   waves?: unknown[];
   additional?: Record<string, unknown>;
+  paymentScenario?: string | null;
 };
 
 export type CheckoutBreakdown = {

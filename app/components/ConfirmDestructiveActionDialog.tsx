@@ -52,10 +52,7 @@ export function ConfirmDestructiveActionDialog({
       }}
     >
       <div className="w-full max-w-md rounded-2xl border border-white/12 bg-[#050915]/95 p-5 shadow-[0_28px_80px_rgba(0,0,0,0.75)] text-white">
-        <div className="rounded-xl border border-white/10 bg-gradient-to-br px-4 py-3"
-          style={{ backgroundImage: `linear-gradient(135deg, var(--tw-gradient-from), var(--tw-gradient-to))` }}
-          className={`bg-gradient-to-br ${tone}`}
-        >
+        <div className={`rounded-xl border border-white/10 bg-gradient-to-br px-4 py-3 ${tone}`}>
           <h3 className="text-lg font-semibold leading-tight">{title}</h3>
           {description && <p className="mt-1 text-sm text-white/80">{description}</p>}
         </div>

@@ -26,10 +26,11 @@ export async function POST(req: NextRequest) {
     const { data, error } = await supabaseAdmin.auth.admin.generateLink({
       type: "signup",
       email,
+      password: undefined,
       options: {
-        emailRedirectTo: `${siteUrl}/auth/callback`,
+        redirectTo: `${siteUrl}/auth/callback`,
       },
-    });
+    } as any);
 
     if (error) {
       const errorCode =

@@ -1,10 +1,24 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
-import { PadelPaymentMode, PadelPairingPaymentStatus } from "@prisma/client";
+import {
+  Gender,
+  PadelEligibilityType,
+  PadelPaymentMode,
+  PadelPairingPaymentStatus,
+  PaymentEventSource,
+} from "@prisma/client";
 import { stripe } from "@/lib/stripeClient";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
+import {
+  checkoutMetadataSchema,
+  createPurchaseId,
+  normalizeItemsForMetadata,
+} from "@/lib/checkoutSchemas";
+import { validateEligibility } from "@/domain/padelEligibility";
+import { resolveOwner } from "@/lib/ownership/resolveOwner";
+import { queuePartnerPaid } from "@/domain/notifications/splitPayments";
 
 async function ensurePlayerProfile(params: { organizerId: number; userId: string }) {
   const { organizerId, userId } = params;
@@ -48,10 +62,13 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   const pairing = await prisma.padelPairing.findUnique({
     where: { id: pairingId },
-    include: { slots: true, event: { select: { organizerId: true, slug: true, id: true } } },
+    include: {
+      slots: true,
+      event: { select: { organizerId: true, slug: true, id: true } },
+    },
   });
   if (!pairing) return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
-  if (inviteToken && pairing.inviteToken && pairing.inviteToken !== inviteToken) {
+  if (inviteToken && pairing.partnerInviteToken && pairing.partnerInviteToken !== inviteToken) {
     return NextResponse.json({ ok: false, error: "INVALID_TOKEN" }, { status: 403 });
   }
   if (pairing.pairingStatus === "CANCELLED") {
@@ -70,6 +87,9 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       return NextResponse.json({ ok: false, error: "SLOT_ALREADY_PAID" }, { status: 400 });
     }
   }
+  if (pairing.deadlineAt && pairing.deadlineAt.getTime() < Date.now()) {
+    return NextResponse.json({ ok: false, error: "PAIRING_EXPIRED" }, { status: 410 });
+  }
 
   // Apenas capitão pode iniciar checkout se for "assume resto"; parceiro também pode iniciar, mas validamos que não há ticket já atribuído
   const isCaptain = pairing.createdByUserId === user.id;
@@ -84,6 +104,43 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   });
   if (!ticketType || ticketType.eventId !== pairing.eventId) {
     return NextResponse.json({ ok: false, error: "INVALID_TICKET_TYPE" }, { status: 400 });
+  }
+
+  // Elegibilidade: garantir que capitão + parceiro (quando definido) respeitam regras
+  const tournamentConfig = await prisma.padelTournamentConfig.findUnique({
+    where: { eventId: pairing.event.id },
+    select: { eligibilityType: true },
+  });
+  const [captainProfile, partnerProfile] = await Promise.all([
+    pairing.player1UserId
+      ? prisma.profile.findUnique({ where: { id: pairing.player1UserId }, select: { gender: true } })
+      : Promise.resolve(null),
+    prisma.profile.findUnique({ where: { id: user.id }, select: { gender: true } }),
+  ]);
+  const eligibility = validateEligibility(
+    (tournamentConfig?.eligibilityType as PadelEligibilityType) ?? PadelEligibilityType.OPEN,
+    (captainProfile?.gender as Gender | null) ?? null,
+    partnerProfile?.gender as Gender | null,
+  );
+  if (!eligibility.ok) {
+    return NextResponse.json(
+      { ok: false, error: eligibility.code },
+      { status: eligibility.code === "GENDER_REQUIRED_FOR_TOURNAMENT" ? 403 : 409 },
+    );
+  }
+
+  // Não permitir checkout se utilizador já tiver pairing ativo no torneio
+  const existingActive = await prisma.padelPairing.findFirst({
+    where: {
+      eventId: pairing.event.id,
+      lifecycleStatus: { not: "CANCELLED_INCOMPLETE" },
+      OR: [{ player1UserId: user.id }, { player2UserId: user.id }],
+      NOT: { id: pairing.id },
+    },
+    select: { id: true },
+  });
+  if (existingActive) {
+    return NextResponse.json({ ok: false, error: "PAIRING_ALREADY_ACTIVE" }, { status: 409 });
   }
 
   // Garantir playerProfile ligado ao slot pendente
@@ -102,6 +159,37 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   const amount = pairing.paymentMode === PadelPaymentMode.FULL ? ticketType.price * 2 : ticketType.price;
   const currency = ticketType.currency || "EUR";
+  const paymentScenario = pairing.paymentMode === PadelPaymentMode.FULL ? "GROUP_FULL" : "GROUP_SPLIT";
+  const items = [
+    {
+      ticketTypeId,
+      quantity: pairing.paymentMode === PadelPaymentMode.FULL ? 2 : 1,
+      unitPriceCents: ticketType.price,
+      currency: currency.toUpperCase(),
+    },
+  ];
+  const purchaseId = createPurchaseId();
+  const normalizedItems = normalizeItemsForMetadata(items);
+  const ownerResolved = await resolveOwner({ sessionUserId: user.id, guestEmail: null });
+  const metadataValidation = checkoutMetadataSchema.safeParse({
+    paymentScenario,
+    purchaseId,
+    items: normalizedItems,
+    eventId: pairing.event.id,
+    eventSlug: pairing.event.slug ?? undefined,
+    pairingId: pairing.id,
+    owner: {
+      ownerUserId: ownerResolved.ownerUserId ?? user.id,
+      ownerIdentityId: ownerResolved.ownerIdentityId ?? undefined,
+      emailNormalized: ownerResolved.emailNormalized ?? undefined,
+    },
+  });
+  if (!metadataValidation.success) {
+    return NextResponse.json(
+      { ok: false, error: "INVALID_METADATA", details: metadataValidation.error.format() },
+      { status: 400 },
+    );
+  }
 
   try {
     const intent = await stripe.paymentIntents.create({
@@ -111,9 +199,15 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         pairingId: pairing.id,
         slotId: pending?.id ?? "",
         eventId: pairing.event.id,
+        eventSlug: pairing.event.slug ?? "",
         ticketTypeId,
-        mode: pairing.paymentMode === PadelPaymentMode.FULL ? "PADEL_FULL" : "PADEL_SPLIT",
+        paymentScenario,
+        purchaseId,
+        items: JSON.stringify(normalizedItems),
         userId: user.id,
+        ownerUserId: ownerResolved.ownerUserId ?? user.id,
+        ownerIdentityId: ownerResolved.ownerIdentityId ?? "",
+        emailNormalized: ownerResolved.emailNormalized ?? "",
       },
     });
 
@@ -121,7 +215,11 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     await prisma.paymentEvent.create({
       data: {
         stripePaymentIntentId: intent.id,
+        purchaseId,
         status: "PROCESSING",
+        source: PaymentEventSource.API,
+        dedupeKey: purchaseId,
+        attempt: 1,
         eventId: pairing.event.id,
         userId: user.id,
         amountCents: amount,
@@ -135,6 +233,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         ok: true,
         clientSecret: intent.client_secret,
         paymentIntentId: intent.id,
+        purchaseId,
+        paymentScenario,
       },
       { status: 200 },
     );

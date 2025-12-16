@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { PadelPairingStatus, PadelPairingSlotStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
+import { cancelActiveHold } from "@/domain/padelPairingHold";
 
 // Cancela pairing Padel v2 (MVP: estados DB; refund efetivo fica para o checkout/refund handler).
 // Regras: capitão (created_by_user_id) ou staff OWNER/ADMIN do organizer.
@@ -63,12 +64,16 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         where: { id: pairingId },
         data: {
           pairingStatus: PadelPairingStatus.CANCELLED,
-          inviteToken: null,
-          inviteExpiresAt: null,
+          partnerInviteToken: null,
+          partnerInviteUsedAt: null,
+          partnerLinkToken: null,
+          partnerLinkExpiresAt: null,
           lockedUntil: null,
         },
         include: { slots: true },
       });
+
+      await cancelActiveHold(tx, pairingId);
 
       return updatedPairing;
     });

@@ -75,12 +75,9 @@ export async function GET() {
       }),
       getNotificationPrefs(userId).catch(() => null),
     ]);
-    let profile = profileFromDb;
-
-    const pendingUsername = typeof userMetadata.pending_username === "string" ? userMetadata.pending_username : null;
-
-    if (!profile) {
-      profile = await prisma.profile.create({
+    let profile =
+      profileFromDb ??
+      (await prisma.profile.create({
         data: {
           id: userId,
           username: null,
@@ -92,8 +89,9 @@ export async function GET() {
           allowEventReminders: true,
           allowFriendRequests: true,
         },
-      });
-    }
+      }));
+
+    const pendingUsername = typeof userMetadata.pending_username === "string" ? userMetadata.pending_username : null;
 
     // Atribuir username pendente se ainda não existir
     if (!profile.username && pendingUsername) {
@@ -121,7 +119,14 @@ export async function GET() {
       }
     }
 
-    const safeProfile = {
+    if (!profile) {
+      throw new Error("PROFILE_MISSING");
+    }
+
+    const profileVisibility: "PUBLIC" | "PRIVATE" =
+      profile.visibility === "PRIVATE" ? "PRIVATE" : "PUBLIC";
+
+    const safeProfile: ApiAuthMeResponse["profile"] = {
       id: profile.id,
       username: profile.username,
       fullName: profile.fullName,
@@ -138,7 +143,7 @@ export async function GET() {
       allowFriendRequests: profile.allowFriendRequests,
       allowSalesAlerts: notificationPrefs?.allowSalesAlerts ?? true,
       allowSystemAnnouncements: notificationPrefs?.allowSystemAnnouncements ?? true,
-      profileVisibility: profile.visibility === "PRIVATE" ? "PRIVATE" : "PUBLIC",
+      profileVisibility,
     };
 
     // Se email não está confirmado, força o frontend a continuar em modo "verify"

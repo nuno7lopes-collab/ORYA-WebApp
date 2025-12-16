@@ -5,6 +5,7 @@ import { OrganizerMemberRole, PadelFormat } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizerForUser } from "@/lib/organizerContext";
+import { queueBracketPublished } from "@/domain/notifications/tournament";
 
 const allowedRoles: OrganizerMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
 
@@ -82,10 +83,18 @@ export async function POST(req: NextRequest) {
       eventId,
       pairingStatus: "COMPLETE",
     },
-    select: { id: true },
+    select: { id: true, slots: { select: { profileId: true } } },
     orderBy: { createdAt: "asc" },
   });
   const pairingIds = pairings.map((p) => p.id);
+  const userIds = Array.from(
+    new Set(
+      pairings
+        .flatMap((p) => p.slots)
+        .map((s) => s.profileId)
+        .filter(Boolean) as string[],
+    ),
+  );
   if (pairingIds.length < 2) {
     return NextResponse.json({ ok: false, error: "NEED_PAIRINGS" }, { status: 400 });
   }
@@ -116,6 +125,10 @@ export async function POST(req: NextRequest) {
     where: { eventId },
     orderBy: [{ startTime: "asc" }, { id: "asc" }],
   });
+
+  if (userIds.length) {
+    await queueBracketPublished(userIds, eventId);
+  }
 
   return NextResponse.json({ ok: true, matches }, { status: 200 });
 }

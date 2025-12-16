@@ -1,16 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import useSWR from "swr";
+import { InlineDateTimePicker } from "@/app/components/forms/InlineDateTimePicker";
+import { FlowStickyFooter } from "@/app/components/flows/FlowStickyFooter";
 import { useUser } from "@/app/hooks/useUser";
 import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
-import { InlineDateTimePicker } from "@/app/components/forms/InlineDateTimePicker";
-import { PORTUGAL_CITIES } from "@/config/cities";
-
-type ToastTone = "success" | "error";
-type Toast = { id: number; message: string; tone: ToastTone };
+import { StepperDots, type WizardStep } from "@/components/organizador/eventos/wizard/StepperDots";
+import { PT_CITIES, type PTCity } from "@/lib/constants/ptCities";
 
 type TicketTypeRow = {
   name: string;
@@ -18,41 +17,28 @@ type TicketTypeRow = {
   totalQuantity: string;
 };
 
-type PadelClubLite = {
-  id: number;
-  name: string;
-  city?: string | null;
-  address?: string | null;
-  courtsCount?: number | null;
-  isActive?: boolean | null;
-};
+type ToastTone = "success" | "error";
+type Toast = { id: number; message: string; tone: ToastTone };
 
-type PadelClubCourt = {
-  id: number;
-  padelClubId: number;
-  name: string;
-  description: string | null;
-  surface: string | null;
-  indoor: boolean;
-  isActive: boolean;
-  displayOrder: number;
-};
-
-type PadelClubStaff = {
-  id: number;
-  padelClubId: number;
-  userId: string | null;
-  email: string | null;
-  role: string;
-  inheritToEvents: boolean;
-};
+const DRAFT_KEY = "orya-organizer-new-event-draft";
 
 const CATEGORY_OPTIONS = [
-  { key: "padel", value: "SPORT", label: "Torneio de Padel", accent: "from-[#6BFFFF] to-[#22c55e]", categories: ["DESPORTO"], preset: "PADEL", soon: false },
-  { key: "outro", value: "OTHER", label: "Outro tipo", accent: "from-[#9ca3af] to-[#6b7280]", categories: [], preset: "other", soon: false },
-  { key: "restaurantes", value: "COMIDA", label: "Restaurantes", accent: "from-[#d4d4d8] to-[#9ca3af]", categories: ["COMIDA"], preset: "restaurante", soon: true },
-  { key: "solidario", value: "VOLUNTEERING", label: "Solidário", accent: "from-[#d4d4d8] to-[#9ca3af]", categories: ["VOLUNTARIADO"], preset: "solidario", soon: true },
-  { key: "festas", value: "PARTY", label: "Festas", accent: "from-[#d4d4d8] to-[#9ca3af]", categories: ["FESTA"], preset: "party", soon: true },
+  {
+    key: "padel",
+    value: "SPORT",
+    label: "Padel / Torneio",
+    accent: "from-[#6BFFFF] to-[#22c55e]",
+    copy: "Setup rápido com courts, rankings e lógica de torneio.",
+    categories: ["DESPORTO"],
+  },
+  {
+    key: "default",
+    value: "OTHER",
+    label: "Evento padrão",
+    accent: "from-[#9ca3af] to-[#6b7280]",
+    copy: "Fluxo base sem extras — serve para qualquer formato simples.",
+    categories: ["FESTA"],
+  },
 ] as const;
 
 const DEFAULT_PLATFORM_FEE_BPS = 800; // 8%
@@ -69,6 +55,23 @@ type PlatformFeeResponse =
   | { ok: false; error?: string };
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
+
+type StepKey = "preset" | "details" | "schedule" | "tickets" | "review";
+type FieldKey =
+  | "preset"
+  | "title"
+  | "description"
+  | "startsAt"
+  | "endsAt"
+  | "locationName"
+  | "locationCity"
+  | "address"
+  | "tickets";
+
+type RecentVenuesResponse = {
+  ok: boolean;
+  items?: Array<{ name: string; city?: string | null }>;
+};
 
 function computeFeePreview(
   priceEuro: number,
@@ -105,64 +108,55 @@ export default function NewOrganizerEventPage() {
     fetcher,
     { revalidateOnFocus: false }
   );
-
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [startsAt, setStartsAt] = useState("");
   const [endsAt, setEndsAt] = useState("");
   const [locationName, setLocationName] = useState("");
-  const [locationCity, setLocationCity] = useState("");
+  const [locationCity, setLocationCity] = useState<PTCity>(PT_CITIES[0]);
   const [address, setAddress] = useState("");
-  const [templateType, setTemplateType] = useState("OTHER");
-  const [categories, setCategories] = useState<string[]>([]);
-  const [padelFormat, setPadelFormat] = useState<"TODOS_CONTRA_TODOS" | "QUADRO_ELIMINATORIO">("TODOS_CONTRA_TODOS");
-  const [padelCourts, setPadelCourts] = useState<number>(2);
-  const [padelRuleSetId, setPadelRuleSetId] = useState<number | null>(null);
-  const [padelMainClubId, setPadelMainClubId] = useState<number | null>(null);
-  const [padelPartnerClubIds, setPadelPartnerClubIds] = useState<number[]>([]);
-  const [padelClubCourts, setPadelClubCourts] = useState<PadelClubCourt[]>([]);
-  const [padelClubStaff, setPadelClubStaff] = useState<PadelClubStaff[]>([]);
-  const [padelSelectedCourtIds, setPadelSelectedCourtIds] = useState<number[]>([]);
-  const [padelAdvancedOpen, setPadelAdvancedOpen] = useState(false);
-  const [padelRegistrationLimit, setPadelRegistrationLimit] = useState<string>("");
-  const [padelWaitlist, setPadelWaitlist] = useState(false);
-  const [padelAllowSecondCategory, setPadelAllowSecondCategory] = useState(false);
-  const [padelDetailsLoading, setPadelDetailsLoading] = useState(false);
-  const [ticketTypes, setTicketTypes] = useState<TicketTypeRow[]>([
-    { name: "Normal", price: "", totalQuantity: "" },
-  ]);
+  const [ticketTypes, setTicketTypes] = useState<TicketTypeRow[]>([{ name: "Geral", price: "", totalQuantity: "" }]);
   const [feeMode, setFeeMode] = useState<"ON_TOP" | "INCLUDED">("ON_TOP");
   const [coverUrl, setCoverUrl] = useState<string | null>(null);
   const [uploadingCover, setUploadingCover] = useState(false);
   const [isTest, setIsTest] = useState(false);
   const [selectedPreset, setSelectedPreset] = useState<string | null>(null);
-  const { data: padelClubsData } = useSWR<{ ok: boolean; items: PadelClubLite[] }>(
-    selectedPreset === "padel" ? "/api/padel/clubs" : null,
-    fetcher,
-    { revalidateOnFocus: false }
-  );
+  const [isFreeEvent, setIsFreeEvent] = useState(false);
+  const [freeTicketName, setFreeTicketName] = useState("Inscrição");
+  const [freeCapacity, setFreeCapacity] = useState("");
+  const [currentStep, setCurrentStep] = useState(0);
+  const [maxStepReached, setMaxStepReached] = useState(0);
 
-  const roles = Array.isArray(profile?.roles) ? (profile?.roles as string[]) : [];
-  const isOrganizer = roles.includes("organizer");
-  const isAdmin = roles.some((r) => r?.toLowerCase() === "admin");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showLoadingHint, setShowLoadingHint] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [stripeAlert, setStripeAlert] = useState<string | null>(null);
   const [validationAlert, setValidationAlert] = useState<string | null>(null);
   const [backendAlert, setBackendAlert] = useState<string | null>(null);
-  const paymentsStatus = isAdmin ? "READY" : organizerStatus?.paymentsStatus ?? "NO_STRIPE";
+  const [draftLoaded, setDraftLoaded] = useState(false);
+  const [draftSavedAt, setDraftSavedAt] = useState<number | null>(null);
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<FieldKey, string>>>({});
+  const [errorSummary, setErrorSummary] = useState<{ field: FieldKey; message: string }[]>([]);
+  const [showLocationSuggestions, setShowLocationSuggestions] = useState(false);
+  const [pendingFocusField, setPendingFocusField] = useState<FieldKey | null>(null);
+  const [creationSuccess, setCreationSuccess] = useState<{ eventId?: number; slug?: string } | null>(null);
+  const prevStepIndexRef = useRef(0);
+
   const ctaAlertRef = useRef<HTMLDivElement | null>(null);
+  const errorSummaryRef = useRef<HTMLDivElement | null>(null);
   const titleRef = useRef<HTMLInputElement | null>(null);
   const startsRef = useRef<HTMLDivElement | null>(null);
+  const endsRef = useRef<HTMLDivElement | null>(null);
+  const locationNameRef = useRef<HTMLInputElement | null>(null);
   const cityRef = useRef<HTMLInputElement | null>(null);
-  const [toasts, setToasts] = useState<Toast[]>([]);
+  const ticketsRef = useRef<HTMLDivElement | null>(null);
+  const suggestionBlurTimeout = useRef<NodeJS.Timeout | null>(null);
 
-  const pushToast = (message: string, tone: ToastTone = "error") => {
-    const id = Date.now() + Math.random();
-    setToasts((prev) => [...prev, { id, message, tone }]);
-    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 4200);
-  };
-
+  const roles = Array.isArray(profile?.roles) ? (profile?.roles as string[]) : [];
+  const isOrganizer = roles.includes("organizer");
+  const isAdmin = roles.some((r) => r?.toLowerCase() === "admin");
+  const paymentsStatus = isAdmin ? "READY" : organizerStatus?.paymentsStatus ?? "NO_STRIPE";
   const platformFees =
     platformFeeData && platformFeeData.ok
       ? platformFeeData.orya
@@ -171,147 +165,476 @@ export default function NewOrganizerEventPage() {
     platformFeeData && platformFeeData.ok
       ? platformFeeData.stripe
       : { feeBps: DEFAULT_STRIPE_FEE_BPS, feeFixedCents: DEFAULT_STRIPE_FEE_FIXED_CENTS, region: "UE" };
+  const hasPaidTicket = useMemo(
+    () => !isFreeEvent && ticketTypes.some((t) => Number(t.price.replace(",", ".")) > 0),
+    [isFreeEvent, ticketTypes],
+  );
 
   const presetMap = useMemo(() => {
     const map = new Map<string, (typeof CATEGORY_OPTIONS)[number]>();
     CATEGORY_OPTIONS.forEach((opt) => map.set(opt.key, opt));
     return map;
   }, []);
-  const hasPaidTicket = useMemo(
-    () => ticketTypes.some((t) => Number(t.price.replace(",", ".")) > 0),
-    [ticketTypes],
-  );
-  const activePadelCourts = useMemo(() => padelClubCourts.filter((c) => c.isActive), [padelClubCourts]);
-  const activePadelCourtsCount = activePadelCourts.length;
-  const padelPartnerOptions = useMemo(
-    () => (padelClubsData?.items || []).filter((c) => c.id !== padelMainClubId),
-    [padelClubsData, padelMainClubId],
-  );
 
-  const ticketSummary = useMemo(
-    () =>
-      ticketTypes
-        .filter((t) => t.name.trim())
-        .map((t) => ({
-          name: t.name.trim(),
-          price: Number(t.price.replace(",", ".")) || 0,
-          quantity: t.totalQuantity ? Number(t.totalQuantity) : null,
-        })),
-    [ticketTypes],
+  const { data: recentVenues } = useSWR<RecentVenuesResponse>(
+    user ? `/api/organizador/venues/recent?q=${encodeURIComponent(locationName.trim())}` : null,
+    fetcher,
+    { revalidateOnFocus: false },
   );
 
   useEffect(() => {
-    if (selectedPreset !== "padel") {
-      setPadelMainClubId(null);
-      setPadelPartnerClubIds([]);
-      setPadelClubCourts([]);
-      setPadelClubStaff([]);
-      setPadelSelectedCourtIds([]);
+    if (draftLoaded) return;
+    if (typeof window === "undefined") return;
+    const raw = window.localStorage.getItem(DRAFT_KEY);
+    if (!raw) {
+      setDraftLoaded(true);
       return;
     }
-    if (!padelMainClubId && padelClubsData?.items?.length) {
-      const firstActive = padelClubsData.items.find((c) => c.isActive !== false) ?? padelClubsData.items[0];
-      if (firstActive) setPadelMainClubId(firstActive.id);
+    try {
+      const draft = JSON.parse(raw) as Partial<{
+        title: string;
+        description: string;
+        startsAt: string;
+        endsAt: string;
+        locationName: string;
+        locationCity: string;
+        address: string;
+        ticketTypes: TicketTypeRow[];
+        feeMode: "ON_TOP" | "INCLUDED";
+        coverUrl: string | null;
+        selectedPreset: string | null;
+        isFreeEvent: boolean;
+        freeTicketName: string;
+        freeCapacity: string;
+        currentStep: number;
+        maxStepReached: number;
+        savedAt: number;
+      }>;
+      setTitle(draft.title ?? "");
+      setDescription(draft.description ?? "");
+      setStartsAt(draft.startsAt ?? "");
+      setEndsAt(draft.endsAt ?? "");
+      setLocationName(draft.locationName ?? "");
+      setLocationCity(
+        draft.locationCity && PT_CITIES.includes(draft.locationCity as PTCity)
+          ? (draft.locationCity as PTCity)
+          : PT_CITIES[0],
+      );
+      setAddress(draft.address ?? "");
+      setTicketTypes(
+        Array.isArray(draft.ticketTypes) && draft.ticketTypes.length > 0
+          ? draft.ticketTypes
+          : [{ name: "Geral", price: "", totalQuantity: "" }],
+      );
+      setFeeMode(draft.feeMode ?? "ON_TOP");
+      setCoverUrl(draft.coverUrl ?? null);
+      setSelectedPreset(draft.selectedPreset ?? null);
+      setIsFreeEvent(Boolean(draft.isFreeEvent));
+      setFreeTicketName(draft.freeTicketName || "Inscrição");
+      setFreeCapacity(draft.freeCapacity || "");
+      const draftCurrentStep =
+        typeof draft.currentStep === "number" && Number.isFinite(draft.currentStep) ? draft.currentStep : 0;
+      const draftMaxStep =
+        typeof draft.maxStepReached === "number" && Number.isFinite(draft.maxStepReached)
+          ? draft.maxStepReached
+          : draftCurrentStep;
+      setCurrentStep(Math.min(draftCurrentStep, 4));
+      setMaxStepReached(Math.min(draftMaxStep, 4));
+      setDraftSavedAt(draft.savedAt ?? null);
+    } catch (err) {
+      console.warn("Falha ao carregar rascunho local", err);
+    } finally {
+      setDraftLoaded(true);
     }
-  }, [selectedPreset, padelClubsData, padelMainClubId]);
+  }, [draftLoaded]);
 
   useEffect(() => {
-    if (selectedPreset !== "padel" || !padelMainClubId) return;
-    const club = padelClubsData?.items?.find((c) => c.id === padelMainClubId);
-    if (club) {
-      if (!locationCity) setLocationCity(club.city || "");
-      if (!address) setAddress(club.address || "");
-      if (club.courtsCount && club.courtsCount > 0) setPadelCourts(club.courtsCount);
-    }
-    const loadDetails = async () => {
-      setPadelDetailsLoading(true);
-      try {
-        const [courtsRes, staffRes] = await Promise.all([
-          fetch(`/api/padel/clubs/${padelMainClubId}/courts`),
-          fetch(`/api/padel/clubs/${padelMainClubId}/staff`),
-        ]);
-        const courtsJson = await courtsRes.json().catch(() => null);
-        const staffJson = await staffRes.json().catch(() => null);
-        if (Array.isArray(courtsJson?.items)) {
-          setPadelClubCourts(courtsJson.items as PadelClubCourt[]);
-          const activeCount = (courtsJson.items as PadelClubCourt[]).filter((c) => c.isActive).length;
-          if (activeCount > 0) {
-            setPadelCourts(activeCount);
-            const sortedActive = (courtsJson.items as PadelClubCourt[])
-              .filter((c) => c.isActive)
-              .sort((a, b) => a.displayOrder - b.displayOrder || a.id - b.id)
-              .slice(0, activeCount)
-              .map((c) => c.id);
-            setPadelSelectedCourtIds(sortedActive);
-          }
-        } else {
-          setPadelClubCourts([]);
-        }
-        if (Array.isArray(staffJson?.items)) {
-          setPadelClubStaff(staffJson.items as PadelClubStaff[]);
-        } else {
-          setPadelClubStaff([]);
-        }
-      } catch (err) {
-        console.error("[padel club details] load", err);
-        setPadelClubCourts([]);
-        setPadelClubStaff([]);
-      } finally {
-        setPadelDetailsLoading(false);
-      }
-    };
-    loadDetails();
-  }, [selectedPreset, padelMainClubId, padelClubsData]);
-
-  useEffect(() => {
-    if (selectedPreset !== "padel") return;
-    const sortedActive = [...activePadelCourts].sort((a, b) => a.displayOrder - b.displayOrder || a.id - b.id);
-    const maxCourts = Math.max(1, sortedActive.length || padelCourts || 1);
-    const clampedCount = Math.min(Math.max(1, padelCourts || 1), maxCourts);
-    if (padelCourts !== clampedCount) setPadelCourts(clampedCount);
-    const availableIds = sortedActive.map((c) => c.id);
-    const filteredSelection = padelSelectedCourtIds.filter((id) => availableIds.includes(id));
-    let nextSelection = filteredSelection;
-    if (nextSelection.length < clampedCount) {
-      const toAdd = availableIds.filter((id) => !nextSelection.includes(id)).slice(0, clampedCount - nextSelection.length);
-      nextSelection = [...nextSelection, ...toAdd];
-    }
-    nextSelection = nextSelection.slice(0, clampedCount);
-    const unchanged =
-      nextSelection.length === padelSelectedCourtIds.length &&
-      nextSelection.every((id, idx) => id === padelSelectedCourtIds[idx]);
-    if (!unchanged) {
-      setPadelSelectedCourtIds(nextSelection);
-    }
-  }, [activePadelCourts, padelCourts, padelSelectedCourtIds, selectedPreset]);
-
-  useEffect(() => {
-    const typeParam = searchParams?.get("type")?.toUpperCase() ?? null;
+    if (!draftLoaded) return;
+    const typeParam = searchParams?.get("type");
     const keyParam = searchParams?.get("category") ?? searchParams?.get("preset");
-    const templateTypeParam = searchParams?.get("templateType")?.toUpperCase() ?? null;
-    const match = CATEGORY_OPTIONS.find(
-      (opt) =>
-        opt.value.toUpperCase() === typeParam ||
-        opt.key === keyParam ||
-        opt.preset === keyParam ||
-        (templateTypeParam === "PADEL" && opt.key === "padel"),
-    );
+    if (selectedPreset || (!typeParam && !keyParam)) return;
+    const match = CATEGORY_OPTIONS.find((opt) => opt.value === typeParam || opt.key === keyParam);
     if (match) {
       setSelectedPreset(match.key);
-      setTemplateType(match.key === "padel" ? "SPORT" : match.value);
-      setCategories(match.categories);
-      if (match.key === "padel") {
-        setPadelFormat("TODOS_CONTRA_TODOS");
-        setTicketTypes([{ name: "Inscrição geral", price: "", totalQuantity: "" }]);
-        setPadelPartnerClubIds([]);
-      }
     }
-  }, [searchParams]);
+  }, [draftLoaded, searchParams, selectedPreset]);
 
-  const showForm = Boolean(selectedPreset);
-  const ticketTitle = selectedPreset === "padel" ? "Inscrições" : "Bilhetes";
-  const ticketNameLabel = selectedPreset === "padel" ? "Nome da inscrição *" : "Nome do bilhete *";
-  const hideTicketCapacity = selectedPreset === "padel" && Boolean(padelRegistrationLimit);
+  useEffect(() => {
+    if (!isFreeEvent) return;
+    setTicketTypes([
+      {
+        name: freeTicketName.trim() || "Inscrição",
+        price: "0",
+        totalQuantity: freeCapacity,
+      },
+    ]);
+  }, [isFreeEvent, freeTicketName, freeCapacity]);
+
+  useEffect(() => {
+    clearErrorsForFields(["tickets"]);
+    setStripeAlert(null);
+  }, [isFreeEvent]);
+
+  const stepOrder = useMemo<{ key: StepKey; title: string; subtitle: string }[]>(
+    () => [
+      { key: "preset", title: "Formato", subtitle: "Escolhe o tipo de evento" },
+      { key: "details", title: "Essenciais", subtitle: "Imagem, título e descrição" },
+      { key: "schedule", title: "Datas", subtitle: "Início, fim e local" },
+      {
+        key: "tickets",
+        title: "Bilhetes",
+        subtitle: isFreeEvent ? "Capacidade e vagas" : "Preços e stock",
+      },
+      { key: "review", title: "Rever", subtitle: "Confirma & cria" },
+    ],
+    [isFreeEvent],
+  );
+
+  const stepIndexMap = useMemo(() => {
+    const map = new Map<StepKey, number>();
+    stepOrder.forEach((step, idx) => map.set(step.key, idx));
+    return map;
+  }, [stepOrder]);
+  const wizardSteps: WizardStep[] = useMemo(
+    () => [
+      { id: "formato", title: "Formato" },
+      { id: "essenciais", title: "Essenciais" },
+      { id: "datas_local", title: "Datas" },
+      { id: "bilhetes", title: "Bilhetes" },
+      { id: "revisao", title: "Rever" },
+    ],
+    [],
+  );
+  const stepIdByKey: Record<StepKey, WizardStep["id"]> = {
+    preset: "formato",
+    details: "essenciais",
+    schedule: "datas_local",
+    tickets: "bilhetes",
+    review: "revisao",
+  };
+  const baseInputClasses =
+    "w-full rounded-xl border border-white/12 bg-black/25 px-4 py-3 text-sm text-white/90 placeholder:text-white/45 outline-none transition focus:border-[var(--orya-cyan)] focus:ring-2 focus:ring-[rgba(107,255,255,0.35)] focus:ring-offset-0 focus:ring-offset-transparent";
+  const errorInputClasses =
+    "border-[rgba(255,0,200,0.45)] focus:border-[rgba(255,0,200,0.6)] focus:ring-[rgba(255,0,200,0.4)]";
+  const inputClass = (errored?: boolean) => `${baseInputClasses} ${errored ? errorInputClasses : ""}`;
+  const labelClass =
+    "text-[11px] font-semibold uppercase tracking-[0.18em] text-white/65 flex items-center gap-1";
+  const errorTextClass = "flex items-center gap-2 text-[12px] font-semibold text-pink-200";
+
+  const pushToast = (message: string, tone: ToastTone = "success") => {
+    const id = Date.now() + Math.random();
+    setToasts((prev) => [...prev, { id, message, tone }]);
+    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 3800);
+  };
+
+  const saveDraft = () => {
+    if (typeof window === "undefined") return;
+    const payload = {
+      title,
+      description,
+      startsAt,
+      endsAt,
+      locationName,
+      locationCity,
+      address,
+      ticketTypes,
+      feeMode,
+      coverUrl,
+      selectedPreset,
+      isFreeEvent,
+      freeTicketName,
+      freeCapacity,
+      currentStep,
+      maxStepReached,
+      savedAt: Date.now(),
+    };
+    window.localStorage.setItem(DRAFT_KEY, JSON.stringify(payload));
+    setDraftSavedAt(Date.now());
+    pushToast("Rascunho guardado.", "success");
+  };
+
+  const handleRequireLogin = () => {
+    openModal({
+      mode: "login",
+      redirectTo: "/organizador/(dashboard)/eventos/novo",
+    });
+  };
+
+  const handleSelectPreset = (key: string) => {
+    const preset = presetMap.get(key);
+    if (!preset) return;
+    setSelectedPreset(preset.key);
+    setValidationAlert(null);
+    setErrorMessage(null);
+    clearErrorsForFields(["preset"]);
+  };
+
+  const handleSelectLocationSuggestion = (suggestion: { name: string; city?: string | null }) => {
+    setLocationName(suggestion.name);
+    if (suggestion.city && PT_CITIES.includes(suggestion.city as PTCity)) {
+      setLocationCity(suggestion.city as PTCity);
+    }
+    clearErrorsForFields(["locationName", "locationCity"]);
+    setShowLocationSuggestions(false);
+  };
+
+  const handleAddTicketType = () => {
+    clearErrorsForFields(["tickets"]);
+    setStripeAlert(null);
+    setTicketTypes((prev) => [...prev, { name: "", price: "", totalQuantity: "" }]);
+  };
+
+  const handleRemoveTicketType = (index: number) => {
+    clearErrorsForFields(["tickets"]);
+    setStripeAlert(null);
+    setTicketTypes((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handleTicketChange = (index: number, field: keyof TicketTypeRow, value: string) => {
+    setTicketTypes((prev) => prev.map((row, i) => (i === index ? { ...row, [field]: value } : row)));
+    clearErrorsForFields(["tickets"]);
+    setStripeAlert(null);
+  };
+
+  const handleCoverUpload = async (file: File | null) => {
+    if (!file) return;
+    const formData = new FormData();
+    formData.append("file", file);
+    setUploadingCover(true);
+    setErrorMessage(null);
+    try {
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        body: formData,
+      });
+      const json = await res.json();
+      if (!res.ok || !json?.url) {
+        throw new Error(json?.error || "Falha no upload da imagem.");
+      }
+      setCoverUrl(json.url as string);
+    } catch (err) {
+      console.error("Erro no upload de capa", err);
+      setErrorMessage("Não foi possível carregar a imagem de capa.");
+    } finally {
+      setUploadingCover(false);
+    }
+  };
+
+  const buildTicketsPayload = () => {
+    if (isFreeEvent) {
+      const totalQuantityRaw = freeCapacity ? Number(freeCapacity) : null;
+      const parsedQuantity =
+        typeof totalQuantityRaw === "number" && Number.isFinite(totalQuantityRaw) && totalQuantityRaw > 0
+          ? totalQuantityRaw
+          : null;
+      return [
+        {
+          name: freeTicketName.trim() || "Inscrição",
+          price: 0,
+          totalQuantity: parsedQuantity,
+        },
+      ];
+    }
+
+    return ticketTypes
+      .map((row) => ({
+        name: row.name.trim(),
+        price: Number(row.price.replace(",", ".")) || 0,
+        totalQuantity: row.totalQuantity ? Number(row.totalQuantity) : null,
+      }))
+      .filter((t) => t.name);
+  };
+
+  const fieldsByStep: Record<StepKey, FieldKey[]> = {
+    preset: ["preset"],
+    details: ["title", "description"],
+    schedule: ["startsAt", "endsAt", "locationName", "locationCity", "address"],
+    tickets: ["tickets"],
+    review: [],
+  };
+
+  function collectStepErrors(stepKey: StepKey | "all") {
+    const keys = stepKey === "all" ? (["preset", "details", "schedule", "tickets"] as StepKey[]) : [stepKey];
+    const issues: { field: FieldKey; message: string }[] = [];
+    keys.forEach((key) => {
+      if (key === "preset" && !selectedPreset) {
+        issues.push({ field: "preset", message: "Escolhe um formato." });
+      }
+      if (key === "details") {
+        if (!title.trim()) {
+          issues.push({ field: "title", message: "Título obrigatório." });
+        }
+      }
+      if (key === "schedule") {
+        if (!startsAt) issues.push({ field: "startsAt", message: "Data/hora de início obrigatória." });
+        if (!endsAt) issues.push({ field: "endsAt", message: "Data/hora de fim obrigatória." });
+        if (!locationName.trim()) issues.push({ field: "locationName", message: "Local obrigatório." });
+        if (!locationCity.trim()) issues.push({ field: "locationCity", message: "Cidade obrigatória." });
+        if (endsAt && startsAt && new Date(endsAt).getTime() <= new Date(startsAt).getTime()) {
+          issues.push({ field: "endsAt", message: "A data/hora de fim tem de ser depois do início." });
+        }
+      }
+      if (key === "tickets") {
+        const preparedTickets = buildTicketsPayload();
+        if (preparedTickets.length === 0) {
+          issues.push({ field: "tickets", message: "Adiciona pelo menos um bilhete ou inscrição." });
+        }
+        if (!isFreeEvent && preparedTickets.some((t) => t.price < 0)) {
+          issues.push({ field: "tickets", message: "Preço tem de ser positivo." });
+        }
+        if (!isFreeEvent && hasPaidTicket && paymentsStatus !== "READY") {
+          issues.push({ field: "tickets", message: "Liga o Stripe em Finanças & Payouts para vender bilhetes pagos." });
+        }
+      }
+    });
+    return issues;
+  }
+
+  const fieldStepMap = useMemo<Record<FieldKey, StepKey>>(
+    () => ({
+      preset: "preset",
+      title: "details",
+      description: "details",
+      startsAt: "schedule",
+      endsAt: "schedule",
+      locationName: "schedule",
+      locationCity: "schedule",
+      address: "schedule",
+      tickets: "tickets",
+    }),
+    [],
+  );
+
+  function clearErrorsForFields(fields: FieldKey[]) {
+    setFieldErrors((prev) => {
+      const next = { ...prev };
+      fields.forEach((field) => {
+        delete next[field];
+      });
+      return next;
+    });
+    setErrorSummary((prev) => prev.filter((err) => !fields.includes(err.field)));
+  }
+
+  function applyErrors(errors: { field: FieldKey; message: string }[], focusSummary = true) {
+    if (errors.length === 0) {
+      setErrorSummary([]);
+    } else {
+      setErrorSummary(errors);
+    }
+    setFieldErrors((prev) => {
+      const next = { ...prev };
+      errors.forEach((err) => {
+        next[err.field] = err.message;
+      });
+      return next;
+    });
+    if (errors.length > 0 && focusSummary) {
+      setTimeout(() => {
+        errorSummaryRef.current?.focus({ preventScroll: false });
+      }, 40);
+    }
+  }
+
+  const focusField = useCallback(
+    (field: FieldKey) => {
+      const targetStep = fieldStepMap[field];
+      const targetStepIndex = stepIndexMap.get(targetStep);
+      if (typeof targetStepIndex === "number" && targetStepIndex !== currentStep) {
+        setCurrentStep(targetStepIndex);
+        setMaxStepReached((prev) => Math.max(prev, targetStepIndex));
+        setPendingFocusField(field);
+        return;
+      }
+
+      const focusable =
+        field === "title"
+          ? titleRef.current
+          : field === "startsAt"
+          ? (startsRef.current?.querySelector("button") as HTMLElement | null)
+          : field === "endsAt"
+            ? (endsRef.current?.querySelector("button") as HTMLElement | null)
+            : field === "locationName"
+              ? locationNameRef.current
+              : field === "locationCity"
+                ? cityRef.current
+                : field === "tickets"
+                  ? (ticketsRef.current?.querySelector("input,button,select,textarea") as HTMLElement | null)
+                  : null;
+
+      if (focusable) {
+        focusable.scrollIntoView({ behavior: "smooth", block: "center" });
+        focusable.focus({ preventScroll: true });
+      }
+    },
+    [currentStep, fieldStepMap, stepIndexMap],
+  );
+
+  useEffect(() => {
+    if (!pendingFocusField) return;
+    const expectedStep = fieldStepMap[pendingFocusField];
+    const targetStepIndex = stepIndexMap.get(expectedStep);
+    if (typeof targetStepIndex === "number" && targetStepIndex !== currentStep) return;
+    focusField(pendingFocusField);
+    setPendingFocusField(null);
+  }, [pendingFocusField, currentStep, stepIndexMap, fieldStepMap, focusField]);
+
+  useEffect(() => {
+    let timer: NodeJS.Timeout | null = null;
+    if (isSubmitting) {
+      timer = setTimeout(() => setShowLoadingHint(true), 750);
+    } else {
+      setShowLoadingHint(false);
+    }
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
+  }, [isSubmitting]);
+
+  const activeStepKey = stepOrder[currentStep]?.key ?? "preset";
+  const nextDisabledReason = (() => {
+    const issues =
+      activeStepKey === "review" ? collectStepErrors("all") : collectStepErrors(activeStepKey as StepKey);
+    if (isSubmitting) return "A criar evento…";
+    return issues[0]?.message ?? null;
+  })();
+
+  const currentWizardStepId = stepIdByKey[activeStepKey];
+  const direction = currentStep >= prevStepIndexRef.current ? "right" : "left";
+  useEffect(() => {
+    prevStepIndexRef.current = currentStep;
+  }, [currentStep]);
+
+  const filteredLocationSuggestions = useMemo(() => {
+    const items = recentVenues?.ok && Array.isArray(recentVenues.items) ? recentVenues.items : [];
+    if (items.length === 0) return [];
+    const term = `${locationName} ${locationCity}`.toLowerCase().trim();
+    const filtered = items.filter((s) => `${s.name} ${s.city ?? ""}`.toLowerCase().includes(term));
+    return (term ? filtered : items).slice(0, 8);
+  }, [recentVenues, locationName, locationCity]);
+
+  useEffect(() => {
+    if (title.trim()) clearErrorsForFields(["title"]);
+  }, [title]);
+
+  useEffect(() => {
+    if (startsAt) clearErrorsForFields(["startsAt"]);
+  }, [startsAt]);
+
+  useEffect(() => {
+    if (locationName.trim()) clearErrorsForFields(["locationName"]);
+  }, [locationName]);
+
+  useEffect(() => {
+    if (locationCity.trim()) clearErrorsForFields(["locationCity"]);
+  }, [locationCity]);
+
+  useEffect(() => {
+    if (endsAt && startsAt && new Date(endsAt).getTime() > new Date(startsAt).getTime()) {
+      clearErrorsForFields(["endsAt"]);
+    }
+  }, [endsAt, startsAt]);
+
   const FormAlert = ({
     variant,
     title: alertTitle,
@@ -352,81 +675,57 @@ export default function NewOrganizerEventPage() {
     );
   };
 
-  const handleSelectPreset = (key: string) => {
-    const preset = presetMap.get(key);
-    if (!preset || preset.soon) return;
-    setSelectedPreset(preset.key);
-    setTemplateType(preset.key === "padel" ? "SPORT" : preset.value);
-    setCategories(preset.categories);
-    if (preset.key === "padel") {
-      setPadelFormat("TODOS_CONTRA_TODOS");
-      setPadelCourts(2);
-      setTicketTypes([{ name: "Inscrição geral", price: "", totalQuantity: "" }]);
-      setPadelPartnerClubIds([]);
+  const goNext = () => {
+    const activeKey = stepOrder[currentStep]?.key;
+    if (!activeKey) return;
+    const issues = activeKey === "review" ? collectStepErrors("all") : collectStepErrors(activeKey as StepKey);
+    if (issues.length > 0) {
+      applyErrors(issues);
+      setValidationAlert("Revê os campos em falta antes de continuar.");
+      setErrorMessage(issues[0]?.message ?? null);
+      setStripeAlert(issues.find((err) => err.message.includes("Stripe")) ? "Liga o Stripe em Finanças & Payouts para vender bilhetes pagos." : null);
+      return;
     }
+    clearErrorsForFields(fieldsByStep[activeKey as StepKey]);
+    setValidationAlert(null);
     setErrorMessage(null);
-  };
-
-  const handleRequireLogin = () => {
-    openModal({
-      mode: "login",
-      redirectTo: "/organizador/eventos/novo",
-    });
-  };
-
-  const handleAddTicketType = () => {
-    setTicketTypes((prev) => [
-      ...prev,
-      { name: "", price: "", totalQuantity: "" },
-    ]);
-  };
-
-  const handleRemoveTicketType = (index: number) => {
-    setTicketTypes((prev) => prev.filter((_, i) => i !== index));
-  };
-
-  const handleTicketChange = (
-    index: number,
-    field: keyof TicketTypeRow,
-    value: string
-  ) => {
-    setTicketTypes((prev) =>
-      prev.map((row, i) =>
-        i === index ? { ...row, [field]: value } : row
-      )
-    );
-  };
-
-  const handleCoverUpload = async (file: File | null) => {
-    if (!file) return;
-    const formData = new FormData();
-    formData.append("file", file);
-    setUploadingCover(true);
-    setErrorMessage(null);
-    try {
-      const res = await fetch("/api/upload", {
-        method: "POST",
-        body: formData,
-      });
-      const json = await res.json();
-      if (!res.ok || !json?.url) {
-        throw new Error(json?.error || "Falha no upload da imagem.");
-      }
-      setCoverUrl(json.url as string);
-    } catch (err) {
-      console.error("Erro no upload de capa", err);
-      setErrorMessage("Não foi possível carregar a imagem de capa.");
-    } finally {
-      setUploadingCover(false);
+    setStripeAlert(null);
+    setErrorSummary([]);
+    if (currentStep >= stepOrder.length - 1) {
+      handleSubmit();
+      return;
     }
+    setValidationAlert(null);
+    setErrorMessage(null);
+    setCurrentStep((s) => s + 1);
+    setMaxStepReached((prev) => Math.max(prev, currentStep + 1));
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const goPrev = () => {
+    setValidationAlert(null);
     setErrorMessage(null);
+    setErrorSummary([]);
+    setStripeAlert(null);
+    setCurrentStep((s) => Math.max(0, s - 1));
+  };
+
+  const handleSubmit = async () => {
     setStripeAlert(null);
     setValidationAlert(null);
     setBackendAlert(null);
+    setErrorMessage(null);
+
+    const issues = collectStepErrors("all");
+    if (issues.length > 0) {
+      applyErrors(issues);
+      setValidationAlert("Revê os campos em falta antes de criar o evento.");
+      setErrorMessage(issues[0]?.message ?? null);
+      setStripeAlert(issues.find((err) => err.message.includes("Stripe")) ? "Liga o Stripe em Finanças & Payouts para vender bilhetes pagos." : null);
+      return;
+    }
+
+    const preparedTickets = buildTicketsPayload();
+    const scrollTo = (el?: HTMLElement | null) => el?.scrollIntoView({ behavior: "smooth", block: "center" });
 
     if (!user) {
       handleRequireLogin();
@@ -434,113 +733,30 @@ export default function NewOrganizerEventPage() {
     }
 
     if (!isOrganizer) {
-      setErrorMessage(
-        "Ainda não és organizador. Vai à área de organizador para ativares essa função."
-      );
-      return;
-    }
-
-    if (!selectedPreset) {
-      setValidationAlert("Revê os campos em destaque antes de criar o evento.");
-      setErrorMessage("Escolhe uma categoria para continuar.");
-      return;
-    }
-
-    const scrollTo = (el?: HTMLElement | null) => el?.scrollIntoView({ behavior: "smooth", block: "center" });
-
-    if (!title.trim()) {
-      setValidationAlert("Revê os campos em destaque antes de criar o evento.");
-      setErrorMessage("O título é obrigatório.");
-      scrollTo(titleRef.current);
-      titleRef.current?.classList.add("ring-1", "ring-red-400");
-      setTimeout(() => titleRef.current?.classList.remove("ring-1", "ring-red-400"), 800);
-      return;
-    }
-
-    if (!startsAt) {
-      setValidationAlert("Revê os campos em destaque antes de criar o evento.");
-      setErrorMessage("A data/hora de início é obrigatória.");
-      scrollTo(startsRef.current);
-      startsRef.current?.classList.add("ring-1", "ring-red-400");
-      setTimeout(() => startsRef.current?.classList.remove("ring-1", "ring-red-400"), 800);
-      return;
-    }
-
-    if (!locationCity.trim()) {
-      setValidationAlert("Revê os campos em destaque antes de criar o evento.");
-      setErrorMessage("A cidade é obrigatória.");
-      scrollTo(cityRef.current);
-      cityRef.current?.classList.add("ring-1", "ring-red-400");
-      setTimeout(() => cityRef.current?.classList.remove("ring-1", "ring-red-400"), 800);
-      return;
-    }
-
-    if (hasPaidTicket && paymentsStatus !== "READY") {
-      setStripeAlert("Podes criar o evento, mas só vender bilhetes pagos depois de ligares o Stripe.");
-      setErrorMessage("Para vender bilhetes pagos, liga a tua conta Stripe em Finanças & Payouts.");
-      scrollTo(ctaAlertRef.current);
-      return;
-    }
-
-    const preparedTickets = ticketTypes
-      .map((row) => ({
-        name: row.name.trim(),
-        price: Number(row.price.replace(",", ".")) || 0,
-        totalQuantity:
-          selectedPreset === "padel" && padelRegistrationLimit
-            ? Number(padelRegistrationLimit)
-            : row.totalQuantity
-                ? Number(row.totalQuantity)
-                : null,
-      }))
-      .filter((t) => t.name);
-
-    if (preparedTickets.length === 0) {
-      setErrorMessage("Precisas de ter pelo menos um tipo de bilhete.");
+      setErrorMessage("Ainda não és organizador. Vai à área de organizador para ativares essa função.");
       return;
     }
 
     setIsSubmitting(true);
 
     try {
-      const padelPayload =
-        selectedPreset === "padel"
-          ? {
-              format: padelFormat,
-              numberOfCourts: Math.max(1, padelSelectedCourtIds.length || padelCourts || 1),
-              ruleSetId: padelRuleSetId,
-              defaultCategoryId: null,
-              padelClubId: padelMainClubId,
-              partnerClubIds: padelPartnerClubIds,
-              advancedSettings: {
-                registrationLimit: padelRegistrationLimit ? Number(padelRegistrationLimit) : undefined,
-                waitlistEnabled: padelWaitlist,
-                allowSecondCategory: padelAllowSecondCategory,
-                courtsSnapshot: padelClubCourts,
-                staffSnapshot: padelClubStaff,
-                selectedCourtIds: padelSelectedCourtIds,
-              },
-            }
-          : null;
-
-      const payloadCategories =
-        categories.length > 0 ? categories : selectedPreset === "padel" ? ["DESPORTO"] : [];
-
+      const preset = selectedPreset ? presetMap.get(selectedPreset) : null;
+      const categoriesToSend = preset?.categories ?? ["FESTA"];
+      const templateToSend = preset?.value ?? "OTHER";
       const payload = {
         title: title.trim(),
         description: description.trim() || null,
         startsAt,
-        endsAt: endsAt || null,
+        endsAt,
         locationName: locationName.trim() || null,
         locationCity: locationCity.trim() || null,
-        templateType: selectedPreset === "padel" ? "SPORT" : templateType,
+        templateType: templateToSend,
         address: address.trim() || null,
-        categories: payloadCategories,
+        categories: categoriesToSend,
         ticketTypes: preparedTickets,
         coverImageUrl: coverUrl,
         feeMode,
         isTest: isAdmin ? isTest : undefined,
-        padel: padelPayload,
       };
 
       const res = await fetch("/api/organizador/events/create", {
@@ -558,22 +774,51 @@ export default function NewOrganizerEventPage() {
       }
 
       const event = data.event;
-      pushToast("Evento criado com sucesso.", "success");
-      if (event?.id) {
-        router.push(`/organizador/eventos/${event.id}`);
-      } else if (event?.slug) {
-        router.push(`/eventos/${event.slug}`);
-      } else {
-        router.push("/organizador/eventos");
+      if (event?.id || event?.slug) {
+        if (typeof window !== "undefined") {
+          window.localStorage.removeItem(DRAFT_KEY);
+        }
+        setCreationSuccess({ eventId: event.id, slug: event.slug });
+        setCurrentStep(stepOrder.length - 1);
+        setMaxStepReached(stepOrder.length - 1);
+        setErrorSummary([]);
+        setFieldErrors({});
       }
     } catch (err) {
       console.error("Erro ao criar evento de organizador:", err);
       const message = err instanceof Error ? err.message : null;
       setBackendAlert(message || "Algo correu mal ao guardar o evento. Tenta novamente em segundos.");
       scrollTo(ctaAlertRef.current);
-      pushToast(message || "Não foi possível criar o evento agora.");
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const resetForm = () => {
+    setSelectedPreset(null);
+    setTitle("");
+    setDescription("");
+    setStartsAt("");
+    setEndsAt("");
+    setLocationName("");
+    setLocationCity(PT_CITIES[0]);
+    setAddress("");
+    setTicketTypes([{ name: "Geral", price: "", totalQuantity: "" }]);
+    setIsFreeEvent(false);
+    setFreeTicketName("Inscrição");
+    setFreeCapacity("");
+    setCoverUrl(null);
+    setCreationSuccess(null);
+    setCurrentStep(0);
+    setMaxStepReached(0);
+    setValidationAlert(null);
+    setErrorMessage(null);
+    setErrorSummary([]);
+    setFieldErrors({});
+    setStripeAlert(null);
+    setBackendAlert(null);
+    if (typeof window !== "undefined") {
+      window.localStorage.removeItem(DRAFT_KEY);
     }
   };
 
@@ -616,683 +861,799 @@ export default function NewOrganizerEventPage() {
     );
   }
 
+  const renderPresetStep = () => (
+    <div className="space-y-4 animate-fade-slide">
+      <div className="flex flex-col gap-2">
+        <p className="text-sm text-white/75">Escolhe o formato. Padel ativa o wizard dedicado; Evento padrão é neutro.</p>
+        <p className="text-[12px] text-white/55">Tudo segue a mesma linguagem visual.</p>
+        {fieldErrors.preset && (
+          <p className={errorTextClass}>
+            <span aria-hidden>⚠️</span>
+            {fieldErrors.preset}
+          </p>
+        )}
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {CATEGORY_OPTIONS.map((opt) => {
+          const isActive = selectedPreset === opt.key;
+          return (
+            <button
+              key={opt.key}
+              type="button"
+              onClick={() => handleSelectPreset(opt.key)}
+              className={`group flex flex-col items-start gap-2 rounded-2xl border border-white/12 bg-black/40 p-4 text-left transition hover:border-white/30 hover:shadow-[0_10px_30px_rgba(0,0,0,0.4)] ${
+                isActive ? "ring-2 ring-[#6BFFFF]/40 border-white/30" : ""
+              }`}
+            >
+              <span
+                className={`inline-flex items-center rounded-full bg-gradient-to-r ${opt.accent} px-3 py-1 text-[11px] font-semibold text-black shadow`}
+              >
+                {opt.label}
+              </span>
+              <p className="text-sm text-white/80">{opt.copy}</p>
+              <div className="flex flex-wrap gap-2 text-[11px] text-white/60">
+                {opt.categories.length === 0 ? (
+                  <span className="rounded-full border border-white/10 px-2 py-0.5">Personalizado</span>
+                ) : (
+                  opt.categories.map((cat) => (
+                    <span key={cat} className="rounded-full border border-white/15 px-2 py-0.5">
+                      {cat}
+                    </span>
+                  ))
+                )}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+
+  const renderDetailsStep = () => (
+    <div className="space-y-4 animate-fade-slide">
+      {isAdmin && (
+        <label className="flex items-center gap-3 rounded-2xl border border-white/12 bg-black/30 px-3 py-2 text-sm">
+          <input
+            type="checkbox"
+            checked={isTest}
+            onChange={(e) => setIsTest(e.target.checked)}
+            className="h-4 w-4 rounded border-white/40 bg-transparent"
+          />
+          <span className="text-white/80">Evento de teste (visível só para admin, não aparece em explorar)</span>
+        </label>
+      )}
+
+      <div className="rounded-2xl border border-white/12 bg-[rgba(14,14,20,0.7)] p-4 space-y-3 shadow-[0_14px_36px_rgba(0,0,0,0.45)]">
+        <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <p className={labelClass}>Imagem de capa</p>
+            <p className="text-[12px] text-white/65">Hero do evento — legível em mobile.</p>
+          </div>
+          <div className="flex items-center gap-2 text-[11px] text-white/60">
+            {uploadingCover && <span className="animate-pulse text-white/70">A carregar…</span>}
+            {coverUrl && (
+              <button
+                type="button"
+                onClick={() => setCoverUrl(null)}
+                className="rounded-full border border-white/20 px-3 py-1 text-white/75 hover:bg-white/10"
+              >
+                Remover
+              </button>
+            )}
+          </div>
+        </div>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <div className="h-36 w-56 rounded-xl border border-white/15 bg-gradient-to-br from-[#12121f] via-[#0b0b18] to-[#1f1630] overflow-hidden flex items-center justify-center text-[11px] text-white/60">
+            {coverUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={coverUrl} alt="Capa" className="h-full w-full object-cover" />
+            ) : (
+              <span className="text-white/55">Sem imagem</span>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-2 text-[12px] text-white/60">
+            <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-white/25 px-3 py-1 hover:bg-white/10">
+              <span>{coverUrl ? "Trocar imagem" : "Adicionar imagem"}</span>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => handleCoverUpload(e.target.files?.[0] ?? null)}
+                className="hidden"
+              />
+            </label>
+            <span className="inline-flex items-center rounded-full border border-white/10 px-3 py-1 text-white/50">
+              1200x630 recomendado
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div className="space-y-2 md:col-span-2">
+          <label className={labelClass}>
+            Título <span aria-hidden>*</span>
+          </label>
+          <input
+            type="text"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            ref={titleRef}
+            aria-invalid={Boolean(fieldErrors.title)}
+            className={inputClass(Boolean(fieldErrors.title))}
+            placeholder="Torneio Sunset Padel"
+          />
+          {fieldErrors.title && (
+            <p className={errorTextClass}>
+              <span aria-hidden>⚠️</span>
+              {fieldErrors.title}
+            </p>
+          )}
+        </div>
+
+        <div className="space-y-2 md:col-span-2">
+          <label className={labelClass}>Descrição</label>
+          <textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            rows={4}
+            className={inputClass(false)}
+            placeholder="Explica rapidamente o que torna o evento único."
+          />
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderScheduleStep = () => (
+    <div className="space-y-4 animate-fade-slide">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div ref={startsRef} className="space-y-1">
+          <InlineDateTimePicker
+            label="Data/hora início *"
+            value={startsAt}
+            onChange={(v) => setStartsAt(v)}
+            minDateTime={new Date()}
+            required
+          />
+          {fieldErrors.startsAt && (
+            <p className={errorTextClass}>
+              <span aria-hidden>⚠️</span>
+              {fieldErrors.startsAt}
+            </p>
+          )}
+        </div>
+        <div ref={endsRef} className="space-y-1">
+          <InlineDateTimePicker
+            label="Data/hora fim *"
+            value={endsAt}
+            onChange={(v) => setEndsAt(v)}
+            minDateTime={startsAt ? new Date(startsAt) : new Date()}
+          />
+          {fieldErrors.endsAt && (
+            <p className={errorTextClass}>
+              <span aria-hidden>⚠️</span>
+              {fieldErrors.endsAt}
+            </p>
+          )}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="space-y-1">
+          <label className={labelClass}>
+            Local <span aria-hidden>*</span>
+          </label>
+          <div className="relative overflow-visible">
+            <input
+              type="text"
+              value={locationName}
+              onChange={(e) => {
+                setLocationName(e.target.value);
+                setShowLocationSuggestions(true);
+              }}
+              onFocus={() => setShowLocationSuggestions(true)}
+              onBlur={() => {
+                if (suggestionBlurTimeout.current) clearTimeout(suggestionBlurTimeout.current);
+                suggestionBlurTimeout.current = setTimeout(() => setShowLocationSuggestions(false), 120);
+              }}
+              ref={locationNameRef}
+              aria-invalid={Boolean(fieldErrors.locationName)}
+              className={inputClass(Boolean(fieldErrors.locationName))}
+              placeholder="Clube, sala ou venue"
+            />
+            {showLocationSuggestions && (
+              <div className="absolute left-0 right-0 z-[70] mt-2 max-h-56 overflow-y-auto rounded-xl border border-white/12 bg-black/90 shadow-xl backdrop-blur-2xl animate-popover">
+                {recentVenues === undefined ? (
+                  <div className="px-3 py-2 text-sm text-white/70 animate-pulse">A procurar…</div>
+                ) : filteredLocationSuggestions.length === 0 ? (
+                  <div className="px-3 py-2 text-sm text-white/60">Sem locais recentes.</div>
+                ) : (
+                  filteredLocationSuggestions.map((suggestion) => (
+                    <button
+                      key={`${suggestion.name}-${suggestion.city ?? "?"}`}
+                      type="button"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => handleSelectLocationSuggestion(suggestion)}
+                      className="flex w-full flex-col items-start gap-1 border-b border-white/5 px-3 py-2 text-left text-sm hover:bg-white/8 last:border-0 transition"
+                    >
+                      <div className="flex w-full items-center justify-between gap-3">
+                        <span className="font-semibold text-white">{suggestion.name}</span>
+                        <span className="text-[12px] text-white/65">{suggestion.city || "Cidade por definir"}</span>
+                      </div>
+                      <span className="text-[11px] text-white/50">Usado em eventos deste organizador</span>
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
+          {fieldErrors.locationName && (
+            <p className={errorTextClass}>
+              <span aria-hidden>⚠️</span>
+              {fieldErrors.locationName}
+            </p>
+          )}
+        </div>
+
+        <div className="space-y-1">
+          <label className={labelClass}>
+            Cidade <span aria-hidden>*</span>
+          </label>
+          <select
+            value={locationCity}
+            onChange={(e) => {
+              setLocationCity(e.target.value);
+              setShowLocationSuggestions(true);
+            }}
+            ref={cityRef}
+            aria-invalid={Boolean(fieldErrors.locationCity)}
+            onFocus={() => setShowLocationSuggestions(true)}
+            onBlur={() => {
+              if (suggestionBlurTimeout.current) clearTimeout(suggestionBlurTimeout.current);
+              suggestionBlurTimeout.current = setTimeout(() => setShowLocationSuggestions(false), 120);
+            }}
+            className={inputClass(Boolean(fieldErrors.locationCity))}
+          >
+            {PT_CITIES.map((city) => (
+              <option key={city} value={city}>
+                {city}
+              </option>
+            ))}
+          </select>
+          {fieldErrors.locationCity && (
+            <p className={errorTextClass}>
+              <span aria-hidden>⚠️</span>
+              {fieldErrors.locationCity}
+            </p>
+          )}
+        </div>
+      </div>
+
+      <div className="space-y-1">
+        <label className={labelClass}>Rua / morada (opcional)</label>
+        <input
+          type="text"
+          value={address}
+          onChange={(e) => setAddress(e.target.value)}
+          className={inputClass(false)}
+          placeholder="Rua, número ou complemento"
+        />
+      </div>
+    </div>
+  );
+
+  const renderTicketsStep = () => (
+    <div ref={ticketsRef} className="space-y-5 animate-fade-slide">
+      <div className="flex flex-col gap-3 rounded-2xl border border-white/12 bg-[rgba(14,14,20,0.7)] p-4 shadow-[0_14px_36px_rgba(0,0,0,0.45)]">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className={labelClass}>Modelo</p>
+            <p className="text-[12px] text-white/65">Escolhe se é pago ou gratuito. Copy adapta-se.</p>
+          </div>
+          <div className="inline-flex rounded-full border border-white/15 bg-black/40 p-1 text-[13px]">
+            <button
+              type="button"
+              onClick={() => setIsFreeEvent(false)}
+              className={`rounded-full px-3 py-1 font-semibold transition ${
+                !isFreeEvent ? "bg-white text-black shadow" : "text-white/70"
+              }`}
+            >
+              Evento pago
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsFreeEvent(true)}
+              className={`rounded-full px-3 py-1 font-semibold transition ${
+                isFreeEvent ? "bg-white text-black shadow" : "text-white/70"
+              }`}
+            >
+              Evento grátis
+            </button>
+          </div>
+        </div>
+        <p className="text-[12px] text-white/55">
+          Bilhetes pagos só ficam ativos com Stripe ligado. Eventos grátis focam-se em inscrições e vagas.
+        </p>
+        {fieldErrors.tickets && (
+          <p className={errorTextClass}>
+            <span aria-hidden>⚠️</span>
+            {fieldErrors.tickets}
+          </p>
+        )}
+      </div>
+
+      {isFreeEvent ? (
+        <div className="space-y-3 rounded-2xl border border-white/12 bg-[rgba(12,12,20,0.65)] p-4">
+          <div className="flex items-center justify-between">
+            <p className={labelClass}>Inscrições gratuitas</p>
+            <span className="rounded-full border border-emerald-300/40 bg-emerald-400/10 px-3 py-1 text-[12px] text-emerald-50">
+              Sem taxas
+            </span>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="space-y-1">
+              <label className={labelClass}>Nome da inscrição</label>
+              <input
+                type="text"
+                value={freeTicketName}
+                onChange={(e) => setFreeTicketName(e.target.value)}
+                className={inputClass(false)}
+                placeholder="Inscrição geral, equipa…"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className={labelClass}>Capacidade (opcional)</label>
+              <input
+                type="number"
+                min={0}
+                value={freeCapacity}
+                onChange={(e) => setFreeCapacity(e.target.value)}
+                className={inputClass(false)}
+                placeholder="Ex.: 64"
+              />
+            </div>
+          </div>
+          <p className="text-[12px] text-white/60">
+            Só precisas disto para registar vagas. Podes abrir inscrições avançadas (equipas, rankings) no passo Padel.
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-4 rounded-2xl border border-white/12 bg-[rgba(12,12,20,0.65)] p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className={labelClass}>Bilhetes</h2>
+            <button
+              type="button"
+              onClick={handleAddTicketType}
+              className="inline-flex items-center rounded-full border border-white/20 bg-black/25 px-3 py-1 text-[13px] font-semibold hover:border-white/35 hover:bg-white/5 transition"
+            >
+              + Adicionar bilhete
+            </button>
+          </div>
+
+          <div className="grid gap-3">
+            {ticketTypes.map((row, idx) => {
+              const priceEuro = Number(row.price || "0");
+              const preview = computeFeePreview(priceEuro, feeMode, platformFees, stripeFees);
+              const combinedFeeCents = preview.feeCents + preview.stripeFeeCents;
+              return (
+                <div
+                  key={idx}
+                  className="space-y-3 rounded-xl border border-white/12 bg-white/[0.03] p-3 shadow-[0_12px_30px_rgba(0,0,0,0.35)] animate-step-pop"
+                >
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="space-y-1 flex-1">
+                      <label className={labelClass}>
+                        Nome do bilhete <span aria-hidden>*</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={row.name}
+                        onChange={(e) => handleTicketChange(idx, "name", e.target.value)}
+                        className={inputClass(false)}
+                        placeholder="Early bird, Geral, VIP"
+                      />
+                    </div>
+                    {ticketTypes.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveTicketType(idx)}
+                        className="text-[11px] text-white/60 hover:text-white/90"
+                      >
+                        Remover
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                    <div className="space-y-1">
+                      <label className={labelClass}>
+                        Preço (€) <span aria-hidden>*</span>
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        value={row.price}
+                        onChange={(e) => handleTicketChange(idx, "price", e.target.value)}
+                        className={inputClass(false)}
+                        placeholder="Ex.: 12.50"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className={labelClass}>Capacidade (opcional)</label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={row.totalQuantity}
+                        onChange={(e) => handleTicketChange(idx, "totalQuantity", e.target.value)}
+                        className={inputClass(false)}
+                        placeholder="Ex.: 100"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-[12px] font-semibold text-white/75">Pré-visualização</p>
+                      <div className="text-[12px] rounded-lg border border-white/10 bg-black/25 px-3 py-2 text-white/85">
+                        <p>Cliente: {(preview.totalCliente / 100).toFixed(2)} €</p>
+                        <p>Recebes: {(preview.recebeOrganizador / 100).toFixed(2)} €</p>
+                        <p className="text-white/50">Taxa ORYA: {(combinedFeeCents / 100).toFixed(2)} €</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="space-y-2">
+            <p className={labelClass}>Modo de taxas</p>
+            <div className="inline-flex rounded-full border border-white/15 bg-black/40 p-1 text-[13px]">
+              <button
+                type="button"
+                onClick={() => setFeeMode("ON_TOP")}
+                className={`rounded-full px-3 py-1 font-semibold transition ${
+                  feeMode === "ON_TOP" ? "bg-white text-black shadow" : "text-white/70"
+                }`}
+              >
+                Cliente paga taxa
+              </button>
+              <button
+                type="button"
+                onClick={() => setFeeMode("INCLUDED")}
+                className={`rounded-full px-3 py-1 font-semibold transition ${
+                  feeMode === "INCLUDED" ? "bg-white text-black shadow" : "text-white/70"
+                }`}
+              >
+                Preço inclui taxas
+              </button>
+            </div>
+            <p className="text-[12px] text-white/55">
+              Podes ajustar depois no resumo. Para eventos de plataforma, a taxa ORYA é zero.
+            </p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
+  const renderReviewStep = () => {
+    const previewTickets = buildTicketsPayload();
+    const presetLabel = selectedPreset === "padel" ? "Padel / Torneio" : "Evento padrão";
+    const presetDesc = selectedPreset === "padel" ? "Wizard Padel ativo" : "Fluxo base sem extras";
+    const pendingIssues = collectStepErrors("all");
+    const pendingLabel = pendingIssues.length === 0 ? "Campos ok" : `Falta corrigir ${pendingIssues.length}`;
+    return (
+      <div className="space-y-4 animate-fade-slide">
+        <div className="rounded-2xl border border-white/12 bg-[rgba(12,12,20,0.72)] p-4 space-y-4 shadow-[0_14px_36px_rgba(0,0,0,0.45)]">
+          <div className="flex items-start justify-between gap-3">
+            <div className="space-y-1">
+              <p className={labelClass}>Revisão final</p>
+              <p className="text-white/70 text-sm">Tudo pronto. Revê os detalhes antes de publicar.</p>
+            </div>
+            <div className="flex flex-col items-end gap-1 text-right">
+              <span className="text-[11px] uppercase tracking-[0.18em] text-white/55">Passo 5/5</span>
+              <span className="btn-chip bg-white/10 text-white/90">{pendingLabel}</span>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <div className="rounded-xl border border-white/12 bg-black/25 p-3 shadow-inner transition hover:border-white/25 hover:bg-white/10">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className={labelClass}>Essenciais</p>
+                  <p className="font-semibold text-white">{title || "Sem título"}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => focusField("title")}
+                  className="btn-chip"
+                >
+                  Editar
+                </button>
+              </div>
+              <div className="mt-2 flex items-center gap-3">
+                <div className="h-16 w-24 overflow-hidden rounded-lg border border-white/10 bg-gradient-to-br from-[#161623] via-[#0c0c18] to-[#241836] text-[11px] text-white/60">
+                  {coverUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={coverUrl} alt="Capa" className="h-full w-full object-cover" />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center text-[11px] text-white/60">
+                      Sem imagem
+                    </div>
+                  )}
+                </div>
+                <p className="text-sm text-white/70 line-clamp-3">{description || "Sem descrição"}</p>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-white/12 bg-black/25 p-3 shadow-inner transition hover:border-white/25 hover:bg-white/10">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className={labelClass}>Datas</p>
+                  <p className="font-semibold text-white">
+                    {locationName || "Local a definir"} · {locationCity || "Cidade a definir"}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => focusField("startsAt")}
+                  className="btn-chip"
+                >
+                  Editar
+                </button>
+              </div>
+              <p className="text-sm text-white/70">
+                {startsAt ? new Date(startsAt).toLocaleString() : "Início por definir"}{" "}
+                {endsAt ? `→ ${new Date(endsAt).toLocaleString()}` : ""}
+              </p>
+              {address && <p className="text-[12px] text-white/60">{address}</p>}
+            </div>
+
+            <div className="rounded-xl border border-white/12 bg-black/25 p-3 shadow-inner transition hover:border-white/25 hover:bg-white/10">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className={labelClass}>Bilhetes</p>
+                  <p className="font-semibold text-white">
+                    {isFreeEvent
+                      ? `Vagas: ${freeCapacity ? freeCapacity : "sem limite"}`
+                      : `${previewTickets.length} tipo${previewTickets.length === 1 ? "" : "s"} de bilhete`}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => focusField("tickets")}
+                  className="btn-chip"
+                >
+                  Editar
+                </button>
+              </div>
+              {!isFreeEvent && (
+                <ul className="mt-2 space-y-1 text-sm text-white/70">
+                  {previewTickets.map((t) => (
+                    <li key={`${t.name}-${t.price}`} className="flex items-center justify-between gap-2">
+                      <span>{t.name}</span>
+                      <span className="text-white/60">{t.price.toFixed(2)} €</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {isFreeEvent && <p className="text-sm text-white/70">Entrada gratuita com inscrições simples.</p>}
+            </div>
+
+            <div className="rounded-xl border border-white/12 bg-black/25 p-3 shadow-inner transition hover:border-white/25 hover:bg-white/10">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className={labelClass}>Modelo</p>
+                  <p className="font-semibold text-white">{isFreeEvent ? "Evento grátis" : "Evento pago"}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => focusField("preset")}
+                  className="btn-chip"
+                >
+                  Editar
+                </button>
+              </div>
+              <p className="text-sm text-white/70">Formato: {presetLabel}</p>
+              <p className="text-[12px] text-white/60">{presetDesc}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
-    <>
-    <div className="max-w-4xl mx-auto px-4 py-8 space-y-6 md:px-6 lg:px-8 text-white">
+    <form
+      noValidate
+      onSubmit={(e) => {
+        e.preventDefault();
+        goNext();
+      }}
+      className="max-w-5xl mx-auto px-4 py-8 space-y-6 md:px-6 lg:px-8 text-white"
+    >
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div className="space-y-1">
           <p className="text-[11px] uppercase tracking-[0.3em] text-white/60">Novo evento</p>
           <h1 className="text-2xl font-semibold tracking-tight">Cria o teu evento</h1>
-          <p className="text-sm text-white/70">
-            Escolhe primeiro o tipo de evento, depois preenche os detalhes base. Podes ajustar bilhetes, lotações e página pública mais tarde.
-          </p>
+          <p className="text-sm text-white/70">Fluxo rápido com autosave, feedback premium e zero ruído.</p>
         </div>
         <div className="flex flex-wrap gap-2 text-[11px]">
           <Link
             href="/organizador"
-            className="rounded-full border border-white/20 px-3 py-1.5 text-white/80 hover:bg-white/10 transition"
+            className="btn-ghost text-[12px] font-semibold"
           >
             Voltar
           </Link>
-        </div>
-      </div>
-
-      {!showForm && (
-        <div className="space-y-4">
-          <h2 className="text-lg font-semibold">Que tipo de evento queres criar?</h2>
-          <div className="grid gap-3">
-            <div className="grid gap-3 sm:grid-cols-2">
-              {CATEGORY_OPTIONS.filter((opt) => !opt.soon).map((opt) => (
-                <button
-                  key={opt.key}
-                  type="button"
-                  onClick={() => handleSelectPreset(opt.key)}
-                  className={`flex flex-col items-start gap-2 rounded-2xl border border-white/10 bg-black/40 p-4 text-left transition hover:border-white/25 hover:shadow-[0_10px_30px_rgba(0,0,0,0.4)] ${
-                    selectedPreset === opt.key ? "border-white/30 ring-2 ring-[#6BFFFF]/40" : ""
-                  }`}
-                >
-                  <span className={`inline-flex items-center rounded-full bg-gradient-to-r ${opt.accent} px-3 py-1 text-[11px] font-semibold text-black shadow`}>
-                    {opt.label}
-                  </span>
-                  <p className="text-sm text-white/80">
-                    {opt.key === "padel" && "Torneios com equipas, courts e staff herdado do clube."}
-                    {opt.key === "outro" && "Eventos gerais: festas, talks, concertos, etc."}
-                  </p>
-                </button>
-              ))}
-            </div>
-            <div className="grid gap-3 sm:grid-cols-3">
-              {CATEGORY_OPTIONS.filter((opt) => opt.soon).map((opt) => (
-                <div
-                  key={opt.key}
-                  className="flex flex-col items-start gap-2 rounded-2xl border border-white/10 bg-black/30 p-4 text-left opacity-70"
-                >
-                  <div className="flex items-center gap-2">
-                    <span className={`inline-flex items-center rounded-full bg-gradient-to-r ${opt.accent} px-3 py-1 text-[11px] font-semibold text-black shadow`}>
-                      {opt.label}
-                    </span>
-                    <span className="rounded-full bg-amber-300/20 px-2 py-[2px] text-[10px] text-amber-100">Em breve</span>
-                  </div>
-                  <p className="text-sm text-white/70">
-                    {opt.key === "restaurantes" && "Reservas por slot e menus fixos chegam em breve."}
-                    {opt.key === "solidario" && "Inscrições de voluntários e donativos."}
-                    {opt.key === "festas" && "Guest lists, packs e consumo mínimo."}
-                  </p>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showForm && (
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div className="flex flex-wrap gap-2 rounded-2xl border border-white/10 bg-black/30 px-3 py-2 text-sm">
-            {[
-              { key: "info", label: "Info base" },
-              { key: "tickets", label: ticketTitle },
-              { key: "review", label: "Revisão" },
-            ].map((step, idx) => (
-              <div
-                key={step.key}
-                className="flex items-center gap-2"
-              >
-                <span className="flex h-7 w-7 items-center justify-center rounded-full border border-white/25 bg-white/10 text-[12px] font-semibold">
-                  {idx + 1}
-                </span>
-                <span className="text-white/80">{step.label}</span>
-                {idx < 2 && <span className="text-white/40">—</span>}
-              </div>
-            ))}
-          </div>
-
-          <div className="rounded-2xl border border-white/10 bg-black/45 p-4 md:p-6 space-y-6">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2 text-[12px]">
-                <span className="text-white/60">Categoria escolhida:</span>
-                <span className="rounded-full border border-white/20 bg-white/10 px-3 py-1 font-semibold">
-                  {presetMap.get(selectedPreset!)?.label ?? "Outro"}
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setSelectedPreset(null)}
-                className="text-[11px] rounded-full border border-white/20 px-3 py-1 text-white/80 hover:bg-white/10"
-              >
-                Trocar categoria
-              </button>
-            </div>
-
-            <div className="space-y-4 rounded-lg border border-white/10 bg-white/5 p-4">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-white/70">
-                Detalhes do evento
-              </h2>
-
-              {isAdmin && (
-                <label className="flex items-center gap-3 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={isTest}
-                    onChange={(e) => setIsTest(e.target.checked)}
-                    className="h-4 w-4 rounded border-white/40 bg-transparent"
-                  />
-                  <span className="text-white/80">
-                    Evento de teste (visível só para admin, não aparece em explorar)
-                  </span>
-                </label>
-              )}
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Imagem de capa</label>
-                <div className="flex flex-col sm:flex-row gap-3 items-start">
-                  <div className="h-32 w-48 rounded-xl border border-white/15 bg-black/30 overflow-hidden flex items-center justify-center text-[11px] text-white/60">
-                    {coverUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={coverUrl} alt="Capa" className="h-full w-full object-cover" />
-                    ) : (
-                      <span>Sem imagem</span>
-                    )}
-                  </div>
-                  <div className="space-y-2">
-                    <div className="flex flex-wrap gap-2 text-[11px] text-white/60">
-                      <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-white/20 px-3 py-1 hover:bg-white/10">
-                        <span>{coverUrl ? "Substituir imagem" : "Adicionar imagem de capa"}</span>
-                        <input
-                          type="file"
-                          accept="image/*"
-                          onChange={(e) => handleCoverUpload(e.target.files?.[0] ?? null)}
-                          className="hidden"
-                        />
-                      </label>
-                      <button
-                        type="button"
-                        disabled={uploadingCover || !coverUrl}
-                        onClick={() => setCoverUrl(null)}
-                        className="inline-flex items-center rounded-full border border-white/20 px-3 py-1 hover:bg-white/10 disabled:opacity-60"
-                      >
-                        Remover imagem
-                      </button>
-                    </div>
-                    {uploadingCover && <span className="text-[11px] text-white/60">A carregar imagem…</span>}
-                  </div>
-                </div>
-              </div>
-
-              {selectedPreset === "padel" && (
-                <div className="space-y-3 rounded-2xl border border-white/10 bg-gradient-to-r from-[#0f1a3a] via-[#0d1731] to-[#0a1227] p-4 text-sm">
-                  <div className="flex flex-wrap items-start justify-between gap-2">
-                    <div>
-                      <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Padel – setup rápido</p>
-                      <p className="text-white/80">Escolhe clube, courts e seguimos.</p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setPadelAdvancedOpen((p) => !p)}
-                      className="rounded-full border border-white/20 px-3 py-1 text-[12px] text-white hover:border-white/35"
-                    >
-                      {padelAdvancedOpen ? "Fechar avançadas" : "Opções avançadas"}
-                    </button>
-                  </div>
-
-                  {padelClubsData?.items?.length ? (
-                    <>
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        <label className="space-y-1">
-                          <span className="text-[12px] text-white/70">Clube principal *</span>
-                          <select
-                            value={padelMainClubId ?? ""}
-                            onChange={(e) => setPadelMainClubId(e.target.value ? Number(e.target.value) : null)}
-                            className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-white/50"
-                          >
-                            <option value="">Escolhe o clube</option>
-                            {padelClubsData.items.map((club) => (
-                              <option key={club.id} value={club.id}>
-                                {club.name} {club.isActive === false ? "(inativo)" : ""}
-                              </option>
-                            ))}
-                          </select>
-                          <p className="text-[12px] text-white/60">Usamos cidade/morada do clube ativo.</p>
-                        </label>
-                        <label className="space-y-1">
-                          <div className="flex items-center justify-between text-[12px] text-white/70">
-                            <span>Nº de courts (sugerido)</span>
-                            <span className="rounded-full border border-white/20 px-2 py-[2px] text-[11px] text-white/80">
-                              Máx: {Math.max(1, activePadelCourtsCount || 1)}
-                            </span>
-                          </div>
-                          <input
-                            type="number"
-                            min={1}
-                            value={padelCourts}
-                            max={Math.max(1, activePadelCourtsCount || 1)}
-                            onChange={(e) => {
-                              const next = Number(e.target.value) || 1;
-                              const clamped = Math.min(Math.max(1, next), Math.max(1, activePadelCourtsCount || 1));
-                              setPadelCourts(clamped);
-                            }}
-                            className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-white/50"
-                          />
-                          <p className="text-[12px] text-white/60">
-                            Auto-preenchido pelos courts ativos do clube. Máximo = {Math.max(1, activePadelCourtsCount || 1)}.
-                          </p>
-                        </label>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-2 text-[12px] text-white/70">
-                        <span className="rounded-full border border-white/20 bg-white/10 px-3 py-1">
-                          {padelClubCourts.filter((c) => c.isActive).length} courts herdados
-                        </span>
-                        <span className="rounded-full border border-white/20 bg-white/10 px-3 py-1">
-                          {padelClubStaff.length} membros de staff
-                        </span>
-                        {padelDetailsLoading && <span className="text-white/60">A carregar courts & staff…</span>}
-                        {!padelDetailsLoading && padelMainClubId && (
-                          <span className="text-white/70">
-                            Este torneio vai usar {Math.max(1, padelSelectedCourtIds.length || padelCourts || 1)} court(s) e {padelClubStaff.length} staff de {padelClubsData?.items.find((c) => c.id === padelMainClubId)?.name ?? "clube escolhido"}.
-                          </span>
-                        )}
-                      </div>
-                    </>
-                  ) : (
-                    <div className="rounded-lg border border-dashed border-white/20 bg-black/30 p-3 text-white/75">
-                      Sem clubes ainda. Cria no hub de Padel para pré-preencher o wizard.
-                    </div>
-                  )}
-
-                  {padelAdvancedOpen && (
-                    <div className="space-y-3 rounded-xl border border-white/10 bg-black/30 p-3">
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        <div className="space-y-2">
-                          <p className="text-sm font-semibold text-white">Clubes parceiros</p>
-                          <div className="flex flex-wrap gap-2">
-                            {padelPartnerOptions.length === 0 && (
-                              <span className="text-[12px] text-white/60">Sem clubes extra ainda.</span>
-                            )}
-                            {padelPartnerOptions.map((club) => {
-                              const checked = padelPartnerClubIds.includes(club.id);
-                              return (
-                                <label
-                                  key={club.id}
-                                  className={`flex items-center gap-2 rounded-full border px-3 py-1 text-[12px] ${
-                                    checked ? "border-white bg-white text-black" : "border-white/20 bg-black/30 text-white"
-                                  }`}
-                                >
-                                  <input
-                                    type="checkbox"
-                                    className="sr-only"
-                                    checked={checked}
-                                    onChange={(e) => {
-                                      if (e.target.checked) {
-                                        setPadelPartnerClubIds((prev) => [...prev, club.id]);
-                                      } else {
-                                        setPadelPartnerClubIds((prev) => prev.filter((id) => id !== club.id));
-                                      }
-                                    }}
-                                  />
-                                  <span>{club.name}</span>
-                                </label>
-                              );
-                            })}
-                          </div>
-                        </div>
-                        <div className="space-y-2">
-                          <p className="text-sm font-semibold text-white">Courts a usar</p>
-                          {activePadelCourtsCount === 0 && <p className="text-[12px] text-white/60">Sem courts ativos no clube.</p>}
-                          {activePadelCourtsCount > 0 && (
-                            <div className="flex flex-wrap gap-2">
-                              {activePadelCourts.map((court) => {
-                                const checked = padelSelectedCourtIds.includes(court.id);
-                                return (
-                                  <button
-                                    key={court.id}
-                                    type="button"
-                                    onClick={() => {
-                                      if (checked && padelSelectedCourtIds.length <= 1) return;
-                                      const next = checked
-                                        ? padelSelectedCourtIds.filter((id) => id !== court.id)
-                                        : [...padelSelectedCourtIds, court.id];
-                                      setPadelSelectedCourtIds(next);
-                                      if (next.length) setPadelCourts(next.length);
-                                    }}
-                                    className={`rounded-full border px-3 py-1 text-[12px] ${
-                                      checked
-                                        ? "border-white bg-white text-black"
-                                        : "border-white/20 bg-black/30 text-white hover:border-white/40"
-                                    }`}
-                                  >
-                                    {court.name} · {court.indoor ? "Indoor" : "Outdoor"}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          )}
-                        </div>
-                        <div className="space-y-2">
-                          <label className="space-y-1">
-                            <span className="text-[12px] text-white/70">Limite total de inscrições</span>
-                            <input
-                              type="number"
-                              min={0}
-                              value={padelRegistrationLimit}
-                              onChange={(e) => setPadelRegistrationLimit(e.target.value)}
-                              className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-white/50"
-                              placeholder="Ex.: 64 equipas"
-                            />
-                          </label>
-                          <div className="inline-flex rounded-full border border-white/15 bg-black/40 p-1 text-[12px]">
-                            {[
-                              { key: true, label: "Lista de espera ON" },
-                              { key: false, label: "Lista de espera OFF" },
-                            ].map((opt) => (
-                              <button
-                                key={String(opt.key)}
-                                type="button"
-                                onClick={() => setPadelWaitlist(opt.key)}
-                                className={`rounded-full px-3 py-1 transition ${
-                                  padelWaitlist === opt.key
-                                    ? "bg-white text-black font-semibold shadow"
-                                    : "text-white/75 hover:bg-white/5"
-                                }`}
-                              >
-                                {opt.label}
-                              </button>
-                            ))}
-                          </div>
-                          <div className="inline-flex rounded-full border border-white/15 bg-black/40 p-1 text-[12px]">
-                            {[
-                              { key: true, label: "Permitir 2ª categoria" },
-                              { key: false, label: "Só 1 categoria" },
-                            ].map((opt) => (
-                              <button
-                                key={String(opt.key)}
-                                type="button"
-                                onClick={() => setPadelAllowSecondCategory(opt.key)}
-                                className={`rounded-full px-3 py-1 transition ${
-                                  padelAllowSecondCategory === opt.key
-                                    ? "bg-white text-black font-semibold shadow"
-                                    : "text-white/75 hover:bg-white/5"
-                                }`}
-                              >
-                                {opt.label}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                          <p className="text-[12px] text-white/60">
-                            Guardamos estes campos em advanced_settings para evoluir o wizard de Padel (lista de espera, 2ª categoria, courts).
-                          </p>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              <div className="space-y-1">
-                <label className="text-sm font-medium">Título *</label>
-                <input
-                  type="text"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  ref={titleRef}
-                  className="w-full rounded-md border border-white/15 bg-black/20 px-3 py-2 text-sm outline-none focus:border-white/60"
-                  placeholder="Ex.: Festa de abertura ORYA"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-sm font-medium">Descrição</label>
-                <textarea
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  rows={4}
-                  className="w-full rounded-md border border-white/15 bg-black/20 px-3 py-2 text-sm outline-none focus:border-white/60"
-                  placeholder="Conta às pessoas o que podem esperar deste evento."
-                />
-              </div>
-
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div ref={startsRef}>
-                  <InlineDateTimePicker
-                    label="Data/hora início *"
-                    value={startsAt}
-                    onChange={(v) => setStartsAt(v)}
-                    minDateTime={new Date()}
-                    required
-                  />
-                </div>
-                <InlineDateTimePicker
-                  label="Data/hora fim (opcional)"
-                  value={endsAt}
-                  onChange={(v) => setEndsAt(v)}
-                  minDateTime={startsAt ? new Date(startsAt) : new Date()}
-                />
-              </div>
-
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div className="space-y-1">
-                  <label className="text-sm font-medium">Local</label>
-                  <input
-                    type="text"
-                    value={locationName}
-                    onChange={(e) => setLocationName(e.target.value)}
-                    className="w-full rounded-md border border-white/15 bg-black/20 px-3 py-2 text-sm outline-none focus:border-white/60"
-                    placeholder="Ex.: Casa &amp; Ala, Coliseu, Parque da Cidade…"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-sm font-medium">Cidade</label>
-                  <div className="relative">
-                    <input
-                      list="pt-cities"
-                      type="text"
-                      value={locationCity}
-                      onChange={(e) => setLocationCity(e.target.value)}
-                      ref={cityRef}
-                      className="w-full rounded-md border border-white/15 bg-black/20 px-3 py-2 text-sm outline-none focus:border-white/60"
-                      placeholder="Porto, Braga, Lisboa…"
-                    />
-                    <datalist id="pt-cities">
-                      {PORTUGAL_CITIES.map((city) => (
-                        <option key={city} value={city} />
-                      ))}
-                    </datalist>
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-sm font-medium">Rua / morada (opcional)</label>
-                <input
-                  type="text"
-                  value={address}
-                  onChange={(e) => setAddress(e.target.value)}
-                  className="w-full rounded-md border border-white/15 bg-black/20 px-3 py-2 text-sm outline-none focus:border-white/60"
-                  placeholder="Ex.: Rua de exemplo, 123 (TODO: ligar a Mapbox Search)"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-sm font-medium">Modo de taxas</label>
-                <select
-                  value={feeMode}
-                  onChange={(e) => setFeeMode(e.target.value as "ON_TOP" | "INCLUDED")}
-                  className="w-full rounded-md border border-white/15 bg-black/20 px-3 py-2 text-sm outline-none focus:border-white/60"
-                >
-                  <option value="ON_TOP">Adicionar taxa ao preço (cliente paga)</option>
-                  <option value="INCLUDED">Incluir taxa no preço (tu absorves)</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="space-y-4 rounded-lg border border-white/10 bg-white/5 p-4">
-              <div className="flex items-center justify-between">
-                <h2 className="text-sm font-semibold uppercase tracking-wide text-white/70">
-                  {ticketTitle}
-                </h2>
-                <button
-                  type="button"
-                  onClick={handleAddTicketType}
-                  className="inline-flex items-center rounded-md border border-white/15 bg-black/20 px-3 py-1 text-[13px] font-medium hover:border-white/40"
-                >
-                  + Adicionar {selectedPreset === "padel" ? "inscrição" : "tipo"}
-                </button>
-              </div>
-
-              <div className="space-y-3">
-                {ticketTypes.map((row, idx) => (
-                  <div
-                    key={idx}
-                    className="space-y-3 rounded-xl border border-white/10 bg-black/30 p-3"
-                  >
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                      <div className="space-y-1 flex-1">
-                        <label className="text-sm font-medium">{ticketNameLabel}</label>
-                        <input
-                          type="text"
-                          value={row.name}
-                          onChange={(e) => handleTicketChange(idx, "name", e.target.value)}
-                          className="w-full rounded-md border border-white/15 bg-black/20 px-3 py-2 text-sm outline-none focus:border-white/60"
-                          placeholder="Ex.: Early bird, Geral, VIP"
-                        />
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveTicketType(idx)}
-                        className="text-[11px] text-red-300 hover:text-red-200"
-                      >
-                        Remover
-                      </button>
-                    </div>
-
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                        <div className="space-y-1">
-                          <label className="text-sm font-medium">
-                            {selectedPreset === "padel" ? "Preço / inscrição (€) *" : "Preço (€) *"}
-                          </label>
-                          <input
-                            type="number"
-                            min={0}
-                            step="0.01"
-                            value={row.price}
-                            onChange={(e) => handleTicketChange(idx, "price", e.target.value)}
-                            className="w-full rounded-md border border-white/15 bg-black/20 px-3 py-2 text-sm outline-none focus:border-white/60"
-                            placeholder="Ex.: 12.50"
-                          />
-                          {selectedPreset === "padel" && (
-                            <p className="text-[11px] text-white/60">
-                              Chama-se “Inscrição geral” por defeito. Mantém curto e claro.
-                            </p>
-                          )}
-                        </div>
-                      {!hideTicketCapacity && (
-                        <div className="space-y-1">
-                          <label className="text-sm font-medium">
-                            {selectedPreset === "padel" ? "Limite desta inscrição" : "Capacidade (opcional)"}
-                          </label>
-                          <input
-                            type="number"
-                            min={0}
-                            value={row.totalQuantity}
-                            onChange={(e) => handleTicketChange(idx, "totalQuantity", e.target.value)}
-                            className="w-full rounded-md border border-white/15 bg-black/20 px-3 py-2 text-sm outline-none focus:border-white/60"
-                            placeholder="Ex.: 100"
-                          />
-                        </div>
-                      )}
-                      <div className="space-y-1">
-                        <label className="text-sm font-medium">Pré-visualização de taxas</label>
-                        <div className="text-[12px] rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-white/70">
-                          {(() => {
-                            const priceEuro = Number(row.price || "0");
-                            const preview = computeFeePreview(priceEuro, feeMode, platformFees, stripeFees);
-                            return (
-                              <div className="space-y-0.5">
-                                <p>Cliente paga: {(preview.totalCliente / 100).toFixed(2)} €</p>
-                                <p>Recebes: {(preview.recebeOrganizador / 100).toFixed(2)} €</p>
-                                <p className="text-white/50">Taxas ORYA: {(preview.feeCents / 100).toFixed(2)} €</p>
-                                <p className="text-white/50">Taxas Stripe: {(preview.stripeFeeCents / 100).toFixed(2)} €</p>
-                              </div>
-                            );
-                          })()}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          <div ref={ctaAlertRef} className="space-y-3">
-            {stripeAlert && (
-              <FormAlert
-                variant={hasPaidTicket ? "error" : "warning"}
-                title="Stripe incompleto"
-                message={stripeAlert}
-                actionLabel="Abrir Finanças & Payouts"
-                onAction={() => router.push("/organizador?tab=finance")}
-              />
-            )}
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-4 space-y-3">
-              <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Revisão rápida</p>
-              <div className="grid gap-3 sm:grid-cols-3 text-[13px] text-white/80">
-                <div>
-                  <p className="text-white/60 text-[11px]">Título</p>
-                  <p className="font-semibold">{title || "—"}</p>
-                </div>
-                <div>
-                  <p className="text-white/60 text-[11px]">Data/hora</p>
-                  <p className="font-semibold">
-                    {startsAt
-                      ? new Date(startsAt).toLocaleString("pt-PT", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })
-                      : "—"}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-white/60 text-[11px]">Local</p>
-                  <p className="font-semibold">{locationCity || locationName || "—"}</p>
-                </div>
-              </div>
-              <div className="grid gap-2 sm:grid-cols-2 text-[13px] text-white/80">
-                <div className="space-y-1">
-                  <p className="text-white/60 text-[11px]">{ticketTitle}</p>
-                  {ticketSummary.length === 0 && <p className="text-white/60">Nenhuma {ticketTitle.toLowerCase()} configurada.</p>}
-                  {ticketSummary.length > 0 && (
-                    <div className="space-y-1">
-                      {ticketSummary.map((t) => (
-                        <div key={t.name} className="flex items-center justify-between rounded-lg border border-white/10 bg-black/30 px-3 py-2">
-                          <span className="font-semibold">{t.name}</span>
-                          <span className="text-white/70">
-                            {(t.price || 0).toFixed(2)} €{t.quantity ? ` · ${t.quantity} qty` : ""}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                {selectedPreset === "padel" && (
-                  <div className="space-y-1">
-                    <p className="text-white/60 text-[11px]">Padel</p>
-                    <p className="rounded-lg border border-white/10 bg-black/25 px-3 py-2 text-white/75">
-                      {padelMainClubId
-                        ? `Clube: ${padelClubsData?.items.find((c) => c.id === padelMainClubId)?.name ?? "—"}, courts: ${Math.max(
-                            1,
-                            padelSelectedCourtIds.length || padelCourts || 1,
-                          )}`
-                        : "Escolhe um clube para pré-preencher courts e staff."}
-                    </p>
-                  </div>
-                )}
-              </div>
-            </div>
-            {validationAlert && (
-              <FormAlert variant="warning" message={validationAlert} />
-            )}
-            {errorMessage && (
-              <FormAlert variant="error" message={errorMessage} />
-            )}
-            {backendAlert && (
-              <FormAlert
-                variant="error"
-                title="Algo correu mal ao guardar o evento"
-                message={backendAlert}
-              />
-            )}
-            <div className="flex flex-wrap gap-3">
-              <button
-                type="submit"
-                disabled={isSubmitting}
-                className="inline-flex items-center gap-2 rounded-md bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-4 py-2 text-sm font-semibold text-black shadow-lg transition hover:scale-[1.01] disabled:opacity-60"
-              >
-                {isSubmitting ? "A criar..." : "Criar evento"}
-              </button>
-              <Link
-                href="/organizador/eventos"
-                className="inline-flex items-center rounded-md border border-white/15 bg-black/20 px-4 py-2 text-sm font-medium text-white/80 hover:bg-white/10"
-              >
-                Cancelar
-              </Link>
-            </div>
-          </div>
-        </form>
-      )}
-    </div>
-    {toasts.length > 0 && (
-      <div className="pointer-events-none fixed bottom-6 right-6 z-40 flex flex-col gap-2">
-        {toasts.map((toast) => (
-          <div
-            key={toast.id}
-            className={`pointer-events-auto min-w-[240px] rounded-lg border px-4 py-3 text-sm shadow-lg ${
-              toast.tone === "success"
-                ? "border-emerald-400/50 bg-emerald-500/15 text-emerald-50"
-                : "border-red-400/50 bg-red-500/15 text-red-50"
-            }`}
+          <button
+            type="button"
+            onClick={saveDraft}
+            className="btn-ghost text-[12px] font-semibold"
           >
-            {toast.message}
-          </div>
-        ))}
+            Guardar rascunho
+          </button>
+          {draftSavedAt && (
+            <span className="rounded-full border border-white/10 px-3 py-1 text-white/70 bg-white/5">
+              Guardado há pouco
+            </span>
+          )}
+        </div>
       </div>
-    )}
-    </>
+
+      <div className="relative rounded-3xl border border-white/8 bg-[rgba(9,10,16,0.78)] p-5 md:p-6 space-y-6 shadow-[0_24px_70px_rgba(0,0,0,0.6)] overflow-visible">
+        <div className="pb-1">
+          <StepperDots
+            steps={wizardSteps}
+            current={currentWizardStepId}
+            maxUnlockedIndex={Math.max(maxStepReached, currentStep)}
+            onGoTo={(id) => {
+              const idx = wizardSteps.findIndex((s) => s.id === id);
+              const maxClickable = Math.max(maxStepReached, currentStep);
+              if (idx >= 0 && idx <= maxClickable) setCurrentStep(idx);
+            }}
+          />
+        </div>
+
+        {errorSummary.length > 0 && (
+          <div
+            ref={errorSummaryRef}
+            tabIndex={-1}
+            className="rounded-xl border border-amber-400/40 bg-amber-500/10 p-3 text-sm text-amber-50 focus:outline-none focus:ring-2 focus:ring-amber-200/70"
+            aria-live="assertive"
+          >
+            <div className="flex items-center gap-2 font-semibold">
+              <span aria-hidden>⚠️</span>
+              <span>Revê estes campos antes de continuar</span>
+            </div>
+            <ul className="mt-2 space-y-1 text-[13px]">
+              {errorSummary.map((err) => (
+                <li key={`${err.field}-${err.message}`}>
+                  <button
+                    type="button"
+                    onClick={() => focusField(err.field)}
+                    className="inline-flex items-center gap-2 text-left font-semibold text-white underline decoration-pink-200 underline-offset-4 hover:text-pink-50"
+                  >
+                    <span aria-hidden>↘</span>
+                    <span>{err.message}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        <div className="rounded-2xl border border-white/12 bg-[rgba(12,12,20,0.75)] p-4 md:p-5 min-h-[420px] md:min-h-[460px]">
+          <section
+            key={activeStepKey}
+            className={direction === "right" ? "wizard-step-in-right" : "wizard-step-in-left"}
+          >
+            {activeStepKey === "preset" && renderPresetStep()}
+            {activeStepKey === "details" && renderDetailsStep()}
+            {activeStepKey === "schedule" && renderScheduleStep()}
+            {activeStepKey === "tickets" && renderTicketsStep()}
+            {activeStepKey === "review" && renderReviewStep()}
+          </section>
+        </div>
+
+        <div ref={ctaAlertRef} className="space-y-3">
+          {stripeAlert && (
+            <FormAlert
+              variant={hasPaidTicket ? "error" : "warning"}
+              title="Stripe incompleto"
+              message={stripeAlert}
+              actionLabel="Abrir Finanças & Payouts"
+              onAction={() => router.push("/organizador?tab=finance")}
+            />
+          )}
+          {validationAlert && <FormAlert variant="warning" message={validationAlert} />}
+          {errorMessage && <FormAlert variant="error" message={errorMessage} />}
+          {backendAlert && (
+            <FormAlert
+              variant="error"
+              title="Algo correu mal ao guardar o evento"
+              message={backendAlert}
+            />
+          )}
+        </div>
+
+        <FlowStickyFooter
+          backLabel="Anterior"
+          nextLabel={currentStep === stepOrder.length - 1 ? "Criar evento" : "Continuar"}
+          helper={
+            activeStepKey === "tickets" && isFreeEvent
+              ? "Inscrições sem taxas; capacidade é opcional."
+              : activeStepKey === "review"
+                ? "Confirma blocos, edita no passo certo e cria com confiança."
+                : "Navega sem perder contexto; feedback sempre visível."
+          }
+          disabledReason={nextDisabledReason}
+          loading={isSubmitting}
+          loadingLabel={currentStep === stepOrder.length - 1 ? "A criar..." : "A processar..."}
+          showLoadingHint={showLoadingHint}
+          disableBack={currentStep === 0}
+          onBack={goPrev}
+          onNext={goNext}
+        />
+      </div>
+
+      {creationSuccess && (
+        <div className="fixed bottom-6 left-6 z-40 w-[320px] max-w-full rounded-2xl border border-emerald-400/50 bg-emerald-500/15 p-4 shadow-[0_18px_45px_rgba(0,0,0,0.55)] text-emerald-50">
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <p className="text-sm font-semibold">Evento criado</p>
+              <p className="text-[13px] text-emerald-50/85">Escolhe o próximo passo ou cria outro.</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setCreationSuccess(null)}
+              className="text-[12px] text-emerald-50/80 hover:text-white"
+              aria-label="Fechar alerta de criação"
+            >
+              ✕
+            </button>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2 text-[12px]">
+            {creationSuccess.slug && (
+              <Link
+                href={`/eventos/${creationSuccess.slug}`}
+                className="rounded-full border border-emerald-200/60 bg-emerald-500/15 px-3 py-1 font-semibold text-white hover:bg-emerald-500/25"
+              >
+                Ver página pública
+              </Link>
+            )}
+            {creationSuccess.eventId && (
+              <Link
+                href={`/organizador/eventos/${creationSuccess.eventId}`}
+                className="rounded-full border border-emerald-200/60 bg-emerald-500/15 px-3 py-1 font-semibold text-white hover:bg-emerald-500/25"
+              >
+                Editar evento
+              </Link>
+            )}
+            <button
+              type="button"
+              onClick={resetForm}
+              className="rounded-full border border-white/25 px-3 py-1 font-semibold text-white hover:bg-white/10"
+            >
+              Criar outro
+            </button>
+          </div>
+        </div>
+      )}
+
+      {toasts.length > 0 && (
+        <div className="pointer-events-none fixed bottom-6 right-6 z-40 flex flex-col gap-2">
+          {toasts.map((toast) => (
+            <div
+              key={toast.id}
+              className={`pointer-events-auto min-w-[240px] rounded-lg border px-4 py-3 text-sm shadow-lg ${
+                toast.tone === "success"
+                  ? "border-emerald-400/50 bg-emerald-500/15 text-emerald-50"
+                  : "border-red-400/50 bg-red-500/15 text-red-50"
+              }`}
+            >
+              {toast.message}
+            </div>
+          ))}
+        </div>
+      )}
+    </form>
   );
 }

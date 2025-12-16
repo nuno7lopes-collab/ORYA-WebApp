@@ -2,6 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { stripe } from "@/lib/stripeClient";
+import {
+  checkoutMetadataSchema,
+  createPurchaseId,
+  normalizeItemsForMetadata,
+} from "@/lib/checkoutSchemas";
+import { resolveOwner } from "@/lib/ownership/resolveOwner";
 
 /**
  * F5-12 – Checkout específico para revenda de bilhetes
@@ -108,6 +114,34 @@ export async function POST(req: NextRequest) {
     }
 
     const amountCents = rawAmount;
+    const ownerResolved = await resolveOwner({ sessionUserId: buyerUserId, guestEmail: null });
+    const purchaseId = createPurchaseId();
+    const normalizedItems = normalizeItemsForMetadata([
+      {
+        ticketTypeId: resale.ticket.ticketTypeId,
+        quantity: 1,
+        unitPriceCents: amountCents,
+        currency: "EUR",
+      },
+    ]);
+    const metadataValidation = checkoutMetadataSchema.safeParse({
+      paymentScenario: "RESALE",
+      purchaseId,
+      items: normalizedItems,
+      eventId: event.id,
+      eventSlug: event.slug ?? undefined,
+      owner: {
+        ownerUserId: ownerResolved.ownerUserId ?? buyerUserId,
+        ownerIdentityId: ownerResolved.ownerIdentityId ?? undefined,
+        emailNormalized: ownerResolved.emailNormalized ?? undefined,
+      },
+    });
+    if (!metadataValidation.success) {
+      return NextResponse.json(
+        { ok: false, error: "INVALID_METADATA", details: metadataValidation.error.format() },
+        { status: 400 },
+      );
+    }
 
     // 7. Criar sessão Stripe para pagamento da revenda
     const origin = req.nextUrl.origin;
@@ -129,12 +163,17 @@ export async function POST(req: NextRequest) {
         },
       ],
       metadata: {
-        mode: "RESALE",
+        paymentScenario: "RESALE",
+        purchaseId,
         resaleId: resale.id,
         ticketId: ticket.id,
         eventId: event.id,
         eventSlug: event.slug ?? "",
         buyerUserId,
+        ownerUserId: ownerResolved.ownerUserId ?? buyerUserId,
+        ownerIdentityId: ownerResolved.ownerIdentityId ?? "",
+        emailNormalized: ownerResolved.emailNormalized ?? "",
+        items: JSON.stringify(normalizedItems),
       },
       success_url: `${origin}/me/tickets?checkout=success&mode=resale`,
       cancel_url: `${origin}/me/tickets?checkout=cancelled&mode=resale`,
@@ -152,6 +191,7 @@ export async function POST(req: NextRequest) {
         ok: true,
         url: session.url,
         sessionId: session.id,
+        purchaseId,
       },
       { status: 200 }
     );

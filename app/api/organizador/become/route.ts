@@ -39,14 +39,15 @@ export async function GET() {
     const profile = await prisma.profile.findUnique({
       where: { id: user.id },
     });
-    if (!profile) {
-      return NextResponse.json(
-        { ok: false, error: "Perfil não encontrado." },
-        { status: 400 },
-      );
-    }
+  if (!profile) {
+    return NextResponse.json(
+      { ok: false, error: "Perfil não encontrado." },
+      { status: 400 },
+    );
+  }
+  const profileSafe = profile;
 
-    const { organizer: activeOrganizer } = await getActiveOrganizerForUser(profile.id);
+    const { organizer: activeOrganizer } = await getActiveOrganizerForUser(profileSafe.id);
     const fallbackOrganizer = activeOrganizer ?? null;
 
     return NextResponse.json(
@@ -135,8 +136,8 @@ export async function POST(req: NextRequest) {
 
     const displayName =
       businessName ||
-      profile.fullName?.trim() ||
-      profile.username ||
+      profileSafe.fullName?.trim() ||
+      profileSafe.username ||
       "Organizador";
 
     const usernameCandidate = usernameRaw ?? organizer?.username ?? null;
@@ -170,7 +171,7 @@ export async function POST(req: NextRequest) {
         return tx.organizer.create({
           data: {
             // userId fica como legacy "created_by" histórico
-            userId: profile.id,
+            userId: profileSafe.id,
             displayName,
             ...(includePublicName ? { publicName: displayName } : {}),
             status: "ACTIVE", // self-serve aberto

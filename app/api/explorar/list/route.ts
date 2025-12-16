@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { Prisma } from "@prisma/client";
+import { Prisma, EventTemplateType } from "@prisma/client";
 
 const DEFAULT_PAGE_SIZE = 12;
 
@@ -39,6 +39,7 @@ type ExploreResponse = {
 function resolveStatus(event: {
   status: string;
   endsAt: Date | string | null;
+  isDeleted?: boolean;
 }): ExploreItem["status"] {
   if (event.status === "CANCELLED") return "CANCELLED";
   if (event.status === "DRAFT") return "DRAFT";
@@ -122,7 +123,7 @@ export async function GET(req: NextRequest) {
 
   // Map categorias pedidas para templateType conhecido (fallback)
   if (categoryFilters.length > 0) {
-    const mapToTemplate: Record<string, Prisma.EventTemplateType> = {
+    const mapToTemplate: Record<string, EventTemplateType> = {
       FESTA: "PARTY",
       DESPORTO: "SPORT",
       CONCERTO: "OTHER",
@@ -132,9 +133,7 @@ export async function GET(req: NextRequest) {
       DRINKS: "OTHER",
       GERAL: "OTHER",
     };
-    const templateTypes = categoryFilters
-      .map((c) => mapToTemplate[c])
-      .filter((v): v is Prisma.EventTemplateType => Boolean(v));
+    const templateTypes = categoryFilters.map((c) => mapToTemplate[c]).filter((v): v is EventTemplateType => Boolean(v));
 
     if (templateTypes.length > 0) {
       where.templateType = { in: templateTypes };

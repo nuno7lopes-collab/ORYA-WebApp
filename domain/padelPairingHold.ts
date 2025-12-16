@@ -1,0 +1,42 @@
+import { Prisma, PadelPairingHoldStatus } from "@prisma/client";
+
+type TxClient = Prisma.TransactionClient;
+
+const DEFAULT_HOLD_MINUTES = 30;
+
+export async function upsertActiveHold(
+  tx: TxClient,
+  params: { pairingId: number; eventId: number; ttlMinutes?: number },
+) {
+  const { pairingId, eventId, ttlMinutes } = params;
+  const minutes = ttlMinutes && ttlMinutes > 0 ? ttlMinutes : DEFAULT_HOLD_MINUTES;
+  const expiresAt = new Date(Date.now() + minutes * 60 * 1000);
+
+  await tx.padelPairingHold.upsert({
+    where: { pairingId_status: { pairingId, status: PadelPairingHoldStatus.ACTIVE } },
+    update: { expiresAt },
+    create: {
+      pairingId,
+      eventId,
+      holds: 2,
+      status: PadelPairingHoldStatus.ACTIVE,
+      expiresAt,
+    },
+  });
+
+  return { expiresAt };
+}
+
+export async function cancelActiveHold(tx: TxClient, pairingId: number) {
+  await tx.padelPairingHold.updateMany({
+    where: { pairingId, status: PadelPairingHoldStatus.ACTIVE },
+    data: { status: PadelPairingHoldStatus.CANCELLED },
+  });
+}
+
+export async function expireHolds(tx: TxClient, now: Date) {
+  await tx.padelPairingHold.updateMany({
+    where: { status: PadelPairingHoldStatus.ACTIVE, expiresAt: { lt: now } },
+    data: { status: PadelPairingHoldStatus.EXPIRED },
+  });
+}

@@ -9,6 +9,8 @@ import { ConfirmDestructiveActionDialog } from "@/app/components/ConfirmDestruct
 
 type PromoCodeDto = {
   id: number;
+  name?: string | null;
+  description?: string | null;
   code: string;
   type: "PERCENTAGE" | "FIXED";
   value: number;
@@ -19,6 +21,7 @@ type PromoCodeDto = {
   validUntil: string | null;
   active: boolean;
   eventId: number | null;
+  minCartValueCents?: number | null;
   createdAt: string;
   updatedAt: string;
   redemptionsCount?: number;
@@ -38,9 +41,41 @@ type ListResponse = {
     discountCents: number;
     platformFeeCents: number;
     netCents: number;
+    usesTotal?: number;
+    usersUnique?: number;
   }[];
   error?: string;
 };
+
+type PromoDetailResponse =
+  | {
+      ok: true;
+      promo: PromoCodeDto & {
+        name?: string | null;
+        description?: string | null;
+        minCartValueCents?: number | null;
+      };
+      stats: {
+        usesTotal: number;
+        usersUnique: number;
+        tickets: number;
+        grossCents: number;
+        discountCents: number;
+        netCents: number;
+        newUsers: number;
+        returningUsers: number;
+      };
+      topEvents: { id: number; title: string; slug: string | null; uses: number }[];
+      history: {
+        id: number;
+        usedAt: string;
+        discountCents: number;
+        items: number;
+        userLabel: string;
+        event: { id: number; title: string; slug: string | null } | null;
+      }[];
+    }
+  | { ok: false; error?: string };
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -49,6 +84,24 @@ const SUGGESTED_CODES = [
   { code: "EARLY15", type: "PERCENTAGE" as const, value: "15", hint: "Early bird limitado" },
   { code: "TEAM5", type: "FIXED" as const, value: "5", hint: "5 € por pessoa para grupos" },
 ];
+
+const EMPTY_FORM = {
+  name: "",
+  description: "",
+  code: "",
+  type: "PERCENTAGE" as "PERCENTAGE" | "FIXED",
+  value: "10",
+  maxUses: "",
+  perUserLimit: "",
+  validFrom: "",
+  validUntil: "",
+  eventId: "global",
+  active: true,
+  autoApply: false,
+  minQuantity: "",
+  minTotal: "",
+  minCart: "",
+};
 
 function PromoStatusBadge({ status, active }: { status?: "ACTIVE" | "INACTIVE" | "EXPIRED"; active: boolean }) {
   const finalStatus = status || (active ? "ACTIVE" : "INACTIVE");
@@ -73,26 +126,18 @@ export default function PromoCodesClient() {
   const [filters, setFilters] = useState({
     eventId: "all",
     status: "all" as "all" | "active" | "inactive" | "auto",
+    q: "",
   });
-  const [form, setForm] = useState({
-    code: "",
-    type: "PERCENTAGE" as "PERCENTAGE" | "FIXED",
-    value: "10",
-    maxUses: "",
-    perUserLimit: "",
-    validFrom: "",
-    validUntil: "",
-    eventId: "global",
-    active: true,
-    autoApply: false,
-    minQuantity: "",
-    minTotal: "",
-  });
+  const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [deleteId, setDeleteId] = useState<number | null>(null);
+  const [detailId, setDetailId] = useState<number | null>(null);
+  const [detail, setDetail] = useState<PromoDetailResponse | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
 
   const loading = !data;
   useEffect(() => {
@@ -113,6 +158,11 @@ export default function PromoCodesClient() {
       if (filters.status === "active" && !p.active) return false;
       if (filters.status === "inactive" && p.active) return false;
       if (filters.status === "auto" && !autoApply) return false;
+      if (filters.q.trim()) {
+        const q = filters.q.toLowerCase();
+        const haystack = `${p.code} ${p.name ?? ""} ${p.description ?? ""}`.toLowerCase();
+        if (!haystack.includes(q)) return false;
+      }
       return true;
     });
   }, [promos, filters]);
@@ -136,6 +186,8 @@ export default function PromoCodesClient() {
       }
 
       const payload = {
+        name: form.name.trim() || undefined,
+        description: form.description.trim() || undefined,
         code: form.code.trim(),
         type: form.type,
         value:
@@ -151,6 +203,7 @@ export default function PromoCodesClient() {
         autoApply: form.autoApply,
         minQuantity: form.minQuantity ? Number(form.minQuantity) : null,
         minTotalCents: form.minTotal ? Math.round(Number(form.minTotal) * 100) : null,
+        minCartValueCents: form.minCart ? Math.round(Number(form.minCart) * 100) : null,
       };
       const res = await fetch("/api/organizador/promo", {
         method: editingId ? "PATCH" : "POST",
@@ -166,7 +219,7 @@ export default function PromoCodesClient() {
           type: payload.type,
         });
         setSuccess(editingId ? "Código atualizado." : "Código criado com sucesso.");
-        setForm((prev) => ({ ...prev, code: "" }));
+        setForm({ ...EMPTY_FORM, code: "" });
         setEditingId(null);
         mutate();
       }
@@ -181,6 +234,8 @@ export default function PromoCodesClient() {
   const handleEdit = (promo: PromoCodeDto) => {
     setEditingId(promo.id);
     setForm({
+      name: promo.name ?? "",
+      description: promo.description ?? "",
       code: promo.code,
       type: promo.type,
       value: promo.type === "PERCENTAGE" ? String(promo.value / 100) : String(promo.value / 100),
@@ -193,6 +248,7 @@ export default function PromoCodesClient() {
       autoApply: !!promo.autoApply,
       minQuantity: promo.minQuantity != null ? String(promo.minQuantity) : "",
       minTotal: promo.minTotalCents != null ? String(promo.minTotalCents / 100) : "",
+      minCart: promo.minCartValueCents != null ? String(promo.minCartValueCents / 100) : "",
     });
     setSuccess(null);
     setError(null);
@@ -235,6 +291,27 @@ export default function PromoCodesClient() {
     }
   };
 
+  const handleOpenDetail = async (promoId: number) => {
+    setDetailId(promoId);
+    setDetail(null);
+    setDetailError(null);
+    setDetailLoading(true);
+    try {
+      const res = await fetch(`/api/organizador/promo/${promoId}`);
+      const json: PromoDetailResponse = await res.json();
+      if (!res.ok || json.ok === false) {
+        setDetailError(json && "error" in json ? json.error || "Erro ao carregar detalhe." : "Erro ao carregar detalhe.");
+      } else {
+        setDetail(json);
+      }
+    } catch (err) {
+      console.error(err);
+      setDetailError("Erro ao carregar detalhe.");
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+
   const emptyState = filteredPromos.length === 0 && !loading;
 
   const stats = useMemo(() => {
@@ -243,12 +320,14 @@ export default function PromoCodesClient() {
     const redemptions = promos.reduce((acc, p) => acc + (p.redemptionsCount ?? 0), 0);
     const totalDiscount = promoStats.reduce((acc, s) => acc + (s.discountCents ?? 0), 0);
     const totalGross = promoStats.reduce((acc, s) => acc + (s.grossCents ?? 0), 0);
-    return { total, active, redemptions, totalDiscount, totalGross };
+    const usersUnique = promoStats.reduce((acc, s) => acc + (s.usersUnique ?? 0), 0);
+    return { total, active, redemptions, totalDiscount, totalGross, usersUnique };
   }, [promos, promoStats]);
 
   const formatEuro = (cents: number) => `${(cents / 100).toFixed(2)} €`;
+  const formatDateTime = (iso: string) => new Date(iso).toLocaleString("pt-PT");
   const statsFor = (promoId: number) =>
-    promoStatsMap.get(promoId) ?? { tickets: 0, grossCents: 0, discountCents: 0, netCents: 0 };
+    promoStatsMap.get(promoId) ?? { tickets: 0, grossCents: 0, discountCents: 0, netCents: 0, usesTotal: 0, usersUnique: 0 };
 
   const previewPrice = 20; // € exemplo
   const preview = useMemo(() => {
@@ -306,6 +385,7 @@ export default function PromoCodesClient() {
                 <p className="text-[11px] uppercase tracking-[0.18em] text-white/60">Desconto total</p>
                 <p className="text-2xl font-semibold">{formatEuro(stats.totalDiscount)}</p>
                 <p className="text-[11px] text-white/50">Bruto via promo: {formatEuro(stats.totalGross)}</p>
+                <p className="text-[11px] text-white/50">Users únicos: {stats.usersUnique}</p>
               </div>
             </>
           )}
@@ -342,6 +422,16 @@ export default function PromoCodesClient() {
             <option value="auto">Auto-aplicados</option>
           </select>
           </label>
+        <label className="flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1">
+          Pesquisa:
+          <input
+            type="text"
+            value={filters.q}
+            onChange={(e) => setFilters((p) => ({ ...p, q: e.target.value }))}
+            className="bg-transparent outline-none placeholder:text-white/40"
+            placeholder="Nome ou código"
+          />
+        </label>
         </div>
 
         <div className="rounded-xl border border-white/10 bg-white/5 p-3 space-y-2">
@@ -412,10 +502,12 @@ export default function PromoCodesClient() {
             <table className="min-w-full text-left text-sm text-white/80">
               <thead className="bg-white/5 text-[12px] uppercase tracking-[0.12em] text-white/60">
                 <tr>
-                  <th className="px-3 py-2">Código</th>
-                  <th className="px-3 py-2">Evento</th>
-                  <th className="px-3 py-2">Valor</th>
+          <th className="px-3 py-2">Código</th>
+          <th className="px-3 py-2">Nome</th>
+          <th className="px-3 py-2">Evento</th>
+          <th className="px-3 py-2">Valor</th>
                   <th className="px-3 py-2">Usos</th>
+                  <th className="px-3 py-2">Utilizadores</th>
                   <th className="px-3 py-2">Bilhetes</th>
                   <th className="px-3 py-2">Bruto</th>
                   <th className="px-3 py-2">Desconto</th>
@@ -429,7 +521,17 @@ export default function PromoCodesClient() {
                   const s = statsFor(promo.id);
                   return (
                     <tr key={promo.id} className="border-t border-white/10">
-                      <td className="px-3 py-2 font-semibold text-white">{promo.code}</td>
+                      <td className="px-3 py-2 font-semibold text-white">
+                        <div className="flex flex-col">
+                          <span>{promo.code}</span>
+                          {promo.autoApply && (
+                            <span className="mt-1 inline-flex w-fit rounded-full border border-emerald-300/40 bg-emerald-500/10 px-2 py-0.5 text-[10px] uppercase tracking-wide text-emerald-100">
+                              Auto
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-3 py-2 text-white/80">{promo.name ?? "—"}</td>
                       <td className="px-3 py-2">
                         {promo.eventId == null
                           ? "Global"
@@ -440,7 +542,8 @@ export default function PromoCodesClient() {
                           ? `${(promo.value / 100).toFixed(2).replace(/\\.00$/, "")}%`
                           : `${(promo.value / 100).toFixed(2).replace(/\\.00$/, "")} €`}
                       </td>
-                      <td className="px-3 py-2">{promo.redemptionsCount ?? 0}</td>
+                      <td className="px-3 py-2">{s.usesTotal ?? promo.redemptionsCount ?? 0}</td>
+                      <td className="px-3 py-2">{s.usersUnique ?? 0}</td>
                       <td className="px-3 py-2">
                         {s.tickets}
                       </td>
@@ -458,6 +561,13 @@ export default function PromoCodesClient() {
                       </td>
                       <td className="px-3 py-2 text-right">
                         <div className="flex flex-wrap items-center justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenDetail(promo.id)}
+                            className="rounded-full border border-white/20 px-2 py-1 text-[11px] hover:bg-white/10"
+                          >
+                            Ver detalhe
+                          </button>
                           <button
                             type="button"
                             onClick={() => handleEdit(promo)}
@@ -492,7 +602,7 @@ export default function PromoCodesClient() {
         <ConfirmDestructiveActionDialog
           open={deleteId !== null}
           title="Apagar código promocional?"
-          description="Esta ação é definitiva e remove o código da tua lista."
+          description="Esta ação desativa o código e impede novas utilizações. Mantemos o histórico existente."
           consequences={[
             "O código deixa de ser aplicável no checkout.",
             "Mantemos histórico de utilizações anteriores.",
@@ -509,6 +619,24 @@ export default function PromoCodesClient() {
         <div id="promo-form" className="rounded-xl border border-white/10 bg-white/5 p-4 space-y-3">
           <h2 className="text-lg font-semibold">Criar / editar código</h2>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <label className="space-y-1 text-sm">
+            Nome interno
+            <input
+              value={form.name}
+              onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
+              className="w-full rounded-lg border border-white/15 bg-black/20 px-3 py-2 text-sm outline-none focus:border-white"
+              placeholder="Ex.: Early bird maio"
+            />
+          </label>
+          <label className="space-y-1 text-sm">
+            Descrição (opcional)
+            <input
+              value={form.description}
+              onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))}
+              className="w-full rounded-lg border border-white/15 bg-black/20 px-3 py-2 text-sm outline-none focus:border-white"
+              placeholder="Notas internas ou condições"
+            />
+          </label>
           <label className="space-y-1 text-sm">
             Código
             <input
@@ -626,6 +754,18 @@ export default function PromoCodesClient() {
               placeholder="Ex.: 20"
             />
           </label>
+          <label className="space-y-1 text-sm">
+            Mín. valor carrinho (€)
+            <input
+              type="number"
+              min={0}
+              value={form.minCart}
+              onChange={(e) => setForm((p) => ({ ...p, minCart: e.target.value }))}
+              className="w-full rounded-lg border border-white/15 bg-black/20 px-3 py-2 text-sm outline-none"
+              placeholder="Ex.: 30"
+            />
+            <p className="text-[11px] text-white/60">Opcional; preferível ao min total legacy.</p>
+          </label>
         </div>
 
         <div className="flex flex-wrap gap-3 text-[12px] text-white/75">
@@ -668,20 +808,7 @@ export default function PromoCodesClient() {
           <button
             type="button"
             onClick={() => {
-              setForm({
-                code: "",
-                type: "PERCENTAGE",
-                value: "10",
-                maxUses: "",
-                perUserLimit: "",
-                validFrom: "",
-                validUntil: "",
-                eventId: "global",
-                active: true,
-                autoApply: false,
-                minQuantity: "",
-                minTotal: "",
-              });
+              setForm(EMPTY_FORM);
               setEditingId(null);
               setError(null);
               setSuccess(null);
@@ -700,6 +827,129 @@ export default function PromoCodesClient() {
             (desconto {preview.discount.toFixed(2)} €)
           </p>
         </div>
+
+        {detailId !== null && (
+          <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/60 px-4 py-6 backdrop-blur-sm sm:items-center">
+            <div className="w-full max-w-3xl rounded-2xl border border-white/15 bg-neutral-900 p-5 shadow-2xl">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.18em] text-white/60">Promo</p>
+                  <h3 className="text-xl font-semibold text-white">
+                    {detail?.ok ? detail.promo.code : "Detalhe da promoção"}
+                  </h3>
+                  {detail?.ok && detail.promo.name && (
+                    <p className="text-sm text-white/70">{detail.promo.name}</p>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDetailId(null);
+                    setDetail(null);
+                    setDetailError(null);
+                  }}
+                  className="rounded-full border border-white/20 px-3 py-1 text-[12px] text-white hover:bg-white/10"
+                >
+                  Fechar
+                </button>
+              </div>
+
+              {detailLoading && <p className="mt-4 text-sm text-white/70">A carregar detalhe...</p>}
+              {detailError && (
+                <p className="mt-4 text-sm text-red-300">
+                  {detailError || "Não foi possível carregar o detalhe."}
+                </p>
+              )}
+
+              {detail?.ok && (
+                <div className="mt-4 space-y-5">
+                  <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+                    <div className="rounded-lg border border-white/10 bg-white/5 p-3">
+                      <p className="text-[11px] text-white/60">Utilizações</p>
+                      <p className="text-lg font-semibold text-white">{detail.stats.usesTotal}</p>
+                    </div>
+                    <div className="rounded-lg border border-white/10 bg-white/5 p-3">
+                      <p className="text-[11px] text-white/60">Utilizadores únicos</p>
+                      <p className="text-lg font-semibold text-white">{detail.stats.usersUnique}</p>
+                    </div>
+                    <div className="rounded-lg border border-white/10 bg-white/5 p-3">
+                      <p className="text-[11px] text-white/60">Bilhetes</p>
+                      <p className="text-lg font-semibold text-white">{detail.stats.tickets}</p>
+                    </div>
+                    <div className="rounded-lg border border-white/10 bg-white/5 p-3">
+                      <p className="text-[11px] text-white/60">Bruto</p>
+                      <p className="text-lg font-semibold text-white">{formatEuro(detail.stats.grossCents)}</p>
+                    </div>
+                    <div className="rounded-lg border border-white/10 bg-white/5 p-3">
+                      <p className="text-[11px] text-white/60">Desconto</p>
+                      <p className="text-lg font-semibold text-emerald-200">-{formatEuro(detail.stats.discountCents)}</p>
+                    </div>
+                    <div className="rounded-lg border border-white/10 bg-white/5 p-3">
+                      <p className="text-[11px] text-white/60">Líquido</p>
+                      <p className="text-lg font-semibold text-white">{formatEuro(detail.stats.netCents)}</p>
+                    </div>
+                    <div className="rounded-lg border border-white/10 bg-white/5 p-3">
+                      <p className="text-[11px] text-white/60">Novos</p>
+                      <p className="text-lg font-semibold text-white">{detail.stats.newUsers}</p>
+                    </div>
+                    <div className="rounded-lg border border-white/10 bg-white/5 p-3">
+                      <p className="text-[11px] text-white/60">Recorrentes</p>
+                      <p className="text-lg font-semibold text-white">{detail.stats.returningUsers}</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <div className="rounded-lg border border-white/10 bg-black/30 p-3">
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm font-semibold text-white">Top eventos</p>
+                        {detail.topEvents.length === 0 && (
+                          <span className="text-[12px] text-white/50">Sem utilizações</span>
+                        )}
+                      </div>
+                      <div className="mt-2 space-y-2">
+                        {detail.topEvents.map((ev) => (
+                          <div key={ev.id} className="flex items-center justify-between rounded-lg border border-white/10 bg-white/5 px-3 py-2">
+                            <div>
+                              <p className="text-sm text-white">{ev.title}</p>
+                              {ev.slug && <p className="text-[11px] text-white/50">/{ev.slug}</p>}
+                            </div>
+                            <span className="rounded-full border border-white/15 px-2 py-1 text-[11px] text-white/80">
+                              {ev.uses} uso{ev.uses === 1 ? "" : "s"}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="rounded-lg border border-white/10 bg-black/30 p-3">
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm font-semibold text-white">Histórico recente</p>
+                        <span className="text-[11px] text-white/60">Últimos {detail.history.length} registos</span>
+                      </div>
+                      <div className="mt-2 space-y-2 max-h-64 overflow-auto pr-1">
+                        {detail.history.map((h) => (
+                          <div key={h.id} className="rounded-lg border border-white/10 bg-white/5 p-2 text-[12px] text-white/80">
+                            <div className="flex items-center justify-between">
+                              <span className="font-semibold text-white">{formatEuro(h.discountCents)}</span>
+                              <span className="text-white/60">{formatDateTime(h.usedAt)}</span>
+                            </div>
+                            <p className="text-white/70">Utilizador: {h.userLabel}</p>
+                            <p className="text-white/60">
+                              Itens: {h.items} · Evento: {h.event?.title ?? "—"}
+                            </p>
+                          </div>
+                        ))}
+                        {detail.history.length === 0 && (
+                          <p className="text-[12px] text-white/60">Sem histórico registado.</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </section>
   );

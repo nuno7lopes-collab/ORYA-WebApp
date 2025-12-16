@@ -130,7 +130,8 @@ export default async function EventPage({ params }: { params: EventPageParamsInp
   if (event.isTest && !isAdmin) {
     notFound();
   }
-  const padelSnapshot = event.templateType === "PADEL" ? await buildPadelEventSnapshot(event.id) : null;
+  const isPadel = event.templateType === "PADEL";
+  const padelSnapshot = isPadel ? await buildPadelEventSnapshot(event.id) : null;
 
   // Buscar bilhetes ligados a este evento (para contagem de pessoas)
   const safeLocationName = event.locationName || "Local a anunciar";
@@ -538,6 +539,7 @@ export default async function EventPage({ params }: { params: EventPageParamsInp
                   slug={event.slug}
                   tickets={uiTickets}
                   isFreeEvent={event.isFree}
+                  checkoutUiVariant={isPadel ? "PADEL_TOURNAMENT" : "EVENT_DEFAULT"}
                 />
               )}
 

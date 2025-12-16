@@ -1,23 +1,4 @@
-export const PORTUGAL_CITIES = [
-  "Lisboa",
-  "Porto",
-  "Braga",
-  "Coimbra",
-  "Faro",
-  "Aveiro",
-  "Setúbal",
-  "Viana do Castelo",
-  "Vila Real",
-  "Bragança",
-  "Guarda",
-  "Castelo Branco",
-  "Leiria",
-  "Santarém",
-  "Beja",
-  "Évora",
-  "Viseu",
-  "Ponta Delgada",
-  "Funchal",
-] as const;
+import { PT_CITIES, type PTCity } from "@/lib/constants/ptCities";
 
-export type CityOption = (typeof PORTUGAL_CITIES)[number];
+export const PORTUGAL_CITIES = PT_CITIES;
+export type CityOption = PTCity;

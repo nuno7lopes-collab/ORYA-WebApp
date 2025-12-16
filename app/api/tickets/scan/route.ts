@@ -62,8 +62,6 @@ export async function POST(req: NextRequest) {
       include: {
         ticketType: { select: { name: true } },
         event: { select: { id: true, title: true } },
-        user: { select: { fullName: true } },
-        _count: { select: { checkins: true } },
       },
     });
 
@@ -96,47 +94,27 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const existingCheckins = await prisma.ticketCheckin.findMany({
-      where: { ticketId: ticket.id },
-      orderBy: { createdAt: "asc" },
-      take: 2,
-    });
-    if (existingCheckins.length > 0) {
-      const first = existingCheckins[0];
+    if (ticket.usedAt) {
       return buildResponse(
         "ALREADY_USED",
         "Este bilhete já foi usado.",
         {
           id: ticket.id,
-          holderName: ticket.user?.fullName ?? null,
+          holderName: null,
           ticketTypeName: ticket.ticketType?.name ?? null,
-          checkins: existingCheckins.length,
+          checkins: 1,
           maxCheckins: 1,
         },
-        { firstCheckinAt: first.createdAt, checkedInAt: existingCheckins[existingCheckins.length - 1]?.createdAt },
+        { firstCheckinAt: ticket.usedAt, checkedInAt: ticket.usedAt },
       );
     }
 
-    const created = await prisma.$transaction(async (tx) => {
-      const checkin = await tx.ticketCheckin.create({
-        data: {
-          ticketId: ticket.id,
-          eventId: ticket.eventId,
-          staffUserId: user.id,
-          deviceId,
-        },
-      });
-
-      // Marca como usado para compatibilidade com flows existentes
-      await tx.ticket.update({
-        where: { id: ticket.id },
-        data: {
-          status: ticket.status === TicketStatus.ACTIVE ? TicketStatus.USED : ticket.status,
-          usedAt: checkin.createdAt,
-        },
-      });
-
-      return checkin;
+    const updated = await prisma.ticket.update({
+      where: { id: ticket.id },
+      data: {
+        status: ticket.status === TicketStatus.ACTIVE ? TicketStatus.USED : ticket.status,
+        usedAt: new Date(),
+      },
     });
 
     return buildResponse(
@@ -144,12 +122,12 @@ export async function POST(req: NextRequest) {
       "Entrada validada.",
       {
         id: ticket.id,
-        holderName: ticket.user?.fullName ?? null,
+        holderName: null,
         ticketTypeName: ticket.ticketType?.name ?? null,
         checkins: 1,
         maxCheckins: 1,
       },
-      { checkedInAt: created.createdAt, firstCheckinAt: created.createdAt },
+      { checkedInAt: updated.usedAt, firstCheckinAt: updated.usedAt },
     );
   } catch (err) {
     console.error("[tickets/scan][POST]", err);

@@ -140,7 +140,7 @@ export async function POST(req: NextRequest) {
     });
 
     // Se aprovado (ACTIVE), adicionar role organizer ao profile
-    if (normalizedStatus === "ACTIVE") {
+    if (normalizedStatus === "ACTIVE" && updated.userId) {
       const profile = await prisma.profile.findUnique({
         where: { id: updated.userId },
         select: { roles: true },

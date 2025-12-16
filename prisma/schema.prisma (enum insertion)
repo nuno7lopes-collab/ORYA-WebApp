@@ -1,0 +1,10 @@
+
+enum SaleSummaryStatus {
+  PAID
+  PROCESSING
+  REFUNDED
+  DISPUTED
+  FAILED
+
+  @@schema("app_v3")
+}

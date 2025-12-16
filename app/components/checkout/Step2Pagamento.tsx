@@ -34,6 +34,12 @@ type CheckoutItem = {
   ticketId: number;
   quantity: number;
 };
+const scenarioCopy: Record<string, string> = {
+  GROUP_SPLIT: "Estás a pagar apenas a tua parte desta dupla.",
+  GROUP_FULL: "Estás a comprar 2 lugares (tu + parceiro).",
+  RESALE: "Estás a comprar um bilhete em revenda.",
+  FREE_CHECKOUT: "Evento gratuito — só para utilizadores com conta e username.",
+};
 
 type CheckoutWave = {
   id: number | string;
@@ -50,6 +56,7 @@ type CheckoutData = {
     guestEmail?: string;
     guestPhone?: string | null;
   };
+  paymentScenario?: string | null;
 };
 
 type GuestInfo = {
@@ -85,6 +92,7 @@ export default function Step2Pagamento() {
   const [promoCode, setPromoCode] = useState("");
   const [appliedDiscount, setAppliedDiscount] = useState<number>(0);
   const [promoWarning, setPromoWarning] = useState<string | null>(null);
+  const [appliedPromoLabel, setAppliedPromoLabel] = useState<string | null>(null);
   const lastIntentKeyRef = useRef<string | null>(null);
   const inFlightIntentRef = useRef<string | null>(null);
   const [cachedIntent, setCachedIntent] = useState<{
@@ -94,6 +102,10 @@ export default function Step2Pagamento() {
     breakdown: CheckoutBreakdown;
     discount: number;
     freeCheckout: boolean;
+    paymentScenario?: string | null;
+    promoLabel?: string | null;
+    autoAppliedPromo?: boolean;
+    purchaseId?: string | null;
   } | null>(null);
 
   useEffect(() => {
@@ -102,8 +114,18 @@ export default function Step2Pagamento() {
     }
   }, [promoCode]);
 
+  useEffect(() => {
+    if (isFreeScenario && purchaseMode !== "auth") {
+      setPurchaseMode("auth");
+      setClientSecret(null);
+      setServerAmount(null);
+    }
+  }, [isFreeScenario, purchaseMode]);
+
   const safeDados: CheckoutData | null =
     dados && typeof dados === "object" ? (dados as CheckoutData) : null;
+  const scenario = safeDados?.paymentScenario ?? cachedIntent?.paymentScenario ?? null;
+  const isFreeScenario = scenario === "FREE_CHECKOUT";
 
   const stripePromise = useMemo(() => {
     const key = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
@@ -232,6 +254,7 @@ export default function Step2Pagamento() {
         items,
         total: totalFromStep1,
         promoCode: promoCode.trim() || undefined,
+        paymentScenario: safeDados.paymentScenario ?? undefined,
       };
   }, [safeDados, promoCode]);
 
@@ -298,6 +321,7 @@ export default function Step2Pagamento() {
       guest: guestPayload,
       userId: userId ?? "guest",
       mode: purchaseMode,
+      scenario: safeDados?.paymentScenario ?? null,
     });
 
     // Se já temos um intent em cache com a mesma key, reaproveitamos
@@ -306,6 +330,7 @@ export default function Step2Pagamento() {
       setServerAmount(cachedIntent.amount);
       setBreakdown(cachedIntent.breakdown);
       setAppliedDiscount(cachedIntent.discount);
+      setAppliedPromoLabel(cachedIntent.promoLabel ?? null);
       lastIntentKeyRef.current = intentKey;
       setLoading(false);
       if (cachedIntent.freeCheckout) {
@@ -390,14 +415,26 @@ export default function Step2Pagamento() {
 
         if (!res.ok || !data?.ok || (!data.clientSecret && !data.freeCheckout)) {
           setBreakdown(null);
+          if (data?.code === "USERNAME_REQUIRED_FOR_FREE") {
+            if (!cancelled) {
+              setError("Este evento gratuito requer sessão com username definido.");
+              setPurchaseMode("auth");
+              setAuthInfo("Inicia sessão e define um username para concluir a inscrição gratuita.");
+            }
+            return;
+          }
           const msg =
             typeof data?.error === "string"
               ? data.error
               : "Não foi possível preparar o pagamento.";
 
-          if (data?.code === "ORGANIZER_STRIPE_REQUIRED") {
+          if (data?.code === "ORGANIZER_STRIPE_NOT_CONNECTED") {
             if (!cancelled) {
-              setError("Pagamentos desativados para este evento enquanto o organizador não ligar o Stripe.");
+              setError(
+                data?.message ||
+                  "Pagamentos desativados para este evento enquanto o organizador não ligar a Stripe.",
+              );
+              setAuthInfo("Liga a Stripe em Finanças & Payouts para ativares pagamentos.");
             }
             return;
           }
@@ -409,6 +446,7 @@ export default function Step2Pagamento() {
             setPromoWarning("Código não aplicado. Continuas sem desconto.");
             setPromoCode("");
             setAppliedDiscount(0);
+            setAppliedPromoLabel(null);
             setError(null);
             setBreakdown(null);
             return;
@@ -419,6 +457,19 @@ export default function Step2Pagamento() {
         }
 
         if (!cancelled) {
+          const paymentScenarioResponse =
+            typeof data?.paymentScenario === "string"
+              ? data.paymentScenario
+              : safeDados?.paymentScenario ?? null;
+          const purchaseIdFromServer = typeof data?.purchaseId === "string" ? data.purchaseId : undefined;
+          const promoLabel =
+            promoCode?.trim()
+              ? promoCode.trim()
+              : data.discountCents && data.discountCents > 0
+                ? "Promo automática"
+                : null;
+          const isAutoAppliedPromo = !promoCode?.trim() && Boolean(promoLabel);
+
           if (data.freeCheckout) {
             const totalCents =
               data.breakdown && typeof data.breakdown === "object"
@@ -436,15 +487,19 @@ export default function Step2Pagamento() {
                   ? data.breakdown.discountCents / 100
                   : 0,
             );
+            setAppliedPromoLabel(promoLabel);
             setClientSecret(null);
             setServerAmount(0);
             atualizarDados({
               additional: {
                 ...(safeDados?.additional ?? {}),
                 paymentIntentId: "FREE_CHECKOUT",
+                purchaseId: purchaseIdFromServer,
                 total: totalCents / 100,
                 freeCheckout: true,
                 promoCode: payload?.promoCode,
+                appliedPromoLabel: promoLabel ?? undefined,
+                paymentScenario: paymentScenarioResponse ?? undefined,
               },
             });
             lastIntentKeyRef.current = intentKey;
@@ -467,6 +522,15 @@ export default function Step2Pagamento() {
                 ? data.breakdown.discountCents / 100
                 : 0,
           );
+          setAppliedPromoLabel(promoLabel);
+          atualizarDados({
+            paymentScenario: paymentScenarioResponse ?? undefined,
+            additional: {
+              ...(safeDados?.additional ?? {}),
+              purchaseId: purchaseIdFromServer ?? (safeDados?.additional as Record<string, unknown> | undefined)?.purchaseId,
+              paymentIntentId: typeof data?.paymentIntentId === "string" ? data.paymentIntentId : safeDados?.additional?.paymentIntentId,
+            },
+          });
           lastIntentKeyRef.current = intentKey;
           setCachedIntent({
             key: intentKey,
@@ -476,8 +540,17 @@ export default function Step2Pagamento() {
               data.breakdown && typeof data.breakdown === "object"
                 ? (data.breakdown as CheckoutBreakdown)
                 : null,
-            discount: typeof data.discountCents === "number" ? data.discountCents / 100 : 0,
+            discount:
+              typeof data.discountCents === "number"
+                ? data.discountCents / 100
+                : typeof data.breakdown?.discountCents === "number"
+                  ? data.breakdown.discountCents / 100
+                  : 0,
             freeCheckout: false,
+            paymentScenario: paymentScenarioResponse,
+            promoLabel,
+            autoAppliedPromo: isAutoAppliedPromo,
+            purchaseId: purchaseIdFromServer ?? null,
           });
         }
       } catch (err) {
@@ -585,6 +658,12 @@ const options: StripeElementsOptions | undefined = clientSecret
 
   // Callback para continuar como convidado
   const handleGuestContinue = () => {
+    if (isFreeScenario) {
+      setError("Eventos gratuitos requerem sessão com username.");
+      setPurchaseMode("auth");
+      setAuthInfo("Inicia sessão e define um username para concluir a inscrição gratuita.");
+      return;
+    }
     setError(null);
     const localErrors: { name?: string; email?: string; phone?: string } = {};
     if (!guestName.trim()) {
@@ -629,7 +708,20 @@ const options: StripeElementsOptions | undefined = clientSecret
 
   const showPaymentUI =
     (!authChecking && Boolean(userId)) ||
-    (purchaseMode === "guest" && guestSubmitVersion > 0);
+    (!isFreeScenario && purchaseMode === "guest" && guestSubmitVersion > 0);
+
+  const handleRemovePromo = () => {
+    setPromoCode("");
+    setPromoInput("");
+    setAppliedDiscount(0);
+    setAppliedPromoLabel(null);
+    setPromoWarning(null);
+    setError(null);
+    setBreakdown(null);
+    setClientSecret(null);
+    setServerAmount(null);
+    setGuestSubmitVersion((v) => v + 1);
+  };
 
   return (
     <div className="flex flex-col gap-6 text-white">
@@ -638,10 +730,17 @@ const options: StripeElementsOptions | undefined = clientSecret
           <p className="text-[11px] uppercase tracking-[0.18em] text-white/55">
             Passo 2 de 3
           </p>
-          <h2 className="text-xl font-semibold leading-tight">Pagamento</h2>
+          <h2 className="text-xl font-semibold leading-tight">
+            {isFreeScenario ? "Inscrição gratuita" : "Pagamento"}
+          </h2>
           <p className="text-[11px] text-white/60 max-w-xs">
-            Pagamento seguro processado pela Stripe.
+            {isFreeScenario
+              ? "Confirma a tua inscrição. Requer sessão iniciada e username definido."
+              : "Pagamento seguro processado pela Stripe."}
           </p>
+          {scenario && scenarioCopy[scenario] && (
+            <p className="text-[11px] text-white/75 max-w-sm">{scenarioCopy[scenario]}</p>
+          )}
         </div>
       </header>
 
@@ -718,6 +817,11 @@ const options: StripeElementsOptions | undefined = clientSecret
                   {promoWarning}
                 </div>
               )}
+              {appliedPromoLabel === "Promo automática" && appliedDiscount > 0 && (
+                <div className="rounded-md border border-emerald-400/40 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-100">
+                  Desconto aplicado automaticamente 🎉
+                </div>
+              )}
               <div className="rounded-2xl border border-white/10 bg-black/30 p-4 space-y-2">
                 <label className="text-xs text-white/70">Tens um código promocional?</label>
                 <div className="flex flex-col gap-2 sm:flex-row">
@@ -733,6 +837,10 @@ const options: StripeElementsOptions | undefined = clientSecret
                     onClick={() => {
                       setPromoWarning(null);
                       setError(null);
+                      if (!promoInput.trim()) {
+                        setPromoWarning("Escreve um código antes de aplicar.");
+                        return;
+                      }
                       setPromoCode(promoInput.trim());
                       setGuestSubmitVersion((v) => v + 1);
                     }}
@@ -742,9 +850,20 @@ const options: StripeElementsOptions | undefined = clientSecret
                   </button>
                 </div>
                 {appliedDiscount > 0 && (
-                  <p className="text-xs text-emerald-300">
-                    Desconto aplicado: -{appliedDiscount.toFixed(2)} €
-                  </p>
+                  <div className="flex flex-wrap items-center gap-2 rounded-lg border border-emerald-400/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-100">
+                    <span>
+                      {appliedPromoLabel
+                        ? `Desconto ${appliedPromoLabel}: -${appliedDiscount.toFixed(2)} €`
+                        : `Desconto aplicado: -${appliedDiscount.toFixed(2)} €`}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleRemovePromo}
+                      className="rounded-full border border-emerald-300/40 px-2 py-0.5 text-[11px] text-emerald-50 hover:bg-emerald-500/20"
+                    >
+                      Remover
+                    </button>
+                  </div>
                 )}
               </div>
               <Elements stripe={stripePromise} options={options}>
@@ -768,48 +887,57 @@ const options: StripeElementsOptions | undefined = clientSecret
               {error}
             </div>
           )}
-          <div className="flex items-center gap-2 text-[11px] bg-black/40 rounded-full p-1 border border-white/10 w-fit">
-            <button
-              type="button"
-              onClick={() => setPurchaseMode("guest")}
-              className={`px-3 py-1 rounded-full ${
-                purchaseMode === "guest"
-                  ? "bg-white text-black font-semibold"
-                  : "text-white/70"
-              }`}
-            >
-              Comprar como convidado
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setPurchaseMode("auth");
-                setClientSecret(null);
-                setServerAmount(null);
-              }}
-              className={`px-3 py-1 rounded-full ${
-                purchaseMode === "auth"
-                  ? "bg-white text-black font-semibold"
-                  : "text-white/70"
-              }`}
-            >
-              Entrar / Criar conta
-            </button>
-          </div>
+          {!isFreeScenario && (
+            <div className="flex items-center gap-2 text-[11px] bg-black/40 rounded-full p-1 border border-white/10 w-fit">
+              <button
+                type="button"
+                onClick={() => setPurchaseMode("guest")}
+                className={`px-3 py-1 rounded-full ${
+                  purchaseMode === "guest"
+                    ? "bg-white text-black font-semibold"
+                    : "text-white/70"
+                }`}
+              >
+                Comprar como convidado
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setPurchaseMode("auth");
+                  setClientSecret(null);
+                  setServerAmount(null);
+                }}
+                className={`px-3 py-1 rounded-full ${
+                  purchaseMode === "auth"
+                    ? "bg-white text-black font-semibold"
+                    : "text-white/70"
+                }`}
+              >
+                Entrar / Criar conta
+              </button>
+            </div>
+          )}
 
-      {purchaseMode === "guest" ? (
-        <GuestCheckoutCard
-          guestName={guestName}
-          guestEmail={guestEmail}
-          guestEmailConfirm={guestEmailConfirm}
-          guestPhone={guestPhone}
-          guestErrors={guestErrors}
-          onChangeName={setGuestName}
-          onChangeEmail={setGuestEmail}
-          onChangeEmailConfirm={setGuestEmailConfirm}
-          onChangePhone={setGuestPhone}
-          onContinue={handleGuestContinue}
-        />
+          {isFreeScenario ? (
+            <div className="space-y-2">
+              <div className="rounded-xl border border-emerald-400/30 bg-emerald-500/10 px-3 py-2 text-[11px] text-emerald-50">
+                Evento gratuito — inicia sessão e garante que tens username definido para concluir a inscrição.
+              </div>
+              <AuthWall onAuthenticated={handleAuthenticated} />
+            </div>
+          ) : purchaseMode === "guest" ? (
+            <GuestCheckoutCard
+              guestName={guestName}
+              guestEmail={guestEmail}
+              guestEmailConfirm={guestEmailConfirm}
+              guestPhone={guestPhone}
+              guestErrors={guestErrors}
+              onChangeName={setGuestName}
+              onChangeEmail={setGuestEmail}
+              onChangeEmailConfirm={setGuestEmailConfirm}
+              onChangePhone={setGuestPhone}
+              onContinue={handleGuestContinue}
+            />
           ) : (
             <AuthWall onAuthenticated={handleAuthenticated} />
           )}
@@ -971,7 +1099,7 @@ function PaymentForm({ total, discount = 0, breakdown }: PaymentFormProps) {
         </div>
       )}
 
-      <div className="rounded-xl bg-black/40 px-3 py-3 text-sm min-h-[320px] max-h-[400px] overflow-y-auto pr-1">
+      <div className="rounded-xl bg-black/40 px-3 py-3 text-sm min-h-[320px] max-h-[400px] overflow-y-auto pr-1 payment-scroll">
           <PaymentElement
             options={{
               // Ordem preferida; apenas métodos autorizados (Stripe: Card/Link/MB WAY — Apple Pay vem via Card)

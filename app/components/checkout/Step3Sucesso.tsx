@@ -4,13 +4,22 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useCheckout } from "./contextoCheckout";
 import { formatMoney } from "@/lib/money";
+import { useState } from "react";
+
+const scenarioCopy: Record<string, string> = {
+  GROUP_SPLIT: "Pagaste apenas a tua parte desta dupla.",
+  GROUP_FULL: "Pagaste 2 lugares (tu + parceiro).",
+  RESALE: "Compra de bilhete em revenda.",
+  FREE_CHECKOUT: "Inscrição gratuita concluída.",
+};
 
 export default function Step3Sucesso() {
-  const { dados, fecharCheckout } = useCheckout();
+  const { dados, fecharCheckout, breakdown: checkoutBreakdown } = useCheckout();
   const router = useRouter();
+  const [statusError, setStatusError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (dados && !dados.additional?.paymentIntentId) {
+    if (dados && !dados.additional?.paymentIntentId && !dados.additional?.purchaseId) {
       router.replace("/explorar");
     }
   }, [dados, router]);
@@ -26,6 +35,123 @@ export default function Step3Sucesso() {
     }
     revalidateTickets();
   }, []);
+
+  const guestEmail =
+    dados?.additional &&
+    typeof dados.additional === "object" &&
+    typeof dados.additional.guestEmail === "string"
+      ? dados.additional.guestEmail
+      : null;
+
+  const breakdown = (() => {
+    const additional =
+      dados.additional && typeof dados.additional === "object" ? dados.additional : {};
+    const subtotalCentsRaw =
+      checkoutBreakdown?.subtotalCents ??
+      Number(additional.subtotalCents ?? additional.totalCents ?? additional.total ?? 0);
+    const subtotalFromLines =
+      checkoutBreakdown?.lines?.reduce((sum, line) => sum + Number(line.lineTotalCents ?? 0), 0) ??
+      null;
+    const subtotalCents =
+      subtotalCentsRaw && subtotalCentsRaw > 0
+        ? subtotalCentsRaw
+        : subtotalFromLines && subtotalFromLines > 0
+          ? subtotalFromLines
+          : 0;
+    const discountCents =
+      checkoutBreakdown?.discountCents ?? Number(additional.discountCents ?? 0);
+    const platformFeeCents =
+      checkoutBreakdown?.platformFeeCents ?? Number(additional.platformFeeCents ?? 0);
+    const totalCents =
+      checkoutBreakdown?.totalCents ??
+      Number(additional.totalCents ?? additional.total ?? 0) ??
+      Math.max(0, subtotalCents - discountCents + platformFeeCents);
+    const code =
+      typeof additional.promoCodeRaw === "string"
+        ? additional.promoCodeRaw
+        : typeof additional.promoCode === "string"
+          ? additional.promoCode
+          : null;
+
+    if (
+      Number.isNaN(subtotalCents) &&
+      Number.isNaN(discountCents) &&
+      Number.isNaN(platformFeeCents) &&
+      Number.isNaN(totalCents)
+    ) {
+      return null;
+    }
+
+    return {
+      subtotalCents,
+      discountCents,
+      platformFeeCents,
+      totalCents,
+      code,
+      currency: checkoutBreakdown?.currency ?? "EUR",
+    };
+  })();
+  const subtotalEur = breakdown ? breakdown.subtotalCents / 100 : null;
+  const discountEur = breakdown ? breakdown.discountCents / 100 : null;
+  const platformFeeEur = breakdown ? breakdown.platformFeeCents / 100 : null;
+  const totalEur = breakdown ? breakdown.totalCents / 100 : null;
+
+  const scenario =
+    (dados?.paymentScenario as string | null | undefined) ??
+    (dados?.additional?.paymentScenario as string | null | undefined) ??
+    null;
+  const isFreeScenario = scenario === "FREE_CHECKOUT";
+  const purchaseId =
+    typeof dados?.additional?.purchaseId === "string"
+      ? dados.additional.purchaseId
+      : typeof dados?.additional?.paymentIntentId === "string"
+        ? dados.additional.paymentIntentId
+        : null;
+
+  const initialStatus: "PROCESSING" | "PAID" | "FAILED" =
+    !purchaseId || isFreeScenario ? "PAID" : "PROCESSING";
+  const [status, setStatus] = useState<"PROCESSING" | "PAID" | "FAILED">(initialStatus);
+
+  useEffect(() => {
+    if (!purchaseId || isFreeScenario) return;
+
+    let cancelled = false;
+    let interval: NodeJS.Timeout | null = null;
+
+    const poll = async () => {
+      try {
+        const url = new URL("/api/checkout/status", window.location.origin);
+        url.searchParams.set("purchaseId", purchaseId);
+        const res = await fetch(url.toString(), { cache: "no-store" });
+        const data = await res.json().catch(() => null);
+        const mapped = typeof data?.status === "string" ? data.status.toUpperCase() : "PROCESSING";
+        if (cancelled) return;
+        if (mapped === "PAID") {
+          setStatus("PAID");
+          setStatusError(null);
+          if (interval) clearInterval(interval);
+        } else if (mapped === "FAILED") {
+          setStatus("FAILED");
+          setStatusError(typeof data?.error === "string" ? data.error : null);
+          if (interval) clearInterval(interval);
+        } else {
+          setStatus("PROCESSING");
+          setStatusError(null);
+        }
+      } catch (err) {
+        console.warn("[Step3Sucesso] Poll status falhou", err);
+        if (!cancelled) setStatusError("A confirmar pagamento…");
+      }
+    };
+
+    poll();
+    interval = setInterval(poll, 3000);
+
+    return () => {
+      cancelled = true;
+      if (interval) clearInterval(interval);
+    };
+  }, [purchaseId, isFreeScenario]);
 
   if (!dados) {
     return (
@@ -44,39 +170,9 @@ export default function Step3Sucesso() {
     );
   }
 
-  if (!dados.additional?.paymentIntentId) {
+  if (!dados.additional?.paymentIntentId && !dados.additional?.purchaseId) {
     return null;
   }
-
-  const guestEmail =
-    dados.additional &&
-    typeof dados.additional === "object" &&
-    typeof dados.additional.guestEmail === "string"
-      ? dados.additional.guestEmail
-      : null;
-
-  const breakdown = (() => {
-    if (!dados.additional || typeof dados.additional !== "object") return null;
-    const subtotalCents = Number(dados.additional.subtotalCents ?? 0);
-    const discountCents = Number(dados.additional.discountCents ?? 0);
-    const platformFeeCents = Number(dados.additional.platformFeeCents ?? 0);
-    const totalCents = Number(
-      dados.additional.totalCents ?? dados.additional.total ?? 0,
-    );
-    const code =
-      typeof dados.additional.promoCodeRaw === "string"
-        ? dados.additional.promoCodeRaw
-        : typeof dados.additional.promoCode === "string"
-          ? dados.additional.promoCode
-          : null;
-    return {
-      subtotalCents,
-      discountCents,
-      platformFeeCents,
-      totalCents,
-      code,
-    };
-  })();
 
   return (
     <div className="flex flex-col items-center text-center gap-8 py-6 px-4 text-white">
@@ -84,12 +180,22 @@ export default function Step3Sucesso() {
       {/* Título */}
       <div className="space-y-1">
         <h2 className="text-3xl font-semibold bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] bg-clip-text text-transparent">
-          Compra Confirmada 🎉
+          {status === "PAID"
+            ? isFreeScenario
+              ? "Inscrição confirmada 🎉"
+              : "Compra Confirmada 🎉"
+            : status === "FAILED"
+              ? "Pagamento não confirmado"
+              : "A confirmar pagamento…"}
         </h2>
         <p className="text-sm text-white/70">
-          {guestEmail
-            ? `Obrigado! Enviámos os teus bilhetes para ${guestEmail}.`
-            : "A tua compra foi processada com sucesso."}
+          {status === "FAILED"
+            ? statusError ?? "Não conseguimos confirmar o pagamento. Tenta novamente ou contacta suporte."
+            : guestEmail
+              ? `Obrigado! Enviámos os teus bilhetes para ${guestEmail}.`
+              : isFreeScenario
+                ? "A tua inscrição gratuita está confirmada."
+                : "Estamos a confirmar o pagamento. Mantém esta página aberta."}
         </p>
       </div>
 
@@ -102,50 +208,73 @@ export default function Step3Sucesso() {
           <p className="text-xl font-semibold">
             {dados.ticketName ?? "Bilhete"}
           </p>
+          {scenario && scenarioCopy[scenario] && (
+            <p className="text-[11px] text-white/70">{scenarioCopy[scenario]}</p>
+          )}
         </div>
 
         {/* Breakdown */}
-        {breakdown && (
+        {status === "PAID" && breakdown && (
           <div className="space-y-2 text-sm text-white/80">
             <div className="flex items-center justify-between border-b border-white/10 pb-2">
               <span className="text-white/60 text-[11px] uppercase tracking-widest">Total dos bilhetes</span>
-              <span className="font-semibold">{formatMoney(breakdown.subtotalCents, "EUR")}</span>
+              <span className="font-semibold">
+                {formatMoney(subtotalEur)}
+              </span>
             </div>
             {breakdown.discountCents > 0 && (
               <div className="flex items-center justify-between">
                 <span className="text-white/60">Desconto {breakdown.code ? `(${breakdown.code})` : ""}</span>
-                <span className="text-emerald-300">-{formatMoney(breakdown.discountCents, "EUR")}</span>
+                <span className="text-emerald-300">-{formatMoney(discountEur)}</span>
               </div>
             )}
             {breakdown.platformFeeCents > 0 && (
               <div className="flex items-center justify-between">
                 <span className="text-white/60">Taxa da plataforma</span>
-                <span className="text-orange-200">{formatMoney(breakdown.platformFeeCents, "EUR")}</span>
+                <span className="text-orange-200">{formatMoney(platformFeeEur)}</span>
               </div>
             )}
             <div className="flex items-center justify-between border-t border-white/10 pt-2">
               <span className="text-white text-[12px] font-semibold uppercase tracking-widest">Total Pago</span>
               <span className="text-xl font-semibold">
-                {formatMoney(breakdown.totalCents, "EUR")}
+                {formatMoney(totalEur)}
               </span>
             </div>
           </div>
         )}
 
         {/* Info */}
-        <p className="text-white/60 text-sm">
-          {guestEmail
-            ? "Guarda o email com os bilhetes. Podes criar conta e ligar estes bilhetes mais tarde."
-            : "A tua compra foi concluída com sucesso."}
-        </p>
+        <div className="space-y-1 text-sm text-white/60">
+          <p>
+            {guestEmail
+              ? "Guarda o email com os bilhetes. Podes criar conta e ligar estes bilhetes mais tarde."
+              : "A tua compra foi concluída com sucesso."}
+          </p>
+          {scenario && scenarioCopy[scenario] && (
+            <p className="text-white/75">{scenarioCopy[scenario]}</p>
+          )}
+        </div>
 
         {/* Botão ver bilhetes */}
-        <button
-          onClick={() => (guestEmail ? router.push("/login") : router.push("/me"))}
-          className="w-full rounded-full bg-white text-black py-3 text-sm font-semibold shadow-[0_0_25px_rgba(255,255,255,0.35)] hover:scale-[1.03] active:scale-95 transition-transform"
-        >
-          {guestEmail ? "Criar conta e ligar bilhetes" : "Ver os teus bilhetes"}
-        </button>
+        {status === "PAID" ? (
+          <button
+            onClick={() => (guestEmail ? router.push("/login") : router.push("/me"))}
+            className="w-full rounded-full bg-white text-black py-3 text-sm font-semibold shadow-[0_0_25px_rgba(255,255,255,0.35)] hover:scale-[1.03] active:scale-95 transition-transform"
+          >
+            {guestEmail ? "Criar conta e ligar bilhetes" : "Ver os teus bilhetes"}
+          </button>
+        ) : status === "FAILED" ? (
+          <button
+            onClick={fecharCheckout}
+            className="w-full rounded-full bg-red-500 text-white py-3 text-sm font-semibold shadow hover:scale-[1.02] active:scale-95 transition-transform"
+          >
+            Fechar
+          </button>
+        ) : (
+          <div className="w-full rounded-full bg-white/10 text-white text-sm font-semibold py-3 text-center">
+            A confirmar…
+          </div>
+        )}
       </div>
 
       {/* Fechar */}

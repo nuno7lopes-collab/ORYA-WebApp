@@ -30,11 +30,14 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
-    const logs = await prisma.organizationAuditLog.findMany({
-      where: { organizerId },
-      orderBy: { createdAt: "desc" },
-      take: limit,
-    });
+    const auditModel = (prisma as any).organizationAuditLog;
+    const logs = auditModel?.findMany
+      ? await auditModel.findMany({
+          where: { organizerId },
+          orderBy: { createdAt: "desc" },
+          take: limit,
+        })
+      : [];
 
     return NextResponse.json({ ok: true, items: logs }, { status: 200 });
   } catch (err) {

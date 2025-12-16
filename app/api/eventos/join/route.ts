@@ -84,7 +84,7 @@ export async function POST(req: NextRequest) {
         coverImageUrl:
           coverImage ||
           "https://images.unsplash.com/photo-1541987392829-5937c1069305?q=80&w=1600",
-        owner: { connect: { id: user.id } },
+        ownerUserId: user.id,
       },
     });
 

@@ -4,6 +4,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { randomUUID } from "crypto";
+import { computePartnerLinkExpiresAt } from "@/domain/padelDeadlines";
+import { queuePairingInvite } from "@/domain/notifications/splitPayments";
 
 // Regenera token de convite para um pairing (v2). Apenas capitão ou staff OWNER/ADMIN.
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
@@ -17,14 +19,18 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   if (!user) return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
-  const expiresHours = typeof body?.expiresHours === "number" ? Math.max(1, Math.min(168, body!.expiresHours)) : 48;
+  const expiresMinutesRaw = typeof body?.expiresMinutes === "number" ? body.expiresMinutes : null;
+  const targetUserId = typeof body?.targetUserId === "string" ? body.targetUserId : null;
 
   const pairing = await prisma.padelPairing.findUnique({
     where: { id: pairingId },
     include: { event: { select: { organizerId: true } } },
   });
   if (!pairing) return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
-  if (!pairing.inviteToken) {
+  if (pairing.player2UserId) {
+    return NextResponse.json({ ok: false, error: "INVITE_ALREADY_USED" }, { status: 409 });
+  }
+  if (!pairing.partnerInviteToken) {
     // se não existe, seguimos para criar mesmo assim
   }
 
@@ -46,16 +52,27 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   }
 
   const token = randomUUID();
-  const expiresAt = new Date(Date.now() + expiresHours * 60 * 60 * 1000);
+  const expiresAt = computePartnerLinkExpiresAt(new Date(), expiresMinutesRaw);
 
   const updated = await prisma.padelPairing.update({
     where: { id: pairingId },
     data: {
-      inviteToken: token,
-      inviteExpiresAt: expiresAt,
+      partnerInviteToken: token,
+      partnerLinkToken: token,
+      partnerLinkExpiresAt: expiresAt,
+      partnerInvitedAt: new Date(),
     },
-    select: { id: true, inviteToken: true, inviteExpiresAt: true },
+    select: { id: true, partnerInviteToken: true, partnerLinkExpiresAt: true },
   });
+
+  if (targetUserId) {
+    await queuePairingInvite({
+      pairingId,
+      targetUserId,
+      inviterUserId: user.id,
+      token,
+    });
+  }
 
   return NextResponse.json({ ok: true, invite: updated }, { status: 200 });
 }

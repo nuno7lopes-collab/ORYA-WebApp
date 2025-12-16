@@ -193,19 +193,7 @@ type TabKey =
   | "staff"
   | "settings";
 
-const ALL_TABS: TabKey[] = [
-  "overview",
-  "events",
-  "sales",
-  "finance",
-  "marketing",
-  "padel",
-  "restaurants",
-  "volunteer",
-  "night",
-  "staff",
-  "settings",
-];
+const ALL_TABS: TabKey[] = ["overview", "events", "sales", "marketing", "staff", "finance", "padel", "settings"];
 
 export default function OrganizadorPage() {
   const { user, profile, isLoading: userLoading, mutate: mutateUser } = useUser();
@@ -2498,14 +2486,14 @@ export default function OrganizadorPage() {
                 hint: "Líquido nos últimos 30 dias.",
               },
               {
-                label: "Taxas plataforma",
+                label: "Taxas",
                 value:
                   financeData?.totals.feesCents !== undefined
                     ? `${(financeData.totals.feesCents / 100).toFixed(2)} €`
                     : financeSummary
                       ? `${(financeSummary.platformFeesCents / 100).toFixed(2)} €`
                       : "—",
-                hint: "Total de fees cobrados pela ORYA.",
+                hint: "Custos de processamento + eventuais fees.",
               },
               {
                 label: "Eventos com vendas",
@@ -2610,6 +2598,7 @@ export default function OrganizadorPage() {
                   <p className="text-xl font-semibold text-white">
                     {financeData ? (financeData.totals.feesCents / 100).toFixed(2) : financeSummary ? (financeSummary.platformFeesCents / 100).toFixed(2) : "—"} €
                   </p>
+                  <p className="text-[11px] text-white/55">Inclui processamento Stripe e fees aplicadas.</p>
                 </div>
                 <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
                   <p className="text-white/60 text-xs">Eventos com vendas</p>

@@ -6,6 +6,11 @@ import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizerForUser } from "@/lib/organizerContext";
 import { isValidScore } from "@/lib/padel/validation";
+import {
+  queueMatchChanged,
+  queueMatchResult,
+  queueNextOpponent,
+} from "@/domain/notifications/tournament";
 
 const allowedRoles: OrganizerMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
 
@@ -46,6 +51,8 @@ export async function POST(req: NextRequest) {
   const matchId = typeof body.id === "number" ? body.id : Number(body.id);
   const statusRaw = typeof body.status === "string" ? (body.status as PadelMatchStatus) : undefined;
   const scoreRaw = body.score;
+  const startAtRaw = body.startAt ? new Date(body.startAt as string) : undefined;
+  const courtIdRaw = typeof body.courtId === "number" ? body.courtId : undefined;
 
   if (!Number.isFinite(matchId)) return NextResponse.json({ ok: false, error: "INVALID_ID" }, { status: 400 });
 
@@ -93,12 +100,33 @@ export async function POST(req: NextRequest) {
         ? (scoreRaw as { sets?: unknown }).sets
         : match.scoreSets,
       winnerPairingId: winnerPairingId ?? match.winnerPairingId,
+      startTime: startAtRaw ?? match.startTime,
+      courtNumber: courtIdRaw ?? match.courtNumber,
     },
     include: {
       pairingA: { include: { slots: { include: { playerProfile: true } } } },
       pairingB: { include: { slots: { include: { playerProfile: true } } } },
     },
   });
+
+  const involvedUserIds = [
+    ...((updated.pairingA?.slots ?? []).map((s) => s.profileId).filter(Boolean) as string[]),
+    ...((updated.pairingB?.slots ?? []).map((s) => s.profileId).filter(Boolean) as string[]),
+  ];
+
+  // Notificações: mudança de horário/court
+  await queueMatchChanged({
+    userIds: involvedUserIds,
+    matchId: updated.id,
+    startAt: updated.startTime ?? null,
+    courtId: updated.courtNumber ?? null,
+  });
+
+  // Notificações de resultado + próximo adversário
+  if (winnerPairingId) {
+    await queueMatchResult(involvedUserIds, updated.id, updated.eventId);
+    await queueNextOpponent(involvedUserIds, updated.id, updated.eventId);
+  }
 
   return NextResponse.json({ ok: true, match: updated }, { status: 200 });
 }

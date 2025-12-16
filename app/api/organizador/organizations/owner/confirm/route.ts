@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { OrganizerMemberRole, OrganizerOwnerTransferStatus } from "@prisma/client";
+import { OrganizerMemberRole } from "@prisma/client";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { getOrgTransferEnabled } from "@/lib/platformSettings";
@@ -10,6 +10,11 @@ import { sendEmail } from "@/lib/resendClient";
 
 export async function POST(req: NextRequest) {
   try {
+    const ownerTransferModel = (prisma as any).organizerOwnerTransfer;
+    if (!ownerTransferModel?.findUnique) {
+      return NextResponse.json({ ok: false, error: "OWNER_TRANSFER_UNAVAILABLE" }, { status: 501 });
+    }
+
     const supabase = await createSupabaseServer();
     const {
       data: { user },
@@ -31,14 +36,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "INVALID_TOKEN" }, { status: 400 });
     }
 
-    const transfer = await prisma.organizerOwnerTransfer.findUnique({
+    const transfer = await ownerTransferModel.findUnique({
       where: { token },
     });
     if (!transfer) {
       return NextResponse.json({ ok: false, error: "TRANSFER_NOT_FOUND" }, { status: 404 });
     }
 
-    if (transfer.status !== OrganizerOwnerTransferStatus.PENDING) {
+    if (transfer.status !== "PENDING") {
       return NextResponse.json({ ok: false, error: "TRANSFER_NOT_PENDING" }, { status: 400 });
     }
 
@@ -48,9 +53,9 @@ export async function POST(req: NextRequest) {
 
     const now = new Date();
     if (transfer.expiresAt && transfer.expiresAt.getTime() < now.getTime()) {
-      await prisma.organizerOwnerTransfer.update({
+      await ownerTransferModel.update({
         where: { id: transfer.id },
-        data: { status: OrganizerOwnerTransferStatus.EXPIRED, cancelledAt: now },
+        data: { status: "EXPIRED", cancelledAt: now },
       });
       return NextResponse.json({ ok: false, error: "TRANSFER_EXPIRED" }, { status: 400 });
     }
@@ -59,9 +64,9 @@ export async function POST(req: NextRequest) {
       where: { organizerId_userId: { organizerId: transfer.organizerId, userId: transfer.fromUserId } },
     });
     if (!fromMembership || fromMembership.role !== OrganizerMemberRole.OWNER) {
-      await prisma.organizerOwnerTransfer.update({
+      await ownerTransferModel.update({
         where: { id: transfer.id },
-        data: { status: OrganizerOwnerTransferStatus.CANCELLED, cancelledAt: now },
+        data: { status: "CANCELLED", cancelledAt: now },
       });
       return NextResponse.json({ ok: false, error: "TRANSFER_NO_LONGER_VALID" }, { status: 400 });
     }
@@ -82,9 +87,9 @@ export async function POST(req: NextRequest) {
     ]);
 
     await prisma.$transaction(async (tx) => {
-      await tx.organizerOwnerTransfer.update({
+      await ownerTransferModel.update({
         where: { id: transfer.id },
-        data: { status: OrganizerOwnerTransferStatus.CONFIRMED, confirmedAt: now },
+        data: { status: "CONFIRMED", confirmedAt: now },
       });
 
       await setSoleOwner(tx, transfer.organizerId, transfer.toUserId, transfer.fromUserId);

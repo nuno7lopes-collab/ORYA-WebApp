@@ -3,6 +3,7 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { clearUsernameForOwner } from "@/lib/globalUsernames";
+import { logAccountEvent } from "@/lib/accountEvents";
 
 export async function POST(req: NextRequest) {
   try {
@@ -50,91 +51,39 @@ export async function POST(req: NextRequest) {
     }
 
     const now = new Date();
+    const scheduled = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
 
-    await prisma.$transaction([
-      prisma.profile.updateMany({
-        where: { id: user.id },
-        data: {
-          isDeleted: true,
-          deletedAt: now,
-          visibility: "PRIVATE",
-          username: null,
-          fullName: "Conta apagada",
-          bio: null,
-          city: null,
-          avatarUrl: null,
-        },
-      }),
-      prisma.event.updateMany({
-        where: { ownerUserId: user.id },
-        data: { isDeleted: true, deletedAt: now, status: "CANCELLED" },
-      }),
-      prisma.eventInterest.deleteMany({ where: { userId: user.id } }),
-      prisma.experienceParticipant.deleteMany({ where: { userId: user.id } }),
-      prisma.staffAssignment.deleteMany({ where: { userId: user.id } }),
-      prisma.ticketReservation.deleteMany({ where: { userId: user.id } }),
-      prisma.ticketTransfer.deleteMany({
-        where: {
-          OR: [{ fromUserId: user.id }, { toUserId: user.id }],
-        },
-      }),
-      prisma.ticketResale.deleteMany({ where: { sellerUserId: user.id } }),
-
-      // Desassociar organizers legacy e memberships
-      prisma.organizer.updateMany({
-        where: { userId: user.id },
-        data: { userId: null },
-      }),
-      // Limpar memberships deste user (não apaga organizers, só a ligação)
-      prisma.organizerMember.deleteMany({
-        where: { userId: user.id },
-      }),
-    ]);
-
-    // Limpa handle global do utilizador e de organizadores que lhe pertençam
-    await prisma.$transaction(async (tx) => {
-      await clearUsernameForOwner({ ownerType: "user", ownerId: user.id, tx });
-      const orgIds = await tx.organizer.findMany({
-        where: { userId: user.id },
-        select: { id: true },
-      });
-      if (orgIds.length > 0) {
-        await Promise.all(
-          orgIds.map(({ id }) => clearUsernameForOwner({ ownerType: "organizer", ownerId: id, tx })),
-        );
-      }
+    await prisma.profile.update({
+      where: { id: user.id },
+      data: {
+        status: "PENDING_DELETE",
+        deletionRequestedAt: now,
+        deletionScheduledFor: scheduled,
+        visibility: "PRIVATE",
+      },
     });
 
-    // Supabase Auth: hard delete
-    let authDeleted = true;
-    try {
-      const { error: deleteError } = await supabaseAdmin.auth.admin.deleteUser(user.id);
-      if (deleteError) {
-        authDeleted = false;
-        console.error("[settings/delete] supabase delete error (hard):", deleteError);
-      }
-    } catch (e) {
-      authDeleted = false;
-      console.error("[settings/delete] supabase delete exception:", e);
-    }
+    await logAccountEvent({
+      userId: user.id,
+      type: "account_delete_requested",
+      metadata: { scheduledFor: scheduled },
+    });
 
     await supabase.auth.signOut();
 
     return NextResponse.json({
       ok: true,
-      authDeleted,
-      warning: authDeleted
-        ? null
-        : "Conta marcada como apagada, mas não foi possível remover no Auth. Contacta suporte.",
+      status: "PENDING_DELETE",
+      scheduledFor: scheduled.toISOString(),
+      message: "Conta marcada para eliminação. Podes reverter dentro do prazo ao voltar a iniciar sessão.",
     });
   } catch (err) {
     console.error("[settings/delete] erro:", err);
     return NextResponse.json(
       {
         ok: true,
-        authDeleted: false,
-        warning:
-          "Conta marcada como apagada, mas não foi possível remover no Auth. Contacta suporte.",
+        status: "ERROR",
+        warning: "Não foi possível marcar para eliminação. Tenta novamente mais tarde.",
       },
       { status: 200 },
     );

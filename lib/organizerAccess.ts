@@ -34,7 +34,12 @@ export async function canScanTickets(userId: string, eventId: number) {
     select: { role: true },
   });
 
-  if (membership && [OrganizerMemberRole.OWNER, OrganizerMemberRole.CO_OWNER, OrganizerMemberRole.ADMIN].includes(membership.role)) {
+  const managerRoles: OrganizerMemberRole[] = [
+    OrganizerMemberRole.OWNER,
+    OrganizerMemberRole.CO_OWNER,
+    OrganizerMemberRole.ADMIN,
+  ];
+  if (membership && managerRoles.includes(membership.role)) {
     return { allowed: true, membershipRole: membership.role, staffAssignmentId: null as number | null };
   }
 

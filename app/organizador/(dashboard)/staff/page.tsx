@@ -8,6 +8,7 @@ import { useUser } from "@/app/hooks/useUser";
 import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
 import { ConfirmDestructiveActionDialog } from "@/app/components/ConfirmDestructiveActionDialog";
 import { trackEvent } from "@/lib/analytics";
+import { RoleBadge } from "../../RoleBadge";
 
 type MemberRole = "OWNER" | "CO_OWNER" | "ADMIN" | "STAFF" | "VIEWER";
 
@@ -77,14 +78,6 @@ const roleLabels: Record<MemberRole, string> = {
   VIEWER: "Viewer",
 };
 
-const roleTone: Record<MemberRole, string> = {
-  OWNER: "border-emerald-400/50 bg-emerald-400/10 text-emerald-100",
-  CO_OWNER: "border-teal-300/50 bg-teal-300/10 text-teal-50",
-  ADMIN: "border-sky-400/50 bg-sky-400/10 text-sky-100",
-  STAFF: "border-white/20 bg-white/5 text-white/80",
-  VIEWER: "border-white/10 bg-white/5 text-white/60",
-};
-
 const roleOrder: Record<MemberRole, number> = {
   OWNER: 0,
   CO_OWNER: 1,
@@ -121,14 +114,6 @@ function canAssignRole(actorRole: MemberRole | null, targetRole: MemberRole, des
     return allowed && targetRole !== "OWNER" && targetRole !== "CO_OWNER" && targetRole !== "ADMIN";
   }
   return false;
-}
-
-function RoleBadge({ role }: { role: MemberRole }) {
-  return (
-    <span className={`inline-flex items-center rounded-full border px-2 py-[2px] text-[11px] uppercase tracking-[0.16em] ${roleTone[role]}`}>
-      {roleLabels[role]}
-    </span>
-  );
 }
 
 function InviteBadge({ status }: { status: InviteStatus }) {
@@ -208,31 +193,20 @@ export default function OrganizerStaffPage() {
     return null;
   }, [user, organizerId, eventId]);
 
-  const { data: membersData, isLoading: isMembersLoading, mutate: mutateMembers } = useSWR<MembersResponse>(
-    membersKey,
-    fetcher,
-    { revalidateOnFocus: false },
-  );
-
-  const auditKey = useMemo(() => {
-    if (!user || !organizerId || !(viewerRole === "OWNER" || viewerRole === "CO_OWNER" || viewerRole === "ADMIN")) {
-      return null;
-    }
-    return `/api/organizador/organizations/audit?organizerId=${organizerId}&limit=50`;
-  }, [user, organizerId, viewerRole]);
-
-  const { data: auditData, isLoading: auditLoading } = useSWR<AuditResponse>(auditKey, fetcher, {
-    revalidateOnFocus: false,
-  });
-
   const { data: invitesData, isLoading: isInvitesLoading, mutate: mutateInvites } = useSWR<InvitesResponse>(
     invitesKey,
     fetcher,
     { revalidateOnFocus: false },
   );
 
+  const { data: membersData, isLoading: isMembersLoading, mutate: mutateMembers } = useSWR<MembersResponse>(
+    membersKey,
+    fetcher,
+    { revalidateOnFocus: false },
+  );
+
   const members = membersData?.items ?? [];
-  const invites = invitesData?.items ?? [];
+  const invites = useMemo(() => invitesData?.items ?? [], [invitesData?.items]);
   const viewerRole: MemberRole | null = membersData?.viewerRole ?? invitesData?.viewerRole ?? null;
   const resolvedOrganizerId = organizerId ?? membersData?.organizerId ?? invitesData?.organizerId ?? null;
   const canInvite = viewerRole === "OWNER" || viewerRole === "CO_OWNER" || viewerRole === "ADMIN";
@@ -246,6 +220,17 @@ export default function OrganizerStaffPage() {
 
   const isOrganizerProfile = profile?.roles?.includes("organizer") ?? false;
   const hasMembership = !!viewerRole;
+
+  const auditKey = useMemo(() => {
+    if (!user || !organizerId) return null;
+    const canAudit = viewerRole === "OWNER" || viewerRole === "CO_OWNER" || viewerRole === "ADMIN";
+    if (!canAudit) return null;
+    return `/api/organizador/organizations/audit?organizerId=${organizerId}&limit=50`;
+  }, [user, organizerId, viewerRole]);
+
+  const { data: auditData, isLoading: auditLoading } = useSWR<AuditResponse>(auditKey, fetcher, {
+    revalidateOnFocus: false,
+  });
 
   const pushToast = (message: string, type: "error" | "success" = "error") => {
     const id = Date.now() + Math.random();
@@ -522,7 +507,7 @@ export default function OrganizerStaffPage() {
             Controla quem tem acesso {meData?.organizer?.displayName ? ` · ${meData.organizer.displayName}` : ""}
           </h1>
           <p className="text-sm text-white/60">
-            Define papéis, gere convites e transfere a organização de forma segura. Pelo menos um Owner tem de existir sempre.
+            Define papéis, gere convites e, quando ativo, transfere a organização de forma segura. Pelo menos um Owner tem de existir sempre.
           </p>
           {viewerRole === "OWNER" && !orgTransferEnabled && (
             <p className="text-[11px] text-white/50">Transferência de Owner está desativada enquanto a flag global estiver off.</p>

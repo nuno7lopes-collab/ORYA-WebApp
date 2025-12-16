@@ -16,6 +16,11 @@ export function formatEuro(amount: number | null | undefined): string {
 }
 
 /**
+ * Alias histórico usado em vários componentes. Mantém compatibilidade.
+ */
+export const formatMoney = formatEuro;
+
+/**
  * Converte um valor em cêntimos para euros mantendo float com 2 casas.
  */
 export function centsToEuro(cents: number | null | undefined): number | null {

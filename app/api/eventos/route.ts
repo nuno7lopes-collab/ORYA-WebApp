@@ -168,7 +168,7 @@ export async function POST(req: NextRequest) {
     // 7) Criar evento na DB
     const event = await prisma.event.create({
       data: {
-        owner: { connect: { id: organizerId } },
+        ownerUserId: organizerId,
         slug,
         title,
         description,

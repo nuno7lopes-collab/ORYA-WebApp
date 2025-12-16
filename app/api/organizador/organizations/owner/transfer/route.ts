@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "crypto";
-import { OrganizerMemberRole, OrganizerOwnerTransferStatus } from "@prisma/client";
+import { OrganizerMemberRole } from "@prisma/client";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { resolveUserIdentifier } from "@/lib/userResolver";
@@ -13,6 +13,11 @@ const DEFAULT_EXPIRATION_MS = 1000 * 60 * 60 * 24 * 3; // 3 dias
 
 export async function POST(req: NextRequest) {
   try {
+    const ownerTransferModel = (prisma as any).organizerOwnerTransfer;
+    if (!ownerTransferModel?.create) {
+      return NextResponse.json({ ok: false, error: "OWNER_TRANSFER_UNAVAILABLE" }, { status: 501 });
+    }
+
     const supabase = await createSupabaseServer();
     const {
       data: { user },
@@ -69,17 +74,17 @@ export async function POST(req: NextRequest) {
 
     const transfer = await prisma.$transaction(async (tx) => {
       // Cancela pedidos pendentes anteriores
-      await tx.organizerOwnerTransfer.updateMany({
-        where: { organizerId, status: OrganizerOwnerTransferStatus.PENDING },
-        data: { status: OrganizerOwnerTransferStatus.CANCELLED, cancelledAt: new Date(now) },
+      await ownerTransferModel.updateMany({
+        where: { organizerId, status: "PENDING" },
+        data: { status: "CANCELLED", cancelledAt: new Date(now) },
       });
 
-      const created = await tx.organizerOwnerTransfer.create({
+      const created = await ownerTransferModel.create({
         data: {
           organizerId,
           fromUserId: user.id,
           toUserId: targetUserId,
-          status: OrganizerOwnerTransferStatus.PENDING,
+          status: "PENDING",
           token,
           expiresAt,
         },

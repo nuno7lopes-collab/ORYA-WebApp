@@ -51,35 +51,42 @@ export async function GET(req: NextRequest) {
   let nextCursor: number | null = null;
 
   try {
-    const where: Prisma.EventWhereInput = {
-      status: "PUBLISHED",
-    };
-    const visibilityFilter: Prisma.EventWhereInput = {
-      OR: [{ organizerId: null }, { organizer: { publicListingEnabled: true } }],
-    };
-    where.AND = where.AND ? [...where.AND, visibilityFilter] : [visibilityFilter];
+    const filters: Prisma.EventWhereInput[] = [
+      { status: "PUBLISHED" },
+      { OR: [{ organizerId: null }, { organizer: { publicListingEnabled: true } }] },
+    ];
 
     if (category && category !== "all") {
-      where.templateType = category.toUpperCase() as Prisma.EventWhereInput["templateType"];
+      filters.push({ templateType: category.toUpperCase() as Prisma.EventWhereInput["templateType"] });
     }
 
     if (typeFilter === "free") {
-      where.isFree = true;
+      filters.push({ isFree: true });
     } else if (typeFilter === "paid") {
-      where.isFree = false;
+      filters.push({ isFree: false });
     }
 
     if (search && search.trim().length > 0) {
       const q = search.trim();
-      where.OR = [
-        { title: { contains: q, mode: "insensitive" } },
-        { description: { contains: q, mode: "insensitive" } },
-        { locationCity: { contains: q, mode: "insensitive" } },
-      ];
+      filters.push({
+        OR: [
+          { title: { contains: q, mode: "insensitive" } },
+          { description: { contains: q, mode: "insensitive" } },
+          { locationCity: { contains: q, mode: "insensitive" } },
+        ],
+      });
     }
 
-    const query: Prisma.EventFindManyArgs = {
-      where,
+    const cursorId = cursor ? Number(cursor) : null;
+    if (cursor && Number.isNaN(cursorId)) {
+      return NextResponse.json(
+        { items: [], pagination: { nextCursor: null, hasMore: false } },
+        { status: 400 },
+      );
+    }
+
+    const events = await prisma.event.findMany({
+      where: { AND: filters },
       orderBy: { startsAt: "asc" },
       take: take + 1, // +1 para sabermos se há mais páginas
       include: {
@@ -94,21 +101,13 @@ export async function GET(req: NextRequest) {
           },
         },
       },
-    };
-
-    if (cursor) {
-      const cursorId = Number(cursor);
-      if (Number.isNaN(cursorId)) {
-        return NextResponse.json(
-          { items: [], pagination: { nextCursor: null, hasMore: false } },
-          { status: 400 },
-        );
-      }
-      query.skip = 1;
-      query.cursor = { id: cursorId };
-    }
-
-    const events = await prisma.event.findMany(query);
+      ...(cursorId
+        ? {
+            skip: 1,
+            cursor: { id: cursorId },
+          }
+        : {}),
+    });
 
     if (events.length > take) {
       const next = events.pop();

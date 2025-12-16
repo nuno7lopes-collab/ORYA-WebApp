@@ -1,6 +1,6 @@
 export const runtime = "nodejs";
 
-import { ReactNode } from "react";
+import { ReactNode, CSSProperties } from "react";
 import Link from "next/link";
 import { OrganizerSidebar } from "../OrganizerSidebar";
 import { OrganizationSwitcher, type OrganizationSwitcherOption } from "../OrganizationSwitcher";
@@ -10,6 +10,8 @@ import { prisma } from "@/lib/prisma";
 import { OrganizerLangSetter } from "../OrganizerLangSetter";
 import { featureFlags } from "@/lib/flags";
 import { OrganizerTourTrigger } from "../OrganizerTourTrigger";
+import { RoleBadge } from "../RoleBadge";
+import { DASHBOARD_LABEL, DASHBOARD_SHELL_PADDING } from "../dashboardUi";
 
 /**
  * Layout do dashboard do organizador (sidebar + topbar).
@@ -35,11 +37,13 @@ export default async function OrganizerDashboardLayout({ children }: { children:
     brandingSecondaryColor?: string | null;
     language?: string | null;
   } | null = null;
+  let activeRole: string | null = null;
   if (user) {
     try {
-      const { organizer } = await getActiveOrganizerForUser(user.id);
+      const { organizer, membership } = await getActiveOrganizerForUser(user.id);
       currentId = organizer?.id ?? null;
-      if (organizer) {
+      if (organizer && membership) {
+        activeRole = membership.role;
         activeOrganizer = {
           id: organizer.id,
           displayName: organizer.displayName,
@@ -96,7 +100,6 @@ export default async function OrganizerDashboardLayout({ children }: { children:
   const brandPrimary = activeOrganizer?.brandingPrimaryColor ?? undefined;
   const brandSecondary = activeOrganizer?.brandingSecondaryColor ?? undefined;
   const organizerLanguage = activeOrganizer?.language ?? "pt";
-  const stripeState = { label: "Stripe", tone: "neutral" as const };
 
   return (
     <div
@@ -105,7 +108,7 @@ export default async function OrganizerDashboardLayout({ children }: { children:
         {
           "--brand-primary": brandPrimary,
           "--brand-secondary": brandSecondary,
-        } as React.CSSProperties
+        } as CSSProperties
       }
     >
       <OrganizerLangSetter language={organizerLanguage} />
@@ -113,15 +116,43 @@ export default async function OrganizerDashboardLayout({ children }: { children:
 
       <div className="flex-1 flex flex-col min-h-0">
         {/* Top bar */}
-        <header className="sticky top-0 z-30 border-b border-white/10 bg-[#050915]/80 px-4 py-3 backdrop-blur-xl md:px-6 lg:px-8 shrink-0">
-          <div className="flex items-center justify-end gap-3">
-            <div className="flex items-center gap-2 text-[11px]">
+        <header className={`sticky top-0 z-30 border-b border-white/10 bg-[#050915]/85 backdrop-blur-xl ${DASHBOARD_SHELL_PADDING} py-3 shrink-0`}>
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div className="flex items-center gap-3">
+              <div className="h-11 w-11 overflow-hidden rounded-2xl border border-white/15 bg-gradient-to-br from-[#0f172a] via-[#111827] to-[#0b1224] shadow-[0_10px_40px_rgba(0,0,0,0.4)]">
+                {organizerAvatarUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={organizerAvatarUrl} alt={organizerName} className="h-full w-full object-cover" />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center text-xs font-black tracking-[0.22em] text-[#6BFFFF]">
+                    OY
+                  </div>
+                )}
+              </div>
+              <div className="space-y-1">
+                <p className={DASHBOARD_LABEL}>Organização</p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-lg font-semibold text-white">{organizerName}</span>
+                  {activeRole && <RoleBadge role={activeRole as any} />}
+                </div>
+                {organizerUsername && (
+                  <p className="text-[12px] text-white/55">@{organizerUsername}</p>
+                )}
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center justify-end gap-2 text-[12px]">
               <Link
-                href="/explorar"
+                href="/organizador/eventos/novo"
+                className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-black shadow hover:scale-[1.01]"
+              >
+                Criar evento
+              </Link>
+              <Link
+                href={organizerUsername ? `/o/${organizerUsername}` : "/explorar"}
                 className="rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-white/80 hover:bg-white/10"
                 data-tour="user-experience"
               >
-                Voltar à experiência de utilizador
+                Ver página pública
               </Link>
               {featureFlags.NEW_NAVBAR() && <OrganizerTourTrigger />}
               <OrganizationSwitcher currentId={currentId} initialOrgs={orgOptions} />

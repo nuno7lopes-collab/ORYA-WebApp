@@ -1,10 +1,27 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
-import { PadelPairingPaymentStatus, PadelPairingSlotRole, PadelPairingSlotStatus, PadelPaymentMode } from "@prisma/client";
+import {
+  Gender,
+  PadelEligibilityType,
+  PadelPairingLifecycleStatus,
+  PadelPairingPaymentStatus,
+  PadelPairingSlotRole,
+  PadelPairingSlotStatus,
+  PadelPaymentMode,
+  PadelPairingJoinMode,
+} from "@prisma/client";
+import { randomUUID } from "crypto";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { buildPadelEventSnapshot } from "@/lib/padel/eventSnapshot";
+import { validateEligibility } from "@/domain/padelEligibility";
+import { upsertActiveHold } from "@/domain/padelPairingHold";
+import {
+  clampDeadlineHours,
+  computeDeadlineAt,
+  computePartnerLinkExpiresAt,
+} from "@/domain/padelDeadlines";
 
 async function syncPlayersFromSlots({
   organizerId,
@@ -93,6 +110,7 @@ export async function POST(req: NextRequest) {
   const organizerId = body && typeof body.organizerId === "number" ? body.organizerId : Number(body?.organizerId);
   const categoryId = body && typeof body.categoryId === "number" ? body.categoryId : body?.categoryId === null ? null : Number(body?.categoryId);
   const paymentMode = typeof body?.paymentMode === "string" ? (body?.paymentMode as PadelPaymentMode) : null;
+  const pairingJoinModeRaw = typeof body?.pairingJoinMode === "string" ? (body?.pairingJoinMode as PadelPairingJoinMode) : "INVITE_PARTNER";
   const createdByTicketId = typeof body?.createdByTicketId === "string" ? body?.createdByTicketId : null;
   const inviteToken = typeof body?.inviteToken === "string" ? body?.inviteToken : null;
   const inviteExpiresAt = body?.inviteExpiresAt ? new Date(String(body.inviteExpiresAt)) : null;
@@ -106,10 +124,48 @@ export async function POST(req: NextRequest) {
   // Basic guard: only proceed if padel_v2_enabled is active on the tournament config.
   const config = await prisma.padelTournamentConfig.findUnique({
     where: { eventId },
-    select: { padelV2Enabled: true, organizerId: true },
+    select: {
+      padelV2Enabled: true,
+      organizerId: true,
+      eligibilityType: true,
+      splitDeadlineHours: true,
+    },
   });
   if (!config?.padelV2Enabled || config.organizerId !== organizerId) {
     return NextResponse.json({ ok: false, error: "PADEL_V2_DISABLED" }, { status: 400 });
+  }
+
+  const profile = await prisma.profile.findUnique({
+    where: { id: user.id },
+    select: { gender: true },
+  });
+
+  const eligibility = validateEligibility(
+    (config.eligibilityType as PadelEligibilityType) ?? PadelEligibilityType.OPEN,
+    profile?.gender as Gender | null,
+    null,
+  );
+  if (!eligibility.ok) {
+    return NextResponse.json(
+      { ok: false, error: eligibility.code },
+      { status: eligibility.code === "GENDER_REQUIRED_FOR_TOURNAMENT" ? 403 : 409 },
+    );
+  }
+
+  // Invariante: 1 pairing ativo por evento+user
+  const existingActive = await prisma.padelPairing.findFirst({
+    where: {
+      eventId,
+      lifecycleStatus: { not: "CANCELLED_INCOMPLETE" },
+      OR: [{ player1UserId: user.id }, { player2UserId: user.id }],
+    },
+    select: { id: true },
+  });
+  if (existingActive) {
+    return NextResponse.json(
+      { ok: false, error: "PAIRING_ALREADY_ACTIVE" },
+      { status: 409 },
+    );
   }
 
   // Build slots: se não vierem slots no payload, cria duas entradas (capitão + parceiro pendente)
@@ -182,23 +238,48 @@ export async function POST(req: NextRequest) {
         ];
 
   try {
-    const pairing = await prisma.padelPairing.create({
-      data: {
-        eventId,
-        organizerId,
-        categoryId: Number.isFinite(categoryId as number) ? (categoryId as number) : null,
-        paymentMode,
-        createdByUserId: user.id,
-        createdByTicketId,
-        inviteToken,
-        inviteExpiresAt,
+    const now = new Date();
+    const clampedDeadlineHours = clampDeadlineHours(config.splitDeadlineHours ?? undefined);
+    const deadlineAt = computeDeadlineAt(now, clampedDeadlineHours);
+    const partnerLinkExpiresAtNormalized =
+      inviteExpiresAt && !Number.isNaN(inviteExpiresAt.getTime())
+        ? inviteExpiresAt
+        : computePartnerLinkExpiresAt(now, undefined);
+    const partnerInviteToken =
+      pairingJoinModeRaw === "INVITE_PARTNER"
+        ? inviteToken || randomUUID()
+        : null;
+
+    const pairing = await prisma.$transaction(async (tx) => {
+      const created = await tx.padelPairing.create({
+        data: {
+          eventId,
+          organizerId,
+          categoryId: Number.isFinite(categoryId as number) ? (categoryId as number) : null,
+          paymentMode,
+          createdByUserId: user.id,
+          player1UserId: user.id,
+          createdByTicketId,
+          partnerInviteToken,
+        partnerLinkToken: partnerInviteToken,
+        partnerLinkExpiresAt: partnerInviteToken ? partnerLinkExpiresAtNormalized : null,
+        partnerInvitedAt: partnerInviteToken ? now : null,
+        partnerSwapAllowedUntilAt: deadlineAt,
+        deadlineAt,
+        guaranteeStatus: paymentMode === "SPLIT" ? "ARMED" : "NONE",
         lockedUntil,
         isPublicOpen,
-        slots: {
-          create: slotsToCreate,
+        pairingJoinMode: pairingJoinModeRaw ?? PadelPairingJoinMode.INVITE_PARTNER,
+        lifecycleStatus: PadelPairingLifecycleStatus.PENDING_ONE_PAID,
+          slots: {
+            create: slotsToCreate,
+          },
         },
-      },
-      include: { slots: true },
+        include: { slots: true },
+      });
+
+      await upsertActiveHold(tx, { pairingId: created.id, eventId, ttlMinutes: 30 });
+      return created;
     });
 
     // Auto-criar perfis de jogador para o organizador (roster)

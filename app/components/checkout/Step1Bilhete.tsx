@@ -16,6 +16,7 @@ type Wave = {
 type CheckoutData = {
   waves?: Wave[];
   additional?: Record<string, unknown>;
+  paymentScenario?: string | null;
 };
 
 export default function Step1Bilhete() {
@@ -56,10 +57,16 @@ export default function Step1Bilhete() {
       remaining === null ? Number.MAX_SAFE_INTEGER : Math.max(0, remaining);
     initialQuantidades[w.id] = Math.min(rawQty, maxForWave);
   }
+  const variant =
+    (safeDados.additional?.checkoutUiVariant as string) ?? "EVENT_DEFAULT";
 
   const [quantidades, setQuantidades] = useState<Record<string, number>>(
     initialQuantidades,
   );
+  const [padelSelection, setPadelSelection] = useState<
+    "INDIVIDUAL" | "DUO_SPLIT" | "DUO_FULL"
+  >("INDIVIDUAL");
+  const [padelJoinMode, setPadelJoinMode] = useState<"INVITE_PARTNER" | "LOOKING_FOR_PARTNER">("INVITE_PARTNER");
 
   // Qual wave está expandida (tipo acordeão)
   const [aberto, setAberto] = useState<string | null>(
@@ -107,6 +114,33 @@ export default function Step1Bilhete() {
   }
 
   function handleContinuar() {
+    if (variant === "PADEL_TOURNAMENT") {
+      const target = stableWaves.find((w) => normalizeStatus(w.status) !== "sold_out" && normalizeStatus(w.status) !== "closed");
+      if (!target) return;
+
+      const scenario =
+        padelSelection === "DUO_SPLIT"
+          ? "GROUP_SPLIT"
+          : padelSelection === "DUO_FULL"
+            ? "GROUP_FULL"
+            : "SINGLE";
+
+      const nextQuantidades: Record<string, number> = { [target.id]: padelSelection === "DUO_FULL" ? 2 : 1 };
+
+      atualizarDados({
+        paymentScenario: scenario,
+        additional: {
+          ...(safeDados.additional && typeof safeDados.additional === "object" ? safeDados.additional : {}),
+          quantidades: nextQuantidades,
+          total: (target.price ?? 0) * (scenario === "GROUP_FULL" ? 2 : 1),
+          padelJoinMode: padelJoinMode,
+          checkoutUiVariant: variant,
+        },
+      });
+      irParaPasso(2);
+      return;
+    }
+
     if (total <= 0) return;
 
     // Guardar info deste step no contexto (quantidades + total)
@@ -115,6 +149,7 @@ export default function Step1Bilhete() {
         ...(safeDados.additional && typeof safeDados.additional === "object" ? safeDados.additional : {}),
         quantidades,
         total,
+        checkoutUiVariant: variant,
       },
     });
 
@@ -125,6 +160,121 @@ export default function Step1Bilhete() {
     return (
       <div className="p-6 text-sm text-white/70">
         A carregar bilhetes... Se isto persistir, volta atrás e tenta novamente.
+      </div>
+    );
+  }
+
+  if (variant === "PADEL_TOURNAMENT") {
+    const baseWave = stableWaves.find((w) => normalizeStatus(w.status) !== "sold_out" && normalizeStatus(w.status) !== "closed") ?? stableWaves[0];
+    const basePrice = baseWave?.price ?? 0;
+    return (
+      <div className="flex flex-col gap-6 text-white max-h-[80vh] overflow-hidden">
+        <header className="flex items-start justify-between gap-3">
+          <div className="space-y-1">
+            <p className="text-[11px] uppercase tracking-[0.18em] text-white/55">
+              Passo 1 de 3
+            </p>
+            <h2 className="text-xl font-semibold leading-tight">Escolhe como queres jogar</h2>
+            <p className="text-[11px] text-white/60 max-w-sm">
+              Padel: inscrição individual ou como dupla. Pagas já a tua parte ou a dupla completa.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={fecharCheckout}
+            className="text-[11px] rounded-full border border-white/15 px-3 py-1 text-white/65 hover:text-white hover:border-white/40 transition-colors"
+          >
+            Fechar
+          </button>
+        </header>
+
+        <div className="h-1 w-full rounded-full bg-white/10 overflow-hidden">
+          <div className="h-full w-1/3 rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5]" />
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-3">
+          <button
+            type="button"
+            onClick={() => {
+              setPadelSelection("INDIVIDUAL");
+              setPadelJoinMode("INVITE_PARTNER");
+            }}
+            className={`rounded-2xl border px-4 py-4 text-left transition shadow ${
+              padelSelection === "INDIVIDUAL"
+                ? "border-[#6BFFFF] bg-white/10 shadow-[0_0_24px_rgba(107,255,255,0.35)]"
+                : "border-white/12 bg-white/[0.03] hover:border-white/25"
+            }`}
+          >
+            <p className="text-sm font-semibold">Inscrição individual</p>
+            <p className="text-[11px] text-white/65 mt-1">1 lugar. Pode entrar em matchmaking.</p>
+            <p className="mt-3 text-lg font-semibold">{basePrice.toFixed(2)} €</p>
+            <div className="mt-3 space-y-2 text-[11px] text-white/70">
+              <label className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  checked={padelJoinMode === "INVITE_PARTNER" && padelSelection === "INDIVIDUAL"}
+                  onChange={() => setPadelJoinMode("INVITE_PARTNER")}
+                />
+                Já tenho parceiro (convite)
+              </label>
+              <label className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  checked={padelJoinMode === "LOOKING_FOR_PARTNER" && padelSelection === "INDIVIDUAL"}
+                  onChange={() => setPadelJoinMode("LOOKING_FOR_PARTNER")}
+                />
+                Estou à procura de parceiro
+              </label>
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setPadelSelection("DUO_SPLIT");
+              setPadelJoinMode("INVITE_PARTNER");
+            }}
+            className={`rounded-2xl border px-4 py-4 text-left transition shadow ${
+              padelSelection === "DUO_SPLIT"
+                ? "border-[#6BFFFF] bg-white/10 shadow-[0_0_24px_rgba(107,255,255,0.35)]"
+                : "border-white/12 bg-white/[0.03] hover:border-white/25"
+            }`}
+          >
+            <p className="text-sm font-semibold">Dupla · pagar só a minha parte</p>
+            <p className="text-[11px] text-white/65 mt-1">1 lugar pago. O parceiro paga o dele.</p>
+            <p className="mt-3 text-lg font-semibold">{basePrice.toFixed(2)} €</p>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setPadelSelection("DUO_FULL");
+              setPadelJoinMode("INVITE_PARTNER");
+            }}
+            className={`rounded-2xl border px-4 py-4 text-left transition shadow ${
+              padelSelection === "DUO_FULL"
+                ? "border-[#6BFFFF] bg-white/10 shadow-[0_0_24px_rgba(107,255,255,0.35)]"
+                : "border-white/12 bg-white/[0.03] hover:border-white/25"
+            }`}
+          >
+            <p className="text-sm font-semibold">Dupla · pagar os dois lugares</p>
+            <p className="text-[11px] text-white/65 mt-1">2 lugares pagos já garantidos.</p>
+            <p className="mt-3 text-lg font-semibold">{(basePrice * 2).toFixed(2)} €</p>
+          </button>
+        </div>
+
+        <div className="flex items-center justify-between gap-3 border-t border-white/10 pt-3">
+          <div className="text-[11px] text-white/70">
+            Seleciona uma opção para avançar.
+          </div>
+          <button
+            type="button"
+            onClick={handleContinuar}
+            className="rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-5 py-2.5 text-xs font-semibold text-black shadow-[0_0_26px_rgba(107,255,255,0.55)] hover:scale-[1.02] active:scale-95 transition-transform"
+          >
+            Continuar
+          </button>
+        </div>
       </div>
     );
   }

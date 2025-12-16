@@ -2,8 +2,16 @@
 
 import { useId, useMemo, useState } from "react";
 
-type Point = {
+type InputPoint = {
   date: string | Date;
+  value: number;
+  grossCents?: number;
+  discountCents?: number;
+  platformFeeCents?: number;
+  netCents?: number;
+};
+type Point = {
+  date: Date;
   value: number;
   grossCents?: number;
   discountCents?: number;
@@ -12,7 +20,7 @@ type Point = {
 };
 
 type Props = {
-  data: Point[];
+  data: InputPoint[];
   unit?: "eur" | "tickets";
   periodLabel?: string;
   metricLabel?: string;
@@ -41,7 +49,7 @@ export function SalesLineChart({
   const gradientId = useId();
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
 
-  const processed = useMemo(() => {
+  const processed: Point[] = useMemo(() => {
     return data.map((d) => ({
       date: typeof d.date === "string" ? new Date(d.date) : d.date,
       value: Number.isFinite(d.value) ? d.value : 0,

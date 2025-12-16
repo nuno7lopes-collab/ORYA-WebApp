@@ -4,6 +4,7 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { TicketStatus } from "@prisma/client";
 import { getActiveOrganizerForUser } from "@/lib/organizerContext";
 import { isOrgAdminOrAbove } from "@/lib/organizerPermissions";
+import { getStripeBaseFees } from "@/lib/platformSettings";
 
 type Aggregate = {
   grossCents: number;
@@ -38,6 +39,7 @@ export async function GET() {
         slug: true,
         startsAt: true,
         status: true,
+        payoutMode: true,
       },
       orderBy: { startsAt: "asc" },
     });
@@ -62,6 +64,13 @@ export async function GET() {
     const now = new Date();
     const last7 = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
     const last30 = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const stripeBaseFees = await getStripeBaseFees();
+    const estimateStripeFee = (amountCents: number) =>
+      Math.max(
+        0,
+        Math.round((amountCents * (stripeBaseFees.feeBps ?? 0)) / 10_000) +
+          (stripeBaseFees.feeFixedCents ?? 0),
+      );
 
     // Fonte preferencial: SaleSummary/SaleLine
     const summaries = await prisma.saleSummary.findMany({
@@ -75,7 +84,9 @@ export async function GET() {
         subtotalCents: true,
         discountCents: true,
         platformFeeCents: true,
+        stripeFeeCents: true,
         netCents: true,
+        totalCents: true,
         lines: {
           select: { quantity: true },
         },
@@ -94,21 +105,31 @@ export async function GET() {
       }
     >();
 
-    const addTo = (target: Aggregate, gross: number, fees: number, qty: number) => {
+    const addTo = (target: Aggregate, gross: number, fees: number, net: number, qty: number) => {
       target.grossCents += gross;
       target.feesCents += fees;
-      target.netCents += Math.max(0, gross - fees);
+      target.netCents += net;
       target.tickets += qty;
     };
 
     for (const s of summaries) {
       const qty = s.lines.reduce((q, l) => q + (l.quantity ?? 0), 0);
       const gross = s.subtotalCents ?? 0;
-      const fees = s.platformFeeCents ?? 0;
+      const platformFee = s.platformFeeCents ?? 0;
+      const totalCents = s.totalCents ?? gross;
+      const stripeFee =
+        s.stripeFeeCents != null && s.stripeFeeCents > 0
+          ? s.stripeFeeCents
+          : estimateStripeFee(totalCents);
+      const totalFees = platformFee + stripeFee;
+      const net =
+        s.netCents != null && s.netCents >= 0
+          ? s.netCents
+          : Math.max(0, totalCents - totalFees);
 
-      addTo(totals, gross, fees, qty);
-      if (s.createdAt >= last30) addTo(agg30, gross, fees, qty);
-      if (s.createdAt >= last7) addTo(agg7, gross, fees, qty);
+      addTo(totals, gross, totalFees, net, qty);
+      if (s.createdAt >= last30) addTo(agg30, gross, totalFees, net, qty);
+      if (s.createdAt >= last7) addTo(agg7, gross, totalFees, net, qty);
 
       const current = eventStats.get(s.eventId) ?? {
         grossCents: 0,
@@ -118,11 +139,30 @@ export async function GET() {
         status: events.find((e) => e.id === s.eventId)?.status,
         startsAt: events.find((e) => e.id === s.eventId)?.startsAt ?? null,
       };
-      addTo(current, gross, fees, qty);
+      addTo(current, gross, fees, net, qty);
       eventStats.set(s.eventId, current);
     }
 
-    // Fallback se não existir SaleSummary: usar tickets legacy
+    // Pré-carregar payment_events para alocar fees reais (ou estimadas) por PaymentIntent
+    const ticketIntents = await prisma.paymentEvent.findMany({
+      where: { eventId: { in: eventIds } },
+      select: { stripePaymentIntentId: true, stripeFeeCents: true, platformFeeCents: true, amountCents: true },
+    });
+    const intentMap = new Map<
+      string,
+      { stripeFeeCents: number | null; platformFeeCents: number; amountCents: number | null; tickets: number }
+    >();
+    ticketIntents.forEach((pe) => {
+      if (!pe.stripePaymentIntentId) return;
+      intentMap.set(pe.stripePaymentIntentId, {
+        stripeFeeCents: pe.stripeFeeCents ?? null,
+        platformFeeCents: pe.platformFeeCents ?? 0,
+        amountCents: pe.amountCents ?? null,
+        tickets: 0,
+      });
+    });
+
+    // Fallback se não existir SaleSummary: usar tickets legacy + fees de payment_events (ou estimativa)
     if (summaries.length === 0) {
       const tickets = await prisma.ticket.findMany({
         where: {
@@ -134,16 +174,53 @@ export async function GET() {
           platformFeeCents: true,
           purchasedAt: true,
           eventId: true,
+          totalPaidCents: true,
+          event: { select: { payoutMode: true } },
         },
       });
 
       for (const t of tickets) {
         const gross = t.pricePaid ?? 0;
-        const fees = t.platformFeeCents ?? 0;
-        addTo(totals, gross, fees, 1);
+        const platformFee = t.platformFeeCents ?? 0;
+        const total = (t.totalPaidCents ?? gross) + platformFee;
 
-        if (t.purchasedAt >= last30) addTo(agg30, gross, fees, 1);
-        if (t.purchasedAt >= last7) addTo(agg7, gross, fees, 1);
+        if (t.stripePaymentIntentId) {
+          const entry = intentMap.get(t.stripePaymentIntentId) ?? null;
+          if (entry) {
+            entry.tickets += 1;
+            intentMap.set(t.stripePaymentIntentId, entry);
+          }
+        }
+      }
+
+      // Alocar fees dos payment_events (ou estimar) por intent
+      const feePerIntent = new Map<string, { stripeFeePerTicket: number; platformFeePerTicket: number }>();
+      intentMap.forEach((entry, intentId) => {
+        if (entry.tickets <= 0) return;
+        const stripeFee =
+          entry.stripeFeeCents != null
+            ? entry.stripeFeeCents
+            : estimateStripeFee(entry.amountCents ?? 0);
+        const stripePer = Math.round(stripeFee / entry.tickets);
+        const platformPer = Math.round((entry.platformFeeCents ?? 0) / entry.tickets);
+        feePerIntent.set(intentId, { stripeFeePerTicket: stripePer, platformFeePerTicket: platformPer });
+      });
+
+      for (const t of tickets) {
+        const gross = t.pricePaid ?? 0;
+        const platformFee = t.platformFeeCents ?? 0;
+        const total = (t.totalPaidCents ?? gross) + platformFee;
+        const feeAlloc = t.stripePaymentIntentId ? feePerIntent.get(t.stripePaymentIntentId) : null;
+        const stripeFee =
+          feeAlloc && feeAlloc.stripeFeePerTicket > 0
+            ? feeAlloc.stripeFeePerTicket
+            : estimateStripeFee(total);
+        const totalFees = platformFee + stripeFee;
+        const net = Math.max(0, total - totalFees);
+        addTo(totals, gross, totalFees, net, 1);
+
+        if (t.purchasedAt >= last30) addTo(agg30, gross, totalFees, net, 1);
+        if (t.purchasedAt >= last7) addTo(agg7, gross, totalFees, net, 1);
 
         const current = eventStats.get(t.eventId) ?? {
           grossCents: 0,
@@ -153,7 +230,7 @@ export async function GET() {
           status: events.find((e) => e.id === t.eventId)?.status,
           startsAt: events.find((e) => e.id === t.eventId)?.startsAt ?? null,
         };
-        addTo(current, gross, fees, 1);
+        addTo(current, gross, totalFees, net, 1);
         eventStats.set(t.eventId, current);
       }
     }

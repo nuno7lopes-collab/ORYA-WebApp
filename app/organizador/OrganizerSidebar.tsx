@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useState } from "react";
+import { DASHBOARD_LABEL } from "./dashboardUi";
 
 const baseTabHref = (tab: string) => `/organizador?tab=${tab}`;
 
@@ -15,7 +16,7 @@ export function OrganizerSidebar({ organizerName, organizerAvatarUrl }: Props) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const tabParam = searchParams?.get("tab") || "overview";
-  const [catsOpen, setCatsOpen] = useState(() => ["padel", "restaurants", "volunteer", "night"].includes(tabParam));
+  const [catsOpen, setCatsOpen] = useState(true);
 
   const linkClass = (active: boolean) =>
     `flex items-center justify-between rounded-xl px-3 py-2 transition ${
@@ -25,16 +26,6 @@ export function OrganizerSidebar({ organizerName, organizerAvatarUrl }: Props) {
   const isTab = (tab: string) => pathname === "/organizador" && tabParam === tab;
   const isCreateEvent = pathname?.startsWith("/organizador/eventos/novo");
   const isEventDetail = pathname?.startsWith("/organizador/eventos/") && !isCreateEvent;
-
-  const categoryLinks = useMemo(
-    () => [
-      { key: "padel", label: "Padel", soon: false },
-      { key: "restaurants", label: "Restaurantes", soon: true },
-      { key: "volunteer", label: "Solidário", soon: true },
-      { key: "night", label: "Festas", soon: true },
-    ],
-    [],
-  );
 
   return (
     <aside className="hidden lg:flex w-60 shrink-0 flex-col gap-2 border-r border-white/10 bg-black/40 backdrop-blur-xl px-4 py-6 text-[13px] text-white/80 shadow-[0_18px_60px_rgba(0,0,0,0.55)] sticky top-0 h-screen overflow-y-auto">
@@ -48,7 +39,7 @@ export function OrganizerSidebar({ organizerName, organizerAvatarUrl }: Props) {
           )}
         </div>
         <div>
-          <p className="text-[10px] uppercase tracking-[0.25em] text-white/50">Dashboard</p>
+          <p className={DASHBOARD_LABEL}>Dashboard</p>
           <p className="text-sm font-semibold text-white">{organizerName || "Organizador"}</p>
         </div>
       </div>
@@ -71,7 +62,7 @@ export function OrganizerSidebar({ organizerName, organizerAvatarUrl }: Props) {
           <span>Criar evento</span>
         </Link>
         <Link href={baseTabHref("sales")} className={linkClass(isTab("sales"))}>
-          <span>Bilhetes & Vendas</span>
+          <span>Vendas</span>
         </Link>
         <Link href={baseTabHref("finance")} className={linkClass(isTab("finance"))} data-tour="finance">
           <span>Finanças</span>
@@ -83,33 +74,35 @@ export function OrganizerSidebar({ organizerName, organizerAvatarUrl }: Props) {
           <span>Marketing</span>
         </Link>
 
-        <div className="space-y-1 pt-1 border-t border-white/10">
-          <button
-            type="button"
-            onClick={() => setCatsOpen((p) => !p)}
-            className={`flex w-full items-center justify-between rounded-xl px-3 py-2 transition ${
-              catsOpen ? "text-white font-semibold" : "text-white/80 hover:bg-white/10"
-            }`}
-          >
-            <span>Categorias</span>
-            <span className="text-[10px] ml-1">{catsOpen ? "▲" : "▼"}</span>
-          </button>
-          {catsOpen && (
-            <div className="ml-3 space-y-1">
-              {categoryLinks.map((cat) => (
-                <Link
-                  key={cat.key}
-                  href={baseTabHref(cat.key)}
-                  className={linkClass(isTab(cat.key))}
-                >
-                  <span>{cat.label}</span>
-                  {cat.soon && <span className="rounded-full bg-amber-300/20 px-2 py-[2px] text-[10px] text-amber-100">Em breve</span>}
-                </Link>
-              ))}
-              <div className="h-px w-full bg-white/10" />
-            </div>
-          )}
-        </div>
+        <div className="border-t border-white/10 pt-2" />
+        <button
+          type="button"
+          onClick={() => setCatsOpen((v) => !v)}
+          className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left transition hover:bg-white/10"
+        >
+          <span className="text-[10px] uppercase tracking-[0.25em] text-white/60">Categorias</span>
+          <span className="text-white/60">{catsOpen ? "▴" : "▾"}</span>
+        </button>
+        {catsOpen && (
+          <div className="space-y-1">
+            <Link href={baseTabHref("padel")} className={linkClass(isTab("padel"))}>
+              <span>Padel</span>
+            </Link>
+            {[
+              { key: "restauracao", label: "Restauração" },
+              { key: "solidario", label: "Solidário" },
+              { key: "festas", label: "Festas" },
+              { key: "outro", label: "Outro tipo" },
+            ].map((item) => (
+              <div key={item.key} className="flex items-center justify-between rounded-xl px-3 py-2 text-white/60">
+                <span>{item.label}</span>
+                <span className="rounded-full border border-amber-300/30 bg-amber-400/15 px-2 py-[1px] text-[10px] uppercase tracking-[0.12em] text-amber-100">
+                  Em breve
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
 
         <p className="px-2 pt-2 text-[10px] uppercase tracking-[0.25em] text-white/40">Estrutura</p>
         <Link href={baseTabHref("staff")} className={linkClass(isTab("staff") || pathname.startsWith("/organizador/staff"))}>

@@ -8,10 +8,17 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { stripe } from "@/lib/stripeClient";
 import { getPlatformFees } from "@/lib/platformSettings";
 import { shouldNotify, createNotification } from "@/lib/notifications";
-import { NotificationType } from "@prisma/client";
+import { NotificationType, PaymentEventSource, type FeeMode } from "@prisma/client";
+import { paymentScenarioSchema, type PaymentScenario } from "@/lib/paymentScenario";
 import { parsePhoneNumberFromString } from "libphonenumber-js/min";
 import { computePromoDiscountCents } from "@/lib/promoMath";
 import { computePricing } from "@/lib/pricing";
+import {
+  checkoutMetadataSchema,
+  createPurchaseId,
+  normalizeItemsForMetadata,
+} from "@/lib/checkoutSchemas";
+import { resolveOwner } from "@/lib/ownership/resolveOwner";
 
 type CheckoutItem = {
   ticketId: string;
@@ -34,6 +41,8 @@ type Body = {
   contact?: string;
   guest?: Guest;
   promoCode?: string | null;
+  paymentScenario?: string | null;
+  idempotencyKey?: string | null;
 };
 
 function normalizePhone(phone: string | null | undefined, defaultCountry: string = "PT") {
@@ -115,8 +124,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { slug, items, contact, guest, promoCode: rawPromo } = body;
+    const { slug, items, contact, guest, promoCode: rawPromo, paymentScenario: rawScenario, idempotencyKey: bodyIdemKey } = body;
     const promoCodeInput = typeof rawPromo === "string" ? rawPromo.trim() : "";
+    const idempotencyKeyHeader = req.headers.get("Idempotency-Key");
+    const idempotencyKey = (bodyIdemKey || idempotencyKeyHeader || "").trim() || null;
 
     // Validar que o evento existe (fetch raw para evitar issues com enum legacy "ADDED")
     // Autenticação do utilizador
@@ -150,6 +161,23 @@ export async function POST(req: NextRequest) {
         );
       }
     }
+
+    const ownerResolved = await resolveOwner({ sessionUserId: userId, guestEmail });
+    const ownerForMetadata =
+      ownerResolved.ownerUserId || ownerResolved.ownerIdentityId
+        ? {
+            ownerUserId: ownerResolved.ownerUserId ?? undefined,
+            ownerIdentityId: ownerResolved.ownerIdentityId ?? undefined,
+            emailNormalized: ownerResolved.emailNormalized ?? undefined,
+          }
+        : userId || guestEmail
+          ? {
+              userId: userId ?? undefined,
+              guestEmail: guestEmail || undefined,
+              guestName: guestName || undefined,
+              guestPhone: guestPhone || undefined,
+            }
+          : undefined;
 
     const eventRows = await prisma.$queryRaw<
       {
@@ -205,6 +233,7 @@ export async function POST(req: NextRequest) {
     `;
 
     const event = eventRows[0];
+    const eventOrganizerId = event?.organizer_id ?? null;
 
     if (!event) {
       return NextResponse.json({ ok: false, error: "Evento não encontrado." }, { status: 404 });
@@ -435,6 +464,10 @@ export async function POST(req: NextRequest) {
         throw new Error("PROMO_INVALID");
       }
 
+      // Scope ao evento já garantido no filtro eventId; não há organizerId na tabela nova.
+      if (promo.eventId && promo.eventId !== event.id) {
+        throw new Error("PROMO_SCOPE");
+      }
       if (promo.validFrom && promo.validFrom > nowDate) {
         throw new Error("PROMO_NOT_ACTIVE");
       }
@@ -448,11 +481,9 @@ export async function POST(req: NextRequest) {
       ) {
         throw new Error("PROMO_MIN_QTY");
       }
-      if (
-        promo.minTotalCents !== null &&
-        promo.minTotalCents !== undefined &&
-        amountInCents < promo.minTotalCents
-      ) {
+      const minCartCents =
+        promo.minTotalCents ?? (promo as { minCartValueCents?: number | null }).minCartValueCents ?? null;
+      if (minCartCents !== null && minCartCents !== undefined && amountInCents < minCartCents) {
         throw new Error("PROMO_MIN_TOTAL");
       }
 
@@ -487,7 +518,7 @@ export async function POST(req: NextRequest) {
           type: promo.type as "PERCENTAGE" | "FIXED",
           value: promo.value,
           minQuantity: promo.minQuantity,
-          minTotalCents: promo.minTotalCents,
+          minTotalCents: minCartCents ?? promo.minTotalCents,
         },
         totalQuantity,
         amountInCents,
@@ -499,6 +530,11 @@ export async function POST(req: NextRequest) {
     if (promoCodeInput) {
       try {
         await validatePromo({ code: promoCodeInput });
+        console.info("[analytics] promo_applied", {
+          code: promoCodeInput,
+          eventId: event.id,
+          userId,
+        });
       } catch (err) {
         const msg = (err as Error).message;
         const map: Record<string, string> = {
@@ -509,6 +545,7 @@ export async function POST(req: NextRequest) {
           PROMO_USER_LIMIT: "Já utilizaste este código o número máximo de vezes.",
           PROMO_MIN_QTY: "Quantidade insuficiente para aplicar este código.",
           PROMO_MIN_TOTAL: "Valor mínimo não atingido para aplicar este código.",
+          PROMO_SCOPE: "Este código não é válido para este evento/organização.",
           PROMO_UNAVAILABLE: "Descontos temporariamente indisponíveis.",
         };
         return NextResponse.json(
@@ -555,13 +592,13 @@ export async function POST(req: NextRequest) {
 
     const { feeBps: defaultFeeBps, feeFixedCents: defaultFeeFixed } = await getPlatformFees();
 
-    // Org da plataforma? (org_type = PLATFORM → não cobra application fee)
+    // Org da plataforma? (org_type = PLATFORM → não cobra application fee, usa conta da plataforma)
     const isPlatformOrg = (event.org_type || "").toString().toUpperCase() === "PLATFORM";
 
     const pricing = computePricing(amountInCents + discountCents, discountCents, {
-      eventFeeModeOverride: event.fee_mode_override as any,
-      eventFeeMode: event.fee_mode as any,
-      organizerFeeMode: event.org_fee_mode as any,
+      eventFeeModeOverride: (event.fee_mode_override as FeeMode | null) ?? undefined,
+      eventFeeMode: (event.fee_mode as FeeMode | null) ?? undefined,
+      organizerFeeMode: (event.org_fee_mode as FeeMode | null) ?? undefined,
       platformDefaultFeeMode: "ADDED",
       eventPlatformFeeBpsOverride: event.platform_fee_bps_override,
       eventPlatformFeeFixedCentsOverride: event.platform_fee_fixed_cents_override,
@@ -573,36 +610,32 @@ export async function POST(req: NextRequest) {
     });
     const platformFeeCents = pricing.platformFeeCents;
 
+    // Stripe account rules
     let stripeAccountId = event.org_stripe_account_id ?? null;
     const payoutModeRaw = (event.payout_mode || "ORGANIZER").toString().toUpperCase();
-    // Hotfix: se não existir conta Connect, tratamos como payout na plataforma
-    const payoutMode =
-      payoutModeRaw === "PLATFORM" ? "PLATFORM" : stripeAccountId ? "ORGANIZER" : "PLATFORM";
-    const paymentsStatus = stripeAccountId
-      ? event.org_stripe_charges_enabled && event.org_stripe_payouts_enabled
-        ? "READY"
-        : "PENDING"
-      : "NO_STRIPE";
+    const organizerStripeReady = Boolean(event.org_stripe_charges_enabled && event.org_stripe_payouts_enabled);
 
-    if (payoutMode === "ORGANIZER" && paymentsStatus !== "READY") {
-      // Bloqueia checkout se o organizer quis receber diretamente mas não tem Stripe pronto
-      return NextResponse.json(
-        {
-          ok: false,
-          error: "Este evento não pode aceitar pagamentos enquanto a conta Stripe do organizador não estiver ligada.",
-          code: "ORGANIZER_STRIPE_REQUIRED",
-        },
-        { status: 409 },
-      );
-    }
-    // Se payoutMode for PLATFORM por falta de Stripe, seguimos com a conta da plataforma
-    if (payoutMode === "PLATFORM") {
+    // Plataforma ORYA: usa conta da plataforma, não exige Connect
+    if (isPlatformOrg || payoutModeRaw === "PLATFORM") {
       stripeAccountId = null;
+    } else {
+      // Organizadores externos: exigem Connect pronto
+      if (!stripeAccountId || !organizerStripeReady) {
+        return NextResponse.json(
+          {
+            ok: false,
+            code: "ORGANIZER_STRIPE_NOT_CONNECTED",
+            message: "Pagamentos estão desativados porque o organizador ainda não ligou a Stripe.",
+            retryable: false,
+            nextAction: "CONNECT_STRIPE",
+          },
+          { status: 409 },
+        );
+      }
     }
 
-    const isPartnerEvent = payoutMode === "ORGANIZER" && Boolean(stripeAccountId);
+    const isPartnerEvent = Boolean(stripeAccountId);
 
-    const platformFeeCents = pricing.platformFeeCents;
     const totalAmountInCents = pricing.totalCents;
 
     if (totalAmountInCents < 0 || platformFeeCents > Math.max(totalAmountInCents, 0)) {
@@ -612,12 +645,161 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const purchaseId = createPurchaseId();
+    const normalizedItems = normalizeItemsForMetadata(
+      lines.map((line) => ({
+        ticketTypeId: line.ticketTypeId,
+        quantity: line.quantity,
+        unitPriceCents: line.unitPriceCents,
+        currency: line.currency,
+      })),
+    );
+
+    const parsedScenario = paymentScenarioSchema.safeParse(
+      typeof rawScenario === "string" ? rawScenario.toUpperCase() : rawScenario,
+    );
+    const requestedScenario: PaymentScenario | null = parsedScenario.success ? parsedScenario.data : null;
+
+    const paymentScenario: PaymentScenario =
+      totalAmountInCents === 0
+        ? "FREE_CHECKOUT"
+        : requestedScenario
+          ? requestedScenario
+          : "SINGLE";
+
+    const scenarioAdjusted: PaymentScenario = (() => {
+      if (paymentScenario === "GROUP_FULL") return "GROUP_FULL";
+      if (paymentScenario === "GROUP_SPLIT") return "GROUP_SPLIT";
+      if (paymentScenario === "RESALE" || paymentScenario === "SUBSCRIPTION") return paymentScenario;
+      if (paymentScenario === "FREE_CHECKOUT") return "FREE_CHECKOUT";
+      return "SINGLE";
+    })();
+    const effectiveDedupeKey = idempotencyKey ?? purchaseId;
+
+    // Idempotência API: se houver payment_event com dedupeKey=idempotencyKey, devolve mesma resposta
+    if (idempotencyKey) {
+      const existing = await prisma.paymentEvent.findFirst({
+        where: { dedupeKey: idempotencyKey },
+        select: { stripePaymentIntentId: true, purchaseId: true },
+      });
+      if (existing) {
+        return NextResponse.json(
+          {
+            ok: true,
+            reused: true,
+            paymentIntentId: existing.stripePaymentIntentId ?? undefined,
+            purchaseId: existing.purchaseId ?? undefined,
+          },
+          { status: 200 },
+        );
+      }
+    }
+
+    const metadataValidation = checkoutMetadataSchema.safeParse({
+      paymentScenario: scenarioAdjusted,
+      purchaseId,
+      items: normalizedItems,
+      eventId: event.id,
+      eventSlug: event.slug,
+      owner: ownerForMetadata,
+    });
+
+    if (!metadataValidation.success) {
+      console.warn("[payments/intent] Metadata inválida", metadataValidation.error.format());
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "Metadata inválida para checkout.",
+          code: "INVALID_METADATA",
+          retryable: false,
+        },
+        { status: 400 },
+      );
+    }
+
     // --------------------------
     // CHECKOUT GRATUITO (0 €)
     // --------------------------
     if (totalAmountInCents === 0) {
+      if (!userId || !profile?.username?.trim()) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error: "Falta terminar o perfil (username) para concluir eventos gratuitos.",
+            code: "USERNAME_REQUIRED_FOR_FREE",
+            retryable: false,
+            nextAction: "NONE",
+          },
+          { status: 403 },
+        );
+      }
+
+      // Idempotência anti-double click e 1 por user: se já existe bilhete para este evento, recusar
+      const existingFreeTicket = await prisma.ticket.findFirst({
+        where: { eventId: event.id, userId, pricePaid: 0 },
+        select: { id: true },
+      });
+      if (existingFreeTicket) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error: "Já tens uma inscrição gratuita neste evento.",
+            code: "FREE_ALREADY_CLAIMED",
+            retryable: false,
+            nextAction: "NONE",
+          },
+          { status: 409 },
+        );
+      }
+
+      // Cooldown simples: bloquear se já fez free checkout neste evento nos últimos 10 minutos
+      const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
+      const recentFree = await prisma.paymentEvent.findFirst({
+        where: {
+          eventId: event.id,
+          userId,
+          amountCents: 0,
+          purchaseId: { not: null },
+          createdAt: { gte: tenMinutesAgo },
+        },
+        select: { purchaseId: true },
+      });
+      if (recentFree) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error: "Já fizeste uma inscrição gratuita há poucos minutos. Aguarda antes de tentar novamente.",
+            code: "FREE_RATE_LIMIT",
+            retryable: true,
+            nextAction: "NONE",
+            purchaseId: recentFree.purchaseId,
+          },
+          { status: 429 },
+        );
+      }
+
       let createdTicketsCount = 0;
       await prisma.$transaction(async (tx) => {
+        const saleSummary = await tx.saleSummary.create({
+          data: {
+            paymentIntentId: purchaseId,
+            eventId: event.id,
+            userId: ownerResolved.ownerUserId ?? userId,
+            purchaseId,
+            ownerUserId: ownerResolved.ownerUserId ?? null,
+            ownerIdentityId: ownerResolved.ownerIdentityId ?? null,
+            promoCodeId: promoCodeId ? Number(promoCodeId) : null,
+            subtotalCents: pricing.subtotalCents,
+            discountCents: discountCents,
+            platformFeeCents: 0,
+            stripeFeeCents: 0,
+            totalCents: 0,
+            netCents: 0,
+            feeMode: pricing.feeMode,
+            currency: currency.toUpperCase(),
+          },
+        });
+
         for (const line of lines) {
           const ticketType = ticketTypeMap.get(line.ticketTypeId);
           if (!ticketType) continue;
@@ -630,11 +812,31 @@ export async function POST(req: NextRequest) {
             }
           }
 
+          const grossCents = line.unitPriceCents * line.quantity;
+          const discountPerUnitCents = line.quantity > 0 ? Math.floor(grossCents / line.quantity) : 0;
+
+          await tx.saleLine.create({
+            data: {
+              saleSummaryId: saleSummary.id,
+              eventId: event.id,
+              ticketTypeId: line.ticketTypeId,
+              promoCodeId: promoCodeId ? Number(promoCodeId) : null,
+              quantity: line.quantity,
+              unitPriceCents: line.unitPriceCents,
+              discountPerUnitCents,
+              grossCents,
+              netCents: 0,
+              platformFeeCents: 0,
+            },
+          });
+
           for (let i = 0; i < line.quantity; i++) {
             const token = crypto.randomUUID();
-            const ticket = await tx.ticket.create({
+            await tx.ticket.create({
               data: {
-                userId,
+                userId: ownerResolved.ownerUserId ?? null,
+                ownerUserId: ownerResolved.ownerUserId ?? null,
+                ownerIdentityId: ownerResolved.ownerIdentityId ?? null,
                 eventId: event.id,
                 ticketTypeId: ticketType.id,
                 status: "ACTIVE",
@@ -644,26 +846,9 @@ export async function POST(req: NextRequest) {
                 currency: (ticketType.currency || "EUR").toUpperCase(),
                 platformFeeCents: 0,
                 totalPaidCents: 0,
-                stripePaymentIntentId: null,
+                stripePaymentIntentId: purchaseId,
               },
             });
-
-            if (!userId && guestEmail) {
-              await tx.guestTicketLink.upsert({
-                where: { ticketId: ticket.id },
-                update: {
-                  guestEmail,
-                  guestName: guestName || "Convidado",
-                  guestPhone: guestPhone || null,
-                },
-                create: {
-                  ticketId: ticket.id,
-                  guestEmail,
-                  guestName: guestName || "Convidado",
-                  guestPhone: guestPhone || null,
-                },
-              });
-            }
             createdTicketsCount += 1;
           }
 
@@ -672,12 +857,30 @@ export async function POST(req: NextRequest) {
             data: { soldQuantity: { increment: line.quantity } },
           });
         }
+
+        await tx.paymentEvent.create({
+          data: {
+            stripePaymentIntentId: purchaseId,
+            status: "OK",
+            purchaseId,
+            source: PaymentEventSource.API,
+            dedupeKey: effectiveDedupeKey,
+            attempt: 1,
+            eventId: event.id,
+            userId,
+            amountCents: 0,
+            platformFeeCents: 0,
+            stripeFeeCents: 0,
+            mode: event.is_test ? "TEST" : "LIVE",
+            isTest: Boolean(event.is_test),
+          },
+        });
       });
 
       if (padelConfig) {
-        const fullName = userData?.user?.user_metadata?.full_name || guestName || "Jogador Padel";
-        const emailToSave = userData?.user?.email || guestEmail || null;
-        const phoneToSave = userData?.user?.phone || contact || guestPhone || null;
+        const fullName = userData?.user?.user_metadata?.full_name || profile?.fullName || "Jogador Padel";
+        const emailToSave = userData?.user?.email || profile?.email || null;
+        const phoneToSave = userData?.user?.phone || contact || profile?.contactPhone || null;
         await upsertPadelPlayerProfile({
           organizerId: padelConfig.organizerId,
           fullName,
@@ -687,10 +890,10 @@ export async function POST(req: NextRequest) {
       }
 
       // Notificação para o organizer (se existir) — respeita prefs
-      if (event.organizerId) {
+      if (eventOrganizerId) {
         try {
           const ownerMembers = await prisma.organizerMember.findMany({
-            where: { organizerId: event.organizerId, role: { in: ["OWNER", "CO_OWNER", "ADMIN"] } },
+            where: { organizerId: eventOrganizerId, role: { in: ["OWNER", "CO_OWNER", "ADMIN"] } },
             select: { userId: true },
           });
           const uniqOwners = Array.from(new Set(ownerMembers.map((m) => m.userId)));
@@ -718,6 +921,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({
         ok: true,
         freeCheckout: true,
+        purchaseId,
+        paymentScenario,
         ticketsCreated: createdTicketsCount,
         amount: 0,
         currency: currency.toUpperCase(),
@@ -733,11 +938,12 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    const metadata = {
+    const metadata: Record<string, string> = {
       eventId: String(event.id),
       eventSlug: String(event.slug),
-      userId: userId ? String(userId) : "",
-      items: JSON.stringify(items),
+      purchaseId,
+      items: JSON.stringify(normalizedItems),
+      paymentScenario: scenarioAdjusted,
       baseAmountCents: String(pricing.subtotalCents - discountCents),
       discountCents: String(discountCents),
       platformFeeMode: pricing.feeMode,
@@ -762,6 +968,14 @@ export async function POST(req: NextRequest) {
         currency: currency.toUpperCase(),
       }),
     };
+
+    if (userId) {
+      metadata.userId = userId;
+    }
+    if (effectiveDedupeKey) metadata.idempotencyKey = effectiveDedupeKey;
+    if (ownerResolved.ownerUserId) metadata.ownerUserId = ownerResolved.ownerUserId;
+    if (ownerResolved.ownerIdentityId) metadata.ownerIdentityId = ownerResolved.ownerIdentityId;
+    if (ownerResolved.emailNormalized) metadata.emailNormalized = ownerResolved.emailNormalized;
 
     const allowedPaymentMethods = ["card", "link", "mb_way"] as const;
 
@@ -807,6 +1021,8 @@ export async function POST(req: NextRequest) {
       currency,
       discountCents,
       paymentIntentId: paymentIntent.id,
+      purchaseId,
+      paymentScenario: scenarioAdjusted,
       breakdown: {
         lines,
         subtotalCents: pricing.subtotalCents,

@@ -89,18 +89,22 @@ export async function POST(req: NextRequest) {
       env.supabaseUrl;
 
     // Apenas OTP de signup. Se email já existir → pedir login/Google.
-    const { data, error } = await supabaseAdmin.auth.admin.generateLink({
+    const linkPayload: Record<string, unknown> = {
       type: "signup",
       email: rawEmail,
-      password: password ?? undefined,
       options: {
-        emailRedirectTo: `${siteUrl}/auth/callback`,
+        redirectTo: `${siteUrl}/auth/callback`,
         data: {
           ...(usernameNormalized ? { pending_username: usernameNormalized } : {}),
           full_name: fullName || undefined,
         },
       },
-    });
+    };
+    if (password) {
+      linkPayload.password = password;
+    }
+
+    const { data, error } = await supabaseAdmin.auth.admin.generateLink(linkPayload as any);
 
     if (error) {
       const errorCode =
@@ -121,11 +125,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         {
           ok: false,
-          error: "Não foi possível gerar o código. Tenta novamente dentro de alguns minutos.",
-          details: typeof error === "object" ? (error as Record<string, unknown>) : undefined,
-        },
-        { status: 500 },
-      );
+              error: "Não foi possível gerar o código. Tenta novamente dentro de alguns minutos.",
+              details: typeof error === "object" ? (error as unknown as Record<string, unknown>) : undefined,
+            },
+            { status: 500 },
+          );
     }
 
     const otp = data?.properties?.email_otp ?? null;

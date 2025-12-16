@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "crypto";
-import { OrganizerEmailRequestStatus, OrganizerMemberRole } from "@prisma/client";
+import { OrganizerMemberRole } from "@prisma/client";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
@@ -8,6 +8,7 @@ import { sendOfficialEmailVerificationEmail } from "@/lib/emailSender";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
 const DEFAULT_EXPIRATION_MS = 1000 * 60 * 60 * 24; // 24h
+const STATUS_PENDING = "PENDING";
 
 export async function POST(req: NextRequest) {
   try {
@@ -52,9 +53,15 @@ export async function POST(req: NextRequest) {
     if (!organizer) {
       return NextResponse.json({ ok: false, error: "ORGANIZER_NOT_FOUND" }, { status: 404 });
     }
+
     if (organizer.officialEmailVerifiedAt && organizer.officialEmail === emailRaw) {
       return NextResponse.json({ ok: false, error: "EMAIL_ALREADY_VERIFIED" }, { status: 400 });
     }
+
+    await prisma.organizer.update({
+      where: { id: organizerId },
+      data: { officialEmail: emailRaw },
+    });
 
     const now = Date.now();
     const expiresAt = new Date(now + DEFAULT_EXPIRATION_MS);
@@ -62,8 +69,8 @@ export async function POST(req: NextRequest) {
 
     const request = await prisma.$transaction(async (tx) => {
       await tx.organizerOfficialEmailRequest.updateMany({
-        where: { organizerId, status: OrganizerEmailRequestStatus.PENDING },
-        data: { status: OrganizerEmailRequestStatus.CANCELLED, cancelledAt: new Date(now) },
+        where: { organizerId, status: STATUS_PENDING },
+        data: { status: "CANCELLED", cancelledAt: new Date(now) },
       });
 
       const created = await tx.organizerOfficialEmailRequest.create({
@@ -72,7 +79,7 @@ export async function POST(req: NextRequest) {
           requestedByUserId: user.id,
           newEmail: emailRaw,
           token,
-          status: OrganizerEmailRequestStatus.PENDING,
+          status: STATUS_PENDING,
           expiresAt,
         },
       });
