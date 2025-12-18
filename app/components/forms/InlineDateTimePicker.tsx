@@ -71,7 +71,6 @@ export function InlineDateTimePicker({
     setMounted(true);
   }, []);
 
-  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (parsedValue) {
       setSelectedDate(parsedValue);
@@ -80,8 +79,6 @@ export function InlineDateTimePicker({
       setViewMonth(parsedValue);
     }
   }, [parsedValue]);
-  /* eslint-enable react-hooks/set-state-in-effect */
-
   const days = useMemo(() => {
     const firstOfMonth = new Date(viewMonth.getFullYear(), viewMonth.getMonth(), 1);
     const startWeekday = firstOfMonth.getDay(); // 0-6

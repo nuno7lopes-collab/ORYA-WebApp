@@ -843,6 +843,37 @@ export async function POST(req: NextRequest) {
       return "SINGLE";
     })();
 
+    // Revendas desativadas (só admins internos podem usar via outros canais)
+    if (scenarioAdjusted === "RESALE") {
+      return intentError("RESALE_DISABLED", "A revenda está temporariamente indisponível.", {
+        httpStatus: 403,
+        status: "FAILED",
+        nextAction: "NONE",
+      });
+    }
+
+    // Checkouts gratuitos exigem sessão + username definido
+    if (scenarioAdjusted === "FREE_CHECKOUT") {
+      if (!userId) {
+        return intentError("AUTH_REQUIRED", "Inicia sessão para concluir este checkout gratuito.", {
+          httpStatus: 401,
+          status: "FAILED",
+          nextAction: "LOGIN",
+        });
+      }
+      const profile = await prisma.profile.findUnique({
+        where: { id: userId },
+        select: { username: true },
+      });
+      if (!profile?.username) {
+        return intentError("USERNAME_REQUIRED", "Define um username para concluir este checkout gratuito.", {
+          httpStatus: 403,
+          status: "FAILED",
+          nextAction: "LOGIN",
+        });
+      }
+    }
+
     // Padel pricing guard: qty coerente com scenario (anti preço “por dupla”)
     if (scenarioAdjusted === "GROUP_FULL") {
       const invalid = normalizedItems.some((i) => i.quantity !== 2);
@@ -1045,7 +1076,7 @@ export async function POST(req: NextRequest) {
         });
       }
 
-      let createdTicketsCount = 0;
+      const createdTicketsCount = 0;
       const freePayload = {
         eventId: event.id,
         purchaseId,

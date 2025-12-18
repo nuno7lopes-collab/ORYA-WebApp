@@ -5,9 +5,10 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import { ConfirmDestructiveActionDialog } from "@/app/components/ConfirmDestructiveActionDialog";
+import { cn } from "@/lib/utils";
 import { trackEvent } from "@/lib/analytics";
 import { useUser } from "@/app/hooks/useUser";
-import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
+import { AuthModalProvider, useAuthModal } from "@/app/components/autenticação/AuthModalContext";
 import PromoCodesPage from "./promo/PromoCodesClient";
 import OrganizerSettingsPage from "./(dashboard)/settings/page";
 import OrganizerStaffPage from "./(dashboard)/staff/page";
@@ -179,6 +180,9 @@ type OrganizerLite = {
   payoutIban?: string | null;
   officialEmail?: string | null;
   officialEmailVerifiedAt?: string | null;
+  stripeAccountId?: string | null;
+  stripeChargesEnabled?: boolean | null;
+  stripePayoutsEnabled?: boolean | null;
 };
 
 type TabKey =
@@ -198,7 +202,18 @@ type TabKey =
 const ALL_TABS: TabKey[] = ["overview", "events", "sales", "marketing", "staff", "finance", "invoices", "padel", "settings"];
 type SalesRange = "7d" | "30d" | "90d" | "365d" | "all";
 
-export default function OrganizadorPage() {
+type EventStatusFilter = "all" | "active" | "draft" | "finished" | "ongoing" | "archived";
+
+const DATE_LOCALE = "pt-PT";
+const DATE_TIMEZONE = "Europe/Lisbon";
+
+const formatDateTime = (date: Date | null, options?: Intl.DateTimeFormatOptions) =>
+  date ? date.toLocaleString(DATE_LOCALE, { timeZone: DATE_TIMEZONE, ...options }) : "Data a definir";
+
+const formatDateOnly = (date: Date | null, options?: Intl.DateTimeFormatOptions) =>
+  date ? date.toLocaleDateString(DATE_LOCALE, { timeZone: DATE_TIMEZONE, ...options }) : "";
+
+function OrganizadorPageInner() {
   const { user, profile, isLoading: userLoading, mutate: mutateUser } = useUser();
   const { openModal } = useAuthModal();
   const [ctaLoading, setCtaLoading] = useState(false);
@@ -214,7 +229,7 @@ export default function OrganizadorPage() {
   const [businessName, setBusinessName] = useState<string>("");
   const [city, setCity] = useState<string>("");
   const [payoutIban, setPayoutIban] = useState<string>("");
-  const [eventStatusFilter, setEventStatusFilter] = useState<"all" | "active" | "draft" | "finished" | "ongoing">("all");
+  const [eventStatusFilter, setEventStatusFilter] = useState<EventStatusFilter>("all");
   const [eventTypeFilter, setEventTypeFilter] = useState<string>("all");
   const [eventCategoryFilter, setEventCategoryFilter] = useState<string>("all");
   const [eventDateFilter, setEventDateFilter] = useState<"any" | "today" | "week" | "month" | "weekend">("any");
@@ -224,7 +239,7 @@ export default function OrganizadorPage() {
   const [timeScope, setTimeScope] = useState<"all" | "upcoming" | "ongoing" | "past">("all");
   const [viewMode, setViewMode] = useState<"cards" | "table">("cards");
   const [eventActionLoading, setEventActionLoading] = useState<number | null>(null);
-  const [eventDialog, setEventDialog] = useState<{ mode: "archive" | "delete"; ev: EventItem } | null>(null);
+  const [eventDialog, setEventDialog] = useState<{ mode: "archive" | "delete" | "unarchive"; ev: EventItem } | null>(null);
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -283,6 +298,10 @@ export default function OrganizadorPage() {
     const tabParam = searchParams.get("tab");
     if (tabParam === "events" && viewParam === "categories") {
       router.replace("/organizador/categorias", { scroll: false });
+      return;
+    }
+    if (tabParam === "settings") {
+      router.replace("/organizador/settings", { scroll: false });
     }
   }, [router, searchParams]);
 
@@ -449,25 +468,31 @@ export default function OrganizadorPage() {
   );
 
   const archiveEvent = useCallback(
-    async (target: EventItem, mode: "archive" | "delete") => {
+    async (target: EventItem, mode: "archive" | "delete" | "unarchive") => {
       setEventActionLoading(target.id);
       setCtaError(null);
+      const archive = mode === "archive" || mode === "delete";
       try {
         const res = await fetch("/api/organizador/events/update", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ eventId: target.id, archive: true }),
+          body: JSON.stringify({ eventId: target.id, archive }),
         });
         const json = await res.json().catch(() => null);
         if (!res.ok || json?.ok === false) {
           setCtaError(json?.error || "Não foi possível concluir esta ação.");
         } else {
           mutateEvents();
-          setCtaSuccess(mode === "delete" ? "Rascunho apagado." : "Evento arquivado.");
-          trackEvent(mode === "delete" ? "event_draft_deleted" : "event_archived", {
-            eventId: target.id,
-            status: target.status,
-          });
+          if (mode === "delete") {
+            setCtaSuccess("Rascunho apagado.");
+            trackEvent("event_draft_deleted", { eventId: target.id, status: target.status });
+          } else if (mode === "archive") {
+            setCtaSuccess("Evento arquivado.");
+            trackEvent("event_archived", { eventId: target.id, status: target.status });
+          } else {
+            setCtaSuccess("Evento reativado.");
+            trackEvent("event_unarchived", { eventId: target.id, status: target.status });
+          }
           setTimeout(() => setCtaSuccess(null), 3000);
         }
       } catch (err) {
@@ -511,37 +536,6 @@ export default function OrganizadorPage() {
     organizer?.status === "ACTIVE" && activeTab === "padel" && !padelClubs && !padelPlayers;
 
   const currentQuery = searchParams?.toString() || "";
-
-  useEffect(() => {
-    const params = new URLSearchParams(currentQuery);
-    const setParam = (key: string, value: string, defaultVal: string) => {
-      if (!value || value === defaultVal) params.delete(key);
-      else params.set(key, value);
-    };
-    setParam("status", eventStatusFilter, "all");
-    setParam("type", eventTypeFilter, "all");
-    setParam("cat", eventCategoryFilter, "all");
-    setParam("date", eventDateFilter, "any");
-    setParam("club", eventPartnerClubFilter, "all");
-    setParam("search", searchTerm, "");
-    setParam("scope", timeScope, "all");
-    setParam("view", viewMode, "cards");
-    const qs = params.toString();
-    if (qs !== currentQuery) {
-      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
-    }
-  }, [
-    eventCategoryFilter,
-    eventDateFilter,
-    eventStatusFilter,
-    eventTypeFilter,
-    pathname,
-    router,
-    searchTerm,
-    timeScope,
-    viewMode,
-    currentQuery,
-  ]);
 
   async function handleBecomeOrganizer() {
     if (!user) {
@@ -684,7 +678,8 @@ export default function OrganizadorPage() {
     "👥 Staff e acessos rápidos: dá permissões de check-in sem partilhar a conta.",
   ];
 
-  const containerClasses = "mx-auto max-w-7xl px-4 pb-12 pt-6 md:pt-8 md:px-6 lg:px-8";
+  // Usar largura completa do inset para evitar que o conteúdo fique centrado/direita quando a sidebar está aberta
+  const containerClasses = "w-full max-w-none px-4 pb-12 pt-6 md:pt-8 md:px-6 lg:px-8";
   const eventsList = useMemo(() => events?.items ?? [], [events]);
   const eventsListLoading = organizer?.status === "ACTIVE" && activeTab === "events" && !events;
   const overviewLoading = organizer?.status === "ACTIVE" && !overview;
@@ -844,6 +839,7 @@ export default function OrganizadorPage() {
       const isOngoing = startsAt && endsAt ? startsAt.getTime() <= now.getTime() && now.getTime() <= endsAt.getTime() : false;
 
       if (eventStatusFilter === "draft" && ev.status !== "DRAFT") return false;
+      if (eventStatusFilter === "archived" && ev.status !== "ARCHIVED") return false;
       if (eventStatusFilter === "active" && !(ev.status === "PUBLISHED" && isFuture)) return false;
       if (eventStatusFilter === "finished" && !isFinished) return false;
       if (eventStatusFilter === "ongoing" && !isOngoing) return false;
@@ -1033,7 +1029,7 @@ export default function OrganizadorPage() {
       (ev.feesCents / 100).toFixed(2),
       (ev.netCents / 100).toFixed(2),
       ev.status ?? "",
-      ev.startsAt ? new Date(ev.startsAt).toLocaleDateString("pt-PT") : "",
+      formatDateOnly(ev.startsAt ? new Date(ev.startsAt) : null),
     ]);
     const csv = [header.join(";"), ...rows.map((r) => r.join(";"))].join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
@@ -1049,7 +1045,7 @@ export default function OrganizadorPage() {
     if (!salesSeries?.points?.length || !selectedSalesEvent) return;
     const header = ["Data", "Bilhetes", "Bruto (€)", "Desconto (€)", "Taxas (€)", "Líquido (€)"];
     const rows = salesSeries.points.map((p) => {
-      const date = new Date(p.date).toLocaleDateString("pt-PT");
+      const date = formatDateOnly(new Date(p.date));
       const gross = (p.grossCents ?? p.revenueCents ?? 0) / 100;
       const discount = (p.discountCents ?? 0) / 100;
       const fees = (p.platformFeeCents ?? 0) / 100;
@@ -1486,7 +1482,7 @@ export default function OrganizadorPage() {
                     const ticketsSold = ev.ticketsSold ?? 0;
                     const revenue = ((ev.revenueCents ?? 0) / 100).toFixed(2);
                     const dateLabel = date
-                      ? date.toLocaleString("pt-PT", {
+                      ? formatDateTime(date, {
                           day: "2-digit",
                           month: "short",
                           hour: "2-digit",
@@ -1545,175 +1541,163 @@ export default function OrganizadorPage() {
 
       {activeTab === "events" && (
         <section className="space-y-4">
-          {/* Header + ação */}
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <div className="space-y-1">
-              <h2 className="text-2xl font-semibold">Gestão de eventos</h2>
-              <p className="text-sm text-white/65">Vê os teus eventos, filtra o que precisas e cria novos em segundos.</p>
-            </div>
-            <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center">
-              <input
-                type="search"
-                placeholder="Procurar por evento…"
-                value={searchTerm}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  const normalized = val.toLowerCase();
-                  setSearchTerm(val);
-                  if (normalized.includes("padel") || normalized.includes("pádel")) setEventTypeFilter("SPORT");
-                if (normalized.includes("jantar") || normalized.includes("restaurante")) setEventTypeFilter("COMIDA");
-                if (normalized.includes("solid")) setEventTypeFilter("VOLUNTEERING");
-                if (normalized.includes("festa")) setEventTypeFilter("PARTY");
-              }}
-              className="w-full rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF] sm:min-w-[260px]"
-            />
-          </div>
-        </div>
-
-          {/* Filtros em faixa única */}
-          <div className="rounded-2xl border border-white/15 bg-gradient-to-r from-white/10 via-black/50 to-[#0c1a2d] backdrop-blur-xl px-3 py-3 space-y-2 shadow-[0_12px_40px_rgba(0,0,0,0.45)]">
-            <div className="flex flex-wrap items-center justify-between gap-2 text-[12px] text-white/80">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="inline-flex items-center gap-1 rounded-full bg-white/10 px-2 py-1 text-[11px] font-semibold text-white">
-                  🔎 Filtros inteligentes
-                </span>
-                <span className="text-white/70">Estado, tipo, categoria e datas numa só vista.</span>
-                {activeFilterCount > 0 && (
-                  <span className="rounded-full bg-[#6BFFFF]/15 px-2 py-0.5 text-[11px] font-semibold text-[#6BFFFF]">
-                    {activeFilterCount} ativo{activeFilterCount > 1 ? "s" : ""}
-                  </span>
-                )}
+          {/* Header glass + busca */}
+          <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-white/5 via-[#0b1124]/80 to-[#0a132a]/90 px-4 py-4 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
+            <div className="flex flex-col gap-3 rounded-3xl border border-white/10 bg-gradient-to-r from-white/10 via-white/5 to-white/0 px-4 py-4 shadow-inner lg:flex-row lg:items-center lg:justify-between">
+              <div className="space-y-1">
+                <p className="text-[11px] uppercase tracking-[0.28em] text-white/60">Dashboard · Eventos</p>
+                <h2 className="text-xl font-semibold text-white">Painel único para procura e gestão.</h2>
+                <p className="text-sm text-white/65">Menos ruído, mais ação: filtra e abre o dashboard certo.</p>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setEventStatusFilter("all");
-                  setEventTypeFilter("all");
-                  setEventCategoryFilter("all");
-                  setEventDateFilter("any");
-                  setEventPartnerClubFilter("all");
-                  setSearchTerm("");
-                  setTimeScope("all");
-                }}
-                className="text-[12px] rounded-full border border-white/15 px-3 py-1 text-white/90 hover:border-white/40 hover:bg-white/10 transition"
-              >
-                Limpar filtros
-              </button>
             </div>
-            <div className="grid w-full gap-2 md:grid-cols-2 lg:grid-cols-5">
-              <select
-                value={eventStatusFilter}
-                onChange={(e) => setEventStatusFilter(e.target.value as typeof eventStatusFilter)}
-                className={`w-full rounded-xl border px-3 py-2 text-[12px] text-white outline-none focus:border-[#6BFFFF] ${
-                  eventStatusFilter !== "all" ? "border-[#6BFFFF]/60 bg-[#0b1224]" : "border-white/15 bg-black/40"
-                }`}
-              >
-                <option value="all">Estado: Todos</option>
-                <option value="active">Ativo</option>
-                <option value="draft">Draft</option>
-                <option value="finished">Concluído</option>
-                <option value="ongoing">Em curso</option>
-              </select>
-              <select
-                value={eventTypeFilter}
-                onChange={(e) => setEventTypeFilter(e.target.value)}
-                className={`w-full rounded-xl border px-3 py-2 text-[12px] text-white outline-none focus:border-[#6BFFFF] ${
-                  eventTypeFilter !== "all" ? "border-[#6BFFFF]/60 bg-[#0b1224]" : "border-white/15 bg-black/40"
-                }`}
-              >
-                <option value="all">Tipo: Todos</option>
-                <option value="SPORT">Padel</option>
-                <option value="COMIDA">Restaurante &amp; Jantar</option>
-                <option value="VOLUNTEERING">Solidário / Voluntariado</option>
-                <option value="PARTY">Festa &amp; Noite</option>
-                <option value="OTHER">Outro</option>
-              </select>
-              <select
-                value={eventCategoryFilter}
-                onChange={(e) => setEventCategoryFilter(e.target.value)}
-                className={`w-full rounded-xl border px-3 py-2 text-[12px] text-white outline-none focus:border-[#6BFFFF] ${
-                  eventCategoryFilter !== "all" ? "border-[#6BFFFF]/60 bg-[#0b1224]" : "border-white/15 bg-black/40"
-                }`}
-              >
-                <option value="all">Categoria: Todas</option>
-                <option value="DESPORTO">Padel / Desporto</option>
-                <option value="COMIDA">Restaurantes &amp; Jantares</option>
-                <option value="FESTA">Festas / Noite</option>
-                <option value="VOLUNTARIADO">Solidário / Voluntariado</option>
-                <option value="PALESTRA">Talks / Palestras</option>
-                <option value="ARTE">Arte</option>
-                <option value="CONCERTO">Concertos</option>
-                <option value="DRINKS">Drinks</option>
-              </select>
-              <select
-                value={eventDateFilter}
-                onChange={(e) => setEventDateFilter(e.target.value as typeof eventDateFilter)}
-                className={`w-full rounded-xl border px-3 py-2 text-[12px] text-white outline-none focus:border-[#6BFFFF] ${
-                  eventDateFilter !== "any" ? "border-[#6BFFFF]/60 bg-[#0b1224]" : "border-white/15 bg-black/40"
-                }`}
-              >
-                <option value="any">Datas: Qualquer</option>
-                <option value="today">Hoje</option>
-                <option value="weekend">Este fim-de-semana</option>
-                <option value="week">Esta semana</option>
-                <option value="month">Este mês</option>
-              </select>
-              <select
-                value={eventPartnerClubFilter}
-                onChange={(e) => setEventPartnerClubFilter(e.target.value)}
-                className={`w-full rounded-xl border px-3 py-2 text-[12px] text-white outline-none focus:border-[#6BFFFF] ${
-                  eventPartnerClubFilter !== "all" ? "border-[#6BFFFF]/60 bg-[#0b1224]" : "border-white/15 bg-black/40"
-                }`}
-              >
-                <option value="all">Clube parceiro: Todos</option>
-                {partnerClubOptions.map((opt) => (
-                  <option key={opt.id} value={opt.id}>
-                    {opt.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
 
-          <div className="flex flex-wrap items-center gap-2 text-[12px] text-white/70">
-            <span className="rounded-full border border-white/15 px-2 py-0.5">Vista:</span>
-            <button
-              type="button"
-              onClick={() => setViewMode("cards")}
-              className={`rounded-full px-3 py-1 transition ${
-                viewMode === "cards" ? "bg-white text-black font-semibold shadow" : "border border-white/20 hover:border-white/30"
-              }`}
-            >
-              Cartões
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode("table")}
-              className={`rounded-full px-3 py-1 transition ${
-                viewMode === "table" ? "bg-white text-black font-semibold shadow" : "border border-white/20 hover:border-white/30"
-              }`}
-            >
-              Tabela
-            </button>
-            <div className="h-4 w-px bg-white/20" />
-            <span className="rounded-full border border-white/15 px-2 py-0.5">Mostrar:</span>
-            {([
-              { key: "all", label: "Todos" },
-              { key: "upcoming", label: "Próximos" },
-              { key: "ongoing", label: "A decorrer" },
-              { key: "past", label: "Passados" },
-            ] as const).map((opt) => (
-              <button
-                key={opt.key}
-                type="button"
-                onClick={() => setTimeScope(opt.key)}
-                className={`rounded-full px-3 py-1 transition ${
-                  timeScope === opt.key ? "bg-[#6BFFFF]/20 border-[#6BFFFF]/40 text-white" : "border border-white/20 text-white/70 hover:border-white/30"
-                }`}
-              >
-                {opt.label}
-              </button>
-            ))}
+            {/* Pesquisa + controlos compactos */}
+            <div className="mt-1 flex flex-col gap-3">
+              <div className="grid gap-3 md:grid-cols-[1.4fr,1fr]">
+                <div className="space-y-2">
+                  <label className="text-[11px] uppercase tracking-[0.2em] text-white/60">Pesquisa</label>
+                  <div className="flex items-center gap-2 rounded-2xl border border-white/15 bg-black/30 px-3 py-2 shadow-inner">
+                    <input
+                      type="search"
+                      placeholder="Procurar por evento…"
+                      value={searchTerm}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        const normalized = val.toLowerCase();
+                        setSearchTerm(val);
+                        if (normalized.includes("padel") || normalized.includes("pádel")) setEventTypeFilter("SPORT");
+                        if (normalized.includes("jantar") || normalized.includes("restaurante")) setEventTypeFilter("COMIDA");
+                        if (normalized.includes("solid")) setEventTypeFilter("VOLUNTEERING");
+                        if (normalized.includes("festa")) setEventTypeFilter("PARTY");
+                      }}
+                      className="flex-1 bg-transparent text-sm text-white outline-none placeholder:text-white/40"
+                    />
+                    <div className="hidden text-[12px] text-white/50 md:inline">⌘/</div>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[11px] uppercase tracking-[0.2em] text-white/60">Vista & período</label>
+                  <div className="flex flex-wrap gap-2">
+                    <div className="inline-flex flex-1 rounded-2xl border border-white/15 bg-black/30 p-1 shadow-inner">
+                      {[
+                        { key: "cards", label: "Cartões" },
+                        { key: "table", label: "Tabela" },
+                      ].map((opt) => (
+                        <button
+                          key={opt.key}
+                          type="button"
+                          onClick={() => setViewMode(opt.key as typeof viewMode)}
+                          className={cn(
+                            "flex-1 rounded-xl px-3 py-2 text-sm transition",
+                            viewMode === opt.key
+                              ? "bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] text-black font-semibold shadow-[0_0_16px_rgba(107,255,255,0.35)]"
+                              : "text-white/75 hover:bg-white/5",
+                          )}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="inline-flex rounded-2xl border border-white/15 bg-black/30 p-1 shadow-inner">
+                      {(["all", "upcoming", "ongoing", "past"] as const).map((opt) => (
+                        <button
+                          key={opt}
+                          type="button"
+                          onClick={() => setTimeScope(opt)}
+                          className={cn(
+                            "rounded-xl px-3 py-2 text-[12px] transition",
+                            timeScope === opt ? "bg-white text-black font-semibold shadow" : "text-white/75 hover:bg-white/5",
+                          )}
+                        >
+                          {opt === "all" ? "Todos" : opt === "upcoming" ? "Próximos" : opt === "ongoing" ? "A decorrer" : "Passados"}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid w-full gap-2 md:grid-cols-[1fr_1fr_auto]">
+                <select
+                  value={eventStatusFilter}
+                  onChange={(e) => setEventStatusFilter(e.target.value as typeof eventStatusFilter)}
+                  className={`w-full rounded-xl border px-3 py-2 text-[12px] text-white outline-none focus:border-[#6BFFFF] ${
+                    eventStatusFilter !== "all" ? "border-[#6BFFFF]/60 bg-[#0b1224]" : "border-white/15 bg-black/40"
+                  }`}
+                >
+                  <option value="all">Estado: Todos</option>
+                  <option value="active">Ativo</option>
+                  <option value="draft">Draft</option>
+                  <option value="finished">Concluído</option>
+                  <option value="ongoing">Em curso</option>
+                  <option value="archived">Arquivado</option>
+                </select>
+                <select
+                  value={eventTypeFilter}
+                  onChange={(e) => setEventTypeFilter(e.target.value)}
+                  className={`w-full rounded-xl border px-3 py-2 text-[12px] text-white outline-none focus:border-[#6BFFFF] ${
+                    eventTypeFilter !== "all" ? "border-[#6BFFFF]/60 bg-[#0b1224]" : "border-white/15 bg-black/40"
+                  }`}
+                >
+                  <option value="all">Tipo: Todos</option>
+                  <option value="SPORT">Padel</option>
+                  <option value="COMIDA">Restaurante &amp; Jantar</option>
+                  <option value="VOLUNTEERING">Solidário / Voluntariado</option>
+                  <option value="PARTY">Festa &amp; Noite</option>
+                  <option value="OTHER">Outro</option>
+                </select>
+                <select
+                  value={eventDateFilter}
+                  onChange={(e) => setEventDateFilter(e.target.value as typeof eventDateFilter)}
+                  className={`w-full rounded-xl border px-3 py-2 text-[12px] text-white outline-none focus:border-[#6BFFFF] ${
+                    eventDateFilter !== "any" ? "border-[#6BFFFF]/60 bg-[#0b1224]" : "border-white/15 bg-black/40"
+                  }`}
+                >
+                  <option value="any">Datas: Qualquer</option>
+                  <option value="today">Hoje</option>
+                  <option value="weekend">Este fim-de-semana</option>
+                  <option value="week">Esta semana</option>
+                  <option value="month">Este mês</option>
+                </select>
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-2 text-[12px] text-white/70">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEventStatusFilter("all");
+                      setEventTypeFilter("all");
+                      setEventCategoryFilter("all");
+                      setEventDateFilter("any");
+                      setEventPartnerClubFilter("all");
+                      setSearchTerm("");
+                      setTimeScope("all");
+                    }}
+                    className="rounded-full border border-white/15 px-3 py-1.5 text-[12px] text-white/80 hover:border-white/30 hover:bg-white/5 transition"
+                  >
+                    Limpar filtros
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEventStatusFilter((prev) => (prev === "archived" ? "all" : "archived"))}
+                    className={`rounded-full border px-3 py-1.5 text-[12px] transition ${
+                      eventStatusFilter === "archived"
+                        ? "border-amber-300/60 bg-amber-400/10 text-amber-50"
+                        : "border-white/15 bg-white/5 text-white/80 hover:border-white/30 hover:bg-white/10"
+                    }`}
+                  >
+                    {eventStatusFilter === "archived" ? "A mostrar arquivados" : "Ver arquivados"}
+                  </button>
+                </div>
+                <div className="inline-flex items-center gap-2 text-[12px] text-white/70">
+                  <span className="rounded-full border border-white/15 px-2 py-0.5">Próximos: {upcomingCount}</span>
+                  <span className="rounded-full border border-white/15 px-2 py-0.5">A decorrer: {ongoingCount}</span>
+                  <span className="rounded-full border border-white/15 px-2 py-0.5">Concluídos: {finishedCount}</span>
+                </div>
+              </div>
+            </div>
           </div>
 
           {[
@@ -1797,11 +1781,6 @@ export default function OrganizadorPage() {
                 <div className="flex items-center gap-2 text-sm text-white/80">
                   <h3 className="text-lg font-semibold">Eventos</h3>
                   <span className="text-[11px] rounded-full bg-white/10 px-2 py-0.5">{filteredEvents.length}</span>
-                </div>
-                <div className="flex items-center gap-2 text-[12px] text-white/70">
-                  <span className="rounded-full border border-white/15 px-2 py-0.5">Próximos: {upcomingCount}</span>
-                  <span className="rounded-full border border-white/15 px-2 py-0.5">A decorrer: {ongoingCount}</span>
-                  <span className="rounded-full border border-white/15 px-2 py-0.5">Concluídos: {finishedCount}</span>
                 </div>
               </div>
 
@@ -1890,7 +1869,7 @@ export default function OrganizadorPage() {
                             const isFuture = date ? date.getTime() > now.getTime() : false;
                             const isFinished = endsAt ? endsAt.getTime() < now.getTime() : false;
                             const dateLabel = date
-                              ? date.toLocaleString("pt-PT", {
+                              ? formatDateTime(date, {
                                   day: "2-digit",
                                   month: "short",
                                   hour: "2-digit",
@@ -1913,6 +1892,8 @@ export default function OrganizadorPage() {
                             const statusBadge =
                               ev.status === "CANCELLED"
                                 ? { label: "Cancelado", classes: "text-red-200" }
+                                : ev.status === "ARCHIVED"
+                                  ? { label: "Arquivado", classes: "text-amber-200" }
                                 : ev.status === "DRAFT"
                                   ? { label: "Draft", classes: "text-white/70" }
                                   : isOngoing
@@ -1950,21 +1931,42 @@ export default function OrganizadorPage() {
                         <td className="px-4 py-3 text-[12px]">{revenue} €</td>
                         <td className="px-4 py-3 text-right text-[11px]">
                           <div className="flex flex-wrap items-center justify-end gap-2">
-                            <button
-                              type="button"
-                              onClick={() => goToTab("sales")}
-                              className="rounded-full border border-white/20 px-2 py-1 hover:bg-white/10"
-                            >
-                              Vendas
-                            </button>
+                            {ev.status !== "ARCHIVED" && (
+                              <button
+                                type="button"
+                                onClick={() => goToTab("sales")}
+                                className="rounded-full border border-white/20 px-2 py-1 hover:bg-white/10"
+                              >
+                                Vendas
+                              </button>
+                            )}
                             <Link
                               href={`/organizador/eventos/${ev.id}/edit`}
                               className="rounded-full border border-white/20 px-2 py-1 hover:bg-white/10"
                             >
                                       Editar
                                     </Link>
-                                  </div>
-                                </td>
+                            {ev.status === "ARCHIVED" ? (
+                              <button
+                                type="button"
+                                disabled={eventActionLoading === ev.id}
+                                onClick={() => setEventDialog({ mode: "unarchive", ev })}
+                                className="rounded-full border border-emerald-200/40 px-2 py-1 text-emerald-100 hover:bg-emerald-500/10 disabled:opacity-60"
+                              >
+                                Reativar
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                disabled={eventActionLoading === ev.id}
+                                onClick={() => setEventDialog({ mode: ev.status === "DRAFT" ? "delete" : "archive", ev })}
+                                className="rounded-full border border-red-200/30 px-2 py-1 text-red-100/90 hover:bg-red-500/10 disabled:opacity-60"
+                              >
+                                {ev.status === "DRAFT" ? "Apagar rascunho" : "Arquivar"}
+                              </button>
+                            )}
+                          </div>
+                        </td>
                               </tr>
                             );
                           })}
@@ -1980,7 +1982,7 @@ export default function OrganizadorPage() {
                       const isFuture = date ? date.getTime() > now.getTime() : false;
                       const isFinished = endsAt ? endsAt.getTime() < now.getTime() : false;
                       const dateLabel = date
-                        ? date.toLocaleString("pt-PT", {
+                        ? formatDateTime(date, {
                             day: "2-digit",
                             month: "short",
                             hour: "2-digit",
@@ -2014,6 +2016,8 @@ export default function OrganizadorPage() {
                       const statusBadge =
                         ev.status === "CANCELLED"
                           ? { label: "Cancelado", classes: "border-red-400/50 bg-red-500/10 text-red-100" }
+                          : ev.status === "ARCHIVED"
+                            ? { label: "Arquivado", classes: "border-amber-400/50 bg-amber-500/10 text-amber-100" }
                           : ev.status === "DRAFT"
                             ? { label: "Draft", classes: "border-white/20 bg-white/5 text-white/70" }
                             : isOngoing
@@ -2113,23 +2117,37 @@ export default function OrganizadorPage() {
                                 Editar
                               </Link>
                               <Link
-                                href={`/eventos/${ev.slug}`}
-                                onClick={(e) => e.stopPropagation()}
-                                className="rounded-full border border-white/20 px-2.5 py-1 text-white/80 hover:bg-white/10"
-                              >
-                                Página pública
-                              </Link>
-                              <button
-                                type="button"
-                                disabled={eventActionLoading === ev.id}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setEventDialog({ mode: ev.status === "DRAFT" ? "delete" : "archive", ev });
-                                }}
-                                className="rounded-full border border-red-200/30 px-2.5 py-1 text-red-100/90 hover:bg-red-500/10 disabled:opacity-60"
-                              >
-                                {ev.status === "DRAFT" ? "Apagar rascunho" : "Arquivar"}
-                              </button>
+                              href={`/eventos/${ev.slug}`}
+                              onClick={(e) => e.stopPropagation()}
+                              className="rounded-full border border-white/20 px-2.5 py-1 text-white/80 hover:bg-white/10"
+                            >
+                              Página pública
+                            </Link>
+                              {ev.status === "ARCHIVED" ? (
+                                <button
+                                  type="button"
+                                  disabled={eventActionLoading === ev.id}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setEventDialog({ mode: "unarchive", ev });
+                                  }}
+                                  className="rounded-full border border-emerald-200/40 px-2.5 py-1 text-emerald-100 hover:bg-emerald-500/10 disabled:opacity-60"
+                                >
+                                  Reativar
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  disabled={eventActionLoading === ev.id}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setEventDialog({ mode: ev.status === "DRAFT" ? "delete" : "archive", ev });
+                                  }}
+                                  className="rounded-full border border-red-200/30 px-2.5 py-1 text-red-100/90 hover:bg-red-500/10 disabled:opacity-60"
+                                >
+                                  {ev.status === "DRAFT" ? "Apagar rascunho" : "Arquivar"}
+                                </button>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -2182,27 +2200,18 @@ export default function OrganizadorPage() {
           <div className="flex flex-wrap items-center gap-3">
             <div className="w-full max-w-md">
               <label className="text-xs uppercase tracking-[0.18em] text-white/60 block mb-1">Seleciona o evento</label>
-              <div className="flex rounded-2xl border border-white/15 bg-black/40 px-3 py-2">
-                <input
-                  type="text"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  placeholder="Procurar por título ou cidade"
-                  className="flex-1 bg-transparent text-sm text-white outline-none placeholder:text-white/40"
-                />
-                <select
-                  value={salesEventId ?? ""}
-                  onChange={(e) => setSalesEventId(e.target.value ? Number(e.target.value) : null)}
-                  className="ml-2 w-48 rounded-xl border border-white/15 bg-black/60 px-2 py-2 text-sm text-white outline-none focus:border-[#6BFFFF]"
-                >
-                  <option value="">Escolhe</option>
-                  {eventsList.map((ev) => (
-                    <option key={ev.id} value={ev.id}>
-                      {ev.title}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <select
+                value={salesEventId ?? ""}
+                onChange={(e) => setSalesEventId(e.target.value ? Number(e.target.value) : null)}
+                className="w-full rounded-2xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF]"
+              >
+                <option value="">Escolhe</option>
+                {eventsList.map((ev) => (
+                  <option key={ev.id} value={ev.id}>
+                    {ev.title}
+                  </option>
+                ))}
+              </select>
             </div>
             {!eventsList.length && <span className="text-[12px] text-white/60">Sem eventos para analisar.</span>}
           </div>
@@ -2387,7 +2396,7 @@ export default function OrganizadorPage() {
                         r.ticketType,
                         (r.totalPaidCents / 100).toFixed(2),
                         r.status,
-                        new Date(r.purchasedAt).toLocaleString("pt-PT"),
+                        formatDateTime(new Date(r.purchasedAt)),
                       ].join(";")
                     )
                     .join("\n");
@@ -2456,7 +2465,7 @@ export default function OrganizadorPage() {
                           {(row.totalPaidCents / 100).toFixed(2)} €
                         </td>
                         <td className="py-2 pr-3 text-white/70">
-                          {new Date(row.purchasedAt).toLocaleString("pt-PT")}
+                          {formatDateTime(new Date(row.purchasedAt))}
                         </td>
                       </tr>
                     ))}
@@ -2719,7 +2728,7 @@ export default function OrganizadorPage() {
                           <div className="flex flex-col">
                             <span className="font-semibold text-white">{ev.title}</span>
                             <span className="text-[11px] text-white/60">
-                              {ev.startsAt ? new Date(ev.startsAt).toLocaleDateString("pt-PT") : "Data a definir"}
+                              {ev.startsAt ? formatDateOnly(new Date(ev.startsAt)) : "Data a definir"}
                             </span>
                           </div>
                         </td>
@@ -2748,92 +2757,90 @@ export default function OrganizadorPage() {
 
       {activeTab === "marketing" && (
         <section className="space-y-4">
-          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-            <div>
-              <p className="text-[11px] uppercase tracking-[0.3em] text-white/60">Marketing &amp; Crescimento</p>
-              <h2 className="text-2xl font-semibold">Marketing · {marketingSection === "overview" ? "Visão geral" : "Painel"}</h2>
-              <p className="text-sm text-white/65">Receita atribuída a códigos e ações rápidas.</p>
+          <div className="rounded-3xl border border-white/12 bg-white/5/60 bg-black/20 px-3 py-3 sm:px-4 sm:py-4 backdrop-blur-2xl shadow-[0_24px_80px_rgba(0,0,0,0.55)]">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div className="space-y-1">
+                <p className="text-[11px] uppercase tracking-[0.28em] text-white/60">Dashboard · Marketing</p>
+                <h2 className="text-xl sm:text-2xl font-semibold text-white">Marketing</h2>
+              </div>
+              {marketingSection === "promos" && (
+                <Link
+                  href="/organizador?tab=marketing&section=promos"
+                  className="rounded-full border border-white/20 px-4 py-2 text-sm text-white/85 hover:bg-white/10"
+                >
+                  Ver todos os códigos
+                </Link>
+              )}
             </div>
-            <div className="flex flex-wrap gap-2 text-[11px]">
-              <Link
-                href="/organizador?tab=marketing&section=promos"
-                className="rounded-full border border-white/20 px-4 py-2 text-sm text-white/80 hover:bg-white/10"
-              >
-              Ver todos os códigos
-              </Link>
+            <div className="mt-3 flex flex-wrap gap-2 rounded-2xl border border-white/10 bg-white/5/70 bg-black/30 px-2 py-2 text-sm">
+              {[
+                { key: "overview", label: "Visão geral" },
+                { key: "promos", label: "Códigos promocionais" },
+                { key: "promoters", label: "Promotores & Parcerias" },
+                { key: "content", label: "Conteúdo & Kits" },
+              ].map((opt) => (
+                <button
+                  key={opt.key}
+                  type="button"
+                  onClick={() => setMarketingSection(opt.key as typeof marketingSection)}
+                  className={`rounded-xl px-3 py-2 transition ${
+                    marketingSection === opt.key
+                      ? "bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] text-black font-semibold shadow-[0_0_16px_rgba(107,255,255,0.35)]"
+                      : "text-white/80 hover:bg-white/10"
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
             </div>
-          </div>
-
-          <div className="flex flex-wrap gap-2 rounded-2xl border border-white/10 bg-black/30 px-2 py-2 text-sm">
-            {[
-              { key: "overview", label: "Visão geral" },
-              { key: "promos", label: "Códigos promocionais" },
-              { key: "promoters", label: "Promotores & Parcerias" },
-              { key: "content", label: "Conteúdo & Kits" },
-            ].map((opt) => (
-              <button
-                key={opt.key}
-                type="button"
-                onClick={() => setMarketingSection(opt.key as typeof marketingSection)}
-                className={`rounded-xl px-3 py-2 transition ${
-                  marketingSection === opt.key
-                    ? "bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] text-black font-semibold shadow-[0_0_16px_rgba(107,255,255,0.35)]"
-                    : "text-white/75 hover:bg-white/5"
-                }`}
-              >
-                {opt.label}
-              </button>
-            ))}
           </div>
 
           {marketingSection === "overview" && (
             <div className="space-y-4">
-                <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
-                  {marketingOverview
-                    ? (
-                      <>
-                        <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-                          <p className="text-[11px] text-white/60">Receita atribuída a marketing</p>
-                          <p className="text-2xl font-bold text-white mt-1">
-                            {marketingKpis.marketingRevenueCents ? `${(marketingKpis.marketingRevenueCents / 100).toFixed(2)} €` : "—"}
-                          </p>
-                          <p className="text-[11px] text-white/50">Receita estimada através de códigos.</p>
-                        </div>
-                        <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-                          <p className="text-[11px] text-white/60">Bilhetes via marketing</p>
-                          <p className="text-2xl font-bold text-white mt-1">{marketingKpis.ticketsWithPromo}</p>
-                          <p className="text-[11px] text-white/50">Contagem de utilizações de códigos.</p>
-                        </div>
-                        <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-                          <p className="text-[11px] text-white/60">Top código</p>
-                          <p className="text-2xl font-bold text-white mt-1">
-                          {marketingKpis.topPromo ? marketingKpis.topPromo.code : "—"}
-                          </p>
-                          <p className="text-[11px] text-white/50">
-                          {marketingKpis.topPromo ? `${marketingKpis.topPromo.redemptionsCount ?? 0} utilizações` : "Sem dados ainda."}
-                          </p>
-                        </div>
-                        <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-                          <p className="text-[11px] text-white/60">Promo codes ativos</p>
-                          <p className="text-2xl font-bold text-white mt-1">{marketingKpis.activePromos}</p>
-                          <p className="text-[11px] text-white/50">Disponíveis para vender agora.</p>
-                        </div>
-                      </>
-                    )
-                    : [...Array(4)].map((_, idx) => (
-                        <div key={idx} className="rounded-2xl border border-white/10 bg-white/5 p-3 space-y-2 animate-pulse">
-                          <div className="h-3 w-24 rounded bg-white/15" />
-                          <div className="h-6 w-20 rounded bg-white/20" />
-                          <div className="h-3 w-32 rounded bg-white/10" />
-                        </div>
-                      ))}
-                </div>
+              <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+                {marketingOverview
+                  ? [
+                      {
+                        label: "Receita atribuída a marketing",
+                        value: marketingKpis.marketingRevenueCents ? `${(marketingKpis.marketingRevenueCents / 100).toFixed(2)} €` : "—",
+                        hint: "Receita estimada através de códigos.",
+                      },
+                      {
+                        label: "Bilhetes via marketing",
+                        value: marketingKpis.ticketsWithPromo,
+                        hint: "Utilizações de códigos.",
+                      },
+                      {
+                        label: "Top código",
+                        value: marketingKpis.topPromo ? marketingKpis.topPromo.code : "—",
+                        hint: marketingKpis.topPromo ? `${marketingKpis.topPromo.redemptionsCount ?? 0} utilizações` : "Sem dados.",
+                      },
+                      {
+                        label: "Promo codes ativos",
+                        value: marketingKpis.activePromos,
+                        hint: "Disponíveis para vender agora.",
+                      },
+                    ].map((card) => (
+                      <div key={card.label} className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                        <p className="text-[11px] text-white/60">{card.label}</p>
+                        <p className="text-2xl font-bold text-white mt-1">{card.value}</p>
+                        <p className="text-[11px] text-white/50">{card.hint}</p>
+                      </div>
+                    ))
+                  : [...Array(4)].map((_, idx) => (
+                      <div key={idx} className="rounded-2xl border border-white/10 bg-white/5 p-3 space-y-2 animate-pulse">
+                        <div className="h-3 w-24 rounded bg-white/15" />
+                        <div className="h-6 w-20 rounded bg-white/20" />
+                        <div className="h-3 w-32 rounded bg-white/10" />
+                      </div>
+                    ))}
+              </div>
 
               <div className="rounded-3xl border border-white/10 bg-black/35 p-4 space-y-3">
                 <div className="flex items-center justify-between">
                   <div>
                     <h3 className="text-lg font-semibold text-white">Fill the Room</h3>
-                    <p className="text-[12px] text-white/65">Próximos eventos com ocupação, urgência e sugestões.</p>
+                    <p className="text-[12px] text-white/65">Próximos eventos com ocupação e ação sugerida.</p>
                   </div>
                   <Link
                     href="/organizador?tab=marketing&section=promos"
@@ -2870,7 +2877,16 @@ export default function OrganizadorPage() {
                             )}
                           </div>
                           <div className="flex flex-wrap gap-2 text-[11px] text-white/70">
-                            <span>{ev.startsAt ? new Date(ev.startsAt).toLocaleString("pt-PT", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "Data a definir"}</span>
+                            <span>
+                              {ev.startsAt
+                                ? formatDateTime(new Date(ev.startsAt), {
+                                    day: "2-digit",
+                                    month: "short",
+                                    hour: "2-digit",
+                                    minute: "2-digit",
+                                  })
+                                : "Data a definir"}
+                            </span>
                             <span>·</span>
                             <span>{ev.locationCity || ev.locationName || "Local a anunciar"}</span>
                             <span>·</span>
@@ -3082,24 +3098,44 @@ export default function OrganizadorPage() {
       {eventDialog && (
         <ConfirmDestructiveActionDialog
           open
-          title={eventDialog.mode === "delete" ? "Apagar rascunho?" : "Arquivar evento?"}
+          title={
+            eventDialog.mode === "delete"
+              ? "Apagar rascunho?"
+              : eventDialog.mode === "unarchive"
+                ? "Reativar evento?"
+                : "Arquivar evento?"
+          }
           description={
             eventDialog.mode === "delete"
               ? "Esta ação remove o rascunho e bilhetes associados."
-              : "O evento deixa de estar visível para o público. Vendas e relatórios mantêm-se."
+              : eventDialog.mode === "unarchive"
+                ? "O evento volta a aparecer nas listas e dashboards."
+                : "O evento deixa de estar visível para o público. Vendas e relatórios mantêm-se."
           }
           consequences={
             eventDialog.mode === "delete"
               ? ["Podes criar outro evento quando quiseres."]
-              : ["Sai de /explorar e das listas do dashboard.", "Mantém histórico para relatórios/finanças."]
+              : eventDialog.mode === "unarchive"
+                ? ["Podes sempre voltar a arquivar mais tarde."]
+                : ["Sai de /explorar e das listas do dashboard.", "Mantém histórico para relatórios/finanças."]
           }
-          confirmLabel={eventDialog.mode === "delete" ? "Apagar rascunho" : "Arquivar evento"}
-          dangerLevel="high"
+          confirmLabel={
+            eventDialog.mode === "delete" ? "Apagar rascunho" : eventDialog.mode === "unarchive" ? "Reativar evento" : "Arquivar evento"
+          }
+          dangerLevel={eventDialog.mode === "delete" ? "high" : eventDialog.mode === "archive" ? "high" : "medium"}
           onConfirm={() => archiveEvent(eventDialog.ev, eventDialog.mode)}
           onClose={() => setEventDialog(null)}
         />
       )}
     </div>
+  );
+}
+
+export default function OrganizadorPage() {
+  return (
+    <AuthModalProvider>
+      <OrganizadorPageInner />
+    </AuthModalProvider>
   );
 }
 

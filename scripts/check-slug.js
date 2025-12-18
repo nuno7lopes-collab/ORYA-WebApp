@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-require-imports */
 // scripts/check-slug.js
 // Helper para verificar se um slug existe na tabela app_v3.events
 

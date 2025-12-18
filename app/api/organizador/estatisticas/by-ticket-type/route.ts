@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { TicketStatus } from "@prisma/client";
+import { isOrgAdminOrAbove } from "@/lib/organizerPermissions";
 
 /**
  * 6.3 – API por tipo de bilhete (waves)
@@ -89,13 +90,13 @@ export async function GET(req: NextRequest) {
     const toDate =
       toParam && !Number.isNaN(Date.parse(toParam)) ? new Date(toParam) : null;
 
-    // 1) Garantir que este evento pertence ao utilizador (ownerUserId)
+    // 1) Garantir que este evento pertence a um organizer onde o utilizador tem permissões
     const event = await prisma.event.findFirst({
       where: {
         ...(eventIdNum !== null ? { id: eventIdNum } : {}),
         ...(eventSlugParam ? { slug: eventSlugParam } : {}),
-        ownerUserId: user.id,
       },
+      select: { id: true, organizerId: true },
     });
 
     if (!event) {
@@ -103,6 +104,13 @@ export async function GET(req: NextRequest) {
         { ok: false, error: "EVENT_NOT_FOUND_OR_NOT_OWNER" },
         { status: 404 }
       );
+    }
+
+    const membership = await prisma.organizerMember.findUnique({
+      where: { organizerId_userId: { organizerId: event.organizerId, userId: user.id } },
+    });
+    if (!membership || !isOrgAdminOrAbove(membership.role)) {
+      return NextResponse.json({ ok: false, error: "NOT_ORGANIZER" }, { status: 403 });
     }
 
     // 2) Agrupar por ticketType usando SaleLine (fonte de verdade)

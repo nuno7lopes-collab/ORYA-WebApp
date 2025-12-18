@@ -1,60 +1,139 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import { trackEvent } from "@/lib/analytics";
 
 type Step = {
+  id: string;
   title: string;
   body: string;
   anchor?: string;
+  ctaLabel?: string;
+  ctaAction?: { type: "navigate" | "next"; href?: string };
 };
 
 const steps: Step[] = [
   {
+    id: "welcome",
     title: "Bem-vindo ao painel de organizador",
-    body: "Aqui geres eventos, vendas, finanças e marketing num só lugar.",
+    body: "Vamos guiar-te pelos pontos chave para lançares o teu primeiro evento em minutos.",
+    ctaLabel: "Começar",
+    ctaAction: { type: "next" },
   },
   {
+    id: "org-switcher",
+    title: "Organizações e troca rápida",
+    body: "Aqui mudas entre organizações, crias uma nova ou voltas ao modo utilizador.",
+    anchor: "[data-tour='org-switcher-button']",
+    ctaLabel: "Seguinte",
+    ctaAction: { type: "next" },
+  },
+  {
+    id: "create-event",
     title: "Criar evento",
-    body: "Começa sempre aqui. Usa templates de Padel ou eventos gerais e publica em minutos.",
+    body: "Usa templates de Padel ou eventos gerais e publica em minutos.",
     anchor: "[data-tour='criar-evento']",
+    ctaLabel: "Seguinte",
+    ctaAction: { type: "next" },
   },
   {
+    id: "finance",
     title: "Finanças & Stripe",
-    body: "Liga o Stripe, acompanha receita e payouts. Se precisares de atenção, mostramos-te logo aqui.",
+    body: "Liga o Stripe/Connect, acompanha receita, payouts e alertas.",
     anchor: "[data-tour='finance']",
+    ctaLabel: "Seguinte",
+    ctaAction: { type: "next" },
   },
   {
+    id: "marketing",
     title: "Marketing & códigos",
-    body: "Códigos promocionais e boosts para encher eventos mais rápido.",
+    body: "Códigos promocionais, boosts e partilha de links para vender mais rápido.",
     anchor: "[data-tour='marketing']",
+    ctaLabel: "Seguinte",
+    ctaAction: { type: "next" },
   },
   {
-    title: "Voltar à experiência de utilizador",
-    body: "Podes ver sempre como o público vê os teus eventos e inscrições.",
-    anchor: "[data-tour='user-experience']",
+    id: "staff",
+    title: "Equipa & acessos",
+    body: "Convida staff, define papéis e controla quem faz check-in.",
+    anchor: "[data-tour='staff']",
+    ctaLabel: "Seguinte",
+    ctaAction: { type: "next" },
+  },
+  {
+    id: "overview",
+    title: "KPIs e resumo",
+    body: "Acompanha vendas, receita líquida e próximos passos logo no resumo.",
+    anchor: "[data-tour='overview']",
+    ctaLabel: "Seguinte",
+    ctaAction: { type: "next" },
+  },
+  {
+    id: "finish",
+    title: "Pronto para lançar",
+    body: "Completa Stripe, cria o evento e convida a equipa. Estamos aqui se precisares.",
+    ctaLabel: "Terminar tour",
+    ctaAction: { type: "next" },
   },
 ];
 
-const TOUR_KEY = "orya_org_tour_seen_v1";
+const TOUR_KEY = "orya_org_tour_seen_v2";
+const TOUR_PROGRESS_KEY = "orya_org_tour_step_v2";
 const TOUR_EVENT = "orya:startTour";
+const SIDEBAR_WIDTH_EVENT = "orya:sidebar-width";
+const SIDEBAR_READY_EVENT = "orya:sidebar-ready";
 
-export function OrganizerTour() {
+const anchorSelectors = (anchor?: string) => {
+  if (!anchor) return [] as string[];
+  const list = [anchor];
+  if (anchor === "[data-tour='org-switcher']" || anchor === "[data-tour='org-switcher-button']") {
+    list.push("[data-tour='org-switcher-button']", "[data-tour='org-switcher']");
+  }
+  // Fallback apenas quando há anchor definido
+  list.push("[data-tour='sidebar-rail']");
+  return list;
+};
+
+type OrganizerTourProps = {
+  organizerId?: number | null;
+};
+
+export function OrganizerTour({ organizerId }: OrganizerTourProps) {
+  const router = useRouter();
+  const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const [index, setIndex] = useState(0);
   const [mounted, setMounted] = useState(false);
   const [viewport, setViewport] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
   const [anchorRect, setAnchorRect] = useState<DOMRect | null>(null);
+  const [anchorEl, setAnchorEl] = useState<Element | null>(null);
+
+  const tourKey = useMemo(
+    () => (organizerId ? `${TOUR_KEY}:${organizerId}` : TOUR_KEY),
+    [organizerId],
+  );
+  const progressKey = useMemo(
+    () => (organizerId ? `${TOUR_PROGRESS_KEY}:${organizerId}` : TOUR_PROGRESS_KEY),
+    [organizerId],
+  );
 
   const shouldShow = mounted && open;
 
   useEffect(() => {
     const id = requestAnimationFrame(() => {
       setMounted(true);
-      const seen = typeof window !== "undefined" ? localStorage.getItem(TOUR_KEY) : "1";
-      if (!seen) setOpen(true);
+      const seen = typeof window !== "undefined" ? localStorage.getItem(tourKey) : "1";
+      if (!seen) {
+        const savedStep = typeof window !== "undefined" ? Number(localStorage.getItem(progressKey)) : 0;
+        if (Number.isFinite(savedStep) && savedStep > 0 && savedStep < steps.length) {
+          setIndex(savedStep);
+        }
+        setOpen(true);
+      }
       const handler = () => {
-        localStorage.removeItem(TOUR_KEY);
+        localStorage.removeItem(tourKey);
+        localStorage.removeItem(progressKey);
         setIndex(0);
         setOpen(true);
       };
@@ -80,33 +159,51 @@ export function OrganizerTour() {
   useEffect(() => {
     if (!shouldShow) return;
     if (!step.anchor) {
-      const id = requestAnimationFrame(() => setAnchorRect(null));
+      const id = requestAnimationFrame(() => {
+        setAnchorRect(null);
+        setAnchorEl(null);
+      });
       return () => cancelAnimationFrame(id);
-      return;
     }
-    const el = document.querySelector(step.anchor);
-    if (!el) {
-      const id = requestAnimationFrame(() => setAnchorRect(null));
-      return () => cancelAnimationFrame(id);
-      return;
-    }
-    const rect = el.getBoundingClientRect();
-    const id = requestAnimationFrame(() => setAnchorRect(rect));
-    const observer = new ResizeObserver(() => {
-      const nextRect = el.getBoundingClientRect();
-      setAnchorRect(nextRect);
-    });
-    observer.observe(el);
-    return () => {
-      cancelAnimationFrame(id);
-      observer.disconnect();
+
+    let stopped = false;
+    let observer: ResizeObserver | null = null;
+
+    const tryResolve = () => {
+      if (!shouldShow || stopped) return;
+      const el = document.querySelector(step.anchor!);
+      if (el) {
+        const rect = el.getBoundingClientRect();
+        setAnchorRect(rect);
+        setAnchorEl(el);
+        observer = new ResizeObserver(() => {
+          const nextRect = el.getBoundingClientRect();
+          setAnchorRect(nextRect);
+        });
+        observer.observe(el);
+      } else {
+        setAnchorRect(null);
+        setAnchorEl(null);
+        requestAnimationFrame(tryResolve);
+      }
     };
-  }, [shouldShow, step.anchor]);
+
+    tryResolve();
+
+    return () => {
+      stopped = true;
+      if (observer) observer.disconnect();
+    };
+  }, [shouldShow, step.anchor, pathname]);
 
   const goNext = () => {
     trackEvent("organizer_tour_next", { step: index });
     if (index < steps.length - 1) {
-      setIndex((v) => v + 1);
+      setIndex((v) => {
+        const next = v + 1;
+        localStorage.setItem(progressKey, String(next));
+        return next;
+      });
     } else {
       finish();
     }
@@ -114,16 +211,55 @@ export function OrganizerTour() {
 
   const finish = () => {
     trackEvent("organizer_tour_finish");
-    localStorage.setItem(TOUR_KEY, "1");
+    localStorage.setItem(tourKey, "1");
+    localStorage.removeItem(progressKey);
     setOpen(false);
   };
 
   useEffect(() => {
     if (shouldShow && anchorRect && step.anchor) {
-      const el = document.querySelector(step.anchor);
+      const selectors = anchorSelectors(step.anchor);
+      const el = selectors.map((sel) => document.querySelector(sel)).find(Boolean);
       el?.scrollIntoView({ behavior: "smooth", block: "center" });
     }
   }, [anchorRect, shouldShow, step.anchor]);
+
+  useEffect(() => {
+    if (!shouldShow) return;
+    const handler = () => {
+      if (!step.anchor) return;
+      const el = document.querySelector(step.anchor);
+      if (!el) return;
+      setAnchorRect(el.getBoundingClientRect());
+      setAnchorEl(el);
+    };
+    window.addEventListener(SIDEBAR_WIDTH_EVENT, handler);
+    window.addEventListener(SIDEBAR_READY_EVENT, handler);
+    return () => {
+      window.removeEventListener(SIDEBAR_WIDTH_EVENT, handler);
+      window.removeEventListener(SIDEBAR_READY_EVENT, handler);
+    };
+  }, [shouldShow, step.anchor]);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    if (!document.getElementById("tour-highlight-style")) {
+      const style = document.createElement("style");
+      style.id = "tour-highlight-style";
+      style.textContent =
+        ".tour-highlight-ring{position:relative;box-shadow:0 0 0 3px rgba(107,255,255,0.6),0 0 24px rgba(107,255,255,0.35);border-radius:14px;z-index:9999;}";
+      document.head.appendChild(style);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!shouldShow) return;
+    if (!anchorEl) return;
+    anchorEl.classList.add("tour-highlight-ring");
+    return () => {
+      anchorEl.classList.remove("tour-highlight-ring");
+    };
+  }, [anchorEl, shouldShow, step.id]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -131,12 +267,9 @@ export function OrganizerTour() {
         finish();
       }
     };
-    if (shouldShow) {
-      document.body.style.overflow = "hidden";
-      window.addEventListener("keydown", onKey);
-    }
+    if (!shouldShow) return;
+    window.addEventListener("keydown", onKey);
     return () => {
-      document.body.style.overflow = "";
       window.removeEventListener("keydown", onKey);
     };
   }, [shouldShow]);
@@ -165,20 +298,27 @@ export function OrganizerTour() {
   let arrowPos: { x: number; y: number; side: "top" | "bottom" | "left" | "right" } | null = null;
 
   if (!isMobile && anchorRect) {
-    const spaceBelow = viewport.height - anchorRect.bottom - margin;
-    const spaceAbove = anchorRect.top - margin;
     const centerX = anchorRect.left + anchorRect.width / 2;
-    cardLeft = Math.max(margin, Math.min(viewport.width - cardWidth - margin, centerX - cardWidth / 2));
-    if (spaceBelow >= estimatedHeight) {
-      cardTop = anchorRect.bottom + margin;
-      arrowPos = { x: Math.min(cardWidth - 32, Math.max(32, centerX - cardLeft)), y: -12, side: "top" };
-    } else if (spaceAbove >= estimatedHeight) {
-      cardTop = Math.max(margin, anchorRect.top - estimatedHeight - margin);
-      arrowPos = { x: Math.min(cardWidth - 32, Math.max(32, centerX - cardLeft)), y: estimatedHeight - 4, side: "bottom" };
+    const preferRight = centerX < viewport.width / 2;
+
+    // Horizontal positioning: prefer ao lado do alvo, senão centra próximo
+    if (preferRight) {
+      cardLeft = Math.min(viewport.width - cardWidth - margin, anchorRect.right + margin);
     } else {
-      cardTop = Math.max(margin, Math.min(viewport.height - estimatedHeight - margin, anchorRect.bottom + margin));
-      arrowPos = { x: Math.min(cardWidth - 32, Math.max(32, centerX - cardLeft)), y: -12, side: "top" };
+      cardLeft = Math.max(margin, anchorRect.left - cardWidth - margin);
     }
+
+    // Vertical positioning: centrar relativamente ao alvo, com limites
+    cardTop = Math.max(
+      margin,
+      Math.min(viewport.height - estimatedHeight - margin, anchorRect.top + anchorRect.height / 2 - estimatedHeight / 2),
+    );
+
+    const arrowX = preferRight
+      ? Math.max(12, Math.min(cardWidth - 12, anchorRect.left - cardLeft))
+      : Math.max(12, Math.min(cardWidth - 12, anchorRect.right - cardLeft));
+    const arrowY = Math.max(12, Math.min(estimatedHeight - 12, anchorRect.top + anchorRect.height / 2 - cardTop));
+    arrowPos = { x: arrowX, y: arrowY, side: preferRight ? "left" : "right" };
   }
 
   const highlightPadding = 12;
@@ -201,46 +341,20 @@ export function OrganizerTour() {
     highlightRect && viewport.height ? Math.max(0, viewport.height - (highlightRect.top + highlightRect.height)) : 0;
 
   return (
-    <div className="fixed inset-0 z-[99] pointer-events-auto">
-      {highlightRect ? (
-        <>
-          <div
-            className="pointer-events-none absolute left-0 top-0 w-full bg-[radial-gradient(circle_at_30%_20%,rgba(107,255,255,0.09),rgba(0,0,0,0)),rgba(5,9,21,0.7)] backdrop-blur-[9px] backdrop-saturate-[1.4]"
-            style={{ height: highlightRect.top }}
-          />
-          <div
-            className="pointer-events-none absolute bg-[radial-gradient(circle_at_30%_20%,rgba(107,255,255,0.09),rgba(0,0,0,0)),rgba(5,9,21,0.7)] backdrop-blur-[9px] backdrop-saturate-[1.4]"
-            style={{ left: 0, top: highlightRect.top, width: highlightRect.left, height: highlightRect.height }}
-          />
-          <div
-            className="pointer-events-none absolute bg-[radial-gradient(circle_at_30%_20%,rgba(107,255,255,0.09),rgba(0,0,0,0)),rgba(5,9,21,0.7)] backdrop-blur-[9px] backdrop-saturate-[1.4]"
-            style={{
-              left: highlightRect.left + highlightRect.width,
-              top: highlightRect.top,
-              width: rightWidth,
-              height: highlightRect.height,
-            }}
-          />
-          <div
-            className="pointer-events-none absolute left-0 bg-[radial-gradient(circle_at_30%_20%,rgba(107,255,255,0.09),rgba(0,0,0,0)),rgba(5,9,21,0.7)] backdrop-blur-[9px] backdrop-saturate-[1.4]"
-            style={{ top: highlightRect.top + highlightRect.height, width: "100%", height: bottomHeight }}
-          />
-          {!isMobile && (
-            <div
-              className="absolute rounded-2xl pointer-events-none"
-              style={{
-                left: highlightRect.left,
-                top: highlightRect.top,
-                width: highlightRect.width,
-                height: highlightRect.height,
-                boxShadow: "0 0 0 1px rgba(107,255,255,0.45), 0 0 28px rgba(107,255,255,0.28)",
-                background: "radial-gradient(circle at center, rgba(107,255,255,0.12), rgba(7,11,19,0))",
-              }}
-            />
-          )}
-        </>
-      ) : (
-        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(107,255,255,0.09),rgba(0,0,0,0)),rgba(5,9,21,0.7)] backdrop-blur-[9px] backdrop-saturate-[1.4]" />
+    <div className="fixed inset-0 z-[9999] pointer-events-auto">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(107,255,255,0.09),rgba(0,0,0,0)),rgba(5,9,21,0.7)] backdrop-blur-[9px] backdrop-saturate-[1.4]" />
+      {highlightRect && (
+        <div
+          className="pointer-events-none absolute rounded-2xl"
+          style={{
+            left: highlightRect.left,
+            top: highlightRect.top,
+            width: highlightRect.width,
+            height: highlightRect.height,
+            boxShadow: "0 0 0 2px rgba(107,255,255,0.75), 0 0 24px rgba(107,255,255,0.35)",
+            background: "radial-gradient(circle at center, rgba(107,255,255,0.08), rgba(7,11,19,0))",
+          }}
+        />
       )}
       <div
         className="absolute rounded-2xl border border-white/10 bg-black/80 backdrop-blur-xl p-5 shadow-[0_30px_120px_rgba(0,0,0,0.7)] pointer-events-auto"
@@ -254,10 +368,20 @@ export function OrganizerTour() {
       >
         {!isMobile && arrowPos && (
           <div
-            className={`absolute h-3 w-3 rotate-45 border border-white/15 bg-black/80`}
+            className="absolute h-3 w-3 rotate-45 border border-white/15 bg-black/80"
             style={{
-              left: arrowPos.side === "top" || arrowPos.side === "bottom" ? arrowPos.x - 6 : arrowPos.side === "left" ? -6 : cardWidth - 10,
-              top: arrowPos.side === "top" ? arrowPos.y : arrowPos.side === "bottom" ? undefined : cardTop + estimatedHeight / 2,
+              left:
+                arrowPos.side === "left"
+                  ? -6
+                  : arrowPos.side === "right"
+                  ? cardWidth - 10
+                  : Math.min(cardWidth - 10, Math.max(10, arrowPos.x - 6)),
+              top:
+                arrowPos.side === "top"
+                  ? arrowPos.y
+                  : arrowPos.side === "bottom"
+                  ? undefined
+                  : Math.min(estimatedHeight - 10, Math.max(10, arrowPos.y - 6)),
               bottom: arrowPos.side === "bottom" ? -6 : undefined,
             }}
           />
@@ -287,12 +411,26 @@ export function OrganizerTour() {
             >
               Saltar
             </button>
-            <button
-              onClick={goNext}
-              className="rounded-full bg-white text-black px-4 py-1.5 font-semibold hover:scale-[1.01] active:scale-95 transition"
-            >
-              {index === steps.length - 1 ? "Terminar" : "Seguinte"}
-            </button>
+            {step.ctaLabel ? (
+              <button
+                onClick={() => {
+                  if (step.ctaAction?.type === "navigate" && step.ctaAction.href) {
+                    router.push(step.ctaAction.href);
+                  }
+                  goNext();
+                }}
+                className="rounded-full bg-white text-black px-4 py-1.5 font-semibold hover:scale-[1.01] active:scale-95 transition"
+              >
+                {step.ctaLabel}
+              </button>
+            ) : (
+              <button
+                onClick={goNext}
+                className="rounded-full bg-white text-black px-4 py-1.5 font-semibold hover:scale-[1.01] active:scale-95 transition"
+              >
+                {index === steps.length - 1 ? "Terminar" : "Seguinte"}
+              </button>
+            )}
           </div>
         </div>
       </div>

@@ -114,7 +114,18 @@ export default function NewOrganizerEventPage() {
   const { data: platformFeeData } = useSWR<PlatformFeeResponse>("/api/platform/fees", fetcher, {
     revalidateOnFocus: false,
   });
-  const { data: organizerStatus } = useSWR<{ paymentsStatus?: string; profileStatus?: string }>(
+  const { data: organizerStatus } = useSWR<{
+    ok?: boolean;
+    organizer?: {
+      id?: number | null;
+      status?: string | null;
+      officialEmail?: string | null;
+      officialEmailVerifiedAt?: string | null;
+    } | null;
+    membershipRole?: string | null;
+    paymentsStatus?: string;
+    profileStatus?: string;
+  }>(
     user ? "/api/organizador/me" : null,
     fetcher,
     { revalidateOnFocus: false }
@@ -169,7 +180,10 @@ export default function NewOrganizerEventPage() {
   const suggestionBlurTimeout = useRef<NodeJS.Timeout | null>(null);
 
   const roles = Array.isArray(profile?.roles) ? (profile?.roles as string[]) : [];
-  const isOrganizer = roles.includes("organizer");
+  const isOrganizer =
+    roles.includes("organizer") ||
+    Boolean(organizerStatus?.organizer?.id) ||
+    Boolean(organizerStatus?.membershipRole);
   const isAdmin = roles.some((r) => r?.toLowerCase() === "admin");
   const paymentsStatus = isAdmin ? "READY" : organizerStatus?.paymentsStatus ?? "NO_STRIPE";
   const platformFees =
@@ -184,6 +198,28 @@ export default function NewOrganizerEventPage() {
     () => !isFreeEvent && ticketTypes.some((t) => Number(t.price.replace(",", ".")) > 0),
     [isFreeEvent, ticketTypes],
   );
+  const organizerOfficialEmail =
+    (organizerStatus?.organizer as { officialEmail?: string | null } | null)?.officialEmail ?? null;
+  const organizerOfficialEmailVerified = Boolean(
+    (organizerStatus?.organizer as { officialEmailVerifiedAt?: string | null } | null)?.officialEmailVerifiedAt,
+  );
+  const needsOfficialEmailVerification = !isAdmin && (!organizerOfficialEmail || !organizerOfficialEmailVerified);
+  const stripeNotReady = !isAdmin && paymentsStatus !== "READY";
+  const paidTicketsBlocked = stripeNotReady || needsOfficialEmailVerification;
+  const paidTicketsBlockedMessage = useMemo(() => {
+    if (!paidTicketsBlocked) return null;
+    const reasons: string[] = [];
+    if (stripeNotReady) reasons.push("ligares o Stripe em Finanças & Payouts");
+    if (needsOfficialEmailVerification) {
+      reasons.push(
+        organizerOfficialEmail
+          ? "verificares o email oficial da organização em Definições"
+          : "definires o email oficial da organização e o verificares em Definições",
+      );
+    }
+    const reasonsText = reasons.join(" e ");
+    return `Eventos pagos só ficam ativos depois de ${reasonsText}. Até lá podes criar eventos gratuitos (preço = 0 €).`;
+  }, [paidTicketsBlocked, stripeNotReady, needsOfficialEmailVerification, organizerOfficialEmail]);
 
   const presetMap = useMemo(() => {
     const map = new Map<string, (typeof CATEGORY_OPTIONS)[number]>();
@@ -561,8 +597,13 @@ export default function NewOrganizerEventPage() {
         if (!isFreeEvent && preparedTickets.some((t) => t.price < 0)) {
           issues.push({ field: "tickets", message: "Preço tem de ser positivo." });
         }
-        if (!isFreeEvent && hasPaidTicket && paymentsStatus !== "READY") {
-          issues.push({ field: "tickets", message: "Liga o Stripe em Finanças & Payouts para vender bilhetes pagos." });
+        if (!isFreeEvent && hasPaidTicket && paidTicketsBlocked) {
+          issues.push({
+            field: "tickets",
+            message:
+              paidTicketsBlockedMessage ??
+              "Liga o Stripe e verifica o email oficial da organização para vender bilhetes pagos.",
+          });
         }
       }
     });
@@ -758,11 +799,12 @@ export default function NewOrganizerEventPage() {
     const activeKey = stepOrder[currentStep]?.key;
     if (!activeKey) return;
     const issues = activeKey === "review" ? collectStepErrors("all") : collectStepErrors(activeKey as StepKey);
+    const paidAlert = !isFreeEvent && hasPaidTicket && paidTicketsBlocked ? paidTicketsBlockedMessage : null;
     if (issues.length > 0) {
       applyErrors(issues);
       setValidationAlert("Revê os campos em falta antes de continuar.");
       setErrorMessage(issues[0]?.message ?? null);
-      setStripeAlert(issues.find((err) => err.message.includes("Stripe")) ? "Liga o Stripe em Finanças & Payouts para vender bilhetes pagos." : null);
+      setStripeAlert(paidAlert);
       return;
     }
     clearErrorsForFields(fieldsByStep[activeKey as StepKey]);
@@ -795,11 +837,12 @@ export default function NewOrganizerEventPage() {
     setErrorMessage(null);
 
     const issues = collectStepErrors("all");
+    const paidAlert = !isFreeEvent && hasPaidTicket && paidTicketsBlocked ? paidTicketsBlockedMessage : null;
     if (issues.length > 0) {
       applyErrors(issues);
       setValidationAlert("Revê os campos em falta antes de criar o evento.");
       setErrorMessage(issues[0]?.message ?? null);
-      setStripeAlert(issues.find((err) => err.message.includes("Stripe")) ? "Liga o Stripe em Finanças & Payouts para vender bilhetes pagos." : null);
+      setStripeAlert(paidAlert);
       return;
     }
 
@@ -1391,13 +1434,45 @@ export default function NewOrganizerEventPage() {
           </div>
         </div>
         <p className="text-[12px] text-white/55">
-          Bilhetes pagos só ficam ativos com Stripe ligado. Eventos grátis focam-se em inscrições e vagas.
+          Eventos pagos precisam de Stripe ligado e email oficial definido e verificado. Eventos grátis focam-se em inscrições e vagas.
         </p>
         {fieldErrors.tickets && (
           <p className={errorTextClass}>
             <span aria-hidden>⚠️</span>
             {fieldErrors.tickets}
           </p>
+        )}
+        {paidTicketsBlocked && (
+          <div className="rounded-xl border border-amber-400/40 bg-amber-400/10 p-3 text-[12px] text-amber-50 space-y-2">
+            <div className="flex items-center gap-2 text-sm font-semibold">
+              <span aria-hidden>⚠️</span>
+              <span>Só podes criar eventos gratuitos para já</span>
+            </div>
+            <p className="text-amber-50/90">
+              {paidTicketsBlockedMessage ??
+                "Liga o Stripe e verifica o email oficial da organização para vender bilhetes pagos. Até lá, cria eventos gratuitos (preço = 0 €)."}
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {stripeNotReady && (
+                <button
+                  type="button"
+                  onClick={() => router.push("/organizador?tab=finance")}
+                  className="rounded-full border border-white/30 px-3 py-1 text-[11px] font-semibold text-amber-50 hover:bg-white/10"
+                >
+                  Abrir Finanças & Payouts
+                </button>
+              )}
+              {needsOfficialEmailVerification && (
+                <button
+                  type="button"
+                  onClick={() => router.push("/organizador/settings")}
+                  className="rounded-full border border-white/30 px-3 py-1 text-[11px] font-semibold text-amber-50 hover:bg-white/10"
+                >
+                  Definir / verificar email oficial
+                </button>
+              )}
+            </div>
+          </div>
         )}
       </div>
 
@@ -1776,7 +1851,7 @@ export default function NewOrganizerEventPage() {
           {stripeAlert && (
             <FormAlert
               variant={hasPaidTicket ? "error" : "warning"}
-              title="Stripe incompleto"
+              title="Conclui os passos para vender"
               message={stripeAlert}
               actionLabel="Abrir Finanças & Payouts"
               onAction={() => router.push("/organizador?tab=finance")}
@@ -1797,8 +1872,13 @@ export default function NewOrganizerEventPage() {
           backLabel="Anterior"
           nextLabel={currentStep === stepOrder.length - 1 ? "Criar evento" : "Continuar"}
           helper={
-            activeStepKey === "tickets" && isFreeEvent
-              ? "Inscrições sem taxas; capacidade é opcional."
+            activeStepKey === "tickets"
+              ? isFreeEvent
+                ? "Inscrições sem taxas; capacidade é opcional."
+                : paidTicketsBlocked
+                  ? paidTicketsBlockedMessage ??
+                    "Eventos pagos precisam de Stripe ligado e email oficial verificado."
+                  : "Define preços, taxas e capacidade dos bilhetes."
               : activeStepKey === "review"
                 ? "Confirma blocos, edita no passo certo e cria com confiança."
                 : "Navega sem perder contexto; feedback sempre visível."

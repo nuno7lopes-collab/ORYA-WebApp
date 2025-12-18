@@ -6,6 +6,7 @@ import { getActiveOrganizerForUser } from "@/lib/organizerContext";
 import DashboardClient from "../DashboardClient";
 import { OrganizerTour } from "../OrganizerTour";
 import { cookies } from "next/headers";
+import { AuthModalProvider } from "@/app/components/autenticação/AuthModalContext";
 
 export const runtime = "nodejs";
 
@@ -93,9 +94,9 @@ export default async function OrganizerRouterPage() {
 
   // Tem org ativa → dashboard
   return (
-    <>
+    <AuthModalProvider>
       <DashboardClient />
-      <OrganizerTour />
-    </>
+      <OrganizerTour organizerId={activeOrganizerId} />
+    </AuthModalProvider>
   );
 }

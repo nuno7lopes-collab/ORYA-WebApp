@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { resolveActions } from "@/lib/entitlements/accessResolver";
-import { EntitlementStatus } from "@prisma/client";
+import { EntitlementStatus, OrganizerMemberRole } from "@prisma/client";
 import { buildDefaultCheckinWindow } from "@/lib/checkin/policy";
 
 const MAX_PAGE = 100;
@@ -42,9 +42,12 @@ async function ensureOrganizer(userId: string, eventId: number) {
 
   const membership = await prisma.organizerMember.findUnique({
     where: { organizerId_userId: { organizerId: event.organizerId, userId } },
-    select: { id: true },
+    select: { id: true, role: true },
   });
   if (!membership) return { ok: false as const, reason: "FORBIDDEN_ATTENDEES_ACCESS" };
+  if (!membership.role || (membership.role !== OrganizerMemberRole.OWNER && membership.role !== OrganizerMemberRole.CO_OWNER && membership.role !== OrganizerMemberRole.ADMIN)) {
+    return { ok: false as const, reason: "FORBIDDEN_ATTENDEES_ACCESS" };
+  }
   return { ok: true as const, isAdmin };
 }
 

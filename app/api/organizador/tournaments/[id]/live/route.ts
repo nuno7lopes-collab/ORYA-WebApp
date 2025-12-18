@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
-import { getTournamentStructure, summarizeMatchStatus, computeStandingsForGroup } from "@/domain/tournaments/structure";
+import { getTournamentStructure } from "@/domain/tournaments/structureData";
+import { summarizeMatchStatus, computeStandingsForGroup } from "@/domain/tournaments/structure";
 import { computeLiveWarnings } from "@/domain/tournaments/liveWarnings";
 
 async function ensureOrganizerAccess(userId: string, eventId: number) {

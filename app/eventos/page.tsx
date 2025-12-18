@@ -25,7 +25,6 @@ export default function EventosFeedPage() {
 
   useEffect(() => {
     fetchEvents();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function fetchEvents() {

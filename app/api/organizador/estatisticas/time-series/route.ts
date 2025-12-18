@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { Prisma, TicketStatus } from "@prisma/client";
 import { getActiveOrganizerForUser } from "@/lib/organizerContext";
+import { isOrgAdminOrAbove } from "@/lib/organizerPermissions";
 
 function parseRangeParams(url: URL) {
   const range = url.searchParams.get("range");
@@ -96,14 +97,13 @@ export async function GET(req: NextRequest) {
       eventId = parsed;
     }
 
-    // 1) Garantir que o user é um organizador ativo
-    const { organizer } = await getActiveOrganizerForUser(user.id);
+    // 1) Garantir que o user é um organizador ativo com permissões de gestão
+    const { organizer, membership } = await getActiveOrganizerForUser(user.id, {
+      roles: ["OWNER", "CO_OWNER", "ADMIN"],
+    });
 
-    if (!organizer) {
-      return NextResponse.json(
-        { ok: false, error: "NOT_ORGANIZER" },
-        { status: 403 }
-      );
+    if (!organizer || !membership || !isOrgAdminOrAbove(membership.role)) {
+      return NextResponse.json({ ok: false, error: "NOT_ORGANIZER" }, { status: 403 });
     }
 
     // 2) Preferir fonte de verdade: sale_summaries + sale_lines

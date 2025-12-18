@@ -12,10 +12,13 @@ interface SaveBasicBody {
   username?: string;
   contactPhone?: string | null;
   avatarUrl?: string | null;
+  bio?: string | null;
   visibility?: "PUBLIC" | "PRIVATE";
   allowEmailNotifications?: boolean;
   allowEventReminders?: boolean;
   allowFriendRequests?: boolean;
+  followersCount?: number; // ignored for now (future-proof)
+  followingCount?: number; // ignored for now (future-proof)
 }
 
 export async function POST(req: NextRequest) {
@@ -45,22 +48,29 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const rawFullName = body.fullName ?? "";
-    const rawUsername = body.username ?? "";
-    const rawPhone = body.contactPhone;
-    const avatarUrl = body.avatarUrl ?? undefined;
-    const visibility = body.visibility === "PRIVATE" ? "PRIVATE" : body.visibility === "PUBLIC" ? "PUBLIC" : undefined;
-    const allowEmailNotifications = typeof body.allowEmailNotifications === "boolean" ? body.allowEmailNotifications : undefined;
-    const allowEventReminders = typeof body.allowEventReminders === "boolean" ? body.allowEventReminders : undefined;
-    const allowFriendRequests = typeof body.allowFriendRequests === "boolean" ? body.allowFriendRequests : undefined;
+  const rawFullName = body.fullName ?? "";
+  const rawUsername = body.username ?? "";
+  const rawPhone = body.contactPhone;
+  const avatarUrl = body.avatarUrl ?? undefined;
+  const rawBio = body.bio;
+  const visibility = body.visibility === "PRIVATE" ? "PRIVATE" : body.visibility === "PUBLIC" ? "PUBLIC" : undefined;
+  const allowEmailNotifications = typeof body.allowEmailNotifications === "boolean" ? body.allowEmailNotifications : undefined;
+  const allowEventReminders = typeof body.allowEventReminders === "boolean" ? body.allowEventReminders : undefined;
+  const allowFriendRequests = typeof body.allowFriendRequests === "boolean" ? body.allowFriendRequests : undefined;
 
-    const fullName = rawFullName.trim();
-    const username = rawUsername.trim();
+  const fullName = rawFullName.trim();
+  const username = rawUsername.trim();
+  const bio =
+    typeof rawBio === "string"
+      ? rawBio.trim().slice(0, 280)
+      : rawBio === null
+        ? null
+        : undefined;
 
-    let normalizedPhone: string | null | undefined = undefined;
-    if (rawPhone !== undefined) {
-      if (rawPhone === null || rawPhone === "") {
-        normalizedPhone = null;
+  let normalizedPhone: string | null | undefined = undefined;
+  if (rawPhone !== undefined) {
+    if (rawPhone === null || rawPhone === "") {
+      normalizedPhone = null;
       } else if (typeof rawPhone === "string") {
         const parsed = parsePhoneNumberFromString(rawPhone.trim(), "PT");
         if (parsed && parsed.isPossible()) {
@@ -104,6 +114,7 @@ export async function POST(req: NextRequest) {
         update: {
           fullName,
           username: usernameNormalized,
+          ...(bio !== undefined ? { bio } : {}),
           onboardingDone: true,
           ...(normalizedPhone !== undefined ? { contactPhone: normalizedPhone } : {}),
           ...(avatarUrl !== undefined ? { avatarUrl: avatarUrl || null } : {}),
@@ -116,6 +127,7 @@ export async function POST(req: NextRequest) {
           id: userId,
           fullName,
           username: usernameNormalized,
+          bio: bio ?? null,
           onboardingDone: true,
           roles: ["user"],
           contactPhone: normalizedPhone ?? null,

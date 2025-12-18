@@ -1,18 +1,37 @@
 export const runtime = "nodejs";
 
 import { ReactNode, CSSProperties } from "react";
-import Link from "next/link";
-import { OrganizerSidebar } from "../OrganizerSidebar";
-import { OrganizationSwitcher, type OrganizationSwitcherOption } from "../OrganizationSwitcher";
+import { AppSidebar } from "@/components/app-sidebar";
+import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizerForUser } from "@/lib/organizerContext";
 import { prisma } from "@/lib/prisma";
 import { OrganizerLangSetter } from "../OrganizerLangSetter";
 import { RoleBadge } from "../RoleBadge";
 import { DASHBOARD_LABEL, DASHBOARD_SHELL_PADDING } from "../dashboardUi";
+import { OrganizerBreadcrumb } from "../OrganizerBreadcrumb";
+
+type OrganizationSwitcherOption = {
+  organizerId: number;
+  role: string;
+  organizer: {
+    id: number;
+    username: string | null;
+    publicName?: string | null;
+    displayName: string | null;
+    businessName: string | null;
+    city: string | null;
+    entityType: string | null;
+    status: string | null;
+    brandingAvatarUrl?: string | null;
+    brandingPrimaryColor?: string | null;
+    brandingSecondaryColor?: string | null;
+    language?: string | null;
+  };
+};
 
 /**
- * Layout do dashboard do organizador (sidebar + topbar).
+ * Layout do dashboard do organizador (sidebar + topbar com shadcn-like shell).
  * Não contém lógica de autenticação; isso é tratado no layout pai /organizador.
  * Busca o organizer ativo no server para alimentar o switcher e reduzir fetches client.
  */
@@ -24,19 +43,20 @@ export default async function OrganizerDashboardLayout({ children }: { children:
 
   let currentId: number | null = null;
   let orgOptions: OrganizationSwitcherOption[] = [];
-  let activeOrganizer: {
-    id: number;
-    displayName: string | null;
-    publicName?: string | null;
-    businessName: string | null;
-    username: string | null;
-    brandingAvatarUrl?: string | null;
-    brandingPrimaryColor?: string | null;
-    brandingSecondaryColor?: string | null;
-    language?: string | null;
-  } | null = null;
+  let activeOrganizer: OrganizationSwitcherOption["organizer"] | null = null;
   let activeRole: string | null = null;
+  let profile: { fullName: string | null; username: string | null; avatarUrl: string | null } | null = null;
+
   if (user) {
+    try {
+      profile = await prisma.profile.findUnique({
+        where: { id: user.id },
+        select: { fullName: true, username: true, avatarUrl: true },
+      });
+    } catch {
+      profile = null;
+    }
+
     try {
       const { organizer, membership } = await getActiveOrganizerForUser(user.id);
       currentId = organizer?.id ?? null;
@@ -51,6 +71,9 @@ export default async function OrganizerDashboardLayout({ children }: { children:
           brandingAvatarUrl: (organizer as { brandingAvatarUrl?: string | null }).brandingAvatarUrl ?? null,
           brandingPrimaryColor: (organizer as { brandingPrimaryColor?: string | null }).brandingPrimaryColor ?? null,
           brandingSecondaryColor: (organizer as { brandingSecondaryColor?: string | null }).brandingSecondaryColor ?? null,
+          city: (organizer as { city?: string | null }).city ?? null,
+          entityType: (organizer as { entityType?: string | null }).entityType ?? null,
+          status: organizer.status ?? null,
           language: (organizer as { language?: string | null }).language ?? null,
         };
       }
@@ -70,16 +93,19 @@ export default async function OrganizerDashboardLayout({ children }: { children:
         .map((m) => ({
           organizerId: m.organizerId,
           role: m.role,
-            organizer: {
-              id: m.organizer!.id,
-              username: m.organizer!.username,
-              displayName: m.organizer!.displayName,
-              publicName: (m.organizer as { publicName?: string | null }).publicName ?? null,
-              businessName: m.organizer!.businessName,
-              city: m.organizer!.city,
-              entityType: m.organizer!.entityType,
-              status: m.organizer!.status,
-              brandingAvatarUrl: (m.organizer as { brandingAvatarUrl?: string | null }).brandingAvatarUrl ?? null,
+          organizer: {
+            id: m.organizer!.id,
+            username: m.organizer!.username,
+            displayName: m.organizer!.displayName,
+            publicName: (m.organizer as { publicName?: string | null }).publicName ?? null,
+            businessName: m.organizer!.businessName,
+            city: m.organizer!.city,
+            entityType: m.organizer!.entityType,
+            status: m.organizer!.status,
+            brandingAvatarUrl: (m.organizer as { brandingAvatarUrl?: string | null }).brandingAvatarUrl ?? null,
+            brandingPrimaryColor: (m.organizer as { brandingPrimaryColor?: string | null }).brandingPrimaryColor ?? null,
+            brandingSecondaryColor: (m.organizer as { brandingSecondaryColor?: string | null }).brandingSecondaryColor ?? null,
+            language: (m.organizer as { language?: string | null }).language ?? null,
           },
         }));
     } catch (err: unknown) {
@@ -99,66 +125,71 @@ export default async function OrganizerDashboardLayout({ children }: { children:
   const brandSecondary = activeOrganizer?.brandingSecondaryColor ?? undefined;
   const organizerLanguage = activeOrganizer?.language ?? "pt";
 
-  return (
-    <div
-      className="orya-body-bg h-screen text-white flex overflow-hidden"
-      style={
-        {
-          "--brand-primary": brandPrimary,
-          "--brand-secondary": brandSecondary,
-        } as CSSProperties
+  const userInfo = user
+    ? {
+        id: user.id,
+        name: profile?.fullName || profile?.username || user.email || null,
+        email: user.email ?? null,
+        avatarUrl: profile?.avatarUrl ?? null,
       }
-    >
-      <OrganizerLangSetter language={organizerLanguage} />
-      {organizerUsername ? (
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `try{sessionStorage.setItem("orya_last_organizer_username","${organizerUsername}");}catch(e){}`,
-          }}
-        />
-      ) : null}
-      <OrganizerSidebar organizerName={organizerName} organizerAvatarUrl={organizerAvatarUrl} />
+    : null;
 
-      <div className="flex-1 flex flex-col min-h-0">
-        {/* Top bar */}
-        <header className={`sticky top-0 z-30 border-b border-white/10 bg-[#050915]/85 backdrop-blur-xl ${DASHBOARD_SHELL_PADDING} py-3 shrink-0`}>
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <div className="flex items-center gap-3">
-              <div className="h-11 w-11 overflow-hidden rounded-2xl border border-white/15 bg-gradient-to-br from-[#0f172a] via-[#111827] to-[#0b1224] shadow-[0_10px_40px_rgba(0,0,0,0.4)]">
-                {organizerAvatarUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={organizerAvatarUrl} alt={organizerName} className="h-full w-full object-cover" />
-                ) : (
-                  <div className="flex h-full w-full items-center justify-center text-xs font-black tracking-[0.22em] text-[#6BFFFF]">
-                    OY
-                  </div>
-                )}
-              </div>
-              <div className="space-y-1">
-                <p className={DASHBOARD_LABEL}>Organização</p>
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-lg font-semibold text-white">{organizerName}</span>
-                  {activeRole && <RoleBadge role={activeRole as any} />}
+  const activeOrgLite = activeOrganizer
+    ? {
+        id: activeOrganizer.id,
+        name: organizerName,
+        username: organizerUsername,
+        avatarUrl: organizerAvatarUrl,
+      }
+    : null;
+
+  return (
+    <SidebarProvider defaultOpen>
+      <div
+        className="orya-body-bg text-white flex min-h-screen items-stretch"
+        style={
+          {
+            "--brand-primary": brandPrimary,
+            "--brand-secondary": brandSecondary,
+          } as CSSProperties
+        }
+      >
+        <OrganizerLangSetter language={organizerLanguage} />
+        {organizerUsername ? (
+          <script
+            dangerouslySetInnerHTML={{
+              __html: `try{sessionStorage.setItem("orya_last_organizer_username","${organizerUsername}");}catch(e){}`,
+            }}
+          />
+        ) : null}
+
+        <AppSidebar activeOrg={activeOrgLite} orgOptions={orgOptions} user={userInfo} />
+
+        <SidebarInset>
+          {/* Header mobile (trigger + breadcrumb) */}
+          <div className="sticky top-0 z-40 flex items-center gap-3 bg-[rgba(5,9,21,0.85)] px-4 py-3 backdrop-blur md:hidden">
+            <SidebarTrigger />
+            <OrganizerBreadcrumb />
+          </div>
+          {/* Header desktop (breadcrumb only) */}
+          <div className="hidden lg:block mb-4">
+            <div className="rounded-3xl border border-white/5 bg-[rgba(6,10,20,0.75)] backdrop-blur-xl px-4 py-3 md:px-6 md:py-4">
+              <OrganizerBreadcrumb />
+            </div>
+          </div>
+          <main className="relative min-h-0 flex-1 overflow-y-auto pb-0 pt-0">
+            <div className="px-4 py-4 md:px-6 lg:px-8 lg:py-6">
+              <div className="relative isolate overflow-hidden">
+                <div className="pointer-events-none absolute inset-0 -z-10">
+                  <div className="absolute left-0 top-10 h-80 w-80 rounded-full bg-[radial-gradient(circle_at_center,rgba(255,0,200,0.08),rgba(12,18,36,0))]" />
+                  <div className="absolute right-0 bottom-16 h-96 w-96 rounded-full bg-[radial-gradient(circle_at_center,rgba(107,255,255,0.10),rgba(5,9,21,0))]" />
                 </div>
-                {organizerUsername && (
-                  <p className="text-[12px] text-white/55">@{organizerUsername}</p>
-                )}
+                {children}
               </div>
             </div>
-            <div className="flex flex-wrap items-center justify-end gap-2 text-[12px]">
-              <OrganizationSwitcher currentId={currentId} initialOrgs={orgOptions} />
-            </div>
-          </div>
-        </header>
-
-        <main className="relative flex-1 overflow-y-auto pb-0 pt-0 min-h-0 bg-[#050915]">
-          <div className="pointer-events-none absolute inset-0 -z-10">
-            <div className="absolute -left-20 top-10 h-80 w-80 rounded-full bg-[radial-gradient(circle_at_center,rgba(255,0,200,0.08),rgba(12,18,36,0))]" />
-            <div className="absolute right-[-60px] bottom-16 h-96 w-96 rounded-full bg-[radial-gradient(circle_at_center,rgba(107,255,255,0.10),rgba(5,9,21,0))]" />
-          </div>
-          {children}
-        </main>
+          </main>
+        </SidebarInset>
       </div>
-    </div>
+    </SidebarProvider>
   );
 }

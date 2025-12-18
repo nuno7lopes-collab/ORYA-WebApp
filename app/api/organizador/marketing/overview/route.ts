@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizerForUser } from "@/lib/organizerContext";
+import { isOrgAdminOrAbove } from "@/lib/organizerPermissions";
 import { TicketStatus } from "@prisma/client";
 
 export async function GET(req: NextRequest) {
@@ -16,9 +17,11 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
 
-    const { organizer } = await getActiveOrganizerForUser(user.id);
+    const { organizer, membership } = await getActiveOrganizerForUser(user.id, {
+      roles: ["OWNER", "CO_OWNER", "ADMIN"],
+    });
 
-    if (!organizer) {
+    if (!organizer || !membership || !isOrgAdminOrAbove(membership.role)) {
       return NextResponse.json({ ok: false, error: "NOT_ORGANIZER" }, { status: 403 });
     }
 

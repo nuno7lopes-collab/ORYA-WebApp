@@ -3,6 +3,7 @@ export const runtime = "nodejs";
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizerForUser } from "@/lib/organizerContext";
+import { isOrgAdminOrAbove } from "@/lib/organizerPermissions";
 import { prisma } from "@/lib/prisma";
 import { queueEliminated, queueChampion } from "@/domain/notifications/tournament";
 
@@ -33,11 +34,13 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   });
   if (!tournament?.organizerId) return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
 
-  const { organizer } = await getActiveOrganizerForUser(user.id, {
+  const { organizer, membership } = await getActiveOrganizerForUser(user.id, {
     organizerId: tournament.organizerId,
     roles: ["OWNER", "CO_OWNER", "ADMIN"],
   });
-  if (!organizer) return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  if (!organizer || !membership || !isOrgAdminOrAbove(membership.role)) {
+    return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  }
 
   if (eliminatedUserIds.length) {
     await queueEliminated(eliminatedUserIds, tournamentId);

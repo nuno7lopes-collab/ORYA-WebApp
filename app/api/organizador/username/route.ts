@@ -4,10 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizerForUser } from "@/lib/organizerContext";
-
-function normalizeUsername(raw: string) {
-  return raw.trim().toLowerCase();
-}
+import { normalizeAndValidateUsername, setUsernameForOwner, UsernameTakenError } from "@/lib/globalUsernames";
 
 export async function PATCH(req: NextRequest) {
   try {
@@ -22,25 +19,15 @@ export async function PATCH(req: NextRequest) {
 
     const body = await req.json().catch(() => null);
     const usernameRaw = typeof body?.username === "string" ? body.username : "";
-    const username = normalizeUsername(usernameRaw);
-
-    if (!username || username.length < 3) {
-      return NextResponse.json(
-        { ok: false, error: "Escolhe um username com pelo menos 3 caracteres." },
-        { status: 400 },
-      );
+    const validated = normalizeAndValidateUsername(usernameRaw);
+    if (!validated.ok) {
+      return NextResponse.json({ ok: false, error: validated.error }, { status: 400 });
     }
-    const pattern = /^[a-z0-9_-]+$/;
-    if (!pattern.test(username)) {
-      return NextResponse.json(
-        { ok: false, error: "Usa apenas letras minúsculas, números, - ou _." },
-        { status: 400 },
-      );
-    }
+    const username = validated.username;
 
-    const { organizer } = await getActiveOrganizerForUser(user.id, { roles: ["OWNER", "CO_OWNER", "ADMIN"] });
-    if (!organizer) {
-      return NextResponse.json({ ok: false, error: "Organizador não encontrado." }, { status: 403 });
+    const { organizer, membership } = await getActiveOrganizerForUser(user.id, { roles: ["OWNER"] });
+    if (!organizer || !membership || membership.role !== "OWNER") {
+      return NextResponse.json({ ok: false, error: "Apenas o Owner pode alterar o username." }, { status: 403 });
     }
 
     const existingOrganizer = await prisma.organizer.findFirst({
@@ -59,13 +46,24 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "Este username já está a ser usado." }, { status: 409 });
     }
 
-    await prisma.organizer.update({
-      where: { id: organizer.id },
-      data: { username },
+    await prisma.$transaction(async (tx) => {
+      await setUsernameForOwner({
+        username,
+        ownerType: "organizer",
+        ownerId: organizer.id,
+        tx,
+      });
+      await tx.organizer.update({
+        where: { id: organizer.id },
+        data: { username },
+      });
     });
 
     return NextResponse.json({ ok: true, username }, { status: 200 });
   } catch (err) {
+    if (err instanceof UsernameTakenError) {
+      return NextResponse.json({ ok: false, error: "Este username já está a ser usado." }, { status: 409 });
+    }
     console.error("[organizador/username][PATCH]", err);
     const isUnique = err instanceof Error && err.message.toLowerCase().includes("unique");
     const message = isUnique ? "Este username já está a ser usado." : "Erro ao atualizar username.";

@@ -81,6 +81,7 @@ export async function POST(req: NextRequest) {
         { status: 400 },
       );
     }
+    const profileSafe = profile;
 
     // Corpo opcional com dados de onboarding
     let payload: OrganizerPayload = {};
@@ -109,7 +110,22 @@ export async function POST(req: NextRequest) {
     const usernameRaw = sanitizeString(payload.username);
 
     // Procurar organizer existente para este user (por membership ou campo legacy)
-    const { organizer: activeOrganizer } = await getActiveOrganizerForUser(profile.id);
+    const { organizer: activeOrganizer, membership } = await getActiveOrganizerForUser(profile.id);
+
+    // Se já existe organizador ativo e o caller não é OWNER dessa organização, bloquear promoção
+    if (activeOrganizer) {
+      const isOwner =
+        membership?.role === "OWNER" ||
+        // fallback legacy: criador da org sem membership
+        activeOrganizer.userId === profile.id;
+      if (!isOwner) {
+        return NextResponse.json(
+          { ok: false, error: "Apenas o Owner pode alterar esta organização." },
+          { status: 403 },
+        );
+      }
+    }
+
     let organizer = activeOrganizer ?? null;
 
     const displayName =

@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { resolveOwner } from "@/lib/ownership/resolveOwner";
 import { env } from "@/lib/env";
 
 /**
@@ -14,6 +13,11 @@ import { env } from "@/lib/env";
  */
 export async function POST(req: NextRequest) {
   try {
+    return NextResponse.json(
+      { ok: false, error: "Revenda temporariamente desativada.", code: "RESALE_DISABLED" },
+      { status: 403 }
+    );
+
     // 1. Autenticação – garantir que o comprador está autenticado
     const supabase = await createSupabaseServer();
     const {
@@ -109,10 +113,17 @@ export async function POST(req: NextRequest) {
     }
 
     const amountCents = rawAmount;
-    const ownerResolved = await resolveOwner({ sessionUserId: buyerUserId, guestEmail: null });
-    const origin = req.nextUrl.origin || env.appBaseUrl || "";
+    let baseUrl = env.appBaseUrl;
+    if (!baseUrl) {
+      console.error("[/api/checkout/resale] APP_BASE_URL/NEXT_PUBLIC_BASE_URL em falta");
+      return NextResponse.json({ ok: false, error: "APP_BASE_URL_NOT_CONFIGURED" }, { status: 500 });
+    }
+    if (!/^https?:\/\//i.test(baseUrl)) {
+      baseUrl = `https://${baseUrl}`;
+    }
+    const intentUrl = new URL("/api/payments/intent", baseUrl).toString();
 
-    const res = await fetch(`${origin}/api/payments/intent`, {
+    const res = await fetch(intentUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

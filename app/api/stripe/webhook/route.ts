@@ -736,7 +736,6 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent, stripeEventId
     console.warn("[fulfillPayment] Não foi possível obter balance_transaction; a usar estimativa", err);
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const stripeFeeForIntentValue =
     stripeFeeCents ??
     estimateStripeFee(parsedBreakdown?.totalCents ?? intent.amount_received ?? intent.amount ?? 0);

@@ -33,6 +33,9 @@ function PurchaseCard({ purchase }: { purchase: Purchase }) {
   const eventTitle = purchase.event?.title ?? "Evento";
   const startsAt = purchase.event?.startsAt ? new Date(purchase.event.startsAt) : null;
   const dateStr = startsAt ? startsAt.toLocaleString("pt-PT", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : null;
+  const feeMode =
+    typeof purchase.feeMode === "string" ? purchase.feeMode.toUpperCase() : null;
+  const payorPaysFee = feeMode === "ADDED" || feeMode === "ON_TOP";
   const badgeLabel =
     purchase.badge === "FREE"
       ? "Gratuito"
@@ -90,7 +93,9 @@ function PurchaseCard({ purchase }: { purchase: Purchase }) {
       </div>
       <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[12px] text-white/60">
         {purchase.discountCents > 0 && <span>Desconto: -{formatMoney(centsToEuro(purchase.discountCents) ?? 0)}</span>}
-        {purchase.platformFeeCents > 0 && <span>Taxas: {formatMoney(centsToEuro(purchase.platformFeeCents) ?? 0)}</span>}
+        {payorPaysFee && purchase.platformFeeCents > 0 && (
+          <span>Taxas: {formatMoney(centsToEuro(purchase.platformFeeCents) ?? 0)}</span>
+        )}
       </div>
       {purchase.event?.slug && (
         <Link href={`/eventos/${purchase.event.slug}`} className="mt-3 inline-flex text-[12px] text-[#6BFFFF] hover:underline">

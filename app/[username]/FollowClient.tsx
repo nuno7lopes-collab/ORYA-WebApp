@@ -5,9 +5,10 @@ import { useEffect, useState, useTransition } from "react";
 type Props = {
   targetUserId: string;
   initialIsFollowing: boolean;
+  onChange?: (next: boolean) => void;
 };
 
-export default function FollowClient({ targetUserId, initialIsFollowing }: Props) {
+export default function FollowClient({ targetUserId, initialIsFollowing, onChange }: Props) {
   const [isFollowing, setIsFollowing] = useState(initialIsFollowing);
   const [fetching, setFetching] = useState(false);
   const [isPending, startTransition] = useTransition();
@@ -36,6 +37,7 @@ export default function FollowClient({ targetUserId, initialIsFollowing }: Props
   const toggleFollow = async () => {
     const next = !isFollowing;
     setIsFollowing(next);
+    onChange?.(next);
     startTransition(async () => {
       try {
         const res = await fetch(next ? "/api/social/follow" : "/api/social/unfollow", {
@@ -46,9 +48,11 @@ export default function FollowClient({ targetUserId, initialIsFollowing }: Props
         const json = await res.json();
         if (!res.ok || !json?.ok) {
           setIsFollowing(!next);
+          onChange?.(!next);
         }
       } catch {
         setIsFollowing(!next);
+        onChange?.(!next);
       }
     });
   };

@@ -199,7 +199,6 @@ export default function AdminTicketsPage() {
   useEffect(() => {
     // carregar logo ao entrar
     void loadTickets({ page: 1 });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const hasTickets = tickets.length > 0;

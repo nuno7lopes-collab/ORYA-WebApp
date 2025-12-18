@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useMemo, useState } from "react";
 import useSWR from "swr";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -128,7 +129,11 @@ function Avatar({ name, avatarUrl }: { name: string; avatarUrl: string | null })
   const initial = name?.trim()?.[0]?.toUpperCase() || "U";
   return (
     <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full border border-white/10 bg-white/5 text-sm font-semibold">
-      {avatarUrl ? <img src={avatarUrl} alt={name} className="h-full w-full object-cover" /> : <span>{initial}</span>}
+      {avatarUrl ? (
+        <Image src={avatarUrl} alt={name} width={40} height={40} className="h-full w-full object-cover" />
+      ) : (
+        <span>{initial}</span>
+      )}
     </div>
   );
 }

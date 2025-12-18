@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getTournamentStructure, summarizeMatchStatus, computeStandingsForGroup } from "@/domain/tournaments/structure";
+import { getTournamentStructure } from "@/domain/tournaments/structureData";
+import { summarizeMatchStatus, computeStandingsForGroup } from "@/domain/tournaments/structure";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 

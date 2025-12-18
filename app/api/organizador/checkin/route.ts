@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { EntitlementStatus, CheckinResultCode } from "@prisma/client";
+import { EntitlementStatus, CheckinResultCode, OrganizerMemberRole } from "@prisma/client";
 import { buildDefaultCheckinWindow, isOutsideWindow } from "@/lib/checkin/policy";
 
 type Body = { qrToken?: string; eventId?: number; deviceId?: string };
@@ -28,9 +28,12 @@ async function ensureOrganizer(userId: string, eventId: number) {
 
   const membership = await prisma.organizerMember.findUnique({
     where: { organizerId_userId: { organizerId: event.organizerId, userId } },
-    select: { id: true },
+    select: { id: true, role: true },
   });
   if (!membership) return { ok: false as const, reason: "FORBIDDEN_CHECKIN_ACCESS" };
+  if (membership.role === OrganizerMemberRole.VIEWER) {
+    return { ok: false as const, reason: "FORBIDDEN_CHECKIN_ACCESS" };
+  }
   return { ok: true as const, isAdmin };
 }
 

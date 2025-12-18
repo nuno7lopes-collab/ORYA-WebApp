@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { TicketStatus } from "@prisma/client";
 import { getActiveOrganizerForUser } from "@/lib/organizerContext";
+import { isOrgAdminOrAbove } from "@/lib/organizerPermissions";
 
 function getDateRangeFromSearchParams(searchParams: URLSearchParams) {
   const range = searchParams.get("range") || "30d";
@@ -55,14 +56,13 @@ export async function GET(req: NextRequest) {
 
     const { from, to } = getDateRangeFromSearchParams(searchParams);
 
-    // Garantir que o utilizador é organizador e obter o(s) organizer(s)
-    const { organizer } = await getActiveOrganizerForUser(user.id);
+    // Garantir que o utilizador é organizador com permissões de gestão
+    const { organizer, membership } = await getActiveOrganizerForUser(user.id, {
+      roles: ["OWNER", "CO_OWNER", "ADMIN"],
+    });
 
-    if (!organizer) {
-      return NextResponse.json(
-        { ok: false, error: "NOT_ORGANIZER" },
-        { status: 403 }
-      );
+    if (!organizer || !membership || !isOrgAdminOrAbove(membership.role)) {
+      return NextResponse.json({ ok: false, error: "NOT_ORGANIZER" }, { status: 403 });
     }
 
     // 1) Buscar tickets relevantes (status ACTIVE/USED) deste organizer

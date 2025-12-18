@@ -1,13 +1,13 @@
 "use client";
 
-import { OrganizerMemberRole } from "@prisma/client";
+type Role = "OWNER" | "CO_OWNER" | "ADMIN" | "STAFF" | "VIEWER";
 
 type Props = {
-  role: OrganizerMemberRole | "OWNER" | "CO_OWNER" | "ADMIN" | "STAFF" | "VIEWER";
+  role: Role;
   subtle?: boolean;
 };
 
-const ROLE_STYLES: Record<Required<Props>["role"], string> = {
+const ROLE_STYLES: Record<Role, string> = {
   OWNER: "border-amber-300/60 bg-amber-400/15 text-amber-50",
   CO_OWNER: "border-emerald-300/50 bg-emerald-400/10 text-emerald-50",
   ADMIN: "border-sky-300/50 bg-sky-400/10 text-sky-50",
@@ -15,7 +15,7 @@ const ROLE_STYLES: Record<Required<Props>["role"], string> = {
   VIEWER: "border-white/15 bg-white/5 text-white/60",
 };
 
-const ROLE_LABEL: Record<Required<Props>["role"], string> = {
+const ROLE_LABEL: Record<Role, string> = {
   OWNER: "Owner",
   CO_OWNER: "Co-owner",
   ADMIN: "Admin",

@@ -13,10 +13,10 @@ export async function GET(req: NextRequest) {
   }
 
   const rows = await prisma.follows.findMany({
-    where: { following_id: userId },
+    where: { follower_id: userId },
     select: {
-      follower_id: true,
-      profiles_follows_follower_idToprofiles: {
+      following_id: true,
+      profiles_follows_following_idToprofiles: {
         select: { username: true, fullName: true, avatarUrl: true },
       },
     },
@@ -26,10 +26,10 @@ export async function GET(req: NextRequest) {
 
   const items = rows
     .map((r) => ({
-      userId: r.follower_id,
-      username: r.profiles_follows_follower_idToprofiles?.username ?? null,
-      fullName: r.profiles_follows_follower_idToprofiles?.fullName ?? null,
-      avatarUrl: r.profiles_follows_follower_idToprofiles?.avatarUrl ?? null,
+      userId: r.following_id,
+      username: r.profiles_follows_following_idToprofiles?.username ?? null,
+      fullName: r.profiles_follows_following_idToprofiles?.fullName ?? null,
+      avatarUrl: r.profiles_follows_following_idToprofiles?.avatarUrl ?? null,
     }))
     .filter((r) => r.userId);
 

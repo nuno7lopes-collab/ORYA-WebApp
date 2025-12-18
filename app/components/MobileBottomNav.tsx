@@ -30,7 +30,6 @@ export default function MobileBottomNav({
     if (pathname.startsWith("/explorar")) return "explorar";
     if (pathname.startsWith("/buscar")) return "search";
     if (pathname.startsWith("/me/carteira")) return "tickets";
-    if (pathname.startsWith("/me/compras")) return "purchases";
     if (pathname.startsWith("/me")) return "profile";
     return "home";
   })();
@@ -65,16 +64,6 @@ export default function MobileBottomNav({
     [],
   );
 
-  const itemCompras: Item = useMemo(
-    () => ({
-      label: "Compras",
-      icon: "🧾",
-      path: "/me/compras",
-      active: (p) => p.startsWith("/me/compras"),
-    }),
-    [],
-  );
-
   const itemPerfil: Item = useMemo(
     () => ({
       label: "Perfil",
@@ -93,17 +82,18 @@ export default function MobileBottomNav({
   return (
     <nav
       className="fixed bottom-0 left-0 right-0 z-[70] text-white md:hidden"
-      style={{ paddingBottom: "calc(14px + env(safe-area-inset-bottom, 14px))" }}
+      style={{ paddingBottom: "calc(10px + env(safe-area-inset-bottom, 10px))" }}
+      aria-label="Navegação principal móvel"
     >
       <div className="mx-auto max-w-3xl px-3">
-        <div className="relative h-[86px] flex justify-center">
+        <div className="relative h-[72px] flex justify-center">
           {/* Fundo glass + blur */}
-          <div className="absolute inset-0 rounded-3xl border border-white/12 bg-black/38 backdrop-blur-[30px] shadow-[0_-32px_80px_rgba(0,0,0,0.78)]" />
-          <div className="absolute inset-0 rounded-3xl bg-gradient-to-r from-[#0a1120]/80 via-[#0b0f1c]/82 to-[#0a1120]/80 opacity-95" />
+          <div className="absolute inset-0 rounded-3xl border border-white/10 bg-black/32 backdrop-blur-[26px] shadow-[0_-24px_60px_rgba(0,0,0,0.72)]" />
+          <div className="absolute inset-0 rounded-3xl bg-gradient-to-r from-[#0a1120]/85 via-[#0b0f1c]/85 to-[#0a1120]/85 opacity-95" />
 
           {/* Content */}
-          <div className="relative z-10 h-full px-3 pb-3">
-            <div className="grid h-full grid-cols-[1fr_1fr_76px_1fr_1fr] items-center text-center gap-2">
+          <div className="relative z-10 h-full px-3 pb-2">
+            <div className="grid h-full grid-cols-4 items-center text-center gap-1">
               <NavItem item={itemExplorar} isActive={derivedTab === "explorar"} onClick={go} />
               <NavItem
                 item={itemProcurar}
@@ -112,16 +102,15 @@ export default function MobileBottomNav({
               />
               <div />
               <NavItem item={itemBilhetes} isActive={derivedTab === "tickets"} onClick={go} />
-              <NavItem item={itemCompras} isActive={derivedTab === "purchases"} onClick={go} />
               <NavItem item={itemPerfil} isActive={derivedTab === "profile"} onClick={go} />
             </div>
 
             {/* Botão central ORYA */}
-            <div className="absolute left-1/2 top-[16px] -translate-x-1/2">
+            <div className="absolute left-1/2 top-[12px] -translate-x-1/2">
               <button
                 type="button"
                 onClick={() => go({ label: "Início", icon: "", path: "/", active: (p) => p === "/" })}
-                className="relative flex h-12 w-12 items-center justify-center rounded-full outline-none transition transform hover:scale-[1.05] active:scale-95"
+                className="relative flex h-11 w-11 items-center justify-center rounded-full outline-none transition transform hover:scale-[1.05] active:scale-95"
                 aria-label="Início ORYA"
               >
                 <span className="absolute inset-0 rounded-full bg-gradient-to-r from-[#5bf5ff]/32 via-[#8f66ff]/32 to-[#ff3cd6]/32 blur-lg" />
@@ -149,14 +138,14 @@ function NavItem({ item, isActive, onClick }: NavItemProps) {
     <button
       type="button"
       onClick={() => onClick(item)}
-      className={`flex min-w-[68px] flex-col items-center gap-1 rounded-2xl px-2.5 py-2 text-[11px] transition ${
+      className={`flex min-w-0 flex-col items-center gap-1 rounded-2xl px-2 py-2 text-[11px] transition ${
         isActive
           ? "bg-gradient-to-r from-[#5bf5ff]/15 via-[#8f66ff]/15 to-[#ff3cd6]/20 text-white shadow-[0_0_14px_rgba(107,255,255,0.35)]"
           : "text-white/70 hover:bg-white/5"
       }`}
     >
       <span className="text-[18px] leading-none">{item.icon}</span>
-      <span className="leading-none">{item.label}</span>
+      <span className="leading-none truncate">{item.label}</span>
     </button>
   );
 }

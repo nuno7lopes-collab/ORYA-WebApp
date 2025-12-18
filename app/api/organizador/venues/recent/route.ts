@@ -33,15 +33,15 @@ export async function GET(req: NextRequest) {
       where: {
         organizerId: organizer.id,
         isDeleted: false,
-        AND: [{ locationName: { not: null } }, { locationName: { not: "" } }],
-        ...(q
-          ? {
-              locationName: {
+        locationName: {
+          not: "",
+          ...(q
+            ? {
                 contains: q,
                 mode: "insensitive",
-              },
-            }
-          : {}),
+              }
+            : {}),
+        },
       },
       select: { locationName: true, locationCity: true, updatedAt: true },
       orderBy: { updatedAt: "desc" },

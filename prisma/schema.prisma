@@ -388,7 +388,7 @@ model EventCategory {
 /// Tipos de bilhete (antigas "waves")
 model TicketType {
   id            Int                 @id @default(autoincrement())
-  eventId       Int
+  eventId       Int                 @map("event_id")
   name          String
   description   String?
   price         Int
@@ -414,7 +414,7 @@ model TicketType {
 /// Bilhete individual (por utilizador)
 model Ticket {
   id                    String            @id @default(cuid())
-  eventId               Int
+  eventId               Int               @map("event_id")
   ticketTypeId          Int               @map("ticket_type_id")
   purchasedAt           DateTime          @default(now()) @map("purchased_at")
   status                TicketStatus      @default(ACTIVE)

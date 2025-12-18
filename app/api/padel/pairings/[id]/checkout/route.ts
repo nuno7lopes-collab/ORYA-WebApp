@@ -10,6 +10,7 @@ import {
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { validateEligibility } from "@/domain/padelEligibility";
+import { env } from "@/lib/env";
 
 // Apenas valida e delega criação de intent ao endpoint central (/api/payments/intent).
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
@@ -121,7 +122,15 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     },
   ];
 
-  const origin = req.nextUrl.origin || process.env.NEXT_PUBLIC_SITE_URL || "";
+  let baseUrl = env.appBaseUrl;
+  if (!baseUrl) {
+    console.error("[padel/pairings][checkout] APP_BASE_URL/NEXT_PUBLIC_BASE_URL em falta");
+    return NextResponse.json({ ok: false, error: "APP_BASE_URL_NOT_CONFIGURED" }, { status: 500 });
+  }
+  if (!/^https?:\/\//i.test(baseUrl)) {
+    baseUrl = `https://${baseUrl}`;
+  }
+  const origin = new URL(baseUrl).toString().replace(/\/+$/, "");
   try {
     const res = await fetch(`${origin}/api/payments/intent`, {
       method: "POST",

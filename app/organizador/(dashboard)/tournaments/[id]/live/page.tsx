@@ -84,6 +84,7 @@ function Filters({ stages, setFilters }: { stages: any[]; setFilters: (f: any) =
 export default function OrganizerTournamentLivePage({ params }: PageProps) {
   const router = useRouter();
   const tournamentId = Number(params.id);
+  const isValidTournamentId = Number.isFinite(tournamentId);
   const [authError, setAuthError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -91,7 +92,88 @@ export default function OrganizerTournamentLivePage({ params }: PageProps) {
     if (authError === "organizador") router.replace("/organizador");
   }, [authError, router]);
 
-  if (!Number.isFinite(tournamentId)) {
+  const { data, error } = useSWR(
+    isValidTournamentId ? `/api/organizador/tournaments/${tournamentId}/live` : null,
+    fetcher,
+  );
+
+  useEffect(() => {
+    if (!data?.error) return;
+    if (data.error === "UNAUTHENTICATED") setAuthError("login");
+    if (data.error === "FORBIDDEN") setAuthError("organizador");
+  }, [data?.error]);
+
+  const tournament = data?.tournament;
+  const tieBreakRules: TieBreakRule[] = Array.isArray(tournament?.tieBreakRules)
+    ? (tournament.tieBreakRules as TieBreakRule[])
+    : (["WINS", "SET_DIFF", "GAME_DIFF", "HEAD_TO_HEAD", "RANDOM"] as TieBreakRule[]);
+
+  const stages = useMemo(
+    () =>
+      tournament
+        ? tournament.stages.map((s: any) => ({
+            ...s,
+            groups: s.groups.map((g: any) => ({
+              ...g,
+              standings: computeStandingsForGroup(g.matches, tieBreakRules, tournament.generationSeed || undefined),
+              matches: g.matches.map((m: any) => ({ ...m, statusLabel: summarizeMatchStatus(m.status) })),
+            })),
+            matches: s.matches.map((m: any) => ({ ...m, statusLabel: summarizeMatchStatus(m.status) })),
+          }))
+        : [],
+    [tournament, tieBreakRules],
+  );
+
+  const flatMatches = useMemo(
+    () => stages.flatMap((s: any) => [...s.matches, ...s.groups.flatMap((g: any) => g.matches)]),
+    [stages],
+  );
+
+  const warnings = useMemo(
+    () =>
+      tournament
+        ? computeLiveWarnings({
+            matches: flatMatches,
+            pairings: data?.pairings ?? [],
+            startThresholdMinutes: 60,
+          })
+        : [],
+    [tournament, flatMatches, data?.pairings],
+  );
+
+  const [filters, setFilters] = useState<any>({
+    status: null,
+    stageId: null,
+    court: null,
+    todayOnly: false,
+    search: "",
+  });
+
+  const filteredMatches = useMemo(() => {
+    const now = new Date();
+    return flatMatches.filter((m: any) => {
+      if (filters.status && m.status !== filters.status) return false;
+      if (filters.stageId && m.stageId !== filters.stageId) return false;
+      if (filters.court && `${m.courtId ?? ""}` !== filters.court) return false;
+      if (filters.todayOnly && m.startAt) {
+        const d = new Date(m.startAt);
+        if (
+          d.getFullYear() !== now.getFullYear() ||
+          d.getMonth() !== now.getMonth() ||
+          d.getDate() !== now.getDate()
+        )
+          return false;
+      }
+      if (filters.search) {
+        const term = filters.search.trim();
+        if (!term) return true;
+        return `${m.pairing1Id ?? ""}`.includes(term) || `${m.pairing2Id ?? ""}`.includes(term);
+      }
+      return true;
+    });
+  }, [flatMatches, filters]);
+
+  if (!isValidTournamentId) {
     return (
       <div className="p-4 text-white/70">
         <p>ID de torneio inválido.</p>
@@ -105,74 +187,11 @@ export default function OrganizerTournamentLivePage({ params }: PageProps) {
     );
   }
 
-  const { data, error } = useSWR(`/api/organizador/tournaments/${tournamentId}/live`, fetcher);
-
-  useEffect(() => {
-    if (!data?.error) return;
-    if (data.error === "UNAUTHENTICATED") setAuthError("login");
-    if (data.error === "FORBIDDEN") setAuthError("organizador");
-  }, [data?.error]);
-
   if (error) {
     return <div className="p-4 text-white/70">Erro a carregar dados do torneio.</div>;
   }
-  if (!data?.tournament) return <div className="p-4 text-white/70">A carregar…</div>;
 
-  const tournament = data.tournament;
-  const tieBreakRules: TieBreakRule[] = Array.isArray(tournament.tieBreakRules)
-    ? (tournament.tieBreakRules as TieBreakRule[])
-    : (["WINS", "SET_DIFF", "GAME_DIFF", "HEAD_TO_HEAD", "RANDOM"] as TieBreakRule[]);
-
-  const stages = useMemo(
-    () =>
-      tournament.stages.map((s: any) => ({
-        ...s,
-        groups: s.groups.map((g: any) => ({
-          ...g,
-          standings: computeStandingsForGroup(g.matches, tieBreakRules, tournament.generationSeed || undefined),
-          matches: g.matches.map((m: any) => ({ ...m, statusLabel: summarizeMatchStatus(m.status) })),
-        })),
-        matches: s.matches.map((m: any) => ({ ...m, statusLabel: summarizeMatchStatus(m.status) })),
-      })),
-    [tournament, tieBreakRules],
-  );
-
-  const flatMatches = stages.flatMap((s: any) => [...s.matches, ...s.groups.flatMap((g: any) => g.matches)]);
-  const warnings = computeLiveWarnings({
-    matches: flatMatches,
-    pairings: data.pairings ?? [],
-    startThresholdMinutes: 60,
-  });
-
-  const [filters, setFilters] = useState<any>({
-    status: null,
-    stageId: null,
-    court: null,
-    todayOnly: false,
-    search: "",
-  });
-
-  const now = new Date();
-  const filteredMatches = flatMatches.filter((m: any) => {
-    if (filters.status && m.status !== filters.status) return false;
-    if (filters.stageId && m.stageId !== filters.stageId) return false;
-    if (filters.court && `${m.courtId ?? ""}` !== filters.court) return false;
-    if (filters.todayOnly && m.startAt) {
-      const d = new Date(m.startAt);
-      if (
-        d.getFullYear() !== now.getFullYear() ||
-        d.getMonth() !== now.getMonth() ||
-        d.getDate() !== now.getDate()
-      )
-        return false;
-    }
-    if (filters.search) {
-      const term = filters.search.trim();
-      if (!term) return true;
-      return `${m.pairing1Id ?? ""}`.includes(term) || `${m.pairing2Id ?? ""}`.includes(term);
-    }
-    return true;
-  });
+  if (!tournament) return <div className="p-4 text-white/70">A carregar…</div>;
 
   const summary = {
     pending: flatMatches.filter((m: any) => m.status === "PENDING").length,

@@ -1,4 +1,3 @@
-import "server-only";
 // Central helper for server-side environment variables (server-only).
 // ⚠️ Não importar este módulo em componentes com "use client".
 const required = [
@@ -22,6 +21,31 @@ function getEnv(key: EnvKey): string {
   return value;
 }
 
+function getOptionalUrlEnv(...keys: string[]) {
+  for (const key of keys) {
+    const value = process.env[key];
+    if (typeof value === "string" && value.trim().length > 0) {
+      return value.trim().replace(/\/+$/, ""); // remove trailing slash para URLs previsíveis
+    }
+  }
+  return "";
+}
+
+function parseBoolean(raw: unknown, fallback: boolean) {
+  if (typeof raw === "boolean") return raw;
+  if (typeof raw === "string") {
+    const normalized = raw.trim().toLowerCase();
+    if (["1", "true", "yes", "on"].includes(normalized)) return true;
+    if (["0", "false", "no", "off"].includes(normalized)) return false;
+  }
+  return fallback;
+}
+
+function parseNumber(raw: unknown, fallback: number) {
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : fallback;
+}
+
 export const env = {
   supabaseUrl: getEnv("SUPABASE_URL"),
   supabaseAnonKey: getEnv("SUPABASE_ANON_KEY"),
@@ -35,4 +59,13 @@ export const env = {
     process.env.RESEND_FROM ??
     process.env.RESEND_FROM_EMAIL ??
     "no-reply@orya.pt",
+  appBaseUrl: getOptionalUrlEnv("APP_BASE_URL", "NEXT_PUBLIC_BASE_URL", "NEXT_PUBLIC_SITE_URL", "VERCEL_URL"),
+  uploadsBucket:
+    process.env.SUPABASE_STORAGE_BUCKET_UPLOADS ??
+    process.env.SUPABASE_STORAGE_BUCKET ??
+    "uploads",
+  avatarsBucket: process.env.SUPABASE_STORAGE_BUCKET_AVATARS ?? "",
+  eventCoversBucket: process.env.SUPABASE_STORAGE_BUCKET_EVENT_COVERS ?? "",
+  storageSignedUrls: parseBoolean(process.env.SUPABASE_STORAGE_SIGNED_URLS, false),
+  storageSignedTtlSeconds: parseNumber(process.env.SUPABASE_STORAGE_SIGNED_TTL_SECONDS, 60 * 60 * 24 * 30), // 30 dias
 };

@@ -62,6 +62,59 @@ const CATEGORY_OPTIONS = [
   { value: "GERAL", label: "Eventos gerais", accent: "from-[#FF00C8] via-[#9B8CFF] to-[#1646F5]" },
 ] as const;
 
+const defaultCover = (() => {
+  const svg = `
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1200" viewBox="0 0 1200 1200">
+  <defs>
+    <linearGradient id="bg" x1="15%" y1="0%" x2="85%" y2="100%">
+      <stop offset="0%" stop-color="#0b0c12"/>
+      <stop offset="50%" stop-color="#080910"/>
+      <stop offset="100%" stop-color="#05060b"/>
+    </linearGradient>
+    <radialGradient id="glow1" cx="20%" cy="24%" r="34%">
+      <stop offset="0%" stop-color="#9aa6c7" stop-opacity="0.35"/>
+      <stop offset="70%" stop-color="#9aa6c7" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glow2" cx="78%" cy="20%" r="30%">
+      <stop offset="0%" stop-color="#7d8fb5" stop-opacity="0.32"/>
+      <stop offset="70%" stop-color="#7d8fb5" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glow3" cx="52%" cy="80%" r="42%">
+      <stop offset="0%" stop-color="#4f5b73" stop-opacity="0.28"/>
+      <stop offset="70%" stop-color="#4f5b73" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="glass" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="rgba(255,255,255,0.08)"/>
+      <stop offset="42%" stop-color="rgba(255,255,255,0.02)"/>
+      <stop offset="100%" stop-color="rgba(255,255,255,0.08)"/>
+    </linearGradient>
+    <linearGradient id="sheen" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="rgba(255,255,255,0.12)"/>
+      <stop offset="20%" stop-color="rgba(255,255,255,0.03)"/>
+      <stop offset="50%" stop-color="rgba(255,255,255,0.1)"/>
+      <stop offset="78%" stop-color="rgba(255,255,255,0.03)"/>
+      <stop offset="100%" stop-color="rgba(255,255,255,0.14)"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="1200" fill="url(#bg)"/>
+  <rect width="1200" height="1200" fill="url(#glow1)"/>
+  <rect width="1200" height="1200" fill="url(#glow2)"/>
+  <rect width="1200" height="1200" fill="url(#glow3)"/>
+  <rect x="120" y="150" width="960" height="840" rx="36" fill="url(#glass)" stroke="rgba(255,255,255,0.12)" stroke-width="2"/>
+  <rect x="100" y="130" width="1000" height="880" fill="url(#sheen)" opacity="0.45"/>
+  <g opacity="0.12" stroke="rgba(255,255,255,0.24)" stroke-width="1">
+    <path d="M110 260 Q520 180 890 280 T1090 260"/>
+    <path d="M90 520 Q520 460 900 560 T1110 520"/>
+    <path d="M80 760 Q520 720 900 820 T1120 800"/>
+  </g>
+  <g opacity="0.32" stroke="rgba(255,255,255,0.18)" stroke-width="1.3" fill="none">
+    <circle cx="320" cy="300" r="42"/>
+    <circle cx="880" cy="300" r="36"/>
+    <circle cx="820" cy="760" r="40"/>
+  </g>
+</svg>`;
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+})();
 function formatDateRange(start: string, end: string) {
   const startDate = new Date(start);
   const endDate = new Date(end);
@@ -100,6 +153,12 @@ function statusTag(status: ExploreItem["status"]) {
 function buildSlug(type: ExploreItem["type"], slug: string) {
   return type === "EXPERIENCE" ? `/experiencias/${slug}` : `/eventos/${slug}`;
 }
+
+const exploreMainClass =
+  "min-h-screen w-full text-white bg-[radial-gradient(circle_at_12%_18%,rgba(255,0,200,0.06),transparent_38%),radial-gradient(circle_at_88%_12%,rgba(107,255,255,0.06),transparent_32%),radial-gradient(circle_at_42%_78%,rgba(22,70,245,0.06),transparent_38%),linear-gradient(135deg,#050611_0%,#040812_60%,#05060f_100%)]";
+
+const exploreFilterClass =
+  "relative z-30 flex flex-col gap-4 rounded-3xl border border-white/12 bg-gradient-to-r from-white/6 via-[#0f1424]/45 to-white/6 p-5 shadow-[0_24px_70px_rgba(0,0,0,0.55)] backdrop-blur-3xl";
 
 function ExplorarContent() {
   const [items, setItems] = useState<ExploreItem[]>([]);
@@ -511,7 +570,6 @@ function ExplorarContent() {
 
   useEffect(() => {
     fetchItems({ append: false, cursor: null });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filtersTick]);
 
   useEffect(() => {
@@ -628,10 +686,10 @@ function ExplorarContent() {
   const showSkeleton = loading || (error && items.length === 0);
 
   return (
-    <main className="orya-body-bg min-h-screen w-full text-white">
+    <main className={exploreMainClass}>
       <section className="max-w-6xl mx-auto px-6 md:px-10 py-6 md:py-8 space-y-6">
         {/* TOPO – FILTROS PRINCIPAIS */}
-        <div className="flex flex-col gap-4">
+        <div className={exploreFilterClass}>
           <div className="flex flex-wrap items-center gap-3">
             {/* Localização */}
             <div className="relative" ref={cityRef}>
@@ -920,21 +978,25 @@ function ExplorarContent() {
         {!loading && items.length > 0 && (
           <>
             <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-              {items.map((item) =>
-                item.type === "EVENT" ? (
-                  <EventCard
-                    key={`${item.type}-${item.id}`}
-                    item={item}
-                    onLike={toggleLike}
-                    liked={likedItems.includes(item.id)}
-                  />
+              {[...items.map((item) => ({ item })), ...Array.from({ length: Math.max(0, 3 - items.length) }).map((_, idx) => ({ item: null, key: `placeholder-${idx}` }))].map((entry, idx) =>
+                entry.item ? (
+                  entry.item.type === "EVENT" ? (
+                    <EventCard
+                      key={`${entry.item.type}-${entry.item.id}`}
+                      item={entry.item}
+                      onLike={toggleLike}
+                      liked={likedItems.includes(entry.item.id)}
+                    />
+                  ) : (
+                    <ExperienceCard
+                      key={`${entry.item.type}-${entry.item.id}`}
+                      item={entry.item}
+                      onLike={toggleLike}
+                      liked={likedItems.includes(entry.item.id)}
+                    />
+                  )
                 ) : (
-                  <ExperienceCard
-                    key={`${item.type}-${item.id}`}
-                    item={item}
-                    onLike={toggleLike}
-                    liked={likedItems.includes(item.id)}
-                  />
+                  <PlaceholderCard key={entry.key ?? `placeholder-${idx}`} />
                 ),
               )}
             </div>
@@ -1113,19 +1175,19 @@ function BaseCard({
     >
       <div className="relative overflow-hidden">
         <div className="aspect-square w-full">
-          {item.coverImageUrl ? (
-            <Image
-              src={optimizeImageUrl(item.coverImageUrl, 900, 72)}
-              alt={item.title}
-              fill
-              sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
-              className="object-cover transform transition-transform duration-300 group-hover:scale-[1.04]"
-              placeholder="blur"
-              blurDataURL={defaultBlurDataURL}
-            />
-          ) : (
-            <div className={`h-full w-full bg-gradient-to-br ${accentClass}`} />
-          )}
+          <Image
+            src={
+              item.coverImageUrl
+                ? optimizeImageUrl(item.coverImageUrl, 900, 72)
+                : defaultCover
+            }
+            alt={item.title}
+            fill
+            sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+            className="object-cover transform transition-transform duration-300 group-hover:scale-[1.04]"
+            placeholder="blur"
+            blurDataURL={defaultBlurDataURL}
+          />
         </div>
 
         <div
@@ -1162,7 +1224,7 @@ function BaseCard({
         <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
       </div>
 
-      <div className="p-3 flex flex-col gap-1.5">
+      <div className="p-3 flex flex-col gap-1.5 bg-gradient-to-b from-white/2 via-transparent to-white/2">
         <div className="flex items-center justify-between text-[11px] text-white/75">
           {item.hostUsername ? (
             <button
@@ -1235,5 +1297,39 @@ function ExperienceCard(props: CardProps) {
       badge="Experiência"
       neonClass="shadow-[0_14px_32px_rgba(0,0,0,0.42)]"
     />
+  );
+}
+
+function PlaceholderCard() {
+  return (
+    <div className="group rounded-3xl border border-white/10 bg-white/[0.02] overflow-hidden flex flex-col shadow-[0_14px_32px_rgba(0,0,0,0.4)]">
+      <div className="relative aspect-square w-full overflow-hidden">
+        <Image
+          src={defaultCover}
+          alt="Em breve na ORYA"
+          fill
+          sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+          className="object-cover"
+          placeholder="blur"
+          blurDataURL={defaultBlurDataURL}
+        />
+        <div className="absolute inset-0 bg-gradient-to-b from-black/25 via-transparent to-black/70" />
+        <div className="absolute top-3 left-3 rounded-full border border-white/16 bg-black/60 px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-white/75">
+          Em breve
+        </div>
+      </div>
+      <div className="p-3 flex flex-col gap-1.5 bg-gradient-to-b from-white/2 via-transparent to-white/2">
+        <h2 className="text-[14px] md:text-[15px] font-semibold text-white">Novos eventos a caminho</h2>
+        <p className="text-[11px] text-white/75">
+          Fica atento — mais eventos vão surgir aqui com o look glassy premium.
+        </p>
+        <div className="mt-2 flex items-center justify-between text-[11px]">
+          <span className="px-2 py-0.5 rounded-full bg-black/75 border border-white/22 text-white font-medium">
+            Brevemente
+          </span>
+          <span className="text-white/60">ORYA</span>
+        </div>
+      </div>
+    </div>
   );
 }

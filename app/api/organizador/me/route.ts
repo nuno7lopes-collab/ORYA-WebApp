@@ -1,6 +1,5 @@
 
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
@@ -223,12 +222,15 @@ export async function PATCH(req: NextRequest) {
     }
 
     // Garantir que existe organizer (via membership ou legacy userId)
-    const { organizer } = await getActiveOrganizerForUser(user.id, {
+    const { organizer, membership } = await getActiveOrganizerForUser(user.id, {
       roles: ["OWNER", "CO_OWNER", "ADMIN"],
     });
 
     if (!organizer) {
       return NextResponse.json({ ok: false, error: "Ainda não és organizador." }, { status: 403 });
+    }
+    if (!membership || membership.role !== "OWNER") {
+      return NextResponse.json({ ok: false, error: "Apenas o Owner pode alterar estas definições." }, { status: 403 });
     }
 
     const profileUpdates: Record<string, unknown> = {};

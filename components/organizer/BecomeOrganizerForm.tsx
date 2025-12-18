@@ -103,6 +103,26 @@ export default function BecomeOrganizerForm() {
   const watchBusinessName = form.watch("businessName");
   const watchCity = form.watch("city");
   const watchUsername = form.watch("username");
+  const cityOptions = useMemo(
+    () => [
+      "Lisboa",
+      "Porto",
+      "Braga",
+      "Coimbra",
+      "Faro",
+      "Aveiro",
+      "Setúbal",
+      "Guimarães",
+      "Viseu",
+      "Funchal",
+      "Ponta Delgada",
+      "Évora",
+      "Viana do Castelo",
+      "Leiria",
+      "Santarém",
+    ],
+    [],
+  );
 
   useEffect(() => {
     const t = setTimeout(() => setIsLoaded(true), 200);
@@ -174,7 +194,6 @@ export default function BecomeOrganizerForm() {
     return () => {
       if (usernameCheckTimeout.current) clearTimeout(usernameCheckTimeout.current);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [watchUsername]);
 
   const handleSubmit = form.handleSubmit(async (values) => {
@@ -434,13 +453,26 @@ export default function BecomeOrganizerForm() {
                 name="city"
                 control={form.control}
                 render={({ field }) => (
-                  <input
-                    {...field}
-                    className={`w-full rounded-xl border bg-black/40 px-3 py-2 text-sm outline-none transition focus:border-[#6BFFFF] ${
-                      form.formState.errors.city ? "border-red-400/60" : "border-white/15"
-                    }`}
-                    placeholder="Cidade base"
-                  />
+                  <div className="relative">
+                    <select
+                      {...field}
+                      className={`w-full rounded-xl border bg-black/40 px-3 py-2 text-sm outline-none transition focus:border-[#6BFFFF] ${
+                        form.formState.errors.city ? "border-red-400/60" : "border-white/15"
+                      }`}
+                    >
+                      <option value="">Seleciona uma cidade</option>
+                      {cityOptions.map((c) => (
+                        <option key={c} value={c}>
+                          {c}
+                        </option>
+                      ))}
+                    </select>
+                    {!field.value && (
+                      <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] uppercase tracking-[0.18em] text-white/40">
+                        PT
+                      </span>
+                    )}
+                  </div>
                 )}
               />
               {form.formState.errors.city && (

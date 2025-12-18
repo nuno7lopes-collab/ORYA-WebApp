@@ -5,7 +5,6 @@ import { usePathname, useRouter } from "next/navigation";
 import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
 import { useUser } from "@/app/hooks/useUser";
 import Link from "next/link";
-import MobileBottomNav from "./MobileBottomNav";
 import { NotificationBell } from "./notifications/NotificationBell";
 import { featureFlags } from "@/lib/flags";
 import { supabaseBrowser } from "@/lib/supabaseBrowser";
@@ -36,10 +35,10 @@ export function Navbar() {
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [isSuggestLoading, setIsSuggestLoading] = useState(false);
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
-  const [hasMounted, setHasMounted] = useState(false);
   const [hydratedPathname, setHydratedPathname] = useState<string | null>(null);
   const [lastOrganizerUsername, setLastOrganizerUsername] = useState<string | null>(null);
   const profileMenuRef = useRef<HTMLDivElement | null>(null);
+  const searchPanelRef = useRef<HTMLDivElement | null>(null);
   const lastScrollYRef = useRef(0);
   const pathname = hydratedPathname ?? "";
   const useNewNavbar = featureFlags.NEW_NAVBAR();
@@ -63,10 +62,6 @@ export function Navbar() {
       </button>
     );
   };
-
-  useEffect(() => {
-    setHasMounted(true);
-  }, []);
 
   useEffect(() => {
     // Garantir pathname estável só depois de montar para evitar mismatch
@@ -162,6 +157,18 @@ export function Navbar() {
       document.removeEventListener("keydown", handleKeyDown);
     };
   }, []);
+
+  useEffect(() => {
+    if (!isSearchOpen) return;
+    const handleGlobalClick = (event: MouseEvent) => {
+      const target = event.target as Node | null;
+      if (searchPanelRef.current && target && !searchPanelRef.current.contains(target)) {
+        setIsSearchOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleGlobalClick, true);
+    return () => document.removeEventListener("mousedown", handleGlobalClick, true);
+  }, [isSearchOpen]);
 
   const inAuthPage =
     pathname === "/login" || pathname === "/signup" || pathname === "/auth/callback";
@@ -290,11 +297,9 @@ export function Navbar() {
         } ${shouldHide ? "hidden" : ""}`}
       >
         <div
-          className={`flex w-full items-center gap-4 px-4 md:px-6 lg:px-8 transition-all duration-300 ${
-            isAtTop && !isSearchOpen
-              ? "py-4 md:py-5 border-b border-white/5 bg-[#050915]/60 backdrop-blur-xl"
-              : "py-3.5 md:py-4 border-b border-white/10 bg-[#060a16]/85 backdrop-blur-2xl shadow-[0_14px_50px_rgba(0,0,0,0.65)]"
-          }`}
+          className={`relative flex w-full items-center gap-4 px-4 md:px-6 lg:px-8 transition-all duration-300 ${
+            isAtTop && !isSearchOpen ? "py-4 md:py-5" : "py-3.5 md:py-4"
+          } rounded-b-[28px] border-b border-white/12 bg-[radial-gradient(circle_at_12%_0%,rgba(255,0,200,0.08),transparent_30%),radial-gradient(circle_at_82%_0%,rgba(107,255,255,0.08),transparent_26%),linear-gradient(120deg,rgba(5,6,14,0.95),rgba(4,7,14,0.94),rgba(3,5,12,0.94))] backdrop-blur-2xl shadow-[0_20px_55px_rgba(0,0,0,0.68)]`}
         >
           {/* Logo + link explorar */}
           <div className="flex flex-1 items-center gap-3">
@@ -325,8 +330,8 @@ export function Navbar() {
                 onClick={() => router.push("/explorar")}
                 className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
                   pathname?.startsWith("/explorar")
-                    ? "bg-white/12 text-white border border-white/25 shadow-[0_0_18px_rgba(255,255,255,0.18)]"
-                    : "text-zinc-200 hover:bg-white/5 hover:text-white border border-white/10"
+                    ? "bg-[linear-gradient(120deg,rgba(255,0,200,0.22),rgba(107,255,255,0.18))] text-white border border-white/30 shadow-[0_0_18px_rgba(107,255,255,0.35)]"
+                    : "text-white/85 hover:text-white bg-white/5 border border-white/16 hover:border-white/26"
                 }`}
               >
                 Explorar
@@ -336,8 +341,8 @@ export function Navbar() {
                 onClick={() => router.push("/organizador")}
                 className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
                   pathname?.startsWith("/organizador")
-                    ? "bg-white/12 text-white border border-white/25 shadow-[0_0_18px_rgba(107,255,255,0.25)]"
-                    : "text-zinc-200 hover:bg-white/5 hover:text-white border border-white/10"
+                    ? "bg-[linear-gradient(120deg,rgba(107,255,255,0.18),rgba(22,70,245,0.22))] text-white border border-white/28 shadow-[0_0_18px_rgba(22,70,245,0.28)]"
+                    : "text-white/85 hover:text-white bg-white/5 border border-white/16 hover:border-white/26"
                 }`}
               >
                 Organizar
@@ -350,7 +355,7 @@ export function Navbar() {
             <button
               type="button"
               onClick={() => setIsSearchOpen(true)}
-              className="group flex w-full max-w-xl items-center gap-3 rounded-full border border-white/12 bg-white/5 px-4 py-2 text-left text-[13px] text-white/75 hover:border-white/40 hover:bg-white/10 transition-colors shadow-[0_16px_36px_rgba(0,0,0,0.45)]"
+              className="group relative flex w-full max-w-xl items-center gap-3 rounded-full border border-white/16 bg-[linear-gradient(120deg,rgba(255,0,200,0.1),rgba(107,255,255,0.1)),rgba(5,6,12,0.82)] px-4 py-2 text-left text-[13px] text-white hover:border-white/35 hover:shadow-[0_0_35px_rgba(107,255,255,0.28)] transition shadow-[0_26px_60px_rgba(0,0,0,0.7)] backdrop-blur-2xl"
             >
               <span className="flex h-5 w-5 items-center justify-center rounded-full border border-white/30 text-[10px] text-white/70">
                 ⌕
@@ -366,6 +371,14 @@ export function Navbar() {
 
           {/* Lado direito: auth/profile */}
           <div className="flex flex-1 items-center justify-end gap-2 md:gap-3">
+            {/* Acesso rápido a Organizar no mobile */}
+            <button
+              type="button"
+              onClick={() => router.push("/organizador")}
+              className="inline-flex md:hidden items-center rounded-full border border-white/16 bg-white/10 px-3 py-1.5 text-[11px] font-semibold text-white/90 hover:border-white/28 hover:bg-white/16 transition"
+            >
+              Organizar
+            </button>
             {isLoading ? (
               <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[11px] text-white/60 animate-pulse">
                 <div className="h-7 w-7 rounded-full bg-white/20" />
@@ -385,79 +398,68 @@ export function Navbar() {
             ) : (
               <div className="relative flex items-center gap-2" ref={profileMenuRef}>
                 {useNewNavbar && <NotificationBell />}
-                <Link
-                  href="/me"
-                  className="flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-2.5 py-1 text-[11px] text-white/85 hover:bg-white/15"
-                  aria-label="Ir para a tua conta"
-                >
-                  <div className="relative h-9 w-9 overflow-hidden rounded-full border border-white/20 bg-gradient-to-br from-[#0f172a] via-[#111827] to-[#0b1224] text-[11px] font-bold text-white shadow-[0_0_22px_rgba(107,255,255,0.55)]">
-                    <span className="pointer-events-none absolute inset-0 rounded-full border border-white/10" />
-                    <span className="pointer-events-none absolute inset-0 rounded-full bg-gradient-to-tr from-[#FF00C8]/35 via-[#6BFFFF]/25 to-transparent animate-[spin_14s_linear_infinite]" />
-                    <span className="relative z-10 flex h-full w-full items-center justify-center bg-gradient-to-r from-[#FF9CF2] to-[#6BFFFF] bg-clip-text text-transparent">
-                      {userInitial}
-                    </span>
-                  </div>
-                  <span className="hidden max-w-[120px] truncate text-[11px] sm:inline">
-                    {userLabel || "Conta ORYA"}
-                  </span>
-                </Link>
                 <button
                   type="button"
                   onClick={() => setIsProfileMenuOpen((open) => !open)}
-                  className="rounded-full border border-white/15 bg-white/10 px-2 py-1 text-[11px] text-white/80 hover:bg-white/15"
+                  className="flex items-center gap-2 rounded-full border border-white/18 bg-white/8 px-2.5 py-1 text-[11px] text-white/90 hover:border-white/28 hover:bg-white/12 shadow-[0_0_22px_rgba(255,0,200,0.22)] transition"
                   aria-haspopup="menu"
                   aria-expanded={isProfileMenuOpen}
                   aria-label="Abrir menu de conta"
                 >
-                  ▾
+                  <div className="relative h-9 w-9">
+                    <div className="absolute inset-[-3px] rounded-full bg-[conic-gradient(from_180deg,#ff00c8_0deg,#ff5afc_120deg,#6b7bff_240deg,#ff00c8_360deg)] opacity-85 blur-[8px]" />
+                    <div className="relative h-full w-full overflow-hidden rounded-full border border-white/20 bg-gradient-to-br from-[#0b0f1b] via-[#0f1222] to-[#0a0d18] text-[11px] font-bold text-white shadow-[0_0_22px_rgba(255,0,200,0.32)]">
+                      <span className="pointer-events-none absolute inset-0 rounded-full border border-white/10" />
+                      <span className="pointer-events-none absolute inset-0 rounded-full bg-gradient-to-tr from-[#FF00C8]/35 via-[#6BFFFF]/22 to-transparent animate-[spin_16s_linear_infinite]" />
+                      <span className="relative z-10 flex h-full w-full items-center justify-center bg-gradient-to-r from-[#FF9CF2] to-[#6BFFFF] bg-clip-text text-transparent">
+                        {userInitial}
+                      </span>
+                    </div>
+                  </div>
+                  <span className="hidden max-w-[120px] truncate text-[11px] sm:inline">
+                    {userLabel || "Conta ORYA"}
+                  </span>
                 </button>
 
                 {isProfileMenuOpen && (
                   <div
-                    className="absolute right-0 top-full mt-2 w-56 origin-top-right rounded-2xl border border-white/14 bg-black/85 p-2 text-[11px] text-white/80 shadow-[0_22px_60px_rgba(0,0,0,0.85)] backdrop-blur-2xl"
+                    className="absolute right-0 top-full mt-3 w-60 origin-top-right rounded-2xl border border-white/16 bg-[linear-gradient(135deg,rgba(3,4,10,0.97),rgba(8,10,18,0.98))] p-2 text-[11px] text-white/90 shadow-[0_28px_80px_rgba(0,0,0,0.88)] backdrop-blur-3xl"
                     role="menu"
                     aria-label="Menu de conta ORYA"
                   >
                     <Link
                       href="/me"
                       onClick={() => setIsProfileMenuOpen(false)}
-                      className="flex w-full items-center justify-between rounded-xl px-2.5 py-1.5 text-left hover:bg-white/8"
+                      className="flex w-full items-center justify-between rounded-xl px-2.5 py-2 text-left hover:bg-white/8"
                     >
-                      <span>A minha conta</span>
+                      <span className="font-semibold text-white">Minha conta</span>
                     </Link>
                     <Link
                       href="/me/carteira"
                       onClick={() => setIsProfileMenuOpen(false)}
-                      className="flex w-full items-center justify-between rounded-xl px-2.5 py-1.5 text-left hover:bg-white/8"
+                      className="flex w-full items-center justify-between rounded-xl px-2.5 py-2 text-left hover:bg-white/8"
                     >
-                      <span>Carteira (bilhetes)</span>
+                      <span>Carteira</span>
                     </Link>
                     <Link
                       href="/me/compras"
                       onClick={() => setIsProfileMenuOpen(false)}
-                      className="flex w-full items-center justify-between rounded-xl px-2.5 py-1.5 text-left hover:bg-white/8"
+                      className="flex w-full items-center justify-between rounded-xl px-2.5 py-2 text-left hover:bg-white/8"
                     >
-                      <span>Minhas compras</span>
+                      <span>Compras</span>
                     </Link>
                     <Link
                       href="/me/settings"
                       onClick={() => setIsProfileMenuOpen(false)}
-                      className="flex w-full items-center justify-between rounded-xl px-2.5 py-1.5 text-left hover:bg-white/8"
+                      className="flex w-full items-center justify-between rounded-xl px-2.5 py-2 text-left hover:bg-white/8"
                     >
                       <span>Definições</span>
-                    </Link>
-                    <Link
-                      href="/me/experiencias"
-                      onClick={() => setIsProfileMenuOpen(false)}
-                      className="flex w-full items-center justify-between rounded-xl px-2.5 py-1.5 text-left hover:bg-white/8"
-                    >
-                      <span>Minhas experiências</span>
                     </Link>
                     {lastOrganizerUsername && (
                       <Link
                         href={`/o/${lastOrganizerUsername}`}
                         onClick={() => setIsProfileMenuOpen(false)}
-                        className="flex w-full items-center justify-between rounded-xl px-2.5 py-1.5 text-left hover:bg-white/8"
+                        className="flex w-full items-center justify-between rounded-xl px-2.5 py-2 text-left hover:bg-white/8"
                       >
                         <span>Ver página pública</span>
                       </Link>
@@ -466,7 +468,7 @@ export function Navbar() {
                       <Link
                         href="/me"
                         onClick={() => setIsProfileMenuOpen(false)}
-                        className="flex w-full items-center justify-between rounded-xl px-2.5 py-1.5 text-left hover:bg-white/8"
+                        className="flex w-full items-center justify-between rounded-xl px-2.5 py-2 text-left hover:bg-white/8"
                       >
                         <span>Voltar a utilizador</span>
                       </Link>
@@ -476,7 +478,7 @@ export function Navbar() {
                     <button
                       type="button"
                       onClick={handleLogout}
-                      className="mt-1 w-full rounded-xl bg-white/10 px-3 py-2 text-left text-red-100 hover:bg-white/15"
+                      className="mt-1 w-full rounded-xl bg-white/10 px-3 py-2 text-left font-semibold text-red-100 hover:bg-white/15"
                     >
                       Terminar sessão
                     </button>
@@ -490,7 +492,7 @@ export function Navbar() {
       {/* Overlay de pesquisa estilo full-screen, com sugestões */}
       {isSearchOpen && (
         <div
-          className="fixed inset-0 z-40 bg-black/75 backdrop-blur-2xl"
+              className="fixed inset-0 z-40 bg-[radial-gradient(circle_at_10%_20%,rgba(255,0,200,0.07),transparent_35%),radial-gradient(circle_at_80%_0%,rgba(107,255,255,0.08),transparent_30%),rgba(3,5,12,0.82)] backdrop-blur-[18px]"
           role="dialog"
           aria-modal="true"
           onClick={(e) => {
@@ -499,14 +501,14 @@ export function Navbar() {
             }
           }}
         >
-          <div className="mx-auto mt-20 max-w-3xl px-4">
+          <div ref={searchPanelRef} className="mx-auto mt-24 md:mt-28 max-w-3xl px-4">
             <div
-              className="rounded-3xl border border-white/18 bg-[#050915]/90 p-4 shadow-[0_32px_90px_rgba(0,0,0,0.9)]"
+              className="rounded-3xl border border-white/14 bg-[radial-gradient(circle_at_12%_0%,rgba(255,0,200,0.1),transparent_38%),radial-gradient(circle_at_88%_0%,rgba(107,255,255,0.12),transparent_34%),linear-gradient(120deg,rgba(6,10,22,0.94),rgba(8,10,20,0.9),rgba(6,9,16,0.94))] p-4 shadow-[0_32px_90px_rgba(0,0,0,0.9)] backdrop-blur-2xl"
               aria-label="Pesquisa de eventos ORYA"
             >
               <form
                 onSubmit={handleSubmitSearch}
-                className="flex items-center gap-3 rounded-2xl border border-white/20 bg-black/60 px-4 py-2.5"
+                className="flex items-center gap-3 rounded-2xl border border-white/16 bg-[linear-gradient(120deg,rgba(255,0,200,0.08),rgba(107,255,255,0.08)),rgba(255,255,255,0.03)] px-4 py-2.5 shadow-[0_14px_40px_rgba(0,0,0,0.55)] backdrop-blur-xl"
               >
                 <span className="flex h-6 w-6 items-center justify-center rounded-full border border-white/30 text-[12px] text-white/80">
                   ⌕
@@ -515,7 +517,7 @@ export function Navbar() {
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="O que queres fazer hoje?"
-                  className="flex-1 bg-transparent text-base text-white placeholder:text-white/45 focus:outline-none"
+                  className="flex-1 bg-transparent text-base text-white placeholder:text-white/65 focus:outline-none"
                 />
                 <button
                   type="button"
@@ -527,14 +529,14 @@ export function Navbar() {
               </form>
 
               <div className="mt-4 grid gap-4 md:grid-cols-3">
-                <div className="md:col-span-3 rounded-2xl border border-white/8 bg-white/5 p-3">
-                  <div className="flex items-center justify-between text-[11px] text-white/60">
+                <div className="md:col-span-3 rounded-2xl border border-white/12 bg-[linear-gradient(140deg,rgba(255,255,255,0.05),rgba(255,255,255,0.02))] p-3 shadow-[0_18px_60px_rgba(0,0,0,0.45)]">
+                  <div className="flex items-center justify-between text-[11px] text-white/75">
                     <span>Resultados</span>
-                    {isSuggestLoading && <span className="animate-pulse text-white/50">a carregar…</span>}
+                    {isSuggestLoading && <span className="animate-pulse text-white/65">a carregar…</span>}
                   </div>
                   <div className="mt-2 space-y-2">
                   {suggestions.length === 0 && !isSuggestLoading && (
-                    <p className="text-[11px] text-white/55">
+                    <p className="text-[11px] text-white/70">
                       Começa a escrever para ver eventos, locais e cidades.
                     </p>
                   )}
@@ -546,9 +548,9 @@ export function Navbar() {
                         setIsSearchOpen(false);
                           router.push(buildSlug(item));
                         }}
-                        className="w-full rounded-xl border border-white/8 bg-black/50 p-2.5 text-left hover:border-white/20 hover:bg-white/5 transition flex gap-3"
+                        className="w-full rounded-xl border border-white/12 bg-[linear-gradient(120deg,rgba(255,255,255,0.04),rgba(8,10,22,0.7))] p-2.5 text-left hover:border-white/20 hover:bg-white/8 transition flex gap-3 shadow-[0_12px_40px_rgba(0,0,0,0.5)]"
                       >
-                        <div className="h-14 w-14 overflow-hidden rounded-lg bg-gradient-to-br from-[#111827]/70 to-[#0f172a]/60">
+                        <div className="h-14 w-14 overflow-hidden rounded-lg border border-white/10 bg-[radial-gradient(circle_at_30%_30%,rgba(255,0,200,0.14),transparent_45%),radial-gradient(circle_at_70%_70%,rgba(107,255,255,0.14),transparent_50%),#0b0f1b]">
                           {item.coverImageUrl ? (
                             // eslint-disable-next-line @next/next/no-img-element
                             <img
@@ -556,16 +558,20 @@ export function Navbar() {
                               alt={item.title}
                               className="h-full w-full object-cover"
                             />
-                          ) : null}
+                          ) : (
+                            <div className="flex h-full w-full items-center justify-center text-[10px] font-semibold uppercase tracking-wide text-white/55">
+                              ORYA
+                            </div>
+                          )}
                         </div>
                         <div className="flex-1">
                           <p className="text-[12px] font-semibold text-white line-clamp-1">
                             {item.title}
                           </p>
-                          <p className="text-[10px] text-white/65 line-clamp-1">
+                          <p className="text-[10px] text-white/80 line-clamp-1">
                             {item.locationName || item.locationCity || "Local a anunciar"}
                           </p>
-                          <p className="text-[10px] text-white/55">
+                          <p className="text-[10px] text-white/75">
                             {item.startsAt
                               ? new Date(item.startsAt).toLocaleString("pt-PT", {
                                   weekday: "short",
@@ -577,7 +583,7 @@ export function Navbar() {
                               : "Data a anunciar"}
                           </p>
                         </div>
-                        <span className="self-center rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[10px] text-white/70">
+                        <span className="self-center rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[10px] text-white/85">
                           {item.type === "EXPERIENCE" ? "Experiência" : "Evento"}
                         </span>
                       </button>
@@ -588,14 +594,6 @@ export function Navbar() {
             </div>
           </div>
         </div>
-      )}
-      {hasMounted && (
-        <MobileBottomNav
-          pathname={pathname || ""}
-          isSearchOpen={isSearchOpen}
-          onOpenSearch={() => setIsSearchOpen(true)}
-          onCloseSearch={() => setIsSearchOpen(false)}
-        />
       )}
     </>
   );

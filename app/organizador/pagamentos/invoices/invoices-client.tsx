@@ -48,10 +48,13 @@ export default function InvoicesClient() {
   const from = searchParams?.get("from") ?? "";
   const to = searchParams?.get("to") ?? "";
   const organizerId = organizerIdParam ? Number(organizerIdParam) : null;
-  const qs = toQuery({ organizerId, from, to });
-  const { data, isLoading, mutate } = useSWR(() => (organizerId ? `/api/organizador/pagamentos/invoices${qs}` : null), fetcher, {
-    revalidateOnFocus: false,
-  });
+  const effectiveOrganizerId = organizerId ?? orgIdFromProfile ?? null;
+  const qs = toQuery({ organizerId: effectiveOrganizerId, from, to });
+  const { data, isLoading, mutate } = useSWR(
+    () => (effectiveOrganizerId ? `/api/organizador/pagamentos/invoices${qs}` : null),
+    fetcher,
+    { revalidateOnFocus: false },
+  );
 
   const summary: InvoiceSummary = data?.ok ? data.summary : { grossCents: 0, discountCents: 0, platformFeeCents: 0, netCents: 0, tickets: 0 };
   const items: InvoiceItem[] = data?.ok ? data.items : [];
@@ -119,13 +122,13 @@ export default function InvoicesClient() {
     }
     if (!data || data.ok === false) {
       return (
-        <div className="rounded-3xl border border-red-500/40 bg-red-500/10 p-5 text-sm text-red-50 shadow-[0_18px_50px_rgba(0,0,0,0.55)]">
-          <p className="font-semibold">Não foi possível carregar faturação.</p>
-          <p className="text-red-100/80">Tenta novamente ou ajusta o intervalo.</p>
+        <div className="rounded-3xl border border-white/15 bg-red-500/10 p-5 text-sm text-white/80 shadow-[0_18px_50px_rgba(0,0,0,0.55)]">
+          <p className="font-semibold text-white">Não foi possível carregar faturação.</p>
+          <p className="text-white/65">Tenta novamente ou ajusta o intervalo.</p>
           <button
             type="button"
             onClick={() => mutate()}
-            className="mt-3 rounded-full border border-red-200/60 px-3 py-1 text-[12px] text-red-50 hover:bg-red-500/15"
+            className="mt-3 rounded-full border border-white/25 px-3 py-1 text-[12px] text-white/85 hover:bg-white/10"
           >
             Recarregar
           </button>

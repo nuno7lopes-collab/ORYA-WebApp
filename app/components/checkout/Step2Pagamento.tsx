@@ -114,6 +114,7 @@ export default function Step2Pagamento() {
   const ensuredIdemKeyRef = useRef(false);
   const lastClearedFingerprintRef = useRef<string | null>(null);
   const idempotencyMismatchCountRef = useRef(0);
+  const loadErrorCountRef = useRef(0);
   const [cachedIntent, setCachedIntent] = useState<{
     key: string;
     clientSecret: string | null;
@@ -683,6 +684,8 @@ export default function Step2Pagamento() {
           data,
         });
 
+        const respCode = typeof data?.code === "string" ? data.code : null;
+
         // 409 ➜ idempotencyKey reutilizada com payload diferente (proteção contra intents errados/duplicados)
         if (res.status === 409) {
           if (!cancelled) {
@@ -730,7 +733,6 @@ export default function Step2Pagamento() {
 
         // Se a API disser 401 ➜ sessão ausente/expirada OU cenário que exige auth
         if (res.status === 401) {
-          const respCode = typeof data?.code === "string" ? data.code : null;
           const mustAuth =
             requiresAuth ||
             respCode === "AUTH_REQUIRED_FOR_GROUP_SPLIT" ||
@@ -750,11 +752,13 @@ export default function Step2Pagamento() {
               setGuestSubmitVersion(0);
               setGuestErrors({});
               setError(null);
-              setAuthInfo(
+              const freeCopy =
                 respCode === "AUTH_REQUIRED_FOR_GROUP_SPLIT"
                   ? "Para pagar apenas a tua parte tens de iniciar sessão."
-                  : "Este tipo de checkout requer sessão iniciada."
-              );
+                  : isFreeScenario
+                    ? "Checkouts gratuitos exigem conta com username. Cria conta ou entra para continuar."
+                    : "Este tipo de checkout requer sessão iniciada.";
+              setAuthInfo(freeCopy);
             }
             return;
           }
@@ -766,6 +770,18 @@ export default function Step2Pagamento() {
                 ? data.error
                 : "Sessão expirada. Tenta novamente."
             );
+          }
+          return;
+        }
+
+        // 403 ➜ utilizador autenticado mas falta username (free checkout)
+        if (res.status === 403 && respCode === "USERNAME_REQUIRED") {
+          if (!cancelled) {
+            setPurchaseMode("auth");
+            setGuestSubmitVersion(0);
+            setGuestErrors({});
+            setError(null);
+            setAuthInfo("Define um username na tua conta para concluir este checkout gratuito.");
           }
           return;
         }
@@ -1120,15 +1136,13 @@ export default function Step2Pagamento() {
     },
   };
 
-const options: StripeElementsOptions | undefined = clientSecret
-  ? {
-      clientSecret,
-      appearance,
-      // Nota: a lista de métodos permitidos é definida no PaymentIntent (backend).
-    }
-  : undefined;
-
-  const loadErrorCountRef = useRef(0);
+  const options: StripeElementsOptions | undefined = clientSecret
+    ? {
+        clientSecret,
+        appearance,
+        // Nota: a lista de métodos permitidos é definida no PaymentIntent (backend).
+      }
+    : undefined;
 
   const handlePaymentElementError = () => {
     // Evita loop infinito: só tentamos regenerar 1x automaticamente
@@ -1146,18 +1160,6 @@ const options: StripeElementsOptions | undefined = clientSecret
     inFlightIntentRef.current = null;
     setGuestSubmitVersion((v) => v + 1);
 
-    atualizarDados({
-      additional: {
-        ...(safeDados?.additional ?? {}),
-        purchaseId: null,
-        paymentIntentId: undefined,
-        freeCheckout: undefined,
-        appliedPromoLabel: safeDados?.additional?.appliedPromoLabel,
-        intentFingerprint: crypto.randomUUID(),
-        idempotencyKey: crypto.randomUUID(),
-      },
-    });
-
     let nextIdemKey: string | undefined;
     try {
       nextIdemKey = crypto.randomUUID();
@@ -1171,9 +1173,9 @@ const options: StripeElementsOptions | undefined = clientSecret
         purchaseId: null,
         paymentIntentId: undefined,
         freeCheckout: undefined,
-        appliedPromoLabel: undefined,
+        appliedPromoLabel: safeDados?.additional?.appliedPromoLabel,
         intentFingerprint: undefined,
-        idempotencyKey: nextIdemKey ?? (additionalObj as any).idempotencyKey,
+        idempotencyKey: nextIdemKey ?? (safeDados?.additional as any)?.idempotencyKey,
       },
     });
   };
@@ -1506,7 +1508,7 @@ const options: StripeElementsOptions | undefined = clientSecret
           {requiresAuth ? (
             <div className="space-y-2">
               <div className="rounded-xl border border-emerald-400/30 bg-emerald-500/10 px-3 py-2 text-[11px] text-emerald-50">
-                Para este checkout tens de iniciar sessão (e, se for evento gratuito, ter username definido).
+                Este checkout exige conta. Para eventos gratuitos precisas de iniciar sessão e ter um username definido.
               </div>
               <AuthWall onAuthenticated={handleAuthenticated} />
             </div>
@@ -1550,41 +1552,16 @@ function PaymentForm({ total, discount = 0, breakdown, clientSecret, onLoadError
   const currency = breakdown?.currency ?? "EUR";
   const discountCents = Math.max(0, Math.round(discount * 100));
   const hasInvoice = Boolean(breakdown?.lines?.length);
-  const platformFeeCents =
-    breakdown && breakdown.feeMode === "ADDED" ? breakdown.platformFeeCents : 0;
+  const feeMode =
+    typeof breakdown?.feeMode === "string"
+      ? breakdown.feeMode.toUpperCase()
+      : null;
+  const payorPaysFee = feeMode === "ADDED" || feeMode === "ON_TOP";
+  const platformFeeCents = payorPaysFee ? breakdown?.platformFeeCents ?? 0 : 0;
   const subtotalCents = breakdown?.subtotalCents ?? 0;
   const baseSubtotalCents =
     hasInvoice && discountCents > 0 ? subtotalCents + discountCents : subtotalCents;
   const promoApplied = discountCents > 0;
-
-  if (!clientSecret) {
-    return (
-      <div className="rounded-2xl border border-red-500/30 bg-red-500/10 px-5 py-6 text-sm text-red-100 shadow-[0_0_30px_rgba(255,0,0,0.35)]">
-        <p className="font-semibold mb-1 flex items-center gap-2">
-          <span className="text-lg">⚠️</span> Não foi possível preparar o pagamento.
-        </p>
-        <p className="text-[12px] mb-4 leading-relaxed">
-          Volta atrás e tenta novamente ou recarrega a página.
-        </p>
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={() => window.location.reload()}
-            className="rounded-full bg-white text-red-700 px-5 py-1.5 text-[11px] font-semibold shadow hover:bg-white/90 transition"
-          >
-            Recarregar
-          </button>
-          <button
-            type="button"
-            onClick={() => irParaPasso(1)}
-            className="rounded-full border border-white/30 px-5 py-1.5 text-[11px] text-white hover:bg-white/10 transition"
-          >
-            Voltar
-          </button>
-        </div>
-      </div>
-    );
-  }
 
   useEffect(() => {
     // sempre que o clientSecret muda, obrigamos o PaymentElement a fazer ready novamente
@@ -1756,6 +1733,35 @@ function PaymentForm({ total, discount = 0, breakdown, clientSecret, onLoadError
     }
   }
 
+  if (!clientSecret) {
+    return (
+      <div className="rounded-2xl border border-red-500/30 bg-red-500/10 px-5 py-6 text-sm text-red-100 shadow-[0_0_30px_rgba(255,0,0,0.35)]">
+        <p className="font-semibold mb-1 flex items-center gap-2">
+          <span className="text-lg">⚠️</span> Não foi possível preparar o pagamento.
+        </p>
+        <p className="text-[12px] mb-4 leading-relaxed">
+          Volta atrás e tenta novamente ou recarrega a página.
+        </p>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="rounded-full bg-white text-red-700 px-5 py-1.5 text-[11px] font-semibold shadow hover:bg-white/90 transition"
+          >
+            Recarregar
+          </button>
+          <button
+            type="button"
+            onClick={() => irParaPasso(1)}
+            className="rounded-full border border-white/30 px-5 py-1.5 text-[11px] text-white hover:bg-white/10 transition"
+          >
+            Voltar
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-5">
       {(hasInvoice || total !== null) && (
@@ -1826,7 +1832,7 @@ function PaymentForm({ total, discount = 0, breakdown, clientSecret, onLoadError
             <div className="flex items-center justify-between rounded-xl bg-white/5 px-4 py-3 border border-white/10">
               <div className="flex flex-col text-white/80">
                 <span className="text-[12px]">Total a pagar</span>
-                {breakdown?.feeMode === "INCLUDED" && (
+                {feeMode === "INCLUDED" && (
                   <span className="text-[11px] text-white/55">
                     Taxas já incluídas
                   </span>

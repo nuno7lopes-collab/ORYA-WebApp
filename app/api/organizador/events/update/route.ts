@@ -66,7 +66,17 @@ export async function POST(req: NextRequest) {
     }
     const event = await prisma.event.findUnique({
       where: { id: eventId },
-      include: { ticketTypes: true, organizer: true },
+      include: {
+        ticketTypes: true,
+        organizer: true,
+        _count: {
+          select: {
+            tickets: true,
+            reservations: true,
+            saleLines: true,
+          },
+        },
+      },
     });
 
     if (!event) {
@@ -92,6 +102,22 @@ export async function POST(req: NextRequest) {
       : "NO_STRIPE";
 
     const dataUpdate: Partial<Prisma.EventUncheckedUpdateInput> = {};
+    if (body.archive === true) {
+      const hasSoldTickets = event.ticketTypes.some((t) => (t.soldQuantity ?? 0) > 0);
+      const hasRegistrations = (event._count?.tickets ?? 0) > 0 || (event._count?.reservations ?? 0) > 0;
+      const hasPayments = (event._count?.saleLines ?? 0) > 0 || hasSoldTickets;
+      if (hasRegistrations || hasPayments) {
+        return NextResponse.json(
+          {
+            ok: false,
+            code: "EVENT_HAS_ATTENDEES",
+            error:
+              "Não é possível apagar/arquivar este evento porque já existem inscrições ou pagamentos associados.",
+          },
+          { status: 400 },
+        );
+      }
+    }
     if (body.archive === true) {
       dataUpdate.isDeleted = true;
       dataUpdate.deletedAt = new Date();

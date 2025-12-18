@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useWallet } from "@/app/components/wallet/useWallet";
 import { WalletCard } from "@/app/components/wallet/WalletCard";
@@ -21,25 +22,26 @@ export default function CarteiraPage() {
 
   if (!user && !userLoading) {
     return (
-      <main className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-black text-white flex items-center justify-center px-4">
-        <div className="max-w-lg w-full rounded-3xl border border-white/10 bg-white/[0.02] p-8 shadow-[0_18px_60px_rgba(0,0,0,0.7)] backdrop-blur-xl space-y-4 text-center">
+      <main className="relative min-h-screen bg-[radial-gradient(circle_at_15%_20%,#8a1ecb20_0%,transparent_28%),radial-gradient(circle_at_85%_10%,#00eaff20_0%,transparent_25%),radial-gradient(circle_at_30%_70%,#ff00c820_0%,transparent_35%),linear-gradient(135deg,#050611_0%,#040812_60%,#05060f_100%)] text-white flex items-center justify-center px-4">
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_20%,rgba(255,255,255,0.04),transparent_55%)]" />
+        <div className="relative max-w-lg w-full rounded-3xl border border-white/10 bg-gradient-to-br from-white/6 via-[#0f1424]/30 to-white/6 p-8 shadow-[0_24px_70px_rgba(0,0,0,0.7)] backdrop-blur-3xl space-y-4 text-center">
           <h1 className="text-2xl font-semibold">Entra para veres a tua carteira</h1>
           <p className="text-sm text-white/70">
             Autentica-te para veres os teus bilhetes e QR. A carteira é privada e só aparece depois de iniciar sessão.
           </p>
           <div className="flex flex-col sm:flex-row justify-center gap-3">
-            <a
+            <Link
               href="/login?redirectTo=/me/carteira"
               className="px-4 py-2.5 rounded-xl bg-white text-black text-sm font-semibold shadow-[0_0_22px_rgba(255,255,255,0.4)]"
             >
               Entrar
-            </a>
-            <a
+            </Link>
+            <Link
               href="/login?mode=signup&redirectTo=/me/carteira"
               className="px-4 py-2.5 rounded-xl border border-white/25 text-sm font-semibold text-white hover:bg-white/10"
             >
               Criar conta
-            </a>
+            </Link>
           </div>
         </div>
       </main>
@@ -47,18 +49,21 @@ export default function CarteiraPage() {
   }
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-black text-white">
-      <section className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-8">
-        <header className="rounded-2xl border border-white/10 bg-white/[0.02] p-5 shadow-[0_18px_50px_rgba(0,0,0,0.65)] backdrop-blur-xl">
+    <main className="relative min-h-screen bg-[radial-gradient(circle_at_15%_20%,#8a1ecb20_0%,transparent_28%),radial-gradient(circle_at_85%_10%,#00eaff20_0%,transparent_25%),radial-gradient(circle_at_30%_70%,#ff00c820_0%,transparent_35%),linear-gradient(135deg,#050611_0%,#040812_60%,#05060f_100%)] text-white">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_20%,rgba(255,255,255,0.04),transparent_55%)]" />
+      <section className="relative mx-auto flex max-w-6xl flex-col gap-6 px-4 py-8">
+        <header className="flex flex-col gap-3 rounded-3xl border border-white/10 bg-gradient-to-r from-white/5 via-[#111424]/35 to-white/5 px-5 py-6 shadow-[0_25px_60px_rgba(0,0,0,0.55)] backdrop-blur-3xl sm:flex-row sm:items-center sm:justify-between sm:px-8 sm:py-7">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div className="space-y-1">
-              <p className="text-[12px] uppercase tracking-[0.16em] text-white/60">Carteira</p>
-              <h1 className="text-2xl font-semibold text-white">Entitlements ORYA</h1>
-              <p className="text-[12px] text-white/65">
-                Snapshot + status + ações. QR só aparece quando permitido pelas políticas de acesso.
+              <p className="text-[11px] uppercase tracking-[0.24em] text-white/55">Carteira</p>
+              <h1 className="bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] bg-clip-text text-3xl font-bold leading-tight text-transparent">
+                Carteira ORYA
+              </h1>
+              <p className="text-sm text-white/70">
+                Os teus bilhetes num só lugar: snapshot, status e ações. QR só aparece quando permitido pelas políticas de acesso.
               </p>
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-2 text-[11px]">
               {([
                 { key: "ALL", label: "Tudo" },
                 { key: "ACTIVE", label: "Ativos" },
@@ -70,10 +75,10 @@ export default function CarteiraPage() {
                 <button
                   key={f.key}
                   onClick={() => setFilter(f.key)}
-                  className={`rounded-full px-3 py-1.5 text-[11px] font-semibold border transition ${
+                  className={`rounded-full px-3 py-1.5 font-semibold border transition backdrop-blur ${
                     filter === f.key
-                      ? "bg-white text-black shadow-[0_0_18px_rgba(255,255,255,0.35)]"
-                      : "border-white/30 text-white hover:bg-white/10"
+                      ? "bg-white text-black shadow-[0_10px_26px_rgba(255,255,255,0.2)]"
+                      : "border-white/25 text-white hover:bg-white/10"
                   }`}
                 >
                   {f.label}
@@ -88,14 +93,14 @@ export default function CarteiraPage() {
             {Array.from({ length: 6 }).map((_, i) => (
               <div
                 key={i}
-                className="h-60 rounded-2xl border border-white/10 bg-white/5 animate-pulse shadow-[0_14px_40px_rgba(0,0,0,0.4)]"
+                className="h-60 rounded-2xl border border-white/10 bg-gradient-to-br from-white/10 via-white/0 to-white/10 animate-pulse shadow-[0_14px_40px_rgba(0,0,0,0.4)]"
               />
             ))}
           </div>
         )}
 
         {!loading && error && (
-          <div className="rounded-2xl border border-red-400/30 bg-red-500/10 p-4 text-sm text-red-50 space-y-2">
+          <div className="rounded-3xl border border-red-400/30 bg-red-500/10 p-4 text-sm text-red-50 space-y-2 shadow-[0_18px_50px_rgba(127,29,29,0.4)] backdrop-blur-xl">
             <div>{error}</div>
             <div className="flex gap-2 flex-wrap">
               {!authRequired && (
@@ -107,26 +112,46 @@ export default function CarteiraPage() {
                 </button>
               )}
               {authRequired && (
-                <a
+                <Link
                   href="/login?redirectTo=/me/carteira"
                   className="inline-flex px-3 py-1.5 rounded-lg bg-white text-black text-[11px] font-semibold shadow"
                 >
                   Iniciar sessão
-                </a>
+                </Link>
               )}
             </div>
           </div>
         )}
 
         {!loading && !error && list.length === 0 && (
-          <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-[#0f172a]/70 via-[#020617]/60 to-black/70 backdrop-blur-2xl p-8 text-center flex flex-col items-center gap-4 shadow-[0_28px_80px_rgba(15,23,42,0.95)]">
-            <div className="h-20 w-20 rounded-2xl bg-gradient-to-br from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] flex items-center justify-center shadow-[0_0_35px_rgba(107,255,255,0.5)] text-black text-3xl font-bold">
-              🎟️
+          <div className="rounded-3xl border border-white/12 bg-white/4 backdrop-blur-2xl p-10 text-center flex flex-col items-center gap-5 shadow-[0_32px_90px_rgba(5,6,16,0.82)] relative overflow-hidden">
+            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_18%_18%,rgba(255,255,255,0.06),transparent_42%),radial-gradient(circle_at_82%_12%,rgba(255,255,255,0.05),transparent_40%),radial-gradient(circle_at_50%_90%,rgba(255,255,255,0.05),transparent_45%)]" />
+            <div className="relative h-20 w-20">
+              <div className="absolute inset-0 rounded-2xl bg-white/12 blur-2xl" />
+              <div className="relative h-20 w-20 rounded-2xl bg-gradient-to-br from-white/10 via-white/6 to-white/10 border border-white/18 shadow-[0_0_32px_rgba(255,255,255,0.28)] flex items-center justify-center text-2xl text-white">
+                🎟️
+              </div>
             </div>
-            <h3 className="text-lg font-semibold text-white/95">Ainda não tens bilhetes ORYA</h3>
-            <p className="text-[12px] text-white/70 max-w-sm">
-              Compra o teu primeiro bilhete e ele aparece aqui com QR pronto a usar.
-            </p>
+            <div className="space-y-1">
+              <h3 className="text-lg font-semibold text-white/95">Ainda não tens bilhetes ORYA</h3>
+              <p className="text-[12px] text-white/70 max-w-sm">
+                Compra o teu primeiro bilhete e ele aparece aqui com QR pronto a usar.
+              </p>
+            </div>
+            <div className="relative flex gap-2 flex-wrap justify-center">
+              <Link
+                href="/explorar"
+                className="inline-flex mt-2 px-4 py-2.5 rounded-full bg-white text-black text-xs font-semibold shadow-[0_10px_35px_rgba(255,255,255,0.2)] hover:scale-[1.03] active:scale-95 transition-transform"
+              >
+                Explorar eventos
+              </Link>
+              <Link
+                href="/me"
+                className="inline-flex mt-2 px-4 py-2.5 rounded-full border border-white/28 bg-white/5 text-xs font-semibold text-white hover:bg-white/10 shadow-[0_0_16px_rgba(255,255,255,0.1)]"
+              >
+                Ver perfil
+              </Link>
+            </div>
           </div>
         )}
 

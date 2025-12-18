@@ -4,8 +4,16 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import useSWR from "swr";
 import { InlineDateTimePicker } from "@/app/components/forms/InlineDateTimePicker";
-import { TicketTypeStatus } from "@prisma/client";
 import { useUser } from "@/app/hooks/useUser";
+
+const TicketTypeStatus = {
+  ON_SALE: "ON_SALE",
+  UPCOMING: "UPCOMING",
+  CLOSED: "CLOSED",
+  SOLD_OUT: "SOLD_OUT",
+} as const;
+
+type TicketTypeStatus = (typeof TicketTypeStatus)[keyof typeof TicketTypeStatus];
 
 type ToastTone = "success" | "error";
 type Toast = { id: number; message: string; tone: ToastTone };

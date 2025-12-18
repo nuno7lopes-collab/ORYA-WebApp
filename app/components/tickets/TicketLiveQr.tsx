@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useState } from "react";
 
 type TicketLiveQrProps = {
@@ -14,7 +15,6 @@ export default function TicketLiveQr({ qrToken }: TicketLiveQrProps) {
   // Evitar hydration mismatch
   useEffect(() => {
     // Montamos o componente depois da hidratação para evitar desencontros entre SSR e cliente
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setMounted(true);
   }, []);
 
@@ -39,16 +39,18 @@ export default function TicketLiveQr({ qrToken }: TicketLiveQrProps) {
 
   return (
     <div className="flex flex-col items-center gap-2">
-      <img
+      <Image
         key={refreshKey}
         src={`/api/qr/${qrToken}?r=${refreshKey}`}
         alt="QR Code ORYA"
         aria-label="Código QR do bilhete ORYA"
-        loading="eager"
+        priority
+        width={256}
+        height={256}
         className={`w-64 h-64 rounded-xl bg-white p-4 transition-opacity duration-500 ${
           loadedAt ? "opacity-100" : "opacity-0"
         }`}
-        onLoad={() => setLoadedAt(Date.now())}
+        onLoadingComplete={() => setLoadedAt(Date.now())}
       />
 
       <p className="text-[11px] text-white/50 font-medium">

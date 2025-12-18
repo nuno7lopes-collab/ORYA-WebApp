@@ -124,15 +124,28 @@ export default function Step3Sucesso() {
           ? subtotalFromLines
           : 0;
 
+    const feeModeRaw =
+      typeof checkoutBreakdown?.feeMode === "string"
+        ? checkoutBreakdown.feeMode
+        : typeof add.feeMode === "string"
+          ? (add.feeMode as string)
+          : null;
+    const feeMode =
+      typeof feeModeRaw === "string" ? feeModeRaw.toUpperCase() : null;
+
     const discountCents =
       typeof checkoutBreakdown?.discountCents === "number"
         ? checkoutBreakdown.discountCents
         : numberFromUnknown(add.discountCents) ?? 0;
 
-    const platformFeeCents =
+    const platformFeeCentsRaw =
       typeof checkoutBreakdown?.platformFeeCents === "number"
         ? checkoutBreakdown.platformFeeCents
         : numberFromUnknown(add.platformFeeCents) ?? 0;
+
+    // Só mostrar/contabilizar taxa se o modo for ADDED (pago pelo comprador).
+    const payorPaysFee = feeMode === "ADDED" || feeMode === "ON_TOP";
+    const platformFeeCents = payorPaysFee ? platformFeeCentsRaw : 0;
 
     const totalCentsFromContext =
       typeof checkoutBreakdown?.totalCents === "number" ? checkoutBreakdown.totalCents : null;
@@ -143,14 +156,6 @@ export default function Step3Sucesso() {
     const computedTotalFallback = Math.max(0, subtotalCents - discountCents + platformFeeCents);
 
     const totalCents = totalCentsFromContext ?? totalCentsFromAdditional ?? computedTotalFallback;
-
-    // fallback: if discount did not come but total < subtotal (+fees), infer it
-    const inferredDiscount =
-      discountCents > 0
-        ? discountCents
-        : subtotalCents > 0 && totalCents >= 0
-          ? Math.max(0, subtotalCents + platformFeeCents - totalCents)
-          : 0;
 
     const code =
       typeof add.appliedPromoLabel === "string"
@@ -170,7 +175,7 @@ export default function Step3Sucesso() {
 
     if (
       Number.isNaN(subtotalCents) &&
-      Number.isNaN(inferredDiscount) &&
+      Number.isNaN(discountCents) &&
       Number.isNaN(platformFeeCents) &&
       Number.isNaN(totalCents)
     ) {
@@ -179,11 +184,12 @@ export default function Step3Sucesso() {
 
     return {
       subtotalCents,
-      discountCents: inferredDiscount,
+      discountCents,
       platformFeeCents,
       totalCents,
       code,
       currency,
+      feeMode,
     };
   })();
   const subtotalEur = breakdown ? breakdown.subtotalCents / 100 : null;

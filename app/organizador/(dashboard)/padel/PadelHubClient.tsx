@@ -301,7 +301,6 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
     if (initialClubs.length) {
       refreshActiveCounts(initialClubs);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const persistCourtOrder = async (list: PadelClubCourt[]) => {
@@ -339,7 +338,6 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
     if (courtForm.displayOrder !== nextOrder) {
       setCourtForm((prev) => ({ ...prev, displayOrder: nextOrder }));
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeCourtsCount, courtForm.id]);
 
   const openNewClubModal = () => {

@@ -19,7 +19,7 @@ export async function applyPromoRedemptionOperation(payload: ApplyPromoPayload) 
   // Determinar promo a partir do payload ou do SaleSummary
   let promoCodeId = payload.promoCodeId ?? null;
   let userId = payload.userId ?? null;
-  let guestEmail = payload.guestEmail ?? null;
+  const guestEmail = payload.guestEmail ?? null;
 
   if (!promoCodeId) {
     const sale = await prisma.saleSummary.findFirst({

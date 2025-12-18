@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
@@ -416,7 +417,11 @@ export default function PadelWizardSimple() {
           <div className="rounded-2xl border border-amber-400/50 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
             <p className="font-semibold">Ainda não tens nenhum clube de Padel configurado.</p>
             <p className="text-amber-50/80">
-              Vai a <a href="/organizador/padel" className="underline">Padel → Clubes</a> e adiciona pelo menos um clube para continuares.
+              Vai a{" "}
+              <Link href="/organizador/padel" className="underline">
+                Padel → Clubes
+              </Link>{" "}
+              e adiciona pelo menos um clube para continuares.
             </p>
           </div>
         )}

@@ -17,7 +17,6 @@ function LoginContent() {
   const [pendingEmail, setPendingEmail] = useState<string | null>(null);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setMounted(true);
     if (typeof window !== "undefined") {
       const pending = window.localStorage.getItem("orya_pending_email");
@@ -33,7 +32,6 @@ function LoginContent() {
         ref && new URL(ref).origin === window.location.origin
           ? new URL(ref).pathname + new URL(ref).search
           : null;
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setFallback(redirectTo || sameOriginRef || "/");
     }
   }, [redirectTo]);

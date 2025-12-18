@@ -152,7 +152,6 @@ export default function AdminEventosPage() {
 
   useEffect(() => {
     loadEvents({ reset: true });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const isEmpty = initialized && !loading && events.length === 0 && !errorMsg;

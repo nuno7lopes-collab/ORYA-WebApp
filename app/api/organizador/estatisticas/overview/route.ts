@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { TicketStatus, EventStatus, Prisma } from "@prisma/client";
 import { getActiveOrganizerForUser } from "@/lib/organizerContext";
+import { isOrgAdminOrAbove } from "@/lib/organizerPermissions";
 
 /**
  * F6 – Estatísticas do organizador (overview)
@@ -49,23 +50,12 @@ export async function GET(req: NextRequest) {
       select: { roles: true },
     });
 
-    const roles = (profile?.roles || []) as string[];
-    const isOrganizer = roles.includes("organizer") || roles.includes("ORGANIZER");
+    const { organizer, membership } = await getActiveOrganizerForUser(user.id, {
+      roles: ["OWNER", "CO_OWNER", "ADMIN"],
+    });
 
-    if (!isOrganizer) {
-      return NextResponse.json(
-        { ok: false, error: "NOT_ORGANIZER" },
-        { status: 403 },
-      );
-    }
-
-    const { organizer } = await getActiveOrganizerForUser(user.id);
-
-    if (!organizer) {
-      return NextResponse.json(
-        { ok: false, error: "NOT_ORGANIZER" },
-        { status: 403 },
-      );
+    if (!organizer || !membership || !isOrgAdminOrAbove(membership.role)) {
+      return NextResponse.json({ ok: false, error: "NOT_ORGANIZER" }, { status: 403 });
     }
 
     // Cálculo do intervalo temporal
