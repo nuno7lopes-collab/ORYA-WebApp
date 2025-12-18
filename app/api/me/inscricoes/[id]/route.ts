@@ -24,7 +24,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
           guaranteeStatus: true,
           slots: {
             select: {
-              slotRole: true,
+              slot_role: true,
               profileId: true,
               playerProfile: { select: { fullName: true } },
             },
@@ -38,8 +38,8 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
 
   const pairing = entry.pairing;
   const partnerSlot =
-    pairing?.slots?.find((s) => s.slotRole === "PARTNER" && s.profileId !== entry.userId) ||
-    pairing?.slots?.find((s) => s.slotRole === "CAPTAIN" && s.profileId !== entry.userId);
+    pairing?.slots?.find((s) => s.slot_role === "PARTNER" && s.profileId !== entry.userId) ||
+    pairing?.slots?.find((s) => s.slot_role === "CAPTAIN" && s.profileId !== entry.userId);
 
   return NextResponse.json(
     {

@@ -13,6 +13,6 @@ export async function POST() {
   if (!email) {
     return NextResponse.json({ ok: false, error: "EMAIL_MISSING" }, { status: 400 });
   }
-  await claimIdentity(email, data.user.id);
+  await claimIdentity(email, data.user.id, { requireVerified: true });
   return NextResponse.json({ ok: true });
 }

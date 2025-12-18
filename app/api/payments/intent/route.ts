@@ -19,10 +19,14 @@ import {
   normalizeItemsForMetadata,
 } from "@/lib/checkoutSchemas";
 import { resolveOwner } from "@/lib/ownership/resolveOwner";
+import { enqueueOperation } from "@/lib/operations/enqueue";
+
+const FREE_PLACEHOLDER_INTENT_ID = "FREE_CHECKOUT";
 
 type CheckoutItem = {
-  ticketId: string;
+  ticketId: string | number;
   quantity: number;
+  unitPriceCents?: number | null;
 };
 
 type Guest = {
@@ -42,8 +46,49 @@ type Body = {
   guest?: Guest;
   promoCode?: string | null;
   paymentScenario?: string | null;
+  purchaseId?: string | null;
   idempotencyKey?: string | null;
+  intentFingerprint?: string | null;
+  pairingId?: number | null;
+  slotId?: number | null;
+  resaleId?: string | null;
+  ticketId?: string | number | null;
+  total?: number | null;
 };
+
+type IntentStatus =
+  | "PENDING"
+  | "PROCESSING"
+  | "REQUIRES_ACTION"
+  | "PAID"
+  | "FAILED";
+
+type NextAction = "NONE" | "PAY_NOW" | "CONFIRM_GUARANTEE" | "CONTACT_SUPPORT" | "LOGIN" | "CONNECT_STRIPE";
+
+function intentError(
+  code: string,
+  message: string,
+  opts?: {
+    httpStatus?: number;
+    status?: IntentStatus;
+    nextAction?: NextAction;
+    retryable?: boolean;
+    extra?: Record<string, unknown>;
+  },
+) {
+  return NextResponse.json(
+    {
+      ok: false,
+      code,
+      error: message,
+      status: opts?.status ?? "FAILED",
+      nextAction: opts?.nextAction ?? "NONE",
+      retryable: opts?.retryable ?? false,
+      ...(opts?.extra ?? {}),
+    },
+    { status: opts?.httpStatus ?? 400 },
+  );
+}
 
 function normalizePhone(phone: string | null | undefined, defaultCountry: string = "PT") {
   if (!phone) return null;
@@ -118,10 +163,7 @@ export async function POST(req: NextRequest) {
     const body = (await req.json().catch(() => null)) as Body | null;
 
     if (!body || !body.slug || !Array.isArray(body.items) || body.items.length === 0) {
-      return NextResponse.json(
-        { ok: false, error: "Dados inválidos." },
-        { status: 400 },
-      );
+      return intentError("INVALID_INPUT", "Dados inválidos.", { httpStatus: 400, status: "FAILED", nextAction: "NONE", retryable: false });
     }
 
     const { slug, items, contact, guest, promoCode: rawPromo, paymentScenario: rawScenario, idempotencyKey: bodyIdemKey } = body;
@@ -129,11 +171,42 @@ export async function POST(req: NextRequest) {
     const idempotencyKeyHeader = req.headers.get("Idempotency-Key");
     const idempotencyKey = (bodyIdemKey || idempotencyKeyHeader || "").trim() || null;
 
+    // purchaseId/intento fingerprint opcionais vindos do frontend (para retries/idempotência estável)
+    const purchaseIdFromBody =
+      typeof (body as { purchaseId?: unknown })?.purchaseId === "string"
+        ? (body as { purchaseId?: string }).purchaseId!.trim()
+        : "";
+
+    const intentFingerprintFromBody =
+      typeof (body as { intentFingerprint?: unknown })?.intentFingerprint === "string"
+        ? (body as { intentFingerprint?: string }).intentFingerprint!.trim()
+        : "";
+
+    // Nota: o purchaseId final será decidido mais abaixo (de forma determinística quando possível)
+    // depois de conhecermos descontos/pricing.
+
     // Validar que o evento existe (fetch raw para evitar issues com enum legacy "ADDED")
     // Autenticação do utilizador
     const supabase = await createSupabaseServer();
     const { data: userData } = await supabase.auth.getUser();
     const userId = userData?.user?.id ?? null;
+
+    // Regra PADL: pagar só a tua parte (capitão / split) exige conta
+    const parsedScenarioEarly = paymentScenarioSchema.safeParse(
+      typeof rawScenario === "string" ? rawScenario.toUpperCase() : rawScenario,
+    );
+    const requestedScenarioEarly: PaymentScenario | null = parsedScenarioEarly.success
+      ? parsedScenarioEarly.data
+      : null;
+
+    if (requestedScenarioEarly === "GROUP_SPLIT" && !userId) {
+      return intentError("AUTH_REQUIRED_FOR_GROUP_SPLIT", "Este modo de pagamento requer sessão iniciada.", {
+        httpStatus: 401,
+        status: "FAILED",
+        nextAction: "LOGIN",
+        retryable: false,
+      });
+    }
 
     const guestEmailRaw = guest?.email?.trim() ?? "";
     const guestName = guest?.name?.trim() ?? "";
@@ -143,22 +216,13 @@ export async function POST(req: NextRequest) {
 
     if (!userId) {
       if (!guestEmail || !guestName) {
-        return NextResponse.json(
-          { ok: false, error: "Precisas de iniciar sessão ou preencher nome e email para convidado." },
-          { status: 400 },
-        );
+        return intentError("AUTH_OR_GUEST_REQUIRED", "Precisas de iniciar sessão ou preencher nome e email para convidado.", { httpStatus: 400 });
       }
       if (!isValidEmail(guestEmailRaw)) {
-        return NextResponse.json(
-          { ok: false, error: "Email inválido para checkout como convidado." },
-          { status: 400 },
-        );
+        return intentError("INVALID_GUEST_EMAIL", "Email inválido para checkout como convidado.", { httpStatus: 400 });
       }
       if (guestPhoneRaw && !guestPhone) {
-        return NextResponse.json(
-          { ok: false, error: "Telemóvel inválido. Usa formato PT: 9XXXXXXXX ou +3519XXXXXXXX." },
-          { status: 400 },
-        );
+        return intentError("INVALID_GUEST_PHONE", "Telemóvel inválido. Usa formato PT: 9XXXXXXXX ou +3519XXXXXXXX.", { httpStatus: 400 });
       }
     }
 
@@ -236,14 +300,14 @@ export async function POST(req: NextRequest) {
     const eventOrganizerId = event?.organizer_id ?? null;
 
     if (!event) {
-      return NextResponse.json({ ok: false, error: "Evento não encontrado." }, { status: 404 });
+      return intentError("EVENT_NOT_FOUND", "Evento não encontrado.", { httpStatus: 404 });
     }
     const profile = userId
       ? await prisma.profile.findUnique({ where: { id: userId } })
       : null;
     const isAdmin = Array.isArray(profile?.roles) ? profile.roles.includes("admin") : false;
     if (event.is_test && !isAdmin) {
-      return NextResponse.json({ ok: false, error: "Evento não disponível." }, { status: 404 });
+      return intentError("EVENT_NOT_AVAILABLE", "Evento não disponível.", { httpStatus: 404 });
     }
 
     // Atualizar contacto no perfil se fornecido (normalizado)
@@ -258,17 +322,98 @@ export async function POST(req: NextRequest) {
     }
 
     if (event.is_deleted || event.status !== "PUBLISHED" || event.type !== "ORGANIZER_EVENT") {
-      return NextResponse.json({ ok: false, error: "Evento indisponível para compra." }, { status: 400 });
+      return intentError("EVENT_CLOSED", "Evento indisponível para compra.", { httpStatus: 400 });
     }
 
     if (event.ends_at && event.ends_at < new Date()) {
-      return NextResponse.json({ ok: false, error: "Vendas encerradas: evento já terminou." }, { status: 400 });
+      return intentError("EVENT_ENDED", "Vendas encerradas: evento já terminou.", { httpStatus: 400 });
     }
 
     const padelConfig = await prisma.padelTournamentConfig.findUnique({
       where: { eventId: event.id },
       select: { organizerId: true },
     });
+
+    const isResaleRequest =
+      requestedScenarioEarly === "RESALE" ||
+      (typeof body?.resaleId === "string" && body.resaleId.trim().length > 0);
+
+    let resaleContext: {
+      resaleId: string;
+      ticketId: number;
+      ticketTypeId: number;
+      sellerUserId: string | null;
+      priceCents: number;
+    } | null = null;
+
+    if (isResaleRequest) {
+      const resaleId = typeof body?.resaleId === "string" ? body.resaleId.trim() : "";
+      if (!resaleId) {
+        return intentError("INVALID_RESALE_ID", "Revenda inválida.", { httpStatus: 400 });
+      }
+      if (!userId) {
+        return intentError(
+          "AUTH_REQUIRED_FOR_RESALE",
+          "Precisas de sessão iniciada para comprar revendas.",
+          { httpStatus: 401, status: "FAILED", nextAction: "LOGIN", retryable: false },
+        );
+      }
+
+      const resale = await prisma.ticketResale.findUnique({
+        where: { id: resaleId },
+        include: {
+          ticket: {
+            select: { id: true, ticketTypeId: true, status: true, userId: true, eventId: true },
+          },
+        },
+      });
+
+      if (!resale || !resale.ticket) {
+        return intentError("RESALE_NOT_FOUND", "Revenda não encontrada.", { httpStatus: 404 });
+      }
+      if (resale.status !== "LISTED") {
+        return intentError("RESALE_NOT_AVAILABLE", "Revenda indisponível.", { httpStatus: 400 });
+      }
+      if (resale.ticket.status !== "ACTIVE") {
+        return intentError("TICKET_NOT_ACTIVE", "Bilhete indisponível para revenda.", { httpStatus: 400 });
+      }
+      if (resale.ticket.eventId !== event.id) {
+        return intentError("RESALE_EVENT_MISMATCH", "Revenda não corresponde a este evento.", { httpStatus: 400 });
+      }
+      if (resale.sellerUserId && resale.sellerUserId === userId) {
+        return intentError("CANNOT_BUY_OWN_RESALE", "Não podes comprar a tua própria revenda.", {
+          httpStatus: 400,
+          status: "FAILED",
+          retryable: false,
+        });
+      }
+
+      const resalePriceCents =
+        typeof (resale as any).priceCents === "number"
+          ? (resale as any).priceCents
+          : typeof (resale as any).price === "number"
+            ? (resale as any).price
+            : null;
+
+      if (!Number.isFinite(resalePriceCents) || Number(resalePriceCents) <= 0) {
+        return intentError("INVALID_RESALE_PRICE", "Preço de revenda inválido.", { httpStatus: 400 });
+      }
+
+      resaleContext = {
+        resaleId,
+        ticketId: resale.ticket.id,
+        ticketTypeId: resale.ticket.ticketTypeId,
+        sellerUserId: resale.sellerUserId ?? null,
+        priceCents: Number(resalePriceCents),
+      };
+
+      if (items.length !== 1) {
+        return intentError("RESALE_SINGLE_ITEM_ONLY", "Revenda suporta apenas um bilhete por compra.", {
+          httpStatus: 400,
+          status: "FAILED",
+        });
+      }
+    }
 
     const ticketTypeIds = Array.from(
       new Set(
@@ -279,10 +424,7 @@ export async function POST(req: NextRequest) {
     );
 
     if (ticketTypeIds.length === 0) {
-      return NextResponse.json(
-        { ok: false, error: "IDs de bilhete inválidos." },
-        { status: 400 },
-      );
+      return intentError("INVALID_TICKETS", "IDs de bilhete inválidos.", { httpStatus: 400 });
     }
 
     const ticketTypes = await prisma.ticketType.findMany({
@@ -293,6 +435,7 @@ export async function POST(req: NextRequest) {
       },
       select: {
         id: true,
+        name: true,
         price: true,
         currency: true,
         totalQuantity: true,
@@ -301,13 +444,7 @@ export async function POST(req: NextRequest) {
     });
 
     if (ticketTypes.length !== ticketTypeIds.length) {
-      return NextResponse.json(
-        {
-          ok: false,
-          error: "Um dos bilhetes não foi encontrado ou não pertence a este evento.",
-        },
-        { status: 400 },
-      );
+      return intentError("TICKET_NOT_FOUND", "Um dos bilhetes não foi encontrado ou não pertence a este evento.", { httpStatus: 400 });
     }
 
     // Reservas ativas (excluindo as do próprio utilizador) contam para stock
@@ -351,26 +488,32 @@ export async function POST(req: NextRequest) {
     for (const item of items) {
       const ticketTypeId = Number(item.ticketId);
       if (!Number.isFinite(ticketTypeId)) {
-        return NextResponse.json(
-          { ok: false, error: "ID de bilhete inválido." },
-          { status: 400 },
-        );
+        return intentError("INVALID_TICKET_ID", "ID de bilhete inválido.", { httpStatus: 400 });
       }
 
       const ticketType = ticketTypeMap.get(ticketTypeId);
       if (!ticketType) {
-        return NextResponse.json(
-          { ok: false, error: "Um dos bilhetes não foi encontrado ou não pertence a este evento." },
-          { status: 400 },
-        );
+        return intentError("TICKET_NOT_FOUND", "Um dos bilhetes não foi encontrado ou não pertence a este evento.", { httpStatus: 400 });
       }
 
       const qty = Number(item.quantity ?? 0);
       if (!Number.isInteger(qty) || qty < 1) {
-        return NextResponse.json(
-          { ok: false, error: "Quantidade inválida." },
-          { status: 400 },
-        );
+        return intentError("INVALID_QUANTITY", "Quantidade inválida.", { httpStatus: 400 });
+      }
+
+      if (resaleContext) {
+        if (ticketTypeId !== resaleContext.ticketTypeId) {
+          return intentError("RESALE_TICKET_MISMATCH", "Revenda não corresponde ao bilhete selecionado.", {
+            httpStatus: 400,
+            status: "FAILED",
+          });
+        }
+        if (qty !== 1) {
+          return intentError("RESALE_QUANTITY_INVALID", "Revenda apenas permite 1 bilhete por compra.", {
+            httpStatus: 400,
+            status: "FAILED",
+          });
+        }
       }
 
       // limite agora é apenas o stock disponível; o cap de 6 foi removido
@@ -383,29 +526,27 @@ export async function POST(req: NextRequest) {
         const reserved = reservedByType[ticketTypeId] ?? 0;
         const remaining = ticketType.totalQuantity - ticketType.soldQuantity - reserved;
         if (remaining < qty) {
-          return NextResponse.json(
-            { ok: false, error: "Stock insuficiente para um dos bilhetes." },
-            { status: 400 },
-          );
+          return intentError("INSUFFICIENT_STOCK", "Stock insuficiente para um dos bilhetes.", {
+            httpStatus: 409,
+            status: "FAILED",
+            retryable: false,
+            nextAction: "NONE",
+          });
         }
       }
 
-      const priceCents = Number(ticketType.price);
+      const priceCents = resaleContext && ticketTypeId === resaleContext.ticketTypeId
+        ? resaleContext.priceCents
+        : Number(ticketType.price);
       if (!Number.isFinite(priceCents) || priceCents <= 0) {
-        return NextResponse.json(
-          { ok: false, error: "Preço inválido no servidor." },
-          { status: 500 },
-        );
+        return intentError("INVALID_PRICE_SERVER", "Preço inválido no servidor.", { httpStatus: 500 });
       }
 
       const ticketCurrency = (ticketType.currency || "EUR").toLowerCase();
       if (!currency) {
         currency = ticketCurrency;
       } else if (currency !== ticketCurrency) {
-        return NextResponse.json(
-          { ok: false, error: "Não é possível misturar moedas diferentes no mesmo checkout." },
-          { status: 400 },
-        );
+        return intentError("CURRENCY_MISMATCH", "Não é possível misturar moedas diferentes no mesmo checkout.", { httpStatus: 400 });
       }
 
       const lineTotal = priceCents * qty;
@@ -423,16 +564,16 @@ export async function POST(req: NextRequest) {
     }
 
     if (!currency) {
-      return NextResponse.json(
-        { ok: false, error: "Moeda não determinada para o checkout." },
-        { status: 400 },
-      );
+      return intentError("CURRENCY_UNDETERMINED", "Moeda não determinada para o checkout.", { httpStatus: 400 });
     }
 
-    // Garantir que não temos montantes negativos após descontos
-    if (amountInCents < 0) {
-      amountInCents = 0;
-    }
+    const clientExpectedTotalCents =
+      body && typeof (body as Record<string, unknown>).total === "number"
+        ? Math.round(Math.max(0, (body as Record<string, number>).total) * 100)
+        : null;
+
+    // Montante base do carrinho (antes de descontos)
+    const preDiscountAmountCents = Math.max(0, amountInCents);
 
     const promoRepo = (prisma as unknown as {
       promoCode?: {
@@ -483,7 +624,7 @@ export async function POST(req: NextRequest) {
       }
       const minCartCents =
         promo.minTotalCents ?? (promo as { minCartValueCents?: number | null }).minCartValueCents ?? null;
-      if (minCartCents !== null && minCartCents !== undefined && amountInCents < minCartCents) {
+      if (minCartCents !== null && minCartCents !== undefined && preDiscountAmountCents < minCartCents) {
         throw new Error("PROMO_MIN_TOTAL");
       }
 
@@ -521,10 +662,9 @@ export async function POST(req: NextRequest) {
           minTotalCents: minCartCents ?? promo.minTotalCents,
         },
         totalQuantity,
-        amountInCents,
+        amountInCents: preDiscountAmountCents,
       });
       promoCodeId = promo.id;
-      amountInCents = amountInCents - discountCents;
     };
 
     if (promoCodeInput) {
@@ -548,10 +688,12 @@ export async function POST(req: NextRequest) {
           PROMO_SCOPE: "Este código não é válido para este evento/organização.",
           PROMO_UNAVAILABLE: "Descontos temporariamente indisponíveis.",
         };
-        return NextResponse.json(
-          { ok: false, error: map[msg] ?? "Código promocional inválido." },
-          { status: 400 },
-        );
+        return intentError(msg || "PROMO_INVALID", map[msg] ?? "Código promocional inválido.", {
+          httpStatus: 400,
+          status: "FAILED",
+          nextAction: "NONE",
+          retryable: msg === "PROMO_UNAVAILABLE",
+        });
       }
     } else if (promoRepo) {
       // Auto-apply: escolher o melhor desconto elegível (event/global, autoApply=true)
@@ -566,6 +708,8 @@ export async function POST(req: NextRequest) {
             },
           ],
         },
+        // determinístico: evita escolher promos diferentes em chamadas repetidas
+        orderBy: [{ id: "asc" }],
       });
 
       let best: { promoId: number; discount: number } | null = null;
@@ -576,7 +720,8 @@ export async function POST(req: NextRequest) {
         try {
           await validatePromo({ id: promo.id });
           const d = discountCents;
-          if (!best || d > best.discount) {
+          // determinístico: em empate, escolhe o menor id
+          if (!best || d > best.discount || (d === best.discount && promo.id < best.promoId)) {
             best = { promoId: promo.id, discount: d };
           }
         } catch {
@@ -590,12 +735,16 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Clamp final discount (não deixa passar do total)
+    discountCents = Math.max(0, Math.min(discountCents, preDiscountAmountCents));
+    const amountAfterDiscountCents = preDiscountAmountCents - discountCents;
+
     const { feeBps: defaultFeeBps, feeFixedCents: defaultFeeFixed } = await getPlatformFees();
 
     // Org da plataforma? (org_type = PLATFORM → não cobra application fee, usa conta da plataforma)
     const isPlatformOrg = (event.org_type || "").toString().toUpperCase() === "PLATFORM";
 
-    const pricing = computePricing(amountInCents + discountCents, discountCents, {
+    const pricing = computePricing(preDiscountAmountCents, discountCents, {
       eventFeeModeOverride: (event.fee_mode_override as FeeMode | null) ?? undefined,
       eventFeeMode: (event.fee_mode as FeeMode | null) ?? undefined,
       organizerFeeMode: (event.org_fee_mode as FeeMode | null) ?? undefined,
@@ -616,21 +765,19 @@ export async function POST(req: NextRequest) {
     const organizerStripeReady = Boolean(event.org_stripe_charges_enabled && event.org_stripe_payouts_enabled);
 
     // Plataforma ORYA: usa conta da plataforma, não exige Connect
-    if (isPlatformOrg || payoutModeRaw === "PLATFORM") {
+    const requiresOrganizerStripe = !isPlatformOrg && payoutModeRaw !== "PLATFORM";
+
+    if (!requiresOrganizerStripe) {
       stripeAccountId = null;
     } else {
       // Organizadores externos: exigem Connect pronto
       if (!stripeAccountId || !organizerStripeReady) {
-        return NextResponse.json(
-          {
-            ok: false,
-            code: "ORGANIZER_STRIPE_NOT_CONNECTED",
-            message: "Pagamentos estão desativados porque o organizador ainda não ligou a Stripe.",
-            retryable: false,
-            nextAction: "CONNECT_STRIPE",
-          },
-          { status: 409 },
-        );
+        return intentError("ORGANIZER_STRIPE_NOT_CONNECTED", "Pagamentos estão desativados porque o organizador ainda não ligou a Stripe.", {
+          httpStatus: 409,
+          status: "FAILED",
+          nextAction: "CONNECT_STRIPE",
+          retryable: false,
+        });
       }
     }
 
@@ -638,14 +785,35 @@ export async function POST(req: NextRequest) {
 
     const totalAmountInCents = pricing.totalCents;
 
-    if (totalAmountInCents < 0 || platformFeeCents > Math.max(totalAmountInCents, 0)) {
-      return NextResponse.json(
-        { ok: false, error: "Montante total inválido para este checkout." },
-        { status: 400 },
-      );
+    // Validação do total do cliente (tolerante): alguns FE enviam subtotal, outros enviam total.
+    if (clientExpectedTotalCents !== null) {
+      const matchesAnyExpected =
+        clientExpectedTotalCents === preDiscountAmountCents ||
+        clientExpectedTotalCents === amountAfterDiscountCents ||
+        clientExpectedTotalCents === totalAmountInCents;
+
+      if (!matchesAnyExpected) {
+        return intentError("PRICE_CHANGED", "Os preços foram atualizados. Revê a seleção e tenta novamente.", {
+          httpStatus: 409,
+          status: "FAILED",
+          retryable: true,
+          nextAction: "NONE",
+          extra: {
+            expected: {
+              subtotalCents: preDiscountAmountCents,
+              afterDiscountCents: amountAfterDiscountCents,
+              totalCents: totalAmountInCents,
+              currency: currency.toUpperCase(),
+            },
+          },
+        });
+      }
     }
 
-    const purchaseId = createPurchaseId();
+    if (totalAmountInCents < 0 || platformFeeCents > Math.max(totalAmountInCents, 0)) {
+      return intentError("INVALID_TOTAL", "Montante total inválido para este checkout.", { httpStatus: 400 });
+    }
+
     const normalizedItems = normalizeItemsForMetadata(
       lines.map((line) => ({
         ticketTypeId: line.ticketTypeId,
@@ -674,24 +842,138 @@ export async function POST(req: NextRequest) {
       if (paymentScenario === "FREE_CHECKOUT") return "FREE_CHECKOUT";
       return "SINGLE";
     })();
-    const effectiveDedupeKey = idempotencyKey ?? purchaseId;
 
-    // Idempotência API: se houver payment_event com dedupeKey=idempotencyKey, devolve mesma resposta
-    if (idempotencyKey) {
-      const existing = await prisma.paymentEvent.findFirst({
-        where: { dedupeKey: idempotencyKey },
-        select: { stripePaymentIntentId: true, purchaseId: true },
+    // Padel pricing guard: qty coerente com scenario (anti preço “por dupla”)
+    if (scenarioAdjusted === "GROUP_FULL") {
+      const invalid = normalizedItems.some((i) => i.quantity !== 2);
+      if (invalid) {
+        return intentError("INVALID_PRICING_MODEL", "Modelo de preço inválido para GROUP_FULL (espera qty=2 por item).", {
+          httpStatus: 400,
+          status: "FAILED",
+          retryable: false,
+        });
+      }
+    }
+    if (scenarioAdjusted === "GROUP_SPLIT") {
+      const invalid = normalizedItems.some((i) => i.quantity !== 1);
+      if (invalid) {
+        return intentError("INVALID_PRICING_MODEL", "Modelo de preço inválido para GROUP_SPLIT (espera qty=1 por item).", {
+          httpStatus: 400,
+          status: "FAILED",
+          retryable: false,
+        });
+      }
+    }
+
+    // purchaseId determinístico quando o frontend não enviar: evita duplicar PaymentIntents em retries
+    const identityKey = userId
+      ? `u:${userId}`
+      : guestEmail
+        ? `g:${guestEmail.toLowerCase()}`
+        : "anon";
+
+    const FINGERPRINT_VERSION = "v2"; // bump to avoid clashes com intents antigos
+
+    const intentFingerprint = crypto
+      .createHash("sha256")
+      .update(
+        JSON.stringify({
+          version: FINGERPRINT_VERSION,
+          eventId: event.id,
+          slug: event.slug,
+          items: normalizedItems,
+          scenario: scenarioAdjusted,
+          identity: identityKey,
+          promoCodeId,
+          promoCodeRaw: promoCodeInput ? promoCodeInput.toLowerCase() : null,
+          discountCents,
+          totalCents: totalAmountInCents,
+          currency: currency.toLowerCase(),
+          platformFeeCents,
+        }),
+      )
+      .digest("hex")
+      .slice(0, 32);
+
+    const computedPurchaseId = `pur_${intentFingerprint}`;
+
+    // Se o frontend enviou fingerprint/purchaseId, podem estar desatualizados.
+    // Em vez de bloquear (409 + loop no FE), registamos e seguimos sempre com a SSOT do servidor.
+    if (intentFingerprintFromBody && intentFingerprintFromBody !== intentFingerprint) {
+      console.warn("[payments/intent] client intentFingerprint desatualizado", {
+        provided: intentFingerprintFromBody,
+        expected: intentFingerprint,
+        purchaseId: computedPurchaseId,
       });
-      if (existing) {
-        return NextResponse.json(
-          {
-            ok: true,
-            reused: true,
-            paymentIntentId: existing.stripePaymentIntentId ?? undefined,
-            purchaseId: existing.purchaseId ?? undefined,
-          },
-          { status: 200 },
-        );
+    }
+
+    if (purchaseIdFromBody && purchaseIdFromBody !== computedPurchaseId) {
+      console.warn("[payments/intent] client purchaseId desatualizado", {
+        provided: purchaseIdFromBody,
+        expected: computedPurchaseId,
+        intentFingerprint,
+      });
+    }
+
+    const purchaseId = computedPurchaseId;
+
+    // Dedupe determinístico por carrinho: evita loops 409 quando o FE reutiliza uma idempotencyKey inválida.
+    // Mantemos a key enviada pelo FE para diferenciar intents e evitar reaproveitar PI terminal.
+    const clientIdempotencyKey = idempotencyKey;
+    const effectiveDedupeKey = purchaseId;
+
+    // Idempotência API: se houver payment_event com dedupeKey=idempotencyKey e PI não terminal, devolve. Terminal → ignora e cria novo.
+    if (clientIdempotencyKey) {
+      const existing = await prisma.paymentEvent.findFirst({
+        where: { dedupeKey: clientIdempotencyKey },
+        select: {
+          stripePaymentIntentId: true,
+          purchaseId: true,
+          amountCents: true,
+        },
+      });
+
+      if (existing?.stripePaymentIntentId?.startsWith("pi_")) {
+        try {
+          const pi = await stripe.paymentIntents.retrieve(existing.stripePaymentIntentId);
+          const terminal = pi.status && ["succeeded", "canceled", "requires_capture"].includes(pi.status);
+          if (!terminal) {
+            // Safety: payload mismatch ainda bloqueia
+            if (typeof pi.amount === "number" && pi.amount !== Math.max(0, totalAmountInCents)) {
+              return intentError("IDEMPOTENCY_KEY_PAYLOAD_MISMATCH", "Chave de idempotência reutilizada com um carrinho diferente.", {
+                httpStatus: 409,
+                retryable: false,
+              });
+            }
+            return NextResponse.json(
+              {
+                ok: true,
+                reused: true,
+                clientSecret: pi.client_secret,
+                amount: typeof pi.amount === "number" ? pi.amount : totalAmountInCents,
+                currency: currency.toUpperCase(),
+                discountCents,
+                paymentIntentId: existing.stripePaymentIntentId,
+                purchaseId: existing.purchaseId ?? undefined,
+                paymentScenario: scenarioAdjusted,
+                breakdown: {
+                  lines,
+                  subtotalCents: pricing.subtotalCents,
+                  feeMode: pricing.feeMode,
+                  platformFeeCents: pricing.platformFeeCents,
+                  totalCents: totalAmountInCents,
+                  currency: currency.toUpperCase(),
+                },
+                intentFingerprint,
+                idempotencyKey: clientIdempotencyKey ?? effectiveDedupeKey,
+              },
+              { status: 200 },
+            );
+          }
+          // terminal → segue para criar PI novo
+        } catch (e) {
+          console.warn("[payments/intent] idempotency retrieve PI falhou", e);
+        }
       }
     }
 
@@ -702,19 +984,16 @@ export async function POST(req: NextRequest) {
       eventId: event.id,
       eventSlug: event.slug,
       owner: ownerForMetadata,
+      pairingId: typeof body?.pairingId === "number" ? body?.pairingId : undefined,
     });
 
     if (!metadataValidation.success) {
       console.warn("[payments/intent] Metadata inválida", metadataValidation.error.format());
-      return NextResponse.json(
-        {
-          ok: false,
-          error: "Metadata inválida para checkout.",
-          code: "INVALID_METADATA",
-          retryable: false,
-        },
-        { status: 400 },
-      );
+      return intentError("INVALID_METADATA", "Metadata inválida para checkout.", {
+        httpStatus: 400,
+        status: "FAILED",
+        retryable: false,
+      });
     }
 
     // --------------------------
@@ -722,16 +1001,12 @@ export async function POST(req: NextRequest) {
     // --------------------------
     if (totalAmountInCents === 0) {
       if (!userId || !profile?.username?.trim()) {
-        return NextResponse.json(
-          {
-            ok: false,
-            error: "Falta terminar o perfil (username) para concluir eventos gratuitos.",
-            code: "USERNAME_REQUIRED_FOR_FREE",
-            retryable: false,
-            nextAction: "NONE",
-          },
-          { status: 403 },
-        );
+        return intentError("USERNAME_REQUIRED_FOR_FREE", "Falta terminar o perfil (username) para concluir eventos gratuitos.", {
+          httpStatus: 403,
+          status: "FAILED",
+          nextAction: "LOGIN",
+          retryable: false,
+        });
       }
 
       // Idempotência anti-double click e 1 por user: se já existe bilhete para este evento, recusar
@@ -740,16 +1015,12 @@ export async function POST(req: NextRequest) {
         select: { id: true },
       });
       if (existingFreeTicket) {
-        return NextResponse.json(
-          {
-            ok: false,
-            error: "Já tens uma inscrição gratuita neste evento.",
-            code: "FREE_ALREADY_CLAIMED",
-            retryable: false,
-            nextAction: "NONE",
-          },
-          { status: 409 },
-        );
+        return intentError("FREE_ALREADY_CLAIMED", "Já tens uma inscrição gratuita neste evento.", {
+          httpStatus: 409,
+          status: "FAILED",
+          nextAction: "NONE",
+          retryable: false,
+        });
       }
 
       // Cooldown simples: bloquear se já fez free checkout neste evento nos últimos 10 minutos
@@ -765,116 +1036,56 @@ export async function POST(req: NextRequest) {
         select: { purchaseId: true },
       });
       if (recentFree) {
-        return NextResponse.json(
-          {
-            ok: false,
-            error: "Já fizeste uma inscrição gratuita há poucos minutos. Aguarda antes de tentar novamente.",
-            code: "FREE_RATE_LIMIT",
-            retryable: true,
-            nextAction: "NONE",
-            purchaseId: recentFree.purchaseId,
-          },
-          { status: 429 },
-        );
+        return intentError("FREE_RATE_LIMIT", "Já fizeste uma inscrição gratuita há poucos minutos. Aguarda antes de tentar novamente.", {
+          httpStatus: 429,
+          status: "FAILED",
+          nextAction: "NONE",
+          retryable: true,
+          extra: { purchaseId: recentFree.purchaseId },
+        });
       }
 
       let createdTicketsCount = 0;
-      await prisma.$transaction(async (tx) => {
-        const saleSummary = await tx.saleSummary.create({
-          data: {
-            paymentIntentId: purchaseId,
-            eventId: event.id,
-            userId: ownerResolved.ownerUserId ?? userId,
-            purchaseId,
-            ownerUserId: ownerResolved.ownerUserId ?? null,
-            ownerIdentityId: ownerResolved.ownerIdentityId ?? null,
-            promoCodeId: promoCodeId ? Number(promoCodeId) : null,
-            subtotalCents: pricing.subtotalCents,
-            discountCents: discountCents,
-            platformFeeCents: 0,
-            stripeFeeCents: 0,
-            totalCents: 0,
-            netCents: 0,
-            feeMode: pricing.feeMode,
-            currency: currency.toUpperCase(),
-          },
-        });
+      const freePayload = {
+        eventId: event.id,
+        purchaseId,
+        userId: ownerResolved.ownerUserId ?? userId,
+        ownerIdentityId: ownerResolved.ownerIdentityId ?? null,
+        promoCodeId: promoCodeId ? Number(promoCodeId) : null,
+        subtotalCents: pricing.subtotalCents,
+        discountCents,
+        platformFeeCents: 0,
+        feeMode: pricing.feeMode,
+        currency: currency.toUpperCase(),
+        lines: lines.map((l) => ({
+          ticketTypeId: l.ticketTypeId,
+          quantity: l.quantity,
+          unitPriceCents: l.unitPriceCents,
+        })),
+      };
 
-        for (const line of lines) {
-          const ticketType = ticketTypeMap.get(line.ticketTypeId);
-          if (!ticketType) continue;
-
-          // Stock check novamente por segurança
-          if (ticketType.totalQuantity !== null && ticketType.totalQuantity !== undefined) {
-            const remaining = ticketType.totalQuantity - ticketType.soldQuantity;
-            if (remaining <= 0 || line.quantity > remaining) {
-              throw new Error("Sem stock suficiente para um dos bilhetes.");
-            }
-          }
-
-          const grossCents = line.unitPriceCents * line.quantity;
-          const discountPerUnitCents = line.quantity > 0 ? Math.floor(grossCents / line.quantity) : 0;
-
-          await tx.saleLine.create({
-            data: {
-              saleSummaryId: saleSummary.id,
-              eventId: event.id,
-              ticketTypeId: line.ticketTypeId,
-              promoCodeId: promoCodeId ? Number(promoCodeId) : null,
-              quantity: line.quantity,
-              unitPriceCents: line.unitPriceCents,
-              discountPerUnitCents,
-              grossCents,
-              netCents: 0,
-              platformFeeCents: 0,
-            },
-          });
-
-          for (let i = 0; i < line.quantity; i++) {
-            const token = crypto.randomUUID();
-            await tx.ticket.create({
-              data: {
-                userId: ownerResolved.ownerUserId ?? null,
-                ownerUserId: ownerResolved.ownerUserId ?? null,
-                ownerIdentityId: ownerResolved.ownerIdentityId ?? null,
-                eventId: event.id,
-                ticketTypeId: ticketType.id,
-                status: "ACTIVE",
-                purchasedAt: new Date(),
-                qrSecret: token,
-                pricePaid: 0,
-                currency: (ticketType.currency || "EUR").toUpperCase(),
-                platformFeeCents: 0,
-                totalPaidCents: 0,
-                stripePaymentIntentId: purchaseId,
-              },
-            });
-            createdTicketsCount += 1;
-          }
-
-          await tx.ticketType.update({
-            where: { id: ticketType.id },
-            data: { soldQuantity: { increment: line.quantity } },
-          });
-        }
-
-        await tx.paymentEvent.create({
-          data: {
-            stripePaymentIntentId: purchaseId,
-            status: "OK",
-            purchaseId,
-            source: PaymentEventSource.API,
-            dedupeKey: effectiveDedupeKey,
-            attempt: 1,
-            eventId: event.id,
-            userId,
-            amountCents: 0,
-            platformFeeCents: 0,
-            stripeFeeCents: 0,
-            mode: event.is_test ? "TEST" : "LIVE",
-            isTest: Boolean(event.is_test),
-          },
-        });
+      await prisma.paymentEvent.create({
+        data: {
+          stripePaymentIntentId: purchaseId,
+          status: "PROCESSING",
+          purchaseId,
+          source: PaymentEventSource.API,
+          dedupeKey: effectiveDedupeKey,
+          attempt: 1,
+          eventId: event.id,
+          userId,
+          amountCents: 0,
+          platformFeeCents: 0,
+          stripeFeeCents: 0,
+          mode: event.is_test ? "TEST" : "LIVE",
+          isTest: Boolean(event.is_test),
+        },
+      });
+      await enqueueOperation({
+        operationType: "UPSERT_LEDGER_FROM_PI_FREE",
+        dedupeKey: purchaseId,
+        correlations: { purchaseId, eventId: event.id },
+        payload: freePayload,
       });
 
       if (padelConfig) {
@@ -920,8 +1131,14 @@ export async function POST(req: NextRequest) {
 
       return NextResponse.json({
         ok: true,
+        code: "OK",
+        status: "PROCESSING",
+        nextAction: "NONE",
+        retryable: true,
         freeCheckout: true,
+        isFreeCheckout: true,
         purchaseId,
+        paymentIntentId: FREE_PLACEHOLDER_INTENT_ID,
         paymentScenario,
         ticketsCreated: createdTicketsCount,
         amount: 0,
@@ -935,6 +1152,8 @@ export async function POST(req: NextRequest) {
           totalCents: 0,
           currency: currency.toUpperCase(),
         },
+        intentFingerprint,
+        idempotencyKey: clientIdempotencyKey ?? effectiveDedupeKey,
       });
     }
 
@@ -942,9 +1161,10 @@ export async function POST(req: NextRequest) {
       eventId: String(event.id),
       eventSlug: String(event.slug),
       purchaseId,
+      intentFingerprint,
       items: JSON.stringify(normalizedItems),
       paymentScenario: scenarioAdjusted,
-      baseAmountCents: String(pricing.subtotalCents - discountCents),
+      baseAmountCents: String(preDiscountAmountCents),
       discountCents: String(discountCents),
       platformFeeMode: pricing.feeMode,
       platformFeeBps: String(pricing.feeBpsApplied),
@@ -972,15 +1192,24 @@ export async function POST(req: NextRequest) {
     if (userId) {
       metadata.userId = userId;
     }
-    if (effectiveDedupeKey) metadata.idempotencyKey = effectiveDedupeKey;
+    // Metadata idempotencyKey deve ser estável (purchaseId) para não disparar idempotency_error na Stripe.
+    metadata.idempotencyKey = effectiveDedupeKey;
+    if (clientIdempotencyKey) {
+      metadata.clientIdempotencyKey = clientIdempotencyKey;
+    }
     if (ownerResolved.ownerUserId) metadata.ownerUserId = ownerResolved.ownerUserId;
     if (ownerResolved.ownerIdentityId) metadata.ownerIdentityId = ownerResolved.ownerIdentityId;
     if (ownerResolved.emailNormalized) metadata.emailNormalized = ownerResolved.emailNormalized;
+    if (typeof body?.pairingId === "number") metadata.pairingId = String(body.pairingId);
+    if (typeof body?.slotId === "number") metadata.slotId = String(body.slotId);
+    if (typeof body?.resaleId === "string") metadata.resaleId = body.resaleId;
+    if (typeof body?.ticketId === "string" || typeof body?.ticketId === "number") metadata.ticketId = String(body.ticketId);
+    if (paymentScenario === "RESALE" && userId) metadata.buyerUserId = userId;
 
     const allowedPaymentMethods = ["card", "link", "mb_way"] as const;
 
     const intentParams: Parameters<typeof stripe.paymentIntents.create>[0] = {
-      amount: totalAmountInCents,
+      amount: Math.max(0, totalAmountInCents),
       currency,
       payment_method_types: [...allowedPaymentMethods],
       metadata,
@@ -1000,7 +1229,61 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const paymentIntent = await stripe.paymentIntents.create(intentParams);
+    // Stripe idempotency: se o cliente enviar idempotencyKey, usamos-na para diferenciar intents e evitar reaproveitar PI terminal
+    const stripeIdempotencyKey =
+      clientIdempotencyKey && clientIdempotencyKey.trim().length > 0
+        ? `${purchaseId}:${clientIdempotencyKey}`.slice(0, 200)
+        : purchaseId.slice(0, 200);
+
+    const createPi = async (idemKey?: string) =>
+      stripe.paymentIntents.create(intentParams, idemKey ? { idempotencyKey: idemKey } : undefined);
+
+    const isTerminal = (status?: string | null) =>
+      !!status && ["succeeded", "canceled", "requires_capture"].includes(status);
+
+    let paymentIntent;
+    let attemptKey = stripeIdempotencyKey;
+    let attempts = 0;
+    while (attempts < 3) {
+      try {
+        paymentIntent = await createPi(attemptKey);
+        if (isTerminal(paymentIntent?.status)) {
+          // PI reaproveitado (provavelmente via idempotency) em estado terminal — gerar chave nova
+          attempts += 1;
+          attemptKey = `${stripeIdempotencyKey}:retry:${attempts}:${Date.now()}`;
+          paymentIntent = null as any;
+          continue;
+        }
+        break;
+      } catch (e: unknown) {
+        const anyErr = e as { type?: string; code?: string; message?: string };
+        const isIdem =
+          anyErr?.type === "StripeIdempotencyError" ||
+          anyErr?.code === "idempotency_error" ||
+          (typeof anyErr?.message === "string" && anyErr.message.toLowerCase().includes("idempot"));
+
+        if (isIdem) {
+          attempts += 1;
+          attemptKey = `${stripeIdempotencyKey}:idem:${attempts}:${Date.now()}`;
+          console.warn("[payments/intent] Stripe idempotency mismatch, a recalcular com nova key", {
+            purchaseId,
+            intentFingerprint,
+            attemptKey,
+          });
+          continue;
+        }
+        throw e;
+      }
+    }
+
+    // Se apesar das retentativas ainda recebemos um PI terminal, devolvemos 409 para o FE refazer tudo com novas keys.
+    if (!paymentIntent || isTerminal(paymentIntent?.status)) {
+      return intentError(
+        "PAYMENT_INTENT_TERMINAL",
+        "Sessão de pagamento expirada. Vamos criar um novo intento.",
+        { httpStatus: 409, status: "FAILED", retryable: true, nextAction: "PAY_NOW" },
+      );
+    }
 
     if (padelConfig) {
       const fullName = userData?.user?.user_metadata?.full_name || guestName || "Jogador Padel";
@@ -1014,11 +1297,26 @@ export async function POST(req: NextRequest) {
       });
     }
 
+    if (!paymentIntent.client_secret) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "Não foi possível preparar o pagamento (client_secret em falta).",
+          code: "MISSING_CLIENT_SECRET",
+          retryable: true,
+        },
+        { status: 500 },
+      );
+    }
     return NextResponse.json({
       ok: true,
+      code: "OK",
+      status: "REQUIRES_ACTION",
+      nextAction: "PAY_NOW",
+      retryable: true,
       clientSecret: paymentIntent.client_secret,
       amount: totalAmountInCents,
-      currency,
+      currency: currency.toUpperCase(),
       discountCents,
       paymentIntentId: paymentIntent.id,
       purchaseId,
@@ -1031,6 +1329,8 @@ export async function POST(req: NextRequest) {
         totalCents: totalAmountInCents,
         currency: currency.toUpperCase(),
       },
+      intentFingerprint,
+      idempotencyKey: clientIdempotencyKey ?? effectiveDedupeKey,
     });
   } catch (err) {
     console.error("Erro PaymentIntent:", err);

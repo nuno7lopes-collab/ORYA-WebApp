@@ -18,6 +18,7 @@ import { getStripeBaseFees } from "@/lib/platformSettings";
 import { normalizePaymentScenario } from "@/lib/paymentScenario";
 import { checkoutMetadataSchema, normalizeItemsForMetadata, parseCheckoutItems } from "@/lib/checkoutSchemas";
 import { computeGraceUntil } from "@/domain/padelDeadlines";
+import { enqueueOperation } from "@/lib/operations/enqueue";
 import { ensureEntriesForConfirmedPairing } from "@/domain/tournaments/ensureEntriesForConfirmedPairing";
 import { resolveOwner } from "@/lib/ownership/resolveOwner";
 import {
@@ -36,10 +37,10 @@ import {
 } from "@/domain/notifications/tournament";
 
 const webhookSecret = env.stripeWebhookSecret;
+const FREE_PLACEHOLDER_INTENT_ID = "FREE_CHECKOUT";
 
 export async function POST(req: NextRequest) {
   const sig = req.headers.get("stripe-signature");
-
   if (!sig) {
     console.error("[Webhook] Missing signature header");
     return new Response("Missing signature", { status: 400 });
@@ -64,100 +65,79 @@ export async function POST(req: NextRequest) {
 
   try {
     switch (event.type) {
-      /**
-       * F5-13 – checkout.session.completed (REVENDAS)
-       *
-       * Aqui tratamos apenas sessões com paymentScenario=RESALE
-       * (revenda de bilhetes entre utilizadores).
-       */
-      case "checkout.session.completed": {
-        const session = event.data.object as Stripe.Checkout.Session;
-        const metadata = session.metadata || {};
-        const paymentScenario = normalizePaymentScenario(
-          typeof metadata["paymentScenario"] === "string" ? metadata["paymentScenario"] : null
-        );
-
-        if (paymentScenario !== "RESALE") {
-          console.log("[Webhook] checkout.session.completed sem RESALE, a ignorar neste fluxo.");
-          break;
-        }
-
-        const resaleId = metadata["resaleId"];
-        const ticketId = metadata["ticketId"];
-        const buyerUserId = metadata["buyerUserId"];
-
-        if (!resaleId || !ticketId || !buyerUserId) {
-          console.error(
-            "[Webhook][RESALE] Metadata incompleta em checkout.session.completed",
-            { resaleId, ticketId, buyerUserId }
-          );
-          break;
-        }
-
-        try {
-          await prisma.$transaction(async (tx) => {
-            const resale = await tx.ticketResale.findUnique({
-              where: { id: resaleId as string },
-              include: { ticket: true },
-            });
-
-            if (!resale || !resale.ticket) {
-              console.error("[Webhook][RESALE] Revenda não encontrada", {
-                resaleId,
-              });
-              return;
-            }
-
-            // Idempotência: se já não estiver LISTED, não repetimos a operação
-            if (resale.status !== "LISTED") {
-              console.log(
-                "[Webhook][RESALE] Revenda já processada ou num estado inválido",
-                { resaleId, status: resale.status }
-              );
-              return;
-            }
-
-            // Atualizar revenda para SOLD
-            await tx.ticketResale.update({
-              where: { id: resale.id },
-              data: {
-                status: "SOLD",
-                completedAt: new Date(),
-              },
-            });
-
-            // Mudar o dono do bilhete para o comprador
-            await tx.ticket.update({
-              where: { id: resale.ticketId },
-              data: {
-                userId: buyerUserId as string,
-                status: "ACTIVE",
-              },
-            });
-          });
-
-          console.log("[Webhook][RESALE] Revenda processada com sucesso", {
-            resaleId,
-            ticketId,
-            buyerUserId,
-          });
-        } catch (err) {
-          console.error("[Webhook][RESALE] Erro ao processar revenda:", err);
-          // mesmo com erro, devolvemos 200 no final para não ter retries infinitos
-        }
-
-        break;
-      }
-
       case "payment_intent.succeeded": {
         const intent = event.data.object as Stripe.PaymentIntent;
+        if (intent.id === FREE_PLACEHOLDER_INTENT_ID) {
+          console.log("[Webhook] payment_intent.succeeded ignorado (FREE_CHECKOUT placeholder)");
+          break;
+        }
         console.log("[Webhook] payment_intent.succeeded", {
           id: intent.id,
           amount: intent.amount,
           currency: intent.currency,
           metadata: intent.metadata,
         });
-        await fulfillPayment(intent, event.id);
+        const purchaseAnchor =
+          typeof intent.metadata?.purchaseId === "string" && intent.metadata.purchaseId.trim() !== ""
+            ? intent.metadata.purchaseId.trim()
+            : intent.id;
+        // Registar PaymentEvent ingest-only (tolerante a PI múltiplos para o mesmo purchaseId)
+        try {
+          const existing =
+            (await prisma.paymentEvent.findUnique({ where: { purchaseId: purchaseAnchor } })) ||
+            (await prisma.paymentEvent.findUnique({ where: { stripePaymentIntentId: intent.id } }));
+
+          if (existing) {
+            await prisma.paymentEvent.update({
+              where: { id: existing.id },
+              data: {
+                stripePaymentIntentId: intent.id,
+                status: "PROCESSING",
+                purchaseId: purchaseAnchor,
+                stripeEventId: event.id,
+                source: PaymentEventSource.WEBHOOK,
+                dedupeKey: event.id,
+                amountCents: intent.amount ?? null,
+                userId: typeof intent.metadata?.userId === "string" ? intent.metadata.userId : undefined,
+                updatedAt: new Date(),
+                errorMessage: null,
+                mode: intent.livemode ? "LIVE" : "TEST",
+                isTest: !intent.livemode,
+              },
+            });
+          } else {
+            await prisma.paymentEvent.create({
+              data: {
+                stripePaymentIntentId: intent.id,
+                status: "PROCESSING",
+                purchaseId: purchaseAnchor,
+                stripeEventId: event.id,
+                source: PaymentEventSource.WEBHOOK,
+                dedupeKey: event.id,
+                attempt: 1,
+                eventId:
+                  typeof intent.metadata?.eventId === "string" && Number.isFinite(Number(intent.metadata.eventId))
+                    ? Number(intent.metadata.eventId)
+                    : undefined,
+                userId: typeof intent.metadata?.userId === "string" ? intent.metadata.userId : undefined,
+                amountCents: intent.amount ?? null,
+                platformFeeCents: typeof intent.metadata?.platformFeeCents === "string" ? Number(intent.metadata.platformFeeCents) : null,
+                mode: intent.livemode ? "LIVE" : "TEST",
+                isTest: !intent.livemode,
+              },
+            });
+          }
+        } catch (logErr) {
+          console.warn("[Webhook] Falha ao registar PaymentEvent ingest-only", logErr);
+        }
+
+        await enqueueOperation({
+          operationType: "FULFILL_PAYMENT",
+          dedupeKey: intent.id,
+          correlations: { paymentIntentId: intent.id, stripeEventId: event.id, purchaseId: purchaseAnchor },
+          payload: { paymentIntentId: intent.id, stripeEventType: event.type, stripeEventId: event.id },
+        });
+
         break;
       }
 
@@ -167,7 +147,25 @@ export async function POST(req: NextRequest) {
           id: charge.id,
           payment_intent: charge.payment_intent,
         });
-        await handleRefund(charge);
+        await enqueueOperation({
+          operationType: "PROCESS_STRIPE_EVENT",
+          dedupeKey: event.id,
+          correlations: {
+            paymentIntentId:
+              typeof charge.payment_intent === "string"
+                ? charge.payment_intent
+                : charge.payment_intent?.id ?? null,
+            stripeEventId: event.id,
+          },
+          payload: {
+            stripeEventType: event.type,
+            chargeId: charge.id,
+            paymentIntentId:
+              typeof charge.payment_intent === "string"
+                ? charge.payment_intent
+                : charge.payment_intent?.id ?? null,
+          },
+        });
         break;
       }
 
@@ -256,12 +254,91 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent, stripeEventId
     Number.isFinite(Number((meta as Record<string, unknown>)?.pairingId)) ||
     Number.isFinite(Number((meta as Record<string, unknown>)?.slotId));
 
-  // Se por algum motivo um PaymentIntent de revenda vier parar aqui, ignoramos
+  // Resale: processar aqui (deixámos de usar checkout.session.completed)
   if (paymentScenario === "RESALE") {
-    console.log(
-      "[fulfillPayment] Intent de revenda recebido em fulfillPayment, a ignorar (tratado via checkout.session.completed).",
-      { intentId: intent.id }
-    );
+    const resaleId = typeof meta.resaleId === "string" ? meta.resaleId : null;
+    const ticketId = typeof meta.ticketId === "string" ? meta.ticketId : null;
+    const buyerUserId = typeof meta.buyerUserId === "string" ? meta.buyerUserId : null;
+
+    if (!resaleId || !ticketId || !buyerUserId) {
+      console.error("[fulfillPayment][RESALE] Metadata incompleta", { resaleId, ticketId, buyerUserId, intentId: intent.id });
+      return;
+    }
+
+    try {
+      await prisma.$transaction(async (tx) => {
+        const resale = await tx.ticketResale.findUnique({
+          where: { id: resaleId },
+          include: { ticket: true },
+        });
+
+        if (!resale || !resale.ticket) {
+          console.error("[fulfillPayment][RESALE] Revenda não encontrada", { resaleId });
+          return;
+        }
+
+        // Idempotência: se já não estiver LISTED, não repetimos a operação
+        if (resale.status !== "LISTED") {
+          console.log("[fulfillPayment][RESALE] Revenda já processada ou num estado inválido", {
+            resaleId,
+            status: resale.status,
+          });
+          return;
+        }
+
+        await tx.ticketResale.update({
+          where: { id: resale.id },
+          data: {
+            status: "SOLD",
+            completedAt: new Date(),
+          },
+        });
+
+        await tx.ticket.update({
+          where: { id: resale.ticketId },
+          data: {
+            userId: buyerUserId,
+            status: "ACTIVE",
+          },
+        });
+
+        await tx.paymentEvent.upsert({
+          where: { stripePaymentIntentId: intent.id },
+          update: {
+            status: "OK",
+            amountCents: intent.amount,
+            eventId: resale.ticket.eventId,
+            userId: buyerUserId,
+            updatedAt: new Date(),
+            errorMessage: null,
+            mode: intent.livemode ? "LIVE" : "TEST",
+            isTest: !intent.livemode,
+            purchaseId: purchaseId ?? intent.id,
+            source: PaymentEventSource.WEBHOOK,
+            dedupeKey: purchaseId ?? intent.id,
+            attempt: { increment: 1 },
+          },
+          create: {
+            stripePaymentIntentId: intent.id,
+            status: "OK",
+            amountCents: intent.amount,
+            eventId: resale.ticket.eventId,
+            userId: buyerUserId,
+            mode: intent.livemode ? "LIVE" : "TEST",
+            isTest: !intent.livemode,
+            purchaseId: purchaseId ?? intent.id,
+            source: PaymentEventSource.WEBHOOK,
+            dedupeKey: purchaseId ?? intent.id,
+            attempt: 1,
+          },
+        });
+      });
+
+      console.log("[fulfillPayment][RESALE] processada com sucesso", { resaleId, ticketId, buyerUserId });
+    } catch (err) {
+      console.error("[fulfillPayment][RESALE] erro", err);
+    }
+
     return;
   }
 
@@ -545,11 +622,8 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent, stripeEventId
     where: { stripePaymentIntentId: intent.id },
   });
 
-  if (already) {
-    console.log(
-      "[fulfillPayment] INTENT JÁ PROCESSADO — evitar duplicação mas permitir múltiplos bilhetes dentro do mesmo intent:",
-      intent.id
-    );
+  if (already && !process.env.ENABLE_WORKER_PAYMENTS) {
+    console.log("[fulfillPayment] INTENT JÁ PROCESSADO — evitando duplicação:", intent.id);
     try {
       await prisma.paymentEvent.updateMany({
         where: { stripePaymentIntentId: intent.id },
@@ -801,15 +875,41 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent, stripeEventId
               })
             : 0;
         const exceedsGlobal = promo?.maxUses != null && totalUses >= promo.maxUses;
-        const exceedsUser = promo?.perUserLimit != null && userUses >= promo.perUserLimit;
-        if (!exceedsGlobal && !exceedsUser) {
-          await tx.promoRedemption.create({
-            data: {
-              promoCodeId: Number(promoCodeId),
-              userId: ownerUserId ?? null,
-              guestEmail: guestEmail || null,
-            },
-          });
+          const exceedsUser = promo?.perUserLimit != null && userUses >= promo.perUserLimit;
+          if (!exceedsGlobal && !exceedsUser) {
+            try {
+              await tx.promoRedemption.upsert({
+                where: {
+                  purchaseId_promoCodeId: {
+                    purchaseId: purchaseAnchor ?? undefined,
+                    promoCodeId: Number(promoCodeId),
+                  },
+                },
+                update: {
+                  userId: ownerUserId ?? null,
+                  guestEmail: guestEmail || null,
+                },
+                create: {
+                  promoCodeId: Number(promoCodeId),
+                  userId: ownerUserId ?? null,
+                  guestEmail: guestEmail || null,
+                  purchaseId: purchaseAnchor ?? null,
+                },
+              });
+            } catch (err) {
+              const isUnique =
+                err &&
+                typeof err === "object" &&
+                "code" in err &&
+                (err as { code: string }).code === "P2002";
+              if (!isUnique) throw err;
+              console.warn("[fulfillPayment] promoRedemption unique conflict ignorado", {
+                promoCodeId,
+                purchaseId: purchaseAnchor ?? null,
+                userId: ownerUserId ?? null,
+                guestEmail,
+              });
+            }
         } else {
           console.warn("[fulfillPayment] promoRedemption não criada por limite atingido", {
             promoCodeId,
@@ -847,7 +947,16 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent, stripeEventId
         }
       }
 
+      const existingTickets = await tx.ticket.findMany({
+        where: { purchaseId: purchaseAnchor, ticketTypeId: ticketType.id },
+        select: { emissionIndex: true },
+      });
+      const existingIndexes = new Set<number>(existingTickets.map((t) => t.emissionIndex ?? 0));
+
       for (let i = 0; i < qty; i++) {
+        if (existingIndexes.has(i)) {
+          continue;
+        }
         // Gerar QR seguro para cada bilhete
         const token = crypto.randomUUID();
         const feeForThisTicket =
@@ -883,6 +992,9 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent, stripeEventId
             platformFeeCents: feeForThisTicket,
             totalPaidCents: pricePerTicketCents + feeForThisTicket,
             stripePaymentIntentId: intent.id,
+            purchaseId: purchaseAnchor ?? intent.id,
+            saleSummaryId: saleSummaryId ?? null,
+            emissionIndex: i,
           },
         });
 
@@ -987,7 +1099,7 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent, stripeEventId
         endsAt: eventRecord.endsAt?.toISOString() ?? null,
         locationName: eventRecord.locationName ?? null,
         ticketsCount: createdTicketsCount,
-        ticketUrl: userId ? `${baseUrl}/me/tickets` : `${baseUrl}/`,
+        ticketUrl: userId ? `${baseUrl}/me/carteira` : `${baseUrl}/`,
       });
       console.log("[fulfillPayment] Email de confirmação enviado para", targetEmail);
     } catch (emailErr) {
@@ -1408,7 +1520,7 @@ async function handlePadelFullPayment(intent: Stripe.PaymentIntent) {
   });
 }
 
-async function handleRefund(charge: Stripe.Charge) {
+export async function handleRefund(charge: Stripe.Charge) {
   const paymentIntentId =
     typeof charge.payment_intent === "string"
       ? charge.payment_intent

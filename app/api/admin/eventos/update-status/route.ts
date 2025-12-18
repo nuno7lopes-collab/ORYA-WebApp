@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import type { EventStatus } from "@prisma/client";
+import { enqueueOperation } from "@/lib/operations/enqueue";
 
 /**
  * 6.14 – Update de estado de evento (admin)
@@ -124,6 +125,30 @@ export async function POST(req: NextRequest) {
           updatedAt: true,
         },
       });
+
+      if (updated.status === "CANCELLED" || updated.status === "DELETED" || updated.status === "DATE_CHANGED") {
+        // Disparar refunds base-only para todas as compras deste evento (idempotente por dedupeKey)
+        const summaries = await prisma.saleSummary.findMany({
+          where: { eventId: updated.id, status: "PAID" },
+          select: { purchaseId: true, paymentIntentId: true },
+        });
+        await Promise.all(
+          summaries.map((s) =>
+            enqueueOperation({
+              operationType: "PROCESS_REFUND_SINGLE",
+              dedupeKey: `${updated.id}:${s.purchaseId ?? s.paymentIntentId ?? "unknown"}`,
+              correlations: { eventId: updated.id, purchaseId: s.purchaseId ?? s.paymentIntentId ?? null, paymentIntentId: s.paymentIntentId ?? null },
+              payload: {
+                eventId: updated.id,
+                purchaseId: s.purchaseId ?? s.paymentIntentId ?? null,
+                paymentIntentId: s.paymentIntentId ?? null,
+                reason: updated.status,
+                refundedBy: user.id,
+              },
+            }),
+          ),
+        );
+      }
 
       return NextResponse.json(
         {

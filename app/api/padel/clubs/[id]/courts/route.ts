@@ -96,3 +96,33 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
+
+// Hard delete court
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const clubId = Number(id);
+  if (!Number.isFinite(clubId)) return NextResponse.json({ ok: false, error: "INVALID_CLUB" }, { status: 400 });
+
+  const supabase = await createSupabaseServer();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+
+  const { organizer } = await getActiveOrganizerForUser(user.id, { roles: allowedRoles });
+  if (!organizer) return NextResponse.json({ ok: false, error: "NO_ORGANIZER" }, { status: 403 });
+
+  const url = new URL(req.url);
+  const courtIdParam = url.searchParams.get("courtId");
+  const courtId = courtIdParam ? Number(courtIdParam) : NaN;
+  if (!Number.isFinite(courtId)) return NextResponse.json({ ok: false, error: "INVALID_COURT" }, { status: 400 });
+
+  const club = await prisma.padelClub.findFirst({ where: { id: clubId, organizerId: organizer.id, deletedAt: null } });
+  if (!club) return NextResponse.json({ ok: false, error: "CLUB_NOT_FOUND" }, { status: 404 });
+
+  try {
+    const deleted = await prisma.padelClubCourt.delete({ where: { id: courtId, padelClubId: club.id } });
+    return NextResponse.json({ ok: true, court: deleted }, { status: 200 });
+  } catch (err) {
+    console.error("[padel/clubs/courts/delete] error", err);
+    return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+  }
+}

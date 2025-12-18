@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useCheckout } from "./contextoCheckout";
 import { formatMoney } from "@/lib/money";
-import { useState } from "react";
+
+const FREE_PLACEHOLDER_INTENT_ID = "FREE_CHECKOUT";
 
 const scenarioCopy: Record<string, string> = {
   GROUP_SPLIT: "Pagaste apenas a tua parte desta dupla.",
@@ -13,69 +14,163 @@ const scenarioCopy: Record<string, string> = {
   FREE_CHECKOUT: "Inscrição gratuita concluída.",
 };
 
+function normalizeCheckoutStatus(raw: unknown): "PROCESSING" | "PAID" | "FAILED" {
+  const v = typeof raw === "string" ? raw.trim().toUpperCase() : "";
+  if (["PAID", "OK", "SUCCEEDED", "SUCCESS", "COMPLETED", "CONFIRMED"].includes(v)) return "PAID";
+  if (["FAILED", "ERROR", "CANCELED", "CANCELLED", "REQUIRES_PAYMENT_METHOD"].includes(v)) return "FAILED";
+  return "PROCESSING";
+}
+
+function numberFromUnknown(v: unknown): number | null {
+  return typeof v === "number" && Number.isFinite(v) ? v : null;
+}
+
+function eurosToCents(v: number): number {
+  return Math.max(0, Math.round(v * 100));
+}
+
+function centsFromAdditional(additional: Record<string, unknown>, key: string): number | null {
+  // Convention used in this checkout:
+  // - `*Cents` fields are cents
+  // - `total` (without suffix) has historically been stored as euros
+  const centsKey = `${key}Cents`;
+  const cents = numberFromUnknown(additional[centsKey]);
+  if (cents !== null) return cents;
+
+  if (key === "total") {
+    const totalEuros = numberFromUnknown(additional.total);
+    if (totalEuros !== null) return eurosToCents(totalEuros);
+  }
+
+  return null;
+}
+
 export default function Step3Sucesso() {
   const { dados, fecharCheckout, breakdown: checkoutBreakdown } = useCheckout();
   const router = useRouter();
   const [statusError, setStatusError] = useState<string | null>(null);
 
+  const additional:
+    | Record<string, unknown>
+    | undefined =
+    dados?.additional && typeof dados.additional === "object"
+      ? (dados.additional as Record<string, unknown>)
+      : undefined;
+
+  const scenario =
+    (dados?.paymentScenario as string | null | undefined) ??
+    (additional && typeof additional.paymentScenario === "string"
+      ? (additional.paymentScenario as string)
+      : null);
+
+  const isFreeScenario = scenario === "FREE_CHECKOUT";
+
+  const paymentIntentId =
+    additional && typeof additional.paymentIntentId === "string"
+      ? additional.paymentIntentId
+      : null;
+
+  const fallbackPurchaseId =
+    paymentIntentId && paymentIntentId !== FREE_PLACEHOLDER_INTENT_ID ? paymentIntentId : null;
+
+  const purchaseId =
+    additional && typeof additional.purchaseId === "string"
+      ? additional.purchaseId
+      : fallbackPurchaseId;
+
   useEffect(() => {
-    if (dados && !dados.additional?.paymentIntentId && !dados.additional?.purchaseId) {
+    if (dados && !purchaseId && !isFreeScenario) {
       router.replace("/explorar");
     }
-  }, [dados, router]);
+  }, [dados, router, purchaseId, isFreeScenario]);
 
   // Revalidar bilhetes após sucesso (traz novos bilhetes mais depressa)
   useEffect(() => {
     async function revalidateTickets() {
       try {
-        await fetch("/api/me/tickets", { method: "GET", cache: "no-store" });
+        await fetch("/api/me/wallet", { method: "GET", cache: "no-store" });
       } catch (err) {
-        console.warn("[Step3Sucesso] Falha ao revalidar /api/me/tickets", err);
+        console.warn("[Step3Sucesso] Falha ao revalidar /api/me/wallet", err);
       }
     }
     revalidateTickets();
   }, []);
 
   const guestEmail =
-    dados?.additional &&
-    typeof dados.additional === "object" &&
-    typeof dados.additional.guestEmail === "string"
-      ? dados.additional.guestEmail
-      : null;
+    additional && typeof additional.guestEmail === "string" ? additional.guestEmail : null;
 
   const breakdown = (() => {
-    const additional =
-      dados.additional && typeof dados.additional === "object" ? dados.additional : {};
-    const subtotalCentsRaw =
-      checkoutBreakdown?.subtotalCents ??
-      Number(additional.subtotalCents ?? additional.totalCents ?? additional.total ?? 0);
+    const add = additional ?? {};
+
+    const subtotalFromContext =
+      typeof checkoutBreakdown?.subtotalCents === "number" ? checkoutBreakdown.subtotalCents : null;
+
     const subtotalFromLines =
-      checkoutBreakdown?.lines?.reduce((sum, line) => sum + Number(line.lineTotalCents ?? 0), 0) ??
-      null;
+      checkoutBreakdown?.lines?.reduce((sum, line) => sum + Number(line.lineTotalCents ?? 0), 0) ?? null;
+
+    // If we lost the context breakdown (refresh), we fallback to additional.
+    // NOTE: `additional.total` is stored as euros in Step2, so we convert to cents.
+    const subtotalCentsRaw =
+      subtotalFromContext ??
+      numberFromUnknown(add.subtotalCents) ??
+      numberFromUnknown(add.totalCents) ??
+      centsFromAdditional(add, "total") ??
+      0;
+
     const subtotalCents =
       subtotalCentsRaw && subtotalCentsRaw > 0
         ? subtotalCentsRaw
         : subtotalFromLines && subtotalFromLines > 0
           ? subtotalFromLines
           : 0;
+
     const discountCents =
-      checkoutBreakdown?.discountCents ?? Number(additional.discountCents ?? 0);
+      typeof checkoutBreakdown?.discountCents === "number"
+        ? checkoutBreakdown.discountCents
+        : numberFromUnknown(add.discountCents) ?? 0;
+
     const platformFeeCents =
-      checkoutBreakdown?.platformFeeCents ?? Number(additional.platformFeeCents ?? 0);
-    const totalCents =
-      checkoutBreakdown?.totalCents ??
-      Number(additional.totalCents ?? additional.total ?? 0) ??
-      Math.max(0, subtotalCents - discountCents + platformFeeCents);
+      typeof checkoutBreakdown?.platformFeeCents === "number"
+        ? checkoutBreakdown.platformFeeCents
+        : numberFromUnknown(add.platformFeeCents) ?? 0;
+
+    const totalCentsFromContext =
+      typeof checkoutBreakdown?.totalCents === "number" ? checkoutBreakdown.totalCents : null;
+
+    const totalCentsFromAdditional =
+      numberFromUnknown(add.totalCents) ?? centsFromAdditional(add, "total");
+
+    const computedTotalFallback = Math.max(0, subtotalCents - discountCents + platformFeeCents);
+
+    const totalCents = totalCentsFromContext ?? totalCentsFromAdditional ?? computedTotalFallback;
+
+    // fallback: if discount did not come but total < subtotal (+fees), infer it
+    const inferredDiscount =
+      discountCents > 0
+        ? discountCents
+        : subtotalCents > 0 && totalCents >= 0
+          ? Math.max(0, subtotalCents + platformFeeCents - totalCents)
+          : 0;
+
     const code =
-      typeof additional.promoCodeRaw === "string"
-        ? additional.promoCodeRaw
-        : typeof additional.promoCode === "string"
-          ? additional.promoCode
-          : null;
+      typeof add.appliedPromoLabel === "string"
+        ? add.appliedPromoLabel
+        : typeof add.promoCodeRaw === "string"
+          ? add.promoCodeRaw
+          : typeof add.promoCode === "string"
+            ? add.promoCode
+            : null;
+
+    const currency =
+      typeof checkoutBreakdown?.currency === "string"
+        ? checkoutBreakdown.currency
+        : typeof add.currency === "string"
+          ? add.currency
+          : "EUR";
 
     if (
       Number.isNaN(subtotalCents) &&
-      Number.isNaN(discountCents) &&
+      Number.isNaN(inferredDiscount) &&
       Number.isNaN(platformFeeCents) &&
       Number.isNaN(totalCents)
     ) {
@@ -84,11 +179,11 @@ export default function Step3Sucesso() {
 
     return {
       subtotalCents,
-      discountCents,
+      discountCents: inferredDiscount,
       platformFeeCents,
       totalCents,
       code,
-      currency: checkoutBreakdown?.currency ?? "EUR",
+      currency,
     };
   })();
   const subtotalEur = breakdown ? breakdown.subtotalCents / 100 : null;
@@ -96,51 +191,55 @@ export default function Step3Sucesso() {
   const platformFeeEur = breakdown ? breakdown.platformFeeCents / 100 : null;
   const totalEur = breakdown ? breakdown.totalCents / 100 : null;
 
-  const scenario =
-    (dados?.paymentScenario as string | null | undefined) ??
-    (dados?.additional?.paymentScenario as string | null | undefined) ??
-    null;
-  const isFreeScenario = scenario === "FREE_CHECKOUT";
-  const purchaseId =
-    typeof dados?.additional?.purchaseId === "string"
-      ? dados.additional.purchaseId
-      : typeof dados?.additional?.paymentIntentId === "string"
-        ? dados.additional.paymentIntentId
-        : null;
-
   const initialStatus: "PROCESSING" | "PAID" | "FAILED" =
-    !purchaseId || isFreeScenario ? "PAID" : "PROCESSING";
+    isFreeScenario ? "PAID" : purchaseId ? "PROCESSING" : "PROCESSING";
   const [status, setStatus] = useState<"PROCESSING" | "PAID" | "FAILED">(initialStatus);
+
+  useEffect(() => {
+    if (isFreeScenario) setStatus("PAID");
+  }, [isFreeScenario]);
 
   useEffect(() => {
     if (!purchaseId || isFreeScenario) return;
 
     let cancelled = false;
-    let interval: NodeJS.Timeout | null = null;
+    let interval: ReturnType<typeof setInterval> | null = null;
 
     const poll = async () => {
       try {
         const url = new URL("/api/checkout/status", window.location.origin);
         url.searchParams.set("purchaseId", purchaseId);
+        if (paymentIntentId && paymentIntentId !== purchaseId) {
+          url.searchParams.set("paymentIntentId", paymentIntentId);
+        }
         const res = await fetch(url.toString(), { cache: "no-store" });
         const data = await res.json().catch(() => null);
-        const mapped = typeof data?.status === "string" ? data.status.toUpperCase() : "PROCESSING";
+        const mapped = normalizeCheckoutStatus(data?.status);
         if (cancelled) return;
+
         if (mapped === "PAID") {
           setStatus("PAID");
           setStatusError(null);
           if (interval) clearInterval(interval);
-        } else if (mapped === "FAILED") {
+          // revalidate once more after confirmed
+          try {
+            await fetch("/api/me/wallet", { method: "GET", cache: "no-store" });
+          } catch {}
+          return;
+        }
+
+        if (mapped === "FAILED") {
           setStatus("FAILED");
           setStatusError(typeof data?.error === "string" ? data.error : null);
           if (interval) clearInterval(interval);
-        } else {
-          setStatus("PROCESSING");
-          setStatusError(null);
+          return;
         }
+
+        setStatus("PROCESSING");
+        setStatusError(null);
       } catch (err) {
         console.warn("[Step3Sucesso] Poll status falhou", err);
-        if (!cancelled) setStatusError("A confirmar pagamento…");
+        if (!cancelled) setStatusError(null);
       }
     };
 
@@ -170,7 +269,7 @@ export default function Step3Sucesso() {
     );
   }
 
-  if (!dados.additional?.paymentIntentId && !dados.additional?.purchaseId) {
+  if (!purchaseId && !isFreeScenario) {
     return null;
   }
 
@@ -191,10 +290,14 @@ export default function Step3Sucesso() {
         <p className="text-sm text-white/70">
           {status === "FAILED"
             ? statusError ?? "Não conseguimos confirmar o pagamento. Tenta novamente ou contacta suporte."
-            : guestEmail
-              ? `Obrigado! Enviámos os teus bilhetes para ${guestEmail}.`
-              : isFreeScenario
-                ? "A tua inscrição gratuita está confirmada."
+            : status === "PAID"
+              ? guestEmail
+                ? `Obrigado! Enviámos os teus bilhetes para ${guestEmail}.`
+                : isFreeScenario
+                  ? "A tua inscrição gratuita está confirmada."
+                  : "Compra confirmada. Já podes ver os teus bilhetes."
+              : guestEmail
+                ? `Estamos a confirmar o pagamento. Assim que estiver confirmado, vais receber os bilhetes em ${guestEmail}.`
                 : "Estamos a confirmar o pagamento. Mantém esta página aberta."}
         </p>
       </div>
@@ -246,13 +349,14 @@ export default function Step3Sucesso() {
         {/* Info */}
         <div className="space-y-1 text-sm text-white/60">
           <p>
-            {guestEmail
-              ? "Guarda o email com os bilhetes. Podes criar conta e ligar estes bilhetes mais tarde."
-              : "A tua compra foi concluída com sucesso."}
+            {status === "PAID"
+              ? guestEmail
+                ? "Guarda o email com os bilhetes. Podes criar conta e ligar estes bilhetes mais tarde."
+                : "A tua compra foi concluída com sucesso."
+              : status === "FAILED"
+                ? `O pagamento não ficou confirmado. Se o teu banco debitou, contacta suporte${purchaseId ? ` com o ID de compra: ${purchaseId}` : ""}.`
+                : "Estamos a confirmar o pagamento. Se demorares mais de alguns minutos, fecha e volta a abrir o checkout."}
           </p>
-          {scenario && scenarioCopy[scenario] && (
-            <p className="text-white/75">{scenarioCopy[scenario]}</p>
-          )}
         </div>
 
         {/* Botão ver bilhetes */}
@@ -264,12 +368,9 @@ export default function Step3Sucesso() {
             {guestEmail ? "Criar conta e ligar bilhetes" : "Ver os teus bilhetes"}
           </button>
         ) : status === "FAILED" ? (
-          <button
-            onClick={fecharCheckout}
-            className="w-full rounded-full bg-red-500 text-white py-3 text-sm font-semibold shadow hover:scale-[1.02] active:scale-95 transition-transform"
-          >
-            Fechar
-          </button>
+          <div className="w-full rounded-2xl border border-red-500/40 bg-red-500/10 text-sm text-red-100 py-3 text-center">
+            Pagamento não confirmado. Verifica o método de pagamento ou tenta novamente.
+          </div>
         ) : (
           <div className="w-full rounded-full bg-white/10 text-white text-sm font-semibold py-3 text-center">
             A confirmar…

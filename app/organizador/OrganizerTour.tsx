@@ -49,16 +49,19 @@ export function OrganizerTour() {
   const shouldShow = mounted && open;
 
   useEffect(() => {
-    setMounted(true);
-    const seen = typeof window !== "undefined" ? localStorage.getItem(TOUR_KEY) : "1";
-    if (!seen) setOpen(true);
-    const handler = () => {
-      localStorage.removeItem(TOUR_KEY);
-      setIndex(0);
-      setOpen(true);
-    };
-    window.addEventListener(TOUR_EVENT, handler);
-    return () => window.removeEventListener(TOUR_EVENT, handler);
+    const id = requestAnimationFrame(() => {
+      setMounted(true);
+      const seen = typeof window !== "undefined" ? localStorage.getItem(TOUR_KEY) : "1";
+      if (!seen) setOpen(true);
+      const handler = () => {
+        localStorage.removeItem(TOUR_KEY);
+        setIndex(0);
+        setOpen(true);
+      };
+      window.addEventListener(TOUR_EVENT, handler);
+      return () => window.removeEventListener(TOUR_EVENT, handler);
+    });
+    return () => cancelAnimationFrame(id);
   }, []);
 
   useEffect(() => {
@@ -77,22 +80,27 @@ export function OrganizerTour() {
   useEffect(() => {
     if (!shouldShow) return;
     if (!step.anchor) {
-      setAnchorRect(null);
+      const id = requestAnimationFrame(() => setAnchorRect(null));
+      return () => cancelAnimationFrame(id);
       return;
     }
     const el = document.querySelector(step.anchor);
     if (!el) {
-      setAnchorRect(null);
+      const id = requestAnimationFrame(() => setAnchorRect(null));
+      return () => cancelAnimationFrame(id);
       return;
     }
     const rect = el.getBoundingClientRect();
-    setAnchorRect(rect);
+    const id = requestAnimationFrame(() => setAnchorRect(rect));
     const observer = new ResizeObserver(() => {
       const nextRect = el.getBoundingClientRect();
       setAnchorRect(nextRect);
     });
     observer.observe(el);
-    return () => observer.disconnect();
+    return () => {
+      cancelAnimationFrame(id);
+      observer.disconnect();
+    };
   }, [shouldShow, step.anchor]);
 
   const goNext = () => {
@@ -133,6 +141,20 @@ export function OrganizerTour() {
     };
   }, [shouldShow]);
 
+  useEffect(() => {
+    if (!shouldShow) return;
+    if (step.anchor !== "[data-tour='user-experience']") return;
+    const el = document.querySelector(step.anchor);
+    if (!el) return;
+    const details = el.closest("details");
+    if (!details) return;
+    const hadOpen = details.hasAttribute("open");
+    details.setAttribute("open", "true");
+    return () => {
+      if (!hadOpen) details.removeAttribute("open");
+    };
+  }, [shouldShow, step.anchor]);
+
   if (!shouldShow) return null;
 
   const cardWidth = isMobile ? viewport.width - 32 : Math.min(480, viewport.width - 32);
@@ -159,21 +181,66 @@ export function OrganizerTour() {
     }
   }
 
+  const highlightPadding = 12;
+  const highlightRect =
+    anchorRect && viewport.width && viewport.height
+      ? {
+          left: Math.max(0, anchorRect.left - highlightPadding),
+          top: Math.max(0, anchorRect.top - highlightPadding),
+          width: Math.min(anchorRect.width + highlightPadding * 2, viewport.width - Math.max(0, anchorRect.left - highlightPadding)),
+          height: Math.min(
+            anchorRect.height + highlightPadding * 2,
+            viewport.height - Math.max(0, anchorRect.top - highlightPadding)
+          ),
+        }
+      : null;
+
+  const rightWidth =
+    highlightRect && viewport.width ? Math.max(0, viewport.width - (highlightRect.left + highlightRect.width)) : 0;
+  const bottomHeight =
+    highlightRect && viewport.height ? Math.max(0, viewport.height - (highlightRect.top + highlightRect.height)) : 0;
+
   return (
-    <div className="fixed inset-0 z-[99] pointer-events-none">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(107,255,255,0.08),rgba(0,0,0,0)),rgba(0,0,0,0.6)] backdrop-blur-sm" />
-      {!isMobile && anchorRect && (
-        <div
-          className="absolute rounded-2xl pointer-events-none"
-          style={{
-            left: anchorRect.left - 6,
-            top: anchorRect.top - 6,
-            width: anchorRect.width + 12,
-            height: anchorRect.height + 12,
-            boxShadow: "0 0 0 1px rgba(107,255,255,0.35), 0 0 24px rgba(107,255,255,0.18)",
-            background: "radial-gradient(circle at center, rgba(107,255,255,0.06), rgba(7,11,19,0))",
-          }}
-        />
+    <div className="fixed inset-0 z-[99] pointer-events-auto">
+      {highlightRect ? (
+        <>
+          <div
+            className="pointer-events-none absolute left-0 top-0 w-full bg-[radial-gradient(circle_at_30%_20%,rgba(107,255,255,0.09),rgba(0,0,0,0)),rgba(5,9,21,0.7)] backdrop-blur-[9px] backdrop-saturate-[1.4]"
+            style={{ height: highlightRect.top }}
+          />
+          <div
+            className="pointer-events-none absolute bg-[radial-gradient(circle_at_30%_20%,rgba(107,255,255,0.09),rgba(0,0,0,0)),rgba(5,9,21,0.7)] backdrop-blur-[9px] backdrop-saturate-[1.4]"
+            style={{ left: 0, top: highlightRect.top, width: highlightRect.left, height: highlightRect.height }}
+          />
+          <div
+            className="pointer-events-none absolute bg-[radial-gradient(circle_at_30%_20%,rgba(107,255,255,0.09),rgba(0,0,0,0)),rgba(5,9,21,0.7)] backdrop-blur-[9px] backdrop-saturate-[1.4]"
+            style={{
+              left: highlightRect.left + highlightRect.width,
+              top: highlightRect.top,
+              width: rightWidth,
+              height: highlightRect.height,
+            }}
+          />
+          <div
+            className="pointer-events-none absolute left-0 bg-[radial-gradient(circle_at_30%_20%,rgba(107,255,255,0.09),rgba(0,0,0,0)),rgba(5,9,21,0.7)] backdrop-blur-[9px] backdrop-saturate-[1.4]"
+            style={{ top: highlightRect.top + highlightRect.height, width: "100%", height: bottomHeight }}
+          />
+          {!isMobile && (
+            <div
+              className="absolute rounded-2xl pointer-events-none"
+              style={{
+                left: highlightRect.left,
+                top: highlightRect.top,
+                width: highlightRect.width,
+                height: highlightRect.height,
+                boxShadow: "0 0 0 1px rgba(107,255,255,0.45), 0 0 28px rgba(107,255,255,0.28)",
+                background: "radial-gradient(circle at center, rgba(107,255,255,0.12), rgba(7,11,19,0))",
+              }}
+            />
+          )}
+        </>
+      ) : (
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(107,255,255,0.09),rgba(0,0,0,0)),rgba(5,9,21,0.7)] backdrop-blur-[9px] backdrop-saturate-[1.4]" />
       )}
       <div
         className="absolute rounded-2xl border border-white/10 bg-black/80 backdrop-blur-xl p-5 shadow-[0_30px_120px_rgba(0,0,0,0.7)] pointer-events-auto"
@@ -197,9 +264,9 @@ export function OrganizerTour() {
         )}
         <div className="flex items-start justify-between gap-2">
           <div className="space-y-1">
-            <p className="text-[11px] uppercase tracking-[0.18em] text-white/50">Tour</p>
+            <p className="text-[11px] uppercase tracking-[0.18em] text-white/55">Tour</p>
             <h3 className="text-lg font-semibold text-white">{step.title}</h3>
-            <p className="text-sm text-white/70">{step.body}</p>
+            <p className="text-sm text-white/80">{step.body}</p>
           </div>
           <button
             onClick={finish}

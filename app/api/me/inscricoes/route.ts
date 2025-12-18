@@ -29,7 +29,7 @@ export async function GET() {
             select: {
               id: true,
               profileId: true,
-              slotRole: true,
+              slot_role: true,
               ticket: { select: { id: true, status: true } },
             },
           },

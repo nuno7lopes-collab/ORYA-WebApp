@@ -1,11 +1,11 @@
 generator client {
   provider = "prisma-client-js"
 }
+
 datasource db {
   provider = "postgresql"
   schemas  = ["app_v3", "auth"]
 }
-
 
 /// Perfil base do utilizador ORYA (1-1 com auth.users)
 model Profile {
@@ -48,8 +48,8 @@ model Profile {
   padelPairingsPlayer1                                             PadelPairing[]          @relation("PadelPairingPlayer1")
   padelPairingsPlayer2                                             PadelPairing[]          @relation("PadelPairingPlayer2")
   tournamentEntries                                                TournamentEntry[]
-  tournamentsGenerated                                             Tournament[]           @relation("TournamentGeneratedBy")
-  tournamentAuditLogs                                              TournamentAuditLog[]   @relation("TournamentAuditLogUser")
+  tournamentsGenerated                                             Tournament[]            @relation("TournamentGeneratedBy")
+  tournamentAuditLogs                                              TournamentAuditLog[]    @relation("TournamentAuditLogUser")
   users                                                            users                   @relation(fields: [id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   saleSummaries                                                    SaleSummary[]
   notificationOutbox                                               NotificationOutbox[]
@@ -60,60 +60,60 @@ model Profile {
 
 /// Entidade organizadora (marca, página de eventos)
 model Organizer {
-  id                      Int                     @id @default(autoincrement())
-  displayName             String                  @map("display_name")
-  stripeAccountId         String?                 @map("stripe_account_id")
-  status                  OrganizerStatus         @default(PENDING)
-  createdAt               DateTime                @default(now()) @map("created_at")
-  updatedAt               DateTime                @default(now()) @updatedAt @map("updated_at")
-  userId                  String?                 @map("user_id") @db.Uuid
-  feeMode                 FeeMode                 @default(ADDED) @map("fee_mode")
-  platformFeeBps          Int                     @default(200) @map("platform_fee_bps")
-  platformFeeFixedCents   Int                     @default(0) @map("platform_fee_fixed_cents")
-  stripeChargesEnabled    Boolean                 @default(false) @map("stripe_charges_enabled")
-  stripePayoutsEnabled    Boolean                 @default(false) @map("stripe_payouts_enabled")
-  entityType              String?                 @map("entity_type")
-  businessName            String?                 @map("business_name")
-  city                    String?                 @map("city")
-  payoutIban              String?                 @map("payout_iban")
-  username                String?                 @db.Citext
-  language                String?                 @default("pt")
-  publicListingEnabled    Boolean?                @default(true) @map("public_listing_enabled")
-  alertsEmail             String?                 @map("alerts_email")
-  alertsSalesEnabled      Boolean?                @default(true) @map("alerts_sales_enabled")
-  alertsPayoutEnabled     Boolean?                @default(false) @map("alerts_payout_enabled")
-  brandingAvatarUrl       String?                 @map("branding_avatar_url")
-  brandingPrimaryColor    String?                 @map("branding_primary_color")
-  brandingSecondaryColor  String?                 @map("branding_secondary_color")
-  refundFeePayer          RefundFeePayer          @default(CUSTOMER) @map("refund_fee_payer")
-  organizationKind        OrganizationKind        @default(PESSOA_SINGULAR) @map("organization_kind")
-  padelDefaultShortName   String?                 @map("padel_default_short_name")
-  padelDefaultCity        String?                 @map("padel_default_city")
-  padelDefaultAddress     String?                 @map("padel_default_address")
-  padelDefaultCourts      Int                     @default(0) @map("padel_default_courts")
-  padelDefaultHours       String?                 @map("padel_default_hours")
-  padelDefaultRuleSetId   Int?                    @map("padel_default_rule_set_id")
-  padelFavoriteCategories Int[]                   @default([]) @map("padel_favorite_categories")
-  publicName              String?                 @map("public_name")
-  address                 String?                 @map("address")
-  showAddressPublicly     Boolean                 @default(false) @map("show_address_publicly")
-  is_platform_owned       Boolean                 @default(false)
-  orgType                 OrgType                 @default(EXTERNAL) @map("org_type")
-  officialEmail           String?                 @map("official_email")
-  officialEmailVerifiedAt DateTime?               @map("official_email_verified_at") @db.Timestamptz(6)
+  id                      Int                             @id @default(autoincrement())
+  displayName             String                          @map("display_name")
+  stripeAccountId         String?                         @map("stripe_account_id")
+  status                  OrganizerStatus                 @default(PENDING)
+  createdAt               DateTime                        @default(now()) @map("created_at")
+  updatedAt               DateTime                        @default(now()) @updatedAt @map("updated_at")
+  userId                  String?                         @map("user_id") @db.Uuid
+  feeMode                 FeeMode                         @default(ADDED) @map("fee_mode")
+  platformFeeBps          Int                             @default(200) @map("platform_fee_bps")
+  platformFeeFixedCents   Int                             @default(0) @map("platform_fee_fixed_cents")
+  stripeChargesEnabled    Boolean                         @default(false) @map("stripe_charges_enabled")
+  stripePayoutsEnabled    Boolean                         @default(false) @map("stripe_payouts_enabled")
+  entityType              String?                         @map("entity_type")
+  businessName            String?                         @map("business_name")
+  city                    String?                         @map("city")
+  payoutIban              String?                         @map("payout_iban")
+  username                String?                         @db.Citext
+  language                String?                         @default("pt")
+  publicListingEnabled    Boolean?                        @default(true) @map("public_listing_enabled")
+  alertsEmail             String?                         @map("alerts_email")
+  alertsSalesEnabled      Boolean?                        @default(true) @map("alerts_sales_enabled")
+  alertsPayoutEnabled     Boolean?                        @default(false) @map("alerts_payout_enabled")
+  brandingAvatarUrl       String?                         @map("branding_avatar_url")
+  brandingPrimaryColor    String?                         @map("branding_primary_color")
+  brandingSecondaryColor  String?                         @map("branding_secondary_color")
+  refundFeePayer          RefundFeePayer                  @default(CUSTOMER) @map("refund_fee_payer")
+  organizationKind        OrganizationKind                @default(PESSOA_SINGULAR) @map("organization_kind")
+  padelDefaultShortName   String?                         @map("padel_default_short_name")
+  padelDefaultCity        String?                         @map("padel_default_city")
+  padelDefaultAddress     String?                         @map("padel_default_address")
+  padelDefaultCourts      Int                             @default(0) @map("padel_default_courts")
+  padelDefaultHours       String?                         @map("padel_default_hours")
+  padelDefaultRuleSetId   Int?                            @map("padel_default_rule_set_id")
+  padelFavoriteCategories Int[]                           @default([]) @map("padel_favorite_categories")
+  publicName              String?                         @map("public_name")
+  address                 String?                         @map("address")
+  showAddressPublicly     Boolean                         @default(false) @map("show_address_publicly")
+  is_platform_owned       Boolean                         @default(false)
+  orgType                 OrgType                         @default(EXTERNAL) @map("org_type")
+  officialEmail           String?                         @map("official_email")
+  officialEmailVerifiedAt DateTime?                       @map("official_email_verified_at") @db.Timestamptz(6)
   officialEmailRequests   OrganizerOfficialEmailRequest[]
   events                  Event[]
-  notifications           Notification[]          @relation("NotificationOrganizer")
+  notifications           Notification[]                  @relation("NotificationOrganizer")
   memberInvites           OrganizerMemberInvite[]
   members                 OrganizerMember[]
-  padelDefaultRuleSet     PadelRuleSet?           @relation("OrganizerPadelDefaultRuleSet", fields: [padelDefaultRuleSetId], references: [id], onUpdate: NoAction, map: "organizers_padel_default_rule_set_fk")
-  user                    Profile?                @relation(fields: [userId], references: [id], onUpdate: NoAction)
+  padelDefaultRuleSet     PadelRuleSet?                   @relation("OrganizerPadelDefaultRuleSet", fields: [padelDefaultRuleSetId], references: [id], onUpdate: NoAction, map: "organizers_padel_default_rule_set_fk")
+  user                    Profile?                        @relation(fields: [userId], references: [id], onUpdate: NoAction)
   padelCategories         PadelCategory[]
   padelClubs              PadelClub[]
   padelPairings           PadelPairing[]
   padelPlayers            PadelPlayerProfile[]
   padelRankingEntries     PadelRankingEntry[]
-  padelRuleSets           PadelRuleSet[]          @relation("OrganizerPadelRuleSets")
+  padelRuleSets           PadelRuleSet[]                  @relation("OrganizerPadelRuleSets")
   padelTournaments        PadelTournamentConfig[]
   staffAssignments        StaffAssignment[]
 
@@ -123,16 +123,16 @@ model Organizer {
 }
 
 model OrganizerOfficialEmailRequest {
-  id               Int                         @id @default(autoincrement())
-  organizerId      Int                         @map("organizer_id")
-  requestedByUserId String?                    @map("requested_by_user_id") @db.Uuid
-  newEmail         String                      @map("new_email")
-  token            String                      @unique
-  status           String                      @default("PENDING")
-  expiresAt        DateTime?                   @map("expires_at") @db.Timestamptz(6)
-  createdAt        DateTime                    @default(now()) @map("created_at") @db.Timestamptz(6)
-  confirmedAt      DateTime?                   @map("confirmed_at") @db.Timestamptz(6)
-  cancelledAt      DateTime?                   @map("cancelled_at") @db.Timestamptz(6)
+  id                Int       @id @default(autoincrement())
+  organizerId       Int       @map("organizer_id")
+  requestedByUserId String?   @map("requested_by_user_id") @db.Uuid
+  newEmail          String    @map("new_email")
+  token             String    @unique
+  status            String    @default("PENDING")
+  expiresAt         DateTime? @map("expires_at") @db.Timestamptz(6)
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  confirmedAt       DateTime? @map("confirmed_at") @db.Timestamptz(6)
+  cancelledAt       DateTime? @map("cancelled_at") @db.Timestamptz(6)
 
   organizer Organizer @relation(fields: [organizerId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "organizer_official_email_requests_organizer_fk")
 
@@ -192,37 +192,69 @@ model Notification {
 }
 
 model NotificationPreference {
-  userId                 String  @id @map("userId") @db.Uuid
-  allowEmailNotifications Boolean @default(true) @map("allow_email_notifications")
-  allowEventReminders     Boolean @default(true) @map("allow_event_reminders")
-  allowFriendRequests     Boolean @default(true) @map("allow_friend_requests")
-  allowSalesAlerts        Boolean @default(true) @map("allow_sales_alerts")
-  allowSystemAnnouncements Boolean @default(true) @map("allow_system_announcements")
-  createdAt               DateTime @default(now()) @map("created_at")
-  updatedAt               DateTime @default(now()) @updatedAt @map("updated_at")
-  user                    Profile  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId                   String   @id @map("userId") @db.Uuid
+  allowEmailNotifications  Boolean  @default(true) @map("allow_email_notifications")
+  allowEventReminders      Boolean  @default(true) @map("allow_event_reminders")
+  allowFriendRequests      Boolean  @default(true) @map("allow_friend_requests")
+  allowSalesAlerts         Boolean  @default(true) @map("allow_sales_alerts")
+  allowSystemAnnouncements Boolean  @default(true) @map("allow_system_announcements")
+  createdAt                DateTime @default(now()) @map("created_at")
+  updatedAt                DateTime @default(now()) @updatedAt @map("updated_at")
+  user                     Profile  @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("notification_preferences")
   @@schema("app_v3")
 }
 
 model NotificationOutbox {
-  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId           String?  @map("user_id") @db.Uuid
-  notificationType String   @map("notification_type")
-  templateVersion  String?  @map("template_version")
-  dedupeKey        String   @map("dedupe_key") @unique
-  status           String   @default("PENDING")
-  payload          Json     @default("{}")
-  retries          Int      @default(0)
-  lastError        String?  @map("last_error")
-  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId           String?   @map("user_id") @db.Uuid
+  notificationType String    @map("notification_type")
+  templateVersion  String?   @map("template_version")
+  dedupeKey        String    @unique @map("dedupe_key")
+  status           String    @default("PENDING")
+  payload          Json      @default("{}")
+  retries          Int       @default(0)
+  lastError        String?   @map("last_error")
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   sentAt           DateTime? @map("sent_at") @db.Timestamptz(6)
-  user             Profile? @relation(fields: [userId], references: [id], onUpdate: NoAction, onDelete: NoAction)
+  user             Profile?  @relation(fields: [userId], references: [id], onUpdate: NoAction, onDelete: NoAction)
 
   @@index([status], map: "notification_outbox_status_idx")
   @@index([userId], map: "notification_outbox_user_idx")
   @@map("notification_outbox")
+  @@schema("app_v3")
+}
+
+model EmailIdentity {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  emailNormalized String   @unique @map("email_normalized") @db.Citext
+  emailVerifiedAt DateTime? @map("email_verified_at") @db.Timestamptz(6)
+  userId         String?   @map("user_id") @db.Uuid
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("email_identities")
+  @@schema("app_v3")
+}
+
+model EmailOutbox {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  templateKey   String    @map("template_key")
+  recipient     String    @db.Citext
+  purchaseId    String    @map("purchase_id") @db.Text
+  entitlementId String?   @map("entitlement_id") @db.Uuid
+  dedupeKey     String    @unique @map("dedupe_key")
+  status        String    @default("PENDING")
+  payload       Json      @default("{}")
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  sentAt        DateTime? @map("sent_at") @db.Timestamptz(6)
+  failedAt      DateTime? @map("failed_at") @db.Timestamptz(6)
+  errorCode     String?   @map("error_code")
+
+  @@index([purchaseId], map: "email_outbox_purchase_idx")
+  @@index([recipient], map: "email_outbox_recipient_idx")
+  @@map("email_outbox")
   @@schema("app_v3")
 }
 
@@ -323,7 +355,7 @@ model Event {
   padelTeams                        PadelTeam[]
   padelTournamentConfig             PadelTournamentConfig?
   tournamentEntries                 TournamentEntry[]
-  tournament                        Tournament?            @relation("EventTournament")
+  tournament                        Tournament?             @relation("EventTournament")
   promoCodes                        PromoCode[]
   saleLines                         SaleLine[]
   saleSummaries                     SaleSummary[]
@@ -398,6 +430,9 @@ model Ticket {
   pairingId             Int?              @map("pairing_id")
   padelSplitShareCents  Int?              @map("padel_split_share_cents")
   padelPairingVersion   Int?              @map("padel_pairing_version")
+  purchaseId            String?           @map("purchase_id") @db.Text
+  saleSummaryId         Int?              @map("sale_summary_id")
+  emissionIndex         Int               @default(0) @map("emission_index")
   guestLink             GuestTicketLink?
   notifications         Notification[]    @relation("NotificationTicket")
   pairingSlot           PadelPairingSlot? @relation("TicketPairingSlot")
@@ -411,12 +446,15 @@ model Ticket {
   ownerIdentityId       String?           @map("owner_identity_id") @db.Uuid
   tournamentEntryId     Int?              @map("tournament_entry_id")
   tournamentEntry       TournamentEntry?  @relation("TicketTournamentEntry", fields: [tournamentEntryId], references: [id], onDelete: SetNull)
+  saleSummary           SaleSummary?      @relation(fields: [saleSummaryId], references: [id], onDelete: SetNull)
 
+  @@unique([purchaseId, ticketTypeId, emissionIndex], map: "tickets_purchase_ticket_idx")
   @@index([eventId])
   @@index([userId])
   @@index([ticketTypeId])
   @@index([stripePaymentIntentId])
   @@index([pairingId])
+  @@index([saleSummaryId])
   @@map("tickets")
   @@schema("app_v3")
 }
@@ -579,30 +617,57 @@ model EventSalesAgg {
 
 /// Registo de eventos de pagamento (auditoria webhooks/intent)
 model PaymentEvent {
-  id                    Int         @id @default(autoincrement())
-  stripePaymentIntentId String      @unique @map("stripe_payment_intent_id")
-  status                String      @default("PROCESSING")
-  stripeEventId         String?     @unique @map("stripe_event_id")
-  purchaseId            String?     @unique @map("purchase_id")
+  id                    Int                @id @default(autoincrement())
+  stripePaymentIntentId String             @unique @map("stripe_payment_intent_id")
+  status                String             @default("PROCESSING")
+  stripeEventId         String?            @unique @map("stripe_event_id")
+  purchaseId            String?            @unique @map("purchase_id") @db.Text
   source                PaymentEventSource @default(WEBHOOK)
-  dedupeKey             String?     @map("dedupe_key")
-  attempt               Int         @default(1)
-  eventId               Int?        @map("event_id")
-  userId                String?     @map("user_id") @db.Uuid
-  amountCents           Int?        @map("amount_cents")
-  platformFeeCents      Int?        @map("platform_fee_cents")
-  stripeFeeCents        Int?        @map("stripe_fee_cents")
-  errorMessage          String?     @map("error_message")
-  createdAt             DateTime?   @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt             DateTime?   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  mode                  PaymentMode @default(LIVE)
-  isTest                Boolean     @default(false) @map("is_test")
+  dedupeKey             String?            @map("dedupe_key")
+  attempt               Int                @default(1)
+  eventId               Int?               @map("event_id")
+  userId                String?            @map("user_id") @db.Uuid
+  amountCents           Int?               @map("amount_cents")
+  platformFeeCents      Int?               @map("platform_fee_cents")
+  stripeFeeCents        Int?               @map("stripe_fee_cents")
+  errorMessage          String?            @map("error_message")
+  createdAt             DateTime?          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime?          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  mode                  PaymentMode        @default(LIVE)
+  isTest                Boolean            @default(false) @map("is_test")
 
   @@index([stripePaymentIntentId])
   @@index([stripeEventId])
   @@index([purchaseId])
   @@index([eventId])
   @@map("payment_events")
+  @@schema("app_v3")
+}
+
+model Operation {
+  id              Int             @id @default(autoincrement())
+  operationType   String          @map("operation_type")
+  dedupeKey       String          @unique(map: "operations_dedupe_key_unique") @map("dedupe_key")
+  status          OperationStatus @default(PENDING)
+  attempts        Int             @default(0)
+  lastError       String?         @map("last_error")
+  lockedAt        DateTime?       @map("locked_at") @db.Timestamptz(6)
+  nextRetryAt     DateTime?       @map("next_retry_at") @db.Timestamptz(6)
+  payload         Json?           @default("{}")
+  purchaseId      String?         @map("purchase_id") @db.Text
+  paymentIntentId String?         @map("payment_intent_id")
+  stripeEventId   String?         @map("stripe_event_id")
+  eventId         Int?            @map("event_id")
+  organizerId     Int?            @map("organizer_id")
+  pairingId       Int?            @map("pairing_id")
+  createdAt       DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([status], map: "operations_status_idx")
+  @@index([purchaseId], map: "operations_purchase_idx")
+  @@index([paymentIntentId], map: "operations_payment_intent_idx")
+  @@index([stripeEventId], map: "operations_stripe_event_idx")
+  @@map("operations")
   @@schema("app_v3")
 }
 
@@ -655,44 +720,72 @@ model PromoRedemption {
   userId      String?   @map("user_id") @db.Uuid
   guestEmail  String?   @map("guest_email")
   usedAt      DateTime  @default(now()) @map("used_at") @db.Timestamptz(6)
+  purchaseId  String?   @map("purchase_id") @db.Text
   promoCode   PromoCode @relation(fields: [promoCodeId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
+  @@unique([purchaseId, promoCodeId], map: "promo_redemptions_purchase_code_unique")
   @@index([promoCodeId], map: "promo_redemptions_code_idx")
   @@index([promoCodeId], map: "promo_redemptions_promo_idx")
   @@index([userId], map: "promo_redemptions_user_idx")
+  @@index([purchaseId], map: "promo_redemptions_purchase_idx")
   @@map("promo_redemptions")
+  @@schema("app_v3")
+}
+
+model Refund {
+  id                Int          @id @default(autoincrement())
+  dedupeKey         String       @unique(map: "refunds_dedupe_key_unique") @map("dedupe_key")
+  purchaseId        String?      @map("purchase_id") @db.Text
+  paymentIntentId   String?      @map("payment_intent_id")
+  eventId           Int          @map("event_id")
+  baseAmountCents   Int          @map("base_amount_cents")
+  feesExcludedCents Int          @map("fees_excluded_cents")
+  reason            RefundReason
+  refundedBy        String?      @map("refunded_by")
+  refundedAt        DateTime?    @default(now()) @map("refunded_at") @db.Timestamptz(6)
+  stripeRefundId    String?      @map("stripe_refund_id")
+  auditPayload      Json?        @map("audit_payload")
+  createdAt         DateTime?    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime?    @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([eventId], map: "refunds_event_idx")
+  @@index([purchaseId], map: "refunds_purchase_idx")
+  @@index([paymentIntentId], map: "refunds_payment_intent_idx")
+  @@map("refunds")
   @@schema("app_v3")
 }
 
 /// Venda agregada por PaymentIntent (fonte de verdade de valores)
 model SaleSummary {
-  id                 Int        @id @default(autoincrement())
-  paymentIntentId    String     @unique @map("payment_intent_id")
-  eventId            Int        @map("event_id")
-  userId             String?    @map("user_id") @db.Uuid
-  promoCodeId        Int?       @map("promo_code_id")
-  subtotalCents      Int        @map("subtotal_cents")
-  discountCents      Int        @map("discount_cents")
-  platformFeeCents   Int        @map("platform_fee_cents")
-  totalCents         Int        @map("total_cents")
-  netCents           Int        @map("net_cents")
-  feeMode            FeeMode?   @map("fee_mode")
-  currency           String     @default("EUR")
-  createdAt          DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt          DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  purchaseId         String?    @unique @map("purchase_id")
-  promoCodeSnapshot  String?    @map("promo_code_snapshot")
-  promoLabelSnapshot String?    @map("promo_label_snapshot")
-  promoTypeSnapshot  PromoType? @map("promo_type_snapshot")
-  promoValueSnapshot Int?       @map("promo_value_snapshot")
-  stripeFeeCents     Int        @default(0) @map("stripe_fee_cents")
+  id                 Int               @id @default(autoincrement())
+  paymentIntentId    String            @unique @map("payment_intent_id")
+  eventId            Int               @map("event_id")
+  userId             String?           @map("user_id") @db.Uuid
+  promoCodeId        Int?              @map("promo_code_id")
+  subtotalCents      Int               @map("subtotal_cents")
+  discountCents      Int               @map("discount_cents")
+  platformFeeCents   Int               @map("platform_fee_cents")
+  totalCents         Int               @map("total_cents")
+  netCents           Int               @map("net_cents")
+  feeMode            FeeMode?          @map("fee_mode")
+  currency           String            @default("EUR")
+  createdAt          DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  purchaseId         String?           @unique @map("purchase_id") @db.Text
+  promoCodeSnapshot  String?           @map("promo_code_snapshot")
+  promoLabelSnapshot String?           @map("promo_label_snapshot")
+  promoTypeSnapshot  PromoType?        @map("promo_type_snapshot")
+  promoValueSnapshot Int?              @map("promo_value_snapshot")
+  stripeFeeCents     Int               @default(0) @map("stripe_fee_cents")
   status             SaleSummaryStatus @default(PAID)
   lines              SaleLine[]
-  event              Event      @relation(fields: [eventId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  promoCode          PromoCode? @relation(fields: [promoCodeId], references: [id], onUpdate: NoAction)
-  user               Profile?   @relation(fields: [userId], references: [id], onUpdate: NoAction)
-  ownerUserId        String?    @map("owner_user_id") @db.Uuid
-  ownerIdentityId    String?    @map("owner_identity_id") @db.Uuid
+  tickets            Ticket[]
+  tournamentEntries  TournamentEntry[]
+  event              Event             @relation(fields: [eventId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  promoCode          PromoCode?        @relation(fields: [promoCodeId], references: [id], onUpdate: NoAction)
+  user               Profile?          @relation(fields: [userId], references: [id], onUpdate: NoAction)
+  ownerUserId        String?           @map("owner_user_id") @db.Uuid
+  ownerIdentityId    String?           @map("owner_identity_id") @db.Uuid
 
   @@index([eventId], map: "sale_summaries_event_idx")
   @@index([promoCodeId], map: "sale_summaries_promo_idx")
@@ -870,32 +963,32 @@ model PadelRuleSet {
 
 /// Configuração específica do torneio Padel (por evento)
 model PadelTournamentConfig {
-  id                 Int               @id @default(autoincrement())
-  eventId            Int               @unique(map: "padel_tournament_configs_event_unique") @map("event_id")
-  organizerId        Int               @map("organizer_id")
+  id                 Int                  @id @default(autoincrement())
+  eventId            Int                  @unique(map: "padel_tournament_configs_event_unique") @map("event_id")
+  organizerId        Int                  @map("organizer_id")
   format             padel_format
-  numberOfCourts     Int               @default(1) @map("number_of_courts")
-  ruleSetId          Int?              @map("rule_set_id")
-  defaultCategoryId  Int?              @map("default_category_id")
-  enabledFormats     String[]          @default([]) @map("enabled_formats")
-  createdAt          DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt          DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  padelV2Enabled     Boolean           @default(false) @map("padel_v2_enabled")
-  splitDeadlineHours Int?              @map("split_deadline_hours")
-  autoCancelUnpaid   Boolean           @default(true) @map("auto_cancel_unpaid")
-  allowCaptainAssume Boolean           @default(true) @map("allow_captain_assume")
-  defaultPaymentMode PadelPaymentMode? @map("default_payment_mode")
-  refundFeePayer     RefundFeePayer?   @map("refund_fee_payer")
-  padelClubId        Int?              @map("padel_club_id")
-  clubHours          String?           @map("club_hours")
-  partnerClubIds     Int[]             @default([]) @map("partner_club_ids")
-  advancedSettings   Json?             @map("advanced_settings")
+  numberOfCourts     Int                  @default(1) @map("number_of_courts")
+  ruleSetId          Int?                 @map("rule_set_id")
+  defaultCategoryId  Int?                 @map("default_category_id")
+  enabledFormats     String[]             @default([]) @map("enabled_formats")
+  createdAt          DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  padelV2Enabled     Boolean              @default(false) @map("padel_v2_enabled")
+  splitDeadlineHours Int?                 @map("split_deadline_hours")
+  autoCancelUnpaid   Boolean              @default(true) @map("auto_cancel_unpaid")
+  allowCaptainAssume Boolean              @default(true) @map("allow_captain_assume")
+  defaultPaymentMode PadelPaymentMode?    @map("default_payment_mode")
+  refundFeePayer     RefundFeePayer?      @map("refund_fee_payer")
+  padelClubId        Int?                 @map("padel_club_id")
+  clubHours          String?              @map("club_hours")
+  partnerClubIds     Int[]                @default([]) @map("partner_club_ids")
+  advancedSettings   Json?                @map("advanced_settings")
   eligibilityType    PadelEligibilityType @default(OPEN) @map("eligibility_type")
-  category           PadelCategory?    @relation(fields: [defaultCategoryId], references: [id], onUpdate: NoAction)
-  event              Event             @relation(fields: [eventId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  organizer          Organizer         @relation(fields: [organizerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  club               PadelClub?        @relation(fields: [padelClubId], references: [id], onUpdate: NoAction)
-  ruleSet            PadelRuleSet?     @relation(fields: [ruleSetId], references: [id], onUpdate: NoAction)
+  category           PadelCategory?       @relation(fields: [defaultCategoryId], references: [id], onUpdate: NoAction)
+  event              Event                @relation(fields: [eventId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  organizer          Organizer            @relation(fields: [organizerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  club               PadelClub?           @relation(fields: [padelClubId], references: [id], onUpdate: NoAction)
+  ruleSet            PadelRuleSet?        @relation(fields: [ruleSetId], references: [id], onUpdate: NoAction)
 
   @@index([padelClubId], map: "padel_tournament_configs_padel_club_idx")
   @@map("padel_tournament_configs")
@@ -904,55 +997,55 @@ model PadelTournamentConfig {
 
 /// Pairings (duplas) para Padel v2
 model PadelPairing {
-  id                Int                @id @default(autoincrement())
-  eventId           Int                @map("event_id")
-  organizerId       Int                @map("organizer_id")
-  categoryId        Int?               @map("category_id")
-  player1UserId     String?            @map("player1_user_id") @db.Uuid
-  player2UserId     String?            @map("player2_user_id") @db.Uuid
-  player2IdentityId String?            @map("player2_identity_id") @db.Uuid
-  payment_mode      PadelPaymentMode
-  pairingStatus     PadelPairingStatus @default(INCOMPLETE) @map("pairing_status")
-  lifecycleStatus   PadelPairingLifecycleStatus @default(PENDING_ONE_PAID) @map("lifecycle_status")
-  pairingJoinMode   PadelPairingJoinMode @default(INVITE_PARTNER) @map("pairing_join_mode")
-  createdByUserId   String?            @map("created_by_user_id") @db.Uuid
-  createdByTicketId String?            @map("created_by_ticket_id")
-  partnerInviteToken String?           @unique @map("invite_token")
-  partnerInviteUsedAt DateTime?        @map("partner_invite_used_at") @db.Timestamptz(6)
-  partnerLinkToken   String?           @map("partner_link_token")
-  partnerLinkExpiresAt DateTime?       @map("invite_expires_at") @db.Timestamptz(6)
-  lockedUntil       DateTime?          @map("locked_until") @db.Timestamptz(6)
-  isPublicOpen      Boolean            @default(false) @map("is_public_open")
-  deadlineAt        DateTime?          @map("deadline_at") @db.Timestamptz(6)
-  partnerSwapAllowedUntilAt DateTime?  @map("partner_swap_allowed_until_at") @db.Timestamptz(6)
-  graceUntilAt      DateTime?          @map("grace_until_at") @db.Timestamptz(6)
-  partnerInvitedAt  DateTime?          @map("partner_invited_at") @db.Timestamptz(6)
-  partnerAcceptedAt DateTime?          @map("partner_accepted_at") @db.Timestamptz(6)
-  partnerPaidAt     DateTime?          @map("partner_paid_at") @db.Timestamptz(6)
-  captainSecondChargedAt DateTime?     @map("captain_second_charged_at") @db.Timestamptz(6)
-  guaranteeStatus   PadelPairingGuaranteeStatus @default(NONE) @map("guarantee_status")
-  setupIntentId     String?            @map("setup_intent_id")
-  paymentMethodId   String?            @map("payment_method_id")
-  secondChargePaymentIntentId String?  @map("second_charge_payment_intent_id")
-  captainConsentAt  DateTime?          @map("captain_consent_at") @db.Timestamptz(6)
-  captainFirstSaleId Int?              @map("captain_first_sale_id")
-  partnerSaleId     Int?               @map("partner_sale_id")
-  captainSecondSaleId Int?             @map("captain_second_sale_id")
-  createdAt         DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt         DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  matchesA          PadelMatch[]       @relation("MatchPairingA")
-  matchesB          PadelMatch[]       @relation("MatchPairingB")
-  matchesWinner     PadelMatch[]       @relation("MatchWinnerPairing")
-  slots             PadelPairingSlot[]
-  category          PadelCategory?     @relation(fields: [categoryId], references: [id])
-  createdByTicket   Ticket?            @relation("PadelPairingCreatedByTicket", fields: [createdByTicketId], references: [id], map: "padel_pairings_created_ticket_fkey")
-  event             Event              @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  organizer         Organizer          @relation(fields: [organizerId], references: [id], onDelete: Cascade)
-  tickets           Ticket[]           @relation("PairingTickets")
-  player1           Profile?           @relation("PadelPairingPlayer1", fields: [player1UserId], references: [id], onUpdate: NoAction)
-  player2           Profile?           @relation("PadelPairingPlayer2", fields: [player2UserId], references: [id], onUpdate: NoAction)
-  holds             PadelPairingHold[]
-  tournamentEntries TournamentEntry[]
+  id                          Int                         @id @default(autoincrement())
+  eventId                     Int                         @map("event_id")
+  organizerId                 Int                         @map("organizer_id")
+  categoryId                  Int?                        @map("category_id")
+  player1UserId               String?                     @map("player1_user_id") @db.Uuid
+  player2UserId               String?                     @map("player2_user_id") @db.Uuid
+  player2IdentityId           String?                     @map("player2_identity_id") @db.Uuid
+  payment_mode                PadelPaymentMode
+  pairingStatus               PadelPairingStatus          @default(INCOMPLETE) @map("pairing_status")
+  lifecycleStatus             PadelPairingLifecycleStatus @default(PENDING_ONE_PAID) @map("lifecycle_status")
+  pairingJoinMode             PadelPairingJoinMode        @default(INVITE_PARTNER) @map("pairing_join_mode")
+  createdByUserId             String?                     @map("created_by_user_id") @db.Uuid
+  createdByTicketId           String?                     @map("created_by_ticket_id")
+  partnerInviteToken          String?                     @unique @map("invite_token")
+  partnerInviteUsedAt         DateTime?                   @map("partner_invite_used_at") @db.Timestamptz(6)
+  partnerLinkToken            String?                     @map("partner_link_token")
+  partnerLinkExpiresAt        DateTime?                   @map("invite_expires_at") @db.Timestamptz(6)
+  lockedUntil                 DateTime?                   @map("locked_until") @db.Timestamptz(6)
+  isPublicOpen                Boolean                     @default(false) @map("is_public_open")
+  deadlineAt                  DateTime?                   @map("deadline_at") @db.Timestamptz(6)
+  partnerSwapAllowedUntilAt   DateTime?                   @map("partner_swap_allowed_until_at") @db.Timestamptz(6)
+  graceUntilAt                DateTime?                   @map("grace_until_at") @db.Timestamptz(6)
+  partnerInvitedAt            DateTime?                   @map("partner_invited_at") @db.Timestamptz(6)
+  partnerAcceptedAt           DateTime?                   @map("partner_accepted_at") @db.Timestamptz(6)
+  partnerPaidAt               DateTime?                   @map("partner_paid_at") @db.Timestamptz(6)
+  captainSecondChargedAt      DateTime?                   @map("captain_second_charged_at") @db.Timestamptz(6)
+  guaranteeStatus             PadelPairingGuaranteeStatus @default(NONE) @map("guarantee_status")
+  setupIntentId               String?                     @map("setup_intent_id")
+  paymentMethodId             String?                     @map("payment_method_id")
+  secondChargePaymentIntentId String?                     @map("second_charge_payment_intent_id")
+  captainConsentAt            DateTime?                   @map("captain_consent_at") @db.Timestamptz(6)
+  captainFirstSaleId          Int?                        @map("captain_first_sale_id")
+  partnerSaleId               Int?                        @map("partner_sale_id")
+  captainSecondSaleId         Int?                        @map("captain_second_sale_id")
+  createdAt                   DateTime                    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                   DateTime                    @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  matchesA                    PadelMatch[]                @relation("MatchPairingA")
+  matchesB                    PadelMatch[]                @relation("MatchPairingB")
+  matchesWinner               PadelMatch[]                @relation("MatchWinnerPairing")
+  slots                       PadelPairingSlot[]
+  category                    PadelCategory?              @relation(fields: [categoryId], references: [id])
+  createdByTicket             Ticket?                     @relation("PadelPairingCreatedByTicket", fields: [createdByTicketId], references: [id], map: "padel_pairings_created_ticket_fkey")
+  event                       Event                       @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  organizer                   Organizer                   @relation(fields: [organizerId], references: [id], onDelete: Cascade)
+  tickets                     Ticket[]                    @relation("PairingTickets")
+  player1                     Profile?                    @relation("PadelPairingPlayer1", fields: [player1UserId], references: [id], onUpdate: NoAction)
+  player2                     Profile?                    @relation("PadelPairingPlayer2", fields: [player2UserId], references: [id], onUpdate: NoAction)
+  holds                       PadelPairingHold[]
+  tournamentEntries           TournamentEntry[]
 
   @@index([eventId])
   @@index([organizerId])
@@ -974,30 +1067,35 @@ model PadelPairingHold {
   updatedAt DateTime               @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   pairing   PadelPairing           @relation(fields: [pairingId], references: [id], onDelete: Cascade)
 
+  @@unique([pairingId, status], map: "padel_pairing_holds_active_unique")
   @@index([pairingId])
   @@index([eventId])
-  @@unique([pairingId, status], map: "padel_pairing_holds_active_unique")
   @@map("padel_pairing_holds")
   @@schema("app_v3")
 }
 
 model TournamentEntry {
-  id        Int                   @id @default(autoincrement())
-  eventId   Int                   @map("event_id")
-  userId    String                @map("user_id") @db.Uuid
-  pairingId Int?                  @map("pairing_id")
-  role      TournamentEntryRole   @default(PARTNER)
-  status    TournamentEntryStatus @default(PENDING)
-  ownerUserId    String?                @map("owner_user_id") @db.Uuid
+  id              Int                   @id @default(autoincrement())
+  eventId         Int                   @map("event_id")
+  userId          String                @map("user_id") @db.Uuid
+  pairingId       Int?                  @map("pairing_id")
+  role            TournamentEntryRole   @default(PARTNER)
+  status          TournamentEntryStatus @default(PENDING)
+  ownerUserId     String?               @map("owner_user_id") @db.Uuid
   ownerIdentityId String?               @map("owner_identity_id") @db.Uuid
-  createdAt DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  event     Event                 @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  user      Profile               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  pairing   PadelPairing?         @relation(fields: [pairingId], references: [id], onDelete: Cascade)
-  tickets   Ticket[]              @relation("TicketTournamentEntry")
+  purchaseId      String?               @map("purchase_id") @db.Text
+  saleSummaryId   Int?                  @map("sale_summary_id")
+  emissionIndex   Int                   @default(0) @map("emission_index")
+  createdAt       DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  event           Event                 @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user            Profile               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  pairing         PadelPairing?         @relation(fields: [pairingId], references: [id], onDelete: Cascade)
+  tickets         Ticket[]              @relation("TicketTournamentEntry")
+  saleSummary     SaleSummary?          @relation(fields: [saleSummaryId], references: [id], onDelete: SetNull)
 
   @@unique([eventId, userId], map: "tournament_entries_event_user_unique")
+  @@unique([purchaseId, emissionIndex], map: "tournament_entries_purchase_idx")
   @@index([pairingId])
   @@map("tournament_entries")
   @@schema("app_v3")
@@ -1106,21 +1204,21 @@ model PadelRankingEntry {
 
 /// Estrutura base de torneios (formatos/chaves)
 model Tournament {
-  id                    Int               @id @default(autoincrement())
-  eventId               Int               @unique @map("event_id")
+  id                    Int                  @id @default(autoincrement())
+  eventId               Int                  @unique @map("event_id")
   format                TournamentFormat
-  generationSeed        String?           @map("generation_seed")
-  generatedAt           DateTime?         @map("generated_at") @db.Timestamptz(6)
-  generatedByUserId     String?           @map("generated_by_user_id") @db.Uuid
-  inscriptionDeadlineAt DateTime?         @map("inscription_deadline_at") @db.Timestamptz(6)
-  tieBreakRules         Json              @default("{}") @map("tie_break_rules")
-  config                Json              @default("{}")
-  createdAt             DateTime          @default(now()) @map("created_at")
-  updatedAt             DateTime          @default(now()) @updatedAt @map("updated_at")
+  generationSeed        String?              @map("generation_seed")
+  generatedAt           DateTime?            @map("generated_at") @db.Timestamptz(6)
+  generatedByUserId     String?              @map("generated_by_user_id") @db.Uuid
+  inscriptionDeadlineAt DateTime?            @map("inscription_deadline_at") @db.Timestamptz(6)
+  tieBreakRules         Json                 @default("{}") @map("tie_break_rules")
+  config                Json                 @default("{}")
+  createdAt             DateTime             @default(now()) @map("created_at")
+  updatedAt             DateTime             @default(now()) @updatedAt @map("updated_at")
   stages                TournamentStage[]
   auditLogs             TournamentAuditLog[]
-  generatedBy           Profile?          @relation("TournamentGeneratedBy", fields: [generatedByUserId], references: [id], onUpdate: NoAction, onDelete: SetNull)
-  event                 Event             @relation("EventTournament", fields: [eventId], references: [id], onDelete: Cascade)
+  generatedBy           Profile?             @relation("TournamentGeneratedBy", fields: [generatedByUserId], references: [id], onUpdate: NoAction, onDelete: SetNull)
+  event                 Event                @relation("EventTournament", fields: [eventId], references: [id], onDelete: Cascade)
 
   @@map("tournaments")
   @@schema("app_v3")
@@ -1144,13 +1242,13 @@ model TournamentStage {
 }
 
 model TournamentGroup {
-  id        Int             @id @default(autoincrement())
-  stageId   Int             @map("stage_id")
+  id        Int               @id @default(autoincrement())
+  stageId   Int               @map("stage_id")
   name      String
-  order     Int             @default(0)
-  createdAt DateTime        @default(now()) @map("created_at")
-  updatedAt DateTime        @default(now()) @updatedAt @map("updated_at")
-  stage     TournamentStage @relation(fields: [stageId], references: [id], onDelete: Cascade)
+  order     Int               @default(0)
+  createdAt DateTime          @default(now()) @map("created_at")
+  updatedAt DateTime          @default(now()) @updatedAt @map("updated_at")
+  stage     TournamentStage   @relation(fields: [stageId], references: [id], onDelete: Cascade)
   matches   TournamentMatch[]
 
   @@index([stageId])
@@ -1184,15 +1282,15 @@ model TournamentMatch {
 }
 
 model TournamentAuditLog {
-  id           Int       @id @default(autoincrement())
-  tournamentId Int       @map("tournament_id")
-  userId       String?   @map("user_id") @db.Uuid
-  action       String
-  payloadBefore Json?    @map("payload_before")
-  payloadAfter Json?     @map("payload_after")
-  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
-  user         Profile?  @relation("TournamentAuditLogUser", fields: [userId], references: [id], onUpdate: NoAction, onDelete: SetNull)
+  id            Int        @id @default(autoincrement())
+  tournamentId  Int        @map("tournament_id")
+  userId        String?    @map("user_id") @db.Uuid
+  action        String
+  payloadBefore Json?      @map("payload_before")
+  payloadAfter  Json?      @map("payload_after")
+  createdAt     DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  tournament    Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  user          Profile?   @relation("TournamentAuditLogUser", fields: [userId], references: [id], onUpdate: NoAction, onDelete: SetNull)
 
   @@index([tournamentId])
   @@index([userId])
@@ -1619,6 +1717,73 @@ model users {
   @@schema("auth")
 }
 
+model Entitlement {
+  id               String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  type             EntitlementType
+  status           EntitlementStatus     @default(ACTIVE)
+  ownerUserId      String?               @map("owner_user_id") @db.Uuid
+  ownerIdentityId  String?               @map("owner_identity_id") @db.Uuid
+  ownerKey         String                @map("owner_key")
+  purchaseId       String                @map("purchase_id") @db.Text
+  saleLineId       Int                   @map("sale_line_id")
+  lineItemIndex    Int                   @default(0) @map("line_item_index")
+  eventId          Int?                  @map("event_id")
+  tournamentId     Int?                  @map("tournament_id")
+  seasonId         Int?                  @map("season_id")
+  snapshotTitle    String                @map("snapshot_title")
+  snapshotCoverUrl String?               @map("snapshot_cover_url")
+  snapshotVenueName String?              @map("snapshot_venue_name")
+  snapshotStartAt  DateTime              @map("snapshot_start_at") @db.Timestamptz(6)
+  snapshotTimezone String                @map("snapshot_timezone")
+  snapshotVersion  Int                   @default(1) @map("snapshot_version")
+  createdAt        DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  checkins         EntitlementCheckin[]
+  qrTokens         EntitlementQrToken[]
+
+  @@unique([purchaseId, saleLineId, lineItemIndex, ownerKey, type], map: "entitlements_purchase_sale_owner_type_idx")
+  @@index([ownerKey, snapshotStartAt], map: "entitlements_owner_start_idx")
+  @@index([eventId], map: "entitlements_event_idx")
+  @@index([tournamentId], map: "entitlements_tournament_idx")
+  @@index([seasonId], map: "entitlements_season_idx")
+  @@index([status], map: "entitlements_status_idx")
+  @@map("entitlements")
+  @@schema("app_v3")
+}
+
+model EntitlementCheckin {
+  id             Int                @id @default(autoincrement())
+  entitlementId  String             @map("entitlement_id") @db.Uuid
+  eventId        Int                @map("event_id")
+  deviceId       String             @map("device_id")
+  resultCode     CheckinResultCode  @map("result_code")
+  checkedInAt    DateTime           @default(now()) @map("checked_in_at") @db.Timestamptz(6)
+  checkedInBy    String?            @map("checked_in_by") @db.Uuid
+  purchaseId     String             @map("purchase_id") @db.Text
+  createdAt      DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  entitlement    Entitlement        @relation(fields: [entitlementId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "entitlement_checkins_entitlement_fkey")
+
+  @@unique([eventId, entitlementId], map: "entitlement_checkins_event_entitlement_key")
+  @@index([eventId], map: "entitlement_checkins_event_idx")
+  @@index([purchaseId], map: "entitlement_checkins_purchase_idx")
+  @@map("entitlement_checkins")
+  @@schema("app_v3")
+}
+
+model EntitlementQrToken {
+  id            BigInt      @id @default(autoincrement())
+  tokenHash     String      @map("token_hash") @unique
+  entitlementId String      @map("entitlement_id") @db.Uuid
+  expiresAt     DateTime?   @map("expires_at") @db.Timestamptz(6)
+  createdAt     DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  entitlement   Entitlement @relation(fields: [entitlementId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "entitlement_qr_tokens_entitlement_fkey")
+
+  @@index([entitlementId], map: "entitlement_qr_tokens_entitlement_idx")
+  @@map("entitlement_qr_tokens")
+  @@schema("app_v3")
+}
+
 enum NotificationType {
   ORGANIZER_INVITE
   ORGANIZER_TRANSFER
@@ -1690,6 +1855,16 @@ enum PaymentEventSource {
   WEBHOOK
   JOB
   API
+
+  @@schema("app_v3")
+}
+
+enum OperationStatus {
+  PENDING
+  RUNNING
+  SUCCEEDED
+  FAILED
+  DEAD_LETTER
 
   @@schema("app_v3")
 }
@@ -1772,6 +1947,7 @@ enum EventStatus {
   PUBLISHED
   CANCELLED
   FINISHED
+  DATE_CHANGED
 
   @@schema("app_v3")
 }
@@ -1787,6 +1963,14 @@ enum ResaleMode {
 enum RefundFeePayer {
   ORGANIZER
   CUSTOMER
+
+  @@schema("app_v3")
+}
+
+enum RefundReason {
+  CANCELLED
+  DELETED
+  DATE_CHANGED
 
   @@schema("app_v3")
 }
@@ -2026,6 +2210,42 @@ enum padel_match_status {
   DONE
   CANCELLED
 
+  @@schema("app_v3")
+}
+
+enum EntitlementStatus {
+  ACTIVE
+  USED
+  REFUNDED
+  REVOKED
+  SUSPENDED
+
+  @@map("entitlement_status")
+  @@schema("app_v3")
+}
+
+enum EntitlementType {
+  EVENT_TICKET
+  PADEL_ENTRY
+  PASS
+  SUBSCRIPTION_ACCESS
+  FUTURE_TYPE
+
+  @@map("entitlement_type")
+  @@schema("app_v3")
+}
+
+enum CheckinResultCode {
+  OK
+  ALREADY_USED
+  INVALID
+  REFUNDED
+  REVOKED
+  SUSPENDED
+  NOT_ALLOWED
+  OUTSIDE_WINDOW
+
+  @@map("checkin_result_code")
   @@schema("app_v3")
 }
 

@@ -73,6 +73,17 @@ type RecentVenuesResponse = {
   items?: Array<{ name: string; city?: string | null }>;
 };
 
+type PadelClubSummary = {
+  id: number;
+  name: string;
+  city?: string | null;
+  address?: string | null;
+  isActive: boolean;
+  courtsCount?: number | null;
+};
+type PadelCourtSummary = { id: number; name: string; isActive: boolean; displayOrder: number };
+type PadelStaffSummary = { id: number; fullName?: string | null; email?: string | null; inheritToEvents?: boolean | null };
+
 function computeFeePreview(
   priceEuro: number,
   mode: "ON_TOP" | "INCLUDED",
@@ -114,6 +125,7 @@ export default function NewOrganizerEventPage() {
   const [endsAt, setEndsAt] = useState("");
   const [locationName, setLocationName] = useState("");
   const [locationCity, setLocationCity] = useState<PTCity>(PT_CITIES[0]);
+  const [locationManuallySet, setLocationManuallySet] = useState(false);
   const [address, setAddress] = useState("");
   const [ticketTypes, setTicketTypes] = useState<TicketTypeRow[]>([{ name: "Geral", price: "", totalQuantity: "" }]);
   const [feeMode, setFeeMode] = useState<"ON_TOP" | "INCLUDED">("ON_TOP");
@@ -126,6 +138,9 @@ export default function NewOrganizerEventPage() {
   const [freeCapacity, setFreeCapacity] = useState("");
   const [currentStep, setCurrentStep] = useState(0);
   const [maxStepReached, setMaxStepReached] = useState(0);
+  const [selectedPadelClubId, setSelectedPadelClubId] = useState<number | null>(null);
+  const [selectedPadelCourtIds, setSelectedPadelCourtIds] = useState<number[]>([]);
+  const [selectedPadelStaffIds, setSelectedPadelStaffIds] = useState<number[]>([]);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showLoadingHint, setShowLoadingHint] = useState(false);
@@ -178,6 +193,21 @@ export default function NewOrganizerEventPage() {
 
   const { data: recentVenues } = useSWR<RecentVenuesResponse>(
     user ? `/api/organizador/venues/recent?q=${encodeURIComponent(locationName.trim())}` : null,
+    fetcher,
+    { revalidateOnFocus: false },
+  );
+  const { data: padelClubs } = useSWR<{ ok: boolean; items?: PadelClubSummary[] }>(
+    selectedPreset === "padel" ? "/api/padel/clubs" : null,
+    fetcher,
+    { revalidateOnFocus: false },
+  );
+  const { data: padelCourts } = useSWR<{ ok: boolean; items?: PadelCourtSummary[] }>(
+    selectedPreset === "padel" && selectedPadelClubId ? `/api/padel/clubs/${selectedPadelClubId}/courts` : null,
+    fetcher,
+    { revalidateOnFocus: false },
+  );
+  const { data: padelStaff } = useSWR<{ ok: boolean; items?: PadelStaffSummary[] }>(
+    selectedPreset === "padel" && selectedPadelClubId ? `/api/padel/clubs/${selectedPadelClubId}/staff` : null,
     fetcher,
     { revalidateOnFocus: false },
   );
@@ -275,6 +305,50 @@ export default function NewOrganizerEventPage() {
     setStripeAlert(null);
   }, [isFreeEvent]);
 
+  useEffect(() => {
+    if (selectedPreset !== "padel") {
+      setSelectedPadelClubId(null);
+      setSelectedPadelCourtIds([]);
+      setSelectedPadelStaffIds([]);
+      setLocationManuallySet(false);
+      return;
+    }
+    if (padelClubs?.items && padelClubs.items.length > 0 && !selectedPadelClubId) {
+      const firstActive = padelClubs.items.find((c) => c.isActive) ?? padelClubs.items[0];
+      setSelectedPadelClubId(firstActive.id);
+    }
+  }, [selectedPreset, padelClubs, selectedPadelClubId]);
+
+  useEffect(() => {
+    if (!padelCourts?.items) return;
+    const activeCourts = padelCourts.items.filter((c) => c.isActive).map((c) => c.id);
+    if (activeCourts.length > 0) setSelectedPadelCourtIds(activeCourts);
+  }, [padelCourts]);
+
+  useEffect(() => {
+    if (!padelStaff?.items) return;
+    const inherited = padelStaff.items.filter((s) => s.inheritToEvents).map((s) => s.id);
+    if (inherited.length > 0) setSelectedPadelStaffIds(inherited);
+  }, [padelStaff]);
+
+  useEffect(() => {
+    if (selectedPreset !== "padel") return;
+    if (!selectedPadelClubId) return;
+    const club = padelClubs?.items?.find((c) => c.id === selectedPadelClubId);
+    if (!club) return;
+    const composed = [club.address?.trim(), club.city?.trim()].filter(Boolean).join(", ");
+    if (!locationManuallySet) {
+      if (composed) setLocationName(composed);
+      else if (!locationName) setLocationName(club.name ?? "");
+    }
+    if (club.city && PT_CITIES.includes(club.city as PTCity)) {
+      // Preenche cidade a partir do clube, mas não sobrepõe escolha manual já feita.
+      if (!locationManuallySet || !locationCity) {
+        setLocationCity(club.city as PTCity);
+      }
+    }
+  }, [selectedPreset, selectedPadelClubId, padelClubs?.items, locationManuallySet, locationName]);
+
   const stepOrder = useMemo<{ key: StepKey; title: string; subtitle: string }[]>(
     () => [
       { key: "preset", title: "Formato", subtitle: "Escolhe o tipo de evento" },
@@ -318,8 +392,12 @@ export default function NewOrganizerEventPage() {
     "border-[rgba(255,0,200,0.45)] focus:border-[rgba(255,0,200,0.6)] focus:ring-[rgba(255,0,200,0.4)]";
   const inputClass = (errored?: boolean) => `${baseInputClasses} ${errored ? errorInputClasses : ""}`;
   const labelClass =
-    "text-[11px] font-semibold uppercase tracking-[0.18em] text-white/65 flex items-center gap-1";
-  const errorTextClass = "flex items-center gap-2 text-[12px] font-semibold text-pink-200";
+    "text-[11px] font-semibold uppercase tracking-[0.18em] text-white/70 flex items-center gap-1";
+  const helperClass = "text-[12px] text-white/60 min-h-[18px]";
+  const errorTextClass = "flex items-center gap-2 text-[12px] font-semibold text-pink-200 min-h-[18px]";
+  const breadcrumbs = wizardSteps.map((s) => s.title).join(" · ");
+  const progressPercent = Math.max(0, Math.min(100, ((currentStep + 1) / stepOrder.length) * 100));
+  const dateOrderWarning = startsAt && endsAt && new Date(endsAt).getTime() <= new Date(startsAt).getTime();
 
   const pushToast = (message: string, tone: ToastTone = "success") => {
     const id = Date.now() + Math.random();
@@ -374,6 +452,7 @@ export default function NewOrganizerEventPage() {
     if (suggestion.city && PT_CITIES.includes(suggestion.city as PTCity)) {
       setLocationCity(suggestion.city as PTCity);
     }
+    setLocationManuallySet(true);
     clearErrorsForFields(["locationName", "locationCity"]);
     setShowLocationSuggestions(false);
   };
@@ -743,11 +822,11 @@ export default function NewOrganizerEventPage() {
       const preset = selectedPreset ? presetMap.get(selectedPreset) : null;
       const categoriesToSend = preset?.categories ?? ["FESTA"];
       const templateToSend = preset?.value ?? "OTHER";
-      const payload = {
-        title: title.trim(),
-        description: description.trim() || null,
-        startsAt,
-        endsAt,
+    const payload = {
+      title: title.trim(),
+      description: description.trim() || null,
+      startsAt,
+      endsAt,
         locationName: locationName.trim() || null,
         locationCity: locationCity.trim() || null,
         templateType: templateToSend,
@@ -757,7 +836,15 @@ export default function NewOrganizerEventPage() {
         coverImageUrl: coverUrl,
         feeMode,
         isTest: isAdmin ? isTest : undefined,
-      };
+        padelConfig:
+          selectedPreset === "padel"
+            ? {
+                clubId: selectedPadelClubId,
+                courtIds: selectedPadelCourtIds,
+                staffIds: selectedPadelStaffIds,
+              }
+            : undefined,
+    };
 
       const res = await fetch("/api/organizador/events/create", {
         method: "POST",
@@ -1009,7 +1096,7 @@ export default function NewOrganizerEventPage() {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div ref={startsRef} className="space-y-1">
           <InlineDateTimePicker
-            label="Data/hora início *"
+            label="🗓️ Data/hora início *"
             value={startsAt}
             onChange={(v) => setStartsAt(v)}
             minDateTime={new Date()}
@@ -1024,30 +1111,37 @@ export default function NewOrganizerEventPage() {
         </div>
         <div ref={endsRef} className="space-y-1">
           <InlineDateTimePicker
-            label="Data/hora fim *"
+            label="⏱️ Data/hora fim *"
             value={endsAt}
             onChange={(v) => setEndsAt(v)}
             minDateTime={startsAt ? new Date(startsAt) : new Date()}
           />
-          {fieldErrors.endsAt && (
+          {fieldErrors.endsAt ? (
             <p className={errorTextClass}>
               <span aria-hidden>⚠️</span>
               {fieldErrors.endsAt}
             </p>
+          ) : dateOrderWarning ? (
+            <p className={errorTextClass}>
+              <span aria-hidden>⚠️</span>Fim antes do início
+            </p>
+          ) : (
+            <p className={helperClass}>Duração ajuda no planeamento de staff.</p>
           )}
         </div>
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="space-y-1">
-          <label className={labelClass}>
-            Local <span aria-hidden>*</span>
+          <label className={labelClass} title="Nome do local ou clube.">
+            📍 Local <span aria-hidden>*</span>
           </label>
           <div className="relative overflow-visible">
             <input
               type="text"
               value={locationName}
               onChange={(e) => {
+                setLocationManuallySet(true);
                 setLocationName(e.target.value);
                 setShowLocationSuggestions(true);
               }}
@@ -1096,12 +1190,13 @@ export default function NewOrganizerEventPage() {
         </div>
 
         <div className="space-y-1">
-          <label className={labelClass}>
-            Cidade <span aria-hidden>*</span>
+          <label className={labelClass} title="Escolhe a cidade para facilitar a procura.">
+            🏙️ Cidade <span aria-hidden>*</span>
           </label>
           <select
             value={locationCity}
             onChange={(e) => {
+              setLocationManuallySet(true);
               setLocationCity(e.target.value);
               setShowLocationSuggestions(true);
             }}
@@ -1120,14 +1215,138 @@ export default function NewOrganizerEventPage() {
               </option>
             ))}
           </select>
-          {fieldErrors.locationCity && (
-            <p className={errorTextClass}>
-              <span aria-hidden>⚠️</span>
-              {fieldErrors.locationCity}
+        {fieldErrors.locationCity && (
+          <p className={errorTextClass}>
+            <span aria-hidden>⚠️</span>
+            {fieldErrors.locationCity}
+          </p>
+        )}
+        {!fieldErrors.locationCity && <p className="text-[12px] text-white/60">Usa a capital do concelho para pesquisa fácil.</p>}
+      </div>
+    </div>
+
+    {selectedPreset === "padel" && (
+      <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-[#0c1224]/88 via-[#0a0f1d]/90 to-[#0b1224]/88 p-6 shadow-[0_28px_90px_rgba(0,0,0,0.55)] backdrop-blur-2xl space-y-5 transition-all">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="space-y-1">
+            <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Wizard Padel avançado</p>
+            <p className="text-[12px] text-white/70">
+              Liga clube, courts e staff herdado sem sair do fluxo. Ajusta detalhes no hub sempre que precisares.
             </p>
-          )}
+          </div>
+          <Link
+            href="/organizador?tab=padel"
+            className="rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-[12px] font-semibold text-white hover:border-white/30 hover:bg-white/15 shadow-[0_12px_30px_rgba(0,0,0,0.35)]"
+          >
+            Abrir hub de Padel
+          </Link>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-[1.2fr_1fr]">
+          <div className="space-y-3 rounded-2xl border border-white/12 bg-white/5 p-4 shadow-inner">
+            <div className="flex items-center justify-between">
+              <label className={`${labelClass} m-0`}>Clube</label>
+              <span className="rounded-full border border-white/15 bg-white/5 px-2 py-1 text-[11px] text-white/65">
+                Courts ativos: {padelCourts?.items?.filter((c) => c.isActive).length ?? "—"} · Selecionados: {selectedPadelCourtIds.length || "—"}
+              </span>
+            </div>
+            <select
+              className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white/90 outline-none transition focus:border-[var(--orya-cyan)] focus:ring-2 focus:ring-[rgba(107,255,255,0.35)]"
+              value={selectedPadelClubId ?? ""}
+              onChange={(e) => {
+                setLocationManuallySet(false);
+                setSelectedPadelClubId(Number(e.target.value) || null);
+              }}
+            >
+              <option value="">Escolhe um clube</option>
+              {(padelClubs?.items || [])
+                .filter((c) => c.isActive)
+                .map((club) => (
+                  <option key={club.id} value={club.id}>
+                    {club.name} {club.city ? `— ${club.city}` : ""}
+                  </option>
+                ))}
+            </select>
+            {!padelClubs?.items?.length && (
+              <p className="text-[12px] text-white/60">Adiciona um clube em Padel → Clubes para continuar.</p>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <label className={labelClass}>Courts (ativos)</label>
+            <div className="rounded-2xl border border-white/12 bg-white/[0.04] p-3 max-h-56 overflow-auto space-y-2 shadow-inner">
+              {(padelCourts?.items || [])
+                .filter((c) => c.isActive)
+                .map((ct) => {
+                  const checked = selectedPadelCourtIds.includes(ct.id);
+                  return (
+                    <label
+                      key={ct.id}
+                      className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-[12px] ${
+                        checked
+                          ? "border-emerald-400/50 bg-emerald-500/10 text-emerald-50"
+                          : "border-white/15 bg-black/30 text-white/80"
+                      } transition hover:border-[var(--orya-cyan)]/50`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={(e) =>
+                          setSelectedPadelCourtIds((prev) =>
+                            e.target.checked ? [...prev, ct.id] : prev.filter((id) => id !== ct.id),
+                          )
+                        }
+                        className="accent-white"
+                      />
+                      <span>{ct.name}</span>
+                      <span className="text-[10px] text-white/50">#{ct.displayOrder}</span>
+                    </label>
+                  );
+                })}
+              {!padelCourts?.items?.length && (
+                <p className="text-[12px] text-white/60">Sem courts ativos neste clube.</p>
+              )}
+              {selectedPadelCourtIds.length === 0 && (padelCourts?.items?.length || 0) > 0 && (
+                <p className="text-[11px] text-red-200">Seleciona pelo menos um court.</p>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <label className={labelClass}>Staff herdado</label>
+          <div className="rounded-2xl border border-white/12 bg-white/[0.04] p-3 max-h-48 overflow-auto space-y-2 shadow-inner">
+            {(padelStaff?.items || []).map((member) => {
+              const checked = selectedPadelStaffIds.includes(member.id);
+              return (
+                <label
+                  key={member.id}
+                  className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-[12px] ${
+                    checked ? "border-emerald-400/50 bg-emerald-500/10 text-emerald-50" : "border-white/15 bg-black/30 text-white/80"
+                  } transition hover:border-[var(--orya-cyan)]/50`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={(e) =>
+                      setSelectedPadelStaffIds((prev) =>
+                        e.target.checked ? [...prev, member.id] : prev.filter((id) => id !== member.id),
+                      )
+                    }
+                    className="accent-white"
+                  />
+                  <span>{member.fullName || member.email || "Staff"}</span>
+                  {member.inheritToEvents && <span className="text-[10px] text-emerald-300">herdado</span>}
+                </label>
+              );
+            })}
+            {!padelStaff?.items?.length && (
+              <p className="text-[12px] text-white/60">Sem staff para herdar. Adiciona em Padel → Clubes.</p>
+            )}
+          </div>
         </div>
       </div>
+    )}
 
       <div className="space-y-1">
         <label className={labelClass}>Rua / morada (opcional)</label>

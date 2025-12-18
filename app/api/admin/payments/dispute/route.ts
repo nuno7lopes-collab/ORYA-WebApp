@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { markSaleDisputed } from "@/domain/finance/disputes";
 import { prisma } from "@/lib/prisma";
+import { enqueueOperation } from "@/lib/operations/enqueue";
 
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
@@ -15,8 +15,26 @@ export async function POST(req: NextRequest) {
   // Nota: sem RBAC forte (exemplo). Para produção, colocar auth/admin.
 
   try {
-    const sale = await markSaleDisputed({ saleSummaryId, paymentIntentId, reason, purchaseId: null });
-    return NextResponse.json({ ok: true, sale }, { status: 200 });
+    const sale = await prisma.saleSummary.findUnique({
+      where: { id: saleSummaryId },
+      select: { purchaseId: true, paymentIntentId: true },
+    });
+    if (!sale) return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
+    await enqueueOperation({
+      operationType: "MARK_DISPUTE",
+      dedupeKey: sale.purchaseId ?? sale.paymentIntentId ?? `dispute:${saleSummaryId}`,
+      correlations: {
+        paymentIntentId: sale.paymentIntentId ?? null,
+        purchaseId: sale.purchaseId ?? null,
+      },
+      payload: {
+        saleSummaryId,
+        paymentIntentId: sale.paymentIntentId ?? null,
+        purchaseId: sale.purchaseId ?? null,
+        reason,
+      },
+    });
+    return NextResponse.json({ ok: true, queued: true }, { status: 200 });
   } catch (err) {
     console.error("[admin/dispute] erro", err);
     return NextResponse.json({ ok: false, error: "FAILED" }, { status: 500 });

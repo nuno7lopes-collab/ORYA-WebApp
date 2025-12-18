@@ -16,8 +16,16 @@ export async function GET(req: NextRequest) {
     }
 
     const url = new URL(req.url);
-    const organizerId = Number(url.searchParams.get("organizerId"));
-    if (!organizerId || Number.isNaN(organizerId)) {
+    const organizerIdParam = url.searchParams.get("organizerId");
+    const parsedId = organizerIdParam ? Number(organizerIdParam) : null;
+
+    const activeMembership = await prisma.organizerMember.findFirst({
+      where: { userId: user.id, organizer: { status: "ACTIVE" } },
+      orderBy: [{ lastUsedAt: "desc" }, { createdAt: "asc" }],
+    });
+
+    const organizerId = parsedId && !Number.isNaN(parsedId) ? parsedId : activeMembership?.organizerId ?? null;
+    if (!organizerId) {
       return NextResponse.json({ ok: false, error: "INVALID_ORGANIZER" }, { status: 400 });
     }
 

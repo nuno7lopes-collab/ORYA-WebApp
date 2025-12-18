@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 export type OrganizationSwitcherOption = {
   organizerId: number;
@@ -27,10 +28,17 @@ type Props = {
 export function OrganizationSwitcher({ currentId, initialOrgs = [] }: Props) {
   const [options, setOptions] = useState<OrganizationSwitcherOption[]>(initialOrgs);
   const [activeId, setActiveId] = useState<number | null>(currentId);
+  const [isOpen, setIsOpen] = useState(false);
+  const detailsRef = useRef<HTMLDetailsElement>(null);
+  const router = useRouter();
 
   useEffect(() => {
-    setActiveId(currentId);
-    setOptions(initialOrgs);
+    // Defere para o próximo tick para evitar cascade em render síncrono de layout
+    const id = requestAnimationFrame(() => {
+      setActiveId(currentId);
+      setOptions(initialOrgs);
+    });
+    return () => cancelAnimationFrame(id);
   }, [currentId, initialOrgs]);
 
   const current = useMemo(
@@ -40,19 +48,38 @@ export function OrganizationSwitcher({ currentId, initialOrgs = [] }: Props) {
 
   if (!current) {
     return (
-      <Link
-        href="/organizador/organizations"
-        className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-2 text-[12px] text-white/80 hover:border-white/20"
-      >
-        Escolher organização
-      </Link>
+      <div data-tour="user-experience">
+        <Link
+          href="/organizador/organizations"
+          className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-2 text-[12px] text-white/80 hover:border-white/20"
+        >
+          Escolher organização
+        </Link>
+      </div>
     );
   }
 
+  const closeDropdown = () => {
+    setIsOpen(false);
+  };
+
+  const goUserMode = () => {
+    closeDropdown();
+    router.push("/explorar");
+  };
+
   return (
-    <div className="relative">
-      <details className="group">
-        <summary className="flex cursor-pointer select-none items-center gap-2 rounded-full border border-white/15 bg-white/5 px-2 py-1 text-[12px] text-white/85 transition hover:border-white/30">
+    <div className="relative" data-tour="user-experience">
+      <details
+        className="group"
+        ref={detailsRef}
+        open={isOpen}
+        onToggle={(e) => setIsOpen(e.currentTarget.open)}
+        suppressHydrationWarning
+      >
+        <summary
+          className="flex cursor-pointer select-none items-center gap-2 rounded-full border border-white/15 bg-white/5 px-2 py-1 text-[12px] text-white/85 transition hover:border-white/30"
+        >
           {current.organizer.brandingAvatarUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
@@ -72,21 +99,29 @@ export function OrganizationSwitcher({ currentId, initialOrgs = [] }: Props) {
             <Link
               href="/organizador/organizations"
               className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm text-white hover:bg-white/10"
+              onClick={closeDropdown}
             >
               <span>Gerir organizações</span>
               <span className="text-[10px] text-white/60">↗</span>
             </Link>
-            {current.organizer.username && (
             <Link
-              href={`/org/${current.organizer.username}`}
-              target="_blank"
-              rel="noreferrer"
+              href={current.organizer.username ? `/org/${current.organizer.username}` : "/explorar"}
+              target={current.organizer.username ? "_blank" : undefined}
+              rel={current.organizer.username ? "noreferrer" : undefined}
               className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm text-white hover:bg-white/10"
+              onClick={closeDropdown}
             >
               <span>Página pública</span>
               <span className="text-[10px] text-white/60">↗</span>
             </Link>
-            )}
+            <button
+              type="button"
+              onClick={goUserMode}
+              className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm text-white hover:bg-white/10"
+            >
+              <span>Modo público</span>
+              <span className="text-[10px] text-white/60">↗</span>
+            </button>
           </div>
         </div>
       </details>

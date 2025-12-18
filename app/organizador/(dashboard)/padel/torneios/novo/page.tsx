@@ -36,6 +36,14 @@ type PadelClubCourt = {
   displayOrder: number;
 };
 
+type PadelStaff = {
+  id: number;
+  padelClubId: number;
+  fullName?: string | null;
+  email?: string | null;
+  inheritToEvents?: boolean | null;
+};
+
 type TicketRow = {
   name: string;
   categoryId: number | null;
@@ -66,6 +74,9 @@ export default function PadelWizardSimple() {
   const [selectedClubId, setSelectedClubId] = useState<number | null>(null);
   const [partnerClubIds, setPartnerClubIds] = useState<number[]>([]);
   const [clubCourts, setClubCourts] = useState<PadelClubCourt[]>([]);
+  const [selectedCourtIds, setSelectedCourtIds] = useState<number[]>([]);
+  const [clubStaff, setClubStaff] = useState<PadelStaff[]>([]);
+  const [selectedStaffIds, setSelectedStaffIds] = useState<number[]>([]);
   const [loadingCourts, setLoadingCourts] = useState(false);
 
   const [title, setTitle] = useState("");
@@ -118,6 +129,10 @@ export default function PadelWizardSimple() {
     setClubName(club.shortName || club.name || "");
     setAddress(club.address || "");
     setCourtsCount(club.courtsCount ? String(club.courtsCount) : "");
+    const inheritedCourts = clubCourts.filter((c) => c.padelClubId === club.id && c.isActive).map((c) => c.id);
+    if (inheritedCourts.length) setSelectedCourtIds(inheritedCourts);
+    const inheritedStaff = clubStaff.filter((s) => s.padelClubId === club.id && s.inheritToEvents).map((s) => s.id);
+    if (inheritedStaff.length) setSelectedStaffIds(inheritedStaff);
   };
 
   // Load organizer defaults + categories + clubes
@@ -171,6 +186,7 @@ export default function PadelWizardSimple() {
     if (selectedClub) {
       applyClubDefaults(selectedClub);
       loadCourts(selectedClub.id);
+      loadStaff(selectedClub.id);
     }
   }, [selectedClub]);
 
@@ -188,18 +204,43 @@ export default function PadelWizardSimple() {
       if (res.ok && Array.isArray(json?.items)) {
         const courts = (json.items as PadelClubCourt[]).filter((c) => c.isActive);
         setClubCourts(courts);
+        if (selectedClubId === clubId) {
+          setSelectedCourtIds(courts.map((c) => c.id));
+        }
         if (!courtsCount && courts.length > 0) {
           const activeCount = courts.filter((c) => c.isActive).length || courts.length;
           setCourtsCount(String(activeCount));
         }
       } else {
         setClubCourts([]);
+        setSelectedCourtIds([]);
       }
     } catch (err) {
       console.warn("[PadelWizard] load courts failed", err);
       setClubCourts([]);
+      setSelectedCourtIds([]);
     } finally {
       setLoadingCourts(false);
+    }
+  };
+
+  const loadStaff = async (clubId: number) => {
+    try {
+      const res = await fetch(`/api/padel/clubs/${clubId}/staff`);
+      const json = await res.json().catch(() => null);
+      if (res.ok && Array.isArray(json?.items)) {
+        const staff = json.items as PadelStaff[];
+        setClubStaff(staff);
+        const inherited = staff.filter((s) => s.inheritToEvents).map((s) => s.id);
+        if (selectedClubId === clubId) setSelectedStaffIds(inherited);
+      } else {
+        setClubStaff([]);
+        setSelectedStaffIds([]);
+      }
+    } catch (err) {
+      console.warn("[PadelWizard] load staff failed", err);
+      setClubStaff([]);
+      setSelectedStaffIds([]);
     }
   };
 
@@ -320,10 +361,14 @@ export default function PadelWizardSimple() {
             price: Number(t.price.replace(",", ".")) || 0,
             totalQuantity: t.capacity ? Number(t.capacity) : null,
           })),
-        padel: {
-          padelV2Enabled: true,
-          ruleSetId: defaultRuleSetId,
-        },
+          padel: {
+            padelV2Enabled: true,
+            ruleSetId: defaultRuleSetId,
+            staffIds: selectedStaffIds,
+            courtIds: selectedCourtIds.length ? selectedCourtIds : clubCourts.filter((c) => c.isActive).map((c) => c.id),
+            inheritStaffCount: selectedStaffIds.length,
+            inheritCourtsCount: selectedCourtIds.length || clubCourts.filter((c) => c.isActive).length || 0,
+          },
       };
 
       const res = await fetch("/api/organizador/padel/tournaments/create", {
@@ -738,28 +783,28 @@ export default function PadelWizardSimple() {
         )}
 
         {step === 3 && (
-          <div className="space-y-3 rounded-2xl border border-white/10 bg-black/35 p-4 shadow-[0_20px_60px_rgba(0,0,0,0.55)]">
-            <h2 className="text-sm font-semibold">Jogos & courts</h2>
-            <div className="grid gap-3 md:grid-cols-2">
-              <label className="space-y-1 text-sm">
-                Nº de courts a usar
-                <input
-                  type="number"
-                  min={1}
-                  max={1000}
-                  value={courtsCount}
-                  onChange={(e) => setCourtsCount(e.target.value)}
-                  disabled={formDisabled}
-                  className="w-full rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none disabled:opacity-50 [appearance:textfield]"
-                  placeholder={clubCourts.length ? String(clubCourts.filter((c) => c.isActive).length || clubCourts.length) : "4"}
-                />
-                <p className="text-[11px] text-white/60">Sugestão: {clubCourts.filter((c) => c.isActive).length || clubCourts.length || "—"} courts ativos neste clube.</p>
-              </label>
-              <label className="space-y-1 text-sm">
-                Duração padrão de jogo (min)
-                <input
-                  type="number"
-                  min={15}
+        <div className="space-y-3 rounded-2xl border border-white/10 bg-black/35 p-4 shadow-[0_20px_60px_rgba(0,0,0,0.55)]">
+          <h2 className="text-sm font-semibold">Jogos & courts</h2>
+          <div className="grid gap-3 md:grid-cols-2">
+            <label className="space-y-1 text-sm">
+              Nº de courts a usar
+              <input
+                type="number"
+                min={1}
+                max={1000}
+                value={courtsCount}
+                onChange={(e) => setCourtsCount(e.target.value)}
+                disabled={formDisabled}
+                className="w-full rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none disabled:opacity-50 [appearance:textfield]"
+                placeholder={clubCourts.length ? String(clubCourts.filter((c) => c.isActive).length || clubCourts.length) : "4"}
+              />
+              <p className="text-[11px] text-white/60">Sugestão: {clubCourts.filter((c) => c.isActive).length || clubCourts.length || "—"} courts ativos neste clube.</p>
+            </label>
+            <label className="space-y-1 text-sm">
+              Duração padrão de jogo (min)
+              <input
+                type="number"
+                min={15}
                   max={240}
                   value={gameDuration}
                   onChange={(e) => setGameDuration(e.target.value)}
@@ -781,30 +826,87 @@ export default function PadelWizardSimple() {
             {selectedClub && (
               <div className="space-y-2 rounded-xl border border-white/10 bg-black/30 p-3">
                 <div className="flex items-center justify-between text-sm">
-                  <span className="font-semibold">Courts do clube</span>
+                  <span className="font-semibold">Courts do clube (seleciona)</span>
                   {loadingCourts && <span className="text-[11px] text-white/60">A carregar…</span>}
                 </div>
                 {clubCourts.length === 0 && !loadingCourts && (
                   <p className="text-[12px] text-white/65">Ainda não adicionaste courts a este clube.</p>
                 )}
                 {clubCourts.length > 0 && (
-                  <div className="flex flex-wrap gap-2">
-                    {clubCourts.map((court) => (
-                      <span
-                        key={court.id}
-                        className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 text-[12px] ${
-                          court.isActive ? "border-emerald-400/50 bg-emerald-400/10 text-emerald-50" : "border-white/15 bg-black/30 text-white/70"
-                        }`}
-                      >
-                        {court.name}
-                        {court.indoor && <span className="text-[10px] uppercase tracking-[0.14em]">Indoor</span>}
-                      </span>
-                    ))}
+                  <div className="grid gap-2 md:grid-cols-2">
+                    {clubCourts.map((court) => {
+                      const checked = selectedCourtIds.includes(court.id);
+                      return (
+                        <label
+                          key={court.id}
+                          className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-[12px] ${
+                            checked ? "border-emerald-400/50 bg-emerald-400/10 text-emerald-50" : "border-white/15 bg-black/30 text-white/80"
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(e) =>
+                              setSelectedCourtIds((prev) =>
+                                e.target.checked ? [...prev, court.id] : prev.filter((id) => id !== court.id),
+                              )
+                            }
+                            className="accent-white"
+                          />
+                          <span>{court.name}</span>
+                          <span className="text-[10px] text-white/60">#{court.displayOrder}</span>
+                          {court.indoor && <span className="text-[10px] uppercase tracking-[0.14em]">Indoor</span>}
+                        </label>
+                      );
+                    })}
                   </div>
                 )}
                 <p className="text-[11px] text-white/55">
                   Podes gerir courts em Padel → Clubes. O nº de courts acima é usado para gerar o calendário inicial.
                 </p>
+                {selectedCourtIds.length === 0 && <p className="text-[11px] text-red-200">Seleciona pelo menos um court.</p>}
+              </div>
+            )}
+
+            {selectedClub && (
+              <div className="space-y-2 rounded-xl border border-white/10 bg-black/30 p-3">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="font-semibold">Staff herdado</span>
+                </div>
+                {clubStaff.length === 0 && (
+                  <p className="text-[12px] text-white/65">Sem staff neste clube. Adiciona em Padel → Clubes.</p>
+                )}
+                {clubStaff.length > 0 && (
+                  <div className="grid gap-2 md:grid-cols-2">
+                    {clubStaff.map((member) => {
+                      const checked = selectedStaffIds.includes(member.id);
+                      return (
+                        <label
+                          key={member.id}
+                          className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-[12px] ${
+                            checked ? "border-emerald-400/50 bg-emerald-400/10 text-emerald-50" : "border-white/15 bg-black/30 text-white/80"
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(e) =>
+                              setSelectedStaffIds((prev) =>
+                                e.target.checked ? [...prev, member.id] : prev.filter((id) => id !== member.id),
+                              )
+                            }
+                            className="accent-white"
+                          />
+                          <span>{member.fullName || member.email || "Staff"}</span>
+                          {member.inheritToEvents && <span className="text-[10px] text-emerald-300">herdado</span>}
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+                {selectedStaffIds.length === 0 && clubStaff.length > 0 && (
+                  <p className="text-[11px] text-red-200">Podes herdar staff (sugerido) — seleciona pelo menos um se precisares.</p>
+                )}
               </div>
             )}
           </div>
@@ -822,7 +924,10 @@ export default function PadelWizardSimple() {
               <p><strong>Estado inicial:</strong> {tournamentStateLabel}</p>
               <p><strong>Categorias:</strong> {tickets.length} linha(s)</p>
               <p><strong>Estimativa bruta:</strong> {grossEstimate.toFixed(2)} €</p>
-              <p className="text-[11px] text-white/60">Courts: {courtsCount || selectedClub?.courtsCount || "—"} · Jogo: {gameDuration || "—"} min</p>
+              <p className="text-[11px] text-white/60">
+                Courts: {selectedCourtIds.length || clubCourts.filter((c) => c.isActive).length || courtsCount || "—"} · Jogo: {gameDuration || "—"} min
+              </p>
+              <p className="text-[11px] text-white/60">Staff: {selectedStaffIds.length || 0} selecionado(s)</p>
               <p className="text-[11px] text-white/60">
                 Avançadas: limite total {maxEntriesTotal || "—"} · Waitlist {waitlistEnabled ? "ativa" : "off"} · 2ª categoria {allowSecondCategory ? "permitida" : "não"} · Cancelar jogos {allowCancelGames ? "sim" : "não"}.
               </p>

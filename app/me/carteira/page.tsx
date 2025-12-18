@@ -1,162 +1,143 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import { useWallet } from "@/app/components/wallet/useWallet";
+import { WalletCard } from "@/app/components/wallet/WalletCard";
+import { useUser } from "@/app/hooks/useUser";
 
-type TicketItem = {
-  id: string;
-  badge: string;
-  paymentStatusLabel?: string;
-  nextAction?: string;
-  event: { title: string; slug: string };
-  isTournament?: boolean;
-  liveLink?: string | null;
-};
-
-type InscricaoItem = {
-  id: string;
-  badge: string;
-  paymentStatusLabel?: string;
-  nextAction?: string;
-  event: { title: string; slug: string } | null;
-  isCaptain: boolean;
-  ctaUrl?: string | null;
-  liveLink?: string | null;
-};
-
-type FilterKey = "ALL" | "TICKETS" | "TOURNAMENTS" | "FREE" | "RESALE";
+type FilterKey = "ALL" | "ACTIVE" | "USED" | "REFUNDED" | "REVOKED" | "SUSPENDED";
 
 export default function CarteiraPage() {
-  const [tickets, setTickets] = useState<TicketItem[]>([]);
-  const [inscricoes, setInscricoes] = useState<InscricaoItem[]>([]);
+  const { items, loading, error, authRequired, refetch } = useWallet();
   const [filter, setFilter] = useState<FilterKey>("ALL");
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    // Best-effort claim automático (se email verificado)
-    fetch("/api/email/verified", { method: "POST" }).catch(() => undefined);
-
-    const load = async () => {
-      setLoading(true);
-      try {
-        const [tRes, iRes] = await Promise.all([fetch("/api/me/tickets"), fetch("/api/me/inscricoes")]);
-        const tJson = await tRes.json();
-        const iJson = await iRes.json();
-        if (tJson?.tickets) setTickets(tJson.tickets);
-        if (iJson?.items) setInscricoes(iJson.items);
-      } catch (err) {
-        console.warn("Erro a carregar carteira", err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    void load();
-  }, []);
+  const { user, isLoading: userLoading } = useUser();
 
   const list = useMemo(() => {
-    const ticketItems =
-      tickets?.map((t) => ({
-        id: t.id,
-        kind: t.isTournament ? "TORNEIO" : "BILHETE",
-        title: t.event?.title ?? "Evento",
-        slug: t.event?.slug ?? "",
-        badge: t.badge,
-        nextAction: t.nextAction,
-        paymentStatusLabel: t.paymentStatusLabel,
-        liveLink: t.liveLink ?? (t.event?.slug ? `/torneios/${t.event.slug}/live` : null),
-      })) ?? [];
-    const inscricaoItems =
-      inscricoes?.map((i) => ({
-        id: `insc-${i.id}`,
-        kind: "TORNEIO",
-        title: i.event?.title ?? "Torneio",
-        slug: i.event?.slug ?? "",
-        badge: i.badge,
-        nextAction: i.nextAction,
-        paymentStatusLabel: i.paymentStatusLabel,
-        ctaUrl: i.ctaUrl,
-        liveLink: i.liveLink,
-      })) ?? [];
-    const combined = [...ticketItems, ...inscricaoItems];
-    return combined.filter((item) => {
+    return (items ?? []).filter((item) => {
       if (filter === "ALL") return true;
-      if (filter === "TICKETS") return item.kind === "BILHETE";
-      if (filter === "TOURNAMENTS") return item.kind === "TORNEIO";
-      if (filter === "FREE") return item.badge === "FREE";
-      if (filter === "RESALE") return item.badge === "RESALE";
-      return true;
+      return item.status === filter;
     });
-  }, [tickets, inscricoes, filter]);
+  }, [items, filter]);
+
+  if (!user && !userLoading) {
+    return (
+      <main className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-black text-white flex items-center justify-center px-4">
+        <div className="max-w-lg w-full rounded-3xl border border-white/10 bg-white/[0.02] p-8 shadow-[0_18px_60px_rgba(0,0,0,0.7)] backdrop-blur-xl space-y-4 text-center">
+          <h1 className="text-2xl font-semibold">Entra para veres a tua carteira</h1>
+          <p className="text-sm text-white/70">
+            Autentica-te para veres os teus bilhetes e QR. A carteira é privada e só aparece depois de iniciar sessão.
+          </p>
+          <div className="flex flex-col sm:flex-row justify-center gap-3">
+            <a
+              href="/login?redirectTo=/me/carteira"
+              className="px-4 py-2.5 rounded-xl bg-white text-black text-sm font-semibold shadow-[0_0_22px_rgba(255,255,255,0.4)]"
+            >
+              Entrar
+            </a>
+            <a
+              href="/login?mode=signup&redirectTo=/me/carteira"
+              className="px-4 py-2.5 rounded-xl border border-white/25 text-sm font-semibold text-white hover:bg-white/10"
+            >
+              Criar conta
+            </a>
+          </div>
+        </div>
+      </main>
+    );
+  }
 
   return (
-    <main className="mx-auto max-w-4xl px-4 py-8 space-y-4">
-      <header className="space-y-2">
-        <h1 className="text-2xl font-semibold">Carteira</h1>
-        <p className="text-sm text-gray-500">Bilhetes e inscrições num só sítio.</p>
-        <div className="flex gap-2 flex-wrap">
-          {([
-            { key: "ALL", label: "Tudo" },
-            { key: "TICKETS", label: "Bilhetes" },
-            { key: "TOURNAMENTS", label: "Torneios" },
-            { key: "FREE", label: "Gratuitos" },
-            { key: "RESALE", label: "Revenda" },
-          ] satisfies { key: FilterKey; label: string }[]).map((f) => (
-            <button
-              key={f.key}
-              onClick={() => setFilter(f.key)}
-              className={`rounded-full px-3 py-1 text-sm border ${
-                filter === f.key ? "bg-black text-white" : "bg-white text-black"
-              }`}
-            >
-              {f.label}
-            </button>
-          ))}
-        </div>
-      </header>
-
-      {loading && <p className="text-sm text-gray-500">A carregar...</p>}
-
-      <ul className="space-y-3">
-        {list.map((item) => (
-          <li key={item.id} className="rounded-lg border p-3 flex items-center justify-between gap-3">
-            <div>
-              <div className="flex gap-2 items-center">
-                <span className="text-xs rounded-full bg-gray-100 px-2 py-0.5">{item.kind}</span>
-                <span className="text-xs rounded-full bg-blue-100 px-2 py-0.5">{item.badge}</span>
-                {item.paymentStatusLabel && (
-                  <span className="text-xs text-gray-500">{item.paymentStatusLabel}</span>
-                )}
-              </div>
-              <div className="text-sm font-medium">{item.title}</div>
+    <main className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-black text-white">
+      <section className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-8">
+        <header className="rounded-2xl border border-white/10 bg-white/[0.02] p-5 shadow-[0_18px_50px_rgba(0,0,0,0.65)] backdrop-blur-xl">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="space-y-1">
+              <p className="text-[12px] uppercase tracking-[0.16em] text-white/60">Carteira</p>
+              <h1 className="text-2xl font-semibold text-white">Entitlements ORYA</h1>
+              <p className="text-[12px] text-white/65">
+                Snapshot + status + ações. QR só aparece quando permitido pelas políticas de acesso.
+              </p>
             </div>
-            <div className="flex gap-2">
-              {item.nextAction === "CONFIRM_GUARANTEE" && (
-                <a
-                  href={item.ctaUrl ?? "#"}
-                  className="bg-black text-white px-3 py-1 rounded text-sm"
+            <div className="flex flex-wrap gap-2">
+              {([
+                { key: "ALL", label: "Tudo" },
+                { key: "ACTIVE", label: "Ativos" },
+                { key: "USED", label: "Usados" },
+                { key: "REFUNDED", label: "Refund" },
+                { key: "REVOKED", label: "Revogados" },
+                { key: "SUSPENDED", label: "Suspensos" },
+              ] satisfies { key: FilterKey; label: string }[]).map((f) => (
+                <button
+                  key={f.key}
+                  onClick={() => setFilter(f.key)}
+                  className={`rounded-full px-3 py-1.5 text-[11px] font-semibold border transition ${
+                    filter === f.key
+                      ? "bg-white text-black shadow-[0_0_18px_rgba(255,255,255,0.35)]"
+                      : "border-white/30 text-white hover:bg-white/10"
+                  }`}
                 >
-                  Confirmar garantia
-                </a>
+                  {f.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </header>
+
+        {loading && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div
+                key={i}
+                className="h-60 rounded-2xl border border-white/10 bg-white/5 animate-pulse shadow-[0_14px_40px_rgba(0,0,0,0.4)]"
+              />
+            ))}
+          </div>
+        )}
+
+        {!loading && error && (
+          <div className="rounded-2xl border border-red-400/30 bg-red-500/10 p-4 text-sm text-red-50 space-y-2">
+            <div>{error}</div>
+            <div className="flex gap-2 flex-wrap">
+              {!authRequired && (
+                <button
+                  onClick={refetch}
+                  className="inline-flex px-3 py-1.5 rounded-lg bg-white text-black text-[11px] font-semibold shadow"
+                >
+                  Tentar novamente
+                </button>
               )}
-              {item.nextAction === "PAY_PARTNER" && (
-                <a href={item.ctaUrl ?? "#"} className="border px-3 py-1 rounded text-sm">
-                  Pagar a minha parte
-                </a>
-              )}
-              {item.nextAction === "VIEW_LIVE" && (
-                <a href={item.liveLink ?? `/torneios/${item.slug}/live`} className="underline text-sm">
-                  Ver ao vivo
-                </a>
-              )}
-              {!item.nextAction && item.liveLink && (
-                <a href={item.liveLink} className="underline text-sm">
-                  Ver ao vivo
+              {authRequired && (
+                <a
+                  href="/login?redirectTo=/me/carteira"
+                  className="inline-flex px-3 py-1.5 rounded-lg bg-white text-black text-[11px] font-semibold shadow"
+                >
+                  Iniciar sessão
                 </a>
               )}
             </div>
-          </li>
-        ))}
-        {!loading && list.length === 0 && <p className="text-sm text-gray-500">Nada para mostrar ainda.</p>}
-      </ul>
+          </div>
+        )}
+
+        {!loading && !error && list.length === 0 && (
+          <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-[#0f172a]/70 via-[#020617]/60 to-black/70 backdrop-blur-2xl p-8 text-center flex flex-col items-center gap-4 shadow-[0_28px_80px_rgba(15,23,42,0.95)]">
+            <div className="h-20 w-20 rounded-2xl bg-gradient-to-br from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] flex items-center justify-center shadow-[0_0_35px_rgba(107,255,255,0.5)] text-black text-3xl font-bold">
+              🎟️
+            </div>
+            <h3 className="text-lg font-semibold text-white/95">Ainda não tens bilhetes ORYA</h3>
+            <p className="text-[12px] text-white/70 max-w-sm">
+              Compra o teu primeiro bilhete e ele aparece aqui com QR pronto a usar.
+            </p>
+          </div>
+        )}
+
+        {!loading && !error && list.length > 0 && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {list.map((item) => (
+              <WalletCard key={item.entitlementId} item={item} />
+            ))}
+          </div>
+        )}
+      </section>
     </main>
   );
 }

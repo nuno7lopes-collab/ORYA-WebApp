@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizerForUser } from "@/lib/organizerContext";
 import { normalizeAndValidateUsername, setUsernameForOwner, UsernameTakenError } from "@/lib/globalUsernames";
+import { AuthRequiredError, requireUser } from "@/lib/auth/requireUser";
 
 type OrganizerPayload = {
   entityType?: string | null;
@@ -23,18 +24,7 @@ function sanitizeString(value: unknown) {
 
 export async function GET() {
   try {
-    const supabase = await createSupabaseServer();
-    const {
-      data: { user },
-      error,
-    } = await supabase.auth.getUser();
-
-    if (error || !user) {
-      return NextResponse.json(
-        { ok: false, error: "Não autenticado." },
-        { status: 401 },
-      );
-    }
+    const user = await requireUser();
 
     const profile = await prisma.profile.findUnique({
       where: { id: user.id },
@@ -79,19 +69,7 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
-    const supabase = await createSupabaseServer();
-
-    const {
-      data: { user },
-      error,
-    } = await supabase.auth.getUser();
-
-    if (error || !user) {
-      return NextResponse.json(
-        { ok: false, error: "Não autenticado." },
-        { status: 401 },
-      );
-    }
+    const user = await requireUser();
 
     const profile = await prisma.profile.findUnique({
       where: { id: user.id },

@@ -33,7 +33,7 @@ export async function GET(req: NextRequest) {
       where: {
         organizerId: organizer.id,
         isDeleted: false,
-        locationName: { not: null },
+        AND: [{ locationName: { not: null } }, { locationName: { not: "" } }],
         ...(q
           ? {
               locationName: {

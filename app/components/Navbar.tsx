@@ -38,6 +38,7 @@ export function Navbar() {
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [hasMounted, setHasMounted] = useState(false);
   const [hydratedPathname, setHydratedPathname] = useState<string | null>(null);
+  const [lastOrganizerUsername, setLastOrganizerUsername] = useState<string | null>(null);
   const profileMenuRef = useRef<HTMLDivElement | null>(null);
   const lastScrollYRef = useRef(0);
   const pathname = hydratedPathname ?? "";
@@ -272,6 +273,15 @@ export function Navbar() {
   const userInitial =
     (userLabel || "O").trim().charAt(0).toUpperCase() || "O";
 
+  useEffect(() => {
+    try {
+      const stored = sessionStorage.getItem("orya_last_organizer_username");
+      if (stored) setLastOrganizerUsername(stored);
+    } catch {
+      // ignore storage issues
+    }
+  }, []);
+
   return (
     <>
       <header
@@ -375,15 +385,12 @@ export function Navbar() {
             ) : (
               <div className="relative flex items-center gap-2" ref={profileMenuRef}>
                 {useNewNavbar && <NotificationBell />}
-                <button
-                  type="button"
-                  onClick={() => setIsProfileMenuOpen((open) => !open)}
-            className="flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-2.5 py-1 text-[11px] text-white/85 hover:bg-white/15"
-            aria-haspopup="menu"
-            aria-expanded={isProfileMenuOpen}
-            aria-label="Abrir menu de conta"
-          >
-            <div className="relative h-9 w-9 overflow-hidden rounded-full border border-white/20 bg-gradient-to-br from-[#0f172a] via-[#111827] to-[#0b1224] text-[11px] font-bold text-white shadow-[0_0_22px_rgba(107,255,255,0.55)]">
+                <Link
+                  href="/me"
+                  className="flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-2.5 py-1 text-[11px] text-white/85 hover:bg-white/15"
+                  aria-label="Ir para a tua conta"
+                >
+                  <div className="relative h-9 w-9 overflow-hidden rounded-full border border-white/20 bg-gradient-to-br from-[#0f172a] via-[#111827] to-[#0b1224] text-[11px] font-bold text-white shadow-[0_0_22px_rgba(107,255,255,0.55)]">
                     <span className="pointer-events-none absolute inset-0 rounded-full border border-white/10" />
                     <span className="pointer-events-none absolute inset-0 rounded-full bg-gradient-to-tr from-[#FF00C8]/35 via-[#6BFFFF]/25 to-transparent animate-[spin_14s_linear_infinite]" />
                     <span className="relative z-10 flex h-full w-full items-center justify-center bg-gradient-to-r from-[#FF9CF2] to-[#6BFFFF] bg-clip-text text-transparent">
@@ -393,6 +400,16 @@ export function Navbar() {
                   <span className="hidden max-w-[120px] truncate text-[11px] sm:inline">
                     {userLabel || "Conta ORYA"}
                   </span>
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => setIsProfileMenuOpen((open) => !open)}
+                  className="rounded-full border border-white/15 bg-white/10 px-2 py-1 text-[11px] text-white/80 hover:bg-white/15"
+                  aria-haspopup="menu"
+                  aria-expanded={isProfileMenuOpen}
+                  aria-label="Abrir menu de conta"
+                >
+                  ▾
                 </button>
 
                 {isProfileMenuOpen && (
@@ -401,71 +418,60 @@ export function Navbar() {
                     role="menu"
                     aria-label="Menu de conta ORYA"
                   >
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsProfileMenuOpen(false);
-                        router.push("/me");
-                      }}
+                    <Link
+                      href="/me"
+                      onClick={() => setIsProfileMenuOpen(false)}
                       className="flex w-full items-center justify-between rounded-xl px-2.5 py-1.5 text-left hover:bg-white/8"
                     >
                       <span>A minha conta</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsProfileMenuOpen(false);
-                        router.push("/me/tickets");
-                      }}
+                    </Link>
+                    <Link
+                      href="/me/carteira"
+                      onClick={() => setIsProfileMenuOpen(false)}
                       className="flex w-full items-center justify-between rounded-xl px-2.5 py-1.5 text-left hover:bg-white/8"
                     >
-                      <span>Os meus bilhetes</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsProfileMenuOpen(false);
-                        router.push("/me/compras");
-                      }}
+                      <span>Carteira (bilhetes)</span>
+                    </Link>
+                    <Link
+                      href="/me/compras"
+                      onClick={() => setIsProfileMenuOpen(false)}
                       className="flex w-full items-center justify-between rounded-xl px-2.5 py-1.5 text-left hover:bg-white/8"
                     >
                       <span>Minhas compras</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsProfileMenuOpen(false);
-                        router.push("/me/settings");
-                      }}
+                    </Link>
+                    <Link
+                      href="/me/settings"
+                      onClick={() => setIsProfileMenuOpen(false)}
                       className="flex w-full items-center justify-between rounded-xl px-2.5 py-1.5 text-left hover:bg-white/8"
                     >
                       <span>Definições</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsProfileMenuOpen(false);
-                        router.push("/me/experiencias");
-                      }}
+                    </Link>
+                    <Link
+                      href="/me/experiencias"
+                      onClick={() => setIsProfileMenuOpen(false)}
                       className="flex w-full items-center justify-between rounded-xl px-2.5 py-1.5 text-left hover:bg-white/8"
                     >
                       <span>Minhas experiências</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsProfileMenuOpen(false);
-                        router.push("/organizador");
-                      }}
-                      className="mt-1 flex w-full items-center justify-between rounded-xl px-2.5 py-1.5 text-left hover:bg-white/8"
-                    >
-                      <span>{isOrganizer ? "Dashboard de organizador" : "Tornar-me organizador"}</span>
-                      {!isOrganizer && (
-                        <span className="text-[10px] text-[#FFCC66]">
-                          Em breve
-                        </span>
-                      )}
-                    </button>
+                    </Link>
+                    {lastOrganizerUsername && (
+                      <Link
+                        href={`/o/${lastOrganizerUsername}`}
+                        onClick={() => setIsProfileMenuOpen(false)}
+                        className="flex w-full items-center justify-between rounded-xl px-2.5 py-1.5 text-left hover:bg-white/8"
+                      >
+                        <span>Ver página pública</span>
+                      </Link>
+                    )}
+                    {pathname?.startsWith("/organizador") && (
+                      <Link
+                        href="/me"
+                        onClick={() => setIsProfileMenuOpen(false)}
+                        className="flex w-full items-center justify-between rounded-xl px-2.5 py-1.5 text-left hover:bg-white/8"
+                      >
+                        <span>Voltar a utilizador</span>
+                      </Link>
+                    )}
+                    {/* Dashboard de organizador removido do dropdown: já está acessível na nav */}
                     <div className="my-1 h-px w-full bg-white/10" />
                     <button
                       type="button"

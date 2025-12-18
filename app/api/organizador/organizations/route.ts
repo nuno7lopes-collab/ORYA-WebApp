@@ -3,18 +3,11 @@ import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { OrganizerStatus, OrganizerMemberRole } from "@prisma/client";
 import { normalizeAndValidateUsername, setUsernameForOwner, UsernameTakenError } from "@/lib/globalUsernames";
+import { requireUser } from "@/lib/auth/requireUser";
 
 export async function GET() {
   try {
-    const supabase = await createSupabaseServer();
-    const {
-      data: { user },
-      error,
-    } = await supabase.auth.getUser();
-
-    if (error || !user) {
-      return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
-    }
+    const user = await requireUser();
 
     const memberships = await prisma.organizerMember.findMany({
       where: { userId: user.id },
@@ -89,15 +82,7 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
-    const supabase = await createSupabaseServer();
-    const {
-      data: { user },
-      error,
-    } = await supabase.auth.getUser();
-
-    if (error || !user) {
-      return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
-    }
+    const user = await requireUser();
 
     const body = await req.json().catch(() => null);
     if (!body || typeof body !== "object") {

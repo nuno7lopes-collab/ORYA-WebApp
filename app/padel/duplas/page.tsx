@@ -86,7 +86,7 @@ export default function MinhasDuplasPage() {
           {pairings.map((p) => {
             const pendingSlot = p.slots.find((s) => s.slotStatus === "PENDING");
             const canPayPending = pendingSlot && pendingSlot.paymentStatus === "UNPAID" && p.paymentMode === "SPLIT";
-            const inviteLink = p.inviteToken ? `${typeof window !== "undefined" ? window.location.origin : ""}/padel/checkout?token=${p.inviteToken}` : null;
+            const inviteLink = p.inviteToken ? `${typeof window !== "undefined" ? window.location.origin : ""}/eventos/${p.eventSlug ?? ""}?inviteToken=${p.inviteToken}` : null;
             return (
               <div key={p.id} className="rounded-2xl border border-white/10 bg-white/5 p-4 shadow">
                 <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -114,7 +114,7 @@ export default function MinhasDuplasPage() {
             <div className="mt-4 flex gap-3 flex-wrap">
               {canPayPending && (
                 <Link
-                  href={`/padel/checkout?pairingId=${p.id}`}
+                  href={`/eventos/${p.eventSlug ?? ""}?pairingId=${p.id}`}
                   className="rounded-full bg-white text-black px-4 py-2 text-sm font-semibold"
                 >
                   Pagar o meu lugar

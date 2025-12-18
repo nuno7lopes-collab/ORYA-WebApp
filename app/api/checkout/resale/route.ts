@@ -1,13 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { stripe } from "@/lib/stripeClient";
-import {
-  checkoutMetadataSchema,
-  createPurchaseId,
-  normalizeItemsForMetadata,
-} from "@/lib/checkoutSchemas";
 import { resolveOwner } from "@/lib/ownership/resolveOwner";
+import { env } from "@/lib/env";
 
 /**
  * F5-12 – Checkout específico para revenda de bilhetes
@@ -115,85 +110,56 @@ export async function POST(req: NextRequest) {
 
     const amountCents = rawAmount;
     const ownerResolved = await resolveOwner({ sessionUserId: buyerUserId, guestEmail: null });
-    const purchaseId = createPurchaseId();
-    const normalizedItems = normalizeItemsForMetadata([
-      {
-        ticketTypeId: resale.ticket.ticketTypeId,
-        quantity: 1,
-        unitPriceCents: amountCents,
-        currency: "EUR",
-      },
-    ]);
-    const metadataValidation = checkoutMetadataSchema.safeParse({
-      paymentScenario: "RESALE",
-      purchaseId,
-      items: normalizedItems,
-      eventId: event.id,
-      eventSlug: event.slug ?? undefined,
-      owner: {
-        ownerUserId: ownerResolved.ownerUserId ?? buyerUserId,
-        ownerIdentityId: ownerResolved.ownerIdentityId ?? undefined,
-        emailNormalized: ownerResolved.emailNormalized ?? undefined,
-      },
-    });
-    if (!metadataValidation.success) {
-      return NextResponse.json(
-        { ok: false, error: "INVALID_METADATA", details: metadataValidation.error.format() },
-        { status: 400 },
-      );
-    }
+    const origin = req.nextUrl.origin || env.appBaseUrl || "";
 
-    // 7. Criar sessão Stripe para pagamento da revenda
-    const origin = req.nextUrl.origin;
-
-    const session = await stripe.checkout.sessions.create({
-      mode: "payment",
-      payment_method_types: ["card"],
-      line_items: [
-        {
-          quantity: 1,
-          price_data: {
-            currency: "eur",
-            unit_amount: amountCents,
-            product_data: {
-              name: `Bilhete – ${event.title}`,
-              description: "Revenda de bilhete entre utilizadores via ORYA",
-            },
+    const res = await fetch(`${origin}/api/payments/intent`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        cookie: req.headers.get("cookie") ?? "",
+      },
+      body: JSON.stringify({
+        slug: event.slug ?? null,
+        items: [
+          {
+            ticketId: resale.ticket.ticketTypeId,
+            quantity: 1,
+            unitPriceCents: amountCents,
+            currency: (event.currency || "EUR").toUpperCase(),
           },
-        },
-      ],
-      metadata: {
+        ],
         paymentScenario: "RESALE",
-        purchaseId,
         resaleId: resale.id,
-        ticketId: ticket.id,
-        eventId: event.id,
-        eventSlug: event.slug ?? "",
-        buyerUserId,
-        ownerUserId: ownerResolved.ownerUserId ?? buyerUserId,
-        ownerIdentityId: ownerResolved.ownerIdentityId ?? "",
-        emailNormalized: ownerResolved.emailNormalized ?? "",
-        items: JSON.stringify(normalizedItems),
-      },
-      success_url: `${origin}/me/tickets?checkout=success&mode=resale`,
-      cancel_url: `${origin}/me/tickets?checkout=cancelled&mode=resale`,
+        ticketId: resale.ticket.id,
+        total: rawAmount / 100,
+      }),
     });
 
-    if (!session.url) {
+    const data = await res.json().catch(() => null);
+    if (!res.ok || !data?.ok || !data?.clientSecret) {
+      console.error("Error in /api/checkout/resale intent:", { status: res.status, data });
       return NextResponse.json(
-        { ok: false, error: "SESSION_URL_MISSING" },
-        { status: 500 }
+        { ok: false, error: data?.error ?? "INTENT_CREATION_FAILED", code: data?.code ?? null },
+        { status: res.status },
       );
     }
 
     return NextResponse.json(
       {
         ok: true,
-        url: session.url,
-        sessionId: session.id,
-        purchaseId,
+        clientSecret: data.clientSecret,
+        paymentIntentId: data.paymentIntentId,
+        purchaseId: data.purchaseId,
+        paymentScenario: "RESALE",
+        preview: {
+          title: event.title,
+          ticketTypeName: resale.ticket.ticketType?.name ?? null,
+          priceCents: amountCents,
+          currency: event.currency || "EUR",
+          sellerName: resale.ticket.user?.username ?? resale.ticket.user?.fullName ?? null,
+        },
       },
-      { status: 200 }
+      { status: 200 },
     );
   } catch (error) {
     console.error("Error in /api/checkout/resale:", error);

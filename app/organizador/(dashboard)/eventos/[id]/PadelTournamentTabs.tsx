@@ -154,7 +154,7 @@ export default function PadelTournamentTabs({ eventId, categoriesMeta }: { event
               {p.inviteToken && (
                 <button
                   type="button"
-                  onClick={() => navigator.clipboard.writeText(`${window.location.origin}/padel/checkout?token=${p.inviteToken}`)}
+                  onClick={() => navigator.clipboard.writeText(`${window.location.origin}/eventos/${event.slug}?token=${p.inviteToken}`)}
                   className="rounded-full border border-white/20 px-3 py-1 text-[12px] text-white/80 hover:bg-white/10"
                 >
                   Copiar convite

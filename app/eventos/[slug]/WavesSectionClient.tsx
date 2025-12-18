@@ -1,11 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { useCheckout } from "@/app/components/checkout/contextoCheckout";
-import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
-
-import { useUser } from "@/app/hooks/useUser";
 
 export type WaveStatus = "on_sale" | "upcoming" | "closed" | "sold_out";
 
@@ -100,10 +96,7 @@ export default function WavesSectionClient({
   isFreeEvent,
   checkoutUiVariant = "EVENT_DEFAULT",
 }: WavesSectionClientProps) {
-  const router = useRouter();
   const { abrirCheckout, atualizarDados } = useCheckout();
-  const { openModal } = useAuthModal();
-  const { user } = useUser();
   const [tickets, setTickets] = useState<WaveTicket[]>(initialTickets);
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<FeedbackState>({});
@@ -122,114 +115,17 @@ export default function WavesSectionClient({
     setLoadingId(ticketId);
 
     try {
-      const isPaidTicket = !isFreeEvent && selectedTicket.price > 0;
-
-      // 🔥 Evento pago → abre modal de checkout (novo fluxo)
-      if (isPaidTicket) {
-        abrirCheckout({
-          slug,
-          ticketId,
-          price: selectedTicket.price,
-          ticketName: selectedTicket.name,
-        });
-        setLoadingId(null);
-        return;
-      }
-
-      // Evento grátis (ou wave a 0€) → fluxo atual de "compra" direta
-      const res = await fetch(`/api/eventos/${slug}/comprar`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
+      // Todo o checkout (pago ou grátis) passa pelo modal/core único.
+      abrirCheckout({
+        slug,
+        ticketId,
+        price: selectedTicket.price,
+        ticketName: selectedTicket.name,
+        additional: {
+          checkoutUiVariant,
         },
-        body: JSON.stringify({
-          ticketId,
-          quantity: 1,
-        }),
+        waves: tickets,
       });
-
-      // Não autenticado → mandar para login com redirect
-      if (res.status === 401) {
-        setFeedback((prev) => ({
-          ...prev,
-          [ticketId]: {
-            type: "error",
-            message:
-              "Precisas de entrar na tua conta para reservar este lugar.",
-          },
-        }));
-        router.push(`/login?redirect=/eventos/${slug}`);
-        return;
-      }
-
-      if (!res.ok) {
-        let errorMessage =
-          "Não foi possível concluir a reserva. Tenta outra vez.";
-        try {
-          const errBody = await res.json();
-          if (errBody && typeof errBody.error === "string") {
-            errorMessage = errBody.error;
-          }
-        } catch {
-          const text = await res.text().catch(() => null);
-          if (text) {
-            try {
-              const parsed = JSON.parse(text);
-              if (parsed && typeof parsed.error === "string") {
-                errorMessage = parsed.error;
-              }
-            } catch {
-              // ignore
-            }
-          }
-        }
-
-        setFeedback((prev) => ({
-          ...prev,
-          [ticketId]: {
-            type: "error",
-            message: errorMessage,
-          },
-        }));
-        return;
-      }
-
-      const data = await res.json();
-
-      setTickets((prev) =>
-        prev.map((t) => {
-          if (t.id !== ticketId) return t;
-
-          const updatedTicket = data.ticket ?? {};
-          const { remaining, status } = computeRemainingAndStatus(t, {
-            totalQuantity: updatedTicket.totalQuantity,
-            soldQuantity: updatedTicket.soldQuantity,
-          });
-
-          return {
-            ...t,
-            totalQuantity:
-              updatedTicket.totalQuantity !== undefined
-                ? updatedTicket.totalQuantity
-                : t.totalQuantity ?? null,
-            soldQuantity:
-              updatedTicket.soldQuantity !== undefined
-                ? updatedTicket.soldQuantity
-                : t.soldQuantity ?? 0,
-            remaining,
-            status,
-          };
-        }),
-      );
-
-      setFeedback((prev) =>({
-        ...prev,
-        [ticketId]: {
-          type: "success",
-          message:
-            "Lugar garantido! Em breve vais poder ver este bilhete na tua conta ORYA.",
-        },
-      }));
     } catch (err) {
       console.error(err);
       setFeedback((prev) => ({

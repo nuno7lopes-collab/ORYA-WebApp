@@ -1,13 +1,13 @@
-\"use client\";
+"use client";
 
-import { useMemo, useState } from "react";
-import { notFound, redirect, useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import useSWR from "swr";
-import { summarizeMatchStatus } from "@/domain/tournaments/structure";
-import { computeStandingsForGroup } from "@/domain/tournaments/structure";
+import { summarizeMatchStatus, computeStandingsForGroup } from "@/domain/tournaments/structure";
+import { type TieBreakRule } from "@/domain/tournaments/standings";
 import { computeLiveWarnings } from "@/domain/tournaments/liveWarnings";
 
-type PageProps = { params: Promise<{ id: string }> };
+type PageProps = { params: { id: string } };
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -83,27 +83,45 @@ function Filters({ stages, setFilters }: { stages: any[]; setFilters: (f: any) =
 
 export default function OrganizerTournamentLivePage({ params }: PageProps) {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const tournamentId = Number((params as any)?.id || searchParams?.get("id"));
+  const tournamentId = Number(params.id);
+  const [authError, setAuthError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (authError === "login") router.replace("/login");
+    if (authError === "organizador") router.replace("/organizador");
+  }, [authError, router]);
+
   if (!Number.isFinite(tournamentId)) {
-    notFound();
+    return (
+      <div className="p-4 text-white/70">
+        <p>ID de torneio inválido.</p>
+        <button
+          onClick={() => router.back()}
+          className="mt-3 rounded-full border border-white/20 px-3 py-1 text-sm text-white hover:border-white/40"
+        >
+          Voltar
+        </button>
+      </div>
+    );
   }
 
   const { data, error } = useSWR(`/api/organizador/tournaments/${tournamentId}/live`, fetcher);
+
+  useEffect(() => {
+    if (!data?.error) return;
+    if (data.error === "UNAUTHENTICATED") setAuthError("login");
+    if (data.error === "FORBIDDEN") setAuthError("organizador");
+  }, [data?.error]);
+
   if (error) {
-    if (error.status === 401) redirect("/login");
-    if (error.status === 403) redirect("/organizador");
-  }
-  if (!data?.ok) {
-    if (data?.error === "UNAUTHENTICATED") redirect("/login");
-    if (data?.error === "FORBIDDEN") redirect("/organizador");
+    return <div className="p-4 text-white/70">Erro a carregar dados do torneio.</div>;
   }
   if (!data?.tournament) return <div className="p-4 text-white/70">A carregar…</div>;
 
   const tournament = data.tournament;
-  const tieBreakRules = Array.isArray(tournament.tieBreakRules)
-    ? (tournament.tieBreakRules as string[])
-    : ["WINS", "SET_DIFF", "GAME_DIFF", "HEAD_TO_HEAD", "RANDOM"];
+  const tieBreakRules: TieBreakRule[] = Array.isArray(tournament.tieBreakRules)
+    ? (tournament.tieBreakRules as TieBreakRule[])
+    : (["WINS", "SET_DIFF", "GAME_DIFF", "HEAD_TO_HEAD", "RANDOM"] as TieBreakRule[]);
 
   const stages = useMemo(
     () =>
@@ -198,64 +216,69 @@ export default function OrganizerTournamentLivePage({ params }: PageProps) {
         {stages.map((stage: any) => (
           <div key={stage.id} className="rounded-xl border border-white/10 bg-white/5 p-3 space-y-3">
             <div className="flex items-center justify-between">
-              <h2 className="text-white font-semibold">{stage.name || stage.stageType}</h2>
-              <span className="text-[11px] text-white/60">{stage.stageType}</span>
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">
+                  {stage.name || stage.stageType}
+                </p>
+                <p className="text-white/75 text-sm">{stage.matches.length} jogos</p>
+              </div>
+              <div className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] text-white/70">
+                {stage.stageType}
+              </div>
             </div>
 
-            {stage.groups.map((group: any) => (
-              <div key={group.id} className="space-y-2 rounded-lg border border-white/10 bg-black/30 p-2">
-                <div className="flex items-center justify-between text-sm text-white">
-                  <span>{group.name}</span>
-                  <span className="text-[11px] text-white/60">Jogos: {group.matches.length}</span>
-                </div>
-                {group.standings?.length ? (
-                  <div className="space-y-1 text-[12px] text-white/80">
-                    <p className="text-[11px] uppercase tracking-[0.18em] text-white/60">Standings</p>
-                    {group.standings.map((s: any, idx: number) => (
-                      <div key={s.pairingId} className="flex items-center justify-between rounded border border-white/5 bg-white/5 px-2 py-1">
-                        <span className="text-white">{idx + 1}º · Dupla #{s.pairingId}</span>
-                        <span className="text-white/70">V {s.wins} · L {s.losses} · Sets {s.setDiff}</span>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-[12px] text-white/60">Sem standings ainda.</p>
-                )}
-                <div className="space-y-1 text-[12px] text-white/80">
-                  <p className="text-[11px] uppercase tracking-[0.18em] text-white/60">Jogos</p>
-                  {group.matches
-                    .filter((m: any) => filteredMatches.find((fm: any) => fm.id === m.id))
-                    .map((m: any) => (
-                      <div key={m.id} className="rounded border border-white/10 bg-white/5 px-2 py-1">
-                        <div className="flex items-center justify-between">
-                          <span className="text-white">#{m.id} · {m.pairing1Id ?? "?"} vs {m.pairing2Id ?? "?"}</span>
-                          <span className="text-[11px] text-white/60">{m.statusLabel}</span>
+            {stage.groups.length > 0 && (
+              <div className="space-y-2">
+                {stage.groups.map((group: any) => (
+                  <div key={group.id} className="rounded-lg border border-white/10 bg-black/40 p-2">
+                    <p className="text-[12px] text-white/70 mb-1">{group.name}</p>
+                    <div className="space-y-1">
+                      {group.standings.map((row: any, idx: number) => (
+                        <div key={row.pairingId ?? idx} className="flex items-center justify-between text-[12px] text-white/80">
+                          <span>
+                            #{idx + 1} · Dupla {row.pairingId ?? "—"}
+                          </span>
+                          <span>{row.points} pts</span>
                         </div>
-                        <p className="text-white/60 text-[11px]">
-                          Court {m.courtId ?? "—"} · {m.startAt ? new Date(m.startAt).toLocaleString("pt-PT") : "sem horário"}
-                        </p>
-                      </div>
-                    ))}
-                </div>
+                      ))}
+                    </div>
+                    <div className="mt-2 space-y-1">
+                      {group.matches.map((match: any) => (
+                        <div
+                          key={match.id}
+                          className="rounded border border-white/10 bg-white/5 px-2 py-1 text-[12px] text-white/75"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span>Jogo #{match.id}</span>
+                            <span>{match.statusLabel}</span>
+                          </div>
+                          <div className="text-white/60">
+                            {match.pairing1Id ?? "—"} vs {match.pairing2Id ?? "—"}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))}
+            )}
 
             {stage.matches.length > 0 && (
-              <div className="space-y-1 text-[12px] text-white/80">
-                <p className="text-[11px] uppercase tracking-[0.18em] text-white/60">Jogos avulso</p>
-                {stage.matches
-                  .filter((m: any) => filteredMatches.find((fm: any) => fm.id === m.id))
-                  .map((m: any) => (
-                    <div key={m.id} className="rounded border border-white/10 bg-white/5 px-2 py-1">
-                      <div className="flex items-center justify-between">
-                        <span className="text-white">#{m.id} · {m.pairing1Id ?? "?"} vs {m.pairing2Id ?? "?"}</span>
-                        <span className="text-[11px] text-white/60">{m.statusLabel}</span>
-                      </div>
-                      <p className="text-white/60 text-[11px]">
-                        Court {m.courtId ?? "—"} · {m.startAt ? new Date(m.startAt).toLocaleString("pt-PT") : "sem horário"}
-                      </p>
+              <div className="space-y-1">
+                {stage.matches.map((match: any) => (
+                  <div
+                    key={match.id}
+                    className="rounded border border-white/10 bg-white/5 px-3 py-2 text-[12px] text-white/75"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span>Jogo #{match.id}</span>
+                      <span>{match.statusLabel}</span>
                     </div>
-                  ))}
+                    <div className="text-white/60">
+                      {match.pairing1Id ?? "—"} vs {match.pairing2Id ?? "—"}
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </div>

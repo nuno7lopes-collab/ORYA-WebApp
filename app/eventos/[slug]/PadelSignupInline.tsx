@@ -51,9 +51,9 @@ export default function PadelSignupInline({
       }
       const pairingId = json.pairing.id as number;
       if (mode === "SPLIT") {
-        router.push(`/padel/checkout?pairingId=${pairingId}`);
+        router.push(`/eventos/${slug}?pairingId=${pairingId}`);
       } else {
-        router.push(`/padel/checkout?pairingId=${pairingId}&mode=full`);
+        router.push(`/eventos/${slug}?pairingId=${pairingId}&mode=full`);
       }
     } catch (err) {
       console.error("[PadelSignupInline] erro", err);

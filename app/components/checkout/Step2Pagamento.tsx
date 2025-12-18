@@ -16,6 +16,7 @@ import { type CheckoutBreakdown, useCheckout } from "./contextoCheckout";
 import { supabaseBrowser } from "@/lib/supabaseBrowser";
 import { isValidPhone, sanitizePhone } from "@/lib/phone";
 import { sanitizeUsername, validateUsername } from "@/lib/username";
+import { createPurchaseId } from "@/lib/checkoutSchemas";
 
 function isValidEmail(email: string) {
   return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email);
@@ -28,6 +29,15 @@ function formatMoney(cents: number, currency = "EUR") {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(cents / 100);
+}
+
+function buildClientFingerprint(input: unknown) {
+  try {
+    return JSON.stringify(input);
+  } catch {
+    // Fallback muito raro (ex.: objeto circular) — usamos um valor que força refresh.
+    return `fp_${Date.now()}`;
+  }
 }
 
 type CheckoutItem = {
@@ -55,6 +65,9 @@ type CheckoutData = {
     guestName?: string;
     guestEmail?: string;
     guestPhone?: string | null;
+    idempotencyKey?: string;
+    purchaseId?: string | null;
+    requiresAuth?: boolean;
   };
   paymentScenario?: string | null;
 };
@@ -64,6 +77,8 @@ type GuestInfo = {
   email: string;
   phone?: string;
 };
+
+const FREE_PLACEHOLDER_INTENT_ID = "FREE_CHECKOUT";
 
 export default function Step2Pagamento() {
   const { dados, irParaPasso, atualizarDados, breakdown, setBreakdown } = useCheckout();
@@ -81,6 +96,7 @@ export default function Step2Pagamento() {
   const [purchaseMode, setPurchaseMode] = useState<"auth" | "guest">("guest");
   const [authInfo, setAuthInfo] = useState<string | null>(null);
   const [guestErrors, setGuestErrors] = useState<{ name?: string; email?: string; phone?: string }>({});
+  const persistedIdemKeyRef = useRef<string | null>(null);
 
   // 👤 Guest form state
   const [guestName, setGuestName] = useState("");
@@ -95,6 +111,9 @@ export default function Step2Pagamento() {
   const [appliedPromoLabel, setAppliedPromoLabel] = useState<string | null>(null);
   const lastIntentKeyRef = useRef<string | null>(null);
   const inFlightIntentRef = useRef<string | null>(null);
+  const ensuredIdemKeyRef = useRef(false);
+  const lastClearedFingerprintRef = useRef<string | null>(null);
+  const idempotencyMismatchCountRef = useRef(0);
   const [cachedIntent, setCachedIntent] = useState<{
     key: string;
     clientSecret: string | null;
@@ -108,6 +127,58 @@ export default function Step2Pagamento() {
     purchaseId?: string | null;
   } | null>(null);
 
+  const safeDados: CheckoutData | null =
+    dados && typeof dados === "object" ? (dados as CheckoutData) : null;
+  const scenario = safeDados?.paymentScenario ?? cachedIntent?.paymentScenario ?? null;
+  const isFreeScenario = scenario === "FREE_CHECKOUT";
+  const needsStripe = !isFreeScenario;
+
+  const additionalForRules =
+    safeDados?.additional && typeof safeDados.additional === "object"
+      ? safeDados.additional
+      : {};
+
+  // Regras de acesso ao checkout:
+  // - FREE_CHECKOUT: sempre com conta
+  // - GROUP_SPLIT: por defeito exige conta (capitão a pagar a sua parte)
+  // - Podemos forçar via additional.requiresAuth (SSOT no futuro)
+  const requiresAuth =
+    Boolean((additionalForRules as Record<string, unknown>)?.requiresAuth) ||
+    isFreeScenario ||
+    scenario === "GROUP_SPLIT";
+
+  useEffect(() => {
+    if (!safeDados) return;
+    if (ensuredIdemKeyRef.current) return;
+
+    const additional =
+      safeDados.additional && typeof safeDados.additional === "object"
+        ? (safeDados.additional as Record<string, unknown>)
+        : {};
+
+    const existing =
+      typeof additional.idempotencyKey === "string" && additional.idempotencyKey.trim()
+        ? additional.idempotencyKey.trim()
+        : null;
+
+    if (!existing) {
+      ensuredIdemKeyRef.current = true;
+      try {
+        atualizarDados({
+          additional: {
+            ...(safeDados?.additional ?? {}),
+            idempotencyKey: crypto.randomUUID(),
+          },
+        });
+      } catch {
+        // Se por algum motivo falhar (ambiente sem crypto), não bloqueamos o checkout
+      }
+      return;
+    }
+
+    ensuredIdemKeyRef.current = true;
+  }, [safeDados, atualizarDados]);
+
   useEffect(() => {
     if (!promoCode.trim()) {
       setAppliedDiscount(0);
@@ -115,30 +186,28 @@ export default function Step2Pagamento() {
   }, [promoCode]);
 
   useEffect(() => {
-    if (isFreeScenario && purchaseMode !== "auth") {
+    if (requiresAuth && purchaseMode !== "auth") {
       setPurchaseMode("auth");
       setClientSecret(null);
       setServerAmount(null);
     }
-  }, [isFreeScenario, purchaseMode]);
+  }, [requiresAuth, purchaseMode]);
 
-  const safeDados: CheckoutData | null =
-    dados && typeof dados === "object" ? (dados as CheckoutData) : null;
-  const scenario = safeDados?.paymentScenario ?? cachedIntent?.paymentScenario ?? null;
-  const isFreeScenario = scenario === "FREE_CHECKOUT";
 
   const stripePromise = useMemo(() => {
+    // FREE_CHECKOUT não precisa de Stripe no cliente.
+    if (!needsStripe) return null;
     const key = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
     if (!key) return null;
     return loadStripe(key);
-  }, []);
+  }, [needsStripe]);
 
   useEffect(() => {
-    if (!stripePromise) {
+    if (needsStripe && !stripePromise) {
       setError("Configuração de pagamentos indisponível. Tenta novamente mais tarde.");
       setLoading(false);
     }
-  }, [stripePromise]);
+  }, [stripePromise, needsStripe]);
 
   // Primeiro: verificar se há sessão Supabase no browser e ficar a escutar mudanças de auth
   useEffect(() => {
@@ -234,7 +303,7 @@ export default function Step2Pagamento() {
 
     if (!safeDados.slug || waves.length === 0) return null;
 
-    const items: CheckoutItem[] = waves
+    const items: CheckoutItem[] = (waves
       .map((w) => {
         const qty = quantidades[w.id] ?? 0;
         if (!qty || qty <= 0) return null;
@@ -242,21 +311,77 @@ export default function Step2Pagamento() {
         if (!Number.isFinite(ticketId)) return null;
         return { ticketId, quantity: qty };
       })
-      .filter(Boolean) as CheckoutItem[];
+      .filter(Boolean) as CheckoutItem[])
+      .sort((a, b) => a.ticketId - b.ticketId);
 
     if (items.length === 0) return null;
 
     const totalFromStep1 =
       typeof additional.total === "number" ? additional.total : null;
 
-      return {
-        slug: safeDados.slug,
-        items,
-        total: totalFromStep1,
-        promoCode: promoCode.trim() || undefined,
-        paymentScenario: safeDados.paymentScenario ?? undefined,
-      };
-  }, [safeDados, promoCode]);
+    // IdempotencyKey estável: reutiliza a existente; se não houver, gera apenas uma vez
+    let idemKey: string | undefined =
+      (safeDados?.additional as Record<string, unknown> | undefined)?.idempotencyKey as string | undefined;
+    if (!idemKey || !idemKey.trim()) {
+      if (!persistedIdemKeyRef.current) {
+        try {
+          persistedIdemKeyRef.current = crypto.randomUUID();
+        } catch {
+          persistedIdemKeyRef.current = `idem-${Date.now()}`;
+        }
+      }
+      idemKey = persistedIdemKeyRef.current ?? undefined;
+    } else {
+      persistedIdemKeyRef.current = idemKey;
+    }
+    const purchaseId = undefined;
+
+    return {
+      slug: safeDados.slug,
+      items,
+      total: totalFromStep1,
+      promoCode: promoCode.trim() || undefined,
+      paymentScenario: safeDados.paymentScenario ?? undefined,
+      requiresAuth,
+      idempotencyKey: idemKey,
+      purchaseId: purchaseId || undefined,
+    };
+  }, [safeDados, promoCode, requiresAuth]);
+
+  // Garante idempotencyKey persistida no contexto para estabilizar intentKey e evitar re-renders infinitos
+  useEffect(() => {
+    if (!safeDados) return;
+    const additionalObj =
+      safeDados.additional && typeof safeDados.additional === "object"
+        ? (safeDados.additional as Record<string, unknown>)
+        : {};
+    const existing =
+      typeof additionalObj.idempotencyKey === "string" && additionalObj.idempotencyKey.trim()
+        ? additionalObj.idempotencyKey.trim()
+        : null;
+
+    if (existing) {
+      persistedIdemKeyRef.current = existing;
+      return;
+    }
+
+    let newKey = persistedIdemKeyRef.current;
+    if (!newKey) {
+      try {
+        newKey = crypto.randomUUID();
+      } catch {
+        newKey = `idem-${Date.now()}`;
+      }
+      persistedIdemKeyRef.current = newKey;
+    }
+
+    atualizarDados({
+      additional: {
+        ...(safeDados.additional as Record<string, unknown> | undefined),
+        idempotencyKey: newKey,
+      },
+    });
+  }, [safeDados, atualizarDados]);
 
   const checkUsernameAvailability = async (value: string) => {
     const cleaned = sanitizeUsername(value);
@@ -287,7 +412,7 @@ export default function Step2Pagamento() {
       return;
     }
 
-    if (!stripePromise) return;
+    if (needsStripe && !stripePromise) return;
     // Enquanto não sabemos se está logado, não fazemos nada
     if (!authChecked) return;
 
@@ -315,6 +440,102 @@ export default function Step2Pagamento() {
         }
       : null;
 
+    const clientFingerprint = buildClientFingerprint({
+      slug: payload.slug,
+      items: payload.items,
+      total: payload.total ?? null,
+      promoCode: payload.promoCode ?? null,
+      paymentScenario: payload.paymentScenario ?? null,
+      requiresAuth,
+      mode: purchaseMode,
+      userId: userId ?? null,
+      guest: guestPayload
+        ? {
+            name: guestPayload.name,
+            email: guestPayload.email,
+            phone: guestPayload.phone ?? null,
+          }
+        : null,
+    });
+
+    const additionalObj =
+      safeDados?.additional && typeof safeDados.additional === "object"
+        ? (safeDados.additional as Record<string, unknown>)
+        : {};
+
+    const existingClientFingerprint =
+      typeof (additionalObj as any).clientFingerprint === "string"
+        ? String((additionalObj as any).clientFingerprint)
+        : null;
+
+    const currentIdempotencyKey =
+      (safeDados?.additional as Record<string, unknown> | undefined)?.idempotencyKey ??
+      (payload as any)?.idempotencyKey ??
+      null;
+
+    const existingIntentFingerprint =
+      typeof (additionalObj as any).intentFingerprint === "string"
+        ? String((additionalObj as any).intentFingerprint)
+        : null;
+
+    const hasExistingPurchaseState = Boolean(
+      (additionalObj as any).purchaseId || (additionalObj as any).paymentIntentId || (additionalObj as any).freeCheckout,
+    );
+
+    // Se o utilizador alterou o checkout (items/promo/guest/mode/etc.) mas ainda temos um purchaseId antigo,
+    // limpamos o estado para não reutilizar o PaymentIntent errado (caso clássico: aplicar/remover promo e não recalcular).
+    if (
+      hasExistingPurchaseState &&
+      existingClientFingerprint &&
+      existingClientFingerprint !== clientFingerprint &&
+      lastClearedFingerprintRef.current !== clientFingerprint
+    ) {
+      lastClearedFingerprintRef.current = clientFingerprint;
+
+      // Limpeza local imediata para evitar UI/states inconsistentes
+      setCachedIntent(null);
+      setClientSecret(null);
+      setServerAmount(null);
+      setBreakdown(null);
+      lastIntentKeyRef.current = null;
+      inFlightIntentRef.current = null;
+
+      let nextIdemKey: string | undefined;
+      try {
+        nextIdemKey = crypto.randomUUID();
+      } catch {
+        nextIdemKey = undefined;
+      }
+
+      atualizarDados({
+        additional: {
+          ...(safeDados?.additional ?? {}),
+          purchaseId: null,
+          paymentIntentId: undefined,
+          freeCheckout: undefined,
+          appliedPromoLabel: undefined,
+          // clientFingerprint é só para o FE detetar mudanças
+          clientFingerprint,
+          // intentFingerprint é do BE (hash). Ao mudar seleção, limpamos.
+          intentFingerprint: undefined,
+          idempotencyKey: nextIdemKey ?? (additionalObj as any).idempotencyKey,
+        },
+      });
+
+      setLoading(false);
+      return;
+    }
+
+    // Backfill: se já existe purchaseId mas ainda não guardámos fingerprint, guardamos para futuras comparações.
+    if (hasExistingPurchaseState && !existingClientFingerprint) {
+      atualizarDados({
+        additional: {
+          ...(safeDados?.additional ?? {}),
+          clientFingerprint,
+        },
+      });
+    }
+
     // Chave estável para não recriar PaymentIntent sem necessidade
     const intentKey = JSON.stringify({
       payload,
@@ -322,6 +543,12 @@ export default function Step2Pagamento() {
       userId: userId ?? "guest",
       mode: purchaseMode,
       scenario: safeDados?.paymentScenario ?? null,
+      clientFingerprint,
+      idempotencyKey: currentIdempotencyKey,
+      purchaseId:
+        (payload as any)?.purchaseId ??
+        (safeDados?.additional as any)?.purchaseId ??
+        null,
     });
 
     // Se já temos um intent em cache com a mesma key, reaproveitamos
@@ -374,61 +601,254 @@ export default function Step2Pagamento() {
           payload,
         );
 
-        const res = await fetch("/api/payments/intent", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            ...payload,
-            guest: guestPayload ?? undefined,
-          }),
-        });
+        const idem =
+          (safeDados?.additional as Record<string, unknown> | undefined)?.idempotencyKey ??
+          (payload as any)?.idempotencyKey ??
+          null;
 
-        const data = await res.json();
+        let attempt = 0;
+        // Não enviamos purchaseId; o backend calcula anchors determinísticas. idempotencyKey segue para evitar PI terminal.
+        let currentPayload = { ...payload };
+        delete (currentPayload as any).purchaseId;
+        let currentIntentFingerprint = undefined;
+        let res: Response | null = null;
+        let data: any = null;
+        let handled409 = false;
+
+        while (attempt < 2) {
+          res = await fetch("/api/payments/intent", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              ...currentPayload,
+              guest: guestPayload ?? undefined,
+              requiresAuth,
+              purchaseId: null,
+              idempotencyKey: idem,
+              intentFingerprint: currentIntentFingerprint ?? undefined,
+            }),
+          });
+
+          data = await res.json().catch(() => null);
+
+          if (res.status === 409) {
+            handled409 = true;
+            attempt += 1;
+            // Reset total: limpar caches e fazer um retry sem anchors próprias.
+            currentPayload = { ...payload };
+            delete (currentPayload as any).purchaseId;
+            currentIntentFingerprint = undefined;
+
+            if (!cancelled) {
+              setCachedIntent(null);
+              setClientSecret(null);
+              setServerAmount(null);
+              setBreakdown(null);
+              lastIntentKeyRef.current = null;
+              inFlightIntentRef.current = null;
+              try {
+                atualizarDados({
+                  additional: {
+                    ...(safeDados?.additional ?? {}),
+                    purchaseId: null,
+                    paymentIntentId: undefined,
+                    freeCheckout: undefined,
+                    appliedPromoLabel: undefined,
+                    clientFingerprint,
+                    intentFingerprint: undefined,
+                    idempotencyKey: undefined,
+                  },
+                });
+              } catch {}
+            }
+            continue;
+          }
+
+          // status != 409 ➜ sair do loop
+          break;
+        }
+
+        if (!data || typeof data !== "object") {
+          if (!cancelled) {
+            setBreakdown(null);
+            setError("Resposta inválida do servidor. Tenta novamente.");
+          }
+          return;
+        }
         console.log("[Step2Pagamento] Resposta de /api/payments/intent:", {
           status: res.status,
           ok: res.ok,
           data,
         });
 
-        // Se a API disser 401 ➜ perder sessão entretanto
-        if (res.status === 401) {
-          if (purchaseMode === "guest") {
-            if (!cancelled) {
-              setBreakdown(null);
-              setError(
-                typeof data?.error === "string"
-                  ? data.error
-                  : "Não foi possível continuar como convidado."
-              );
-            }
-            return;
-          }
+        // 409 ➜ idempotencyKey reutilizada com payload diferente (proteção contra intents errados/duplicados)
+        if (res.status === 409) {
           if (!cancelled) {
-            setUserId(null);
+            // Reset total para forçar recalcular (idempotencyKey + purchaseId + PI state)
+            setCachedIntent(null);
             setClientSecret(null);
             setServerAmount(null);
             setBreakdown(null);
+            lastIntentKeyRef.current = null;
+            inFlightIntentRef.current = null;
+
+            let nextIdemKey: string | undefined;
+            try {
+              nextIdemKey = crypto.randomUUID();
+            } catch {
+              nextIdemKey = undefined;
+            }
+
+            try {
+              atualizarDados({
+                additional: {
+                  ...(safeDados?.additional ?? {}),
+                  purchaseId: null,
+                  paymentIntentId: undefined,
+                  freeCheckout: undefined,
+                  appliedPromoLabel: undefined,
+                  clientFingerprint,
+                  intentFingerprint: undefined,
+                  idempotencyKey: nextIdemKey,
+                },
+              });
+            } catch {}
+
+            // Força novo ciclo de preparação (especialmente útil em guest flow)
+            setGuestSubmitVersion((v) => v + 1);
+            setPromoWarning(
+              typeof (data as any)?.error === "string"
+                ? (data as any).error
+                : "O teu checkout mudou e estamos a recalcular o pagamento…",
+            );
             setError(null);
           }
           return;
         }
 
-        if (!res.ok || !data?.ok || (!data.clientSecret && !data.freeCheckout)) {
-          setBreakdown(null);
-          if (data?.code === "USERNAME_REQUIRED_FOR_FREE") {
+        // Se a API disser 401 ➜ sessão ausente/expirada OU cenário que exige auth
+        if (res.status === 401) {
+          const respCode = typeof data?.code === "string" ? data.code : null;
+          const mustAuth =
+            requiresAuth ||
+            respCode === "AUTH_REQUIRED_FOR_GROUP_SPLIT" ||
+            respCode === "AUTH_REQUIRED";
+
+          if (!cancelled) {
+            // Garantimos estado limpo para permitir retry correto
+            setClientSecret(null);
+            setServerAmount(null);
+            setBreakdown(null);
+            setCachedIntent(null);
+          }
+
+          if (mustAuth) {
             if (!cancelled) {
-              setError("Este evento gratuito requer sessão com username definido.");
               setPurchaseMode("auth");
-              setAuthInfo("Inicia sessão e define um username para concluir a inscrição gratuita.");
+              setGuestSubmitVersion(0);
+              setGuestErrors({});
+              setError(null);
+              setAuthInfo(
+                respCode === "AUTH_REQUIRED_FOR_GROUP_SPLIT"
+                  ? "Para pagar apenas a tua parte tens de iniciar sessão."
+                  : "Este tipo de checkout requer sessão iniciada."
+              );
             }
             return;
           }
-          const msg =
-            typeof data?.error === "string"
-              ? data.error
-              : "Não foi possível preparar o pagamento.";
 
-          if (data?.code === "ORGANIZER_STRIPE_NOT_CONNECTED") {
+          // Guest permitido, mas algo correu mal (ex.: backend rejeitou por sessão)
+          if (!cancelled) {
+            setError(
+              typeof data?.error === "string"
+                ? data.error
+                : "Sessão expirada. Tenta novamente."
+            );
+          }
+          return;
+        }
+
+        if (!res.ok || !data?.ok) {
+          setBreakdown(null);
+
+          const respCode = typeof data?.code === "string" ? data.code : null;
+          const retryable = typeof data?.retryable === "boolean" ? data.retryable : null;
+          const nextAction =
+            typeof data?.nextAction === "string" && data.nextAction
+              ? data.nextAction
+              : null;
+
+          if (respCode === "IDEMPOTENCY_KEY_PAYLOAD_MISMATCH") {
+            if (!cancelled) {
+              // Limita a 1 retentativa local para evitar loops de 409
+              if (idempotencyMismatchCountRef.current >= 1) {
+                setError(
+                  typeof data?.error === "string"
+                    ? data.error
+                    : "O checkout mudou noutro separador. Volta ao passo anterior ou recarrega a página e tenta de novo.",
+                );
+                setSubmitting(false);
+                setLoading(false);
+                return;
+              }
+              idempotencyMismatchCountRef.current += 1;
+
+              // Limpa estado local para forçar novo intent (sem reusar idempotency antiga)
+              setClientSecret(null);
+              setServerAmount(null);
+              setBreakdown(null);
+              setCachedIntent(null);
+              lastIntentKeyRef.current = null;
+              inFlightIntentRef.current = null;
+
+              try {
+                atualizarDados({
+                  additional: {
+                    ...(safeDados?.additional ?? {}),
+                    purchaseId: null,
+                    paymentIntentId: undefined,
+                    idempotencyKey: undefined,
+                    intentFingerprint: undefined,
+                    clientFingerprint,
+                    freeCheckout: undefined,
+                    appliedPromoLabel: undefined,
+                  },
+                });
+              } catch {}
+
+              setError(
+                typeof data?.error === "string"
+                  ? data.error
+                  : "O checkout foi aberto noutro separador. Recriámos o pagamento; volta a clicar em Pagar.",
+              );
+              // Não re-submete automaticamente; utilizador volta a clicar
+            }
+            return;
+          }
+
+          if (respCode === "USERNAME_REQUIRED_FOR_FREE") {
+            if (!cancelled) {
+              setError("Este evento gratuito requer sessão com username definido.");
+              setPurchaseMode("auth");
+              setAuthInfo(
+                "Inicia sessão e define um username para concluir a inscrição gratuita.",
+              );
+            }
+            return;
+          }
+
+          const msg =
+            respCode === "PRICE_CHANGED"
+              ? "Os preços foram atualizados. Revê a seleção e tenta novamente."
+              : respCode === "INSUFFICIENT_STOCK"
+                ? "Stock insuficiente para um dos bilhetes."
+                : typeof data?.error === "string"
+                  ? data.error
+                  : "Não foi possível preparar o pagamento.";
+
+          if (respCode === "ORGANIZER_STRIPE_NOT_CONNECTED") {
             if (!cancelled) {
               setError(
                 data?.message ||
@@ -440,7 +860,9 @@ export default function Step2Pagamento() {
           }
 
           const promoFail =
-            payload?.promoCode && typeof data?.error === "string" && data.error.toLowerCase().includes("código");
+            payload?.promoCode &&
+            typeof data?.error === "string" &&
+            data.error.toLowerCase().includes("código");
 
           if (promoFail && !cancelled) {
             setPromoWarning("Código não aplicado. Continuas sem desconto.");
@@ -452,7 +874,24 @@ export default function Step2Pagamento() {
             return;
           }
 
-          if (!cancelled) setError(msg);
+          if (!cancelled) {
+            setError(
+              respCode === "PRICE_CHANGED"
+                ? "Os preços mudaram. Volta ao passo anterior e revê a seleção."
+                : respCode === "INSUFFICIENT_STOCK"
+                  ? "Stock insuficiente. Remove itens esgotados e tenta novamente."
+                  : nextAction === "PAY_NOW" && retryable
+                    ? "Precisamos de novo pagamento para continuar."
+                    : msg,
+            );
+
+            if (respCode === "PRICE_CHANGED" || respCode === "INSUFFICIENT_STOCK") {
+              setPromoWarning(null);
+              setBreakdown(null);
+              setClientSecret(null);
+              setServerAmount(null);
+            }
+          }
           return;
         }
 
@@ -462,6 +901,23 @@ export default function Step2Pagamento() {
               ? data.paymentScenario
               : safeDados?.paymentScenario ?? null;
           const purchaseIdFromServer = typeof data?.purchaseId === "string" ? data.purchaseId : undefined;
+          const responseIntentFingerprint =
+            typeof data?.intentFingerprint === "string" ? data.intentFingerprint : null;
+          const responseIdemKey =
+            typeof data?.idempotencyKey === "string" && data.idempotencyKey.trim()
+              ? data.idempotencyKey.trim()
+              : null;
+
+          const effectiveIntentFingerprint = responseIntentFingerprint ?? existingIntentFingerprint ?? undefined;
+
+          // Só fazemos backfill da idempotencyKey se por algum motivo ainda não existir localmente.
+          const localIdem =
+            typeof (safeDados?.additional as Record<string, unknown> | undefined)?.idempotencyKey === "string" &&
+            String((safeDados?.additional as Record<string, unknown>).idempotencyKey).trim()
+              ? String((safeDados?.additional as Record<string, unknown>).idempotencyKey).trim()
+              : null;
+          const effectiveIdemKey = localIdem ?? responseIdemKey;
+
           const promoLabel =
             promoCode?.trim()
               ? promoCode.trim()
@@ -469,35 +925,72 @@ export default function Step2Pagamento() {
                 ? "Promo automática"
                 : null;
           const isAutoAppliedPromo = !promoCode?.trim() && Boolean(promoLabel);
-
-          if (data.freeCheckout) {
-            const totalCents =
-              data.breakdown && typeof data.breakdown === "object"
-                ? (data.breakdown as CheckoutBreakdown).totalCents ?? 0
+          const breakdownFromResponse =
+            data.breakdown && typeof data.breakdown === "object"
+              ? (data.breakdown as CheckoutBreakdown)
+              : null;
+          const discountCentsNumber =
+            typeof data.discountCents === "number"
+              ? data.discountCents
+              : typeof breakdownFromResponse?.discountCents === "number"
+                ? breakdownFromResponse.discountCents
                 : 0;
-            setBreakdown(
-              data.breakdown && typeof data.breakdown === "object"
-                ? (data.breakdown as CheckoutBreakdown)
-                : null,
-            );
-            setAppliedDiscount(
-              typeof data.discountCents === "number"
-                ? data.discountCents / 100
-                : typeof data.breakdown?.discountCents === "number"
-                  ? data.breakdown.discountCents / 100
-                  : 0,
-            );
+          const subtotalCentsNumber =
+            typeof breakdownFromResponse?.subtotalCents === "number"
+              ? breakdownFromResponse.subtotalCents
+              : null;
+          const platformFeeCentsNumber =
+            typeof breakdownFromResponse?.platformFeeCents === "number"
+              ? breakdownFromResponse.platformFeeCents
+              : null;
+          const totalCentsNumber =
+            typeof breakdownFromResponse?.totalCents === "number"
+              ? breakdownFromResponse.totalCents
+              : typeof data.amount === "number"
+                ? data.amount
+                : null;
+          const currencyFromResponse =
+            typeof breakdownFromResponse?.currency === "string" ? breakdownFromResponse.currency : undefined;
+
+          const statusFromResponse =
+            typeof data?.status === "string" ? data.status.toUpperCase() : null;
+          const nextActionFromResponse =
+            typeof data?.nextAction === "string" ? data.nextAction : null;
+          const paymentIntentIdFromResponse =
+            typeof data?.paymentIntentId === "string" ? data.paymentIntentId : null;
+
+          if (statusFromResponse === "FAILED") {
+            setClientSecret(null);
+            setServerAmount(null);
+            setBreakdown(null);
+            setError(typeof data?.error === "string" ? data.error : "Pagamento falhou.");
+            return;
+          }
+
+          if (data.freeCheckout || data.isFreeCheckout || statusFromResponse === "PAID") {
+            const totalCents = totalCentsNumber ?? 0;
+            setBreakdown(breakdownFromResponse);
+            setAppliedDiscount(discountCentsNumber > 0 ? discountCentsNumber / 100 : 0);
             setAppliedPromoLabel(promoLabel);
             setClientSecret(null);
             setServerAmount(0);
             atualizarDados({
               additional: {
                 ...(safeDados?.additional ?? {}),
-                paymentIntentId: "FREE_CHECKOUT",
+                paymentIntentId: paymentIntentIdFromResponse ?? FREE_PLACEHOLDER_INTENT_ID,
                 purchaseId: purchaseIdFromServer,
+                subtotalCents: subtotalCentsNumber ?? undefined,
+                discountCents: discountCentsNumber ?? undefined,
+                platformFeeCents: platformFeeCentsNumber ?? undefined,
+                totalCents: totalCents,
+                currency: currencyFromResponse ?? undefined,
                 total: totalCents / 100,
                 freeCheckout: true,
+                clientFingerprint,
+                intentFingerprint: effectiveIntentFingerprint,
+                idempotencyKey: effectiveIdemKey ?? undefined,
                 promoCode: payload?.promoCode,
+                promoCodeRaw: payload?.promoCode,
                 appliedPromoLabel: promoLabel ?? undefined,
                 paymentScenario: paymentScenarioResponse ?? undefined,
               },
@@ -506,29 +999,34 @@ export default function Step2Pagamento() {
             irParaPasso(3);
             return;
           }
+
           setClientSecret(data.clientSecret as string);
-          setServerAmount(
-            typeof data.amount === "number" ? data.amount : null,
-          );
-          setBreakdown(
-            data.breakdown && typeof data.breakdown === "object"
-              ? (data.breakdown as CheckoutBreakdown)
-              : null,
-          );
-          setAppliedDiscount(
-            typeof data.discountCents === "number"
-              ? data.discountCents / 100
-              : typeof data.breakdown?.discountCents === "number"
-                ? data.breakdown.discountCents / 100
-                : 0,
-          );
+          setServerAmount(typeof data.amount === "number" ? data.amount : null);
+          setBreakdown(breakdownFromResponse);
+          setAppliedDiscount(discountCentsNumber > 0 ? discountCentsNumber / 100 : 0);
           setAppliedPromoLabel(promoLabel);
           atualizarDados({
             paymentScenario: paymentScenarioResponse ?? undefined,
             additional: {
               ...(safeDados?.additional ?? {}),
-              purchaseId: purchaseIdFromServer ?? (safeDados?.additional as Record<string, unknown> | undefined)?.purchaseId,
-              paymentIntentId: typeof data?.paymentIntentId === "string" ? data.paymentIntentId : safeDados?.additional?.paymentIntentId,
+              clientFingerprint,
+              intentFingerprint: effectiveIntentFingerprint,
+              idempotencyKey: effectiveIdemKey ?? undefined,
+              purchaseId:
+                purchaseIdFromServer ??
+                (safeDados?.additional as Record<string, unknown> | undefined)?.purchaseId ??
+                (payload as any)?.purchaseId,
+              paymentIntentId:
+                paymentIntentIdFromResponse ??
+                safeDados?.additional?.paymentIntentId,
+              subtotalCents: subtotalCentsNumber ?? undefined,
+              discountCents: discountCentsNumber ?? undefined,
+              platformFeeCents: platformFeeCentsNumber ?? undefined,
+              totalCents: totalCentsNumber ?? undefined,
+              currency: currencyFromResponse ?? undefined,
+              promoCode: payload?.promoCode,
+              promoCodeRaw: payload?.promoCode,
+              appliedPromoLabel: promoLabel ?? undefined,
             },
           });
           lastIntentKeyRef.current = intentKey;
@@ -536,16 +1034,8 @@ export default function Step2Pagamento() {
             key: intentKey,
             clientSecret: data.clientSecret as string,
             amount: typeof data.amount === "number" ? data.amount : null,
-            breakdown:
-              data.breakdown && typeof data.breakdown === "object"
-                ? (data.breakdown as CheckoutBreakdown)
-                : null,
-            discount:
-              typeof data.discountCents === "number"
-                ? data.discountCents / 100
-                : typeof data.breakdown?.discountCents === "number"
-                  ? data.breakdown.discountCents / 100
-                  : 0,
+            breakdown: breakdownFromResponse,
+            discount: discountCentsNumber > 0 ? discountCentsNumber / 100 : 0,
             freeCheckout: false,
             paymentScenario: paymentScenarioResponse,
             promoLabel,
@@ -638,6 +1128,56 @@ const options: StripeElementsOptions | undefined = clientSecret
     }
   : undefined;
 
+  const loadErrorCountRef = useRef(0);
+
+  const handlePaymentElementError = () => {
+    // Evita loop infinito: só tentamos regenerar 1x automaticamente
+    if (loadErrorCountRef.current >= 1) return;
+    loadErrorCountRef.current += 1;
+
+    setError("Sessão de pagamento expirou. Vamos criar um novo intento.");
+    setLoading(true);
+
+    setCachedIntent(null);
+    setClientSecret(null);
+    setServerAmount(null);
+    setBreakdown(null);
+    lastIntentKeyRef.current = null;
+    inFlightIntentRef.current = null;
+    setGuestSubmitVersion((v) => v + 1);
+
+    atualizarDados({
+      additional: {
+        ...(safeDados?.additional ?? {}),
+        purchaseId: null,
+        paymentIntentId: undefined,
+        freeCheckout: undefined,
+        appliedPromoLabel: safeDados?.additional?.appliedPromoLabel,
+        intentFingerprint: crypto.randomUUID(),
+        idempotencyKey: crypto.randomUUID(),
+      },
+    });
+
+    let nextIdemKey: string | undefined;
+    try {
+      nextIdemKey = crypto.randomUUID();
+    } catch {
+      nextIdemKey = undefined;
+    }
+
+    atualizarDados({
+      additional: {
+        ...(safeDados?.additional ?? {}),
+        purchaseId: null,
+        paymentIntentId: undefined,
+        freeCheckout: undefined,
+        appliedPromoLabel: undefined,
+        intentFingerprint: undefined,
+        idempotencyKey: nextIdemKey ?? (additionalObj as any).idempotencyKey,
+      },
+    });
+  };
+
 // Callback chamado pelo AuthWall quando o utilizador faz login/cria conta com sucesso
   const handleAuthenticated = async (newUserId: string) => {
     setUserId(newUserId);
@@ -646,22 +1186,15 @@ const options: StripeElementsOptions | undefined = clientSecret
     setPurchaseMode("auth");
 
     // Tentar migrar bilhetes de guest para este user (best-effort)
-    try {
-      await fetch("/api/tickets/migrate-guest", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      });
-    } catch (err) {
-      console.warn("[Step2Pagamento] Falha ao migrar bilhetes de convidado", err);
-    }
+    // Claim guest será enfileirado depois da compra via /api/me/claim-guest
   };
 
   // Callback para continuar como convidado
   const handleGuestContinue = () => {
-    if (isFreeScenario) {
-      setError("Eventos gratuitos requerem sessão com username.");
+    if (requiresAuth) {
+      setError("Este tipo de checkout requer sessão iniciada.");
       setPurchaseMode("auth");
-      setAuthInfo("Inicia sessão e define um username para concluir a inscrição gratuita.");
+      setAuthInfo("Inicia sessão para continuar.");
       return;
     }
     setError(null);
@@ -697,6 +1230,14 @@ const options: StripeElementsOptions | undefined = clientSecret
         guestEmail: guestEmail.trim(),
         guestEmailConfirm: guestEmailConfirm.trim(),
         guestPhone: phoneNormalized || undefined,
+        // Reset de estado para evitar reutilização de intents/purchase antigos
+        purchaseId: null,
+        paymentIntentId: undefined,
+        freeCheckout: undefined,
+        appliedPromoLabel: undefined,
+        clientFingerprint: undefined,
+        intentFingerprint: undefined,
+        idempotencyKey: crypto.randomUUID(),
       },
     });
 
@@ -721,6 +1262,24 @@ const options: StripeElementsOptions | undefined = clientSecret
     setClientSecret(null);
     setServerAmount(null);
     setGuestSubmitVersion((v) => v + 1);
+
+    try {
+      atualizarDados({
+        additional: {
+          ...(safeDados?.additional ?? {}),
+          purchaseId: null,
+          paymentIntentId: undefined,
+          freeCheckout: undefined,
+          appliedPromoLabel: undefined,
+          clientFingerprint: undefined,
+          intentFingerprint: undefined,
+          idempotencyKey: crypto.randomUUID(),
+        },
+      });
+    } catch {}
+
+    lastIntentKeyRef.current = null;
+    inFlightIntentRef.current = null;
   };
 
   return (
@@ -767,7 +1326,7 @@ const options: StripeElementsOptions | undefined = clientSecret
       {/* 💳 UI de pagamento (user logado OU convidado depois de validar form) */}
       {!authChecking && showPaymentUI ? (
         <>
-          {error || !stripePromise ? (
+          {error || (needsStripe && !stripePromise) ? (
             <div className="flex-1 rounded-2xl border border-red-500/30 bg-red-500/10 px-5 py-6 text-sm text-red-100 shadow-[0_0_30px_rgba(255,0,0,0.35)]">
               <p className="font-semibold mb-1 flex items-center gap-2">
                 <span className="text-lg">⚠️</span> Ocorreu um problema
@@ -783,7 +1342,7 @@ const options: StripeElementsOptions | undefined = clientSecret
                 Tentar novamente
               </button>
             </div>
-          ) : loading || !clientSecret || !options ? (
+          ) : loading || (needsStripe && (!clientSecret || !options)) ? (
             <div className="flex-1 rounded-2xl border border-white/10 bg-white/[0.03] px-6 py-12 flex flex-col justify-center items-center text-center shadow-[0_0_40px_rgba(255,0,200,0.25)]">
               <div className="relative mb-6">
                 <div className="h-14 w-14 rounded-full border-2 border-white/20 border-t-transparent animate-spin" />
@@ -841,6 +1400,26 @@ const options: StripeElementsOptions | undefined = clientSecret
                         setPromoWarning("Escreve um código antes de aplicar.");
                         return;
                       }
+                      // Promo altera o cálculo: limpamos purchase/payment state para obrigar a recalcular intent.
+                      try {
+                    atualizarDados({
+                      additional: {
+                        ...(safeDados?.additional ?? {}),
+                        purchaseId: null,
+                        paymentIntentId: undefined,
+                        freeCheckout: undefined,
+                        appliedPromoLabel: undefined,
+                        intentFingerprint: crypto.randomUUID(),
+                        idempotencyKey: crypto.randomUUID(),
+                      },
+                    });
+                      } catch {}
+                      setCachedIntent(null);
+                      setClientSecret(null);
+                      setServerAmount(null);
+                      setBreakdown(null);
+                      lastIntentKeyRef.current = null;
+                      inFlightIntentRef.current = null;
                       setPromoCode(promoInput.trim());
                       setGuestSubmitVersion((v) => v + 1);
                     }}
@@ -867,7 +1446,13 @@ const options: StripeElementsOptions | undefined = clientSecret
                 )}
               </div>
               <Elements stripe={stripePromise} options={options}>
-                <PaymentForm total={total} discount={appliedDiscount} breakdown={breakdown ?? undefined} />
+                <PaymentForm
+                  total={total}
+                  discount={appliedDiscount}
+                  breakdown={breakdown ?? undefined}
+                  clientSecret={clientSecret}
+                  onLoadError={handlePaymentElementError}
+                />
               </Elements>
             </div>
           )}
@@ -887,7 +1472,7 @@ const options: StripeElementsOptions | undefined = clientSecret
               {error}
             </div>
           )}
-          {!isFreeScenario && (
+          {!requiresAuth && (
             <div className="flex items-center gap-2 text-[11px] bg-black/40 rounded-full p-1 border border-white/10 w-fit">
               <button
                 type="button"
@@ -918,10 +1503,10 @@ const options: StripeElementsOptions | undefined = clientSecret
             </div>
           )}
 
-          {isFreeScenario ? (
+          {requiresAuth ? (
             <div className="space-y-2">
               <div className="rounded-xl border border-emerald-400/30 bg-emerald-500/10 px-3 py-2 text-[11px] text-emerald-50">
-                Evento gratuito — inicia sessão e garante que tens username definido para concluir a inscrição.
+                Para este checkout tens de iniciar sessão (e, se for evento gratuito, ter username definido).
               </div>
               <AuthWall onAuthenticated={handleAuthenticated} />
             </div>
@@ -951,14 +1536,17 @@ type PaymentFormProps = {
   total: number | null;
   discount?: number;
   breakdown?: CheckoutBreakdown;
+  clientSecret: string | null;
+  onLoadError?: () => void;
 };
 
-function PaymentForm({ total, discount = 0, breakdown }: PaymentFormProps) {
+function PaymentForm({ total, discount = 0, breakdown, clientSecret, onLoadError }: PaymentFormProps) {
   const stripe = useStripe();
   const elements = useElements();
   const { irParaPasso, atualizarDados, dados } = useCheckout();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [elementReady, setElementReady] = useState(false);
   const currency = breakdown?.currency ?? "EUR";
   const discountCents = Math.max(0, Math.round(discount * 100));
   const hasInvoice = Boolean(breakdown?.lines?.length);
@@ -969,16 +1557,169 @@ function PaymentForm({ total, discount = 0, breakdown }: PaymentFormProps) {
     hasInvoice && discountCents > 0 ? subtotalCents + discountCents : subtotalCents;
   const promoApplied = discountCents > 0;
 
+  if (!clientSecret) {
+    return (
+      <div className="rounded-2xl border border-red-500/30 bg-red-500/10 px-5 py-6 text-sm text-red-100 shadow-[0_0_30px_rgba(255,0,0,0.35)]">
+        <p className="font-semibold mb-1 flex items-center gap-2">
+          <span className="text-lg">⚠️</span> Não foi possível preparar o pagamento.
+        </p>
+        <p className="text-[12px] mb-4 leading-relaxed">
+          Volta atrás e tenta novamente ou recarrega a página.
+        </p>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="rounded-full bg-white text-red-700 px-5 py-1.5 text-[11px] font-semibold shadow hover:bg-white/90 transition"
+          >
+            Recarregar
+          </button>
+          <button
+            type="button"
+            onClick={() => irParaPasso(1)}
+            className="rounded-full border border-white/30 px-5 py-1.5 text-[11px] text-white hover:bg-white/10 transition"
+          >
+            Voltar
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  useEffect(() => {
+    // sempre que o clientSecret muda, obrigamos o PaymentElement a fazer ready novamente
+    setElementReady(false);
+  }, [clientSecret]);
+
+  // Proteção: se o PaymentIntent já estiver terminal (succeeded/canceled), força regenerar.
+  useEffect(() => {
+    if (!stripe || !clientSecret) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const pi = await stripe.retrievePaymentIntent(clientSecret);
+        if (cancelled) return;
+        const status = pi.paymentIntent?.status;
+        if (status && !["requires_payment_method", "requires_action", "requires_confirmation"].includes(status)) {
+          setError("Sessão de pagamento expirou. Vamos criar um novo intento.");
+          if (onLoadError) onLoadError();
+        }
+      } catch (err) {
+        if (cancelled) return;
+        setError("Falha ao validar estado do pagamento. Tenta novamente.");
+        if (onLoadError) onLoadError();
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [stripe, clientSecret, onLoadError]);
+
+  // Se o utilizador for redirecionado pela Stripe (ex.: 3DS), o URL volta com
+  // `payment_intent_client_secret` e `redirect_status`. Aqui recuperamos o PI
+  // e avançamos automaticamente para o passo 3 quando o pagamento fica concluído.
+  useEffect(() => {
+    if (!stripe) return;
+    if (typeof window === "undefined") return;
+
+    const params = new URLSearchParams(window.location.search);
+    const clientSecretFromUrl = params.get("payment_intent_client_secret");
+
+    if (!clientSecretFromUrl) return;
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        // Limpamos o erro antigo para não confundir o utilizador.
+        setError(null);
+
+        const result = await stripe.retrievePaymentIntent(clientSecretFromUrl);
+
+        if (cancelled) return;
+
+        if (result.error) {
+          setError(result.error.message ?? "Não foi possível confirmar o estado do pagamento.");
+          return;
+        }
+
+        const paymentIntent = result.paymentIntent;
+        if (!paymentIntent) {
+          setError("Não foi possível confirmar o estado do pagamento.");
+          return;
+        }
+
+        if (paymentIntent.status === "succeeded") {
+          atualizarDados({
+            additional: {
+              ...(dados?.additional ?? {}),
+              paymentIntentId: paymentIntent.id,
+            },
+          });
+
+          try {
+            const { trackEvent } = await import("@/lib/analytics");
+            trackEvent("checkout_payment_confirmed", {
+              eventId: dados?.eventId,
+              promoApplied: discountCents > 0,
+              currency,
+              totalCents: total ? Math.round(total * 100) : null,
+              viaRedirect: true,
+            });
+          } catch (err) {
+            console.warn("[trackEvent] checkout_payment_confirmed (redirect) falhou", err);
+          }
+
+          irParaPasso(3);
+          return;
+        }
+
+        if (paymentIntent.status === "processing") {
+          setError("Pagamento em processamento. Aguarda uns segundos e verifica o teu email.");
+          return;
+        }
+
+        if (paymentIntent.status === "requires_payment_method") {
+          setError("O pagamento não foi concluído. Tenta novamente ou usa outro método.");
+          return;
+        }
+
+        // Para outros estados, mostramos uma mensagem genérica.
+        setError("O pagamento não ficou concluído. Tenta novamente.");
+      } catch (err) {
+        console.error("[PaymentForm] Erro a recuperar PaymentIntent do redirect:", err);
+        if (!cancelled) setError("Não foi possível confirmar o estado do pagamento.");
+      } finally {
+        // Removemos os query params de redirect para evitar loops se o utilizador fizer refresh.
+        try {
+          const url = new URL(window.location.href);
+          url.searchParams.delete("payment_intent");
+          url.searchParams.delete("payment_intent_client_secret");
+          url.searchParams.delete("redirect_status");
+          window.history.replaceState({}, "", url.toString());
+        } catch {}
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [stripe, atualizarDados, dados?.additional, dados?.eventId, irParaPasso, currency, total, discountCents]);
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!stripe || !elements) return;
+    if (!stripe || !elements || !elementReady) return;
 
     setSubmitting(true);
     setError(null);
 
     try {
+      const returnUrl =
+        typeof window !== "undefined" ? window.location.href : undefined;
+
       const { error, paymentIntent } = await stripe.confirmPayment({
         elements,
+        confirmParams: returnUrl ? { return_url: returnUrl } : undefined,
         redirect: "if_required",
       });
 
@@ -1101,9 +1842,24 @@ function PaymentForm({ total, discount = 0, breakdown }: PaymentFormProps) {
 
       <div className="rounded-xl bg-black/40 px-3 py-3 text-sm min-h-[320px] max-h-[400px] overflow-y-auto pr-1 payment-scroll">
           <PaymentElement
-            options={{
-              // Ordem preferida; apenas métodos autorizados (Stripe: Card/Link/MB WAY — Apple Pay vem via Card)
-            paymentMethodOrder: ["card", "link", "mb_way"],
+            // key força remount quando o clientSecret muda para evitar usar intents antigos
+            key={clientSecret ?? "payment-element"}
+            options={{}}
+            onReady={() => setElementReady(true)}
+            onLoadError={(err) => {
+              console.error("[PaymentElement] loaderror", err);
+              setElementReady(false);
+              setError(err?.message ?? "Não foi possível carregar o formulário de pagamento. Tenta novamente.");
+              if (onLoadError) onLoadError();
+              // Debug extra: tentar perceber o estado do PI associado
+              if (stripe && clientSecret) {
+                stripe
+                  .retrievePaymentIntent(clientSecret)
+                  .then((res) => {
+                    console.warn("[PaymentElement] PI status", res.paymentIntent?.status, res.paymentIntent?.id);
+                  })
+                  .catch(() => undefined);
+              }
             }}
           />
       </div>
@@ -1114,7 +1870,7 @@ function PaymentForm({ total, discount = 0, breakdown }: PaymentFormProps) {
 
       <button
         type="submit"
-        disabled={submitting || !stripe || !elements}
+        disabled={submitting || !stripe || !elements || !elementReady}
         className="mt-3 inline-flex w-full items-center justify-center rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-6 py-3 text-xs font-semibold text-black shadow-[0_0_32px_rgba(107,255,255,0.55)] disabled:opacity-40 disabled:cursor-not-allowed hover:scale-[1.03] active:scale-95 transition-transform"
       >
         {submitting ? "A processar…" : "Pagar agora"}

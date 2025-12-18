@@ -8,8 +8,6 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizerForUser } from "@/lib/organizerContext";
 import { prisma } from "@/lib/prisma";
 import { OrganizerLangSetter } from "../OrganizerLangSetter";
-import { featureFlags } from "@/lib/flags";
-import { OrganizerTourTrigger } from "../OrganizerTourTrigger";
 import { RoleBadge } from "../RoleBadge";
 import { DASHBOARD_LABEL, DASHBOARD_SHELL_PADDING } from "../dashboardUi";
 
@@ -112,6 +110,13 @@ export default async function OrganizerDashboardLayout({ children }: { children:
       }
     >
       <OrganizerLangSetter language={organizerLanguage} />
+      {organizerUsername ? (
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `try{sessionStorage.setItem("orya_last_organizer_username","${organizerUsername}");}catch(e){}`,
+          }}
+        />
+      ) : null}
       <OrganizerSidebar organizerName={organizerName} organizerAvatarUrl={organizerAvatarUrl} />
 
       <div className="flex-1 flex flex-col min-h-0">
@@ -141,26 +146,18 @@ export default async function OrganizerDashboardLayout({ children }: { children:
               </div>
             </div>
             <div className="flex flex-wrap items-center justify-end gap-2 text-[12px]">
-              <Link
-                href="/organizador/eventos/novo"
-                className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-black shadow hover:scale-[1.01]"
-              >
-                Criar evento
-              </Link>
-              <Link
-                href={organizerUsername ? `/o/${organizerUsername}` : "/explorar"}
-                className="rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-white/80 hover:bg-white/10"
-                data-tour="user-experience"
-              >
-                Ver página pública
-              </Link>
-              {featureFlags.NEW_NAVBAR() && <OrganizerTourTrigger />}
               <OrganizationSwitcher currentId={currentId} initialOrgs={orgOptions} />
             </div>
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto pb-0 pt-0 min-h-0">{children}</main>
+        <main className="relative flex-1 overflow-y-auto pb-0 pt-0 min-h-0 bg-[#050915]">
+          <div className="pointer-events-none absolute inset-0 -z-10">
+            <div className="absolute -left-20 top-10 h-80 w-80 rounded-full bg-[radial-gradient(circle_at_center,rgba(255,0,200,0.08),rgba(12,18,36,0))]" />
+            <div className="absolute right-[-60px] bottom-16 h-96 w-96 rounded-full bg-[radial-gradient(circle_at_center,rgba(107,255,255,0.10),rgba(5,9,21,0))]" />
+          </div>
+          {children}
+        </main>
       </div>
     </div>
   );

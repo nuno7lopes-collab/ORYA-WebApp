@@ -124,6 +124,8 @@ export async function GET(req: NextRequest) {
       select: {
         createdAt: true,
         netCents: true,
+        subtotalCents: true,
+        discountCents: true,
         currency: true,
         lines: {
           select: {

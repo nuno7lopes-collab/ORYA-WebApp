@@ -29,7 +29,7 @@ export default function MobileBottomNav({
     if (isSearchOpen) return "search";
     if (pathname.startsWith("/explorar")) return "explorar";
     if (pathname.startsWith("/buscar")) return "search";
-    if (pathname.startsWith("/me/tickets")) return "tickets";
+    if (pathname.startsWith("/me/carteira")) return "tickets";
     if (pathname.startsWith("/me/compras")) return "purchases";
     if (pathname.startsWith("/me")) return "profile";
     return "home";
@@ -59,8 +59,8 @@ export default function MobileBottomNav({
     () => ({
       label: "Bilhetes",
       icon: "🎫",
-      path: "/me/tickets",
-      active: (p) => p.startsWith("/me/tickets"),
+      path: "/me/carteira",
+      active: (p) => p.startsWith("/me/carteira"),
     }),
     [],
   );

@@ -78,7 +78,7 @@ export default async function HomePage() {
     : null;
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-[#050915] to-[#080b12] text-white pb-28 md:pb-8">
+    <main className="min-h-screen text-white pb-28 md:pb-8">
       <section className="mx-auto max-w-4xl px-4 py-6 space-y-6">
         <div className="flex items-center justify-between">
           <h1 className="text-lg font-semibold tracking-tight">ORYA</h1>

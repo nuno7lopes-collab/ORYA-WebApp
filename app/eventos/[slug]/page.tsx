@@ -588,13 +588,12 @@ export default async function EventPage({ params }: { params: EventPageParamsInp
                           </span>
                         </div>
 
-                        <button
-                          type="button"
-                          disabled
-                          className="inline-flex items-center rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-3 py-1.5 text-xs font-semibold text-black shadow-[0_0_18px_rgba(107,255,255,0.65)] opacity-70 cursor-not-allowed"
+                        <Link
+                          href={`/resale/${r.id}`}
+                          className="inline-flex items-center rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-3 py-1.5 text-xs font-semibold text-black shadow-[0_0_18px_rgba(107,255,255,0.65)] hover:scale-[1.01] active:scale-95 transition-transform"
                         >
-                          Comprar em breve
-                        </button>
+                          Comprar agora
+                        </Link>
                       </div>
                     ))}
                   </div>

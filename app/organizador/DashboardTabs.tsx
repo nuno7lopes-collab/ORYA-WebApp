@@ -8,6 +8,7 @@ export type TabKey =
   | "events"
   | "sales"
   | "finance"
+  | "invoices"
   | "marketing"
   | "padel"
   | "staff"
@@ -21,6 +22,7 @@ const TABS: Tab[] = [
   { id: "marketing", label: "Marketing" },
   { id: "staff", label: "Equipa" },
   { id: "finance", label: "Finanças" },
+  { id: "invoices", label: "Faturação" },
   { id: "padel", label: "Padel" },
   { id: "settings", label: "Definições" },
 ];

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useUser } from "@/app/hooks/useUser";
 import { useState, useEffect } from "react";
+import { supabaseBrowser } from "@/lib/supabaseBrowser";
 
 export default function SettingsPage() {
   const { user, profile, isLoading, error, mutate } = useUser();
@@ -133,7 +134,7 @@ export default function SettingsPage() {
       await mutate();
     } catch (err) {
       console.error(err);
-      setErrorMsg("Não foi possível atualizar o email.");
+      setErrorMsg(err instanceof Error ? err.message : "Não foi possível atualizar o email.");
     } finally {
       setSavingEmail(false);
     }
@@ -144,11 +145,13 @@ export default function SettingsPage() {
     setFeedback(null);
     setErrorMsg(null);
     try {
+      await supabaseBrowser.auth.signOut();
       await fetch("/api/auth/logout", { method: "POST" });
     } catch (err) {
       console.error("Erro no logout:", err);
     } finally {
       setLogoutLoading(false);
+      router.refresh();
       router.push("/login");
     }
   }

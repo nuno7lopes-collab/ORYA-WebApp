@@ -109,6 +109,39 @@ const badge = (tone: "green" | "amber" | "slate" = "slate") =>
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
+const normalizeSlug = (value: string) => {
+  const base =
+    value
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "clube";
+  return base;
+};
+
+const buildSlugCandidates = (value: string, limit = 15) => {
+  const base = normalizeSlug(value || "clube");
+  const list: string[] = [];
+  for (let i = 0; i < limit; i += 1) {
+    list.push(i === 0 ? base : `${base}${i}`);
+  }
+  return list;
+};
+
+const fetchCourtsForClub = async (clubId: number): Promise<PadelClubCourt[]> => {
+  try {
+    const res = await fetch(`/api/padel/clubs/${clubId}/courts`);
+    const json = await res.json().catch(() => null);
+    if (res.ok && Array.isArray(json?.items)) {
+      return json.items as PadelClubCourt[];
+    }
+  } catch (err) {
+    console.error("[padel/clubs] fetchCourtsForClub", err);
+  }
+  return [];
+};
+
 export default function PadelHubClient({ organizerId, organizationKind, initialClubs, initialPlayers }: Props) {
   const [activeTab, setActiveTab] = useState<"clubs" | "players" | "rankings">("clubs");
   const [clubs, setClubs] = useState<PadelClub[]>(initialClubs);
@@ -116,6 +149,7 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
   const [search, setSearch] = useState("");
 
   const [clubForm, setClubForm] = useState(DEFAULT_FORM);
+  const [slugError, setSlugError] = useState<string | null>(null);
   const [clubModalOpen, setClubModalOpen] = useState(false);
   const [savingClub, setSavingClub] = useState(false);
   const [clubError, setClubError] = useState<string | null>(null);
@@ -139,6 +173,8 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
   const [staffError, setStaffError] = useState<string | null>(null);
   const [draggingCourtId, setDraggingCourtId] = useState<number | null>(null);
   const [clubDialog, setClubDialog] = useState<{ club: PadelClub; nextActive: boolean } | null>(null);
+  const [deleteClubDialog, setDeleteClubDialog] = useState<PadelClub | null>(null);
+  const [deleteCourtDialog, setDeleteCourtDialog] = useState<PadelClubCourt | null>(null);
 
   const { data: organizerStaff } = useSWR<OrganizerStaffResponse>(
     organizerId ? `/api/organizador/organizations/members?organizerId=${organizerId}` : null,
@@ -180,6 +216,62 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
   const renumberCourts = (list: PadelClubCourt[]) =>
     list.map((c, idx) => ({ ...c, displayOrder: idx + 1 }));
 
+  const computeActiveCount = (list: PadelClubCourt[]) => list.filter((c) => c.isActive).length;
+
+  const syncActiveCountOnClub = (clubId: number, list: PadelClubCourt[]) => {
+    const activeCount = computeActiveCount(list);
+    setClubs((prev) => prev.map((c) => (c.id === clubId ? { ...c, courtsCount: activeCount } : c)));
+    return activeCount;
+  };
+
+  const refreshActiveCounts = async (clubList: PadelClub[]) => {
+    if (!clubList.length) return;
+    try {
+      const updates = await Promise.all(
+        clubList.map(async (club) => {
+          const courts = await fetchCourtsForClub(club.id);
+          return { id: club.id, count: computeActiveCount(courts) };
+        }),
+      );
+      setClubs((prev) =>
+        prev.map((club) => {
+          const found = updates.find((u) => u.id === club.id);
+          return found ? { ...club, courtsCount: found.count } : club;
+        }),
+      );
+    } catch (err) {
+      console.error("[padel/clubs] refreshActiveCounts", err);
+    }
+  };
+
+  const createDefaultCourts = async (clubId: number, desired: number, startIndex = 1) => {
+    const created: PadelClubCourt[] = [];
+    for (let i = 0; i < desired; i += 1) {
+      const idx = startIndex + i;
+      try {
+        const res = await fetch(`/api/padel/clubs/${clubId}/courts`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: `Court ${idx}`,
+            description: "",
+            indoor: false,
+            isActive: true,
+            displayOrder: idx,
+            surface: null,
+          }),
+        });
+        const json = await res.json().catch(() => null);
+        if (res.ok && json?.court) {
+          created.push(json.court as PadelClubCourt);
+        }
+      } catch (err) {
+        console.error("[padel/clubs/courts] auto-create", err);
+      }
+    }
+    return renumberCourts(created);
+  };
+
   useEffect(() => {
     if (!drawerClubId) {
       setCourts([]);
@@ -204,6 +296,13 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
     const preferred = clubs.find((c) => c.isActive) ?? clubs[0];
     setDrawerClubId(preferred.id);
   }, [clubs, drawerClubId]);
+
+  useEffect(() => {
+    if (initialClubs.length) {
+      refreshActiveCounts(initialClubs);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const persistCourtOrder = async (list: PadelClubCourt[]) => {
     if (!selectedClub) return;
@@ -247,6 +346,7 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
     setClubForm(DEFAULT_FORM);
     setClubError(null);
     setClubMessage(null);
+    setSlugError(null);
     setClubModalOpen(true);
   };
 
@@ -263,6 +363,7 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
     });
     setClubError(null);
     setClubMessage(null);
+    setSlugError(null);
     setClubModalOpen(true);
   };
 
@@ -279,8 +380,11 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
       ]);
       const courtsJson = await courtsRes.json().catch(() => null);
       const staffJson = await staffRes.json().catch(() => null);
-      if (courtsRes.ok && Array.isArray(courtsJson?.items)) setCourts(courtsJson.items as PadelClubCourt[]);
-      else setCourtError(courtsJson?.error || "Erro ao carregar courts.");
+      if (courtsRes.ok && Array.isArray(courtsJson?.items)) {
+        const list = renumberCourts(courtsJson.items as PadelClubCourt[]);
+        setCourts(list);
+        syncActiveCountOnClub(clubId, list);
+      } else setCourtError(courtsJson?.error || "Erro ao carregar courts.");
       if (staffRes.ok && Array.isArray(staffJson?.items)) setStaff(staffJson.items as PadelClubStaff[]);
       else setStaffError(staffJson?.error || "Erro ao carregar equipa.");
     } catch (err) {
@@ -294,45 +398,89 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
 
   const handleSubmitClub = async () => {
     setClubError(null);
+    setSlugError(null);
     setClubMessage(null);
     if (!clubForm.name.trim()) {
       setClubError("Nome do clube é obrigatório.");
       return;
     }
+    if (!clubForm.address.trim()) {
+      setClubError("Morada é obrigatória.");
+      return;
+    }
     const courtsNum = Number(clubForm.courtsCount);
     const courtsCount = Number.isFinite(courtsNum) ? Math.min(1000, Math.max(1, Math.floor(courtsNum))) : 1;
     setSavingClub(true);
+    const slugCandidates = buildSlugCandidates(clubForm.slug || clubForm.name, 15);
+    let savedClub: PadelClub | null = null;
+    let lastError: string | null = null;
     try {
-      const res = await fetch("/api/padel/clubs", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id: clubForm.id,
-          organizerId,
-          name: clubForm.name.trim(),
-          city: clubForm.city.trim(),
-          address: clubForm.address.trim(),
-          courtsCount,
-          isActive: clubForm.isActive,
-          slug: clubForm.slug?.trim(),
-          isDefault: clubForm.isDefault,
-        }),
-      });
-      const json = await res.json().catch(() => null);
-      if (!res.ok || json?.ok === false) {
-        setClubError(json?.error || "Erro ao guardar clube.");
-      } else {
-        const club = json.club as PadelClub;
-        setClubs((prev) => {
-          const existing = prev.some((c) => c.id === club.id);
-          if (existing) return prev.map((c) => (c.id === club.id ? club : c));
-          return [club, ...prev];
+      for (const candidate of slugCandidates) {
+        const res = await fetch("/api/padel/clubs", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: clubForm.id,
+            organizerId,
+            name: clubForm.name.trim(),
+            city: clubForm.city.trim(),
+            address: clubForm.address.trim(),
+            courtsCount,
+            isActive: clubForm.isActive,
+            slug: candidate,
+            isDefault: clubForm.isDefault,
+          }),
         });
-        setClubMessage(clubForm.id ? "Clube atualizado." : "Clube criado.");
-        setClubModalOpen(false);
-        setClubForm({ ...DEFAULT_FORM, courtsCount: String(courtsCount) });
-        setDrawerClubId((prev) => prev ?? club.id);
-        trackEvent(clubForm.id ? "padel_club_updated" : "padel_club_created", { clubId: club.id });
+        const json = await res.json().catch(() => null);
+        if (res.ok && json?.club) {
+          savedClub = json.club as PadelClub;
+          break;
+        }
+        const errMsg = json?.error || "Erro ao guardar clube.";
+        lastError = errMsg;
+        const lower = errMsg.toLowerCase();
+        if (lower.includes("slug") || lower.includes("já existe") || lower.includes("duplic")) {
+          continue;
+        } else {
+          break;
+        }
+      }
+      if (!savedClub) {
+        setSlugError(lastError || "Slug em uso. Tentámos alternativas automáticas.");
+        setClubError(lastError || "Erro ao guardar clube.");
+        return;
+      }
+      const club = savedClub;
+      setClubs((prev) => {
+        const existing = prev.some((c) => c.id === club.id);
+        if (existing) return prev.map((c) => (c.id === club.id ? club : c));
+        return [club, ...prev];
+      });
+      setClubMessage(clubForm.id ? "Clube atualizado." : "Clube criado.");
+      setClubModalOpen(false);
+      setClubForm({ ...DEFAULT_FORM, courtsCount: String(courtsCount) });
+      setDrawerClubId(club.id);
+      trackEvent(clubForm.id ? "padel_club_updated" : "padel_club_created", { clubId: club.id });
+
+      const existingList = await fetchCourtsForClub(club.id);
+      const existingCount = existingList.length;
+      if (courtsCount > existingCount) {
+        const missing = courtsCount - existingCount;
+        const createdCourts = await createDefaultCourts(club.id, missing, existingCount + 1);
+        const merged = renumberCourts([...existingList, ...createdCourts]);
+        if (club.id === selectedClub?.id) setCourts(merged);
+        setCourtMessage(`Criados ${createdCourts.length} courts por omissão.`);
+        const activeCount = syncActiveCountOnClub(club.id, merged);
+        if (club.id !== selectedClub?.id) {
+          setClubs((prev) => prev.map((c) => (c.id === club.id ? { ...c, courtsCount: activeCount } : c)));
+        }
+      } else {
+        const normalized = renumberCourts(existingList);
+        const activeCount = syncActiveCountOnClub(club.id, normalized);
+        if (club.id === selectedClub?.id && existingCount > 0) setCourts(normalized);
+        if (club.id !== selectedClub?.id) {
+          setClubs((prev) => prev.map((c) => (c.id === club.id ? { ...c, courtsCount: activeCount } : c)));
+        }
       }
     } catch (err) {
       console.error("[padel/clubs] save", err);
@@ -403,31 +551,33 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
     setCourtError(null);
     setCourtMessage(null);
     try {
-      const res = await fetch(`/api/padel/clubs/${selectedClub.id}/courts`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...courtForm,
+        const res = await fetch(`/api/padel/clubs/${selectedClub.id}/courts`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ...courtForm,
           name: fallbackName,
           description: courtForm.description.trim(),
           surface: null,
           displayOrder: normalizedOrder,
         }),
       });
-      const json = await res.json().catch(() => null);
-      if (!res.ok || json?.ok === false) {
-        setCourtError(json?.error || "Erro ao guardar court.");
-      } else {
-        const court = json.court as PadelClubCourt;
-        setCourts((prev) => {
-          const exists = prev.some((c) => c.id === court.id);
-          const updated = exists ? prev.map((c) => (c.id === court.id ? court : c)) : [...prev, court];
-          return renumberCourts(updated);
-        });
-        trackEvent(courtForm.id ? "padel_court_updated" : "padel_court_created", {
-          clubId: selectedClub.id,
-          indoor: court.indoor,
-        });
+        const json = await res.json().catch(() => null);
+        if (!res.ok || json?.ok === false) {
+          setCourtError(json?.error || "Erro ao guardar court.");
+        } else {
+          const court = json.court as PadelClubCourt;
+          setCourts((prev) => {
+            const exists = prev.some((c) => c.id === court.id);
+            const updated = exists ? prev.map((c) => (c.id === court.id ? court : c)) : [...prev, court];
+            const normalized = renumberCourts(updated);
+            syncActiveCountOnClub(selectedClub.id, normalized);
+            return normalized;
+          });
+          trackEvent(courtForm.id ? "padel_court_updated" : "padel_court_created", {
+            clubId: selectedClub.id,
+            indoor: court.indoor,
+          });
         setCourtMessage(courtForm.id ? "Court atualizado." : "Court criado.");
         resetCourtForm();
       }
@@ -452,6 +602,7 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
   const handleToggleClubActive = async (club: PadelClub, next: boolean) => {
     setClubError(null);
     setClubMessage(null);
+    setClubDialog(null);
     try {
       const res = await fetch("/api/padel/clubs", {
         method: "POST",
@@ -480,6 +631,33 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
     } catch (err) {
       console.error("[padel/clubs] toggle active", err);
       setClubError("Erro inesperado ao atualizar clube.");
+    } finally {
+      setClubDialog(null);
+    }
+  };
+
+  const handleDeleteClub = async (club: PadelClub) => {
+    setClubError(null);
+    setClubMessage(null);
+    try {
+      const res = await fetch(`/api/padel/clubs?id=${club.id}`, { method: "DELETE" });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || json?.ok === false) {
+        setClubError(json?.error || "Erro ao apagar clube.");
+      } else {
+        setClubs((prev) => prev.filter((c) => c.id !== club.id));
+        if (drawerClubId === club.id) {
+          setDrawerClubId(null);
+          setCourts([]);
+          setStaff([]);
+        }
+        setClubMessage("Clube apagado.");
+      }
+    } catch (err) {
+      console.error("[padel/clubs] delete", err);
+      setClubError("Erro inesperado ao apagar clube.");
+    } finally {
+      setDeleteClubDialog(null);
     }
   };
 
@@ -495,12 +673,42 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
       const json = await res.json().catch(() => null);
       if (res.ok && json?.court) {
         const updated = json.court as PadelClubCourt;
-        setCourts((prev) => renumberCourts(prev.map((c) => (c.id === updated.id ? updated : c))));
+        setCourts((prev) => {
+          const nextList = renumberCourts(prev.map((c) => (c.id === updated.id ? updated : c)));
+          syncActiveCountOnClub(selectedClub.id, nextList);
+          return nextList;
+        });
       }
     } catch (err) {
       console.error("[padel/clubs/courts] toggle", err);
     } finally {
       setSavingCourt(false);
+    }
+  };
+
+  const handleDeleteCourt = async (court: PadelClubCourt) => {
+    if (!selectedClub) return;
+    setSavingCourt(true);
+    try {
+      const res = await fetch(`/api/padel/clubs/${selectedClub.id}/courts?courtId=${court.id}`, {
+        method: "DELETE",
+      });
+      const json = await res.json().catch(() => null);
+      if (res.ok && json?.ok !== false) {
+        setCourts((prev) => {
+          const nextList = renumberCourts(prev.filter((c) => c.id !== court.id));
+          syncActiveCountOnClub(selectedClub.id, nextList);
+          return nextList;
+        });
+      } else {
+        setCourtError(json?.error || "Erro ao apagar court.");
+      }
+    } catch (err) {
+      console.error("[padel/clubs/courts] delete", err);
+      setCourtError("Erro inesperado ao apagar court.");
+    } finally {
+      setSavingCourt(false);
+      setDeleteCourtDialog(null);
     }
   };
 
@@ -574,6 +782,14 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
     return bits.join(" · ") || "Morada por definir";
   };
 
+  const activeCourtsForClub = (club: PadelClub) => {
+    if (!club) return 0;
+    if (club.id === selectedClub?.id && courts.length > 0) return computeActiveCount(courts);
+    return club.courtsCount || 0;
+  };
+
+  const totalActiveCourts = useMemo(() => clubs.reduce((acc, c) => acc + (c.courtsCount || 0), 0), [clubs]);
+
   return (
     <div className="space-y-5 rounded-3xl border border-white/10 bg-black/35 px-4 py-5 shadow-[0_22px_70px_rgba(0,0,0,0.55)] md:px-6 md:py-6">
       <header className="flex flex-wrap items-start justify-between gap-3 rounded-2xl border border-white/10 bg-gradient-to-r from-[#0b1021] via-[#0d152f] to-[#0f1c3d] px-4 py-4">
@@ -590,18 +806,6 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
           >
             Novo clube
           </button>
-          <Link
-            href="/organizador/eventos/novo?templateType=PADEL"
-            className="rounded-full border border-white/15 bg-white/10 px-4 py-2 text-sm font-semibold text-white hover:border-white/30"
-          >
-            Criar torneio
-          </Link>
-          <Link
-            href="/organizador?tab=events&type=PADEL"
-            className="rounded-full border border-white/15 bg-white/5 px-4 py-2 text-sm text-white hover:border-white/30"
-          >
-            Ver torneios
-          </Link>
         </div>
       </header>
 
@@ -613,9 +817,7 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
         </div>
         <div>
           <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Courts ativos</p>
-          <p className="text-2xl font-semibold">
-            {clubs.reduce((acc, c) => acc + (c.courtsCount || 0), 0) || "—"}
-          </p>
+          <p className="text-2xl font-semibold">{Number.isFinite(totalActiveCourts) ? totalActiveCourts : "—"}</p>
           <p className="text-[12px] text-white/60">Usados como sugestão no wizard.</p>
         </div>
         <div>
@@ -657,18 +859,11 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
                 >
                   Criar clube
                 </button>
-                <Link
-                  href="/organizador?tab=events&type=PADEL"
-                  className="rounded-full border border-white/15 px-4 py-2 text-sm text-white hover:border-white/25"
-                >
-                  Ver torneios
-                </Link>
               </div>
             </div>
           ) : (
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
               {sortedClubs.map((club) => {
-                const activeCourts = club.courtsCount || 0;
                 return (
                   <div
                     key={club.id}
@@ -676,14 +871,27 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
                       club.isActive
                         ? "border border-emerald-400/40 bg-emerald-500/5"
                         : "border border-red-500/40 bg-red-500/8"
-                    }`}
+                    } ${drawerClubId === club.id ? "ring-2 ring-cyan-400/40" : ""}`}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => {
+                      setDrawerClubId(club.id);
+                      loadCourtsAndStaff(club.id);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        setDrawerClubId(club.id);
+                        loadCourtsAndStaff(club.id);
+                      }
+                    }}
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="space-y-1">
                         <p className="text-base font-semibold text-white">{club.name}</p>
-                        <p className="text-[12px] text-white/65">{compactAddress(club)}</p>
-                        <p className="text-[12px] text-white/55">Courts ativos: {activeCourts}</p>
-                      </div>
+                    <p className="text-[12px] text-white/65">{compactAddress(club)}</p>
+                    <p className="text-[12px] text-white/55">Courts ativos: {activeCourtsForClub(club)}</p>
+                  </div>
                       <span
                         className={
                           club.isActive
@@ -697,7 +905,8 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
                     <div className="mt-3 flex flex-wrap items-center gap-2">
                       <button
                         type="button"
-                        onClick={() => {
+                        onClick={(e) => {
+                          e.stopPropagation();
                           setDrawerClubId(club.id);
                           loadCourtsAndStaff(club.id);
                         }}
@@ -726,12 +935,21 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
                         onClick={() => setClubDialog({ club, nextActive: !club.isActive })}
                         className={`rounded-full border px-3 py-1.5 text-[12px] ${
                           club.isActive
-                            ? "border-red-400/50 bg-red-500/10 text-red-100 hover:border-red-300/70"
-                            : "border-emerald-400/50 bg-emerald-500/10 text-emerald-100 hover:border-emerald-300/70"
+                            ? "border-amber-300/60 bg-amber-400/15 text-amber-50 hover:border-amber-200/80"
+                            : "border-emerald-400/60 bg-emerald-500/15 text-emerald-50 hover:border-emerald-300/80"
                         }`}
                       >
                         {club.isActive ? "Arquivar" : "Reativar"}
                       </button>
+                      {!club.isActive && (
+                        <button
+                          type="button"
+                          onClick={() => setDeleteClubDialog(club)}
+                          className="rounded-full border border-red-400/60 bg-red-500/15 px-3 py-1.5 text-[12px] text-red-50 hover:border-red-300/80"
+                        >
+                          Apagar
+                        </button>
+                      )}
                     </div>
                   </div>
                 );
@@ -747,7 +965,27 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
                   <p className="text-sm text-white/70">Courts ativos e staff herdável vão para o wizard de torneio.</p>
                 </div>
                 <div className="flex items-center gap-2">
-                    <span className={badge("slate")}>{selectedClub.name}</span>
+                  <label className="sr-only" htmlFor="club-switcher">
+                    Trocar clube
+                  </label>
+                  <select
+                    id="club-switcher"
+                    value={drawerClubId ?? ""}
+                    onChange={(e) => {
+                      const nextId = Number(e.target.value);
+                      if (Number.isFinite(nextId)) {
+                        setDrawerClubId(nextId);
+                      }
+                    }}
+                    className="rounded-full border border-white/20 bg-black/50 px-3 py-1 text-[12px] text-white shadow-inner outline-none transition focus:border-white/60 focus:ring-2 focus:ring-cyan-400/40"
+                  >
+                    {sortedClubs.map((club) => (
+                      <option key={club.id} value={club.id}>
+                        {club.name}
+                      </option>
+                    ))}
+                  </select>
+                  <span className={badge("slate")}>{selectedClub.name}</span>
                   <button
                     type="button"
                     onClick={() => setDrawerClubId(null)}
@@ -836,10 +1074,6 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
                         ))}
                       </div>
                     </div>
-                    <div className="flex items-center justify-between text-[12px] text-white/60">
-                      <span>Arrasta os courts para ordenar (ordem automática).</span>
-                      <span className="rounded-full border border-white/15 px-2 py-[2px]">1º é o mais usado</span>
-                    </div>
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <button
@@ -916,12 +1150,21 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
                         onClick={() => setCourtDialog({ court: c, nextActive: !c.isActive })}
                         className={`rounded-full border px-2 py-1 text-[11px] ${
                           c.isActive
-                            ? "border-white/15 text-white/80 hover:border-white/30"
-                            : "border-red-400/50 bg-red-500/10 text-red-100 hover:border-red-300/70"
+                            ? "border-amber-300/60 bg-amber-400/15 text-amber-50 hover:border-amber-200/80"
+                            : "border-emerald-400/60 bg-emerald-500/15 text-emerald-50 hover:border-emerald-300/80"
                         }`}
                       >
-                        {c.isActive ? "Desativar" : "Ativar"}
+                        {c.isActive ? "Desativar" : "Reativar"}
                       </button>
+                      {!c.isActive && (
+                        <button
+                          type="button"
+                          onClick={() => setDeleteCourtDialog(c)}
+                          className="rounded-full border border-red-400/60 bg-red-500/15 px-2 py-1 text-[11px] text-red-50 hover:border-red-300/80"
+                        >
+                          Apagar
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -1182,10 +1425,14 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
               <div className="grid gap-3 sm:grid-cols-2">
                 <input
                   value={(clubForm as any).slug ?? ""}
-                  onChange={(e) => setClubForm((p: any) => ({ ...p, slug: e.target.value }))}
+                  onChange={(e) => {
+                    setSlugError(null);
+                    setClubForm((p: any) => ({ ...p, slug: e.target.value }));
+                  }}
                   placeholder="Slug / código curto (opcional)"
                   className="rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
                 />
+                {slugError && <p className="mt-1 text-[12px] font-semibold text-red-300">{slugError}</p>}
                 <input
                   type="number"
                   min={1}
@@ -1246,9 +1493,22 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
               : ["Não aparecerá ao criar torneios.", "Podes reativar mais tarde."]
           }
           confirmLabel={clubDialog.nextActive ? "Reativar" : "Arquivar"}
-          dangerLevel={clubDialog.nextActive ? "medium" : "high"}
+          dangerLevel="medium"
           onClose={() => setClubDialog(null)}
           onConfirm={() => handleToggleClubActive(clubDialog.club, clubDialog.nextActive)}
+        />
+      )}
+
+      {deleteClubDialog && (
+        <ConfirmDestructiveActionDialog
+          open
+          title="Apagar clube?"
+          description="Remove definitivamente este clube e os courts associados. Não aparecerá mais no hub ou no wizard."
+          consequences={["Ação permanente.", "Court e staff associados deixam de estar disponíveis."]}
+          confirmLabel="Apagar"
+          dangerLevel="high"
+          onClose={() => setDeleteClubDialog(null)}
+          onConfirm={() => handleDeleteClub(deleteClubDialog)}
         />
       )}
 
@@ -1267,9 +1527,22 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
               : ["Sai das sugestões do wizard.", "Podes reativar mais tarde."]
           }
           confirmLabel={courtDialog.nextActive ? "Reativar" : "Desativar"}
-          dangerLevel={courtDialog.nextActive ? "medium" : "high"}
+          dangerLevel="medium"
           onClose={() => setCourtDialog(null)}
           onConfirm={handleConfirmCourtToggle}
+        />
+      )}
+
+      {deleteCourtDialog && (
+        <ConfirmDestructiveActionDialog
+          open
+          title="Apagar court?"
+          description="Remove definitivamente este court. Não aparecerá mais no hub ou no wizard."
+          consequences={["Ação permanente.", "Podes criar outro mais tarde."]}
+          confirmLabel="Apagar"
+          dangerLevel="high"
+          onClose={() => setDeleteCourtDialog(null)}
+          onConfirm={() => handleDeleteCourt(deleteCourtDialog)}
         />
       )}
     </div>

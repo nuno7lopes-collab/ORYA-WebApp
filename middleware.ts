@@ -33,7 +33,25 @@ export async function middleware(req: NextRequest) {
     },
   });
 
-  await supabase.auth.getSession();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  // Auth wall para áreas privadas
+  const pathname = req.nextUrl.pathname;
+  const isProtected =
+    pathname.startsWith("/me") ||
+    pathname.startsWith("/organizador");
+
+  if (isProtected && !user) {
+    const loginUrl = new URL("/login", req.url);
+    loginUrl.searchParams.set("redirectTo", `${pathname}${req.nextUrl.search}`);
+    return NextResponse.redirect(loginUrl);
+  }
 
   return res;
 }
+
+export const config = {
+  matcher: ["/me/:path*", "/organizador/:path*"],
+};

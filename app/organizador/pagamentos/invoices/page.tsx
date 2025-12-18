@@ -1,9 +1,9 @@
-import InvoicesClient from "./invoices-client";
+import { redirect } from "next/navigation";
 
 export const metadata = {
-  title: "Faturação / Invoices | ORYA",
+  title: "Faturação | ORYA",
 };
 
 export default function InvoicesPage() {
-  return <InvoicesClient />;
+  redirect("/organizador?tab=invoices");
 }

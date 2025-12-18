@@ -63,18 +63,23 @@ export function useUser() {
     };
   }, [mutate]);
 
-  // Migrar bilhetes de guest após login (best-effort)
+  // Claim guest purchases após email verificado (best-effort)
   useEffect(() => {
-    const migrate = async () => {
+    const claim = async () => {
       try {
-        await fetch("/api/tickets/migrate-guest", { method: "POST" });
+        await fetch("/api/me/claim-guest", { method: "POST" });
       } catch (err) {
-        console.warn("[useUser] migrate-guest falhou", err);
+        console.warn("[useUser] claim-guest falhou", err);
       }
     };
-    if (data?.user && !migratedRef.current) {
+    const emailVerified =
+      Boolean((data?.user as any)?.emailConfirmedAt) ||
+      Boolean((data?.user as any)?.emailConfirmed) ||
+      Boolean(data?.user?.email);
+
+    if (data?.user && emailVerified && !migratedRef.current) {
       migratedRef.current = true;
-      migrate();
+      claim();
     }
   }, [data?.user]);
 

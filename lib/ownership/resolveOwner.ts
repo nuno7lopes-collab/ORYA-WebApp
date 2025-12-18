@@ -9,6 +9,11 @@ export type OwnerInput = {
 export async function resolveOwner(input: OwnerInput) {
   const sessionUserId = input.sessionUserId?.trim() || null;
   const guestEmail = normalizeEmail(input.guestEmail);
+  const client: any = prisma as any;
+  const hasEmailIdentity =
+    client.emailIdentity &&
+    typeof client.emailIdentity.findUnique === "function" &&
+    typeof client.emailIdentity.create === "function";
 
   if (sessionUserId) {
     return { ownerUserId: sessionUserId, ownerIdentityId: null, emailNormalized: guestEmail };
@@ -19,13 +24,17 @@ export async function resolveOwner(input: OwnerInput) {
   }
 
   // Procura/gera EmailIdentity
-  let identity = await prisma.emailIdentity.findUnique({
+  if (!hasEmailIdentity) {
+    return { ownerUserId: null, ownerIdentityId: null, emailNormalized: guestEmail };
+  }
+
+  let identity = await client.emailIdentity.findUnique({
     where: { emailNormalized: guestEmail },
     select: { id: true, userId: true, emailVerifiedAt: true },
   });
 
   if (!identity) {
-    identity = await prisma.emailIdentity.create({
+    identity = await client.emailIdentity.create({
       data: { emailNormalized: guestEmail },
       select: { id: true, userId: true, emailVerifiedAt: true },
     });

@@ -24,7 +24,6 @@ export async function resolveUserIdentifier(identifier: string): Promise<Resolve
     username: true,
     fullName: true,
     avatarUrl: true,
-    email: true,
   };
 
   // Se for UUID válido, tenta match direto
@@ -41,26 +40,40 @@ export async function resolveUserIdentifier(identifier: string): Promise<Resolve
           username: byId.username,
           fullName: byId.fullName,
           avatarUrl: byId.avatarUrl,
-          email: byId.email ?? null,
+          email: null,
         },
       };
     }
   }
 
-  // Username ou email (case insensitive nas colunas citext; para email usamos lower)
+  // Username (case insensitive). Para email, procura em auth.users e mapeia para profile.
   const lowered = value.toLowerCase();
-  const match = await prisma.profile.findFirst({
+
+  // Tenta por username no profile (citext)
+  let match = await prisma.profile.findFirst({
     where: {
-      OR: [
-        { username: value },
-        { username: lowered },
-        { email: value },
-        { email: lowered },
-      ],
+      OR: [{ username: value }, { username: lowered }],
       isDeleted: false,
     },
     select,
   });
+
+  let resolvedEmail: string | null = null;
+  // Se for email, procurar em auth.users e ligar ao profile
+  if (!match && value.includes("@")) {
+    const userByEmail = await prisma.users.findFirst({
+      where: { email: lowered },
+      select: { id: true, email: true },
+    });
+
+    if (userByEmail) {
+      match = await prisma.profile.findUnique({
+        where: { id: userByEmail.id },
+        select,
+      });
+      resolvedEmail = userByEmail.email ?? null;
+    }
+  }
 
   if (!match) return null;
 
@@ -71,7 +84,7 @@ export async function resolveUserIdentifier(identifier: string): Promise<Resolve
       username: match.username,
       fullName: match.fullName,
       avatarUrl: match.avatarUrl,
-      email: match.email ?? null,
+      email: resolvedEmail ?? (value.includes("@") ? value : null),
     },
   };
 }

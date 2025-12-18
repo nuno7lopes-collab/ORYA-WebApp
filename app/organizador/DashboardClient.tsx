@@ -13,7 +13,8 @@ import OrganizerSettingsPage from "./(dashboard)/settings/page";
 import OrganizerStaffPage from "./(dashboard)/staff/page";
 import { BackButton } from "./BackButton";
 import PadelHubClient from "./(dashboard)/padel/PadelHubClient";
-import { SalesLineChart } from "@/app/components/charts/SalesLineChart";
+import { SalesAreaChart } from "@/app/components/charts/SalesAreaChart";
+import InvoicesClient from "./pagamentos/invoices/invoices-client";
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
@@ -185,6 +186,7 @@ type TabKey =
   | "events"
   | "sales"
   | "finance"
+  | "invoices"
   | "marketing"
   | "padel"
   | "restaurants"
@@ -193,7 +195,8 @@ type TabKey =
   | "staff"
   | "settings";
 
-const ALL_TABS: TabKey[] = ["overview", "events", "sales", "marketing", "staff", "finance", "padel", "settings"];
+const ALL_TABS: TabKey[] = ["overview", "events", "sales", "marketing", "staff", "finance", "invoices", "padel", "settings"];
+type SalesRange = "7d" | "30d" | "90d" | "365d" | "all";
 
 export default function OrganizadorPage() {
   const { user, profile, isLoading: userLoading, mutate: mutateUser } = useUser();
@@ -216,7 +219,6 @@ export default function OrganizadorPage() {
   const [eventCategoryFilter, setEventCategoryFilter] = useState<string>("all");
   const [eventDateFilter, setEventDateFilter] = useState<"any" | "today" | "week" | "month" | "weekend">("any");
   const [eventPartnerClubFilter, setEventPartnerClubFilter] = useState<string>("all");
-  const [salesMetric, setSalesMetric] = useState<"tickets" | "revenue">("revenue");
   const [salesEventId, setSalesEventId] = useState<number | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [timeScope, setTimeScope] = useState<"all" | "upcoming" | "ongoing" | "past">("all");
@@ -227,7 +229,35 @@ export default function OrganizadorPage() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [marketingSection, setMarketingSection] = useState<"overview" | "promos" | "promoters" | "content">("overview");
-  const [salesRange, setSalesRange] = useState<"7d" | "30d" | "all">("30d");
+  const [salesRange, setSalesRange] = useState<SalesRange>("30d");
+  const salesRangeLabelShort = (range: SalesRange) => {
+    switch (range) {
+      case "7d":
+        return "7d";
+      case "30d":
+        return "30d";
+      case "90d":
+        return "3m";
+      case "365d":
+        return "1a";
+      default:
+        return "sempre";
+    }
+  };
+  const salesRangeLabelLong = (range: SalesRange) => {
+    switch (range) {
+      case "7d":
+        return "Últimos 7 dias";
+      case "30d":
+        return "Últimos 30 dias";
+      case "90d":
+        return "Últimos 3 meses";
+      case "365d":
+        return "Último ano";
+      default:
+        return "Todo o histórico";
+    }
+  };
 
   const tabParam = searchParams?.get("tab") || undefined;
   const activeTab: TabKey = ALL_TABS.includes((tabParam as TabKey) || "overview") ? ((tabParam as TabKey) || "overview") : "overview";
@@ -388,8 +418,26 @@ export default function OrganizadorPage() {
     { revalidateOnFocus: false }
   );
 
+  const oneYearAgoIso = useMemo(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() - 365);
+    return d.toISOString();
+  }, []);
+
+  const salesSeriesKey = useMemo(() => {
+    if (!salesEventId) return null;
+    if (salesRange === "7d" || salesRange === "30d" || salesRange === "90d") {
+      return `/api/organizador/estatisticas/time-series?range=${salesRange}&eventId=${salesEventId}`;
+    }
+    if (salesRange === "365d") {
+      return `/api/organizador/estatisticas/time-series?eventId=${salesEventId}&from=${oneYearAgoIso}`;
+    }
+    return `/api/organizador/estatisticas/time-series?eventId=${salesEventId}`;
+  }, [salesEventId, salesRange, oneYearAgoIso]);
+
   const { data: salesSeries } = useSWR<TimeSeriesResponse>(
-    salesEventId ? `/api/organizador/estatisticas/time-series?range=${salesRange}&eventId=${salesEventId}` : null,
+    salesSeriesKey,
     fetcher,
     { revalidateOnFocus: false }
   );
@@ -459,6 +507,8 @@ export default function OrganizadorPage() {
     fetcher,
     { revalidateOnFocus: false }
   );
+  const padelLoading =
+    organizer?.status === "ACTIVE" && activeTab === "padel" && !padelClubs && !padelPlayers;
 
   const currentQuery = searchParams?.toString() || "";
 
@@ -925,23 +975,52 @@ export default function OrganizadorPage() {
 
   const formatEuros = (val: number) => `${(val / 100).toFixed(2)} €`;
 
+  const extractFees = (p: TimeSeriesPoint) => p.platformFeeCents ?? p.feesCents ?? 0;
+
+  const normalizePoint = (p: TimeSeriesPoint) => {
+    const netCents = p.netCents ?? p.revenueCents ?? 0;
+    const discount = p.discountCents ?? 0;
+    const fees = extractFees(p);
+    const grossCents = p.grossCents ?? netCents + discount + fees;
+    return {
+      date: p.date,
+      gross: grossCents / 100,
+      net: netCents / 100,
+    };
+  };
+
   const overviewSeriesBreakdown = useMemo(() => {
     if (!timeSeries?.points?.length) return null;
-    const gross = timeSeries.points.reduce((acc, p) => acc + (p.grossCents ?? 0), 0);
+    const gross = timeSeries.points.reduce(
+      (acc, p) => acc + (p.grossCents ?? (p.netCents ?? p.revenueCents ?? 0) + (p.discountCents ?? 0) + extractFees(p)),
+      0,
+    );
     const discount = timeSeries.points.reduce((acc, p) => acc + (p.discountCents ?? 0), 0);
-    const fees = timeSeries.points.reduce((acc, p) => acc + (p.platformFeeCents ?? 0), 0);
+    const fees = timeSeries.points.reduce((acc, p) => acc + extractFees(p), 0);
     const net = timeSeries.points.reduce((acc, p) => acc + (p.netCents ?? p.revenueCents ?? 0), 0);
     return { gross, discount, fees, net };
   }, [timeSeries?.points]);
 
   const salesSeriesBreakdown = useMemo(() => {
     if (!salesSeries?.points?.length) return null;
-    const gross = salesSeries.points.reduce((acc, p) => acc + (p.grossCents ?? 0), 0);
+    const gross = salesSeries.points.reduce(
+      (acc, p) => acc + (p.grossCents ?? (p.netCents ?? p.revenueCents ?? 0) + (p.discountCents ?? 0) + extractFees(p)),
+      0,
+    );
     const discount = salesSeries.points.reduce((acc, p) => acc + (p.discountCents ?? 0), 0);
-    const fees = salesSeries.points.reduce((acc, p) => acc + (p.platformFeeCents ?? 0), 0);
+    const fees = salesSeries.points.reduce((acc, p) => acc + extractFees(p), 0);
     const net = salesSeries.points.reduce((acc, p) => acc + (p.netCents ?? p.revenueCents ?? 0), 0);
     return { gross, discount, fees, net };
   }, [salesSeries?.points]);
+  const salesChartPoints = useMemo(() => {
+    if (!salesSeries?.points?.length) return [];
+    return salesSeries.points.map((p) => ({ ...normalizePoint(p), tickets: p.tickets ?? 0 }));
+  }, [salesSeries?.points, normalizePoint]);
+
+  const overviewChartPoints = useMemo(() => {
+    if (!timeSeries?.points?.length) return [];
+    return timeSeries.points.map((p) => normalizePoint(p));
+  }, [timeSeries?.points, normalizePoint]);
 
   const exportFinanceCsv = useCallback(() => {
     if (!financeData || !financeData.events.length) return;
@@ -989,7 +1068,7 @@ export default function OrganizadorPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    const rangeLabel = salesRange === "all" ? "sempre" : `${salesRange}`;
+    const rangeLabel = salesRangeLabelShort(salesRange);
     a.download = `vendas-${selectedSalesEvent.title}-${rangeLabel}.csv`;
     a.click();
     URL.revokeObjectURL(url);
@@ -1302,7 +1381,7 @@ export default function OrganizadorPage() {
               : statsCards.map((card, idx) => (
                   <div
                     key={card.label}
-                    className="rounded-3xl border border-white/10 bg-white/5 p-4 shadow-[0_18px_50px_rgba(0,0,0,0.6)]"
+                    className="rounded-3xl border border-white/10 bg-white/5 p-4 shadow-[0_18px_50px_rgba(0,0,0,0.6)] transition hover:border-white/25 hover:shadow-[0_22px_70px_rgba(0,0,0,0.65)]"
                   >
                     <p className="text-white/60 text-xs">{card.label}</p>
                     <p className="text-2xl font-bold text-white mt-1">{card.value}</p>
@@ -1320,24 +1399,24 @@ export default function OrganizadorPage() {
           </div>
 
           <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
-            <div className="rounded-3xl border border-white/10 bg-black/40 p-4 space-y-3 shadow-[0_18px_60px_rgba(0,0,0,0.65)]">
+            <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-white/5 via-black/50 to-[#0c1a2d] p-4 space-y-3 shadow-[0_18px_60px_rgba(0,0,0,0.65)]">
               <div className="flex items-center justify-between">
                 <h3 className="text-lg font-semibold">Vendas ao longo do tempo</h3>
                 <div className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[11px] text-white/70">
                   Receita · 30 dias
                 </div>
               </div>
-              <div className="h-48 rounded-2xl border border-white/10 bg-gradient-to-br from-white/5 to-white/0 shadow-inner overflow-hidden px-2 py-3">
-                {timeSeries?.points?.length ? (
-                  <SalesLineChart
-                    className="h-full"
-                    data={timeSeries.points.map((p) => ({ date: p.date, value: p.revenueCents / 100 }))}
-                    unit="eur"
-                    periodLabel="Últimos 30 dias"
-                    metricLabel="Receita"
-                    rangeDays={30}
-                  />
-                ) : (
+            <div className="h-48 rounded-2xl border border-white/10 bg-gradient-to-br from-white/5 to-white/0 shadow-inner overflow-hidden px-2 py-3">
+                {!timeSeries && (
+                  <div className="flex w-full items-center gap-3 px-4">
+                    <div className="h-28 flex-1 rounded-xl bg-white/10 animate-pulse" />
+                    <div className="hidden h-28 w-20 rounded-xl bg-white/10 animate-pulse md:block" />
+                  </div>
+                )}
+                {timeSeries && overviewChartPoints.length > 0 && (
+                  <SalesAreaChart data={overviewChartPoints} periodLabel="Últimos 30 dias" height={190} />
+                )}
+                {timeSeries && overviewChartPoints.length === 0 && (
                   <span className="text-white/40 text-xs">Sem dados suficientes.</span>
                 )}
               </div>
@@ -1351,7 +1430,7 @@ export default function OrganizadorPage() {
               )}
             </div>
 
-            <div className="rounded-3xl border border-white/10 bg-black/30 p-4 space-y-3 shadow-[0_18px_60px_rgba(0,0,0,0.65)]">
+            <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-white/5 via-black/40 to-[#0a1327] p-4 space-y-3 shadow-[0_18px_60px_rgba(0,0,0,0.65)]">
               <div className="flex items-center justify-between">
                 <h3 className="text-lg font-semibold">Próximos passos</h3>
                 <span className="text-[11px] text-white/60">{quickTasks.filter((t) => t.done).length}/{quickTasks.length} feitos</span>
@@ -2074,7 +2153,7 @@ export default function OrganizadorPage() {
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-[11px] text-white/60">Período</span>
               <div className="inline-flex rounded-full border border-white/15 bg-black/40 p-[3px] text-[11px]">
-                {(["7d", "30d", "all"] as const).map((range) => (
+                {(["7d", "30d", "90d", "365d", "all"] as SalesRange[]).map((range) => (
                   <button
                     key={range}
                     type="button"
@@ -2085,24 +2164,15 @@ export default function OrganizadorPage() {
                         : "text-white/70 hover:bg-white/5"
                     }`}
                   >
-                    {range === "7d" ? "7 dias" : range === "30d" ? "30 dias" : "Sempre"}
-                  </button>
-                ))}
-              </div>
-              <span className="text-[11px] text-white/60">Métrica</span>
-              <div className="inline-flex rounded-full border border-white/15 bg-black/40 p-[3px] text-[11px]">
-                {(["tickets", "revenue"] as const).map((key) => (
-                  <button
-                    key={key}
-                    type="button"
-                    onClick={() => setSalesMetric(key)}
-                    className={`rounded-full px-3 py-1 transition ${
-                      salesMetric === key
-                        ? "bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] text-black font-semibold shadow-[0_0_12px_rgba(107,255,255,0.6)]"
-                        : "text-white/70 hover:bg-white/5"
-                    }`}
-                  >
-                    {key === "tickets" ? "Bilhetes" : "Receita"}
+                    {range === "7d"
+                      ? "7 dias"
+                      : range === "30d"
+                        ? "30 dias"
+                        : range === "90d"
+                          ? "3 meses"
+                          : range === "365d"
+                            ? "1 ano"
+                            : "Sempre"}
                   </button>
                 ))}
               </div>
@@ -2164,7 +2234,7 @@ export default function OrganizadorPage() {
                 <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
                   <p className="text-[11px] text-white/60">Receita no período</p>
                   <p className="text-2xl font-bold text-white mt-1">{(salesKpis.revenueCents / 100).toFixed(2)} €</p>
-                  <p className="text-[11px] text-white/50">{salesRange === "all" ? "Total" : `Últimos ${salesRange === "7d" ? "7" : "30"} dias`}</p>
+                  <p className="text-[11px] text-white/50">{salesRangeLabelLong(salesRange)}</p>
                 </div>
                 <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
                   <p className="text-[11px] text-white/60">Bilhetes vendidos</p>
@@ -2204,7 +2274,7 @@ export default function OrganizadorPage() {
                 </div>
               )}
             </div>
-            <div className="h-48 rounded-2xl border border-white/10 bg-gradient-to-br from-white/5 to-white/0 shadow-inner overflow-hidden px-2 py-3">
+            <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-white/5 to-white/0 shadow-inner overflow-hidden px-2 py-3 min-h-[260px]">
               {salesLoading ? (
                 <div className="flex w-full items-center gap-3 px-4">
                   <div className="h-28 flex-1 rounded-xl bg-white/10 animate-pulse" />
@@ -2213,24 +2283,15 @@ export default function OrganizadorPage() {
                 ) : !salesEventId ? (
                   <span className="text-white/40 text-xs">Escolhe um evento para ver a evolução.</span>
                 ) : salesSeries?.points?.length ? (
-                  <SalesLineChart
-                    className="h-full"
-                    data={salesSeries.points.map((p) => ({
-                      date: p.date,
-                      value: salesMetric === "tickets" ? p.tickets : p.revenueCents / 100,
-                    }))}
-                    unit={salesMetric === "tickets" ? "tickets" : "eur"}
-                    rangeDays={salesRange === "all" ? "all" : salesRange === "7d" ? 7 : 30}
-                    periodLabel={
-                      salesRange === "all" ? "Todo o histórico" : salesRange === "7d" ? "Últimos 7 dias" : "Últimos 30 dias"
-                    }
-                    metricLabel={salesMetric === "tickets" ? "Bilhetes" : "Receita"}
+                  <SalesAreaChart
+                    data={salesChartPoints}
+                    periodLabel={salesRangeLabelLong(salesRange)}
                   />
               ) : (
                 <span className="text-white/40 text-xs">Sem dados de vendas para este evento.</span>
               )}
             </div>
-            {salesMetric === "revenue" && salesSeriesBreakdown && (
+            {salesSeriesBreakdown && (
               <div className="flex flex-wrap gap-3 text-[11px] text-white/70">
                 <span>Bruto: {formatEuros(salesSeriesBreakdown.gross)}</span>
                 <span>Desconto: -{formatEuros(salesSeriesBreakdown.discount)}</span>
@@ -2432,7 +2493,7 @@ export default function OrganizadorPage() {
                     {paymentsStatus === "NO_STRIPE"
                       ? "Sem ligação Stripe não há payouts. O resto da gestão continua disponível."
                       : stripeRequirements.length > 0
-                        ? `Falta concluir no Stripe: ${stripeRequirements.join(", ")}.`
+                        ? `Faltam ${stripeRequirements.length} passos no Stripe Connect. Abre o painel para concluir.`
                         : "Conclui o onboarding no Stripe para ativares payouts."}
                   </p>
                 </div>
@@ -2558,14 +2619,9 @@ export default function OrganizadorPage() {
               <div className="text-[11px] text-white/70 space-y-2">
                 <p>{stripeState.desc}</p>
                 {stripeRequirements.length > 0 && (
-                  <ul className="space-y-1 text-white/65">
-                    {stripeRequirements.map((req) => (
-                      <li key={req} className="flex items-center gap-2">
-                        <span className="text-red-300">•</span>
-                        <span>{req}</span>
-                      </li>
-                    ))}
-                  </ul>
+                  <p className="text-white/65">
+                    {stripeRequirements.length} itens pendentes no Stripe. Conclui-os no painel Connect para ativares payouts.
+                  </p>
                 )}
               </div>
               {stripeCtaError && <div className="text-xs text-red-300">{stripeCtaError}</div>}
@@ -2681,6 +2737,12 @@ export default function OrganizadorPage() {
               </div>
             )}
           </div>
+        </section>
+      )}
+
+      {activeTab === "invoices" && (
+        <section className="space-y-4">
+          <InvoicesClient />
         </section>
       )}
 
@@ -2922,41 +2984,58 @@ export default function OrganizadorPage() {
         </section>
       )}
 
-      {activeTab === "padel" && (
-        <section className="space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="text-[11px] uppercase tracking-[0.3em] text-white/60">Categorias</p>
-              <h2 className="text-2xl font-semibold">Padel</h2>
-              <p className="text-sm text-white/65">Clubes, courts, staff e jogadores num só sítio.</p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Link
-                href="/organizador/eventos/novo?templateType=PADEL"
-                className="rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-4 py-2 text-sm font-semibold text-black shadow-[0_0_16px_rgba(107,255,255,0.35)] hover:scale-[1.02] transition"
-              >
-                Criar torneio
-              </Link>
-              <Link
-                href="/organizador?tab=events&type=PADEL"
-                className="rounded-full border border-white/20 px-4 py-2 text-sm text-white/80 hover:bg-white/10"
-              >
-                Ver torneios
-              </Link>
-            </div>
-          </div>
+          {activeTab === "padel" && (
+            <section className="space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.3em] text-white/60">Categorias</p>
+                  <h2 className="text-2xl font-semibold">Padel</h2>
+                  <p className="text-sm text-white/65">Clubes, courts, staff e jogadores num só sítio.</p>
+                </div>
+                <div className="flex flex-wrap gap-2" />
+              </div>
 
-          {!organizer?.id && <p className="text-sm text-white/70">Sem organização ativa.</p>}
-          {organizer?.id && (
-            <PadelHubClient
-              organizerId={organizer.id}
-              organizationKind={(organizer as { organizationKind?: string | null }).organizationKind ?? "PESSOA_SINGULAR"}
-              initialClubs={padelClubs?.items ?? []}
-              initialPlayers={padelPlayers?.items ?? []}
-            />
+              {!organizer?.id && <p className="text-sm text-white/70">Sem organização ativa.</p>}
+              {padelLoading && organizer?.id && (
+                <div className="space-y-3 rounded-3xl border border-white/10 bg-black/25 p-4 shadow-[0_18px_60px_rgba(0,0,0,0.6)]">
+                  <div className="h-5 w-32 rounded bg-white/10 animate-pulse" />
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    {[...Array(3)].map((_, idx) => (
+                      <div
+                        key={idx}
+                        className="space-y-2 rounded-2xl border border-white/10 bg-white/5 p-3 shadow-inner animate-pulse"
+                      >
+                        <div className="h-4 w-20 rounded bg-white/15" />
+                        <div className="h-6 w-16 rounded bg-white/20" />
+                        <div className="h-3 w-24 rounded bg-white/10" />
+                      </div>
+                    ))}
+                  </div>
+                  <div className="rounded-2xl border border-white/10 bg-white/5 p-4 animate-pulse">
+                    <div className="h-4 w-32 rounded bg-white/10 mb-3" />
+                    <div className="grid gap-3 lg:grid-cols-2">
+                      {[...Array(2)].map((__, idx) => (
+                        <div key={idx} className="space-y-2 rounded-xl border border-white/10 bg-white/5 p-3">
+                          <div className="h-4 w-1/2 rounded bg-white/10" />
+                          <div className="h-10 rounded bg-white/10" />
+                          <div className="h-10 rounded bg-white/10" />
+                          <div className="h-3 w-28 rounded bg-white/10" />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+              {organizer?.id && (
+                <PadelHubClient
+                  organizerId={organizer.id}
+                  organizationKind={(organizer as { organizationKind?: string | null }).organizationKind ?? "PESSOA_SINGULAR"}
+                  initialClubs={padelClubs?.items ?? []}
+                  initialPlayers={padelPlayers?.items ?? []}
+                />
+              )}
+            </section>
           )}
-        </section>
-      )}
 
       {activeTab === "restaurants" && (
         <section className="space-y-3">
@@ -3032,4 +3111,5 @@ type TimeSeriesPoint = {
   grossCents?: number;
   discountCents?: number;
   platformFeeCents?: number;
+  feesCents?: number; // alias para taxas
 };

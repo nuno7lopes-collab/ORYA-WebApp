@@ -159,7 +159,17 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, club }, { status: id ? 200 : 201 });
   } catch (err) {
     console.error("[padel/clubs] error", err);
-    const msg = err instanceof Error && err.message.includes("Record to update not found") ? "Clube não encontrado." : "Erro ao gravar clube.";
+    const code = (err as { code?: string })?.code;
+    if (code === "P2002") {
+      return NextResponse.json(
+        { ok: false, error: "Já existe um clube com este slug/nome. Escolhe outro." },
+        { status: 409 },
+      );
+    }
+    const msg =
+      err instanceof Error && err.message.includes("Record to update not found")
+        ? "Clube não encontrado."
+        : "Erro ao gravar clube.";
     const status = msg === "Clube não encontrado." ? 404 : 500;
     return NextResponse.json({ ok: false, error: msg }, { status });
   }

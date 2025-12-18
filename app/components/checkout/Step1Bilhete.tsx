@@ -73,12 +73,15 @@ export default function Step1Bilhete() {
     cheapestAvailable?.id ?? stableWaves[0]?.id ?? null,
   );
 
-  // 💰 Total dinâmico
-  const total = stableWaves.reduce((acc: number, w: Wave) => {
-    const q = quantidades[w.id] ?? 0;
-    const price = typeof w.price === "number" ? w.price : 0;
-    return acc + q * price;
-  }, 0);
+  // 💰 Totais para mostrar apenas (backend recalcula sempre)
+  const { total, selectedQty } = stableWaves.reduce(
+    (acc: { total: number; selectedQty: number }, w: Wave) => {
+      const q = quantidades[w.id] ?? 0;
+      const price = typeof w.price === "number" ? w.price : 0;
+      return { total: acc.total + q * price, selectedQty: acc.selectedQty + q };
+    },
+    { total: 0, selectedQty: 0 },
+  );
 
   function toggleWave(id: string) {
     setAberto((prev) => (prev === id ? null : id));
@@ -141,10 +144,12 @@ export default function Step1Bilhete() {
       return;
     }
 
-    if (total <= 0) return;
+    // Permitir avançar mesmo que aparente 0€ — backend decide se é FREE/PAID.
+    if (selectedQty <= 0) return;
 
     // Guardar info deste step no contexto (quantidades + total)
     atualizarDados({
+      paymentScenario: "SINGLE",
       additional: {
         ...(safeDados.additional && typeof safeDados.additional === "object" ? safeDados.additional : {}),
         quantidades,

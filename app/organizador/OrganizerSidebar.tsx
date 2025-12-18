@@ -15,7 +15,9 @@ type Props = {
 export function OrganizerSidebar({ organizerName, organizerAvatarUrl }: Props) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const tabParam = searchParams?.get("tab") || "overview";
+  const tabParamRaw = searchParams?.get("tab") || "overview";
+  const allowedTabs = ["overview", "events", "sales", "finance", "invoices", "marketing", "padel", "staff", "settings"] as const;
+  const tabParam = allowedTabs.includes(tabParamRaw as any) ? tabParamRaw : "overview";
   const [catsOpen, setCatsOpen] = useState(true);
 
   const linkClass = (active: boolean) =>
@@ -23,9 +25,15 @@ export function OrganizerSidebar({ organizerName, organizerAvatarUrl }: Props) {
       active ? "bg-white/10 text-white font-semibold border border-white/20" : "hover:bg-white/10"
     }`;
 
-  const isTab = (tab: string) => pathname === "/organizador" && tabParam === tab;
-  const isCreateEvent = pathname?.startsWith("/organizador/eventos/novo");
-  const isEventDetail = pathname?.startsWith("/organizador/eventos/") && !isCreateEvent;
+  const currentKey = (() => {
+    if (pathname?.startsWith("/organizador/pagamentos/invoices")) return "invoices";
+    if (pathname?.startsWith("/organizador/eventos/novo") || pathname?.endsWith("/edit")) return "create";
+    if (pathname?.startsWith("/organizador/eventos/")) return "events";
+    if (pathname?.startsWith("/organizador/staff")) return "staff";
+    if (pathname?.startsWith("/organizador/settings")) return "settings";
+    if (pathname === "/organizador") return tabParam;
+    return tabParam;
+  })();
 
   return (
     <aside className="hidden lg:flex w-60 shrink-0 flex-col gap-2 border-r border-white/10 bg-black/40 backdrop-blur-xl px-4 py-6 text-[13px] text-white/80 shadow-[0_18px_60px_rgba(0,0,0,0.55)] sticky top-0 h-screen overflow-y-auto">
@@ -45,32 +53,29 @@ export function OrganizerSidebar({ organizerName, organizerAvatarUrl }: Props) {
       </div>
       <nav className="mt-4 space-y-1">
         <p className="px-2 text-[10px] uppercase tracking-[0.25em] text-white/40">Operação</p>
-        <Link href={baseTabHref("overview")} className={linkClass(isTab("overview") || pathname === "/organizador")}>
+        <Link href={baseTabHref("overview")} className={linkClass(currentKey === "overview")}>
           <span>Resumo</span>
         </Link>
-        <Link
-          href={baseTabHref("events")}
-          className={linkClass(isTab("events") || (isEventDetail && !isCreateEvent))}
-        >
+        <Link href={baseTabHref("events")} className={linkClass(currentKey === "events")}>
           <span>Eventos</span>
         </Link>
         <Link
           href="/organizador/eventos/novo"
-          className={linkClass(isCreateEvent || pathname.endsWith("/edit"))}
+          className={linkClass(currentKey === "create")}
           data-tour="criar-evento"
         >
           <span>Criar evento</span>
         </Link>
-        <Link href={baseTabHref("sales")} className={linkClass(isTab("sales"))}>
+        <Link href={baseTabHref("sales")} className={linkClass(currentKey === "sales")}>
           <span>Vendas</span>
         </Link>
-        <Link href={baseTabHref("finance")} className={linkClass(isTab("finance"))} data-tour="finance">
+        <Link href={baseTabHref("finance")} className={linkClass(currentKey === "finance")} data-tour="finance">
           <span>Finanças</span>
         </Link>
-        <Link href="/organizador/pagamentos/invoices" className={linkClass(pathname.startsWith("/organizador/pagamentos/invoices"))}>
+        <Link href={baseTabHref("invoices")} className={linkClass(currentKey === "invoices")}>
           <span>Faturação</span>
         </Link>
-        <Link href={baseTabHref("marketing")} className={linkClass(isTab("marketing"))} data-tour="marketing">
+        <Link href={baseTabHref("marketing")} className={linkClass(currentKey === "marketing")} data-tour="marketing">
           <span>Marketing</span>
         </Link>
 
@@ -85,7 +90,7 @@ export function OrganizerSidebar({ organizerName, organizerAvatarUrl }: Props) {
         </button>
         {catsOpen && (
           <div className="space-y-1">
-            <Link href={baseTabHref("padel")} className={linkClass(isTab("padel"))}>
+            <Link href={baseTabHref("padel")} className={linkClass(currentKey === "padel")}>
               <span>Padel</span>
             </Link>
             {[
@@ -105,10 +110,10 @@ export function OrganizerSidebar({ organizerName, organizerAvatarUrl }: Props) {
         )}
 
         <p className="px-2 pt-2 text-[10px] uppercase tracking-[0.25em] text-white/40">Estrutura</p>
-        <Link href={baseTabHref("staff")} className={linkClass(isTab("staff") || pathname.startsWith("/organizador/staff"))}>
+        <Link href={baseTabHref("staff")} className={linkClass(currentKey === "staff")}>
           <span>Staff</span>
         </Link>
-        <Link href={baseTabHref("settings")} className={linkClass(isTab("settings") || pathname.startsWith("/organizador/settings"))}>
+        <Link href={baseTabHref("settings")} className={linkClass(currentKey === "settings")}>
           <span>Definições</span>
         </Link>
       </nav>

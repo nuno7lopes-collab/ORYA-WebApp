@@ -1,0 +1,191 @@
+import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+import { createSupabaseServer } from "@/lib/supabaseServer";
+import { resolveActions } from "@/lib/entitlements/accessResolver";
+import { EntitlementStatus, EntitlementType } from "@prisma/client";
+import crypto from "crypto";
+
+const MAX_PAGE = 50;
+
+type CursorPayload = { snapshotStartAt: string; entitlementId: string };
+
+function parseCursor(cursor: string | null): CursorPayload | null {
+  if (!cursor) return null;
+  try {
+    const json = Buffer.from(cursor, "base64url").toString("utf8");
+    const obj = JSON.parse(json);
+    if (typeof obj.snapshotStartAt === "string" && typeof obj.entitlementId === "string") {
+      return obj;
+    }
+  } catch (_) {
+    return null;
+  }
+  return null;
+}
+
+function buildCursor(payload: CursorPayload) {
+  return Buffer.from(JSON.stringify(payload)).toString("base64url");
+}
+
+function hashToken(token: string) {
+  return crypto.createHash("sha256").update(token).digest("hex");
+}
+
+export async function GET(req: NextRequest) {
+  try {
+    const supabase = await createSupabaseServer();
+    const { data, error } = await supabase.auth.getUser();
+    if (error || !data?.user) {
+      return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+    }
+
+    const userId = data.user.id;
+    const profile = await prisma.profile.findUnique({
+      where: { id: userId },
+      select: { roles: true },
+    });
+
+    const roles = profile?.roles ?? [];
+    const isAdmin = roles.includes("admin");
+
+    const searchParams = req.nextUrl.searchParams;
+    const filter = searchParams.getAll("filter");
+    const cursor = parseCursor(searchParams.get("cursor"));
+    const pageSizeRaw = Number(searchParams.get("pageSize"));
+    const take = Number.isFinite(pageSizeRaw) ? Math.min(Math.max(1, pageSizeRaw), MAX_PAGE) : 20;
+
+    const statusFilter = filter
+      .map((f) => f.split(":"))
+      .filter(([k]) => k === "status")
+      .map(([, v]) => v)
+      .filter(Boolean) as EntitlementStatus[];
+
+    const typeFilter = filter
+      .map((f) => f.split(":"))
+      .filter(([k]) => k === "type")
+      .map(([, v]) => v)
+      .filter(Boolean) as EntitlementType[];
+
+    const hasUpcoming = filter.includes("upcoming");
+    const hasPast = filter.includes("past");
+    const now = new Date();
+
+    const where: any = {
+      AND: [],
+    };
+
+    if (!isAdmin) {
+      where.AND.push({ ownerUserId: userId });
+    }
+
+    if (statusFilter.length) {
+      where.AND.push({ status: { in: statusFilter } });
+    }
+
+    if (typeFilter.length) {
+      where.AND.push({ type: { in: typeFilter } });
+    }
+
+    if (hasUpcoming && !hasPast) {
+      where.AND.push({ snapshotStartAt: { gte: now } });
+    } else if (hasPast && !hasUpcoming) {
+      where.AND.push({ snapshotStartAt: { lt: now } });
+    }
+
+    if (cursor?.snapshotStartAt) {
+      const cursorDate = new Date(cursor.snapshotStartAt);
+      where.AND.push({
+        OR: [
+          { snapshotStartAt: { lt: cursorDate } },
+          {
+            snapshotStartAt: cursorDate,
+            id: { lt: cursor.entitlementId },
+          },
+        ],
+      });
+    }
+
+    if (!(prisma as any).entitlement?.findMany) {
+      console.warn("[api/me/wallet] entitlement model not available in Prisma client");
+      return NextResponse.json({ items: [], nextCursor: null }, { status: 200 });
+    }
+
+    const items = await (prisma as any).entitlement.findMany({
+      where,
+      orderBy: [
+        { snapshotStartAt: "desc" },
+        { id: "desc" },
+      ],
+      take: take + 1,
+    });
+
+    const pageItems = items.slice(0, take);
+    const hasMore = items.length > take;
+    const last = pageItems[pageItems.length - 1];
+    const nextCursor =
+      hasMore && last?.snapshotStartAt
+        ? buildCursor({
+            snapshotStartAt: last.snapshotStartAt.toISOString(),
+            entitlementId: last.id,
+          })
+        : null;
+
+    const responseItems = await Promise.all(
+      pageItems.map(async (e) => {
+        const actions = resolveActions({
+          type: e.type,
+          status: e.status,
+          isOwner: true,
+          isOrganizer: false,
+          isAdmin,
+          checkinWindow: undefined,
+          emailVerified: Boolean(data.user.email_confirmed_at),
+          isGuestOwner: false,
+        });
+
+        let qrToken: string | null = null;
+        if (actions.canShowQr) {
+          // Limpa tokens antigos deste entitlement antes de gerar um novo, para evitar acumulação.
+          await prisma.entitlementQrToken.deleteMany({ where: { entitlementId: e.id } });
+
+          const token = crypto.randomUUID();
+          const tokenHash = hashToken(token);
+          const expiresAt = new Date(Date.now() + 1000 * 60 * 60); // 1h
+          await prisma.entitlementQrToken.create({
+            data: {
+              tokenHash,
+              entitlementId: e.id,
+              expiresAt,
+            },
+          });
+          qrToken = token;
+        }
+
+        return {
+          entitlementId: e.id,
+          type: e.type,
+          scope: { eventId: e.eventId, tournamentId: e.tournamentId, seasonId: e.seasonId },
+          status: e.status,
+          snapshot: {
+            title: e.snapshotTitle,
+            coverUrl: e.snapshotCoverUrl,
+            venueName: e.snapshotVenueName,
+            startAt: e.snapshotStartAt,
+            timezone: e.snapshotTimezone,
+          },
+          actions,
+          qrToken,
+          updatedAt: e.updatedAt,
+        };
+      }),
+    );
+
+    return NextResponse.json({
+      items: responseItems,
+      nextCursor,
+    });
+  } catch (err: any) {
+    console.error("[api/me/wallet] erro", err);
+    return NextResponse.json({ error: "INTERNAL_ERROR" }, { status: 500 });
+  }
+}
