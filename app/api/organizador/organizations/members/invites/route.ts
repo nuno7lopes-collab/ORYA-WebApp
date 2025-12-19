@@ -8,6 +8,7 @@ import { NotificationType } from "@prisma/client";
 import { canManageMembers, isOrgAdminOrAbove, isOrgOwner } from "@/lib/organizerPermissions";
 import { ensureUserIsOrganizer, setSoleOwner } from "@/lib/organizerRoles";
 import { sanitizeProfileVisibility } from "@/lib/profileVisibility";
+import { sendEmail } from "@/lib/resendClient";
 
 const INVITE_EXPIRY_DAYS = 14;
 
@@ -81,6 +82,36 @@ const serializeInvite = (
     canRespond,
   };
 };
+
+async function sendInviteEmail(invite: { id: string; organizerId: number; targetIdentifier: string; role: string; organizer?: { displayName: string | null } | null }) {
+  const normalized = invite.targetIdentifier.toLowerCase();
+  if (!normalized.includes("@")) return;
+
+  const origin = "https://orya.pt";
+  const acceptUrl = `${origin}/organizador/organizations?organizerId=${invite.organizerId}&invite=${invite.id}`;
+  const roleLabel =
+    invite.role === "OWNER" ? "Owner" : invite.role === "CO_OWNER" ? "Co-owner" : invite.role.toUpperCase();
+  const orgName = invite.organizer?.displayName ?? "ORYA";
+
+  try {
+    await sendEmail({
+      to: normalized,
+      subject: `Convite para a organização ${orgName}`,
+      html: `
+        <div style="font-family: Inter, system-ui, -apple-system, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px; background: #050915; color: #f6f8ff; border-radius: 18px; border: 1px solid rgba(255,255,255,0.08);">
+          <h2 style="margin: 0 0 12px; font-size: 22px;">Foste convidado(a) para a organização ${orgName}</h2>
+          <p style="margin: 0 0 12px;">Papél: <strong>${roleLabel}</strong></p>
+          <p style="margin: 0 0 16px;">Entra com a tua conta ORYA e aceita o convite. Se ainda não tens conta, cria-a no mesmo link.</p>
+          <a href="${acceptUrl}" style="display: inline-block; margin-top: 8px; padding: 12px 18px; background: linear-gradient(90deg,#7cf2ff,#7b7bff,#ff7ddb); color: #0b0f1c; text-decoration: none; font-weight: 700; border-radius: 999px;">Abrir convite</a>
+          <p style="margin: 16px 0 0; font-size: 12px; color: rgba(255,255,255,0.7);">Link direto: <a href="${acceptUrl}" style="color: #8fd6ff;">${acceptUrl}</a></p>
+        </div>
+      `,
+      text: `Convite para a organização ${orgName} como ${roleLabel}. Abre: ${acceptUrl}`,
+    });
+  } catch (err) {
+    console.warn("[invite][email] falhou", err);
+  }
+}
 
 export async function GET(req: NextRequest) {
   try {
@@ -319,6 +350,16 @@ export async function POST(req: NextRequest) {
       }).catch((err) => console.warn("[notification][invite] falhou", err));
     }
 
+    await sendInviteEmail(
+      {
+        id: invite.id,
+        organizerId: invite.organizerId,
+        targetIdentifier: invite.targetIdentifier,
+        role: invite.role,
+        organizer: invite.organizer,
+      },
+    );
+
     return NextResponse.json({ ok: true, invite: serializeInvite(invite, viewer) }, { status: 201 });
   } catch (err) {
     console.error("[organizador/members/invites][POST]", err);
@@ -515,6 +556,7 @@ export async function PATCH(req: NextRequest) {
             avatarUrl: true,
           },
         },
+        organizer: { select: { id: true, displayName: true } },
       },
     });
 
@@ -527,6 +569,19 @@ export async function PATCH(req: NextRequest) {
     }
 
     const viewer = { id: user.id, username: viewerUsername, email: viewerEmail };
+
+    if (action === "RESEND") {
+      await sendInviteEmail(
+        {
+          id: updated.id,
+          organizerId,
+          targetIdentifier: updated.targetIdentifier,
+          role: updated.role,
+          organizer: updated.organizer,
+        },
+      );
+    }
+
     return NextResponse.json({ ok: true, invite: serializeInvite(updated, viewer) }, { status: 200 });
   } catch (err: unknown) {
     if (err instanceof Error && err.message === "LAST_OWNER_BLOCK") {

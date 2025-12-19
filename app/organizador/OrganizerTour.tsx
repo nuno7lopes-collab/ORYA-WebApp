@@ -80,6 +80,7 @@ const steps: Step[] = [
 
 const TOUR_KEY = "orya_org_tour_seen_v2";
 const TOUR_PROGRESS_KEY = "orya_org_tour_step_v2";
+const TOUR_GLOBAL_KEY = "orya_org_tour_seen_once";
 const TOUR_EVENT = "orya:startTour";
 const SIDEBAR_WIDTH_EVENT = "orya:sidebar-width";
 const SIDEBAR_READY_EVENT = "orya:sidebar-ready";
@@ -107,7 +108,7 @@ export function OrganizerTour({ organizerId }: OrganizerTourProps) {
   const [mounted, setMounted] = useState(false);
   const [viewport, setViewport] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
   const [anchorRect, setAnchorRect] = useState<DOMRect | null>(null);
-  const [anchorEl, setAnchorEl] = useState<Element | null>(null);
+  const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
 
   const tourKey = useMemo(
     () => (organizerId ? `${TOUR_KEY}:${organizerId}` : TOUR_KEY),
@@ -123,8 +124,9 @@ export function OrganizerTour({ organizerId }: OrganizerTourProps) {
   useEffect(() => {
     const id = requestAnimationFrame(() => {
       setMounted(true);
+      const seenGlobal = typeof window !== "undefined" ? localStorage.getItem(TOUR_GLOBAL_KEY) : "1";
       const seen = typeof window !== "undefined" ? localStorage.getItem(tourKey) : "1";
-      if (!seen) {
+      if (!seen && !seenGlobal) {
         const savedStep = typeof window !== "undefined" ? Number(localStorage.getItem(progressKey)) : 0;
         if (Number.isFinite(savedStep) && savedStep > 0 && savedStep < steps.length) {
           setIndex(savedStep);
@@ -132,6 +134,7 @@ export function OrganizerTour({ organizerId }: OrganizerTourProps) {
         setOpen(true);
       }
       const handler = () => {
+        if (typeof window !== "undefined" && localStorage.getItem(TOUR_GLOBAL_KEY)) return;
         localStorage.removeItem(tourKey);
         localStorage.removeItem(progressKey);
         setIndex(0);
@@ -155,10 +158,11 @@ export function OrganizerTour({ organizerId }: OrganizerTourProps) {
 
   const step = useMemo(() => steps[index], [index]);
   const isMobile = viewport.width < 768 && viewport.width > 0;
+  const highlightEnabled = shouldShow && !isMobile && !!step.anchor;
 
   useEffect(() => {
     if (!shouldShow) return;
-    if (!step.anchor) {
+    if (!highlightEnabled || !step.anchor) {
       const id = requestAnimationFrame(() => {
         setAnchorRect(null);
         setAnchorEl(null);
@@ -170,8 +174,8 @@ export function OrganizerTour({ organizerId }: OrganizerTourProps) {
     let observer: ResizeObserver | null = null;
 
     const tryResolve = () => {
-      if (!shouldShow || stopped) return;
-      const el = document.querySelector(step.anchor!);
+      if (!shouldShow || stopped || !highlightEnabled) return;
+      const el = document.querySelector(step.anchor!) as HTMLElement | null;
       if (el) {
         const rect = el.getBoundingClientRect();
         setAnchorRect(rect);
@@ -194,7 +198,7 @@ export function OrganizerTour({ organizerId }: OrganizerTourProps) {
       stopped = true;
       if (observer) observer.disconnect();
     };
-  }, [shouldShow, step.anchor, pathname]);
+  }, [shouldShow, step.anchor, pathname, highlightEnabled]);
 
   const goNext = () => {
     trackEvent("organizer_tour_next", { step: index });
@@ -209,26 +213,36 @@ export function OrganizerTour({ organizerId }: OrganizerTourProps) {
     }
   };
 
+  const goPrev = () => {
+    if (index === 0) return;
+    setIndex((v) => {
+      const prev = Math.max(0, v - 1);
+      localStorage.setItem(progressKey, String(prev));
+      return prev;
+    });
+  };
+
   const finish = () => {
     trackEvent("organizer_tour_finish");
+    localStorage.setItem(TOUR_GLOBAL_KEY, "1");
     localStorage.setItem(tourKey, "1");
     localStorage.removeItem(progressKey);
     setOpen(false);
   };
 
   useEffect(() => {
-    if (shouldShow && anchorRect && step.anchor) {
+    if (highlightEnabled && anchorRect && step.anchor) {
       const selectors = anchorSelectors(step.anchor);
       const el = selectors.map((sel) => document.querySelector(sel)).find(Boolean);
       el?.scrollIntoView({ behavior: "smooth", block: "center" });
     }
-  }, [anchorRect, shouldShow, step.anchor]);
+  }, [anchorRect, highlightEnabled, step.anchor]);
 
   useEffect(() => {
-    if (!shouldShow) return;
+    if (!highlightEnabled) return;
     const handler = () => {
       if (!step.anchor) return;
-      const el = document.querySelector(step.anchor);
+      const el = document.querySelector(step.anchor) as HTMLElement | null;
       if (!el) return;
       setAnchorRect(el.getBoundingClientRect());
       setAnchorEl(el);
@@ -239,7 +253,7 @@ export function OrganizerTour({ organizerId }: OrganizerTourProps) {
       window.removeEventListener(SIDEBAR_WIDTH_EVENT, handler);
       window.removeEventListener(SIDEBAR_READY_EVENT, handler);
     };
-  }, [shouldShow, step.anchor]);
+  }, [highlightEnabled, step.anchor]);
 
   useEffect(() => {
     if (typeof document === "undefined") return;
@@ -253,13 +267,17 @@ export function OrganizerTour({ organizerId }: OrganizerTourProps) {
   }, []);
 
   useEffect(() => {
-    if (!shouldShow) return;
+    if (!highlightEnabled) return;
     if (!anchorEl) return;
+    const previousPointerEvents = anchorEl.style.pointerEvents;
     anchorEl.classList.add("tour-highlight-ring");
+    // Evita cliques acidentais no elemento real enquanto o tour está aberto
+    anchorEl.style.pointerEvents = "none";
     return () => {
       anchorEl.classList.remove("tour-highlight-ring");
+      anchorEl.style.pointerEvents = previousPointerEvents;
     };
-  }, [anchorEl, shouldShow, step.id]);
+  }, [anchorEl, highlightEnabled, step.id]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -294,7 +312,7 @@ export function OrganizerTour({ organizerId }: OrganizerTourProps) {
   const margin = 16;
   const estimatedHeight = isMobile ? 260 : 240;
   let cardLeft = (viewport.width - cardWidth) / 2;
-  let cardTop = isMobile ? viewport.height - estimatedHeight - 24 : 96;
+  let cardTop = isMobile ? Math.max((viewport.height - estimatedHeight) / 2, margin) : 96;
   let arrowPos: { x: number; y: number; side: "top" | "bottom" | "left" | "right" } | null = null;
 
   if (!isMobile && anchorRect) {
@@ -323,7 +341,7 @@ export function OrganizerTour({ organizerId }: OrganizerTourProps) {
 
   const highlightPadding = 12;
   const highlightRect =
-    anchorRect && viewport.width && viewport.height
+    highlightEnabled && anchorRect && viewport.width && viewport.height
       ? {
           left: Math.max(0, anchorRect.left - highlightPadding),
           top: Math.max(0, anchorRect.top - highlightPadding),
@@ -362,7 +380,7 @@ export function OrganizerTour({ organizerId }: OrganizerTourProps) {
           width: cardWidth,
           left: cardLeft,
           top: cardTop,
-          maxHeight: isMobile ? "70vh" : "60vh",
+          maxHeight: isMobile ? "80vh" : "60vh",
           overflow: "auto",
         }}
       >
@@ -411,7 +429,28 @@ export function OrganizerTour({ organizerId }: OrganizerTourProps) {
             >
               Saltar
             </button>
-            {step.ctaLabel ? (
+            {isMobile ? (
+              <>
+                <button
+                  onClick={goPrev}
+                  disabled={index === 0}
+                  className="rounded-full border border-white/20 px-4 py-1.5 text-white/80 hover:bg-white/10 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Anterior
+                </button>
+                <button
+                  onClick={() => {
+                    if (step.ctaAction?.type === "navigate" && step.ctaAction.href) {
+                      router.push(step.ctaAction.href);
+                    }
+                    goNext();
+                  }}
+                  className="rounded-full bg-white text-black px-4 py-1.5 font-semibold hover:scale-[1.01] active:scale-95 transition"
+                >
+                  {index === steps.length - 1 ? "Terminar" : "Próximo"}
+                </button>
+              </>
+            ) : step.ctaLabel ? (
               <button
                 onClick={() => {
                   if (step.ctaAction?.type === "navigate" && step.ctaAction.href) {

@@ -1,7 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import { ConfirmDestructiveActionDialog } from "@/app/components/ConfirmDestructiveActionDialog";
 import { trackEvent } from "@/lib/analytics";
@@ -50,13 +50,6 @@ type Player = {
   tournamentsCount?: number;
 };
 
-type Props = {
-  organizerId: number;
-  organizationKind: string | null;
-  initialClubs: PadelClub[];
-  initialPlayers: Player[];
-};
-
 type OrganizerStaffMember = {
   userId: string;
   fullName: string | null;
@@ -68,6 +61,15 @@ type OrganizerStaffMember = {
 type OrganizerStaffResponse = {
   ok: boolean;
   items: OrganizerStaffMember[];
+};
+
+const PADEL_TABS = ["calendar", "clubs", "players", "rankings"] as const;
+
+type Props = {
+  organizerId: number;
+  organizationKind: string | null;
+  initialClubs: PadelClub[];
+  initialPlayers: Player[];
 };
 
 const DEFAULT_FORM = {
@@ -109,6 +111,24 @@ const badge = (tone: "green" | "amber" | "slate" = "slate") =>
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
+const SkeletonBlock = ({ className = "" }: { className?: string }) => (
+  <div className={`animate-pulse rounded-xl bg-white/5 ${className}`} />
+);
+
+const PadelTabSkeleton = () => (
+  <div className="space-y-4">
+    <SkeletonBlock className="h-10 w-2/3" />
+    <div className="grid gap-3 lg:grid-cols-[1fr_320px]">
+      <SkeletonBlock className="h-[320px]" />
+      <div className="space-y-3">
+        <SkeletonBlock className="h-16" />
+        <SkeletonBlock className="h-10" />
+        <SkeletonBlock className="h-20" />
+      </div>
+    </div>
+  </div>
+);
+
 const normalizeSlug = (value: string) => {
   const base =
     value
@@ -143,10 +163,23 @@ const fetchCourtsForClub = async (clubId: number): Promise<PadelClubCourt[]> => 
 };
 
 export default function PadelHubClient({ organizerId, organizationKind, initialClubs, initialPlayers }: Props) {
-  const [activeTab, setActiveTab] = useState<"clubs" | "players" | "rankings">("clubs");
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const padelSectionParam = searchParams?.get("padel") || null;
+  const eventIdParam = searchParams?.get("eventId") || null;
+  const eventId = eventIdParam && Number.isFinite(Number(eventIdParam)) ? Number(eventIdParam) : null;
+  const initialTab = PADEL_TABS.includes(padelSectionParam as any)
+    ? (padelSectionParam as (typeof PADEL_TABS)[number])
+    : "clubs";
+
+  const [activeTab, setActiveTab] = useState<(typeof PADEL_TABS)[number]>(initialTab);
+  const [switchingTab, setSwitchingTab] = useState(false);
   const [clubs, setClubs] = useState<PadelClub[]>(initialClubs);
   const [players, setPlayers] = useState<Player[]>(initialPlayers);
   const [search, setSearch] = useState("");
+  const [calendarScope, setCalendarScope] = useState<"week" | "day">("week");
+  const [calendarFilter, setCalendarFilter] = useState<"all" | "club">("all");
+  const [calendarError, setCalendarError] = useState<string | null>(null);
 
   const [clubForm, setClubForm] = useState(DEFAULT_FORM);
   const [slugError, setSlugError] = useState<string | null>(null);
@@ -171,6 +204,7 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
   const [staffSearch, setStaffSearch] = useState("");
   const [staffMessage, setStaffMessage] = useState<string | null>(null);
   const [staffError, setStaffError] = useState<string | null>(null);
+  const [staffInviteNotice, setStaffInviteNotice] = useState<string | null>(null);
   const [draggingCourtId, setDraggingCourtId] = useState<number | null>(null);
   const [clubDialog, setClubDialog] = useState<{ club: PadelClub; nextActive: boolean } | null>(null);
   const [deleteClubDialog, setDeleteClubDialog] = useState<PadelClub | null>(null);
@@ -181,6 +215,34 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
     fetcher,
     { revalidateOnFocus: false },
   );
+  const { data: calendarData, isLoading: isCalendarLoading, mutate: mutateCalendar } = useSWR(
+    eventId ? `/api/padel/calendar?eventId=${eventId}` : null,
+    fetcher,
+    { revalidateOnFocus: false },
+  );
+
+  useEffect(() => {
+    if (padelSectionParam && PADEL_TABS.includes(padelSectionParam as any) && padelSectionParam !== activeTab) {
+      setActiveTab(padelSectionParam as (typeof PADEL_TABS)[number]);
+      setSwitchingTab(false);
+    }
+  }, [padelSectionParam, activeTab]);
+
+  useEffect(() => {
+    const timer = switchingTab ? setTimeout(() => setSwitchingTab(false), 280) : null;
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
+  }, [switchingTab]);
+
+  const setPadelSection = (section: (typeof PADEL_TABS)[number]) => {
+    setSwitchingTab(true);
+    setActiveTab(section);
+    const params = new URLSearchParams(searchParams?.toString() || "");
+    params.set("tab", "padel");
+    params.set("padel", section);
+    router.replace(`/organizador?${params.toString()}`, { scroll: false });
+  };
 
   const hasActiveClub = useMemo(() => clubs.some((c) => c.isActive), [clubs]);
   const sortedClubs = useMemo(() => {
@@ -212,6 +274,7 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
       : list;
     return filtered;
   }, [organizerStaff?.items, staffSearch]);
+  const inheritedStaffCount = useMemo(() => staff.filter((s) => s.inheritToEvents).length, [staff]);
   // Mantém a ordem recebida e renumera sequencialmente
   const renumberCourts = (list: PadelClubCourt[]) =>
     list.map((c, idx) => ({ ...c, displayOrder: idx + 1 }));
@@ -716,6 +779,7 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
     setStaffSearch("");
     setStaffError(null);
     setStaffMessage(null);
+    setStaffInviteNotice(null);
   };
 
   const handleEditStaff = (member: PadelClubStaff) => {
@@ -742,8 +806,17 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
       setStaffError("Indica o email do contacto externo.");
       return;
     }
+    const duplicate =
+      staffMode === "existing"
+        ? staff.some((s) => s.userId && s.userId === selectedMember?.userId && s.id !== staffForm.id)
+        : staff.some((s) => s.email && s.email.toLowerCase() === emailToSend.toLowerCase() && s.id !== staffForm.id);
+    if (duplicate) {
+      setStaffError("Já tens este contacto associado ao clube.");
+      return;
+    }
     setStaffError(null);
     setStaffMessage(null);
+    setStaffInviteNotice(null);
     try {
       const res = await fetch(`/api/padel/clubs/${selectedClub.id}/staff`, {
         method: "POST",
@@ -753,6 +826,7 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
           email: emailToSend,
           userId: staffMode === "existing" ? selectedMember?.userId : null,
           role: staffForm.role,
+          padelRole: staffForm.role,
           inheritToEvents: staffForm.inheritToEvents,
         }),
       });
@@ -767,6 +841,21 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
           return [member, ...prev];
         });
         setStaffMessage(staffForm.id ? "Membro atualizado." : "Membro adicionado.");
+        if (staffMode === "external" && emailToSend && organizerId) {
+          // Tentar enviar convite de organização (viewer) para criar conta
+          const inviteRes = await fetch("/api/organizador/organizations/members/invites", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              organizerId,
+              identifier: emailToSend,
+              role: "VIEWER",
+            }),
+          }).catch(() => null);
+          if (inviteRes && inviteRes.ok) {
+            setStaffInviteNotice("Convite enviado para criar conta. Ao registar-se, fica ligado como staff do clube.");
+          }
+        }
         resetStaffForm();
       }
     } catch (err) {
@@ -787,27 +876,27 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
   };
 
   const totalActiveCourts = useMemo(() => clubs.reduce((acc, c) => acc + (c.courtsCount || 0), 0), [clubs]);
+  const calendarBlocks = calendarData?.blocks ?? [];
+  const calendarAvailabilities = calendarData?.availabilities ?? [];
 
   return (
-    <div className="space-y-5 rounded-3xl border border-white/10 bg-black/35 px-4 py-5 shadow-[0_22px_70px_rgba(0,0,0,0.55)] md:px-6 md:py-6">
-      <header className="flex flex-wrap items-start justify-between gap-3 rounded-2xl border border-white/10 bg-gradient-to-r from-[#0b1021] via-[#0d152f] to-[#0f1c3d] px-4 py-4">
+    <div className="space-y-5 rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/75 to-[#050810]/92 px-4 py-6 shadow-[0_30px_110px_rgba(0,0,0,0.6)] backdrop-blur-3xl md:px-6">
+      <header className="flex flex-wrap items-start justify-between gap-3 rounded-2xl border border-white/12 bg-gradient-to-r from-white/10 via-[#0f1c3d]/70 to-[#0b1021]/85 px-4 py-4 shadow-[0_20px_70px_rgba(0,0,0,0.55)]">
         <div className="space-y-1">
-          <p className="text-[11px] uppercase tracking-[0.2em] text-white/55">Padel</p>
-          <h1 className="text-2xl font-semibold">Clubes, courts, staff e jogadores.</h1>
-          <p className="text-sm text-white/65">Tudo num hub único. Copy curta e ações claras.</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={openNewClubModal}
-            className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-black shadow hover:scale-[1.01]"
-          >
-            Novo clube
-          </button>
+          <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] uppercase tracking-[0.22em] text-white/80 shadow-[0_10px_30px_rgba(0,0,0,0.4)]">
+            Padel Hub
+          </div>
+          <h1 className="text-3xl font-semibold text-white drop-shadow-[0_10px_40px_rgba(0,0,0,0.55)]">Operação de Padel</h1>
+          <p className="text-sm text-white/70">Calendário, clubes, courts, staff e jogadores num só hub.</p>
         </div>
       </header>
 
-      <div className="grid grid-cols-1 gap-3 rounded-2xl border border-white/10 bg-black/40 p-4 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 rounded-2xl border border-white/12 bg-gradient-to-r from-white/8 via-[#0c1328]/70 to-[#050912]/90 p-4 shadow-[0_22px_70px_rgba(0,0,0,0.55)] sm:grid-cols-4">
+        <div>
+          <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Calendário</p>
+          <p className="text-2xl font-semibold">Slots & conflitos</p>
+          <p className="text-[12px] text-white/60">Bloqueios, jogos e indisponibilidades.</p>
+        </div>
         <div>
           <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Clubes</p>
           <p className="text-2xl font-semibold">{clubs.length}</p>
@@ -825,8 +914,9 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-2 border-b border-white/10 pb-3">
+      <div className="flex flex-wrap gap-2 border-b border-white/15 pb-3">
         {[
+          { key: "calendar", label: "Calendário" },
           { key: "clubs", label: "Clubes" },
           { key: "players", label: "Jogadores" },
           { key: "rankings", label: "Rankings (em breve)" },
@@ -836,15 +926,140 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
             className={`rounded-full border px-3 py-1 text-[12px] ${
               activeTab === tab.key ? "border-white/80 bg-white text-black" : "border-white/10 bg-white/5 text-white/75 hover:border-white/25"
             }`}
-            onClick={() => setActiveTab(tab.key as any)}
+            onClick={() => setPadelSection(tab.key as typeof padelTabs[number])}
           >
             {tab.label}
           </button>
         ))}
       </div>
 
-      {activeTab === "clubs" && (
+      {switchingTab && <PadelTabSkeleton />}
+
+      {!switchingTab && activeTab === "calendar" && (
+        <div className="space-y-4 rounded-2xl border border-white/12 bg-gradient-to-br from-white/6 via-[#0c1628]/60 to-[#050912]/85 p-4 shadow-[0_18px_60px_rgba(0,0,0,0.5)]">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="space-y-1">
+              <p className="text-[12px] uppercase tracking-[0.2em] text-white/60">Calendário</p>
+              <p className="text-sm text-white/70">Visual por court com jogos, bloqueios e indisponibilidades (padel only).</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="inline-flex rounded-full border border-white/15 bg-white/5 p-1 text-[12px]">
+                {["week", "day"].map((scope) => (
+                  <button
+                    key={scope}
+                    onClick={() => setCalendarScope(scope as "week" | "day")}
+                    className={`rounded-full px-3 py-1 font-semibold transition ${
+                      calendarScope === scope ? "bg-white text-black shadow" : "text-white/75"
+                    }`}
+                    disabled={switchingTab}
+                  >
+                    {scope === "week" ? "Semana" : "Dia"}
+                  </button>
+                ))}
+              </div>
+              <div className="inline-flex rounded-full border border-white/15 bg-white/5 p-1 text-[12px]">
+                {[
+                  { key: "all", label: "Todos os clubes" },
+                  { key: "club", label: "Clube ativo" },
+                ].map((opt) => (
+                  <button
+                    key={opt.key}
+                    onClick={() => setCalendarFilter(opt.key as "all" | "club")}
+                    className={`rounded-full px-3 py-1 font-semibold transition ${
+                      calendarFilter === opt.key ? "bg-white text-black shadow" : "text-white/75"
+                    }`}
+                    disabled={switchingTab}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="grid gap-3 lg:grid-cols-[1fr_320px]">
+            <div className="h-[420px] rounded-2xl border border-dashed border-white/15 bg-black/25 p-4 text-white/70">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-semibold text-white">Timeline</p>
+                {isCalendarLoading && <span className="text-[11px] text-white/60 animate-pulse">A carregar…</span>}
+              </div>
+              {!eventId && (
+                <p className="mt-2 text-[12px] text-white/60">
+                  Abre este hub a partir de um torneio de padel para ver o calendário (precisa de eventId no URL).
+                </p>
+              )}
+              {eventId && !isCalendarLoading && calendarError && (
+                <p className="mt-2 text-[12px] text-red-200">{calendarError}</p>
+              )}
+              {eventId && !isCalendarLoading && !calendarError && (
+                <div className="mt-3 space-y-2">
+                  {calendarBlocks.length === 0 && calendarAvailabilities.length === 0 && (
+                    <p className="text-[12px] text-white/55">Ainda sem bloqueios ou indisponibilidades.</p>
+                  )}
+                  {[...calendarBlocks]
+                    .sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime())
+                    .slice(0, 6)
+                    .map((block) => (
+                      <div
+                        key={`block-${block.id}`}
+                        className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-[12px]"
+                      >
+                        <p className="font-semibold text-white">Bloqueio {block.label || `#${block.id}`}</p>
+                        <p className="text-white/65">
+                          {new Date(block.startAt).toLocaleString("pt-PT")} →{" "}
+                          {new Date(block.endAt).toLocaleString("pt-PT")}
+                        </p>
+                        {block.note && <p className="text-white/55">Nota: {block.note}</p>}
+                      </div>
+                    ))}
+                  {[...calendarAvailabilities]
+                    .sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime())
+                    .slice(0, 6)
+                    .map((av) => (
+                      <div
+                        key={`av-${av.id}`}
+                        className="rounded-lg border border-amber-300/30 bg-amber-400/10 px-3 py-2 text-[12px] text-white"
+                      >
+                        <p className="font-semibold">{av.playerName || av.playerEmail || "Jogador"}</p>
+                        <p className="text-white/70">
+                          {new Date(av.startAt).toLocaleString("pt-PT")} → {new Date(av.endAt).toLocaleString("pt-PT")}
+                        </p>
+                        {av.note && <p className="text-white/65">Nota: {av.note}</p>}
+                      </div>
+                    ))}
+                </div>
+              )}
+            </div>
+            <div className="space-y-3 rounded-2xl border border-white/12 bg-white/5 p-4 text-white/80 shadow-[0_16px_50px_rgba(0,0,0,0.45)]">
+              <p className="text-sm font-semibold text-white">Legenda & próximos passos</p>
+              <ul className="space-y-2 text-[13px] text-white/70">
+                <li>• Bloqueios de court e indisponibilidades de jogador.</li>
+                <li>• Conflitos: sobreposição, jogador em dois jogos, fora de horário.</li>
+                <li>• Vista por clube ou todos os clubes ativos do torneio.</li>
+              </ul>
+              <div className="rounded-xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0f1c3d]/50 to-[#050912]/90 p-3 text-[13px] text-white/75">
+                A seguir: endpoints de indisponibilidade + slots de bloqueio; depois ligamos o drag & drop.
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {!switchingTab && activeTab === "clubs" && (
         <div className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h2 className="text-sm font-semibold text-white">Clubes</h2>
+              <p className="text-[12px] text-white/65">Morada, courts e default para o wizard.</p>
+            </div>
+            <button
+              type="button"
+              onClick={openNewClubModal}
+              className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-black shadow hover:scale-[1.01]"
+            >
+              Novo clube
+            </button>
+          </div>
           {sortedClubs.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-white/20 bg-black/35 p-6 text-white">
               <p className="text-lg font-semibold">Ainda sem clubes.</p>
@@ -956,7 +1171,7 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
           )}
 
           {drawerClubId && selectedClub && (
-            <div className="space-y-4 rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+            <div className="space-y-4 rounded-2xl border border-white/12 bg-gradient-to-br from-white/6 via-[#0c1628]/65 to-[#050912]/85 p-4 shadow-[0_18px_60px_rgba(0,0,0,0.5)]">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <p className="text-[12px] uppercase tracking-[0.18em] text-white/60">Courts & equipa</p>
@@ -999,7 +1214,7 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
                   <div className="h-4 w-32 rounded bg-white/10 animate-pulse" />
                   <div className="grid gap-3 lg:grid-cols-2">
                     {[...Array(2)].map((_, idx) => (
-                      <div key={idx} className="space-y-2 rounded-xl border border-white/10 bg-black/25 p-3 animate-pulse">
+                      <div key={idx} className="space-y-2 rounded-xl border border-white/12 bg-white/5 p-3 animate-pulse">
                         <div className="h-4 w-1/2 rounded bg-white/10" />
                         <div className="h-10 rounded bg-white/5" />
                         <div className="h-10 rounded bg-white/5" />
@@ -1011,7 +1226,7 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
               )}
 
               <div className="grid gap-4 lg:grid-cols-2">
-                <div className="space-y-3 rounded-xl border border-white/10 bg-black/30 p-3">
+                <div className="space-y-3 rounded-xl border border-white/12 bg-gradient-to-br from-white/6 via-[#0c1628]/60 to-[#050912]/85 p-3 shadow-[0_14px_45px_rgba(0,0,0,0.45)]">
                   <div className="flex items-center justify-between">
                     <p className="text-sm font-semibold text-white">Courts do clube</p>
                     <span className={badge("slate")}>{courts.filter((c) => c.isActive).length} ativos</span>
@@ -1169,31 +1384,48 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
               </div>
             </div>
 
-                <div className="space-y-3 rounded-xl border border-white/10 bg-black/30 p-3">
+                <div className="space-y-3 rounded-xl border border-white/12 bg-gradient-to-br from-white/6 via-[#0c1628]/60 to-[#050912]/85 p-3 shadow-[0_14px_45px_rgba(0,0,0,0.45)]">
                   <div className="flex items-center justify-between">
-                    <p className="text-sm font-semibold text-white">Staff do clube</p>
-                    <span className={badge("slate")}>{staff.filter((s) => s.inheritToEvents).length} herdam</span>
-                  </div>
-                  <div className="space-y-2">
-                    <div className="inline-flex rounded-full border border-white/15 bg-black/40 p-1 text-[12px]">
-                      {[
-                        { key: "existing", label: "Usar staff do organizador" },
-                        { key: "external", label: "Adicionar contacto externo" },
-                      ].map((opt) => (
-                        <button
-                          key={opt.key}
-                          type="button"
-                          onClick={() => setStaffMode(opt.key as typeof staffMode)}
-                          className={`rounded-full px-3 py-1 transition ${
-                            staffMode === opt.key ? "bg-white text-black font-semibold shadow" : "text-white/75 hover:bg-white/5"
-                          }`}
-                        >
-                          {opt.label}
-                        </button>
-                      ))}
+                    <div className="space-y-1">
+                      <p className="text-sm font-semibold text-white">Staff do clube</p>
+                      <p className="text-[11px] text-white/60">
+                        {staff.length} membros · {inheritedStaffCount} herdam para torneios
+                      </p>
                     </div>
+                    <span className={badge("slate")}>Herdam: {inheritedStaffCount}</span>
+                  </div>
 
-                    {staffMode === "existing" ? (
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {[
+                      {
+                        key: "existing",
+                        label: "Staff do organizador",
+                        desc: "Reaproveita quem já tens no staff global e herda para torneios.",
+                      },
+                      {
+                        key: "external",
+                        label: "Contacto externo",
+                        desc: "Email + role só para este clube. Podes convidar depois.",
+                      },
+                    ].map((opt) => (
+                      <button
+                        key={opt.key}
+                        type="button"
+                        onClick={() => setStaffMode(opt.key as typeof staffMode)}
+                        className={`rounded-xl border p-3 text-left transition ${
+                          staffMode === opt.key
+                            ? "border-white/60 bg-white/10 shadow-[0_10px_35px_rgba(0,0,0,0.45)]"
+                            : "border-white/15 bg-white/5 hover:border-white/30"
+                        }`}
+                      >
+                        <p className="font-semibold text-white">{opt.label}</p>
+                        <p className="text-[12px] text-white/65">{opt.desc}</p>
+                      </button>
+                    ))}
+                  </div>
+
+                  {staffMode === "existing" ? (
+                    <div className="space-y-2 rounded-xl border border-white/12 bg-black/30 p-3">
                       <div className="grid gap-2 sm:grid-cols-2">
                         <input
                           value={staffSearch}
@@ -1214,7 +1446,17 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
                           ))}
                         </select>
                       </div>
-                    ) : (
+                      {staffForm.staffMemberId && (
+                        <div className="rounded-lg border border-white/15 bg-white/5 p-3 text-[12px] text-white/75">
+                          <p className="font-semibold text-white/90">Resumo rápido</p>
+                          <p className="text-white/70">
+                            Herdado do staff global; ficará marcado como herdado neste clube e nos torneios.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="space-y-2 rounded-xl border border-white/12 bg-black/30 p-3">
                       <div className="grid gap-2 sm:grid-cols-2">
                         <input
                           value={staffForm.email}
@@ -1223,42 +1465,43 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
                           placeholder="Email do contacto"
                         />
                         <div className="rounded-lg border border-white/15 bg-black/25 px-3 py-2 text-[12px] text-white/70">
-                          Sem conta ORYA: guardamos só email + role.
+                          Sem conta ORYA: guardamos só email + role. Podes convidar mais tarde.
                         </div>
                       </div>
-                    )}
+                    </div>
+                  )}
 
-                    <div className="grid gap-2 sm:grid-cols-2">
-                      <select
-                        value={staffForm.role}
-                        onChange={(e) => setStaffForm((p) => ({ ...p, role: e.target.value }))}
-                        className="rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
-                      >
-                        <option value="ADMIN_CLUBE">Admin clube</option>
-                        <option value="DIRETOR_PROVA">Diretor / Árbitro</option>
-                        <option value="STAFF">Staff de campo</option>
-                      </select>
-                      <div className="inline-flex rounded-full border border-white/15 bg-black/40 p-1 text-[12px]">
-                        {[
-                          { key: true, label: "Herdar para torneios" },
-                          { key: false, label: "Só neste clube" },
-                        ].map((opt) => (
-                          <button
-                            key={String(opt.key)}
-                            type="button"
-                            onClick={() => setStaffForm((p) => ({ ...p, inheritToEvents: opt.key as boolean }))}
-                            className={`rounded-full px-3 py-1 transition ${
-                              staffForm.inheritToEvents === opt.key
-                                ? "bg-white text-black font-semibold shadow"
-                                : "text-white/75 hover:bg-white/5"
-                            }`}
-                          >
-                            {opt.label}
-                          </button>
-                        ))}
-                      </div>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <select
+                      value={staffForm.role}
+                      onChange={(e) => setStaffForm((p) => ({ ...p, role: e.target.value }))}
+                      className="rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
+                    >
+                      <option value="ADMIN_CLUBE">Admin clube</option>
+                      <option value="DIRETOR_PROVA">Diretor / Árbitro</option>
+                      <option value="STAFF">Staff de campo</option>
+                    </select>
+                    <div className="inline-flex rounded-full border border-white/15 bg-black/40 p-1 text-[12px]">
+                      {[
+                        { key: true, label: "Herdar para torneios" },
+                        { key: false, label: "Só neste clube" },
+                      ].map((opt) => (
+                        <button
+                          key={String(opt.key)}
+                          type="button"
+                          onClick={() => setStaffForm((p) => ({ ...p, inheritToEvents: opt.key as boolean }))}
+                          className={`rounded-full px-3 py-1 transition ${
+                            staffForm.inheritToEvents === opt.key
+                              ? "bg-white text-black font-semibold shadow"
+                              : "text-white/75 hover:bg-white/5"
+                          }`}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
                     </div>
                   </div>
+
                   <div className="flex flex-wrap gap-2">
                     <button
                       type="button"
@@ -1276,20 +1519,35 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
                         Cancelar
                       </button>
                     )}
-                    {(staffError || staffMessage) && (
-                      <span className="text-[12px] text-white/70">{staffError || staffMessage}</span>
+                    {(staffError || staffMessage || staffInviteNotice) && (
+                      <span className="text-[12px] text-white/70">
+                        {staffError || staffMessage || staffInviteNotice}
+                      </span>
                     )}
                   </div>
-                  <div className="space-y-2 rounded-lg border border-white/10 bg-white/5 p-2 text-[12px] text-white/80">
+
+                  <div className="space-y-2 rounded-lg border border-white/12 bg-white/5 p-2 text-[12px] text-white/80">
                     {staff.length === 0 && <p className="text-white/60">Sem staff ainda.</p>}
                     {staff.map((s) => (
                       <div key={s.id} className="flex items-center justify-between rounded-md border border-white/10 bg-black/40 px-2 py-1.5">
-                        <div>
+                        <div className="space-y-0.5">
                           <p className="text-sm text-white">{s.email || s.userId || "Sem contacto"}</p>
-                          <p className="text-[11px] text-white/55">
-                            {s.role} · {s.inheritToEvents ? "Herdar para torneios" : "Só no clube"} ·{" "}
-                            {s.userId ? "Staff global" : "Externo"}
-                          </p>
+                          <div className="flex flex-wrap items-center gap-2 text-[11px] text-white/60">
+                            <span className="rounded-full border border-white/20 bg-white/5 px-2 py-[2px]">{s.role}</span>
+                            <span
+                              className={`rounded-full border px-2 py-[2px] ${
+                                s.inheritToEvents
+                                  ? "border-emerald-300/50 bg-emerald-500/10 text-emerald-100"
+                                  : "border-white/20 bg-white/5 text-white/70"
+                              }`}
+                            >
+                              {s.inheritToEvents ? "Herdado p/ torneios" : "Só no clube"}
+                            </span>
+                            <span className="rounded-full border border-white/15 bg-white/5 px-2 py-[2px]">
+                              {s.userId ? "Staff global" : "Externo"}
+                            </span>
+                            {!s.userId && <span className="rounded-full border border-amber-300/50 bg-amber-400/10 px-2 py-[2px] text-amber-50">Pendente (sem conta)</span>}
+                          </div>
                         </div>
                         <button
                           type="button"
@@ -1308,8 +1566,8 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
         </div>
       )}
 
-      {activeTab === "players" && (
-        <div className="space-y-4 rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+      {!switchingTab && activeTab === "players" && (
+        <div className="space-y-4 rounded-2xl border border-white/12 bg-gradient-to-br from-white/6 via-[#0c1628]/60 to-[#050912]/85 p-4 shadow-[0_18px_60px_rgba(0,0,0,0.5)]">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <p className="text-[12px] uppercase tracking-[0.2em] text-white/60">Jogadores</p>
@@ -1359,15 +1617,15 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
         </div>
       )}
 
-      {activeTab === "rankings" && (
-        <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-sm text-white/75 space-y-2">
+      {!switchingTab && activeTab === "rankings" && (
+        <div className="rounded-2xl border border-white/12 bg-gradient-to-br from-white/6 via-[#0c1628]/60 to-[#050912]/85 p-4 text-sm text-white/75 space-y-2 shadow-[0_18px_60px_rgba(0,0,0,0.5)]">
           <p className="text-[12px] uppercase tracking-[0.2em] text-white/60">Rankings</p>
           <p>Rankings multi-torneio chegam numa próxima versão.</p>
         </div>
       )}
 
       {organizationKind !== "CLUBE_PADEL" && (
-        <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-[12px] text-white/65">
+        <div className="rounded-2xl border border-white/12 bg-gradient-to-br from-white/6 via-[#0c1628]/60 to-[#050912]/85 p-4 text-[12px] text-white/70 shadow-[0_16px_50px_rgba(0,0,0,0.45)]">
           Ferramentas de Padel disponíveis mesmo sem seres clube. Usa quando precisares.
         </div>
       )}

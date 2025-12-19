@@ -4,7 +4,6 @@ import Image from "next/image";
 import { useMemo, useState } from "react";
 import useSWR from "swr";
 import { useRouter, useSearchParams } from "next/navigation";
-import Link from "next/link";
 import { useUser } from "@/app/hooks/useUser";
 import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
 import { ConfirmDestructiveActionDialog } from "@/app/components/ConfirmDestructiveActionDialog";
@@ -88,11 +87,14 @@ const roleOrder: Record<MemberRole, number> = {
 };
 
 const statusTone: Record<InviteStatus, string> = {
-  PENDING: "border-amber-300/40 bg-amber-300/10 text-amber-100",
-  EXPIRED: "border-white/15 bg-white/5 text-white/60",
-  ACCEPTED: "border-emerald-400/40 bg-emerald-400/10 text-emerald-100",
-  DECLINED: "border-red-400/40 bg-red-400/10 text-red-100",
-  CANCELLED: "border-white/15 bg-white/5 text-white/60",
+  PENDING:
+    "border-amber-200/60 bg-gradient-to-r from-amber-500/25 via-amber-400/15 to-amber-600/25 text-amber-50 shadow-[0_10px_32px_rgba(251,191,36,0.25)]",
+  EXPIRED: "border-white/15 bg-gradient-to-r from-white/8 via-white/4 to-white/6 text-white/60",
+  ACCEPTED:
+    "border-emerald-300/60 bg-gradient-to-r from-emerald-500/25 via-emerald-400/15 to-emerald-600/25 text-emerald-50 shadow-[0_10px_32px_rgba(52,211,153,0.25)]",
+  DECLINED:
+    "border-red-300/60 bg-gradient-to-r from-red-500/30 via-red-500/15 to-red-700/25 text-red-100 shadow-[0_10px_32px_rgba(239,68,68,0.25)]",
+  CANCELLED: "border-white/15 bg-gradient-to-r from-white/8 via-white/4 to-white/6 text-white/65",
 };
 
 function canManageMember(actorRole: MemberRole | null, targetRole: MemberRole) {
@@ -124,6 +126,19 @@ function InviteBadge({ status }: { status: InviteStatus }) {
     </span>
   );
 }
+
+const primaryCta =
+  "inline-flex items-center gap-2 rounded-full border border-white/25 bg-gradient-to-r from-[#FF7AD1]/35 via-[#7FE0FF]/22 to-[#6A7BFF]/35 px-6 py-2.5 text-sm font-semibold text-white shadow-[0_18px_60px_rgba(107,255,255,0.45)] backdrop-blur-xl transition hover:scale-[1.02] hover:shadow-[0_22px_70px_rgba(107,255,255,0.55)] focus:outline-none focus:ring-2 focus:ring-[#6BFFFF]/60";
+const glassButton =
+  "inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/5 px-4 py-2 text-sm text-white shadow-[0_12px_38px_rgba(0,0,0,0.35)] backdrop-blur hover:border-white/35 hover:bg-white/10 transition focus:outline-none focus:ring-2 focus:ring-white/30";
+const ghostButton =
+  "inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/0 px-4 py-2 text-sm text-white/80 hover:bg-white/5 transition focus:outline-none focus:ring-2 focus:ring-white/20";
+const dangerPill =
+  "inline-flex items-center gap-2 rounded-full border border-red-400/60 bg-gradient-to-r from-red-600/30 via-red-500/25 to-red-700/35 px-3 py-1.5 text-[12px] font-semibold text-red-50 shadow-[0_12px_38px_rgba(239,68,68,0.35)] hover:brightness-110 transition";
+const neutralPill =
+  "inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-[12px] text-white/85 shadow-[0_10px_30px_rgba(0,0,0,0.35)] hover:bg-white/10 transition";
+const acceptPill =
+  "inline-flex items-center gap-2 rounded-full border border-emerald-300/60 bg-gradient-to-r from-emerald-500/30 via-emerald-400/25 to-emerald-600/35 px-4 py-1.5 text-[12px] font-semibold text-emerald-50 shadow-[0_14px_36px_rgba(16,185,129,0.35)] hover:brightness-110 transition";
 
 function Avatar({ name, avatarUrl }: { name: string; avatarUrl: string | null }) {
   const initial = name?.trim()?.[0]?.toUpperCase() || "U";
@@ -212,6 +227,7 @@ export default function OrganizerStaffPage() {
 
   const members = membersData?.items ?? [];
   const invites = useMemo(() => invitesData?.items ?? [], [invitesData?.items]);
+  const pendingInvites = useMemo(() => invites.filter((i) => i.status !== "CANCELLED"), [invites]);
   const viewerRole: MemberRole | null = membersData?.viewerRole ?? invitesData?.viewerRole ?? null;
   const resolvedOrganizerId = organizerId ?? membersData?.organizerId ?? invitesData?.organizerId ?? null;
   const canInvite = viewerRole === "OWNER" || viewerRole === "CO_OWNER" || viewerRole === "ADMIN";
@@ -505,70 +521,69 @@ export default function OrganizerStaffPage() {
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-10 space-y-6 md:px-6 lg:px-8">
-      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <div>
-          <p className="text-[11px] uppercase tracking-[0.3em] text-white/60">Staff & segurança</p>
-          <h1 className="text-3xl font-semibold">
-            Controla quem tem acesso {meData?.organizer?.displayName ? ` · ${meData.organizer.displayName}` : ""}
-          </h1>
-          <p className="text-sm text-white/60">
-            Define papéis, gere convites e, quando ativo, transfere a organização de forma segura. Pelo menos um Owner tem de existir sempre.
-          </p>
-          {viewerRole === "OWNER" && !orgTransferEnabled && (
-            <p className="text-[11px] text-white/50">Transferência de Owner está desativada enquanto a flag global estiver off.</p>
-          )}
-          {auditData?.ok && auditData.items.length > 0 && (
-            <div className="mt-2 rounded-xl border border-white/10 bg-white/5 p-3 text-[12px] text-white/70 space-y-1">
-              <p className="text-[11px] uppercase tracking-[0.2em] text-white/50">Histórico rápido (sensível)</p>
-              <div className="space-y-1 max-h-36 overflow-y-auto pr-1">
-                {auditData.items.map((log) => (
-                  <div key={log.id} className="flex items-center justify-between text-[12px] border-b border-white/5 py-1 last:border-b-0">
-                    <span>{log.action}</span>
-                    <span className="text-white/50">{new Date(log.createdAt).toLocaleString("pt-PT")}</span>
-                  </div>
-                ))}
-              </div>
+      <div className="relative overflow-hidden rounded-[28px] border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/75 to-[#050810]/92 p-5 shadow-[0_30px_110px_rgba(0,0,0,0.6)] backdrop-blur-3xl">
+        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.12),transparent_35%),linear-gradient(225deg,rgba(255,255,255,0.08),transparent_40%)]" />
+        <div className="relative flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="space-y-1">
+            <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] uppercase tracking-[0.26em] text-white/80 shadow-[0_10px_30px_rgba(0,0,0,0.4)]">
+              Staff &amp; segurança
             </div>
-          )}
-        </div>
-        <div className="flex flex-wrap gap-2 text-[12px]">
-          <button
-            type="button"
-            onClick={() => setInviteModalOpen(true)}
-            className="inline-flex items-center rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-5 py-2 text-sm font-semibold text-black shadow hover:opacity-95"
-          >
-            Convidar membro
-          </button>
-          <Link
-            href={eventId ? `/organizador/scan?eventId=${eventId}` : "/organizador/scan"}
-            className="inline-flex items-center rounded-full border border-white/20 bg-white/5 px-4 py-2 text-sm text-white hover:bg-white/10"
-          >
-            Abrir check-in (QR)
-          </Link>
-          {viewerRole === "OWNER" && orgTransferEnabled && (
+            <h1 className="text-3xl font-semibold drop-shadow-[0_10px_40px_rgba(0,0,0,0.55)]">
+              Controla quem tem acesso {meData?.organizer?.displayName ? ` · ${meData.organizer.displayName}` : ""}
+            </h1>
+            <p className="text-sm text-white/70">
+              Define papéis, gere convites e, quando ativo, transfere a organização de forma segura. Pelo menos um Owner tem de existir sempre.
+            </p>
+            {viewerRole === "OWNER" && !orgTransferEnabled && (
+              <p className="text-[11px] text-white/55">Transferência de Owner desativada enquanto a flag global estiver off.</p>
+            )}
+            {auditData?.ok && auditData.items.length > 0 && (
+              <div className="mt-2 rounded-xl border border-white/12 bg-white/5 p-3 text-[12px] text-white/70 shadow-[0_16px_40px_rgba(0,0,0,0.45)] space-y-1">
+                <p className="text-[11px] uppercase tracking-[0.2em] text-white/55">Histórico rápido (sensível)</p>
+                <div className="space-y-1 max-h-36 overflow-y-auto pr-1">
+                  {auditData.items.map((log) => (
+                    <div key={log.id} className="flex items-center justify-between text-[12px] border-b border-white/5 py-1 last:border-b-0">
+                      <span>{log.action}</span>
+                      <span className="text-white/50">{new Date(log.createdAt).toLocaleString("pt-PT")}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-2 text-[12px]">
             <button
               type="button"
-              onClick={() => setTransferModalOpen(true)}
-              className="rounded-full border border-white/20 bg-white/5 px-4 py-2 text-sm text-white hover:bg-white/10"
+              onClick={() => setInviteModalOpen(true)}
+              className={primaryCta}
             >
-              Transferir organização
+              Convidar membro
             </button>
-          )}
-          {viewerRole && (
-            <button
-              type="button"
-              onClick={() => setLeaveConfirmOpen(true)}
-              disabled={leaveLoading}
-              className="rounded-full border border-white/20 bg-white/0 px-4 py-2 text-sm text-white/80 hover:bg-white/10 disabled:opacity-60"
-            >
-              {leaveLoading ? "A sair…" : "Sair da organização"}
-            </button>
-          )}
+            {viewerRole === "OWNER" && orgTransferEnabled && (
+              <button
+                type="button"
+                onClick={() => setTransferModalOpen(true)}
+                className={glassButton}
+              >
+                Transferir organização
+              </button>
+            )}
+            {viewerRole && (
+              <button
+                type="button"
+                onClick={() => setLeaveConfirmOpen(true)}
+                disabled={leaveLoading}
+                className={ghostButton}
+              >
+                {leaveLoading ? "A sair…" : "Sair da organização"}
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
-        <section className="rounded-2xl border border-white/10 bg-black/30 p-4 space-y-3 shadow-[0_16px_50px_rgba(0,0,0,0.45)]">
+        <section className="relative overflow-hidden rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1226]/75 to-[#050912]/90 p-4 space-y-3 shadow-[0_26px_90px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <h2 className="text-sm font-semibold">Membros</h2>
@@ -619,7 +634,7 @@ export default function OrganizerStaffPage() {
                 return (
                   <div
                     key={m.userId}
-                    className="flex flex-col gap-2 rounded-xl border border-white/10 bg-white/5 p-3 md:flex-row md:items-center md:justify-between"
+                    className="flex flex-col gap-2 rounded-xl border border-white/12 bg-gradient-to-r from-white/6 via-[#0c1628]/60 to-[#050912]/85 p-3 shadow-[0_14px_45px_rgba(0,0,0,0.45)] md:flex-row md:items-center md:justify-between"
                   >
                     <div className="flex items-start gap-3">
                       <Avatar name={displayName} avatarUrl={m.avatarUrl} />
@@ -643,7 +658,7 @@ export default function OrganizerStaffPage() {
                         value={m.role}
                         disabled={roleDisabled || memberActionLoading === m.userId}
                         onChange={(e) => handleRoleChange(m, e.target.value as MemberRole)}
-                        className="rounded-md border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-white/40 disabled:opacity-60"
+                        className="rounded-full border border-white/15 bg-black/40 px-4 py-2 text-sm text-white shadow-[0_10px_30px_rgba(0,0,0,0.35)] outline-none focus:border-[#6BFFFF] focus:ring-2 focus:ring-[rgba(107,255,255,0.35)] disabled:opacity-60"
                       >
                         <option value="OWNER" disabled={!canAssignRole(viewerRole, m.role, "OWNER")}>
                           Owner
@@ -665,7 +680,7 @@ export default function OrganizerStaffPage() {
                         type="button"
                         onClick={() => setRemoveTarget(m)}
                         disabled={removeDisabled}
-                        className="rounded-full border border-red-500/40 bg-red-500/10 px-3 py-1.5 text-[12px] text-red-200 hover:bg-red-500/20 disabled:opacity-60"
+                        className={`${dangerPill} ${removeDisabled ? "opacity-60" : ""}`}
                       >
                         Remover
                       </button>
@@ -677,21 +692,21 @@ export default function OrganizerStaffPage() {
           )}
         </section>
 
-        <section className="rounded-2xl border border-white/10 bg-white/5 p-4 space-y-3 shadow-[0_16px_50px_rgba(0,0,0,0.45)]">
+        <section className="relative overflow-hidden rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1226]/75 to-[#050912]/90 p-4 space-y-3 shadow-[0_26px_90px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <h2 className="text-sm font-semibold">Convites</h2>
               <p className="text-[12px] text-white/60">Gerir convites pendentes, reenvios e respostas.</p>
             </div>
             <div className="text-[11px] text-white/60">
-              {isInvitesLoading ? "A carregar…" : `${invites.length} convite${invites.length === 1 ? "" : "s"}`}
+              {isInvitesLoading ? "A carregar…" : `${pendingInvites.length} convite${pendingInvites.length === 1 ? "" : "s"}`}
             </div>
           </div>
 
           {isInvitesLoading && (
             <div className="space-y-2">
               {Array.from({ length: 2 }).map((_, idx) => (
-                <div key={idx} className="flex animate-pulse justify-between rounded-xl border border-white/5 bg-black/30 p-3">
+                <div key={idx} className="flex animate-pulse justify-between rounded-xl border border-white/12 bg-white/5 p-3">
                   <div className="space-y-2">
                     <div className="h-3 w-40 rounded bg-white/10" />
                     <div className="h-3 w-24 rounded bg-white/5" />
@@ -702,15 +717,15 @@ export default function OrganizerStaffPage() {
             </div>
           )}
 
-          {!isInvitesLoading && invites.length === 0 && (
+          {!isInvitesLoading && pendingInvites.length === 0 && (
             <div className="rounded-lg border border-dashed border-white/15 bg-white/5 p-4 text-sm text-white/70">
               Sem convites pendentes. Convida por email ou username para novos acessos.
             </div>
           )}
 
-          {invites.length > 0 && (
+          {pendingInvites.length > 0 && (
             <div className="space-y-2">
-              {invites.map((inv) => {
+              {pendingInvites.map((inv) => {
                 const isPending = inv.status === "PENDING";
                 const isExpired = inv.status === "EXPIRED";
                 const canRespond = inv.canRespond && isPending;
@@ -722,7 +737,7 @@ export default function OrganizerStaffPage() {
                 return (
                   <div
                     key={inv.id}
-                    className="flex flex-col gap-2 rounded-xl border border-white/10 bg-black/30 p-3"
+                    className="flex flex-col gap-2 rounded-xl border border-white/12 bg-gradient-to-r from-white/6 via-[#0c1628]/60 to-[#050912]/85 p-3 shadow-[0_14px_45px_rgba(0,0,0,0.45)]"
                   >
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="space-y-1">
@@ -753,7 +768,7 @@ export default function OrganizerStaffPage() {
                               type="button"
                               disabled={inviteActionLoading === inv.id}
                               onClick={() => handleInviteAction(inv.id, "DECLINE")}
-                              className="rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-[12px] text-white/80 hover:bg-white/10 disabled:opacity-60"
+                              className={`${neutralPill} ${inviteActionLoading === inv.id ? "opacity-60" : ""}`}
                             >
                               Recusar
                             </button>
@@ -761,7 +776,7 @@ export default function OrganizerStaffPage() {
                               type="button"
                               disabled={inviteActionLoading === inv.id}
                               onClick={() => handleInviteAction(inv.id, "ACCEPT")}
-                              className="rounded-full bg-white px-4 py-1.5 text-[12px] font-semibold text-black shadow disabled:opacity-60"
+                              className={`${acceptPill} ${inviteActionLoading === inv.id ? "opacity-60" : ""}`}
                             >
                               Aceitar
                             </button>
@@ -773,7 +788,7 @@ export default function OrganizerStaffPage() {
                               type="button"
                               disabled={inviteActionLoading === inv.id}
                               onClick={() => handleInviteAction(inv.id, "RESEND")}
-                              className="rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-[12px] text-white/85 hover:bg-white/10 disabled:opacity-60"
+                              className={`${neutralPill} ${inviteActionLoading === inv.id ? "opacity-60" : ""}`}
                             >
                               Re-enviar
                             </button>
@@ -781,7 +796,7 @@ export default function OrganizerStaffPage() {
                               type="button"
                               disabled={inviteActionLoading === inv.id}
                               onClick={() => handleInviteAction(inv.id, "CANCEL")}
-                              className="rounded-full border border-red-400/40 bg-red-500/10 px-3 py-1.5 text-[12px] text-red-100 hover:bg-red-500/20 disabled:opacity-60"
+                              className={`${dangerPill} ${inviteActionLoading === inv.id ? "opacity-60" : ""}`}
                             >
                               Cancelar
                             </button>

@@ -115,6 +115,8 @@ model Organizer {
   padelRankingEntries     PadelRankingEntry[]
   padelRuleSets           PadelRuleSet[]                  @relation("OrganizerPadelRuleSets")
   padelTournaments        PadelTournamentConfig[]
+  padelCourtBlocks        PadelCourtBlock[]
+  padelAvailabilities     PadelAvailability[]
   staffAssignments        StaffAssignment[]
 
   @@index([userId])
@@ -354,6 +356,8 @@ model Event {
   padelRankingEntries               PadelRankingEntry[]
   padelTeams                        PadelTeam[]
   padelTournamentConfig             PadelTournamentConfig?
+  padelCourtBlocks                  PadelCourtBlock[]
+  padelAvailabilities               PadelAvailability[]
   tournamentEntries                 TournamentEntry[]
   tournament                        Tournament?             @relation("EventTournament")
   promoCodes                        PromoCode[]
@@ -849,6 +853,7 @@ model PadelPlayerProfile {
   rankings      PadelRankingEntry[]
   teams1        PadelTeam[]         @relation("PadelTeamPlayer1")
   teams2        PadelTeam[]         @relation("PadelTeamPlayer2")
+  availabilities PadelAvailability[]
 
   @@map("padel_player_profiles")
   @@schema("app_v3")
@@ -873,6 +878,7 @@ model PadelClub {
   deletedAt           DateTime?               @map("deleted_at") @db.Timestamptz(6)
   courts              PadelClubCourt[]
   staff               PadelClubStaff[]
+  calendarBlocks      PadelCourtBlock[]
   organizer           Organizer               @relation(fields: [organizerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   tournaments         PadelTournamentConfig[]
 
@@ -893,6 +899,7 @@ model PadelClubCourt {
   createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt    DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   club         PadelClub @relation(fields: [padelClubId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  calendarBlocks PadelCourtBlock[]
 
   @@index([padelClubId], map: "padel_club_courts_club_idx")
   @@map("padel_club_courts")
@@ -992,6 +999,57 @@ model PadelTournamentConfig {
 
   @@index([padelClubId], map: "padel_tournament_configs_padel_club_idx")
   @@map("padel_tournament_configs")
+  @@schema("app_v3")
+}
+
+/// Bloqueios de court para calendário de padel (bloqueios administrativos)
+model PadelCourtBlock {
+  id           Int       @id @default(autoincrement())
+  organizerId  Int       @map("organizer_id")
+  eventId      Int       @map("event_id")
+  padelClubId  Int?      @map("padel_club_id")
+  courtId      Int?      @map("court_id")
+  startAt      DateTime  @map("start_at") @db.Timestamptz(6)
+  endAt        DateTime  @map("end_at") @db.Timestamptz(6)
+  label        String?
+  kind         String    @default("BLOCK")
+  note         String?
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  organizer    Organizer @relation(fields: [organizerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  event        Event     @relation(fields: [eventId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  club         PadelClub? @relation(fields: [padelClubId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  court        PadelClubCourt? @relation(fields: [courtId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([organizerId], map: "padel_court_blocks_org_idx")
+  @@index([eventId], map: "padel_court_blocks_event_idx")
+  @@index([padelClubId], map: "padel_court_blocks_club_idx")
+  @@index([courtId], map: "padel_court_blocks_court_idx")
+  @@map("padel_court_blocks")
+  @@schema("app_v3")
+}
+
+/// Indisponibilidade de jogadores/duplas para o calendário
+model PadelAvailability {
+  id               Int                 @id @default(autoincrement())
+  organizerId      Int                 @map("organizer_id")
+  eventId          Int                 @map("event_id")
+  playerProfileId  Int?                @map("player_profile_id")
+  playerName       String?             @map("player_name")
+  playerEmail      String?             @map("player_email") @db.Citext
+  startAt          DateTime            @map("start_at") @db.Timestamptz(6)
+  endAt            DateTime            @map("end_at") @db.Timestamptz(6)
+  note             String?
+  createdAt        DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  organizer        Organizer           @relation(fields: [organizerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  event            Event               @relation(fields: [eventId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  playerProfile    PadelPlayerProfile? @relation(fields: [playerProfileId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([organizerId], map: "padel_availabilities_org_idx")
+  @@index([eventId], map: "padel_availabilities_event_idx")
+  @@index([playerProfileId], map: "padel_availabilities_profile_idx")
+  @@map("padel_availabilities")
   @@schema("app_v3")
 }
 

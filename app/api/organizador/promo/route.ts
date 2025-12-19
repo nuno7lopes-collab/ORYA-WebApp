@@ -438,7 +438,9 @@ export async function PATCH(req: NextRequest) {
     if (perUserLimit !== undefined) dataUpdate.perUserLimit = perUserLimit;
     if (validFrom !== undefined) dataUpdate.validFrom = parseDate(validFrom);
     if (validUntil !== undefined) dataUpdate.validUntil = parseDate(validUntil);
-    if (targetEventId !== undefined) dataUpdate.eventId = targetEventId;
+    if (targetEventId !== undefined) {
+      dataUpdate.event = targetEventId === null ? { disconnect: true } : { connect: { id: targetEventId } };
+    }
     if (minQuantity !== undefined) dataUpdate.minQuantity = minQuantity;
     if (minTotalCents !== undefined) dataUpdate.minTotalCents = minTotalCents;
     if (minCartValueCents !== undefined) dataUpdate.minCartValueCents = minCartValueCents;

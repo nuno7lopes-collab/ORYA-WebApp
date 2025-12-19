@@ -35,6 +35,10 @@ const MAX_ATTEMPTS = 5;
 const BATCH_SIZE = 5;
 const INTERNAL_HEADER = "X-ORYA-CRON-SECRET";
 
+const RAW_BASE_URL = process.env.NEXT_PUBLIC_BASE_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? "https://app.orya.pt";
+const BASE_URL = RAW_BASE_URL.startsWith("http") ? RAW_BASE_URL : `https://${RAW_BASE_URL}`;
+const absUrl = (path: string) => (/^https?:\/\//i.test(path) ? path : `${BASE_URL}${path.startsWith("/") ? path : `/${path}`}`);
+
 type OperationRecord = {
   id: number;
   operationType: OperationType | string;
@@ -214,7 +218,7 @@ async function processSendEmailOutbox(op: OperationRecord) {
           endsAt: tpl?.endsAt ?? null,
           locationName: tpl?.locationName ?? null,
           ticketsCount: tpl?.ticketsCount ?? 1,
-          ticketUrl: tpl?.ticketUrl ?? "/me/carteira",
+          ticketUrl: tpl?.ticketUrl ? absUrl(tpl.ticketUrl) : absUrl("/me/carteira"),
         });
         break;
       }
@@ -225,7 +229,7 @@ async function processSendEmailOutbox(op: OperationRecord) {
           eventTitle: tpl?.eventTitle ?? "Entitlement entregue",
           startsAt: tpl?.startsAt ?? null,
           venue: tpl?.locationName ?? null,
-          ticketUrl: tpl?.ticketUrl ?? "/me/carteira",
+          ticketUrl: tpl?.ticketUrl ? absUrl(tpl.ticketUrl) : absUrl("/me/carteira"),
         });
         break;
       }
@@ -233,7 +237,7 @@ async function processSendEmailOutbox(op: OperationRecord) {
         await sendClaimEmail({
           to: recipient,
           eventTitle: tpl?.eventTitle ?? "Claim concluído",
-          ticketUrl: tpl?.ticketUrl ?? "/me/carteira",
+          ticketUrl: tpl?.ticketUrl ? absUrl(tpl.ticketUrl) : absUrl("/me/carteira"),
         });
         break;
       }
@@ -243,7 +247,7 @@ async function processSendEmailOutbox(op: OperationRecord) {
           eventTitle: tpl?.eventTitle ?? "Refund ORYA",
           amountRefundedBaseCents: tpl?.amountRefundedBaseCents ?? null,
           reason: tpl?.reason ?? null,
-          ticketUrl: tpl?.ticketUrl ?? "/me/carteira",
+          ticketUrl: tpl?.ticketUrl ? absUrl(tpl.ticketUrl) : absUrl("/me/carteira"),
         });
         break;
       }
@@ -252,7 +256,7 @@ async function processSendEmailOutbox(op: OperationRecord) {
           to: recipient,
           eventTitle: tpl?.eventTitle ?? "Atualização ORYA",
           message: tpl?.message ?? "Atualização relevante sobre o teu acesso.",
-          ticketUrl: tpl?.ticketUrl ?? "/me/carteira",
+          ticketUrl: tpl?.ticketUrl ? absUrl(tpl.ticketUrl) : absUrl("/me/carteira"),
         });
         break;
       }
@@ -784,7 +788,7 @@ async function processSendEmailReceipt(op: OperationRecord) {
     endsAt: event.endsAt?.toISOString() ?? null,
     locationName: event.locationName ?? null,
     ticketsCount,
-    ticketUrl: "/me/carteira",
+    ticketUrl: absUrl("/me/carteira"),
   });
 }
 
@@ -810,7 +814,7 @@ async function processSendNotificationPurchase(op: OperationRecord) {
       type: NotificationType.EVENT_SALE,
       title: "Compra confirmada",
       body: eventId ? `A tua compra para o evento ${eventId} foi confirmada.` : "Compra confirmada.",
-      ctaUrl: "/me/carteira",
+      ctaUrl: absUrl("/me/carteira"),
       ctaLabel: "Ver bilhetes",
       payload: { purchaseId, eventId },
     });

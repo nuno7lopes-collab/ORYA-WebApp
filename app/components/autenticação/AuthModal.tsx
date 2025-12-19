@@ -217,16 +217,14 @@ function AuthModalContent({
     setError(null);
     setLoginOtpSent(false);
     try {
-      const redirect =
-        typeof window !== "undefined"
-          ? `${window.location.origin}/auth/callback`
-          : undefined;
-      const { error: resetErr } = await supabaseBrowser.auth.resetPasswordForEmail(
-        email,
-        { redirectTo: redirect },
-      );
-      if (resetErr) {
-        setError(resetErr.message ?? "Não foi possível enviar recuperação de password.");
+      const res = await fetch("/api/auth/password/reset-request", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || data?.ok === false) {
+        setError(data?.error ?? "Não foi possível enviar recuperação de password.");
         setLoginOtpSending(false);
         return;
       }
@@ -663,6 +661,22 @@ function AuthModalContent({
               </button>
             </div>
 
+            {mode === "login" && (
+              <div className="mt-2 flex items-center justify-between text-[11px] text-white/65">
+                <button
+                  type="button"
+                  onClick={handleResetPassword}
+                  disabled={loginOtpSending}
+                  className="text-[11px] text-white/70 hover:text-white disabled:opacity-60"
+                >
+                  {loginOtpSending ? "A enviar recuperação…" : "Esqueceste a password?"}
+                </button>
+                {loginOtpSent && (
+                  <span className="text-emerald-300 text-[11px]">Email enviado.</span>
+                )}
+              </div>
+            )}
+
             {mode === "signup" && (
               <>
                 <label className="mt-3 block text-xs text-white/70 mb-1">
@@ -876,7 +890,7 @@ function AuthModalContent({
                 </button>
                 {loginOtpSent && (
                   <p className="text-emerald-300 text-[11px]">
-                    Verifica o teu email para o link de login/recuperação.
+                    Verifica o teu email para redefinir a password.
                   </p>
                 )}
               </div>

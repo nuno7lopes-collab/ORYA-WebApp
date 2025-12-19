@@ -14,14 +14,14 @@ import {
 } from "react";
 import { cn } from "@/lib/utils";
 
-// Sidebar mais compacta por defeito para reduzir o offset do conteúdo
-const DEFAULT_WIDTH = 240; // 15rem
-const MIN_WIDTH = 200; // não deixar colapsar demasiado
-const MAX_WIDTH = 360; // limite superior razoável
+// Sidebar: base compacta e responsiva, sem forçar colagem ao topo/rodapé
+const DEFAULT_WIDTH = 240;
+const MIN_WIDTH = 200;
+const MAX_WIDTH = 360;
 const STORAGE_KEY = "orya_sidebar_width";
+const WIDTH_VAR = "var(--orya-sidebar-width, 240px)";
 
 const clampWidth = (value: number) => Math.min(Math.max(value, MIN_WIDTH), MAX_WIDTH);
-const WIDTH_VAR = "var(--orya-sidebar-width, 240px)";
 
 const readStoredWidth = () => {
   if (typeof window === "undefined") return DEFAULT_WIDTH;
@@ -78,7 +78,6 @@ export function SidebarProvider({ children, defaultOpen = true }: { children: Re
   }, []);
 
   useEffect(() => {
-    // Ensures CSS var is set even if stored width was read on init
     applyWidth(width);
     setReady(true);
     try {
@@ -110,8 +109,7 @@ export function SidebarInset({ children, className }: { children: ReactNode; cla
     <div
       className={cn(
         "flex-1 min-w-0 flex flex-col min-h-screen transition-[margin,padding] duration-200 ease-out",
-        // Inner padding for desktop; horizontal offset is handled by the spacer in AppSidebar
-        "lg:pl-6 pb-6",
+        "lg:pl-6 pb-6 pt-6",
         className,
       )}
     >
@@ -184,7 +182,7 @@ export function SidebarRail({ children, className }: { children: ReactNode; clas
         className={cn(
           "fixed inset-y-0 left-0 z-50 flex w-[80vw] max-w-sm flex-col overflow-hidden bg-white/5 backdrop-blur-2xl border-r border-white/10 shadow-[0_20px_70px_rgba(0,0,0,0.55)] transition-transform duration-200",
           open ? "translate-x-0" : "-translate-x-full",
-          "lg:translate-x-0 lg:sticky lg:top-0 lg:h-screen lg:min-h-screen lg:max-h-screen lg:flex lg:self-stretch",
+          "lg:translate-x-0 lg:sticky lg:top-0 lg:min-h-screen lg:h-auto lg:max-h-none lg:flex lg:self-stretch",
           className,
         )}
         style={{
@@ -194,7 +192,7 @@ export function SidebarRail({ children, className }: { children: ReactNode; clas
         }}
         data-tour="sidebar-rail"
       >
-        <div className="relative flex h-full min-h-full w-full flex-col overflow-y-auto">
+        <div className="relative flex h-full min-h-full w-full flex-col overflow-y-auto pt-6 pb-8">
           {ready ? (
             children
           ) : (
@@ -213,6 +211,8 @@ export function SidebarRail({ children, className }: { children: ReactNode; clas
               <div className="h-10 w-2/3 rounded-xl bg-white/5" />
             </div>
           )}
+          {/* Espaçador invisível para o fundo da sidebar estender mesmo em páginas longas */}
+          <div className="pointer-events-none h-[200vh] w-full" aria-hidden />
           <div
             onMouseDown={startDrag}
             className="absolute right-0 top-0 h-full w-2 cursor-col-resize bg-transparent hover:bg-white/5 active:bg-white/10"

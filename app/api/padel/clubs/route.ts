@@ -56,8 +56,13 @@ export async function GET(req: NextRequest) {
   });
   if (!organizer) return NextResponse.json({ ok: false, error: "NO_ORGANIZER" }, { status: 403 });
 
+  const includeInactive = req.nextUrl.searchParams.get("includeInactive") === "1";
   const items = await prisma.padelClub.findMany({
-    where: { organizerId: organizer.id, deletedAt: null },
+    where: {
+      organizerId: organizer.id,
+      deletedAt: null,
+      ...(includeInactive ? {} : { isActive: true }),
+    },
     orderBy: [{ isActive: "desc" }, { createdAt: "desc" }],
   });
 
@@ -114,6 +119,8 @@ export async function POST(req: NextRequest) {
     : 1;
   const baseSlug = slugInput || normalizeSlug(name);
 
+  const safeIsDefault = isActive ? isDefault : false;
+
   try {
     const slug = baseSlug ? await generateUniqueSlug(baseSlug, organizer.id, id) : null;
 
@@ -128,7 +135,7 @@ export async function POST(req: NextRequest) {
       favoriteCategoryIds: [],
       isActive,
       slug: slug || null,
-      isDefault,
+      isDefault: safeIsDefault,
     };
 
     const club = await prisma.$transaction(async (tx) => {
@@ -143,15 +150,21 @@ export async function POST(req: NextRequest) {
 
       if (isDefault) {
         await tx.padelClub.updateMany({
-          where: { organizerId: organizer.id, NOT: { id: saved.id }, isDefault: true },
+          where: { organizerId: organizer.id, NOT: { id: saved.id }, isDefault: true, deletedAt: null },
           data: { isDefault: false },
         });
       } else {
         // Se não existir nenhum default, garante que o primeiro ativo fica default
-        const defaults = await tx.padelClub.count({ where: { organizerId: organizer.id, isDefault: true } });
+        const defaults = await tx.padelClub.count({
+          where: { organizerId: organizer.id, isDefault: true, deletedAt: null, isActive: true },
+        });
         if (defaults === 0 && saved.isActive) {
           saved = await tx.padelClub.update({ where: { id: saved.id }, data: { isDefault: true } });
         }
+      }
+
+      if (!saved.isActive && saved.isDefault) {
+        saved = await tx.padelClub.update({ where: { id: saved.id }, data: { isDefault: false } });
       }
       return saved;
     });
@@ -202,16 +215,24 @@ export async function DELETE(req: NextRequest) {
   });
   if (!club) return NextResponse.json({ ok: false, error: "CLUB_NOT_FOUND" }, { status: 404 });
 
+  const tournamentRefs = await prisma.padelTournamentConfig.count({
+    where: {
+      organizerId: organizer.id,
+      OR: [{ padelClubId: clubId }, { partnerClubIds: { has: clubId } }],
+    },
+  });
+  if (tournamentRefs > 0) {
+    return NextResponse.json(
+      { ok: false, error: "Não podes apagar um clube associado a torneios. Remove-o dessas provas primeiro." },
+      { status: 400 },
+    );
+  }
+
   await prisma.$transaction(async (tx) => {
-    await tx.padelClub.update({
-      where: { id: clubId },
-      data: { isActive: false, deletedAt: new Date() },
-    });
-    await tx.padelClubStaff.updateMany({
-      where: { padelClubId: clubId },
-      data: { isActive: false, deletedAt: new Date() },
-    });
+    await tx.padelClubCourt.deleteMany({ where: { padelClubId: clubId } });
+    await tx.padelClubStaff.deleteMany({ where: { padelClubId: clubId } });
+    await tx.padelClub.delete({ where: { id: clubId } });
   });
 
-  return NextResponse.json({ ok: true }, { status: 200 });
+  return NextResponse.json({ ok: true, deleted: true }, { status: 200 });
 }

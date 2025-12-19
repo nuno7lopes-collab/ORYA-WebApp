@@ -42,6 +42,16 @@ type CreateOrganizerEventBody = {
   } | null;
 };
 
+type PadelConfigInput = {
+  padelClubId?: number | null;
+  partnerClubIds?: number[];
+  format?: string;
+  numberOfCourts?: number;
+  ruleSetId?: number | null;
+  defaultCategoryId?: number | null;
+  advancedSettings?: unknown;
+} | null;
+
 function slugify(input: string): string {
   return input
     .toLowerCase()
@@ -197,6 +207,7 @@ export async function POST(req: NextRequest) {
     const ticketTypesInput = body.ticketTypes ?? [];
     const coverImageUrl = body.coverImageUrl?.trim?.() || null;
     // Validar tipos de bilhete
+    let ticketPriceError: string | null = null;
     const ticketTypesData = ticketTypesInput
       .map((t) => {
         const name = t.name?.trim();
@@ -205,9 +216,15 @@ export async function POST(req: NextRequest) {
         const priceRaw =
           typeof t.price === "number" && !Number.isNaN(t.price) ? t.price : 0;
 
-        // preço mínimo 0.50 € (ou 0 para grátis)
-        if (priceRaw > 0 && priceRaw < 0.5) {
-          throw new Error("O preço mínimo de bilhete é 0,50 € (ou grátis).");
+        if (priceRaw < 0 && !ticketPriceError) {
+          ticketPriceError = "Preço de bilhete não pode ser negativo.";
+          return null;
+        }
+
+        // preço mínimo 1 € (ou 0 para grátis)
+        if (priceRaw > 0 && priceRaw < 1 && !ticketPriceError) {
+          ticketPriceError = "O preço mínimo de bilhete é 1,00 € (ou grátis).";
+          return null;
         }
 
         const totalQuantity =
@@ -224,6 +241,10 @@ export async function POST(req: NextRequest) {
       .filter((t): t is { name: string; price: number; totalQuantity: number | null } =>
         Boolean(t)
       );
+
+    if (ticketPriceError) {
+      return NextResponse.json({ ok: false, error: ticketPriceError }, { status: 400 });
+    }
 
     const paymentsStatus = organizer
       ? organizer.stripeAccountId
@@ -259,6 +280,46 @@ export async function POST(req: NextRequest) {
         ? resaleModeRaw
         : "ALWAYS";
 
+    // Validar configuração de padel antes de criar o evento
+    let padelConfigInput: PadelConfigInput = null;
+    let padelClubId: number | null = null;
+    let partnerClubIds: number[] = [];
+    let advancedSettings: unknown = null;
+
+    if (templateType === "SPORT" && body.padel && organizer) {
+      padelConfigInput = body.padel as PadelConfigInput;
+      padelClubId =
+        typeof padelConfigInput?.padelClubId === "number" && Number.isFinite(padelConfigInput.padelClubId)
+          ? padelConfigInput.padelClubId
+          : null;
+      partnerClubIds = Array.isArray(padelConfigInput?.partnerClubIds)
+        ? padelConfigInput.partnerClubIds.filter((id) => typeof id === "number" && Number.isFinite(id))
+        : [];
+      advancedSettings = padelConfigInput?.advancedSettings ?? null;
+
+      if (padelClubId) {
+        const club = await prisma.padelClub.findFirst({
+          where: { id: padelClubId, organizerId: organizer.id, isActive: true, deletedAt: null },
+          select: { id: true },
+        });
+        if (!club) {
+          return NextResponse.json(
+            { ok: false, error: "Clube de padel arquivado ou inexistente." },
+            { status: 400 },
+          );
+        }
+      }
+
+      if (partnerClubIds.length > 0) {
+        const activePartners = await prisma.padelClub.findMany({
+          where: { id: { in: partnerClubIds }, organizerId: organizer.id, isActive: true, deletedAt: null },
+          select: { id: true },
+        });
+        const allowed = new Set(activePartners.map((c) => c.id));
+        partnerClubIds = partnerClubIds.filter((id) => allowed.has(id));
+      }
+    }
+
     // Criar o evento primeiro
     const event = await prisma.event.create({
       data: {
@@ -283,24 +344,7 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    if (templateType === "SPORT" && body.padel && organizer) {
-      const padelConfig = body.padel as {
-        padelClubId?: number | null;
-        partnerClubIds?: number[];
-        format?: string;
-        numberOfCourts?: number;
-        ruleSetId?: number | null;
-        defaultCategoryId?: number | null;
-        advancedSettings?: unknown;
-      };
-      const padelClubId =
-        typeof padelConfig.padelClubId === "number" && Number.isFinite(padelConfig.padelClubId)
-          ? padelConfig.padelClubId
-          : null;
-      const partnerClubIds = Array.isArray(padelConfig.partnerClubIds)
-        ? padelConfig.partnerClubIds.filter((id) => typeof id === "number" && Number.isFinite(id))
-        : [];
-      const advancedSettings = padelConfig.advancedSettings ?? null;
+    if (templateType === "SPORT" && padelConfigInput && organizer) {
       try {
         await prisma.padelTournamentConfig.upsert({
           where: { eventId: event.id },
@@ -309,19 +353,19 @@ export async function POST(req: NextRequest) {
             organizerId: organizer.id,
             padelClubId,
             partnerClubIds,
-            numberOfCourts: Math.max(1, padelConfig.numberOfCourts || 1),
-            format: (padelConfig.format as any) ?? "TODOS_CONTRA_TODOS",
-            ruleSetId: padelConfig.ruleSetId || undefined,
-            defaultCategoryId: padelConfig.defaultCategoryId || undefined,
+            numberOfCourts: Math.max(1, padelConfigInput.numberOfCourts || 1),
+            format: (padelConfigInput.format as any) ?? "TODOS_CONTRA_TODOS",
+            ruleSetId: padelConfigInput.ruleSetId || undefined,
+            defaultCategoryId: padelConfigInput.defaultCategoryId || undefined,
             advancedSettings: advancedSettings as any,
           },
           update: {
             padelClubId,
             partnerClubIds,
-            numberOfCourts: Math.max(1, padelConfig.numberOfCourts || 1),
-            format: (padelConfig.format as any) ?? "TODOS_CONTRA_TODOS",
-            ruleSetId: padelConfig.ruleSetId || undefined,
-            defaultCategoryId: padelConfig.defaultCategoryId || undefined,
+            numberOfCourts: Math.max(1, padelConfigInput.numberOfCourts || 1),
+            format: (padelConfigInput.format as any) ?? "TODOS_CONTRA_TODOS",
+            ruleSetId: padelConfigInput.ruleSetId || undefined,
+            defaultCategoryId: padelConfigInput.defaultCategoryId || undefined,
             advancedSettings: advancedSettings as any,
           },
         });

@@ -423,7 +423,7 @@ export default function NewOrganizerEventPage() {
     review: "revisao",
   };
   const baseInputClasses =
-    "w-full rounded-xl border border-white/12 bg-black/25 px-4 py-3 text-sm text-white/90 placeholder:text-white/45 outline-none transition focus:border-[var(--orya-cyan)] focus:ring-2 focus:ring-[rgba(107,255,255,0.35)] focus:ring-offset-0 focus:ring-offset-transparent";
+    "w-full rounded-xl border border-white/12 bg-black/25 px-4 py-3 text-sm text-white/90 placeholder:text-white/45 outline-none transition backdrop-blur-sm shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_12px_30px_rgba(0,0,0,0.35)] focus:border-[var(--orya-cyan)] focus:ring-2 focus:ring-[rgba(107,255,255,0.35)] focus:ring-offset-0 focus:ring-offset-transparent";
   const errorInputClasses =
     "border-[rgba(255,0,200,0.45)] focus:border-[rgba(255,0,200,0.6)] focus:ring-[rgba(255,0,200,0.4)]";
   const inputClass = (errored?: boolean) => `${baseInputClasses} ${errored ? errorInputClasses : ""}`;
@@ -432,8 +432,8 @@ export default function NewOrganizerEventPage() {
   const helperClass = "text-[12px] text-white/60 min-h-[18px]";
   const errorTextClass = "flex items-center gap-2 text-[12px] font-semibold text-pink-200 min-h-[18px]";
   const breadcrumbs = wizardSteps.map((s) => s.title).join(" · ");
-  const progressPercent = Math.max(0, Math.min(100, ((currentStep + 1) / stepOrder.length) * 100));
   const dateOrderWarning = startsAt && endsAt && new Date(endsAt).getTime() <= new Date(startsAt).getTime();
+  const currentStepLabel = wizardSteps[currentStep]?.title ?? "";
 
   const pushToast = (message: string, tone: ToastTone = "success") => {
     const id = Date.now() + Math.random();
@@ -552,11 +552,15 @@ export default function NewOrganizerEventPage() {
     }
 
     return ticketTypes
-      .map((row) => ({
-        name: row.name.trim(),
-        price: Number(row.price.replace(",", ".")) || 0,
-        totalQuantity: row.totalQuantity ? Number(row.totalQuantity) : null,
-      }))
+      .map((row) => {
+        const parsedPrice = Number(row.price.replace(",", "."));
+        const price = Number.isFinite(parsedPrice) ? parsedPrice : 0;
+        return {
+          name: row.name.trim(),
+          price,
+          totalQuantity: row.totalQuantity ? Number(row.totalQuantity) : null,
+        };
+      })
       .filter((t) => t.name);
   };
 
@@ -594,8 +598,18 @@ export default function NewOrganizerEventPage() {
         if (preparedTickets.length === 0) {
           issues.push({ field: "tickets", message: "Adiciona pelo menos um bilhete ou inscrição." });
         }
-        if (!isFreeEvent && preparedTickets.some((t) => t.price < 0)) {
-          issues.push({ field: "tickets", message: "Preço tem de ser positivo." });
+        if (!isFreeEvent) {
+          const hasNegativePrice = preparedTickets.some((t) => t.price < 0);
+          const hasBelowMinimum = preparedTickets.some((t) => t.price >= 0 && t.price < 1);
+          if (hasNegativePrice) {
+            issues.push({ field: "tickets", message: "Preço tem de ser positivo." });
+          }
+          if (hasBelowMinimum) {
+            issues.push({
+              field: "tickets",
+              message: "Para eventos pagos, cada bilhete tem de custar pelo menos 1 €.",
+            });
+          }
         }
         if (!isFreeEvent && hasPaidTicket && paidTicketsBlocked) {
           issues.push({
@@ -1477,7 +1491,7 @@ export default function NewOrganizerEventPage() {
       </div>
 
       {isFreeEvent ? (
-        <div className="space-y-3 rounded-2xl border border-white/12 bg-[rgba(12,12,20,0.65)] p-4">
+        <div className="space-y-3 rounded-2xl border border-white/12 bg-gradient-to-br from-white/6 via-[#0c1426]/65 to-[#050a14]/88 p-4 shadow-[0_16px_60px_rgba(0,0,0,0.45)]">
           <div className="flex items-center justify-between">
             <p className={labelClass}>Inscrições gratuitas</p>
             <span className="rounded-full border border-emerald-300/40 bg-emerald-400/10 px-3 py-1 text-[12px] text-emerald-50">
@@ -1512,7 +1526,7 @@ export default function NewOrganizerEventPage() {
           </p>
         </div>
       ) : (
-        <div className="space-y-4 rounded-2xl border border-white/12 bg-[rgba(12,12,20,0.65)] p-4">
+        <div className="space-y-4 rounded-2xl border border-white/12 bg-gradient-to-br from-white/6 via-[#0c1426]/65 to-[#050a14]/88 p-4 shadow-[0_16px_60px_rgba(0,0,0,0.45)]">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className={labelClass}>Bilhetes</h2>
             <button
@@ -1526,14 +1540,30 @@ export default function NewOrganizerEventPage() {
 
           <div className="grid gap-3">
             {ticketTypes.map((row, idx) => {
-              const priceEuro = Number(row.price || "0");
+              const parsed = Number((row.price ?? "0").toString().replace(",", "."));
+              const priceEuro = Number.isFinite(parsed) ? parsed : 0;
               const preview = computeFeePreview(priceEuro, feeMode, platformFees, stripeFees);
               const combinedFeeCents = preview.feeCents + preview.stripeFeeCents;
               return (
                 <div
                   key={idx}
-                  className="space-y-3 rounded-xl border border-white/12 bg-white/[0.03] p-3 shadow-[0_12px_30px_rgba(0,0,0,0.35)] animate-step-pop"
+                  className="space-y-3 rounded-xl border border-white/12 bg-gradient-to-br from-white/6 via-[#0c1728]/60 to-[#050912]/85 p-3 shadow-[0_14px_40px_rgba(0,0,0,0.45)] animate-step-pop"
                 >
+                  <div className="flex items-center justify-between">
+                    <span className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] uppercase tracking-[0.12em] text-white/75">
+                      <span aria-hidden className="text-[#6BFFFF]">🎟️</span>
+                      Bilhete {idx + 1}
+                    </span>
+                    {ticketTypes.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveTicketType(idx)}
+                        className="text-[11px] text-white/60 hover:text-white/90"
+                      >
+                        Remover
+                      </button>
+                    )}
+                  </div>
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                     <div className="space-y-1 flex-1">
                       <label className={labelClass}>
@@ -1547,15 +1577,6 @@ export default function NewOrganizerEventPage() {
                         placeholder="Early bird, Geral, VIP"
                       />
                     </div>
-                    {ticketTypes.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveTicketType(idx)}
-                        className="text-[11px] text-white/60 hover:text-white/90"
-                      >
-                        Remover
-                      </button>
-                    )}
                   </div>
 
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -1565,13 +1586,14 @@ export default function NewOrganizerEventPage() {
                       </label>
                       <input
                         type="number"
-                        min={0}
+                        min={isFreeEvent ? 0 : 1}
                         step="0.01"
                         value={row.price}
                         onChange={(e) => handleTicketChange(idx, "price", e.target.value)}
                         className={inputClass(false)}
                         placeholder="Ex.: 12.50"
                       />
+                      <p className="text-[12px] text-white/55">Em eventos pagos, o preço mínimo é 1,00 €.</p>
                     </div>
                     <div className="space-y-1">
                       <label className={labelClass}>Capacidade (opcional)</label>
@@ -1637,7 +1659,7 @@ export default function NewOrganizerEventPage() {
     const pendingLabel = pendingIssues.length === 0 ? "Campos ok" : `Falta corrigir ${pendingIssues.length}`;
     return (
       <div className="space-y-4 animate-fade-slide">
-        <div className="rounded-2xl border border-white/12 bg-[rgba(12,12,20,0.72)] p-4 space-y-4 shadow-[0_14px_36px_rgba(0,0,0,0.45)]">
+        <div className="rounded-2xl border border-white/12 bg-gradient-to-br from-white/6 via-[#0c1426]/65 to-[#050912]/88 p-4 space-y-4 shadow-[0_18px_60px_rgba(0,0,0,0.5)]">
           <div className="flex items-start justify-between gap-3">
             <div className="space-y-1">
               <p className={labelClass}>Revisão final</p>
@@ -1649,10 +1671,13 @@ export default function NewOrganizerEventPage() {
             </div>
           </div>
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            <div className="rounded-xl border border-white/12 bg-black/25 p-3 shadow-inner transition hover:border-white/25 hover:bg-white/10">
+            <div className="rounded-xl border border-white/12 bg-gradient-to-br from-white/6 via-[#0b1020]/65 to-[#060912]/85 p-3 shadow-[0_12px_38px_rgba(0,0,0,0.45)] transition hover:border-white/25 hover:shadow-[0_16px_48px_rgba(0,0,0,0.55)]">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className={labelClass}>Essenciais</p>
+                  <p className={`${labelClass} gap-2`}>
+                    <span aria-hidden className="text-[#6BFFFF]">✨</span>
+                    Essenciais
+                  </p>
                   <p className="font-semibold text-white">{title || "Sem título"}</p>
                 </div>
                 <button
@@ -1678,10 +1703,13 @@ export default function NewOrganizerEventPage() {
               </div>
             </div>
 
-            <div className="rounded-xl border border-white/12 bg-black/25 p-3 shadow-inner transition hover:border-white/25 hover:bg-white/10">
+            <div className="rounded-xl border border-white/12 bg-gradient-to-br from-white/6 via-[#0b1020]/65 to-[#060912]/85 p-3 shadow-[0_12px_38px_rgba(0,0,0,0.45)] transition hover:border-white/25 hover:shadow-[0_16px_48px_rgba(0,0,0,0.55)]">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className={labelClass}>Datas</p>
+                  <p className={`${labelClass} gap-2`}>
+                    <span aria-hidden className="text-[#AEE4FF]">📅</span>
+                    Datas
+                  </p>
                   <p className="font-semibold text-white">
                     {locationName || "Local a definir"} · {locationCity || "Cidade a definir"}
                   </p>
@@ -1698,13 +1726,21 @@ export default function NewOrganizerEventPage() {
                 {startsAt ? new Date(startsAt).toLocaleString() : "Início por definir"}{" "}
                 {endsAt ? `→ ${new Date(endsAt).toLocaleString()}` : ""}
               </p>
-              {address && <p className="text-[12px] text-white/60">{address}</p>}
+              {address && (
+                <p className="text-[12px] text-white/60 flex items-center gap-2">
+                  <span aria-hidden className="text-white/60">📍</span>
+                  {address}
+                </p>
+              )}
             </div>
 
-            <div className="rounded-xl border border-white/12 bg-black/25 p-3 shadow-inner transition hover:border-white/25 hover:bg-white/10">
+            <div className="rounded-xl border border-white/12 bg-gradient-to-br from-white/6 via-[#0b1020]/65 to-[#060912]/85 p-3 shadow-[0_12px_38px_rgba(0,0,0,0.45)] transition hover:border-white/25 hover:shadow-[0_16px_48px_rgba(0,0,0,0.55)]">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className={labelClass}>Bilhetes</p>
+                  <p className={`${labelClass} gap-2`}>
+                    <span aria-hidden className="text-[#6BFFFF]">🎟️</span>
+                    Bilhetes
+                  </p>
                   <p className="font-semibold text-white">
                     {isFreeEvent
                       ? `Vagas: ${freeCapacity ? freeCapacity : "sem limite"}`
@@ -1732,10 +1768,13 @@ export default function NewOrganizerEventPage() {
               {isFreeEvent && <p className="text-sm text-white/70">Entrada gratuita com inscrições simples.</p>}
             </div>
 
-            <div className="rounded-xl border border-white/12 bg-black/25 p-3 shadow-inner transition hover:border-white/25 hover:bg-white/10">
+            <div className="rounded-xl border border-white/12 bg-gradient-to-br from-white/6 via-[#0b1020]/65 to-[#060912]/85 p-3 shadow-[0_12px_38px_rgba(0,0,0,0.45)] transition hover:border-white/25 hover:shadow-[0_16px_48px_rgba(0,0,0,0.55)]">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className={labelClass}>Modelo</p>
+                  <p className={`${labelClass} gap-2`}>
+                    <span aria-hidden className="text-[#AEE4FF]">🛡️</span>
+                    Modelo
+                  </p>
                   <p className="font-semibold text-white">{isFreeEvent ? "Evento grátis" : "Evento pago"}</p>
                 </div>
                 <button
@@ -1762,38 +1801,45 @@ export default function NewOrganizerEventPage() {
         e.preventDefault();
         goNext();
       }}
-      className="max-w-5xl mx-auto px-4 py-8 space-y-6 md:px-6 lg:px-8 text-white"
+      className="relative mx-auto max-w-5xl space-y-6 px-4 py-8 text-white md:px-6 lg:px-8"
     >
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div className="space-y-1">
-          <p className="text-[11px] uppercase tracking-[0.3em] text-white/60">Novo evento</p>
-          <h1 className="text-2xl font-semibold tracking-tight">Cria o teu evento</h1>
-          <p className="text-sm text-white/70">Fluxo rápido com autosave, feedback premium e zero ruído.</p>
-        </div>
-        <div className="flex flex-wrap gap-2 text-[11px]">
-          <Link
-            href="/organizador"
-            className="btn-ghost text-[12px] font-semibold"
-          >
-            Voltar
-          </Link>
-          <button
-            type="button"
-            onClick={saveDraft}
-            className="btn-ghost text-[12px] font-semibold"
-          >
-            Guardar rascunho
-          </button>
-          {draftSavedAt && (
-            <span className="rounded-full border border-white/10 px-3 py-1 text-white/70 bg-white/5">
-              Guardado há pouco
-            </span>
-          )}
+      <div className="relative overflow-hidden rounded-[28px] border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/92 p-5 shadow-[0_32px_110px_rgba(0,0,0,0.6)] backdrop-blur-3xl">
+        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.12),transparent_35%),linear-gradient(225deg,rgba(255,255,255,0.08),transparent_40%)]" />
+        <div className="relative flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="space-y-1">
+            <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] uppercase tracking-[0.26em] text-white/80 shadow-[0_10px_30px_rgba(0,0,0,0.4)]">
+              <span aria-hidden className="text-[#6BFFFF]">✨</span>
+              Novo evento
+            </div>
+            <h1 className="text-3xl font-semibold tracking-tight drop-shadow-[0_10px_40px_rgba(0,0,0,0.55)]">Cria o teu evento</h1>
+            <p className="text-sm text-white/70">Fluxo premium com autosave, feedback imediato e vidro colorido.</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 text-[11px]">
+            <Link
+              href="/organizador"
+              className="rounded-full border border-white/20 bg-white/5 px-3 py-1.5 text-[12px] font-semibold text-white/85 transition hover:border-white/35 hover:bg-white/10"
+            >
+              Voltar
+            </Link>
+            <button
+              type="button"
+              onClick={saveDraft}
+              className="rounded-full border border-white/20 bg-white/5 px-3 py-1.5 text-[12px] font-semibold text-white/85 transition hover:border-white/35 hover:bg-white/10"
+            >
+              Guardar rascunho
+            </button>
+            {draftSavedAt && (
+              <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-white/75">
+                Guardado há pouco
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
-      <div className="relative rounded-3xl border border-white/8 bg-[rgba(9,10,16,0.78)] p-5 md:p-6 space-y-6 shadow-[0_24px_70px_rgba(0,0,0,0.6)] overflow-visible">
-        <div className="pb-1">
+        <div className="relative overflow-hidden rounded-3xl border border-white/12 bg-gradient-to-br from-white/6 via-[#0b0f1f]/82 to-[#05070f]/94 p-5 md:p-6 space-y-6 shadow-[0_32px_110px_rgba(0,0,0,0.6)]">
+        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(120deg,rgba(255,255,255,0.08),transparent_32%),linear-gradient(240deg,rgba(255,255,255,0.06),transparent_36%)]" />
+        <div className="relative pb-2">
           <StepperDots
             steps={wizardSteps}
             current={currentWizardStepId}
@@ -1834,7 +1880,7 @@ export default function NewOrganizerEventPage() {
           </div>
         )}
 
-        <div className="rounded-2xl border border-white/12 bg-[rgba(12,12,20,0.75)] p-4 md:p-5 min-h-[420px] md:min-h-[460px]">
+        <div className="relative overflow-hidden rounded-2xl border border-white/12 bg-gradient-to-br from-white/6 via-[#0b1224]/70 to-[#04060f]/90 p-4 md:p-5 min-h-[420px] md:min-h-[460px] shadow-[0_18px_70px_rgba(0,0,0,0.5)]">
           <section
             key={activeStepKey}
             className={direction === "right" ? "wizard-step-in-right" : "wizard-step-in-left"}

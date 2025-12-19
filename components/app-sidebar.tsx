@@ -128,29 +128,13 @@ export function AppSidebar({
 
   const orgList = orgOptions ?? [];
   const orgCurrent = orgList.find((o) => o.organizerId === activeOrg?.id) ?? orgList[0] ?? null;
+  const orgButtonAvatar = orgCurrent?.organizer.brandingAvatarUrl || orgAvatar;
 
   const { width } = useSidebar();
 
   return (
     <>
       <SidebarRail>
-      <div className="flex items-center gap-2 px-4 py-4">
-        <div className="h-10 w-10 overflow-hidden rounded-2xl border border-white/15 bg-gradient-to-br from-[#0f172a] via-[#111827] to-[#0b1224] shadow-[0_12px_40px_rgba(0,0,0,0.45)]">
-          {orgAvatar ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={orgAvatar} alt={orgDisplay} className="h-full w-full object-cover" />
-          ) : (
-            <div className="flex h-full w-full items-center justify-center text-xs font-black tracking-[0.18em] text-[#6BFFFF]">
-              OY
-            </div>
-          )}
-        </div>
-        <div>
-          <p className="text-[10px] uppercase tracking-[0.24em] text-white/55">Dashboard</p>
-          <p className="text-sm font-semibold text-white">{orgDisplay}</p>
-        </div>
-      </div>
-
       {/* Organização switcher */}
       <div className="px-3" data-tour="org-switcher">
         <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/80 backdrop-blur-xl">
@@ -162,11 +146,11 @@ export function AppSidebar({
             className="flex w-full items-center justify-between gap-2 text-left"
           >
             <div className="flex items-center gap-2">
-              {orgCurrent?.organizer.brandingAvatarUrl ? (
+              {orgButtonAvatar ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
-                  src={orgCurrent.organizer.brandingAvatarUrl}
-                  alt={orgCurrent.organizer.displayName || "Organização"}
+                  src={orgButtonAvatar}
+                  alt={orgCurrent?.organizer.displayName || orgDisplay || "Organização"}
                   className="h-8 w-8 rounded-lg border border-white/10 object-cover"
                 />
               ) : (
@@ -297,8 +281,8 @@ export function AppSidebar({
         </Link>
       </nav>
 
-      {/* Rodapé utilizador */}
-      <div className="mt-auto space-y-2 px-3 pb-4">
+      {/* Utilizador */}
+      <div className="space-y-2 px-3 pb-4 pt-3">
         <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/80 backdrop-blur-xl">
           <button
             type="button"

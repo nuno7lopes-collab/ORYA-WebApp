@@ -365,19 +365,22 @@ export default function OrganizerSettingsPage() {
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8 space-y-6 text-white md:px-8 lg:px-10">
-      <div className="space-y-1">
-        <p className="text-[11px] uppercase tracking-[0.3em] text-white/60">Definições</p>
-        <div className="flex flex-wrap items-center gap-3">
-          <div>
-            <h1 className="text-3xl font-semibold">Perfil do organizador</h1>
-            <p className="text-sm text-white/65">Identidade, branding e contactos públicos.</p>
+      <div className="relative overflow-hidden rounded-[28px] border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/75 to-[#050810]/92 p-5 shadow-[0_30px_110px_rgba(0,0,0,0.6)] backdrop-blur-3xl">
+        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.12),transparent_35%),linear-gradient(225deg,rgba(255,255,255,0.08),transparent_40%)]" />
+        <div className="relative flex flex-wrap items-center justify-between gap-3">
+          <div className="space-y-1">
+            <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] uppercase tracking-[0.26em] text-white/80 shadow-[0_10px_30px_rgba(0,0,0,0.4)]">
+              Definições
+            </div>
+            <h1 className="text-3xl font-semibold drop-shadow-[0_10px_40px_rgba(0,0,0,0.55)]">Perfil do organizador</h1>
+            <p className="text-sm text-white/70">Identidade, branding e contactos públicos.</p>
           </div>
           {organizer?.username && (
             <a
               href={`/org/${organizer.username}`}
               target="_blank"
               rel="noreferrer"
-              className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/5 px-3 py-1.5 text-[12px] text-white hover:bg-white/10"
+              className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-[12px] text-white hover:border-white/30 hover:bg-white/15"
             >
               Ver página pública ↗
             </a>
@@ -385,7 +388,7 @@ export default function OrganizerSettingsPage() {
         </div>
       </div>
 
-      <section className="rounded-2xl border border-white/10 bg-white/5 p-4 space-y-3 shadow-[0_16px_50px_rgba(0,0,0,0.45)]">
+      <section className="relative overflow-hidden rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1226]/75 to-[#050912]/90 p-5 space-y-3 shadow-[0_26px_90px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-lg font-semibold">Dados da organização</h2>
@@ -494,7 +497,7 @@ export default function OrganizerSettingsPage() {
         {orgMessage && <p className="text-[12px] text-white/70">{orgMessage}</p>}
       </section>
 
-      <section className="rounded-2xl border border-white/10 bg-black/30 p-4 space-y-3 shadow-[0_16px_50px_rgba(0,0,0,0.45)]">
+      <section className="relative overflow-hidden rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1226]/75 to-[#050912]/90 p-5 space-y-3 shadow-[0_26px_90px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-lg font-semibold">Email oficial da organização</h2>
@@ -542,7 +545,7 @@ export default function OrganizerSettingsPage() {
         </div>
       </section>
 
-      <section className="rounded-2xl border border-white/10 bg-black/30 p-4 space-y-3 shadow-[0_16px_50px_rgba(0,0,0,0.45)]">
+      <section className="relative overflow-hidden rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1226]/75 to-[#050912]/90 p-5 space-y-3 shadow-[0_26px_90px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
         <div className="flex items-center justify-between gap-2">
           <div>
             <h2 className="text-lg font-semibold">Branding</h2>
@@ -610,7 +613,7 @@ export default function OrganizerSettingsPage() {
         </div>
       </section>
 
-      <section className="rounded-2xl border border-white/10 bg-white/5 p-4 space-y-3 shadow-[0_16px_50px_rgba(0,0,0,0.45)]">
+      <section className="relative overflow-hidden rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1226]/75 to-[#050912]/90 p-5 space-y-3 shadow-[0_26px_90px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
         <div className="flex items-center justify-between gap-3">
           <div>
             <h2 className="text-lg font-semibold">Username ORYA</h2>
@@ -639,14 +642,14 @@ export default function OrganizerSettingsPage() {
         )}
       </section>
 
-      <section className="rounded-2xl border border-white/10 bg-black/25 p-4 space-y-2 shadow-[0_16px_50px_rgba(0,0,0,0.45)]">
+      <section className="relative overflow-hidden rounded-3xl border border-white/12 bg-gradient-to-br from-white/6 via-[#0b0f1f]/75 to-[#04070f]/90 p-4 space-y-2 shadow-[0_22px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
         <h2 className="text-lg font-semibold">Preferências (em breve)</h2>
         <p className="text-[12px] text-white/65">
           Aqui vais conseguir gerir idioma, notificações e visibilidade pública. Ainda não está disponível nesta versão.
         </p>
       </section>
 
-      <section className="rounded-2xl border border-red-500/30 bg-red-500/5 p-4 space-y-3 shadow-[0_16px_50px_rgba(0,0,0,0.45)]">
+      <section className="relative overflow-hidden rounded-3xl border border-red-400/40 bg-gradient-to-br from-red-500/15 via-[#2a0c0f]/85 to-black/90 p-5 space-y-3 shadow-[0_26px_90px_rgba(0,0,0,0.65)]">
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-lg font-semibold text-red-100">Zona de perigo</h2>
@@ -664,9 +667,6 @@ export default function OrganizerSettingsPage() {
               className="w-full rounded-lg border border-red-400/40 bg-black/40 px-3 py-2 text-sm outline-none focus:border-red-200"
               placeholder="APAGAR"
             />
-            <p className="text-[11px] text-white/60">
-              Ação irreversível (soft delete). Bloqueada se existirem bilhetes vendidos.
-            </p>
           </div>
           <div className="flex flex-col gap-2 md:items-end">
             <button

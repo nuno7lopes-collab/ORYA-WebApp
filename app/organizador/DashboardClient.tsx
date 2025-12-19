@@ -12,7 +12,6 @@ import { AuthModalProvider, useAuthModal } from "@/app/components/autenticação
 import PromoCodesPage from "./promo/PromoCodesClient";
 import OrganizerSettingsPage from "./(dashboard)/settings/page";
 import OrganizerStaffPage from "./(dashboard)/staff/page";
-import { BackButton } from "./BackButton";
 import PadelHubClient from "./(dashboard)/padel/PadelHubClient";
 import { SalesAreaChart } from "@/app/components/charts/SalesAreaChart";
 import InvoicesClient from "./pagamentos/invoices/invoices-client";
@@ -230,14 +229,11 @@ function OrganizadorPageInner() {
   const [city, setCity] = useState<string>("");
   const [payoutIban, setPayoutIban] = useState<string>("");
   const [eventStatusFilter, setEventStatusFilter] = useState<EventStatusFilter>("all");
-  const [eventTypeFilter, setEventTypeFilter] = useState<string>("all");
   const [eventCategoryFilter, setEventCategoryFilter] = useState<string>("all");
-  const [eventDateFilter, setEventDateFilter] = useState<"any" | "today" | "week" | "month" | "weekend">("any");
   const [eventPartnerClubFilter, setEventPartnerClubFilter] = useState<string>("all");
   const [salesEventId, setSalesEventId] = useState<number | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [timeScope, setTimeScope] = useState<"all" | "upcoming" | "ongoing" | "past">("all");
-  const [viewMode, setViewMode] = useState<"cards" | "table">("cards");
   const [eventActionLoading, setEventActionLoading] = useState<number | null>(null);
   const [eventDialog, setEventDialog] = useState<{ mode: "archive" | "delete" | "unarchive"; ev: EventItem } | null>(null);
   const router = useRouter();
@@ -307,24 +303,18 @@ function OrganizadorPageInner() {
 
   useEffect(() => {
     const statusParam = searchParams?.get("status");
-    const typeParam = searchParams?.get("type");
     const catParam = searchParams?.get("cat");
-    const dateParam = searchParams?.get("date");
     const clubParam = searchParams?.get("club");
     const searchParam = searchParams?.get("search");
     const scopeParam = searchParams?.get("scope");
-    const viewParam = searchParams?.get("view");
     const eventIdParam = searchParams?.get("eventId");
     const marketingSectionParam = searchParams?.get("section");
 
     if (statusParam) setEventStatusFilter(statusParam as typeof eventStatusFilter);
-    if (typeParam) setEventTypeFilter(typeParam);
     if (catParam) setEventCategoryFilter(catParam);
-    if (dateParam) setEventDateFilter(dateParam as typeof eventDateFilter);
     if (clubParam) setEventPartnerClubFilter(clubParam);
     if (searchParam) setSearchTerm(searchParam);
     if (scopeParam) setTimeScope(scopeParam as typeof timeScope);
-    if (viewParam === "table" || viewParam === "cards") setViewMode(viewParam);
     if (eventIdParam) setSalesEventId(Number(eventIdParam));
     if (marketingSectionParam) {
       const allowed = ["overview", "promos", "promoters", "content"] as const;
@@ -523,7 +513,7 @@ function OrganizadorPageInner() {
     { revalidateOnFocus: false }
   );
   const { data: padelClubs } = useSWR<{ ok: boolean; items: any[] }>(
-    organizer?.status === "ACTIVE" && activeTab === "padel" ? "/api/padel/clubs" : null,
+    organizer?.status === "ACTIVE" && activeTab === "padel" ? "/api/padel/clubs?includeInactive=1" : null,
     fetcher,
     { revalidateOnFocus: false }
   );
@@ -671,15 +661,29 @@ function OrganizadorPageInner() {
     ];
   }, [overview]);
 
-  const marketingCards = [
-    "💸 Sem mensalidades. Pagas só quando vendes — defines se absorves ou passas a taxa ao cliente.",
-    "🔐 Pagamentos seguros via Stripe; dinheiro direto na tua conta, com proteção anti-fraude.",
-    "🎟️ Bilhetes digitais com QR e validação em tempo real no check-in.",
-    "👥 Staff e acessos rápidos: dá permissões de check-in sem partilhar a conta.",
+  const statGradients = [
+    "from-[#6BFFFF]/25 via-[#0b1224]/70 to-[#0a0f1c]/90",
+    "from-[#FF00C8]/18 via-[#130d1f]/70 to-[#0a0f1c]/90",
+    "from-[#7AF89A]/18 via-[#0d1c16]/70 to-[#0a0f1c]/90",
+    "from-[#AEE4FF]/18 via-[#0d1623]/70 to-[#0a0f1c]/90",
   ];
 
   // Usar largura completa do inset para evitar que o conteúdo fique centrado/direita quando a sidebar está aberta
   const containerClasses = "w-full max-w-none px-4 pb-12 pt-6 md:pt-8 md:px-6 lg:px-8";
+  const statusLabelMap: Record<EventStatusFilter, string> = {
+    all: "Todos",
+    active: "Ativos",
+    draft: "Rascunhos",
+    finished: "Concluídos",
+    ongoing: "Em curso",
+    archived: "Arquivados",
+  };
+  const timeScopeLabels: Record<"all" | "upcoming" | "ongoing" | "past", string> = {
+    all: "Todos",
+    upcoming: "Próximos",
+    ongoing: "A decorrer",
+    past: "Passados",
+  };
   const eventsList = useMemo(() => events?.items ?? [], [events]);
   const eventsListLoading = organizer?.status === "ACTIVE" && activeTab === "events" && !events;
   const overviewLoading = organizer?.status === "ACTIVE" && !overview;
@@ -706,13 +710,10 @@ function OrganizadorPageInner() {
       }
       const payload = {
         status: eventStatusFilter,
-        type: eventTypeFilter,
         cat: eventCategoryFilter,
-        date: eventDateFilter,
         club: eventPartnerClubFilter,
         search: searchTerm,
         scope: timeScope,
-        view: viewMode,
         section: marketingSection,
       };
       if (typeof window !== "undefined") {
@@ -721,15 +722,12 @@ function OrganizadorPageInner() {
     },
     [
       eventCategoryFilter,
-      eventDateFilter,
       eventPartnerClubFilter,
       eventStatusFilter,
-      eventTypeFilter,
       pathname,
       router,
       searchTerm,
       timeScope,
-      viewMode,
       marketingSection,
       currentQuery,
     ]
@@ -741,29 +739,23 @@ function OrganizadorPageInner() {
       else params.set(key, value);
     };
     setParam("status", eventStatusFilter, "all");
-    setParam("type", eventTypeFilter, "all");
     setParam("cat", eventCategoryFilter, "all");
-    setParam("date", eventDateFilter, "any");
     setParam("club", eventPartnerClubFilter, "all");
     setParam("search", searchTerm, "");
     setParam("scope", timeScope, "all");
-    setParam("view", viewMode, "cards");
     setParam("section", marketingSection, "overview");
     if (salesEventId) params.set("eventId", String(salesEventId));
     else params.delete("eventId");
     persistFilters(params);
   }, [
     eventCategoryFilter,
-    eventDateFilter,
     eventPartnerClubFilter,
     eventStatusFilter,
-    eventTypeFilter,
     marketingSection,
     persistFilters,
     salesEventId,
     searchTerm,
     timeScope,
-    viewMode,
     currentQuery,
   ]);
 
@@ -775,23 +767,17 @@ function OrganizadorPageInner() {
     try {
       const parsed = JSON.parse(saved) as {
         status?: string;
-        type?: string;
         cat?: string;
-        date?: string;
         club?: string;
         search?: string;
         scope?: string;
-        view?: string;
         section?: string;
       };
       if (parsed.status) setEventStatusFilter(parsed.status as typeof eventStatusFilter);
-      if (parsed.type) setEventTypeFilter(parsed.type);
       if (parsed.cat) setEventCategoryFilter(parsed.cat);
-      if (parsed.date) setEventDateFilter(parsed.date as typeof eventDateFilter);
       if (parsed.club) setEventPartnerClubFilter(parsed.club);
       if (parsed.search) setSearchTerm(parsed.search);
       if (parsed.scope) setTimeScope(parsed.scope as typeof timeScope);
-      if (parsed.view === "cards" || parsed.view === "table") setViewMode(parsed.view);
       if (
         parsed.section &&
         ["overview", "campaigns", "audience", "promoters", "content", "automation"].includes(parsed.section)
@@ -802,32 +788,6 @@ function OrganizadorPageInner() {
       // ignore parse errors
     }
   }, [searchParams]);
-  const upcomingCount = useMemo(
-    () =>
-      eventsList.filter((ev) => {
-        const start = ev.startsAt ? new Date(ev.startsAt) : null;
-        return ev.status === "PUBLISHED" && start && start.getTime() > Date.now();
-      }).length,
-    [eventsList]
-  );
-  const ongoingCount = useMemo(
-    () =>
-      eventsList.filter((ev) => {
-        const start = ev.startsAt ? new Date(ev.startsAt) : null;
-        const end = ev.endsAt ? new Date(ev.endsAt) : null;
-        const now = Date.now();
-        return ev.status === "PUBLISHED" && start && end && start.getTime() <= now && now <= end.getTime();
-      }).length,
-    [eventsList]
-  );
-  const finishedCount = useMemo(
-    () =>
-      eventsList.filter((ev) => {
-        const end = ev.endsAt ? new Date(ev.endsAt) : null;
-        return ev.status === "PUBLISHED" && end && end.getTime() < Date.now();
-      }).length,
-    [eventsList]
-  );
   const filteredEvents = useMemo(() => {
     const now = new Date();
     const search = searchTerm.trim().toLowerCase();
@@ -844,7 +804,6 @@ function OrganizadorPageInner() {
       if (eventStatusFilter === "finished" && !isFinished) return false;
       if (eventStatusFilter === "ongoing" && !isOngoing) return false;
 
-      if (eventTypeFilter !== "all" && ev.templateType !== eventTypeFilter) return false;
       if (eventCategoryFilter !== "all") {
         const cats = ev.categories ?? [];
         if (!cats.includes(eventCategoryFilter)) return false;
@@ -861,36 +820,23 @@ function OrganizadorPageInner() {
         if (!ev.title.toLowerCase().includes(search)) return false;
       }
 
-      if (eventDateFilter !== "any" && startsAt) {
-        const diffDays = (startsAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
-        if (eventDateFilter === "today" && Math.floor(diffDays) !== 0) return false;
-        if (eventDateFilter === "week" && diffDays > 7) return false;
-        if (eventDateFilter === "month" && diffDays > 31) return false;
-        if (eventDateFilter === "weekend") {
-          const day = startsAt.getDay();
-          if (day !== 6 && day !== 0) return false;
-        }
-      }
-
       if (timeScope === "upcoming" && !isFuture) return false;
       if (timeScope === "ongoing" && !isOngoing) return false;
       if (timeScope === "past" && !isFinished) return false;
 
       return true;
     });
-  }, [eventCategoryFilter, eventDateFilter, eventStatusFilter, eventTypeFilter, eventsList, searchTerm, timeScope]);
+  }, [eventCategoryFilter, eventPartnerClubFilter, eventStatusFilter, eventsList, searchTerm, timeScope]);
   const activeFilterCount = useMemo(
     () =>
       [
         eventStatusFilter !== "all",
-        eventTypeFilter !== "all",
         eventCategoryFilter !== "all",
-        eventDateFilter !== "any",
         eventPartnerClubFilter !== "all",
         timeScope !== "all",
         searchTerm.trim() !== "",
       ].filter(Boolean).length,
-    [eventCategoryFilter, eventDateFilter, eventPartnerClubFilter, eventStatusFilter, eventTypeFilter, searchTerm, timeScope]
+    [eventCategoryFilter, eventPartnerClubFilter, eventStatusFilter, searchTerm, timeScope]
   );
 
   const selectedSalesEvent = salesEventId ? eventsList.find((ev) => ev.id === salesEventId) ?? null : null;
@@ -1129,7 +1075,7 @@ function OrganizadorPageInner() {
   if (organizer?.status !== "ACTIVE") {
     return (
       <div className={`${containerClasses} space-y-8`}>
-        <div className="grid gap-6 md:grid-cols-[1.2fr_0.8fr] items-center">
+        <div className="grid gap-6 max-w-3xl">
           <div className="space-y-4">
             <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-white/60">
               Organizar com a ORYA
@@ -1221,20 +1167,6 @@ function OrganizadorPageInner() {
               </div>
             )}
           </div>
-
-          <div className="rounded-3xl border border-white/10 bg-white/[0.06] backdrop-blur-xl p-5 space-y-3 shadow-[0_18px_60px_rgba(0,0,0,0.55)]">
-            <h3 className="text-sm font-semibold text-white">Porquê a ORYA?</h3>
-            <div className="space-y-2 text-sm text-white/80">
-              {marketingCards.map((item) => (
-                <p
-                  key={item}
-                  className="rounded-2xl border border-white/10 bg-black/40 p-3"
-                >
-                  {item}
-                </p>
-              ))}
-            </div>
-          </div>
         </div>
       </div>
     );
@@ -1288,21 +1220,38 @@ function OrganizadorPageInner() {
           </div>
         </div>
       )}
-      {activeTab !== "overview" && <BackButton className="mb-2" />}
       {activeTab === "overview" && (
         <>
           {/* Header + alerta onboarding */}
           <div
-            className="rounded-3xl border border-white/10 bg-black/40 backdrop-blur-xl p-4 md:p-5 shadow-[0_18px_60px_rgba(0,0,0,0.65)]"
+            className="relative overflow-hidden rounded-[32px] border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/75 to-[#050912]/95 p-5 md:p-6 shadow-[0_30px_120px_rgba(0,0,0,0.6)] backdrop-blur-3xl"
             data-tour="overview"
           >
+            <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(120deg,rgba(255,255,255,0.08),transparent_32%),linear-gradient(240deg,rgba(255,255,255,0.06),transparent_36%)]" />
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <div>
-                <p className="text-[11px] uppercase tracking-[0.3em] text-white/50">Resumo</p>
-                <h1 className="text-3xl font-bold leading-tight">
+              <div className="relative space-y-1">
+                <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] uppercase tracking-[0.3em] text-white/80 shadow-[0_10px_30px_rgba(0,0,0,0.4)]">
+                  <span className="h-2 w-2 rounded-full bg-[#6BFFFF] shadow-[0_0_16px_rgba(107,255,255,0.8)]" />
+                  Resumo
+                </div>
+                <h1 className="text-3xl font-bold leading-tight drop-shadow-[0_6px_30px_rgba(0,0,0,0.55)]">
                   Olá, {organizer.displayName || profile?.fullName || "organizador"} 👋
                 </h1>
                 <p className="text-sm text-white/70">Aqui está o resumo dos teus eventos e vendas.</p>
+              </div>
+              <div className="relative flex flex-wrap items-center gap-2">
+                <span className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] text-white/80">
+                  Organização ativa
+                </span>
+                {overview?.eventsWithSalesCount ? (
+                  <span className="rounded-full border border-emerald-300/40 bg-emerald-400/10 px-3 py-1 text-[11px] text-emerald-50">
+                    {overview.eventsWithSalesCount} eventos com vendas
+                  </span>
+                ) : (
+                  <span className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[11px] text-white/70">
+                    Sem vendas ainda · prepara o próximo evento
+                  </span>
+                )}
               </div>
             </div>
 
@@ -1335,25 +1284,28 @@ function OrganizadorPageInner() {
               </div>
             )}
             {isPlatformStripe && (
-              <div className="mt-4 rounded-2xl border border-emerald-400/40 bg-emerald-500/10 p-3 text-sm text-emerald-50 space-y-1">
-                <p className="font-semibold">Conta interna ORYA</p>
-                <p className="text-white/80 text-xs">
+              <div className="mt-4 rounded-2xl border border-emerald-400/40 bg-gradient-to-r from-emerald-400/10 via-emerald-500/15 to-white/5 p-3 text-sm text-emerald-50 shadow-[0_18px_60px_rgba(0,0,0,0.45)]">
+                <div className="flex items-center gap-2">
+                  <span className="h-2.5 w-2.5 rounded-full bg-emerald-300 shadow-[0_0_16px_rgba(52,211,153,0.7)]" />
+                  <p className="font-semibold">Conta interna ORYA</p>
+                </div>
+                <p className="text-white/80 text-xs mt-1">
                   Este organizador usa a conta Stripe principal da ORYA. Não é necessário onboarding em Connect.
                 </p>
               </div>
             )}
-            <div className="mt-4 grid gap-3 md:grid-cols-2">
+            <div className="mt-5 grid gap-3 md:grid-cols-2">
               <Link
                 href="/organizador/scan"
-                className="rounded-2xl border border-white/15 bg-white/5 p-4 shadow-[0_18px_50px_rgba(0,0,0,0.6)] transition hover:border-white/30 hover:bg-white/10"
+                className="relative overflow-hidden rounded-2xl border border-white/12 bg-gradient-to-br from-[#6BFFFF]/15 via-[#0a1326]/80 to-[#050b18]/90 p-4 shadow-[0_24px_70px_rgba(0,0,0,0.55)] transition hover:border-white/25 hover:shadow-[0_28px_90px_rgba(0,0,0,0.65)]"
               >
                 <p className="text-[11px] uppercase tracking-[0.24em] text-white/50">Check-in rápido</p>
-                <p className="text-lg font-semibold">Abrir scanner</p>
-                <p className="text-sm text-white/70">Valida bilhetes com feedback imediato. Otimizado para telemóvel.</p>
+                <p className="text-lg font-semibold">Scanner em breve</p>
+                <p className="text-sm text-white/70">Estamos a otimizar o check-in dedicado para organizadores.</p>
               </Link>
               <Link
                 href="/organizador/staff"
-                className="rounded-2xl border border-white/15 bg-white/5 p-4 shadow-[0_18px_50px_rgba(0,0,0,0.6)] transition hover:border-white/30 hover:bg-white/10"
+                className="relative overflow-hidden rounded-2xl border border-white/12 bg-gradient-to-br from-[#FF00C8]/15 via-[#120c1f]/80 to-[#060912]/90 p-4 shadow-[0_24px_70px_rgba(0,0,0,0.55)] transition hover:border-white/25 hover:shadow-[0_28px_90px_rgba(0,0,0,0.65)]"
               >
                 <p className="text-[11px] uppercase tracking-[0.24em] text-white/50">Equipa & acessos</p>
                 <p className="text-lg font-semibold">Gerir staff</p>
@@ -1367,7 +1319,7 @@ function OrganizadorPageInner() {
               ? [...Array(4)].map((_, idx) => (
                   <div
                     key={idx}
-                    className="rounded-3xl border border-white/10 bg-white/5 p-4 shadow-[0_18px_50px_rgba(0,0,0,0.6)] animate-pulse space-y-2"
+                    className="rounded-3xl border border-white/12 bg-white/5 p-4 shadow-[0_24px_70px_rgba(0,0,0,0.55)] animate-pulse space-y-2"
                   >
                     <div className="h-3 w-24 rounded bg-white/15" />
                     <div className="h-6 w-20 rounded bg-white/20" />
@@ -1377,15 +1329,19 @@ function OrganizadorPageInner() {
               : statsCards.map((card, idx) => (
                   <div
                     key={card.label}
-                    className="rounded-3xl border border-white/10 bg-white/5 p-4 shadow-[0_18px_50px_rgba(0,0,0,0.6)] transition hover:border-white/25 hover:shadow-[0_22px_70px_rgba(0,0,0,0.65)]"
+                    className={cn(
+                      "relative overflow-hidden rounded-3xl border border-white/12 p-4 shadow-[0_24px_70px_rgba(0,0,0,0.55)] transition hover:-translate-y-0.5 hover:border-white/25 hover:shadow-[0_30px_90px_rgba(0,0,0,0.65)]",
+                      "bg-gradient-to-br",
+                      statGradients[idx % statGradients.length],
+                    )}
                   >
-                    <p className="text-white/60 text-xs">{card.label}</p>
-                    <p className="text-2xl font-bold text-white mt-1">{card.value}</p>
-                    <p className="text-[11px] text-white/45">{card.hint}</p>
+                    <p className="text-white/70 text-xs">{card.label}</p>
+                    <p className="text-2xl font-bold text-white mt-1 drop-shadow-[0_8px_24px_rgba(0,0,0,0.5)]">{card.value}</p>
+                    <p className="text-[11px] text-white/60">{card.hint}</p>
                     {idx === 0 && nextEvent && (
                       <Link
                         href={`/eventos/${nextEvent.slug}`}
-                        className="mt-2 inline-flex text-[11px] text-[#6BFFFF] hover:underline"
+                        className="relative mt-2 inline-flex text-[11px] text-[#6BFFFF] hover:underline"
                       >
                         Ver evento →
                       </Link>
@@ -1395,14 +1351,17 @@ function OrganizadorPageInner() {
           </div>
 
           <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
-            <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-white/5 via-black/50 to-[#0c1a2d] p-4 space-y-3 shadow-[0_18px_60px_rgba(0,0,0,0.65)]">
-              <div className="flex items-center justify-between">
-                <h3 className="text-lg font-semibold">Vendas ao longo do tempo</h3>
+            <div className="relative overflow-hidden rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0a1226]/75 to-[#050a13]/90 p-4 space-y-3 shadow-[0_26px_90px_rgba(0,0,0,0.6)]">
+              <div className="relative flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-lg font-semibold">Vendas ao longo do tempo</h3>
+                  <span className="rounded-full border border-white/15 bg-white/10 px-2 py-0.5 text-[11px] text-white/70">Últimos 30 dias</span>
+                </div>
                 <div className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[11px] text-white/70">
                   Receita · 30 dias
                 </div>
               </div>
-            <div className="h-48 rounded-2xl border border-white/10 bg-gradient-to-br from-white/5 to-white/0 shadow-inner overflow-hidden px-2 py-3">
+              <div className="relative h-48 rounded-2xl border border-white/10 bg-gradient-to-br from-white/6 via-[#0b1222]/60 to-white/0 shadow-inner overflow-hidden px-2 py-3">
                 {!timeSeries && (
                   <div className="flex w-full items-center gap-3 px-4">
                     <div className="h-28 flex-1 rounded-xl bg-white/10 animate-pulse" />
@@ -1417,7 +1376,7 @@ function OrganizadorPageInner() {
                 )}
               </div>
               {overviewSeriesBreakdown && (
-                <div className="flex flex-wrap gap-3 text-[11px] text-white/70">
+                <div className="relative flex flex-wrap gap-3 text-[11px] text-white/75">
                   <span>Bruto: {formatEuros(overviewSeriesBreakdown.gross)}</span>
                   <span>Desconto: -{formatEuros(overviewSeriesBreakdown.discount)}</span>
                   <span>Taxas: -{formatEuros(overviewSeriesBreakdown.fees)}</span>
@@ -1426,47 +1385,47 @@ function OrganizadorPageInner() {
               )}
             </div>
 
-            <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-white/5 via-black/40 to-[#0a1327] p-4 space-y-3 shadow-[0_18px_60px_rgba(0,0,0,0.65)]">
-              <div className="flex items-center justify-between">
+            <div className="relative overflow-hidden rounded-3xl border border-white/12 bg-gradient-to-br from-emerald-400/10 via-[#0c161b]/75 to-[#060a11]/90 p-4 space-y-3 shadow-[0_26px_90px_rgba(0,0,0,0.6)]">
+              <div className="relative flex items-center justify-between">
                 <h3 className="text-lg font-semibold">Próximos passos</h3>
-                <span className="text-[11px] text-white/60">{quickTasks.filter((t) => t.done).length}/{quickTasks.length} feitos</span>
+                <span className="text-[11px] text-white/70">{quickTasks.filter((t) => t.done).length}/{quickTasks.length} feitos</span>
               </div>
-              <div className="space-y-2 text-[12px]">
+              <div className="relative space-y-2 text-[12px]">
                 {quickTasks.map((task) => (
                   <Link
                     key={task.label}
                     href={task.href}
                     className={`flex items-center justify-between rounded-2xl border px-3 py-2 transition ${
                       task.done
-                        ? "border-emerald-400/25 bg-emerald-400/10 text-emerald-100"
-                        : "border-white/12 bg-white/5 text-white/80 hover:bg-white/10"
+                        ? "border-emerald-300/30 bg-emerald-400/15 text-emerald-50 shadow-[0_0_24px_rgba(16,185,129,0.25)]"
+                        : "border-white/15 bg-white/5 text-white/80 hover:border-white/30 hover:bg-white/10"
                     }`}
                   >
                     <span>{task.label}</span>
-                    <span className={`text-[11px] rounded-full px-2 py-0.5 ${task.done ? "bg-emerald-400/20" : "bg-white/10"}`}>
+                    <span className={`text-[11px] rounded-full px-2 py-0.5 ${task.done ? "bg-emerald-400/30" : "bg-white/10"}`}>
                       {task.done ? "Feito" : "Ir"}
                     </span>
                   </Link>
                 ))}
               </div>
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-3 text-[11px] text-white/70">
+              <div className="relative rounded-2xl border border-white/12 bg-white/5 p-3 text-[11px] text-white/70">
                 Organiza-te: cria eventos, ativa promo codes e convida staff. Tudo começa aqui.
               </div>
             </div>
           </div>
 
-          <div className="rounded-3xl border border-white/10 bg-black/40 backdrop-blur-xl p-4 md:p-5 shadow-[0_18px_60px_rgba(0,0,0,0.65)] space-y-3">
-            <div className="flex items-center justify-between gap-3">
+          <div className="relative overflow-hidden rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0a1224]/75 to-[#050912]/90 p-4 md:p-5 shadow-[0_26px_90px_rgba(0,0,0,0.6)] space-y-3">
+            <div className="relative flex items-center justify-between gap-3">
               <div>
                 <h3 className="text-lg font-semibold text-white">Os teus eventos</h3>
                 <p className="text-[11px] text-white/60">Próximos e passados ligados à tua conta de organizador.</p>
               </div>
             </div>
-            <div className="space-y-2">
+            <div className="relative space-y-2">
               {!events?.items && (
                 <div className="grid gap-2 md:grid-cols-2">
                   {[1, 2].map((i) => (
-                    <div key={i} className="h-24 rounded-2xl border border-white/10 bg-white/5 animate-pulse" />
+                    <div key={i} className="h-24 rounded-2xl border border-white/12 bg-white/5 animate-pulse" />
                   ))}
                 </div>
               )}
@@ -1492,9 +1451,9 @@ function OrganizadorPageInner() {
                     return (
                       <div
                         key={ev.id}
-                        className="rounded-2xl border border-white/12 bg-white/5 p-3 flex flex-col gap-2"
+                        className="relative overflow-hidden rounded-2xl border border-white/12 bg-gradient-to-br from-white/6 via-[#0c1626]/60 to-[#070c18]/85 p-3 flex flex-col gap-2 shadow-[0_18px_60px_rgba(0,0,0,0.45)]"
                       >
-                        <div className="flex items-center justify-between gap-2">
+                        <div className="relative flex items-center justify-between gap-2">
                           <div className="flex flex-col">
                             <p className="text-sm font-semibold text-white line-clamp-2">{ev.title}</p>
                             <p className="text-[11px] text-white/60">{dateLabel}</p>
@@ -1505,26 +1464,26 @@ function OrganizadorPageInner() {
                               {ticketsSold} bilhetes · {revenue} €
                             </p>
                           </div>
-                          <span className="rounded-full border border-white/20 px-2 py-0.5 text-[10px] text-white/80">
+                          <span className="rounded-full border border-white/20 bg-white/10 px-2 py-0.5 text-[10px] text-white/80">
                             {ev.status}
                           </span>
                         </div>
-                        <div className="flex flex-wrap gap-2 text-[11px]">
+                        <div className="relative flex flex-wrap gap-2 text-[11px]">
                           <Link
                             href={`/organizador/eventos/${ev.id}/edit`}
-                            className="rounded-full border border-white/20 px-2.5 py-1 text-white/80 hover:bg-white/10"
+                            className="rounded-full border border-white/20 bg-white/5 px-2.5 py-1 text-white/80 hover:border-[#6BFFFF]/60"
                           >
                             Editar
                           </Link>
                           <Link
                             href={`/eventos/${ev.slug}`}
-                            className="rounded-full border border-white/20 px-2.5 py-1 text-white/80 hover:bg-white/10"
+                            className="rounded-full border border-white/20 bg-white/5 px-2.5 py-1 text-white/80 hover:border-[#6BFFFF]/60"
                           >
                             Página pública
                           </Link>
                           <Link
                             href={`/organizador?tab=sales&eventId=${ev.id}`}
-                            className="rounded-full border border-white/20 px-2.5 py-1 text-white/80 hover:bg-white/10"
+                            className="rounded-full border border-white/20 bg-white/5 px-2.5 py-1 text-white/80 hover:border-[#6BFFFF]/60"
                           >
                             Vendas
                           </Link>
@@ -1541,198 +1500,120 @@ function OrganizadorPageInner() {
 
       {activeTab === "events" && (
         <section className="space-y-4">
-          {/* Header glass + busca */}
-          <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-white/5 via-[#0b1124]/80 to-[#0a132a]/90 px-4 py-4 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
-            <div className="flex flex-col gap-3 rounded-3xl border border-white/10 bg-gradient-to-r from-white/10 via-white/5 to-white/0 px-4 py-4 shadow-inner lg:flex-row lg:items-center lg:justify-between">
-              <div className="space-y-1">
-                <p className="text-[11px] uppercase tracking-[0.28em] text-white/60">Dashboard · Eventos</p>
-                <h2 className="text-xl font-semibold text-white">Painel único para procura e gestão.</h2>
-                <p className="text-sm text-white/65">Menos ruído, mais ação: filtra e abre o dashboard certo.</p>
-              </div>
+          <div className="relative overflow-hidden rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0c152f]/75 to-[#050a15]/90 p-5 shadow-[0_28px_90px_rgba(0,0,0,0.6)] backdrop-blur-3xl">
+            <div className="pointer-events-none absolute inset-0">
+              <div className="absolute -left-6 top-2 h-36 w-36 rounded-full bg-[#6BFFFF]/15 blur-[70px]" />
+              <div className="absolute right-0 top-10 h-28 w-28 rounded-full bg-[#FF00C8]/18 blur-[80px]" />
+              <div className="absolute -right-10 -bottom-12 h-40 w-40 rounded-full bg-[#1646F5]/16 blur-[78px]" />
             </div>
 
-            {/* Pesquisa + controlos compactos */}
-            <div className="mt-1 flex flex-col gap-3">
-              <div className="grid gap-3 md:grid-cols-[1.4fr,1fr]">
-                <div className="space-y-2">
-                  <label className="text-[11px] uppercase tracking-[0.2em] text-white/60">Pesquisa</label>
-                  <div className="flex items-center gap-2 rounded-2xl border border-white/15 bg-black/30 px-3 py-2 shadow-inner">
+            <div className="relative space-y-4">
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-start">
+                <div className="space-y-1">
+                  <p className="text-[11px] uppercase tracking-[0.26em] text-white/70">Eventos</p>
+                  <h2 className="text-2xl font-semibold text-white">Gestão dos teus eventos</h2>
+                  <p className="text-sm text-white/65">Pesquisa focada com estados e períodos claros.</p>
+                </div>
+              </div>
+
+              <div className="grid gap-3 lg:grid-cols-[1.4fr,1fr]">
+                <div className="rounded-2xl border border-white/12 bg-black/30 backdrop-blur-2xl px-3 py-3 shadow-inner shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
+                  <label className="text-[10px] uppercase tracking-[0.24em] text-white/55">Pesquisa</label>
+                  <div className="mt-1 flex items-center gap-2">
                     <input
                       type="search"
-                      placeholder="Procurar por evento…"
+                      placeholder="Procurar por evento..."
                       value={searchTerm}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        const normalized = val.toLowerCase();
-                        setSearchTerm(val);
-                        if (normalized.includes("padel") || normalized.includes("pádel")) setEventTypeFilter("SPORT");
-                        if (normalized.includes("jantar") || normalized.includes("restaurante")) setEventTypeFilter("COMIDA");
-                        if (normalized.includes("solid")) setEventTypeFilter("VOLUNTEERING");
-                        if (normalized.includes("festa")) setEventTypeFilter("PARTY");
-                      }}
+                      onChange={(e) => setSearchTerm(e.target.value)}
                       className="flex-1 bg-transparent text-sm text-white outline-none placeholder:text-white/40"
                     />
                     <div className="hidden text-[12px] text-white/50 md:inline">⌘/</div>
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <label className="text-[11px] uppercase tracking-[0.2em] text-white/60">Vista & período</label>
-                  <div className="flex flex-wrap gap-2">
-                    <div className="inline-flex flex-1 rounded-2xl border border-white/15 bg-black/30 p-1 shadow-inner">
-                      {[
-                        { key: "cards", label: "Cartões" },
-                        { key: "table", label: "Tabela" },
-                      ].map((opt) => (
-                        <button
-                          key={opt.key}
-                          type="button"
-                          onClick={() => setViewMode(opt.key as typeof viewMode)}
-                          className={cn(
-                            "flex-1 rounded-xl px-3 py-2 text-sm transition",
-                            viewMode === opt.key
-                              ? "bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] text-black font-semibold shadow-[0_0_16px_rgba(107,255,255,0.35)]"
-                              : "text-white/75 hover:bg-white/5",
-                          )}
-                        >
-                          {opt.label}
-                        </button>
-                      ))}
-                    </div>
-                    <div className="inline-flex rounded-2xl border border-white/15 bg-black/30 p-1 shadow-inner">
-                      {(["all", "upcoming", "ongoing", "past"] as const).map((opt) => (
-                        <button
-                          key={opt}
-                          type="button"
-                          onClick={() => setTimeScope(opt)}
-                          className={cn(
-                            "rounded-xl px-3 py-2 text-[12px] transition",
-                            timeScope === opt ? "bg-white text-black font-semibold shadow" : "text-white/75 hover:bg-white/5",
-                          )}
-                        >
-                          {opt === "all" ? "Todos" : opt === "upcoming" ? "Próximos" : opt === "ongoing" ? "A decorrer" : "Passados"}
-                        </button>
-                      ))}
-                    </div>
+                <div className="rounded-2xl border border-white/12 bg-black/30 backdrop-blur-2xl p-3 shadow-inner shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
+                  <p className="text-[10px] uppercase tracking-[0.24em] text-white/55">Período</p>
+                  <div className="mt-2 inline-flex w-full rounded-2xl border border-white/10 bg-white/5 p-1 shadow-[0_10px_30px_rgba(0,0,0,0.35)]">
+                    {(["all", "upcoming", "ongoing", "past"] as const).map((opt) => (
+                      <button
+                        key={opt}
+                        type="button"
+                        onClick={() => setTimeScope(opt)}
+                        className={cn(
+                          "flex-1 rounded-xl px-3 py-2 text-[12px] transition",
+                          timeScope === opt
+                            ? "bg-gradient-to-r from-[#6BFFFF] via-[#AEE4FF] to-[#FF00C8] text-black font-semibold shadow-[0_0_18px_rgba(107,255,255,0.4)]"
+                            : "text-white/75 hover:bg-white/5",
+                        )}
+                      >
+                        {opt === "all" ? "Todos" : opt === "upcoming" ? "Próximos" : opt === "ongoing" ? "A decorrer" : "Passados"}
+                      </button>
+                    ))}
                   </div>
                 </div>
               </div>
 
-              <div className="grid w-full gap-2 md:grid-cols-[1fr_1fr_auto]">
-                <select
-                  value={eventStatusFilter}
-                  onChange={(e) => setEventStatusFilter(e.target.value as typeof eventStatusFilter)}
-                  className={`w-full rounded-xl border px-3 py-2 text-[12px] text-white outline-none focus:border-[#6BFFFF] ${
-                    eventStatusFilter !== "all" ? "border-[#6BFFFF]/60 bg-[#0b1224]" : "border-white/15 bg-black/40"
-                  }`}
-                >
-                  <option value="all">Estado: Todos</option>
-                  <option value="active">Ativo</option>
-                  <option value="draft">Draft</option>
-                  <option value="finished">Concluído</option>
-                  <option value="ongoing">Em curso</option>
-                  <option value="archived">Arquivado</option>
-                </select>
-                <select
-                  value={eventTypeFilter}
-                  onChange={(e) => setEventTypeFilter(e.target.value)}
-                  className={`w-full rounded-xl border px-3 py-2 text-[12px] text-white outline-none focus:border-[#6BFFFF] ${
-                    eventTypeFilter !== "all" ? "border-[#6BFFFF]/60 bg-[#0b1224]" : "border-white/15 bg-black/40"
-                  }`}
-                >
-                  <option value="all">Tipo: Todos</option>
-                  <option value="SPORT">Padel</option>
-                  <option value="COMIDA">Restaurante &amp; Jantar</option>
-                  <option value="VOLUNTEERING">Solidário / Voluntariado</option>
-                  <option value="PARTY">Festa &amp; Noite</option>
-                  <option value="OTHER">Outro</option>
-                </select>
-                <select
-                  value={eventDateFilter}
-                  onChange={(e) => setEventDateFilter(e.target.value as typeof eventDateFilter)}
-                  className={`w-full rounded-xl border px-3 py-2 text-[12px] text-white outline-none focus:border-[#6BFFFF] ${
-                    eventDateFilter !== "any" ? "border-[#6BFFFF]/60 bg-[#0b1224]" : "border-white/15 bg-black/40"
-                  }`}
-                >
-                  <option value="any">Datas: Qualquer</option>
-                  <option value="today">Hoje</option>
-                  <option value="weekend">Este fim-de-semana</option>
-                  <option value="week">Esta semana</option>
-                  <option value="month">Este mês</option>
-                </select>
-              </div>
-
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex flex-wrap items-center gap-2 text-[12px] text-white/70">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEventStatusFilter("all");
-                      setEventTypeFilter("all");
-                      setEventCategoryFilter("all");
-                      setEventDateFilter("any");
-                      setEventPartnerClubFilter("all");
-                      setSearchTerm("");
-                      setTimeScope("all");
-                    }}
-                    className="rounded-full border border-white/15 px-3 py-1.5 text-[12px] text-white/80 hover:border-white/30 hover:bg-white/5 transition"
-                  >
-                    Limpar filtros
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setEventStatusFilter((prev) => (prev === "archived" ? "all" : "archived"))}
-                    className={`rounded-full border px-3 py-1.5 text-[12px] transition ${
-                      eventStatusFilter === "archived"
-                        ? "border-amber-300/60 bg-amber-400/10 text-amber-50"
-                        : "border-white/15 bg-white/5 text-white/80 hover:border-white/30 hover:bg-white/10"
-                    }`}
-                  >
-                    {eventStatusFilter === "archived" ? "A mostrar arquivados" : "Ver arquivados"}
-                  </button>
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="space-y-1">
+                  <p className="text-[10px] uppercase tracking-[0.22em] text-white/55">Estados</p>
+                  <div className="inline-flex flex-wrap rounded-2xl border border-white/12 bg-white/5 p-1 shadow-[0_10px_30px_rgba(0,0,0,0.35)] backdrop-blur-xl">
+                    {[
+                      { key: "all", label: "Todos" },
+                      { key: "active", label: "Ativos" },
+                      { key: "ongoing", label: "Em curso" },
+                      { key: "finished", label: "Concluídos" },
+                      { key: "archived", label: "Arquivados" },
+                    ].map((opt) => (
+                      <button
+                        key={opt.key}
+                        type="button"
+                        onClick={() => setEventStatusFilter(opt.key as typeof eventStatusFilter)}
+                        className={cn(
+                          "rounded-xl px-3 py-2 text-[12px] transition",
+                          eventStatusFilter === opt.key
+                            ? "bg-white text-black font-semibold shadow-[0_0_12px_rgba(255,255,255,0.35)]"
+                            : "text-white/75 hover:bg-white/5",
+                        )}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-                <div className="inline-flex items-center gap-2 text-[12px] text-white/70">
-                  <span className="rounded-full border border-white/15 px-2 py-0.5">Próximos: {upcomingCount}</span>
-                  <span className="rounded-full border border-white/15 px-2 py-0.5">A decorrer: {ongoingCount}</span>
-                  <span className="rounded-full border border-white/15 px-2 py-0.5">Concluídos: {finishedCount}</span>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEventStatusFilter("all");
+                    setEventCategoryFilter("all");
+                    setEventPartnerClubFilter("all");
+                    setSearchTerm("");
+                    setTimeScope("all");
+                  }}
+                  className="rounded-full border border-white/20 bg-white/5 px-4 py-2 text-[12px] text-white/80 transition hover:border-white/35 hover:bg-white/10"
+                >
+                  Limpar filtros
+                </button>
               </div>
             </div>
           </div>
 
-          {[
-            eventStatusFilter !== "all",
-            eventTypeFilter !== "all",
-            eventCategoryFilter !== "all",
-            eventDateFilter !== "any",
-            timeScope !== "all",
-            searchTerm.trim() !== "",
-          ].some(Boolean) && (
-            <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-[12px] text-white/80 shadow-[0_10px_30px_rgba(0,0,0,0.35)]">
-              <span className="text-white/70 font-semibold">Filtros ativos</span>
+          {activeFilterCount > 0 && (
+            <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-white/12 bg-gradient-to-r from-white/8 via-white/6 to-white/4 px-3 py-2 text-[12px] text-white/80 shadow-[0_12px_36px_rgba(0,0,0,0.45)] backdrop-blur-2xl">
+              <span className="font-semibold text-white/75">Filtros ativos ({activeFilterCount})</span>
               {eventStatusFilter !== "all" && (
                 <button
                   type="button"
                   onClick={() => setEventStatusFilter("all")}
-                  className="inline-flex items-center gap-1 rounded-full border border-white/25 bg-white/10 px-2 py-0.5 hover:border-white/40"
+                  className="inline-flex items-center gap-1 rounded-full border border-white/25 bg-white/10 px-2.5 py-1 hover:border-white/40"
                 >
-                  Estado: {eventStatusFilter} ×
-                </button>
-              )}
-              {eventTypeFilter !== "all" && (
-                <button
-                  type="button"
-                  onClick={() => setEventTypeFilter("all")}
-                  className="inline-flex items-center gap-1 rounded-full border border-white/25 bg-white/10 px-2 py-0.5 hover:border-white/40"
-                >
-                  Tipo: {eventTypeFilter} ×
+                  Estado: {statusLabelMap[eventStatusFilter]} ×
                 </button>
               )}
               {eventCategoryFilter !== "all" && (
                 <button
                   type="button"
                   onClick={() => setEventCategoryFilter("all")}
-                  className="inline-flex items-center gap-1 rounded-full border border-white/25 bg-white/10 px-2 py-0.5 hover:border-white/40"
+                  className="inline-flex items-center gap-1 rounded-full border border-white/25 bg-white/10 px-2.5 py-1 hover:border-white/40"
                 >
                   Categoria: {eventCategoryFilter} ×
                 </button>
@@ -1741,34 +1622,25 @@ function OrganizadorPageInner() {
                 <button
                   type="button"
                   onClick={() => setEventPartnerClubFilter("all")}
-                  className="inline-flex items-center gap-1 rounded-full border border-white/25 bg-white/10 px-2 py-0.5 hover:border-white/40"
+                  className="inline-flex items-center gap-1 rounded-full border border-white/25 bg-white/10 px-2.5 py-1 hover:border-white/40"
                 >
                   Clube: {partnerClubOptions.find((o) => `${o.id}` === eventPartnerClubFilter)?.name ?? eventPartnerClubFilter} ×
-                </button>
-              )}
-              {eventDateFilter !== "any" && (
-                <button
-                  type="button"
-                  onClick={() => setEventDateFilter("any")}
-                  className="inline-flex items-center gap-1 rounded-full border border-white/25 bg-white/10 px-2 py-0.5 hover:border-white/40"
-                >
-                  Datas: {eventDateFilter} ×
                 </button>
               )}
               {timeScope !== "all" && (
                 <button
                   type="button"
                   onClick={() => setTimeScope("all")}
-                  className="inline-flex items-center gap-1 rounded-full border border-white/25 bg-white/10 px-2 py-0.5 hover:border-white/40"
+                  className="inline-flex items-center gap-1 rounded-full border border-white/25 bg-white/10 px-2.5 py-1 hover:border-white/40"
                 >
-                  Mostrar: {timeScope} ×
+                  Período: {timeScopeLabels[timeScope]} ×
                 </button>
               )}
               {searchTerm.trim() && (
                 <button
                   type="button"
                   onClick={() => setSearchTerm("")}
-                  className="inline-flex items-center gap-1 rounded-full border border-white/25 bg-white/10 px-2 py-0.5 hover:border-white/40"
+                  className="inline-flex items-center gap-1 rounded-full border border-white/25 bg-white/10 px-2.5 py-1 hover:border-white/40"
                 >
                   Pesquisa: “{searchTerm}” ×
                 </button>
@@ -1777,204 +1649,88 @@ function OrganizadorPageInner() {
           )}
 
           <div className="space-y-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex items-center gap-2 text-sm text-white/80">
-                  <h3 className="text-lg font-semibold">Eventos</h3>
-                  <span className="text-[11px] rounded-full bg-white/10 px-2 py-0.5">{filteredEvents.length}</span>
-                </div>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2 text-sm text-white/80">
+                <h3 className="text-lg font-semibold">Eventos</h3>
+                <span className="text-[11px] rounded-full bg-white/10 px-2 py-0.5">{filteredEvents.length}</span>
               </div>
+            </div>
 
-              {eventsListLoading && (
-                <div className="grid gap-2 md:grid-cols-2">
-                  {[1, 2, 3].map((i) => (
-                    <div key={i} className="h-28 rounded-2xl border border-white/10 bg-white/5 animate-pulse" />
-                  ))}
+            {eventsListLoading && (
+              <div className="grid gap-2 md:grid-cols-2">
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="h-28 rounded-2xl border border-white/10 bg-white/5 animate-pulse" />
+                ))}
+              </div>
+            )}
+
+            {eventsError && (
+              <div className="rounded-2xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-100 flex items-center justify-between gap-3">
+                <div>
+                  <p className="font-semibold">Não foi possível carregar os eventos.</p>
+                  <p className="text-[12px] text-red-100/80">Verifica a ligação e tenta novamente.</p>
                 </div>
-              )}
+                <button
+                  type="button"
+                  onClick={() => mutateEvents()}
+                  className="rounded-full border border-red-200/50 px-3 py-1 text-[12px] font-semibold hover:bg-red-500/20"
+                >
+                  Tentar novamente
+                </button>
+              </div>
+            )}
 
-              {eventsError && (
-                <div className="rounded-2xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-100 flex items-center justify-between gap-3">
-                  <div>
-                    <p className="font-semibold">Não foi possível carregar os eventos.</p>
-                    <p className="text-[12px] text-red-100/80">Verifica a ligação e tenta novamente.</p>
-                  </div>
+            {!eventsListLoading && events?.items?.length === 0 && (
+              <div className="rounded-2xl border border-dashed border-white/15 bg-white/5 px-4 py-6 text-center text-sm text-white/70 space-y-2">
+                <p className="text-base font-semibold text-white">Ainda não tens eventos criados.</p>
+                <p>Começa por criar o teu primeiro evento e acompanha tudo a partir daqui.</p>
+              </div>
+            )}
+
+            {!eventsListLoading && events?.items && events.items.length > 0 && filteredEvents.length === 0 && (
+              <div className="rounded-2xl border border-white/15 bg-white/5 px-4 py-6 text-center text-sm text-white/70 space-y-2">
+                <p className="text-base font-semibold text-white">Nenhum evento corresponde a estes filtros.</p>
+                <p className="text-white/65">Troca o período ou limpa os filtros para veres todos.</p>
+                <div className="flex flex-wrap justify-center gap-2 text-[12px]">
                   <button
                     type="button"
-                    onClick={() => mutateEvents()}
-                    className="rounded-full border border-red-200/50 px-3 py-1 text-[12px] font-semibold hover:bg-red-500/20"
+                    onClick={() => {
+                      setEventStatusFilter("all");
+                      setEventCategoryFilter("all");
+                      setTimeScope("all");
+                      setEventPartnerClubFilter("all");
+                      setSearchTerm("");
+                    }}
+                    className="rounded-full border border-white/20 px-3 py-1.5 text-white/80 hover:bg-white/10"
                   >
-                    Tentar novamente
+                    Limpar filtros
                   </button>
+                  <Link
+                    href="/organizador/eventos/novo"
+                    className="rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-3 py-1.5 font-semibold text-black shadow"
+                  >
+                    Criar novo evento
+                  </Link>
                 </div>
-              )}
+              </div>
+            )}
 
-              {!eventsListLoading && events?.items?.length === 0 && (
-                <div className="rounded-2xl border border-dashed border-white/15 bg-white/5 px-4 py-6 text-center text-sm text-white/70 space-y-2">
-                  <p className="text-base font-semibold text-white">Ainda não tens eventos criados.</p>
-                  <p>Começa por criar o teu primeiro evento e acompanha tudo a partir daqui.</p>
-                </div>
-              )}
-
-              {!eventsListLoading && events?.items && events.items.length > 0 && filteredEvents.length === 0 && (
-                <div className="rounded-2xl border border-white/15 bg-white/5 px-4 py-6 text-center text-sm text-white/70 space-y-2">
-                  <p className="text-base font-semibold text-white">Nenhum evento corresponde a estes filtros.</p>
-                  <p className="text-white/65">Alarga as datas, limpa filtros ou procura por outro nome.</p>
-                  <div className="flex flex-wrap justify-center gap-2 text-[12px]">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEventStatusFilter("all");
-                        setEventTypeFilter("all");
-                        setEventCategoryFilter("all");
-                        setEventDateFilter("any");
-                        setTimeScope("all");
-                        setSearchTerm("");
-                      }}
-                      className="rounded-full border border-white/20 px-3 py-1.5 text-white/80 hover:bg-white/10"
-                    >
-                      Limpar filtros
-                    </button>
-                    <Link
-                      href="/organizador/eventos/novo"
-                      className="rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-3 py-1.5 font-semibold text-black shadow"
-                    >
-                      Criar novo evento
-                    </Link>
-                  </div>
-                </div>
-              )}
-
-              {filteredEvents.length > 0 && (
-                <div className="space-y-2">
-                  {viewMode === "table" ? (
-                    <div className="overflow-auto rounded-2xl border border-white/10 bg-white/5">
-                      <table className="min-w-full text-sm text-white/80">
-                        <thead className="text-left text-[11px] uppercase tracking-wide text-white/60">
-                          <tr>
-                            <th className="px-4 py-3">Evento</th>
-                            <th className="px-4 py-3">Data</th>
-                            <th className="px-4 py-3">Estado</th>
-                            <th className="px-4 py-3">Tipo</th>
-                            <th className="px-4 py-3">Bilhetes</th>
-                            <th className="px-4 py-3">Receita</th>
-                            <th className="px-4 py-3 text-right">Ações</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-white/5">
-                          {filteredEvents.map((ev) => {
-                            const date = ev.startsAt ? new Date(ev.startsAt) : null;
-                            const endsAt = ev.endsAt ? new Date(ev.endsAt) : null;
-                            const now = new Date();
-                            const isOngoing = date && endsAt ? date.getTime() <= now.getTime() && now.getTime() <= endsAt.getTime() : false;
-                            const isFuture = date ? date.getTime() > now.getTime() : false;
-                            const isFinished = endsAt ? endsAt.getTime() < now.getTime() : false;
-                            const dateLabel = date
-                              ? formatDateTime(date, {
-                                  day: "2-digit",
-                                  month: "short",
-                                  hour: "2-digit",
-                                  minute: "2-digit",
-                                })
-                              : "Data a confirmar";
-                            const ticketsSold = ev.ticketsSold ?? 0;
-                            const capacity = ev.capacity ?? null;
-                            const revenue = ((ev.revenueCents ?? 0) / 100).toFixed(2);
-                            const typeLabel =
-                              ev.templateType === "SPORT"
-                                ? "Padel"
-                                : ev.templateType === "COMIDA"
-                                  ? "Restaurantes & Jantares"
-                                  : ev.templateType === "VOLUNTEERING"
-                                    ? "Solidário / Voluntariado"
-                                    : ev.templateType === "PARTY"
-                                      ? "Festas & Noite"
-                                      : ev.templateType || "Outro";
-                            const statusBadge =
-                              ev.status === "CANCELLED"
-                                ? { label: "Cancelado", classes: "text-red-200" }
-                                : ev.status === "ARCHIVED"
-                                  ? { label: "Arquivado", classes: "text-amber-200" }
-                                : ev.status === "DRAFT"
-                                  ? { label: "Draft", classes: "text-white/70" }
-                                  : isOngoing
-                                    ? { label: "A decorrer", classes: "text-emerald-200" }
-                                    : isFuture
-                                      ? { label: "Publicado", classes: "text-sky-200" }
-                                      : isFinished
-                                        ? { label: "Concluído", classes: "text-purple-200" }
-                                        : { label: ev.status, classes: "text-white/70" };
-
-                            const goToTab = (tab: string) => {
-                              const params = new URLSearchParams(searchParams?.toString() || "");
-                              params.set("tab", tab);
-                              params.set("eventId", String(ev.id));
-                              router.replace(`${pathname}?${params.toString()}`, { scroll: false });
-                            };
-
-                            return (
-                              <tr key={ev.id} className="hover:bg-white/5 transition">
-                                <td className="px-4 py-3 font-semibold text-white">
-                                  <button
-                                    type="button"
-                                    className="text-left hover:underline"
-                                    onClick={() => goToTab("sales")}
-                                  >
-                                    {ev.title}
-                                  </button>
-                                </td>
-                                <td className="px-4 py-3 text-[12px]">{dateLabel}</td>
-                                <td className={`px-4 py-3 text-[12px] ${statusBadge.classes}`}>{statusBadge.label}</td>
-                                <td className="px-4 py-3 text-[12px]">{typeLabel}</td>
-                                <td className="px-4 py-3 text-[12px]">
-                                  {ticketsSold} / {capacity ?? "—"}
-                                </td>
-                        <td className="px-4 py-3 text-[12px]">{revenue} €</td>
-                        <td className="px-4 py-3 text-right text-[11px]">
-                          <div className="flex flex-wrap items-center justify-end gap-2">
-                            {ev.status !== "ARCHIVED" && (
-                              <button
-                                type="button"
-                                onClick={() => goToTab("sales")}
-                                className="rounded-full border border-white/20 px-2 py-1 hover:bg-white/10"
-                              >
-                                Vendas
-                              </button>
-                            )}
-                            <Link
-                              href={`/organizador/eventos/${ev.id}/edit`}
-                              className="rounded-full border border-white/20 px-2 py-1 hover:bg-white/10"
-                            >
-                                      Editar
-                                    </Link>
-                            {ev.status === "ARCHIVED" ? (
-                              <button
-                                type="button"
-                                disabled={eventActionLoading === ev.id}
-                                onClick={() => setEventDialog({ mode: "unarchive", ev })}
-                                className="rounded-full border border-emerald-200/40 px-2 py-1 text-emerald-100 hover:bg-emerald-500/10 disabled:opacity-60"
-                              >
-                                Reativar
-                              </button>
-                            ) : (
-                              <button
-                                type="button"
-                                disabled={eventActionLoading === ev.id}
-                                onClick={() => setEventDialog({ mode: ev.status === "DRAFT" ? "delete" : "archive", ev })}
-                                className="rounded-full border border-red-200/30 px-2 py-1 text-red-100/90 hover:bg-red-500/10 disabled:opacity-60"
-                              >
-                                {ev.status === "DRAFT" ? "Apagar rascunho" : "Arquivar"}
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  ) : (
-                    filteredEvents.map((ev) => {
+            {filteredEvents.length > 0 && (
+              <div className="overflow-hidden rounded-3xl border border-white/12 bg-gradient-to-br from-white/6 via-[#0a1227]/70 to-[#050912]/90 shadow-[0_22px_70px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
+                <table className="min-w-full text-sm text-white/85">
+                  <thead className="bg-white/5 text-left text-[11px] uppercase tracking-wide text-white/65">
+                    <tr>
+                      <th className="px-4 py-3 font-semibold">Evento</th>
+                      <th className="px-4 py-3 font-semibold">Data</th>
+                      <th className="px-4 py-3 font-semibold">Estado</th>
+                      <th className="px-4 py-3 font-semibold">Tipo</th>
+                      <th className="px-4 py-3 font-semibold">Bilhetes</th>
+                      <th className="px-4 py-3 font-semibold">Receita</th>
+                      <th className="px-4 py-3 text-right font-semibold">Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5">
+                    {filteredEvents.map((ev) => {
                       const date = ev.startsAt ? new Date(ev.startsAt) : null;
                       const endsAt = ev.endsAt ? new Date(ev.endsAt) : null;
                       const now = new Date();
@@ -2012,26 +1768,20 @@ function OrganizadorPageInner() {
                               : ev.templateType === "PARTY"
                                 ? "border-fuchsia-300/40 bg-fuchsia-300/10 text-fuchsia-100"
                                 : "border-white/20 bg-white/5 text-white/80";
-
                       const statusBadge =
                         ev.status === "CANCELLED"
-                          ? { label: "Cancelado", classes: "border-red-400/50 bg-red-500/10 text-red-100" }
+                          ? { label: "Cancelado", classes: "border-red-400/60 bg-red-500/10 text-red-100" }
                           : ev.status === "ARCHIVED"
-                            ? { label: "Arquivado", classes: "border-amber-400/50 bg-amber-500/10 text-amber-100" }
-                          : ev.status === "DRAFT"
-                            ? { label: "Draft", classes: "border-white/20 bg-white/5 text-white/70" }
-                            : isOngoing
-                              ? { label: "A decorrer", classes: "border-emerald-400/50 bg-emerald-500/10 text-emerald-100" }
-                              : isFuture
-                                ? { label: "Publicado", classes: "border-sky-400/50 bg-sky-500/10 text-sky-100" }
-                                : isFinished
-                                  ? { label: "Concluído", classes: "border-purple-400/50 bg-purple-500/10 text-purple-100" }
-                                  : { label: ev.status, classes: "border-white/20 bg-white/5 text-white/70" };
-
-                      const handlePrimaryOpen = () => {
-                        router.push(`/organizador?tab=sales&eventId=${ev.id}`);
-                      };
-
+                            ? { label: "Arquivado", classes: "border-amber-400/60 bg-amber-500/10 text-amber-100" }
+                            : ev.status === "DRAFT"
+                              ? { label: "Draft", classes: "border-white/20 bg-white/5 text-white/70" }
+                              : isOngoing
+                                ? { label: "A decorrer", classes: "border-emerald-400/60 bg-emerald-500/10 text-emerald-100" }
+                                : isFuture
+                                  ? { label: "Publicado", classes: "border-sky-400/60 bg-sky-500/10 text-sky-100" }
+                                  : isFinished
+                                    ? { label: "Concluído", classes: "border-purple-400/60 bg-purple-500/10 text-purple-100" }
+                                    : { label: ev.status, classes: "border-white/20 bg-white/5 text-white/70" };
                       const goToTab = (tab: string) => {
                         const params = new URLSearchParams(searchParams?.toString() || "");
                         params.set("tab", tab);
@@ -2040,98 +1790,61 @@ function OrganizadorPageInner() {
                       };
 
                       return (
-                        <div
-                          key={ev.id}
-                          role="button"
-                          tabIndex={0}
-                          onClick={(e) => {
-                            if ((e.target as HTMLElement).closest("a,button")) return;
-                            handlePrimaryOpen();
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" || e.key === " ") {
-                              e.preventDefault();
-                              handlePrimaryOpen();
-                            }
-                          }}
-                          className="group rounded-2xl border border-white/10 bg-white/5 p-4 hover:border-[#6BFFFF]/60 hover:shadow-[0_12px_40px_rgba(0,0,0,0.5)] transition cursor-pointer"
-                        >
-                          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                            <div className="space-y-2">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <p className="text-sm font-semibold text-white line-clamp-2">{ev.title}</p>
-                                <span className={`rounded-full border px-2 py-0.5 text-[11px] ${statusBadge.classes}`}>{statusBadge.label}</span>
-                                <span className={`rounded-full border px-2 py-0.5 text-[11px] ${typeTone}`}>{typeLabel}</span>
-                                {ev.categories?.[0] && (
-                                  <span className="rounded-full border border-white/20 bg-white/5 px-2 py-0.5 text-[11px] text-white/75">
-                                    {ev.categories[0]}
-                                  </span>
-                                )}
-                              </div>
-                              <div className="flex flex-wrap gap-2 text-[11px] text-white/70">
-                                <span>📅 {dateLabel}</span>
-                                <span>·</span>
-                                <span>📍 {ev.locationName || ev.locationCity || "Local a anunciar"}</span>
-                                <span>·</span>
-                                <span>🎟️ {ticketsSold} / {capacity ?? "—"} bilhetes</span>
-                                <span>·</span>
-                                <span>💶 {revenue} €</span>
-                              </div>
-                            </div>
-                            <div className="flex flex-wrap items-center gap-2 text-[11px]">
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handlePrimaryOpen();
-                                }}
-                                className="rounded-full border border-white/25 bg-white/10 px-3 py-1 font-semibold text-white hover:border-[#6BFFFF]/60"
-                              >
-                                Dashboard
-                              </button>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  goToTab("sales");
-                                }}
-                                className="rounded-full border border-white/20 px-2.5 py-1 text-white/80 hover:bg-white/10"
-                              >
-                                Ver vendas
-                              </button>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  goToTab("finance");
-                                }}
-                                className="rounded-full border border-white/20 px-2.5 py-1 text-white/80 hover:bg-white/10"
-                              >
-                                Payouts
-                              </button>
+                        <tr key={ev.id} className="hover:bg-white/5 transition">
+                          <td className="px-4 py-3">
+                            <button
+                              type="button"
+                              className="text-left text-white hover:underline"
+                              onClick={() => goToTab("sales")}
+                            >
+                              {ev.title}
+                            </button>
+                          </td>
+                          <td className="px-4 py-3 text-[12px] text-white/80">{dateLabel}</td>
+                          <td className="px-4 py-3">
+                            <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] ${statusBadge.classes}`}>
+                              {statusBadge.label}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] ${typeTone}`}>
+                              {typeLabel}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-[12px]">
+                            <span className="font-semibold text-white">{ticketsSold}</span>
+                            <span className="text-white/60"> / {capacity ?? "—"}</span>
+                          </td>
+                          <td className="px-4 py-3 text-[12px] font-semibold text-white">{revenue} €</td>
+                          <td className="px-4 py-3 text-right text-[11px]">
+                            <div className="flex flex-wrap items-center justify-end gap-2">
+                              {ev.status !== "ARCHIVED" && (
+                                <button
+                                  type="button"
+                                  onClick={() => goToTab("sales")}
+                                  className="rounded-full border border-white/20 bg-white/5 px-2.5 py-1 text-white/80 hover:border-[#6BFFFF]/60"
+                                >
+                                  Vendas
+                                </button>
+                              )}
                               <Link
                                 href={`/organizador/eventos/${ev.id}/edit`}
-                                onClick={(e) => e.stopPropagation()}
-                                className="rounded-full border border-white/20 px-2.5 py-1 text-white/80 hover:bg-white/10"
+                                className="rounded-full border border-white/20 bg-white/5 px-2.5 py-1 text-white/80 hover:border-[#6BFFFF]/60"
                               >
                                 Editar
                               </Link>
                               <Link
-                              href={`/eventos/${ev.slug}`}
-                              onClick={(e) => e.stopPropagation()}
-                              className="rounded-full border border-white/20 px-2.5 py-1 text-white/80 hover:bg-white/10"
-                            >
-                              Página pública
-                            </Link>
+                                href={`/eventos/${ev.slug}`}
+                                className="rounded-full border border-white/20 bg-white/5 px-2.5 py-1 text-white/80 hover:border-[#6BFFFF]/60"
+                              >
+                                Página pública
+                              </Link>
                               {ev.status === "ARCHIVED" ? (
                                 <button
                                   type="button"
                                   disabled={eventActionLoading === ev.id}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setEventDialog({ mode: "unarchive", ev });
-                                  }}
-                                  className="rounded-full border border-emerald-200/40 px-2.5 py-1 text-emerald-100 hover:bg-emerald-500/10 disabled:opacity-60"
+                                  onClick={() => setEventDialog({ mode: "unarchive", ev })}
+                                  className="rounded-full border border-emerald-200/40 bg-emerald-500/10 px-2.5 py-1 text-emerald-100 hover:border-emerald-200/70 disabled:opacity-60"
                                 >
                                   Reativar
                                 </button>
@@ -2139,81 +1852,87 @@ function OrganizadorPageInner() {
                                 <button
                                   type="button"
                                   disabled={eventActionLoading === ev.id}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setEventDialog({ mode: ev.status === "DRAFT" ? "delete" : "archive", ev });
-                                  }}
-                                  className="rounded-full border border-red-200/30 px-2.5 py-1 text-red-100/90 hover:bg-red-500/10 disabled:opacity-60"
+                                  onClick={() => setEventDialog({ mode: ev.status === "DRAFT" ? "delete" : "archive", ev })}
+                                  className="rounded-full border border-red-200/50 bg-red-500/10 px-2.5 py-1 text-red-100/90 hover:border-red-200/70 disabled:opacity-60"
                                 >
                                   {ev.status === "DRAFT" ? "Apagar rascunho" : "Arquivar"}
                                 </button>
                               )}
                             </div>
-                          </div>
-                        </div>
+                          </td>
+                        </tr>
                       );
-                    })
-                  )}
-                </div>
-              )}
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </section>
       )}
 
       {activeTab === "sales" && (
         <section className="space-y-4">
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <div>
-              <p className="text-[11px] uppercase tracking-[0.3em] text-white/60">Bilhetes &amp; Vendas</p>
-              <h2 className="text-2xl font-semibold">Vendas por evento</h2>
-              <p className="text-sm text-white/65">Escolhe um evento e vê evolução + compradores.</p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-[11px] text-white/60">Período</span>
-              <div className="inline-flex rounded-full border border-white/15 bg-black/40 p-[3px] text-[11px]">
-                {(["7d", "30d", "90d", "365d", "all"] as SalesRange[]).map((range) => (
-                  <button
-                    key={range}
-                    type="button"
-                    onClick={() => setSalesRange(range)}
-                    className={`rounded-full px-3 py-1 transition ${
-                      salesRange === range
-                        ? "bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] text-black font-semibold shadow-[0_0_12px_rgba(107,255,255,0.6)]"
-                        : "text-white/70 hover:bg-white/5"
-                    }`}
-                  >
-                    {range === "7d"
-                      ? "7 dias"
-                      : range === "30d"
-                        ? "30 dias"
-                        : range === "90d"
-                          ? "3 meses"
-                          : range === "365d"
-                            ? "1 ano"
-                            : "Sempre"}
-                  </button>
-                ))}
+          <div className="relative overflow-hidden rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/75 to-[#050810]/92 p-5 shadow-[0_26px_90px_rgba(0,0,0,0.6)] backdrop-blur-3xl space-y-4">
+            <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.12),transparent_35%),linear-gradient(225deg,rgba(255,255,255,0.08),transparent_40%)]" />
+            <div className="relative flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.3em] text-white/70">Bilhetes &amp; Vendas</p>
+                <h2 className="text-2xl font-semibold text-white">Vendas por evento</h2>
+                <p className="text-sm text-white/70">Escolhe um evento e vê evolução + compradores.</p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-[11px] text-white/70">Período</span>
+                <div className="inline-flex rounded-full border border-white/15 bg-white/5 p-[3px] text-[11px] shadow-[0_10px_30px_rgba(0,0,0,0.35)]">
+                  {(["7d", "30d", "90d", "365d", "all"] as SalesRange[]).map((range) => (
+                    <button
+                      key={range}
+                      type="button"
+                      onClick={() => setSalesRange(range)}
+                      className={`rounded-full px-3 py-1 transition ${
+                        salesRange === range
+                          ? "bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] text-black font-semibold shadow-[0_0_12px_rgba(107,255,255,0.6)]"
+                          : "text-white/75 hover:bg-white/5"
+                      }`}
+                    >
+                      {range === "7d"
+                        ? "7 dias"
+                        : range === "30d"
+                          ? "30 dias"
+                          : range === "90d"
+                            ? "3 meses"
+                            : range === "365d"
+                              ? "1 ano"
+                              : "Sempre"}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
-          </div>
 
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="w-full max-w-md">
-              <label className="text-xs uppercase tracking-[0.18em] text-white/60 block mb-1">Seleciona o evento</label>
-              <select
-                value={salesEventId ?? ""}
-                onChange={(e) => setSalesEventId(e.target.value ? Number(e.target.value) : null)}
-                className="w-full rounded-2xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF]"
-              >
-                <option value="">Escolhe</option>
-                {eventsList.map((ev) => (
-                  <option key={ev.id} value={ev.id}>
-                    {ev.title}
-                  </option>
-                ))}
-              </select>
+            <div className="relative flex flex-wrap items-center gap-3">
+              <div className="w-full max-w-md">
+                <label className="text-xs uppercase tracking-[0.18em] text-white/65 block mb-1">Seleciona o evento</label>
+                <select
+                  value={salesEventId ?? ""}
+                  onChange={(e) => setSalesEventId(e.target.value ? Number(e.target.value) : null)}
+                  className="w-full rounded-2xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF] focus:ring-2 focus:ring-[rgba(107,255,255,0.35)]"
+                >
+                  <option value="">Escolhe</option>
+                  {eventsList.map((ev) => (
+                    <option key={ev.id} value={ev.id}>
+                      {ev.title}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {!eventsList.length && <span className="text-[12px] text-white/65">Sem eventos para analisar.</span>}
+              {selectedSalesEvent && (
+                <span className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] text-white/75 shadow-[0_10px_30px_rgba(0,0,0,0.35)]">
+                  A ver: {selectedSalesEvent.title}
+                </span>
+              )}
             </div>
-            {!eventsList.length && <span className="text-[12px] text-white/60">Sem eventos para analisar.</span>}
           </div>
 
           <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
@@ -2240,22 +1959,22 @@ function OrganizadorPageInner() {
             )}
             {!salesLoading && salesSeries && salesSeries.points?.length !== 0 && (
               <>
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                <div className="rounded-2xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1226]/70 to-[#050912]/90 p-3 shadow-[0_14px_45px_rgba(0,0,0,0.5)]">
                   <p className="text-[11px] text-white/60">Receita no período</p>
                   <p className="text-2xl font-bold text-white mt-1">{(salesKpis.revenueCents / 100).toFixed(2)} €</p>
                   <p className="text-[11px] text-white/50">{salesRangeLabelLong(salesRange)}</p>
                 </div>
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                <div className="rounded-2xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1226]/70 to-[#050912]/90 p-3 shadow-[0_14px_45px_rgba(0,0,0,0.5)]">
                   <p className="text-[11px] text-white/60">Bilhetes vendidos</p>
                   <p className="text-2xl font-bold text-white mt-1">{salesKpis.tickets}</p>
                   <p className="text-[11px] text-white/50">No período selecionado</p>
                 </div>
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                <div className="rounded-2xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1226]/70 to-[#050912]/90 p-3 shadow-[0_14px_45px_rgba(0,0,0,0.5)]">
                   <p className="text-[11px] text-white/60">Eventos com vendas</p>
                   <p className="text-2xl font-bold text-white mt-1">{salesKpis.eventsWithSales}</p>
                   <p className="text-[11px] text-white/50">Eventos com pelo menos 1 venda</p>
                 </div>
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                <div className="rounded-2xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1226]/70 to-[#050912]/90 p-3 shadow-[0_14px_45px_rgba(0,0,0,0.5)]">
                   <p className="text-[11px] text-white/60">Ocupação média</p>
                   <p className="text-2xl font-bold text-white mt-1">
                     {salesKpis.avgOccupancy !== null ? `${salesKpis.avgOccupancy}%` : "—"}
@@ -2266,7 +1985,7 @@ function OrganizadorPageInner() {
             )}
           </div>
 
-          <div className="rounded-3xl border border-white/10 bg-black/40 p-4 space-y-3 shadow-[0_18px_60px_rgba(0,0,0,0.65)]">
+          <div className="relative overflow-hidden rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0a1226]/75 to-[#050912]/90 p-4 space-y-3 shadow-[0_26px_90px_rgba(0,0,0,0.6)]">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-semibold">Evolução</h3>
               {selectedSalesEvent && (
@@ -2283,7 +2002,7 @@ function OrganizadorPageInner() {
                 </div>
               )}
             </div>
-            <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-white/5 to-white/0 shadow-inner overflow-hidden px-2 py-3 min-h-[260px]">
+            <div className="rounded-2xl border border-white/12 bg-gradient-to-br from-white/6 via-[#0b1224]/60 to-white/0 shadow-inner overflow-hidden px-2 py-3 min-h-[260px]">
               {salesLoading ? (
                 <div className="flex w-full items-center gap-3 px-4">
                   <div className="h-28 flex-1 rounded-xl bg-white/10 animate-pulse" />
@@ -2310,7 +2029,7 @@ function OrganizadorPageInner() {
             )}
           </div>
 
-          <div className="rounded-3xl border border-white/10 bg-black/40 p-4 space-y-3 shadow-[0_18px_60px_rgba(0,0,0,0.65)]">
+          <div className="relative overflow-hidden rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0a1226]/75 to-[#050912]/90 p-4 space-y-3 shadow-[0_26px_90px_rgba(0,0,0,0.6)]">
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-lg font-semibold">Eventos com mais vendas</h3>
@@ -2349,16 +2068,9 @@ function OrganizadorPageInner() {
                           </td>
                           <td className="py-2 pr-3 text-right text-[11px]">
                             <div className="flex items-center justify-end gap-2">
-                              <button
-                                type="button"
-                                onClick={() => setSalesEventId(ev.id)}
-                                className="rounded-full border border-white/20 px-2.5 py-1 text-white/80 hover:bg-white/10"
-                              >
-                                Ver vendas
-                              </button>
                               <Link
                                 href={`/organizador?tab=sales&eventId=${ev.id}`}
-                                className="rounded-full border border-white/20 px-2.5 py-1 text-white/80 hover:bg-white/10"
+                                className="rounded-full border border-white/20 bg-white/5 px-2.5 py-1 text-white/80 hover:border-[#6BFFFF]/60"
                               >
                                 Dashboard de vendas
                               </Link>
