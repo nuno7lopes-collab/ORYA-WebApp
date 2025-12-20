@@ -13,7 +13,7 @@ type CreateExperienceBody = {
   endsAt?: string;
   locationName?: string;
   locationCity?: string;
-  templateType?: string; // PARTY | SPORT | VOLUNTEERING | TALK | OTHER
+  templateType?: string; // PARTY | PADEL | VOLUNTEERING | TALK | OTHER
   address?: string | null;
   categories?: string[]; // obrigatório pelo negócio
   coverImageUrl?: string | null;
@@ -92,15 +92,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Até termos a tabela de categorias em produção, mapeamos a primeira categoria para templateType fallback.
-    const allowedCategories = [
-      "FESTA",
-      "DESPORTO",
-      "CONCERTO",
-      "PALESTRA",
-      "ARTE",
-      "COMIDA",
-      "DRINKS",
-    ];
+    const allowedCategories = ["FESTA", "PADEL", "CONCERTO", "PALESTRA", "ARTE", "COMIDA", "DRINKS"];
 
     const categories = categoriesInput
       .map((c) => c.trim().toUpperCase())
@@ -109,7 +101,7 @@ export async function POST(req: NextRequest) {
     const templateFromCategory = (() => {
       const first = categories[0];
       if (first === "FESTA") return "PARTY";
-      if (first === "DESPORTO") return "SPORT";
+      if (first === "PADEL") return "PADEL";
       if (first === "PALESTRA") return "TALK";
       return "OTHER";
     })();
@@ -154,13 +146,10 @@ export async function POST(req: NextRequest) {
     const randomSuffix = Math.random().toString(36).slice(2, 8);
     const slug = `${baseSlug}-${randomSuffix}`;
 
-    const templateType = (body.templateType?.toUpperCase() as
-      | "PARTY"
-      | "SPORT"
-      | "VOLUNTEERING"
-      | "TALK"
-      | "OTHER"
-      | undefined) ?? templateFromCategory ?? "OTHER";
+    const templateType =
+      (body.templateType?.toUpperCase() as "PARTY" | "PADEL" | "VOLUNTEERING" | "TALK" | "OTHER" | undefined) ??
+      templateFromCategory ??
+      "OTHER";
 
     // 👇 Construímos primeiro o objeto bem tipado
     const eventData: Prisma.EventCreateInput = {

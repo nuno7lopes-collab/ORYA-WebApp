@@ -159,10 +159,16 @@ export default async function HomePage() {
   );
 
   return (
-    <main className="relative min-h-screen bg-[radial-gradient(circle_at_15%_10%,#8a1ecb22_0%,transparent_28%),radial-gradient(circle_at_85%_8%,#00eaff22_0%,transparent_25%),radial-gradient(circle_at_40%_75%,#ff00c822_0%,transparent_38%),linear-gradient(135deg,#050611_0%,#040812_60%,#05060d_100%)] text-white pb-24 md:pb-12">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_20%,rgba(255,255,255,0.04),transparent_60%)]" />
+    <main className="relative orya-body-bg min-h-screen w-full overflow-hidden text-white pb-24 md:pb-12">
+      <div className="pointer-events-none fixed inset-0" aria-hidden="true">
+        <div className="absolute -top-36 right-[-140px] h-[420px] w-[420px] rounded-full bg-[radial-gradient(circle_at_35%_35%,rgba(255,0,200,0.28),transparent_60%)] opacity-80 blur-3xl" />
+        <div className="absolute top-[22vh] -left-40 h-[360px] w-[360px] rounded-full bg-[radial-gradient(circle_at_30%_30%,rgba(107,255,255,0.22),transparent_60%)] opacity-80 blur-3xl" />
+        <div className="absolute bottom-[-180px] right-[12%] h-[420px] w-[420px] rounded-full bg-[radial-gradient(circle_at_40%_40%,rgba(22,70,245,0.25),transparent_60%)] opacity-70 blur-3xl" />
+        <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.05),transparent_35%,rgba(0,0,0,0.65))] mix-blend-screen" />
+      </div>
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_20%,rgba(255,255,255,0.05),transparent_60%)]" />
 
-      <section className="relative mx-auto flex max-w-5xl flex-col gap-8 px-4 pt-8">
+      <section className="relative mx-auto flex max-w-6xl flex-col gap-10 px-4 pt-10 md:px-8 md:pt-12">
         <div className="flex items-center justify-between">
           <div>
             <p className="text-xs uppercase tracking-[0.24em] text-white/55">Bem-vindo à</p>
@@ -173,18 +179,22 @@ export default async function HomePage() {
           </div>
           <Link
             href="/explorar"
-            className="rounded-full border border-white/15 bg-white/5 px-4 py-2 text-xs font-semibold text-[#6BFFFF] shadow-[0_0_20px_rgba(107,255,255,0.25)] hover:border-white/25 hover:bg-white/10"
+            className="group inline-flex items-center gap-2 rounded-full border border-white/30 bg-white px-4 py-2 text-xs font-semibold text-black shadow-[0_18px_45px_rgba(0,0,0,0.35)] transition hover:shadow-[0_22px_55px_rgba(255,255,255,0.25)]"
           >
-            Explorar →
+            Explorar
+            <span className="text-[10px] opacity-70 transition group-hover:opacity-100">→</span>
           </Link>
         </div>
 
-        <div className="rounded-[28px] border border-white/12 bg-gradient-to-br from-[#0B1229] via-[#0A0E1A] to-[#05060f] shadow-[0_26px_70px_rgba(5,6,16,0.8)] backdrop-blur-3xl">
+        <div className="rounded-[28px] border border-white/15 bg-[linear-gradient(140deg,rgba(255,255,255,0.14),rgba(2,6,16,0.88))] shadow-[0_28px_70px_rgba(0,0,0,0.75)] backdrop-blur-2xl">
           <div className="flex items-center justify-between px-5 py-4">
             <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-white/75">
               Em alta agora
             </h2>
-            <Link href="/explorar" className="text-[11px] text-[#6BFFFF] hover:underline">
+            <Link
+              href="/explorar"
+              className="inline-flex items-center rounded-full border border-white/30 bg-white/10 px-3 py-1 text-[10px] font-semibold text-white/90 backdrop-blur transition hover:border-white/45 hover:bg-white/20"
+            >
               Ver tudo
             </Link>
           </div>
@@ -197,7 +207,7 @@ export default async function HomePage() {
               return (
                 <div
                   key={idx}
-                  className="group relative overflow-hidden rounded-2xl border border-white/12 bg-black/40 shadow-[0_18px_50px_rgba(0,0,0,0.55)] backdrop-blur-2xl"
+                  className="group relative overflow-hidden rounded-2xl border border-white/18 bg-[linear-gradient(160deg,rgba(255,255,255,0.1),rgba(2,6,16,0.9))] shadow-[0_22px_60px_rgba(0,0,0,0.65)] backdrop-blur-2xl"
                 >
                   <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(255,255,255,0.08),transparent_40%)] opacity-50" />
                   <div className="relative h-44 w-full overflow-hidden">
@@ -235,7 +245,7 @@ export default async function HomePage() {
                         </p>
                       </div>
                       {!isEmpty && (
-                        <p className="rounded-full bg-black/70 px-3 py-1 text-[11px] font-semibold text-white border border-white/15">
+                        <p className="rounded-full bg-black/60 px-3 py-1 text-[11px] font-semibold text-white border border-white/20">
                           {formatPriceLabel(card)}
                         </p>
                       )}
@@ -251,12 +261,13 @@ export default async function HomePage() {
                     {!isEmpty ? (
                       <Link
                         href={buildEventLink(card)}
-                        className="relative inline-flex w-full items-center justify-center rounded-xl bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-3 py-2 text-xs font-semibold text-black shadow-[0_0_24px_rgba(107,255,255,0.55)] transition hover:brightness-110"
+                        className="relative inline-flex w-full items-center justify-center overflow-hidden rounded-xl border border-white/30 bg-white px-3 py-2 text-xs font-semibold text-black shadow-[0_18px_45px_rgba(0,0,0,0.35)] transition hover:shadow-[0_20px_55px_rgba(255,255,255,0.25)]"
                       >
-                        Abrir evento
+                        <span className="pointer-events-none absolute inset-0 bg-[linear-gradient(120deg,rgba(255,255,255,0.55),rgba(255,255,255,0.15),rgba(255,255,255,0.35))] opacity-50" />
+                        <span className="relative z-10">Abrir evento</span>
                       </Link>
                     ) : (
-                      <div className="flex w-full items-center justify-center rounded-xl border border-white/12 bg-gradient-to-r from-white/8 via-white/4 to-white/8 px-3 py-2 text-[11px] text-white/75 shadow-[0_0_24px_rgba(255,255,255,0.12)]">
+                      <div className="flex w-full items-center justify-center rounded-xl border border-white/18 bg-[linear-gradient(120deg,rgba(255,255,255,0.16),rgba(255,255,255,0.06))] px-3 py-2 text-[11px] text-white/80 shadow-[0_0_24px_rgba(255,255,255,0.12)] backdrop-blur">
                         Em breve
                       </div>
                     )}
@@ -267,41 +278,53 @@ export default async function HomePage() {
           </div>
         </div>
 
+        <div className="pointer-events-none relative" aria-hidden="true">
+          <div className="relative my-8 md:my-10">
+            <div className="h-px w-full bg-gradient-to-r from-transparent via-white/25 to-transparent" />
+            <div className="absolute inset-0 blur-2xl">
+              <div className="h-px w-full bg-gradient-to-r from-transparent via-[#6BFFFF]/35 to-transparent" />
+            </div>
+          </div>
+        </div>
+
         <div className="grid gap-4 lg:grid-cols-2">
-          <section className="space-y-3 rounded-3xl border border-white/10 bg-gradient-to-br from-white/6 via-[#0d1426]/70 to-[#0b0f1d] p-5 shadow-[0_16px_50px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
+          <section className="space-y-3 rounded-3xl border border-white/15 bg-[linear-gradient(140deg,rgba(255,255,255,0.12),rgba(2,6,16,0.88))] p-5 shadow-[0_24px_60px_rgba(0,0,0,0.65)] backdrop-blur-2xl">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-semibold text-white">Os teus eventos</h2>
-              <Link href="/explorar" className="text-[11px] text-[#6BFFFF] hover:underline">
+              <Link
+                href="/explorar"
+                className="inline-flex items-center rounded-full border border-white/30 bg-white/10 px-3 py-1 text-[10px] font-semibold text-white/90 backdrop-blur transition hover:border-white/45 hover:bg-white/20"
+              >
                 Ver mais
               </Link>
             </div>
-            <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4 text-sm text-white/75">
+            <div className="rounded-2xl border border-white/15 bg-black/45 px-4 py-4 text-sm text-white/85">
               Ainda não tens eventos. Explora e junta-te a um evento para aparecer aqui.
             </div>
           </section>
 
-          <section className="space-y-3 rounded-3xl border border-white/10 bg-gradient-to-br from-white/6 via-[#0d1426]/70 to-[#0b0f1d] p-5 shadow-[0_16px_50px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
+          <section className="space-y-3 rounded-3xl border border-white/15 bg-[linear-gradient(140deg,rgba(255,255,255,0.12),rgba(2,6,16,0.88))] p-5 shadow-[0_24px_60px_rgba(0,0,0,0.65)] backdrop-blur-2xl">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-semibold text-white">Sugestões personalizadas</h2>
             </div>
-            <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4 text-sm text-white/75">
+            <div className="rounded-2xl border border-white/15 bg-black/45 px-4 py-4 text-sm text-white/85">
               Ainda estamos a conhecer-te. À medida que usares a ORYA, as sugestões vão aparecer aqui.
             </div>
           </section>
         </div>
 
-        <section className="space-y-3 rounded-3xl border border-white/10 bg-gradient-to-br from-white/4 via-[#0c0f1c] to-[#0a0a15] p-5 shadow-[0_16px_50px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
+        <section className="space-y-3 rounded-3xl border border-white/15 bg-[linear-gradient(140deg,rgba(255,255,255,0.12),rgba(2,6,16,0.88))] p-5 shadow-[0_24px_60px_rgba(0,0,0,0.65)] backdrop-blur-2xl">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-white">Oportunidades perto de ti agora</h2>
           </div>
-          <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4 text-sm text-white/75">
+          <div className="rounded-2xl border border-white/15 bg-black/45 px-4 py-4 text-sm text-white/85">
             Sem oportunidades perto de ti neste momento. Vais ser o primeiro a saber quando surgir algo porreiro.
           </div>
         </section>
 
-        <section className="space-y-2 rounded-3xl border border-white/10 bg-gradient-to-br from-white/4 via-[#0c0f1c] to-[#0a0a15] p-5 shadow-[0_16px_50px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
+        <section className="space-y-2 rounded-3xl border border-white/15 bg-[linear-gradient(140deg,rgba(255,255,255,0.12),rgba(2,6,16,0.88))] p-5 shadow-[0_24px_60px_rgba(0,0,0,0.65)] backdrop-blur-2xl">
           <h2 className="text-sm font-semibold text-white">Amigos vão a…</h2>
-          <p className="text-sm text-white/75">
+          <p className="text-sm text-white/80">
             Quando os teus amigos começarem a ir a eventos, vais ver aqui onde eles vão.
           </p>
         </section>

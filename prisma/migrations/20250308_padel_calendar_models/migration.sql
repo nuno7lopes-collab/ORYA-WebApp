@@ -1,5 +1,8 @@
 -- Padel calendar: court blocks and player availabilities
 
+-- Ensure citext extension exists (needed for player_email)
+CREATE EXTENSION IF NOT EXISTS citext;
+
 CREATE TABLE IF NOT EXISTS "app_v3"."padel_court_blocks" (
     "id" SERIAL PRIMARY KEY,
     "organizer_id" INTEGER NOT NULL,
@@ -21,7 +24,7 @@ CREATE TABLE IF NOT EXISTS "app_v3"."padel_availabilities" (
     "event_id" INTEGER NOT NULL,
     "player_profile_id" INTEGER,
     "player_name" TEXT,
-    "player_email" CITEXT,
+    "player_email" TEXT,
     "start_at" TIMESTAMPTZ(6) NOT NULL,
     "end_at" TIMESTAMPTZ(6) NOT NULL,
     "note" TEXT,
@@ -57,4 +60,3 @@ ALTER TABLE "app_v3"."padel_availabilities"
   ADD CONSTRAINT "padel_availabilities_profile_fk" FOREIGN KEY ("player_profile_id") REFERENCES "app_v3"."padel_player_profiles"("id") ON DELETE SET NULL ON UPDATE NO ACTION;
 
 -- Update updated_at triggers if needed (left to database triggers if present)
-

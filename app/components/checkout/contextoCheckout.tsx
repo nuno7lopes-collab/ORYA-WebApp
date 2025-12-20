@@ -10,6 +10,9 @@ export type DadosCheckout = {
   ticketName: string | null;
   eventId: string | null;
   userId: string | null;
+  pairingId?: number | null;
+  pairingSlotId?: number | null;
+  ticketTypeId?: number | null;
   waves?: unknown[];
   additional?: Record<string, unknown>;
   paymentScenario?: string | null;
@@ -27,6 +30,9 @@ export type CheckoutBreakdown = {
   subtotalCents: number;
   feeMode: string | null;
   platformFeeCents: number;
+  platformFeeCombinedCents?: number;
+  platformFeeOryaCents?: number;
+  stripeFeeEstimateCents?: number;
   totalCents: number;
   currency: string;
   discountCents?: number;
@@ -48,6 +54,10 @@ type CheckoutContextType = {
     eventId?: string | null;
     userId?: string | null;
     waves?: unknown[];
+    additional?: Record<string, unknown>;
+    pairingId?: number | null;
+    pairingSlotId?: number | null;
+    ticketTypeId?: number | null;
   }) => void;
   fecharCheckout: () => void;
   irParaPasso: (passo: 1 | 2 | 3) => void;
@@ -75,6 +85,10 @@ export function CheckoutProvider({ children }: { children: React.ReactNode }) {
       eventId = null,
       userId = null,
       waves,
+      additional,
+      pairingId = null,
+      pairingSlotId = null,
+      ticketTypeId = null,
     }: {
       slug: string;
       ticketId: string;
@@ -84,6 +98,10 @@ export function CheckoutProvider({ children }: { children: React.ReactNode }) {
       eventId?: string | null;
       userId?: string | null;
       waves?: unknown[];
+      additional?: Record<string, unknown>;
+      pairingId?: number | null;
+      pairingSlotId?: number | null;
+      ticketTypeId?: number | null;
     }) => {
       setDados((prev) => {
         const safeWaves =
@@ -92,6 +110,10 @@ export function CheckoutProvider({ children }: { children: React.ReactNode }) {
             : prev?.waves && Array.isArray(prev.waves)
             ? prev.waves
             : [];
+        const safeAdditional =
+          additional && typeof additional === "object"
+            ? additional
+            : prev?.additional ?? {};
 
         return {
           slug,
@@ -102,7 +124,10 @@ export function CheckoutProvider({ children }: { children: React.ReactNode }) {
           eventId,
           userId,
           waves: safeWaves,
-          additional: prev?.additional ?? {},
+          pairingId,
+          pairingSlotId,
+          ticketTypeId,
+          additional: safeAdditional,
         };
       });
 

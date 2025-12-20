@@ -10,6 +10,7 @@ type Props = {
   categoryId?: number | null;
   padelV2Enabled: boolean;
   templateType?: string | null;
+  slug: string;
 };
 
 export default function PadelSignupInline({
@@ -19,6 +20,7 @@ export default function PadelSignupInline({
   categoryId,
   padelV2Enabled,
   templateType,
+  slug,
 }: Props) {
   const router = useRouter();
   const [loadingFull, setLoadingFull] = useState(false);

@@ -141,10 +141,11 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
   const paymentsStatus = isPlatformPayout ? "READY" : paymentsStatusRaw;
   const hasPaidTicket = useMemo(
     () =>
-      ticketList.some((t) => t.price > 0 && t.status !== TicketTypeStatus.CANCELLED) ||
+      ticketList.some((t) => t.price > 0 && t.status !== TicketTypeStatus.CLOSED) ||
       (newTicket.priceEuro && Number(newTicket.priceEuro.replace(",", ".")) > 0),
     [ticketList, newTicket.priceEuro],
   );
+  const templateLabel = templateType === "PADEL" ? "Padel" : "Evento padrão";
   const FormAlert = ({
     variant,
     title,
@@ -587,15 +588,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
         <div className="space-y-1">
           <label className="text-sm font-medium">Template</label>
           <div className="rounded-md border border-white/15 bg-black/20 px-3 py-2 text-sm text-white/80">
-            {templateType === "PARTY"
-              ? "Festa"
-              : templateType === "SPORT"
-                ? "Desporto"
-                : templateType === "VOLUNTEERING"
-                  ? "Voluntariado"
-                  : templateType === "TALK"
-                    ? "Palestra / Talk"
-                    : "Outro"}
+            {templateLabel}
           </div>
           <p className="text-[11px] text-white/55">O template não pode ser alterado depois de criar o evento.</p>
         </div>
@@ -862,7 +855,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
             </div>
             <div className="text-right text-[12px] text-white/60">
               <p>Estado: {isFree ? "Grátis" : "Pago"}</p>
-              <p>Template: {templateType}</p>
+              <p>Template: {templateLabel}</p>
             </div>
           </div>
 

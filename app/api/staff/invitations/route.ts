@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { ensureAuthenticated } from "@/lib/security";
+import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 
 export async function GET() {
   try {
@@ -45,6 +45,9 @@ export async function GET() {
 
     return NextResponse.json({ ok: true, invitations: payload }, { status: 200 });
   } catch (err) {
+    if (isUnauthenticatedError(err)) {
+      return NextResponse.json({ ok: false, error: "Não autenticado." }, { status: 401 });
+    }
     console.error("[staff/invitations] error:", err);
     return NextResponse.json({ ok: false, error: "Erro interno." }, { status: 500 });
   }

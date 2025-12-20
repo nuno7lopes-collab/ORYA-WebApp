@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { PaymentEventSource, PadelPairingPaymentStatus, PadelPairingSlotStatus, PadelPaymentMode } from "@prisma/client";
+import { PaymentEventSource, PadelPairingPaymentStatus, PadelPairingSlotStatus, PadelPaymentMode, EntitlementType, EntitlementStatus } from "@prisma/client";
 import crypto from "crypto";
 
 type IntentLike = {
@@ -32,6 +32,18 @@ export async function fulfillPadelFullIntent(intent: IntentLike): Promise<boolea
   if (!ticketType || ticketType.eventId !== eventId) {
     return false;
   }
+  const event = await prisma.event.findUnique({
+    where: { id: eventId },
+    select: {
+      id: true,
+      title: true,
+      coverImageUrl: true,
+      locationName: true,
+      startsAt: true,
+      timezone: true,
+    },
+  });
+  if (!event) return false;
 
   const qr1 = crypto.randomUUID();
   const qr2 = crypto.randomUUID();
@@ -94,6 +106,100 @@ export async function fulfillPadelFullIntent(intent: IntentLike): Promise<boolea
     await tx.ticketType.update({
       where: { id: ticketTypeId },
       data: { soldQuantity: ticketType.soldQuantity + 2 },
+    });
+
+    // SaleSummary / SaleLine + Entitlements (2 lugares)
+    const saleSummary =
+      (purchaseId
+        ? await tx.saleSummary.findUnique({ where: { purchaseId } })
+        : null) ||
+      (await tx.saleSummary.findUnique({ where: { paymentIntentId: intent.id } }));
+
+    const summaryData = {
+      eventId,
+      userId: userId ?? null,
+      ownerUserId: userId ?? null,
+      ownerIdentityId: null,
+      purchaseId: purchaseId ?? intent.id,
+      subtotalCents: ticketType.price * 2,
+      discountCents: 0,
+      platformFeeCents: 0,
+      stripeFeeCents: 0,
+      totalCents: intent.amount ?? ticketType.price * 2,
+      netCents: intent.amount ?? ticketType.price * 2,
+      feeMode: null as any,
+      currency: (ticketType.currency || intent.currency || "EUR").toUpperCase(),
+      status: "PAID" as const,
+    };
+
+    const sale = saleSummary
+      ? await tx.saleSummary.update({
+          where: { id: saleSummary.id },
+          data: { ...summaryData, paymentIntentId: intent.id },
+        })
+      : await tx.saleSummary.create({
+          data: { ...summaryData, paymentIntentId: intent.id },
+        });
+
+    await tx.saleLine.deleteMany({ where: { saleSummaryId: sale.id } });
+    const saleLine = await tx.saleLine.create({
+      data: {
+        saleSummaryId: sale.id,
+        eventId,
+        ticketTypeId: ticketType.id,
+        promoCodeId: null,
+        quantity: 2,
+        unitPriceCents: ticketType.price,
+        discountPerUnitCents: 0,
+        grossCents: intent.amount ?? ticketType.price * 2,
+        netCents: intent.amount ?? ticketType.price * 2,
+        platformFeeCents: 0,
+      },
+    });
+
+    const ownerKey = userId ? `user:${userId}` : "unknown";
+    const entitlementBase = {
+      purchaseId: sale.purchaseId,
+      saleLineId: saleLine.id,
+      ownerKey,
+      ownerUserId: userId ?? null,
+      ownerIdentityId: null,
+      type: EntitlementType.PADEL_ENTRY,
+      status: EntitlementStatus.ACTIVE,
+      eventId,
+      snapshotTitle: event.title,
+      snapshotCoverUrl: event.coverImageUrl,
+      snapshotVenueName: event.locationName,
+      snapshotStartAt: event.startsAt,
+      snapshotTimezone: event.timezone,
+    };
+
+    await tx.entitlement.upsert({
+      where: {
+        purchaseId_saleLineId_lineItemIndex_ownerKey_type: {
+          purchaseId: sale.purchaseId,
+          saleLineId: saleLine.id,
+          lineItemIndex: 0,
+          ownerKey,
+          type: EntitlementType.PADEL_ENTRY,
+        },
+      },
+      update: entitlementBase,
+      create: { ...entitlementBase, lineItemIndex: 0 },
+    });
+
+    await tx.entitlement.upsert({
+      where: {
+        purchaseId_saleLineId_lineItemIndex_ownerKey_type: {
+          purchaseId: sale.purchaseId,
+          saleLineId: saleLine.id,
+          lineItemIndex: 1,
+          ownerKey,
+          type: EntitlementType.PADEL_ENTRY,
+        },
+      },
+      update: entitlementBase,
+      create: { ...entitlementBase, lineItemIndex: 1 },
     });
 
     await tx.padelPairing.update({

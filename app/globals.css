@@ -8,7 +8,11 @@
   --orya-pink: #ff00c8;
   --orya-cyan: #6bffff;
   --orya-blue: #1646f5;
-  --orya-purple: #7300ff;
+  --orya-purple: #9c72ff;
+
+  --accent-primary: var(--orya-cyan);
+  --accent-secondary: var(--orya-purple);
+  --accent-glow: 0 0 24px rgba(107, 255, 255, 0.24), 0 0 14px rgba(22, 70, 245, 0.16);
 
   --glass-bg: rgba(255, 255, 255, 0.06);
   --glass-border: rgba(255, 255, 255, 0.1);
@@ -207,11 +211,13 @@ body:not([data-nav-hidden="true"]) .main-shell {
   min-height: 100vh;
   color: #f9fafb;
   background-color: #050814;
-  /* Camadas grandes e suaves, pensadas para o hero + scroll */
+  /* Camadas grandes e suaves, pensadas para o hero + scroll (ORYA Default) */
   background-image:
     radial-gradient(1200px 800px at 50% -200px, rgba(107, 255, 255, 0.18), transparent 60%),
-    radial-gradient(900px 700px at -220px 45%, rgba(255, 0, 200, 0.22), transparent 65%),
-    radial-gradient(1000px 750px at 115% 65%, rgba(22, 70, 245, 0.25), transparent 70%),
+    radial-gradient(900px 700px at -220px 45%, rgba(156, 114, 255, 0.22), transparent 65%),
+    radial-gradient(980px 720px at 18% 68%, rgba(255, 198, 140, 0.06), transparent 68%),
+    radial-gradient(1000px 750px at 115% 65%, rgba(22, 70, 245, 0.22), transparent 70%),
+    radial-gradient(1100px 820px at 52% 82%, rgba(122, 255, 214, 0.08), transparent 72%),
     linear-gradient(180deg, #050814 0%, #05040f 45%, #020308 100%);
   background-attachment: fixed;
   background-repeat: no-repeat;

@@ -2,7 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { ensureAuthenticated } from "@/lib/security";
+import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { getActiveOrganizerForUser } from "@/lib/organizerContext";
 import { isOrgAdminOrAbove } from "@/lib/organizerPermissions";
 
@@ -68,6 +68,9 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true }, { status: 200 });
   } catch (err) {
+    if (isUnauthenticatedError(err)) {
+      return NextResponse.json({ ok: false, error: "Não autenticado." }, { status: 401 });
+    }
     console.error("POST /api/organizador/staff/revoke error:", err);
     return NextResponse.json(
       { ok: false, error: "Erro interno ao revogar staff." },

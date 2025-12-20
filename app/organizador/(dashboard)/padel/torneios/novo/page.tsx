@@ -334,7 +334,7 @@ export default function PadelWizardSimple() {
         address: (address || selectedClub?.address || "").trim() || null,
         coverImageUrl: coverUrl,
         templateType: "PADEL",
-        categories: ["DESPORTO"],
+        categories: ["PADEL"],
         feeMode: "ON_TOP",
         publicListingEnabled: listed,
         visibility,

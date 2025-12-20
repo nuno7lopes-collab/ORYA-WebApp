@@ -23,30 +23,16 @@ const CATEGORY_CARDS = [
   {
     key: "padel",
     title: "Torneios de Padel",
-    desc: "Quadros, equipas, rankings. Em breve UI dedicada.",
-    template: "SPORT",
+    desc: "Quadros, equipas, rankings. UI dedicada a padel.",
+    template: "PADEL",
     preset: "padel",
   },
   {
-    key: "restaurantes",
-    title: "Restaurantes & Jantares",
-    desc: "Menus fixos, reservas por slot, grupos.",
-    template: "COMIDA",
-    preset: "restaurante",
-  },
-  {
-    key: "solidario",
-    title: "Solidário / Voluntariado",
-    desc: "Angariação de fundos e inscrições de voluntários.",
-    template: "VOLUNTEERING",
-    preset: "solidario",
-  },
-  {
-    key: "festas",
-    title: "Festas & Noite",
-    desc: "Guest lists, packs e consumo mínimo.",
-    template: "PARTY",
-    preset: "party",
+    key: "default",
+    title: "Evento padrão",
+    desc: "Fluxo base para qualquer evento simples.",
+    template: "OTHER",
+    preset: "default",
   },
 ];
 

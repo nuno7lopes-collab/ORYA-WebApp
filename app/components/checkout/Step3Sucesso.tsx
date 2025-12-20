@@ -138,14 +138,21 @@ export default function Step3Sucesso() {
         ? checkoutBreakdown.discountCents
         : numberFromUnknown(add.discountCents) ?? 0;
 
-    const platformFeeCentsRaw =
-      typeof checkoutBreakdown?.platformFeeCents === "number"
-        ? checkoutBreakdown.platformFeeCents
-        : numberFromUnknown(add.platformFeeCents) ?? 0;
+    const platformFeeOryaCents =
+      typeof (checkoutBreakdown as any)?.platformFeeOryaCents === "number"
+        ? (checkoutBreakdown as any).platformFeeOryaCents
+        : numberFromUnknown((add as any).platformFeeOryaCents) ??
+          numberFromUnknown(add.platformFeeCents) ??
+          0;
+
+    const platformFeeCombinedCents =
+      typeof (checkoutBreakdown as any)?.platformFeeCombinedCents === "number"
+        ? (checkoutBreakdown as any).platformFeeCombinedCents
+        : numberFromUnknown(add.platformFeeCents) ?? platformFeeOryaCents;
 
     // Só mostrar/contabilizar taxa se o modo for ADDED (pago pelo comprador).
     const payorPaysFee = feeMode === "ADDED" || feeMode === "ON_TOP";
-    const platformFeeCents = payorPaysFee ? platformFeeCentsRaw : 0;
+    const platformFeeCents = payorPaysFee ? platformFeeCombinedCents : 0;
 
     const totalCentsFromContext =
       typeof checkoutBreakdown?.totalCents === "number" ? checkoutBreakdown.totalCents : null;
@@ -194,7 +201,9 @@ export default function Step3Sucesso() {
   })();
   const subtotalEur = breakdown ? breakdown.subtotalCents / 100 : null;
   const discountEur = breakdown ? breakdown.discountCents / 100 : null;
-  const platformFeeEur = breakdown ? breakdown.platformFeeCents / 100 : null;
+  const platformFeeEur = breakdown
+    ? ((breakdown as any).platformFeeCombinedCents ?? breakdown.platformFeeCents) / 100
+    : null;
   const totalEur = breakdown ? breakdown.totalCents / 100 : null;
 
   const initialStatus: "PROCESSING" | "PAID" | "FAILED" =
@@ -280,7 +289,15 @@ export default function Step3Sucesso() {
   }
 
   return (
-    <div className="flex flex-col items-center text-center gap-8 py-6 px-4 text-white">
+    <div className="flex flex-col items-center text-center gap-6 py-6 px-4 text-white">
+      <div className="w-full">
+        <p className="text-[11px] uppercase tracking-[0.18em] text-white/55">
+          Passo 3 de 3
+        </p>
+        <div className="mt-2 h-1 w-full rounded-full bg-white/10 overflow-hidden shadow-[0_6px_20px_rgba(0,0,0,0.35)]">
+          <div className="h-full w-full rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5]" />
+        </div>
+      </div>
 
       {/* Título */}
       <div className="space-y-1">
@@ -309,7 +326,7 @@ export default function Step3Sucesso() {
       </div>
 
       {/* Card principal estilo Apple Wallet */}
-      <div className="w-full rounded-3xl bg-white/[0.03] backdrop-blur-xl border border-white/10 px-6 py-8 shadow-[0_0_40px_rgba(0,0,0,0.45)] space-y-6">
+      <div className="w-full rounded-3xl bg-white/[0.05] backdrop-blur-2xl border border-white/12 px-6 py-8 shadow-[0_20px_60px_rgba(0,0,0,0.55)] space-y-6">
 
         {/* Evento */}
         <div className="space-y-1">
@@ -337,7 +354,7 @@ export default function Step3Sucesso() {
                 <span className="text-emerald-300">-{formatMoney(discountEur)}</span>
               </div>
             )}
-            {breakdown.platformFeeCents > 0 && (
+            {(((breakdown as any).platformFeeCombinedCents ?? breakdown.platformFeeCents) ?? 0) > 0 && (
               <div className="flex items-center justify-between">
                 <span className="text-white/60">Taxa da plataforma</span>
                 <span className="text-orange-200">{formatMoney(platformFeeEur)}</span>
@@ -369,7 +386,7 @@ export default function Step3Sucesso() {
         {status === "PAID" ? (
           <button
             onClick={() => (guestEmail ? router.push("/login") : router.push("/me"))}
-            className="w-full rounded-full bg-white text-black py-3 text-sm font-semibold shadow-[0_0_25px_rgba(255,255,255,0.35)] hover:scale-[1.03] active:scale-95 transition-transform"
+            className="w-full rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] text-black py-3 text-sm font-semibold shadow-[0_0_30px_rgba(107,255,255,0.55)] hover:scale-[1.03] active:scale-95 transition-transform"
           >
             {guestEmail ? "Criar conta e ligar bilhetes" : "Ver os teus bilhetes"}
           </button>
@@ -378,7 +395,7 @@ export default function Step3Sucesso() {
             Pagamento não confirmado. Verifica o método de pagamento ou tenta novamente.
           </div>
         ) : (
-          <div className="w-full rounded-full bg-white/10 text-white text-sm font-semibold py-3 text-center">
+          <div className="w-full rounded-full border border-white/15 bg-white/10 text-white text-sm font-semibold py-3 text-center">
             A confirmar…
           </div>
         )}
@@ -387,7 +404,7 @@ export default function Step3Sucesso() {
       {/* Fechar */}
       <button
         onClick={fecharCheckout}
-        className="w-full rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] text-black font-semibold py-2.5 text-sm shadow-[0_0_25px_rgba(107,255,255,0.45)] hover:scale-[1.02] active:scale-95 transition-transform"
+        className="w-full rounded-full border border-white/15 bg-white/10 text-white font-semibold py-2.5 text-sm shadow-[0_14px_30px_rgba(0,0,0,0.45)] hover:bg-white/20 hover:scale-[1.02] active:scale-95 transition"
       >
         Fechar
       </button>

@@ -137,7 +137,7 @@ export default function MePage() {
       />
 
       {/* STATUS */}
-      <section className="rounded-3xl border border-white/12 bg-gradient-to-r from-white/6 via-[#0f1424]/35 to-white/6 p-5 shadow-[0_24px_70px_rgba(0,0,0,0.55)] backdrop-blur-3xl">
+      <section className="rounded-3xl border border-white/15 bg-white/5 p-5 shadow-[0_24px_70px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <div className="rounded-2xl border border-white/14 bg-gradient-to-br from-white/10 via-[#0b1224]/75 to-[#0a0f1d] p-4 shadow-[0_18px_40px_rgba(0,0,0,0.55)] transition-transform duration-150 hover:-translate-y-[3px] hover:shadow-[0_22px_50px_rgba(0,0,0,0.65)] relative overflow-hidden">
             <div className="pointer-events-none absolute inset-0 rounded-2xl border border-white/10 mix-blend-screen" />
@@ -174,7 +174,7 @@ export default function MePage() {
       </section>
 
       {/* CARTEIRA */}
-      <section className="rounded-3xl border border-[#6BFFFF]/22 bg-gradient-to-br from-[#030816f2] via-[#050a18] to-[#05060f] backdrop-blur-2xl p-5 space-y-4 shadow-[0_26px_78px_rgba(5,6,16,0.62)] min-h-[320px] relative overflow-hidden">
+      <section className="rounded-3xl border border-white/15 bg-white/5 backdrop-blur-2xl p-5 space-y-4 shadow-[0_26px_78px_rgba(5,6,16,0.62)] min-h-[320px] relative overflow-hidden">
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_15%_20%,rgba(255,255,255,0.04),transparent_38%),radial-gradient(circle_at_85%_18%,rgba(255,255,255,0.03),transparent_34%),radial-gradient(circle_at_50%_85%,rgba(255,255,255,0.03),transparent_40%)]" />
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div>
@@ -185,7 +185,7 @@ export default function MePage() {
           </div>
           <Link
             href="/me/carteira"
-            className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/8 text-white text-[11px] font-semibold px-4 py-1.5 shadow-[0_10px_26px_rgba(255,255,255,0.15)] hover:scale-[1.02] active:scale-95 transition-transform backdrop-blur"
+            className="inline-flex items-center gap-2 rounded-full border border-white/30 bg-white/10 text-white text-[11px] font-semibold px-4 py-1.5 shadow-[0_10px_26px_rgba(255,255,255,0.15)] hover:border-white/45 hover:bg-white/20 hover:scale-[1.02] active:scale-95 transition-transform backdrop-blur"
           >
             Ver carteira
             <span className="text-[12px]">↗</span>
@@ -194,8 +194,8 @@ export default function MePage() {
 
         {ticketsLoading && (
           <div className="space-y-2">
-            <div className="h-24 rounded-xl bg-white/5 border border-white/10 animate-pulse" />
-            <div className="h-24 rounded-xl bg-white/5 border border-white/10 animate-pulse" />
+            <div className="h-24 rounded-xl bg-white/5 border border-white/15 animate-pulse" />
+            <div className="h-24 rounded-xl bg-white/5 border border-white/15 animate-pulse" />
           </div>
         )}
 
@@ -231,7 +231,7 @@ export default function MePage() {
         )}
 
         {!ticketsLoading && !ticketsError && tickets.length === 0 && (
-          <div className="rounded-3xl border border-white/14 bg-white/4 backdrop-blur-2xl p-10 text-center flex flex-col items-center gap-5 shadow-[0_32px_90px_rgba(5,6,16,0.82)] relative overflow-hidden">
+          <div className="rounded-3xl border border-white/15 bg-white/5 backdrop-blur-2xl p-10 text-center flex flex-col items-center gap-5 shadow-[0_32px_90px_rgba(5,6,16,0.82)] relative overflow-hidden">
             <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_18%_18%,rgba(255,255,255,0.06),transparent_42%),radial-gradient(circle_at_82%_12%,rgba(255,255,255,0.05),transparent_40%),radial-gradient(circle_at_50%_90%,rgba(255,255,255,0.05),transparent_45%)]" />
             <div className="relative h-20 w-20">
               <div className="absolute inset-0 rounded-2xl bg-white/12 blur-2xl" />
@@ -254,7 +254,7 @@ export default function MePage() {
               </Link>
               <Link
                 href="/me/carteira"
-                className="inline-flex mt-2 px-4 py-2.5 rounded-full border border-white/28 bg-white/5 text-xs font-semibold text-white hover:bg-white/10 shadow-[0_0_16px_rgba(255,255,255,0.1)]"
+                className="inline-flex mt-2 px-4 py-2.5 rounded-full border border-white/30 bg-white/10 text-xs font-semibold text-white hover:border-white/45 hover:bg-white/20 shadow-[0_0_16px_rgba(255,255,255,0.1)]"
               >
                 Ver carteira
               </Link>
@@ -281,7 +281,7 @@ export default function MePage() {
   if (redirectingToProfile) {
     content = (
       <div className="flex min-h-[50vh] items-center justify-center px-4">
-        <div className="rounded-3xl border border-white/12 bg-white/5 px-6 py-4 text-sm text-white/80 shadow-[0_18px_60px_rgba(0,0,0,0.55)] backdrop-blur-xl">
+        <div className="rounded-3xl border border-white/15 bg-white/5 px-6 py-4 text-sm text-white/80 shadow-[0_18px_60px_rgba(0,0,0,0.55)] backdrop-blur-xl">
           A redirecionar para @{profile?.username}…
         </div>
       </div>
@@ -289,7 +289,7 @@ export default function MePage() {
   } else if (needsUsername) {
     content = (
       <div className="flex min-h-[60vh] items-center justify-center px-4">
-        <div className="max-w-lg w-full rounded-3xl border border-white/12 bg-white/5 p-6 shadow-[0_18px_60px_rgba(0,0,0,0.55)] backdrop-blur-xl space-y-3 text-center">
+        <div className="max-w-lg w-full rounded-3xl border border-white/15 bg-white/5 p-6 shadow-[0_18px_60px_rgba(0,0,0,0.55)] backdrop-blur-xl space-y-3 text-center">
           <h1 className="text-xl font-semibold">Escolhe o teu username</h1>
           <p className="text-sm text-white/70">
             Define um @username para poderes ter o teu perfil público. Depois disso, /me passa a
@@ -298,7 +298,7 @@ export default function MePage() {
           <div className="flex justify-center">
             <Link
               href="/onboarding/perfil"
-              className="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-sm font-semibold text-white hover:border-white/30 hover:bg-white/15"
+              className="rounded-full border border-white/30 bg-white/10 px-4 py-2 text-sm font-semibold text-white hover:border-white/45 hover:bg-white/20"
             >
               Definir username
             </Link>
@@ -309,7 +309,7 @@ export default function MePage() {
   } else if (isLoggedOut) {
     content = (
       <div className="flex min-h-[60vh] items-center justify-center px-4">
-        <div className="max-w-lg w-full rounded-3xl border border-white/10 bg-white/[0.02] p-8 shadow-[0_18px_60px_rgba(0,0,0,0.7)] backdrop-blur-xl space-y-4 text-center">
+        <div className="max-w-lg w-full rounded-3xl border border-white/15 bg-white/5 p-8 shadow-[0_24px_60px_rgba(0,0,0,0.7)] backdrop-blur-2xl space-y-4 text-center">
           <h1 className="text-2xl font-semibold">Entra para veres a tua conta</h1>
           <p className="text-sm text-white/70">
             Autentica-te para veres a tua carteira, histórico e bilhetes. O QR e ações só aparecem depois de iniciares sessão.
@@ -317,13 +317,13 @@ export default function MePage() {
           <div className="flex flex-col sm:flex-row justify-center gap-3">
             <Link
               href="/login?redirectTo=/me"
-              className="px-4 py-2.5 rounded-xl bg-white text-black text-sm font-semibold shadow-[0_0_22px_rgba(255,255,255,0.4)]"
+              className="px-4 py-2.5 rounded-xl bg-white text-black text-sm font-semibold shadow-[0_18px_45px_rgba(0,0,0,0.35)] transition hover:shadow-[0_22px_55px_rgba(255,255,255,0.25)]"
             >
               Entrar
             </Link>
             <Link
               href="/login?mode=signup&redirectTo=/me"
-              className="px-4 py-2.5 rounded-xl border border-white/25 text-sm font-semibold text-white hover:bg-white/10"
+              className="px-4 py-2.5 rounded-xl border border-white/30 bg-white/10 text-sm font-semibold text-white hover:border-white/45 hover:bg-white/20"
             >
               Criar conta
             </Link>
@@ -334,7 +334,14 @@ export default function MePage() {
   }
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_12%_18%,rgba(255,0,200,0.06),transparent_38%),radial-gradient(circle_at_88%_12%,rgba(107,255,255,0.06),transparent_32%),radial-gradient(circle_at_42%_78%,rgba(22,70,245,0.06),transparent_38%),linear-gradient(135deg,#050611_0%,#040812_60%,#05060f_100%)] text-white">
+    <main className="relative orya-body-bg min-h-screen w-full overflow-hidden text-white">
+      <div className="pointer-events-none fixed inset-0" aria-hidden="true">
+        <div className="absolute -top-36 right-[-140px] h-[420px] w-[420px] rounded-full bg-[radial-gradient(circle_at_35%_35%,rgba(255,0,200,0.28),transparent_60%)] opacity-80 blur-3xl" />
+        <div className="absolute top-[22vh] -left-40 h-[360px] w-[360px] rounded-full bg-[radial-gradient(circle_at_30%_30%,rgba(107,255,255,0.22),transparent_60%)] opacity-80 blur-3xl" />
+        <div className="absolute bottom-[-180px] right-[12%] h-[420px] w-[420px] rounded-full bg-[radial-gradient(circle_at_40%_40%,rgba(22,70,245,0.25),transparent_60%)] opacity-70 blur-3xl" />
+        <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.05),transparent_35%,rgba(0,0,0,0.65))] mix-blend-screen" />
+      </div>
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_20%,rgba(255,255,255,0.05),transparent_60%)]" />
       {content}
     </main>
   );

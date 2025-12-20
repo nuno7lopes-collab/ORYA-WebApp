@@ -147,12 +147,14 @@ export default function InvoicesClient() {
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6 space-y-6 text-white">
-      <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-[#0b1021] via-[#0d1530] to-[#0f1c3d] p-5 shadow-[0_24px_80px_rgba(0,0,0,0.55)]">
+      <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/10 via-[#0d1530]/75 to-[#050912]/90 p-5 shadow-[0_28px_90px_rgba(0,0,0,0.6)] backdrop-blur-3xl">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div className="space-y-1">
-            <p className="text-[11px] uppercase tracking-[0.3em] text-white/60">Faturação</p>
-            <h1 className="text-3xl font-semibold">Resumo de vendas</h1>
-            <p className="text-sm text-white/65">Bruto, taxas (Stripe + ORYA) e líquido por evento. Exporta CSV quando precisares.</p>
+          <div className="space-y-2">
+            <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] uppercase tracking-[0.24em] text-white/80 shadow-[0_10px_30px_rgba(0,0,0,0.4)]">
+              Faturação premium
+            </div>
+            <h1 className="text-3xl font-semibold drop-shadow-[0_12px_40px_rgba(0,0,0,0.55)]">Receitas, taxas e liquidez.</h1>
+            <p className="text-sm text-white/70">Bruto, descontos, Stripe/ORYA e líquido por evento. Exporta tudo em CSV num clique.</p>
           </div>
           <div className="flex flex-wrap items-center gap-2 text-[12px]">
             {[
@@ -178,8 +180,8 @@ export default function InvoicesClient() {
                 }
                 className={`rounded-full px-3 py-1.5 transition ${
                   preset.key !== "all" && from && to
-                    ? "bg-gradient-to-r from-[#FF00C8]/20 via-[#6BFFFF]/15 to-[#1646F5]/20 text-white shadow-[0_0_12px_rgba(107,255,255,0.25)]"
-                    : "border border-white/20 text-white/75 hover:bg-white/5"
+                    ? "bg-gradient-to-r from-[#FF00C8]/25 via-[#6BFFFF]/20 to-[#1646F5]/25 text-white shadow-[0_0_14px_rgba(107,255,255,0.35)]"
+                    : "border border-white/20 text-white/75 hover:bg-white/10"
                 }`}
               >
                 {preset.label}
@@ -189,18 +191,18 @@ export default function InvoicesClient() {
               type="date"
               value={from}
               onChange={(e) => handleDateChange("from", e.target.value)}
-              className="rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
+              className="rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]/50"
             />
             <input
               type="date"
               value={to}
               onChange={(e) => handleDateChange("to", e.target.value)}
-              className="rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
+              className="rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]/50"
             />
             <button
               type="button"
               onClick={downloadCsv}
-              className="rounded-full border border-white/20 bg-white/5 px-4 py-2 text-sm text-white shadow hover:bg-white/10 disabled:opacity-50"
+              className="rounded-full border border-white/30 bg-gradient-to-r from-white/20 via-white/10 to-white/5 px-4 py-2 text-sm font-semibold text-white shadow-[0_10px_30px_rgba(0,0,0,0.35)] transition hover:scale-[1.01] hover:bg-white/20 disabled:opacity-50"
               disabled={!items.length}
             >
               Exportar CSV
@@ -221,10 +223,10 @@ export default function InvoicesClient() {
             <SummaryCard label="Bilhetes" value={`${totalTickets}`} tone="slate" helper="Total no intervalo." />
           </div>
 
-          <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-white/5 via-black/40 to-[#0a1327] p-4 shadow-[0_18px_60px_rgba(0,0,0,0.6)] overflow-x-auto">
-            <table className="min-w-full text-sm text-white/80">
-              <thead className="text-left text-[11px] uppercase tracking-[0.16em] text-white/60">
-                <tr>
+          <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/75 to-[#050810]/92 p-4 shadow-[0_22px_70px_rgba(0,0,0,0.6)] overflow-x-auto backdrop-blur-2xl">
+            <table className="min-w-full text-sm text-white/85">
+              <thead className="text-left text-[11px] uppercase tracking-[0.18em] text-white/60">
+                <tr className="border-b border-white/10">
                   <th className="py-2 pr-3">Evento</th>
                   <th className="py-2 pr-3">Data</th>
                   <th className="py-2 pr-3">Bilhetes</th>
@@ -249,9 +251,9 @@ export default function InvoicesClient() {
                       <td className="py-3 pr-3">{formatMoney(sale.subtotalCents / 100)}</td>
                       <td className="py-3 pr-3">{formatMoney(sale.discountCents / 100)}</td>
                       <td className="py-3 pr-3">{formatMoney(sale.platformFeeCents / 100)}</td>
-                      <td className="py-3 pr-3 font-semibold">{formatMoney(sale.netCents / 100)}</td>
+                      <td className="py-3 pr-3 font-semibold text-white">{formatMoney(sale.netCents / 100)}</td>
                       <td className="py-3 pr-3 text-[11px]">
-                        <span className="rounded-full border border-white/20 bg-white/5 px-2 py-0.5 text-white/70">
+                        <span className="rounded-full border border-white/25 bg-white/10 px-2.5 py-0.5 text-white shadow-[0_8px_18px_rgba(0,0,0,0.35)]">
                           {sale.event?.payoutMode ?? "STANDARD"}
                         </span>
                       </td>
@@ -280,20 +282,20 @@ function SummaryCard({
 }) {
   const toneClass =
     tone === "success"
-      ? "bg-emerald-500/10 border-emerald-400/40 text-emerald-50"
+      ? "bg-gradient-to-br from-emerald-400/25 via-emerald-500/20 to-teal-500/25 border-emerald-300/45 text-emerald-50"
       : tone === "bright"
-        ? "bg-gradient-to-r from-[#FF00C8]/15 via-[#6BFFFF]/10 to-[#1646F5]/15 border-white/15 text-white"
+        ? "bg-gradient-to-r from-[#FF00C8]/30 via-[#6BFFFF]/18 to-[#1646F5]/28 border-white/18 text-white"
         : tone === "muted"
-          ? "bg-white/5 text-white/65"
+          ? "bg-white/6 text-white/70 border-white/12"
           : tone === "slate"
-            ? "bg-white/8 text-white/80"
-            : "bg-white/10 text-white";
+            ? "bg-gradient-to-br from-white/12 via-white/6 to-white/4 text-white/80 border-white/14"
+            : "bg-white/8 text-white border-white/12";
 
   return (
-    <div className={`rounded-2xl border p-4 shadow-[0_12px_40px_rgba(0,0,0,0.35)] ${toneClass}`}>
-      <p className="text-[11px] uppercase tracking-[0.2em] text-white/70">{label}</p>
-      <p className="text-xl font-semibold leading-tight">{value}</p>
-      {helper && <p className="text-[11px] text-white/55 mt-1">{helper}</p>}
+    <div className={`rounded-2xl border p-4 shadow-[0_16px_50px_rgba(0,0,0,0.38)] backdrop-blur-2xl ${toneClass}`}>
+      <p className="text-[11px] uppercase tracking-[0.2em] text-white/75">{label}</p>
+      <p className="text-xl font-semibold leading-tight drop-shadow-[0_10px_25px_rgba(0,0,0,0.4)]">{value}</p>
+      {helper && <p className="text-[11px] text-white/60 mt-1">{helper}</p>}
     </div>
   );
 }

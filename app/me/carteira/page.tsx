@@ -22,9 +22,15 @@ export default function CarteiraPage() {
 
   if (!user && !userLoading) {
     return (
-      <main className="relative min-h-screen bg-[radial-gradient(circle_at_15%_20%,#8a1ecb20_0%,transparent_28%),radial-gradient(circle_at_85%_10%,#00eaff20_0%,transparent_25%),radial-gradient(circle_at_30%_70%,#ff00c820_0%,transparent_35%),linear-gradient(135deg,#050611_0%,#040812_60%,#05060f_100%)] text-white flex items-center justify-center px-4">
-        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_20%,rgba(255,255,255,0.04),transparent_55%)]" />
-        <div className="relative max-w-lg w-full rounded-3xl border border-white/10 bg-gradient-to-br from-white/6 via-[#0f1424]/30 to-white/6 p-8 shadow-[0_24px_70px_rgba(0,0,0,0.7)] backdrop-blur-3xl space-y-4 text-center">
+      <main className="relative orya-body-bg min-h-screen w-full overflow-hidden text-white flex items-center justify-center px-4">
+        <div className="pointer-events-none fixed inset-0" aria-hidden="true">
+          <div className="absolute -top-36 right-[-140px] h-[420px] w-[420px] rounded-full bg-[radial-gradient(circle_at_35%_35%,rgba(255,0,200,0.28),transparent_60%)] opacity-80 blur-3xl" />
+          <div className="absolute top-[22vh] -left-40 h-[360px] w-[360px] rounded-full bg-[radial-gradient(circle_at_30%_30%,rgba(107,255,255,0.22),transparent_60%)] opacity-80 blur-3xl" />
+          <div className="absolute bottom-[-180px] right-[12%] h-[420px] w-[420px] rounded-full bg-[radial-gradient(circle_at_40%_40%,rgba(22,70,245,0.25),transparent_60%)] opacity-70 blur-3xl" />
+          <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.05),transparent_35%,rgba(0,0,0,0.65))] mix-blend-screen" />
+        </div>
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_20%,rgba(255,255,255,0.05),transparent_55%)]" />
+        <div className="relative max-w-lg w-full rounded-3xl border border-white/15 bg-white/5 p-8 shadow-[0_24px_70px_rgba(0,0,0,0.7)] backdrop-blur-2xl space-y-4 text-center">
           <h1 className="text-2xl font-semibold">Entra para veres a tua carteira</h1>
           <p className="text-sm text-white/70">
             Autentica-te para veres os teus bilhetes e QR. A carteira é privada e só aparece depois de iniciar sessão.
@@ -32,13 +38,13 @@ export default function CarteiraPage() {
           <div className="flex flex-col sm:flex-row justify-center gap-3">
             <Link
               href="/login?redirectTo=/me/carteira"
-              className="px-4 py-2.5 rounded-xl bg-white text-black text-sm font-semibold shadow-[0_0_22px_rgba(255,255,255,0.4)]"
+              className="px-4 py-2.5 rounded-xl bg-white text-black text-sm font-semibold shadow-[0_18px_45px_rgba(0,0,0,0.35)] transition hover:shadow-[0_22px_55px_rgba(255,255,255,0.25)]"
             >
               Entrar
             </Link>
             <Link
               href="/login?mode=signup&redirectTo=/me/carteira"
-              className="px-4 py-2.5 rounded-xl border border-white/25 text-sm font-semibold text-white hover:bg-white/10"
+              className="px-4 py-2.5 rounded-xl border border-white/30 bg-white/10 text-sm font-semibold text-white hover:border-white/45 hover:bg-white/20"
             >
               Criar conta
             </Link>
@@ -49,10 +55,16 @@ export default function CarteiraPage() {
   }
 
   return (
-    <main className="relative min-h-screen bg-[radial-gradient(circle_at_15%_20%,#8a1ecb20_0%,transparent_28%),radial-gradient(circle_at_85%_10%,#00eaff20_0%,transparent_25%),radial-gradient(circle_at_30%_70%,#ff00c820_0%,transparent_35%),linear-gradient(135deg,#050611_0%,#040812_60%,#05060f_100%)] text-white">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_20%,rgba(255,255,255,0.04),transparent_55%)]" />
+    <main className="relative orya-body-bg min-h-screen w-full overflow-hidden text-white">
+      <div className="pointer-events-none fixed inset-0" aria-hidden="true">
+        <div className="absolute -top-36 right-[-140px] h-[420px] w-[420px] rounded-full bg-[radial-gradient(circle_at_35%_35%,rgba(255,0,200,0.28),transparent_60%)] opacity-80 blur-3xl" />
+        <div className="absolute top-[22vh] -left-40 h-[360px] w-[360px] rounded-full bg-[radial-gradient(circle_at_30%_30%,rgba(107,255,255,0.22),transparent_60%)] opacity-80 blur-3xl" />
+        <div className="absolute bottom-[-180px] right-[12%] h-[420px] w-[420px] rounded-full bg-[radial-gradient(circle_at_40%_40%,rgba(22,70,245,0.25),transparent_60%)] opacity-70 blur-3xl" />
+        <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.05),transparent_35%,rgba(0,0,0,0.65))] mix-blend-screen" />
+      </div>
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_20%,rgba(255,255,255,0.05),transparent_55%)]" />
       <section className="relative mx-auto flex max-w-6xl flex-col gap-6 px-4 py-8">
-        <header className="flex flex-col gap-3 rounded-3xl border border-white/10 bg-gradient-to-r from-white/5 via-[#111424]/35 to-white/5 px-5 py-6 shadow-[0_25px_60px_rgba(0,0,0,0.55)] backdrop-blur-3xl sm:flex-row sm:items-center sm:justify-between sm:px-8 sm:py-7">
+        <header className="flex flex-col gap-3 rounded-3xl border border-white/15 bg-white/5 px-5 py-6 shadow-[0_24px_60px_rgba(0,0,0,0.65)] backdrop-blur-2xl sm:flex-row sm:items-center sm:justify-between sm:px-8 sm:py-7">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div className="space-y-1">
               <p className="text-[11px] uppercase tracking-[0.24em] text-white/55">Carteira</p>
@@ -77,8 +89,8 @@ export default function CarteiraPage() {
                   onClick={() => setFilter(f.key)}
                   className={`rounded-full px-3 py-1.5 font-semibold border transition backdrop-blur ${
                     filter === f.key
-                      ? "bg-white text-black shadow-[0_10px_26px_rgba(255,255,255,0.2)]"
-                      : "border-white/25 text-white hover:bg-white/10"
+                      ? "bg-white text-black shadow-[0_18px_45px_rgba(0,0,0,0.35)]"
+                      : "border-white/30 bg-white/10 text-white/85 hover:border-white/45 hover:bg-white/20"
                   }`}
                 >
                   {f.label}
@@ -93,7 +105,7 @@ export default function CarteiraPage() {
             {Array.from({ length: 6 }).map((_, i) => (
               <div
                 key={i}
-                className="h-60 rounded-2xl border border-white/10 bg-gradient-to-br from-white/10 via-white/0 to-white/10 animate-pulse shadow-[0_14px_40px_rgba(0,0,0,0.4)]"
+                className="h-60 rounded-2xl border border-white/15 bg-white/5 animate-pulse shadow-[0_18px_50px_rgba(0,0,0,0.6)] backdrop-blur-2xl"
               />
             ))}
           </div>
@@ -106,7 +118,7 @@ export default function CarteiraPage() {
               {!authRequired && (
                 <button
                   onClick={refetch}
-                  className="inline-flex px-3 py-1.5 rounded-lg bg-white text-black text-[11px] font-semibold shadow"
+                  className="inline-flex px-3 py-1.5 rounded-lg bg-white text-black text-[11px] font-semibold shadow-[0_18px_45px_rgba(0,0,0,0.35)]"
                 >
                   Tentar novamente
                 </button>
@@ -114,7 +126,7 @@ export default function CarteiraPage() {
               {authRequired && (
                 <Link
                   href="/login?redirectTo=/me/carteira"
-                  className="inline-flex px-3 py-1.5 rounded-lg bg-white text-black text-[11px] font-semibold shadow"
+                  className="inline-flex px-3 py-1.5 rounded-lg bg-white text-black text-[11px] font-semibold shadow-[0_18px_45px_rgba(0,0,0,0.35)]"
                 >
                   Iniciar sessão
                 </Link>
@@ -124,7 +136,7 @@ export default function CarteiraPage() {
         )}
 
         {!loading && !error && list.length === 0 && (
-          <div className="rounded-3xl border border-white/12 bg-white/4 backdrop-blur-2xl p-10 text-center flex flex-col items-center gap-5 shadow-[0_32px_90px_rgba(5,6,16,0.82)] relative overflow-hidden">
+          <div className="rounded-3xl border border-white/15 bg-white/5 backdrop-blur-2xl p-10 text-center flex flex-col items-center gap-5 shadow-[0_32px_90px_rgba(5,6,16,0.82)] relative overflow-hidden">
             <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_18%_18%,rgba(255,255,255,0.06),transparent_42%),radial-gradient(circle_at_82%_12%,rgba(255,255,255,0.05),transparent_40%),radial-gradient(circle_at_50%_90%,rgba(255,255,255,0.05),transparent_45%)]" />
             <div className="relative h-20 w-20">
               <div className="absolute inset-0 rounded-2xl bg-white/12 blur-2xl" />
@@ -141,13 +153,13 @@ export default function CarteiraPage() {
             <div className="relative flex gap-2 flex-wrap justify-center">
               <Link
                 href="/explorar"
-                className="inline-flex mt-2 px-4 py-2.5 rounded-full bg-white text-black text-xs font-semibold shadow-[0_10px_35px_rgba(255,255,255,0.2)] hover:scale-[1.03] active:scale-95 transition-transform"
+                className="inline-flex mt-2 px-4 py-2.5 rounded-full bg-white text-black text-xs font-semibold shadow-[0_18px_45px_rgba(0,0,0,0.35)] hover:scale-[1.03] active:scale-95 transition-transform"
               >
                 Explorar eventos
               </Link>
               <Link
                 href="/me"
-                className="inline-flex mt-2 px-4 py-2.5 rounded-full border border-white/28 bg-white/5 text-xs font-semibold text-white hover:bg-white/10 shadow-[0_0_16px_rgba(255,255,255,0.1)]"
+                className="inline-flex mt-2 px-4 py-2.5 rounded-full border border-white/30 bg-white/10 text-xs font-semibold text-white hover:border-white/45 hover:bg-white/20 shadow-[0_0_16px_rgba(255,255,255,0.1)]"
               >
                 Ver perfil
               </Link>

@@ -82,8 +82,7 @@ export async function POST(req: NextRequest) {
         locationName,
         address: address || "",
         coverImageUrl:
-          coverImage ||
-          "https://images.unsplash.com/photo-1541987392829-5937c1069305?q=80&w=1600",
+          coverImage || "/images/placeholder-event.jpg",
         ownerUserId: user.id,
       },
     });

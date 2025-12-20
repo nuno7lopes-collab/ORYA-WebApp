@@ -4,7 +4,6 @@ import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { notFound, redirect } from "next/navigation";
 import PadelTournamentTabs from "./PadelTournamentTabs";
-import type { Event, TicketType } from "@prisma/client";
 
 type PageProps = {
   params: Promise<{
@@ -12,8 +11,38 @@ type PageProps = {
   }>;
 };
 
-type EventWithTickets = Event & {
-  ticketTypes: TicketType[];
+type EventWithTickets = {
+  id: number;
+  slug: string;
+  title: string;
+  description: string;
+  templateType: string | null;
+  startsAt: Date;
+  endsAt: Date;
+  locationName: string | null;
+  locationCity: string | null;
+  address: string | null;
+  status: string;
+  coverImageUrl: string | null;
+  isFree: boolean;
+  ticketTypes: Array<{
+    id: number;
+    name: string;
+    description: string | null;
+    price: number;
+    currency: string;
+    totalQuantity: number | null;
+    soldQuantity: number;
+    status: string;
+    startsAt: Date | null;
+    endsAt: Date | null;
+  }>;
+  padelTournamentConfig: {
+    numberOfCourts: number;
+    club?: { name: string; city: string | null; address: string | null } | null;
+    partnerClubIds?: number[];
+    advancedSettings?: Record<string, unknown> | null;
+  } | null;
 };
 
 export default async function OrganizerEventDetailPage({ params }: PageProps) {

@@ -86,6 +86,8 @@ const checkoutMetadataOutputSchema = z.object({
   eventId: z.number().int().positive().optional(),
   eventSlug: z.string().trim().min(1).optional(),
   pairingId: z.number().int().positive().optional(),
+  slotId: z.number().int().positive().optional(),
+  ticketTypeId: z.number().int().positive().optional(),
   owner: checkoutOwnerSchema.optional(),
 });
 

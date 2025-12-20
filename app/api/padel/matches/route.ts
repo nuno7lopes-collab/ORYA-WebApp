@@ -11,6 +11,7 @@ import {
   queueMatchResult,
   queueNextOpponent,
 } from "@/domain/notifications/tournament";
+import { isPadelStaff } from "@/lib/padel/staff";
 
 const allowedRoles: OrganizerMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
 
@@ -31,7 +32,12 @@ export async function GET(req: NextRequest) {
       pairingA: { include: { slots: { include: { playerProfile: true } } } },
       pairingB: { include: { slots: { include: { playerProfile: true } } } },
     },
-    orderBy: [{ startTime: "asc" }, { id: "asc" }],
+    orderBy: [
+      { roundType: "asc" },
+      { groupLabel: "asc" },
+      { startTime: "asc" },
+      { id: "asc" },
+    ],
   });
 
   return NextResponse.json({ ok: true, items: matches }, { status: 200 });
@@ -62,11 +68,12 @@ export async function POST(req: NextRequest) {
   });
   if (!match || !match.event?.organizerId) return NextResponse.json({ ok: false, error: "MATCH_NOT_FOUND" }, { status: 404 });
 
-  const { organizer } = await getActiveOrganizerForUser(user.id, {
+  const { organizer, membership } = await getActiveOrganizerForUser(user.id, {
     organizerId: match.event.organizerId,
     roles: allowedRoles,
   });
-  if (!organizer) return NextResponse.json({ ok: false, error: "NO_ORGANIZER" }, { status: 403 });
+  const isStaff = await isPadelStaff(user.id, match.event.organizerId);
+  if (!organizer && !isStaff) return NextResponse.json({ ok: false, error: "NO_ORGANIZER" }, { status: 403 });
 
   if (scoreRaw && !isValidScore(scoreRaw)) {
     return NextResponse.json({ ok: false, error: "INVALID_SCORE" }, { status: 400 });

@@ -40,7 +40,7 @@ export type Event = {
   remainingSpots?: number;
 
   minAge?: number;       // ex: 18
-  tags: string[];        // ["padel", "desporto", "torneio"]
+  tags: string[];        // ["padel", "torneio"]
 
   organizerName: string;
   organizerAvatarUrl?: string;

@@ -54,7 +54,7 @@ export async function POST(req: NextRequest) {
       req.nextUrl.origin ||
       "https://orya.pt";
     const origin = originRaw.replace(/\/+$/, "");
-    const redirectTo = `${origin}/reset-password`;
+    const redirectTo = `${origin}/reset-password?recovery=1`;
 
     const { data, error } = await supabaseAdmin.auth.admin.generateLink({
       type: "recovery",
@@ -75,13 +75,23 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const actionLink = data?.action_link;
-    if (!actionLink) {
+    const baseActionLink = data?.action_link || (data as { properties?: { action_link?: string } })?.properties?.action_link;
+    if (!baseActionLink) {
       console.error("[password/reset-request] missing action_link", data);
       return NextResponse.json(
         { ok: false, error: "Não foi possível gerar o link de recuperação. Tenta mais tarde." },
         { status: 500 },
       );
+    }
+
+    // Garante redirect direto para /reset-password (alguns providers removem o path)
+    let actionLink = baseActionLink;
+    try {
+      const url = new URL(baseActionLink);
+      url.searchParams.set("redirect_to", redirectTo);
+      actionLink = url.toString();
+    } catch (e) {
+      console.warn("[password/reset-request] action_link parse failed, fallback ao original", e);
     }
 
     try {

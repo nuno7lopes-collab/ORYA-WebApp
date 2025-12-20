@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import useSWR from "swr";
+import { Badge } from "@/components/ui/badge";
 
 type Pairing = {
   id: number;
@@ -18,6 +19,9 @@ type Match = {
   pairingA?: Pairing | null;
   pairingB?: Pairing | null;
   scoreSets?: Array<{ teamA: number; teamB: number }> | null;
+  groupLabel?: string | null;
+  roundType?: string | null;
+  roundLabel?: string | null;
 };
 
 type Standings = Record<string, Array<{ pairingId: number; points: number; wins: number; losses: number; setsFor: number; setsAgainst: number }>>;
@@ -34,15 +38,69 @@ function nameFromSlots(pairing?: Pairing | null) {
 }
 
 export default function PadelTournamentTabs({ eventId, categoriesMeta }: { eventId: number; categoriesMeta?: CategoryMeta[] }) {
-  const [tab, setTab] = useState<"duplas" | "jogos" | "rankings">("duplas");
+  const [tab, setTab] = useState<"duplas" | "grupos" | "eliminatorias" | "rankings">("duplas");
 
   const { data: pairingsRes } = useSWR(eventId ? `/api/padel/pairings?eventId=${eventId}` : null, fetcher);
   const { data: matchesRes, mutate: mutateMatches } = useSWR(eventId ? `/api/padel/matches?eventId=${eventId}` : null, fetcher);
   const { data: standingsRes } = useSWR(eventId ? `/api/padel/standings?eventId=${eventId}` : null, fetcher);
+  const { data: configRes } = useSWR(eventId ? `/api/padel/tournaments/config?eventId=${eventId}` : null, fetcher);
 
   const pairings: Pairing[] = pairingsRes?.pairings ?? [];
   const matches: Match[] = matchesRes?.items ?? [];
   const standings: Standings = standingsRes?.standings ?? {};
+  const advanced = (configRes?.config?.advancedSettings || {}) as Record<string, any>;
+  const formatRequested = advanced.formatRequested as string | undefined;
+  const formatEffective = advanced.formatEffective as string | undefined;
+  const generationVersion = advanced.generationVersion as string | undefined;
+  const koGeneratedAt = advanced.koGeneratedAt as string | undefined;
+  const koSeedSnapshot =
+    (advanced.koSeedSnapshot as Array<{ pairingId: number; groupLabel: string; rank: number }> | undefined) ?? [];
+
+  const pairingNameById = useMemo(() => {
+    const map = new Map<number, string>();
+    pairings.forEach((p) => map.set(p.id, nameFromSlots(p)));
+    return map;
+  }, [pairings]);
+
+  const koRounds = useMemo(() => {
+    const rounds = new Map<
+      string,
+      Array<{
+        id: number;
+        teamA: string;
+        teamB: string;
+        status: string;
+        score: string;
+      }>
+    >();
+    matches
+      .filter((m) => m.roundType === "KNOCKOUT")
+      .forEach((m) => {
+        const key = m.roundLabel || "KO";
+        if (!rounds.has(key)) rounds.set(key, []);
+        const score =
+          m.scoreSets?.length && m.scoreSets.length > 0
+            ? m.scoreSets.map((s) => `${s.teamA}-${s.teamB}`).join(", ")
+            : "—";
+        rounds.get(key)!.push({
+          id: m.id,
+          teamA: pairingNameById.get(m.pairingA?.id ?? 0) ?? "—",
+          teamB: pairingNameById.get(m.pairingB?.id ?? 0) ?? "—",
+          status: m.status,
+          score,
+        });
+      });
+    // ordenar rounds por importância
+    const order = ["R16", "QUARTERFINAL", "SEMIFINAL", "FINAL"];
+    return Array.from(rounds.entries()).sort((a, b) => {
+      const ai = order.indexOf(a[0]);
+      const bi = order.indexOf(b[0]);
+      if (ai === -1 && bi === -1) return a[0].localeCompare(b[0]);
+      if (ai === -1) return 1;
+      if (bi === -1) return -1;
+      return ai - bi;
+    });
+  }, [matches, pairingNameById]);
 
   const categoryStats = (() => {
     const metaMap = new Map<number | null, CategoryMeta>();
@@ -70,6 +128,36 @@ export default function PadelTournamentTabs({ eventId, categoriesMeta }: { event
     pending: matches.filter((m) => m.status === "PENDING").length,
     live: matches.filter((m) => m.status === "LIVE").length,
     done: matches.filter((m) => m.status === "DONE").length,
+  };
+  const groupMatchesCount = matches.filter((m) => m.roundType === "GROUPS").length;
+  const groupMatchesDone = matches.filter((m) => m.roundType === "GROUPS" && m.status === "DONE").length;
+  const groupMissing = Math.max(0, groupMatchesCount - groupMatchesDone);
+
+  const formatLabel = (value?: string | null) => {
+    if (!value) return "";
+    switch (value) {
+      case "TODOS_CONTRA_TODOS":
+        return "Todos contra todos";
+      case "QUADRO_ELIMINATORIO":
+        return "Quadro eliminatório";
+      case "GRUPOS_ELIMINATORIAS":
+        return "Grupos + eliminatórias";
+      case "CAMPEONATO_LIGA":
+        return "Campeonato/Liga";
+      case "QUADRO_AB":
+        return "Quadro A/B";
+      case "NON_STOP":
+        return "Non-stop";
+      default:
+        return value;
+    }
+  };
+
+  const formatDate = (value?: string | null) => {
+    if (!value) return "";
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return "";
+    return d.toLocaleString("pt-PT");
   };
 
   async function submitResult(matchId: number, scoreText: string) {
@@ -126,15 +214,33 @@ export default function PadelTournamentTabs({ eventId, categoriesMeta }: { event
         </div>
       </div>
 
+      {formatRequested && formatEffective && formatRequested !== formatEffective && (
+        <div className="rounded-xl border border-amber-400/30 bg-amber-500/10 p-3 text-[12px] text-amber-50">
+          Formato pedido: {formatLabel(formatRequested)}. Este torneio está a usar: {formatLabel(formatEffective)} (modo Beta).
+        </div>
+      )}
+
+      {(generationVersion || groupMissing > 0) && (
+        <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-[12px] text-white/80 flex items-center justify-between gap-3 flex-wrap">
+          <span>Motor de geração: {generationVersion ?? "v1-groups-ko"}</span>
+          {groupMissing > 0 && (
+            <span className="rounded-full bg-amber-500/15 px-3 py-1 text-amber-100">
+              Faltam {groupMissing} jogo{groupMissing === 1 ? "" : "s"} dos grupos para fechar classificação.
+            </span>
+          )}
+        </div>
+      )}
+
       <div className="flex items-center gap-2 text-[12px]">
         {[
           { key: "duplas", label: "Duplas" },
-          { key: "jogos", label: "Jogos" },
+          { key: "grupos", label: "Grupos" },
+          { key: "eliminatorias", label: "Eliminatórias" },
           { key: "rankings", label: "Rankings" },
         ].map((t) => (
           <button
             key={t.key}
-            onClick={() => setTab(t.key as "duplas" | "jogos" | "rankings")}
+            onClick={() => setTab(t.key as typeof tab)}
             className={`rounded-full px-3 py-1 border ${tab === t.key ? "bg-white text-black font-semibold" : "border-white/20 text-white/75"}`}
           >
             {t.label}
@@ -154,7 +260,9 @@ export default function PadelTournamentTabs({ eventId, categoriesMeta }: { event
               {p.inviteToken && (
                 <button
                   type="button"
-                  onClick={() => navigator.clipboard.writeText(`${window.location.origin}/eventos/${event.slug}?token=${p.inviteToken}`)}
+                  onClick={() =>
+                    navigator.clipboard.writeText(`${window.location.origin}/eventos/${eventId}?token=${p.inviteToken}`)
+                  }
                   className="rounded-full border border-white/20 px-3 py-1 text-[12px] text-white/80 hover:bg-white/10"
                 >
                   Copiar convite
@@ -165,30 +273,87 @@ export default function PadelTournamentTabs({ eventId, categoriesMeta }: { event
         </div>
       )}
 
-      {tab === "jogos" && (
+      {tab === "grupos" && (
         <div className="space-y-3">
-          {matches.length === 0 && <p className="text-sm text-white/70">Sem jogos gerados.</p>}
-          {matches.map((m) => (
-            <div key={m.id} className="rounded-xl border border-white/15 bg-white/5 p-3 text-sm space-y-2">
-              <div className="flex items-center justify-between">
-                <p className="font-semibold">{nameFromSlots(m.pairingA as Pairing)} vs {nameFromSlots(m.pairingB as Pairing)}</p>
-                <span className="text-[11px] text-white/60">{m.status}</span>
+          {matches.filter((m) => m.roundType === "GROUPS").length === 0 && <p className="text-sm text-white/70">Sem jogos de grupos.</p>}
+          {matches
+            .filter((m) => m.roundType === "GROUPS")
+            .map((m) => (
+              <div key={m.id} className="rounded-xl border border-white/15 bg-white/5 p-3 text-sm space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className="border-white/20 text-white/70">
+                      Grupo {m.groupLabel || "?"}
+                    </Badge>
+                    <p className="font-semibold">{nameFromSlots(m.pairingA as Pairing)} vs {nameFromSlots(m.pairingB as Pairing)}</p>
+                  </div>
+                  <span className="text-[11px] text-white/60">{m.status}</span>
+                </div>
+                <p className="text-[12px] text-white/70">Resultado: {m.scoreSets?.length ? m.scoreSets.map((s) => `${s.teamA}-${s.teamB}`).join(", ") : "—"}</p>
+                <div className="flex items-center gap-2 text-[12px]">
+                  <input
+                    type="text"
+                    placeholder="6-3, 6-4"
+                    className="flex-1 rounded-lg border border-white/15 bg-black/30 px-2 py-1"
+                    onBlur={(e) => {
+                      const v = e.target.value.trim();
+                      if (v) submitResult(m.id, v);
+                    }}
+                  />
+                  <span className="text-white/50">(guardar ao sair do campo)</span>
+                </div>
               </div>
-              <p className="text-[12px] text-white/70">Resultado: {m.scoreSets?.length ? m.scoreSets.map((s) => `${s.teamA}-${s.teamB}`).join(", ") : "—"}</p>
-              <div className="flex items-center gap-2 text-[12px]">
-                <input
-                  type="text"
-                  placeholder="6-3, 6-4"
-                  className="flex-1 rounded-lg border border-white/15 bg-black/30 px-2 py-1"
-                  onBlur={(e) => {
-                    const v = e.target.value.trim();
-                    if (v) submitResult(m.id, v);
-                  }}
-                />
-                <span className="text-white/50">(guardar ao sair do campo)</span>
+            ))}
+        </div>
+      )}
+
+      {tab === "eliminatorias" && (
+        <div className="space-y-3">
+          {koRounds.length === 0 && <p className="text-sm text-white/70">Ainda não geraste eliminatórias.</p>}
+          {koGeneratedAt && (
+            <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-[12px] text-white/80 space-y-1">
+              <p>Quadro gerado em {formatDate(koGeneratedAt)}.</p>
+              {koSeedSnapshot.length > 0 && (
+                <p className="text-white/60">
+                  Apurados: {koSeedSnapshot.map((q) => `${q.rank}º ${q.groupLabel}`).join(" · ")}
+                </p>
+              )}
+            </div>
+          )}
+          {koRounds.length > 0 && (
+            <div className="overflow-x-auto">
+              <div className="flex min-w-full gap-4">
+                {koRounds.map(([roundKey, games]) => (
+                  <div key={roundKey} className="min-w-[220px] rounded-2xl border border-white/10 bg-white/5 p-3 space-y-2">
+                    <p className="text-[11px] uppercase tracking-[0.18em] text-white/60">{roundKey}</p>
+                    {games.map((g) => (
+                      <div key={g.id} className="rounded-xl border border-white/15 bg-black/40 p-2 space-y-1">
+                        <div className="flex items-center justify-between text-[12px] text-white">
+                          <span className="font-semibold">{g.teamA}</span>
+                          <span className="text-white/60">{g.status}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-[12px] text-white">
+                          <span className="font-semibold">{g.teamB}</span>
+                          <span className="text-white/60">{g.score}</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-[11px]">
+                          <input
+                            type="text"
+                            placeholder="6-3, 6-4"
+                            className="flex-1 rounded-lg border border-white/15 bg-black/30 px-2 py-1"
+                            onBlur={(e) => {
+                              const v = e.target.value.trim();
+                              if (v) submitResult(g.id, v);
+                            }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ))}
               </div>
             </div>
-          ))}
+          )}
         </div>
       )}
 
@@ -197,15 +362,20 @@ export default function PadelTournamentTabs({ eventId, categoriesMeta }: { event
           {Object.keys(standings).length === 0 && <p className="text-white/70">Sem standings.</p>}
           {Object.entries(standings).map(([groupKey, rows]) => (
             <div key={groupKey} className="rounded-xl border border-white/15 bg-white/5 p-3 space-y-2">
-              <p className="text-[11px] uppercase tracking-[0.18em] text-white/60">{groupKey}</p>
+              <div className="flex items-center justify-between">
+                <p className="text-[11px] uppercase tracking-[0.18em] text-white/60">Grupo {groupKey}</p>
+                <span className="text-[11px] text-white/50">Top {rows.length}</span>
+              </div>
               <div className="space-y-1">
                 {rows.map((r, idx) => (
                   <div key={r.pairingId} className="flex items-center justify-between">
                     <span className="flex items-center gap-2 text-white/85">
                       <span className="text-[11px] text-white/60">#{idx + 1}</span>
-                      <span>Dupla {r.pairingId}</span>
+                      <span>{pairingNameById.get(r.pairingId) ?? `Dupla ${r.pairingId}`}</span>
                     </span>
-                    <span className="text-white/70">Pts {r.points} · {r.wins}V/{r.losses}D · Sets {r.setsFor}-{r.setsAgainst}</span>
+                    <span className="text-white/70">
+                      Pts {r.points} · {r.wins}V/{r.losses}D · Sets {r.setsFor}-{r.setsAgainst}
+                    </span>
                   </div>
                 ))}
               </div>

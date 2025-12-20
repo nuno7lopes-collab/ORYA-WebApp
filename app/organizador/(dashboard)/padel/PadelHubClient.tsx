@@ -108,26 +108,330 @@ const badge = (tone: "green" | "amber" | "slate" = "slate") =>
         ? "border-amber-300/40 bg-amber-400/10 text-amber-100"
         : "border-white/15 bg-white/10 text-white/70"
   }`;
+const toast = (msg: string, tone: "ok" | "err" | "warn" = "ok") => {
+  if (typeof window === "undefined") return;
+  const el = document.createElement("div");
+  el.textContent = msg;
+  el.className = `fixed right-4 top-4 z-[9999] rounded-full px-4 py-2 text-sm font-semibold shadow-lg transition ${
+    tone === "ok"
+      ? "bg-emerald-500 text-black"
+      : tone === "warn"
+        ? "bg-amber-400 text-black"
+        : "bg-red-500 text-white"
+  }`;
+  document.body.appendChild(el);
+  setTimeout(() => {
+    el.style.opacity = "0";
+    el.style.transform = "translateY(-6px)";
+    setTimeout(() => el.remove(), 180);
+  }, 1800);
+};
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
 const SkeletonBlock = ({ className = "" }: { className?: string }) => (
-  <div className={`animate-pulse rounded-xl bg-white/5 ${className}`} />
+  <div
+    className={`animate-pulse rounded-2xl border border-white/10 bg-gradient-to-br from-white/10 via-[#0b1124]/50 to-[#050810]/70 shadow-[0_20px_60px_rgba(0,0,0,0.4)] backdrop-blur-2xl ${className}`}
+  />
 );
 
 const PadelTabSkeleton = () => (
   <div className="space-y-4">
-    <SkeletonBlock className="h-10 w-2/3" />
+    <div className="flex items-center gap-3">
+      <SkeletonBlock className="h-9 w-32" />
+      <SkeletonBlock className="h-9 w-24" />
+      <SkeletonBlock className="h-9 w-24" />
+    </div>
     <div className="grid gap-3 lg:grid-cols-[1fr_320px]">
-      <SkeletonBlock className="h-[320px]" />
+      <SkeletonBlock className="h-[360px]" />
       <div className="space-y-3">
         <SkeletonBlock className="h-16" />
-        <SkeletonBlock className="h-10" />
-        <SkeletonBlock className="h-20" />
+        <SkeletonBlock className="h-14" />
+        <SkeletonBlock className="h-24" />
       </div>
+    </div>
+    <div className="grid gap-2 md:grid-cols-3">
+      <SkeletonBlock className="h-20" />
+      <SkeletonBlock className="h-20" />
+      <SkeletonBlock className="h-20" />
     </div>
   </div>
 );
+
+const formatDateTimeLocal = (value: string | Date) => {
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  const offset = d.getTimezoneOffset();
+  const local = new Date(d.getTime() - offset * 60_000);
+  return local.toISOString().slice(0, 16);
+};
+
+const formatZoned = (value: string | Date, timeZone: string) => {
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "—";
+  try {
+    return new Intl.DateTimeFormat("pt-PT", {
+      timeZone,
+      day: "2-digit",
+      month: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(d);
+  } catch {
+    return d.toLocaleString("pt-PT");
+  }
+};
+
+type TimelineItem = {
+  id: string;
+  kind: "match" | "block" | "availability";
+  label: string;
+  start: Date;
+  end: Date;
+  laneKey: string;
+  laneLabel: string;
+  courtId?: number | null;
+  version?: string;
+  color: string;
+};
+
+const TimelineView = ({
+  blocks,
+  availabilities,
+  matches,
+  timezone,
+  dayStart,
+  onDrop,
+  laneHints = [],
+  conflictMap,
+  slotMinutes,
+}: {
+  blocks: any[];
+  availabilities: any[];
+  matches: any[];
+  timezone: string;
+  dayStart: Date | null;
+  laneHints?: Array<{ key: string; label: string; courtId?: number | null }>;
+  onDrop?: (payload: { id: string; kind: TimelineItem["kind"]; start: Date; end: Date; courtId?: number | null }) => void;
+  conflictMap: Map<string, string[]>;
+  slotMinutes: number;
+}) => {
+  if (!dayStart) {
+    return <p className="text-[12px] text-white/60">Seleciona uma data válida.</p>;
+  }
+  const laneWidth = 100; // percent
+  const dayLength = 24 * 60 * 60 * 1000;
+  const startDay = new Date(dayStart);
+  startDay.setHours(0, 0, 0, 0);
+  const endDay = new Date(startDay.getTime() + dayLength);
+
+  const toDate = (value: string | Date) => {
+    const d = new Date(value);
+    return Number.isNaN(d.getTime()) ? null : d;
+  };
+
+  const items: TimelineItem[] = [];
+  const lanesSeed = laneHints.reduce<Record<string, { key: string; label: string; courtId?: number | null; items: TimelineItem[] }>>(
+    (acc, hint) => {
+      acc[hint.key] = { ...hint, items: [] };
+      return acc;
+    },
+    {},
+  );
+
+  for (const b of blocks) {
+    const s = toDate(b.startAt);
+    const e = toDate(b.endAt);
+    if (!s || !e) continue;
+    const laneKey = b.courtId ? `court-${b.courtId}` : "block-generic";
+    const laneLabel = b.courtName || (b.courtId ? `Court ${b.courtId}` : "Court");
+    items.push({
+      id: `block-${b.id}`,
+      kind: "block",
+      label: b.label || "Bloqueio",
+      start: s,
+      end: e,
+      laneKey,
+      laneLabel,
+      courtId: b.courtId ?? null,
+      version: b.updatedAt,
+      color: "from-[#7b7bff]/25 to-[#7cf2ff]/30 border-white/20",
+    });
+  }
+  for (const av of availabilities) {
+    const s = toDate(av.startAt);
+    const e = toDate(av.endAt);
+    if (!s || !e) continue;
+    const laneKey = "player-availability";
+    const laneLabel = "Jogadores";
+    items.push({
+      id: `av-${av.id}`,
+      kind: "availability",
+      label: av.playerName || av.playerEmail || "Jogador",
+      start: s,
+      end: e,
+      laneKey,
+      laneLabel,
+      version: av.updatedAt,
+      color: "from-[#f59e0b]/25 to-[#fde68a]/20 border-amber-200/40",
+    });
+  }
+  for (const m of matches) {
+    const s = toDate(m.startTime || m.plannedStartAt);
+    if (!s) continue;
+    const plannedEnd = toDate(m.plannedEndAt);
+    const durationMinutes = Number.isFinite(m.plannedDurationMinutes) ? m.plannedDurationMinutes : 60;
+    const e = plannedEnd || new Date(s.getTime() + (durationMinutes || 60) * 60 * 1000); // assume 1h se não houver fim
+    const laneKey = m.courtId ? `court-${m.courtId}` : m.courtName ? `court-name-${m.courtName}` : m.courtNumber ? `court-num-${m.courtNumber}` : "match-generic";
+    const laneLabel = m.courtName || (m.courtNumber ? `Court ${m.courtNumber}` : m.courtId ? `Court ${m.courtId}` : "Court");
+    items.push({
+      id: `match-${m.id}`,
+      kind: "match",
+      label: `Jogo #${m.id}`,
+      start: s,
+      end: e,
+      laneKey,
+      laneLabel,
+      courtId: m.courtId ?? null,
+      version: m.updatedAt,
+      color: "from-[#34d399]/25 to-[#059669]/25 border-emerald-200/40",
+    });
+  }
+
+  const grouped = items.reduce<Record<string, { key: string; label: string; courtId?: number | null; items: TimelineItem[] }>>((acc, item) => {
+    const existing = acc[item.laneKey] || lanesSeed[item.laneKey];
+    if (!existing) {
+      acc[item.laneKey] = { key: item.laneKey, label: item.laneLabel, courtId: item.courtId, items: [item] };
+    } else {
+      acc[item.laneKey] = { ...existing, items: [...(existing.items || []), item] };
+    }
+    return acc;
+  }, lanesSeed);
+
+  const lanes = Object.values(grouped).map((lane) => ({
+    court: lane.label,
+    courtId: lane.courtId,
+    key: lane.key,
+    items: (lane.items || []).sort((a, b) => a.start.getTime() - b.start.getTime()),
+  }));
+
+  const clampPercent = (value: number) => Math.min(100, Math.max(0, value));
+  const snapToSlot = (date: Date) => {
+    const minutes = date.getMinutes();
+    const snapped = Math.round(minutes / slotMinutes) * slotMinutes;
+    date.setMinutes(snapped, 0, 0);
+    return date;
+  };
+
+  const formatTime = (d: Date) =>
+    new Intl.DateTimeFormat("pt-PT", { hour: "2-digit", minute: "2-digit", timeZone: timezone }).format(d);
+
+  return (
+    <div className="space-y-2">
+      {lanes.length === 0 && <p className="text-[12px] text-white/60">Sem registos para hoje.</p>}
+      {lanes.map((lane) => (
+        <div
+          key={lane.key || lane.court}
+          className="space-y-1 rounded-xl border border-white/10 bg-white/5 p-3"
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => {
+            if (!onDrop) return;
+            e.preventDefault();
+            const payload = e.dataTransfer.getData("application/json");
+            try {
+                    const parsed = JSON.parse(payload);
+                    const duration = parsed.durationMs ?? 0;
+                    const rect = (e.currentTarget.querySelector(".timeline-lane") as HTMLElement)?.getBoundingClientRect();
+                    if (!rect) return;
+                    const relX = (e.clientX - rect.left) / rect.width;
+              const newStart = snapToSlot(new Date(startDay.getTime() + relX * (endDay.getTime() - startDay.getTime())));
+              const newEnd = new Date(newStart.getTime() + duration);
+              onDrop({
+                id: parsed.id,
+                kind: parsed.kind,
+                start: newStart,
+                end: newEnd,
+                courtId: lane.courtId,
+              });
+            } catch {
+              // ignore
+            }
+          }}
+        >
+          <div className="flex items-center justify-between text-[12px] text-white/70">
+            <span className="font-semibold">{lane.court}</span>
+            <span className="text-white/50">Hoje</span>
+          </div>
+          <div className="timeline-lane relative h-16 overflow-hidden rounded-lg border border-white/10 bg-black/30">
+            {lane.items.map((item) => {
+              const left =
+                clampPercent(((item.start.getTime() - startDay.getTime()) / (endDay.getTime() - startDay.getTime())) * laneWidth);
+              const width =
+                clampPercent(((item.end.getTime() - item.start.getTime()) / (endDay.getTime() - startDay.getTime())) * laneWidth);
+            return (
+              <div
+                key={item.id}
+                className={`absolute top-1 h-12 rounded-lg border px-2 py-1 text-[11px] text-white shadow ${item.color} bg-gradient-to-r ${
+                  lane.items.length > 1 && lane.items.some((other) => other !== item && other.laneKey === item.laneKey && overlaps(item, other))
+                    ? "ring-2 ring-red-400/70"
+                    : ""
+                } ${conflictMap.get(item.id)?.length ? "border-red-300/70 shadow-[0_0_0_2px_rgba(248,113,113,0.35)]" : ""}`}
+                style={{ left: `${left}%`, width: `${Math.max(width, 6)}%` }}
+                title={`${item.label} · ${formatTime(item.start)} - ${formatTime(item.end)}`}
+                draggable
+                onDragStart={(e) => {
+                    e.dataTransfer.setData(
+                      "application/json",
+                      JSON.stringify({
+                        id: item.id,
+                        kind: item.kind,
+                        durationMs: item.end.getTime() - item.start.getTime(),
+                        version: item.version,
+                      }),
+                    );
+                }}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => {
+                  if (!onDrop) return;
+                  e.preventDefault();
+                  const payload = e.dataTransfer.getData("application/json");
+                  try {
+                    const parsed = JSON.parse(payload);
+                    if (parsed.id !== item.id) return;
+                    // simple drop keeps duration, aligns start to cursor
+                    const rect = (e.currentTarget.parentElement as HTMLElement).getBoundingClientRect();
+                    const relX = (e.clientX - rect.left) / rect.width;
+                    const newStart = snapToSlot(new Date(startDay.getTime() + relX * (endDay.getTime() - startDay.getTime())));
+                    const duration = item.end.getTime() - item.start.getTime();
+                    const newEnd = new Date(newStart.getTime() + duration);
+                    onDrop({
+                      id: item.id,
+                      kind: item.kind,
+                        start: newStart,
+                        end: newEnd,
+                        courtId: lane.courtId,
+                      });
+                    } catch {
+                      // ignore
+                    }
+                  }}
+              >
+                  <p className="font-semibold leading-tight">{item.label}</p>
+                  <p className="text-white/70">{formatTime(item.start)} - {formatTime(item.end)}</p>
+                </div>
+              );
+            })}
+          </div>
+          <div className="flex justify-between text-[11px] text-white/50">
+            <span>00:00</span>
+            <span>12:00</span>
+            <span>24:00</span>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+};
 
 const normalizeSlug = (value: string) => {
   const base =
@@ -180,6 +484,36 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
   const [calendarScope, setCalendarScope] = useState<"week" | "day">("week");
   const [calendarFilter, setCalendarFilter] = useState<"all" | "club">("all");
   const [calendarError, setCalendarError] = useState<string | null>(null);
+  const [calendarMessage, setCalendarMessage] = useState<string | null>(null);
+  const [calendarWarning, setCalendarWarning] = useState<string | null>(null);
+  const [slotMinutes, setSlotMinutes] = useState<number>(15);
+  const [lastAction, setLastAction] = useState<{
+    type: "block" | "availability" | "match";
+    id: number;
+    prevStart: string;
+    prevEnd: string;
+    prevCourtId?: number | null;
+    prevDuration?: number | null;
+    version?: string | null;
+  } | null>(null);
+  const [blockForm, setBlockForm] = useState({
+    start: "",
+    end: "",
+    label: "",
+    note: "",
+  });
+  const [editingBlockId, setEditingBlockId] = useState<number | null>(null);
+  const [editingBlockVersion, setEditingBlockVersion] = useState<string | null>(null);
+  const [availabilityForm, setAvailabilityForm] = useState({
+    start: "",
+    end: "",
+    playerName: "",
+    playerEmail: "",
+    note: "",
+  });
+  const [editingAvailabilityId, setEditingAvailabilityId] = useState<number | null>(null);
+  const [editingAvailabilityVersion, setEditingAvailabilityVersion] = useState<string | null>(null);
+  const [savingCalendar, setSavingCalendar] = useState(false);
 
   const [clubForm, setClubForm] = useState(DEFAULT_FORM);
   const [slugError, setSlugError] = useState<string | null>(null);
@@ -242,6 +576,7 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
     params.set("tab", "padel");
     params.set("padel", section);
     router.replace(`/organizador?${params.toString()}`, { scroll: false });
+    setLastAction(null);
   };
 
   const hasActiveClub = useMemo(() => clubs.some((c) => c.isActive), [clubs]);
@@ -876,8 +1211,200 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
   };
 
   const totalActiveCourts = useMemo(() => clubs.reduce((acc, c) => acc + (c.courtsCount || 0), 0), [clubs]);
-  const calendarBlocks = calendarData?.blocks ?? [];
-  const calendarAvailabilities = calendarData?.availabilities ?? [];
+  const calendarBlocksRaw = calendarData?.blocks ?? [];
+  const calendarAvailabilitiesRaw = calendarData?.availabilities ?? [];
+  const calendarMatchesRaw = calendarData?.matches ?? [];
+  const calendarConflicts = calendarData?.conflicts ?? [];
+  const calendarTimezone = calendarData?.eventTimezone ?? "Europe/Lisbon";
+  const calendarBuffer = calendarData?.bufferMinutes ?? 5;
+  const calendarDayLengthMinutes = 24 * 60;
+  const [selectedDay, setSelectedDay] = useState(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d.toISOString().slice(0, 10);
+  });
+  const startOfDay = useMemo(() => {
+    const d = new Date(selectedDay);
+    if (Number.isNaN(d.getTime())) return null;
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }, [selectedDay]);
+  const endOfDay = useMemo(() => {
+    if (!startOfDay) return null;
+    const d = new Date(startOfDay);
+    d.setHours(23, 59, 59, 999);
+    return d;
+  }, [startOfDay]);
+
+  const isWithinDay = (date: string | Date) => {
+    if (!startOfDay || !endOfDay) return true;
+    const d = new Date(date);
+    return d >= startOfDay && d <= endOfDay;
+  };
+
+  const calendarBlocks =
+    calendarScope === "day"
+      ? calendarBlocksRaw.filter((b) => isWithinDay(b.startAt))
+      : calendarBlocksRaw;
+  const calendarAvailabilities =
+    calendarScope === "day"
+      ? calendarAvailabilitiesRaw.filter((b) => isWithinDay(b.startAt))
+      : calendarAvailabilitiesRaw;
+  const matchStartsWithinDay = (m: any) => isWithinDay(m.startTime || m.plannedStartAt);
+  const calendarMatches =
+    calendarScope === "day" ? calendarMatchesRaw.filter((m) => matchStartsWithinDay(m)) : calendarMatchesRaw;
+  const matchesById = useMemo(() => {
+    const map = new Map<number, any>();
+    calendarMatchesRaw.forEach((m) => map.set(m.id, m));
+    return map;
+  }, [calendarMatchesRaw]);
+  const getItemVersion = (kind: "block" | "availability" | "match", id: number) => {
+    if (kind === "block") return calendarBlocks.find((b: any) => b.id === id)?.updatedAt;
+    if (kind === "availability") return calendarAvailabilities.find((a: any) => a.id === id)?.updatedAt;
+    return calendarMatchesRaw.find((m: any) => m.id === id)?.updatedAt;
+  };
+
+  const resetCalendarForms = () => {
+    setBlockForm({ start: "", end: "", label: "", note: "" });
+    setAvailabilityForm({ start: "", end: "", playerName: "", playerEmail: "", note: "" });
+    setEditingBlockId(null);
+    setEditingAvailabilityId(null);
+    setEditingBlockVersion(null);
+    setEditingAvailabilityVersion(null);
+    setCalendarMessage(null);
+  };
+
+  const saveCalendarItem = async (type: "block" | "availability") => {
+    if (!eventId) {
+      setCalendarError("Abre a partir de um torneio para editar o calendário.");
+      return;
+    }
+    const isBlock = type === "block";
+    const editingId = isBlock ? editingBlockId : editingAvailabilityId;
+    const start = isBlock ? blockForm.start : availabilityForm.start;
+    const end = isBlock ? blockForm.end : availabilityForm.end;
+    if (!start || !end) {
+      setCalendarError("Indica início e fim.");
+      return;
+    }
+    setSavingCalendar(true);
+    setCalendarError(null);
+    setCalendarMessage(null);
+    setCalendarWarning(null);
+    try {
+      const payload =
+        type === "block"
+          ? {
+              type: "block",
+              id: editingId ?? undefined,
+              eventId,
+              startAt: blockForm.start,
+              endAt: blockForm.end,
+              label: blockForm.label || undefined,
+              note: blockForm.note || undefined,
+              ...(editingBlockVersion ? { version: editingBlockVersion } : {}),
+            }
+          : {
+              type: "availability",
+              id: editingId ?? undefined,
+              eventId,
+              startAt: availabilityForm.start,
+              endAt: availabilityForm.end,
+              playerName: availabilityForm.playerName || undefined,
+              playerEmail: availabilityForm.playerEmail || undefined,
+              note: availabilityForm.note || undefined,
+              ...(editingAvailabilityVersion ? { version: editingAvailabilityVersion } : {}),
+            };
+
+      const res = await fetch("/api/padel/calendar", {
+        method: editingId ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || json?.ok === false) {
+        setCalendarError(json?.error || "Não foi possível guardar.");
+      } else {
+        const prev =
+          type === "block"
+            ? calendarBlocks.find((b: any) => b.id === editingId)
+            : calendarAvailabilities.find((a: any) => a.id === editingId);
+        if (prev && editingId) {
+          setLastAction({
+            type,
+            id: editingId,
+            prevStart: prev.startAt,
+            prevEnd: prev.endAt,
+            prevCourtId: prev.courtId ?? null,
+            version: prev.updatedAt ?? null,
+          });
+        } else {
+          setLastAction(null);
+        }
+        setCalendarMessage(editingId ? "Atualizado." : "Guardado.");
+        toast(editingId ? "Atualizado" : "Guardado", "ok");
+        resetCalendarForms();
+        mutateCalendar();
+      }
+    } catch (err) {
+      console.error("[padel/calendar] save", err);
+      setCalendarError("Erro inesperado ao guardar.");
+    } finally {
+      setSavingCalendar(false);
+    }
+  };
+
+  const handleEditBlock = (block: any) => {
+    setEditingAvailabilityId(null);
+    setEditingBlockId(block.id);
+    setEditingBlockVersion(block.updatedAt || null);
+    setBlockForm({
+      start: formatDateTimeLocal(block.startAt),
+      end: formatDateTimeLocal(block.endAt),
+      label: block.label || "",
+      note: block.note || "",
+    });
+  };
+
+  const handleEditAvailability = (av: any) => {
+    setEditingBlockId(null);
+    setEditingAvailabilityId(av.id);
+    setEditingAvailabilityVersion(av.updatedAt || null);
+    setAvailabilityForm({
+      start: formatDateTimeLocal(av.startAt),
+      end: formatDateTimeLocal(av.endAt),
+      playerName: av.playerName || "",
+      playerEmail: av.playerEmail || "",
+      note: av.note || "",
+    });
+  };
+
+  const handleDeleteCalendarItem = async (type: "block" | "availability", id: number) => {
+    if (!eventId || !Number.isFinite(id)) return;
+    const sure = window.confirm("Remover este registo?");
+    if (!sure) return;
+    setSavingCalendar(true);
+    setCalendarError(null);
+    setCalendarMessage(null);
+    setCalendarWarning(null);
+    try {
+      const res = await fetch(`/api/padel/calendar?type=${type}&id=${id}`, { method: "DELETE" });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || json?.ok === false) {
+        setCalendarError(json?.error || "Não foi possível remover.");
+      } else {
+        setCalendarMessage("Removido.");
+        resetCalendarForms();
+        mutateCalendar();
+        setLastAction(null);
+      }
+    } catch (err) {
+      console.error("[padel/calendar] delete", err);
+      setCalendarError("Erro inesperado ao remover.");
+    } finally {
+      setSavingCalendar(false);
+    }
+  };
 
   return (
     <div className="space-y-5 rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/75 to-[#050810]/92 px-4 py-6 shadow-[0_30px_110px_rgba(0,0,0,0.6)] backdrop-blur-3xl md:px-6">
@@ -936,13 +1463,19 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
       {switchingTab && <PadelTabSkeleton />}
 
       {!switchingTab && activeTab === "calendar" && (
-        <div className="space-y-4 rounded-2xl border border-white/12 bg-gradient-to-br from-white/6 via-[#0c1628]/60 to-[#050912]/85 p-4 shadow-[0_18px_60px_rgba(0,0,0,0.5)]">
+        <div className="space-y-4 rounded-2xl border border-white/12 bg-gradient-to-br from-white/6 via-[#0c1628]/60 to-[#050912]/85 p-4 shadow-[0_18px_60px_rgba(0,0,0,0.5)] transition-all duration-250 ease-out opacity-100 translate-y-0">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="space-y-1">
               <p className="text-[12px] uppercase tracking-[0.2em] text-white/60">Calendário</p>
               <p className="text-sm text-white/70">Visual por court com jogos, bloqueios e indisponibilidades (padel only).</p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-full border border-white/20 bg-white/5 px-3 py-1 text-[12px] text-white/75">
+                Fuso: {calendarTimezone}
+              </span>
+              <span className="rounded-full border border-white/20 bg-white/5 px-3 py-1 text-[12px] text-white/75">
+                Buffer: {calendarBuffer} min
+              </span>
               <div className="inline-flex rounded-full border border-white/15 bg-white/5 p-1 text-[12px]">
                 {["week", "day"].map((scope) => (
                   <button
@@ -957,6 +1490,14 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
                   </button>
                 ))}
               </div>
+              {calendarScope === "day" && (
+                <input
+                  type="date"
+                  value={selectedDay}
+                  onChange={(e) => setSelectedDay(e.target.value)}
+                  className="rounded-full border border-white/20 bg-white/5 px-3 py-1 text-[12px] text-white/80 outline-none focus:border-white/60 focus:ring-2 focus:ring-cyan-400/40"
+                />
+              )}
               <div className="inline-flex rounded-full border border-white/15 bg-white/5 p-1 text-[12px]">
                 {[
                   { key: "all", label: "Todos os clubes" },
@@ -971,6 +1512,20 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
                     disabled={switchingTab}
                   >
                     {opt.label}
+                  </button>
+                ))}
+              </div>
+              <div className="inline-flex rounded-full border border-white/15 bg-white/5 p-1 text-[12px]">
+                {[15, 30].map((slot) => (
+                  <button
+                    key={slot}
+                    onClick={() => setSlotMinutes(slot)}
+                    className={`rounded-full px-3 py-1 font-semibold transition ${
+                      slotMinutes === slot ? "bg-white text-black shadow" : "text-white/75"
+                    }`}
+                    disabled={switchingTab}
+                  >
+                    Slot {slot}m
                   </button>
                 ))}
               </div>
@@ -991,44 +1546,379 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
               {eventId && !isCalendarLoading && calendarError && (
                 <p className="mt-2 text-[12px] text-red-200">{calendarError}</p>
               )}
-              {eventId && !isCalendarLoading && !calendarError && (
-                <div className="mt-3 space-y-2">
-                  {calendarBlocks.length === 0 && calendarAvailabilities.length === 0 && (
-                    <p className="text-[12px] text-white/55">Ainda sem bloqueios ou indisponibilidades.</p>
-                  )}
-                  {[...calendarBlocks]
-                    .sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime())
-                    .slice(0, 6)
-                    .map((block) => (
-                      <div
-                        key={`block-${block.id}`}
-                        className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-[12px]"
-                      >
-                        <p className="font-semibold text-white">Bloqueio {block.label || `#${block.id}`}</p>
-                        <p className="text-white/65">
-                          {new Date(block.startAt).toLocaleString("pt-PT")} →{" "}
-                          {new Date(block.endAt).toLocaleString("pt-PT")}
-                        </p>
-                        {block.note && <p className="text-white/55">Nota: {block.note}</p>}
-                      </div>
-                    ))}
-                  {[...calendarAvailabilities]
-                    .sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime())
-                    .slice(0, 6)
-                    .map((av) => (
-                      <div
-                        key={`av-${av.id}`}
-                        className="rounded-lg border border-amber-300/30 bg-amber-400/10 px-3 py-2 text-[12px] text-white"
-                      >
-                        <p className="font-semibold">{av.playerName || av.playerEmail || "Jogador"}</p>
-                        <p className="text-white/70">
-                          {new Date(av.startAt).toLocaleString("pt-PT")} → {new Date(av.endAt).toLocaleString("pt-PT")}
-                        </p>
-                        {av.note && <p className="text-white/65">Nota: {av.note}</p>}
-                      </div>
-                    ))}
-                </div>
+              {eventId && !isCalendarLoading && calendarWarning && (
+                <p className="mt-2 text-[12px] text-amber-200">{calendarWarning}</p>
               )}
+              {eventId && !isCalendarLoading && calendarMessage && (
+                <p className="mt-2 text-[12px] text-emerald-200">{calendarMessage}</p>
+              )}
+              {eventId && calendarScope === "day" && !isCalendarLoading && !calendarError && startOfDay && (
+                <p className="mt-2 text-[12px] text-white/60">
+                  A mostrar registos de {selectedDay} ({formatZoned(startOfDay, calendarTimezone)}).
+                </p>
+              )}
+                {eventId && !isCalendarLoading && !calendarError && (
+                  <div className="mt-3 space-y-3">
+                    <div className="overflow-hidden rounded-2xl border border-white/10 bg-black/25 p-3 shadow-[0_16px_50px_rgba(0,0,0,0.45)]">
+                      <p className="mb-2 text-[12px] uppercase tracking-[0.16em] text-white/55">Visão rápida (timeline)</p>
+                      <TimelineView
+                        blocks={calendarBlocks}
+                        availabilities={calendarAvailabilities}
+                        matches={calendarMatches}
+                        timezone={calendarTimezone}
+                        dayStart={startOfDay}
+                        conflictMap={new Map(
+                          calendarConflicts.map((c) => [`${c.type === "block_block" || c.type === "block_match" ? "block" : c.type === "availability_match" ? "availability" : "match"}-${c.aId}`, [c.type]]),
+                        )}
+                        slotMinutes={slotMinutes}
+                        onDrop={async (payload) => {
+                          // Persistir drop no servidor (mantendo duração). Usa PATCH no tipo certo.
+                          if (!eventId) return;
+                          const [kind, rawId] = payload.id.split("-");
+                          const parsedId = Number(rawId);
+                          if (!Number.isFinite(parsedId)) return;
+                          if (kind === "match") {
+                            const match = matchesById.get(parsedId);
+                            if (!match?.courtId) {
+                              setCalendarWarning("Define primeiro o court do jogo para o mover.");
+                              toast("Define o court do jogo antes de mover", "warn");
+                              return;
+                            }
+                          }
+                          setSavingCalendar(true);
+                          setCalendarError(null);
+                          setCalendarMessage(null);
+                          setCalendarWarning(null);
+                          try {
+                            const currentVersion = getItemVersion(kind as any, parsedId);
+                            const prevMatch = kind === "match" ? matchesById.get(parsedId) : null;
+                            const res = await fetch("/api/padel/calendar", {
+                              method: "PATCH",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({
+                                type: kind === "block" ? "block" : kind === "availability" ? "availability" : kind === "match" ? "match" : null,
+                                id: parsedId,
+                                startAt: payload.start.toISOString(),
+                                endAt: payload.end.toISOString(),
+                                ...(currentVersion ? { version: currentVersion } : {}),
+                                ...(payload.courtId ? { courtId: payload.courtId } : {}),
+                              }),
+                            });
+                            const json = await res.json().catch(() => null);
+                            if (!res.ok || json?.ok === false) {
+                              const errMsg = json?.error || "Não foi possível mover.";
+                              if (res.status === 409 || errMsg.toLowerCase().includes("conflito")) {
+                                setCalendarWarning(errMsg);
+                                toast(errMsg, "warn");
+                              } else if (res.status === 423 || errMsg.toLowerCase().includes("lock")) {
+                                setCalendarWarning("Outro admin está a editar este slot.");
+                                toast("Outro admin a editar este slot.", "warn");
+                              } else if (res.status === 409 && errMsg.toLowerCase().includes("stale")) {
+                                setCalendarWarning("Atualiza a página, houve edição em paralelo.");
+                                toast("Edição desatualizada, atualiza a página.", "warn");
+                              } else {
+                                setCalendarError(errMsg);
+                                toast(errMsg, "err");
+                              }
+                            } else {
+                              setCalendarMessage("Atualizado via drag & drop.");
+                              toast("Atualizado via drag & drop", "ok");
+                              if (kind === "block") {
+                                const prev = calendarBlocks.find((b: any) => b.id === parsedId);
+                                if (prev) {
+                                  setLastAction({
+                                    type: "block",
+                                    id: parsedId,
+                                    prevStart: prev.startAt,
+                                    prevEnd: prev.endAt,
+                                    prevCourtId: prev.courtId ?? null,
+                                    version: prev.updatedAt ?? null,
+                                  });
+                                }
+                              } else if (kind === "availability") {
+                                const prev = calendarAvailabilities.find((a: any) => a.id === parsedId);
+                                if (prev) {
+                                  setLastAction({
+                                    type: "availability",
+                                    id: parsedId,
+                                    prevStart: prev.startAt,
+                                    prevEnd: prev.endAt,
+                                    version: prev.updatedAt ?? null,
+                                  });
+                                }
+                              } else if (kind === "match" && prevMatch) {
+                                const start = prevMatch.startTime || prevMatch.plannedStartAt;
+                                const end =
+                                  prevMatch.plannedEndAt ||
+                                  (start && prevMatch.plannedDurationMinutes
+                                    ? new Date(new Date(start).getTime() + prevMatch.plannedDurationMinutes * 60 * 1000).toISOString()
+                                    : prevMatch.startTime);
+                                setLastAction({
+                                  type: "match",
+                                  id: parsedId,
+                                  prevStart: start,
+                                  prevEnd: end,
+                                  prevCourtId: prevMatch.courtId ?? null,
+                                  prevDuration: prevMatch.plannedDurationMinutes ?? null,
+                                  version: prevMatch.updatedAt ?? null,
+                                });
+                              }
+                              mutateCalendar();
+                            }
+                          } catch (err) {
+                            console.error("[padel/calendar] drag-drop update", err);
+                            setCalendarError("Erro ao mover.");
+                            toast("Erro ao mover", "err");
+                          } finally {
+                            setSavingCalendar(false);
+                          }
+                        }}
+                      />
+                    </div>
+                    <div className="grid gap-2 lg:grid-cols-2">
+                      <div className="space-y-2">
+                        <p className="text-[12px] uppercase tracking-[0.16em] text-white/55">Bloqueios</p>
+                        {calendarBlocks.length === 0 && (
+                          <p className="text-[12px] text-white/55">Sem bloqueios.</p>
+                        )}
+                        {[...calendarBlocks]
+                          .sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime())
+                          .slice(0, 6)
+                          .map((block) => (
+                            <div
+                              key={`block-${block.id}`}
+                              className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-[12px] space-y-1"
+                            >
+                              <p className="font-semibold text-white">Bloqueio {block.label || `#${block.id}`}</p>
+                              <p className="text-white/65">
+                                {formatZoned(block.startAt, calendarTimezone)} → {formatZoned(block.endAt, calendarTimezone)}
+                              </p>
+                              {block.note && <p className="text-white/55">Nota: {block.note}</p>}
+                              <div className="flex flex-wrap gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => handleEditBlock(block)}
+                                  className="rounded-full border border-white/20 px-2 py-[5px] text-[11px] text-white hover:border-white/35"
+                                >
+                                  Editar
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteCalendarItem("block", block.id)}
+                                  className="rounded-full border border-red-300/60 bg-red-500/15 px-2 py-[5px] text-[11px] text-red-50 hover:border-red-200/70"
+                                >
+                                  Apagar
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                      </div>
+                      <div className="space-y-2">
+                        <p className="text-[12px] uppercase tracking-[0.16em] text-white/55">Indisponibilidades</p>
+                        {calendarAvailabilities.length === 0 && (
+                          <p className="text-[12px] text-white/55">Sem indisponibilidades.</p>
+                        )}
+                        {[...calendarAvailabilities]
+                          .sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime())
+                          .slice(0, 6)
+                          .map((av) => (
+                            <div
+                              key={`av-${av.id}`}
+                              className="rounded-lg border border-amber-300/30 bg-amber-400/10 px-3 py-2 text-[12px] text-white space-y-1"
+                            >
+                              <p className="font-semibold">{av.playerName || av.playerEmail || "Jogador"}</p>
+                              <p className="text-white/70">
+                                {formatZoned(av.startAt, calendarTimezone)} → {formatZoned(av.endAt, calendarTimezone)}
+                              </p>
+                              {av.note && <p className="text-white/65">Nota: {av.note}</p>}
+                              <div className="flex flex-wrap gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => handleEditAvailability(av)}
+                                  className="rounded-full border border-white/30 px-2 py-[5px] text-[11px] text-white hover:border-white/45"
+                                >
+                                  Editar
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteCalendarItem("availability", av.id)}
+                                  className="rounded-full border border-red-300/60 bg-red-500/15 px-2 py-[5px] text-[11px] text-red-50 hover:border-red-200/70"
+                                >
+                                  Apagar
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                      </div>
+              <div className="space-y-2 lg:col-span-2">
+                <p className="text-[12px] uppercase tracking-[0.16em] text-white/55">Jogos agendados</p>
+                {calendarMatches.length === 0 && (
+                  <p className="text-[12px] text-white/55">Sem jogos com horário definido.</p>
+                )}
+                {[...calendarMatches]
+                  .sort(
+                    (a, b) =>
+                      new Date(a.startTime || a.plannedStartAt || 0).getTime() -
+                      new Date(b.startTime || b.plannedStartAt || 0).getTime(),
+                  )
+                  .slice(0, 6)
+                  .map((m) => (
+                    <div
+                      key={`match-${m.id}`}
+                      className={`flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2 text-[12px] text-white shadow-[0_12px_35px_rgba(0,0,0,0.35)] ${
+                        calendarConflicts.some((c) => c.aId === m.id && c.type !== "outside_event_window")
+                          ? "border-red-400/70 bg-red-500/10"
+                          : calendarConflicts.some((c) => c.aId === m.id && c.type === "outside_event_window")
+                            ? "border-amber-300/60 bg-amber-500/10"
+                            : "border-white/12 bg-gradient-to-r from-white/8 via-[#0f1c3d]/50 to-[#050912]/80"
+                      }`}
+                    >
+                      <div className="space-y-1">
+                        <p className="font-semibold">Jogo #{m.id}</p>
+                        <p className="text-white/70">
+                          {formatZoned(m.startTime || m.plannedStartAt, calendarTimezone)} · Court {m.courtName || m.courtNumber || m.courtId || "—"}
+                        </p>
+                        <p className="text-white/60">{m.roundLabel || m.groupLabel || "Fase"}</p>
+                        <div className="flex flex-wrap gap-1">
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              const start = m.startTime || m.plannedStartAt;
+                              const end =
+                                m.plannedEndAt ||
+                                (start && m.plannedDurationMinutes
+                                  ? new Date(new Date(start).getTime() + m.plannedDurationMinutes * 60 * 1000).toISOString()
+                                  : null);
+                              if (!start || !end) return;
+                              const newEnd = new Date(new Date(end).getTime() - slotMinutes * 60 * 1000);
+                              setSavingCalendar(true);
+                              try {
+                                const res = await fetch("/api/padel/calendar", {
+                                  method: "PATCH",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({
+                                    type: "match",
+                                    id: m.id,
+                                    startAt: start,
+                                    endAt: newEnd.toISOString(),
+                                    version: m.updatedAt,
+                                  }),
+                                });
+                                const json = await res.json().catch(() => null);
+                                if (!res.ok || json?.ok === false) {
+                                  setCalendarError(json?.error || "Não foi possível ajustar.");
+                                  toast(json?.error || "Não foi possível ajustar.", "err");
+                                } else {
+                                  setLastAction({
+                                    type: "match",
+                                    id: m.id,
+                                    prevStart: start,
+                                    prevEnd: end,
+                                    prevCourtId: m.courtId ?? null,
+                                    prevDuration: m.plannedDurationMinutes ?? null,
+                                    version: m.updatedAt ?? null,
+                                  });
+                                  toast("Ajustado -1 slot", "ok");
+                                  mutateCalendar();
+                                }
+                              } finally {
+                                setSavingCalendar(false);
+                              }
+                            }}
+                            className="rounded-full border border-white/20 px-2 py-[2px] text-[11px] text-white hover:border-white/35"
+                          >
+                            -{slotMinutes}m
+                          </button>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              const start = m.startTime || m.plannedStartAt;
+                              const end =
+                                m.plannedEndAt ||
+                                (start && m.plannedDurationMinutes
+                                  ? new Date(new Date(start).getTime() + m.plannedDurationMinutes * 60 * 1000).toISOString()
+                                  : null);
+                              if (!start || !end) return;
+                              const newEnd = new Date(new Date(end).getTime() + slotMinutes * 60 * 1000);
+                              setSavingCalendar(true);
+                              try {
+                                const res = await fetch("/api/padel/calendar", {
+                                  method: "PATCH",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({
+                                    type: "match",
+                                    id: m.id,
+                                    startAt: start,
+                                    endAt: newEnd.toISOString(),
+                                    version: m.updatedAt,
+                                  }),
+                                });
+                                const json = await res.json().catch(() => null);
+                                if (!res.ok || json?.ok === false) {
+                                  setCalendarError(json?.error || "Não foi possível ajustar.");
+                                  toast(json?.error || "Não foi possível ajustar.", "err");
+                                } else {
+                                  setLastAction({
+                                    type: "match",
+                                    id: m.id,
+                                    prevStart: start,
+                                    prevEnd: end,
+                                    prevCourtId: m.courtId ?? null,
+                                    prevDuration: m.plannedDurationMinutes ?? null,
+                                    version: m.updatedAt ?? null,
+                                  });
+                                  toast("Ajustado +1 slot", "ok");
+                                  mutateCalendar();
+                                }
+                              } finally {
+                                setSavingCalendar(false);
+                              }
+                            }}
+                            className="rounded-full border border-white/20 px-2 py-[2px] text-[11px] text-white hover:border-white/35"
+                          >
+                            +{slotMinutes}m
+                          </button>
+                        </div>
+                      </div>
+                      <span className="rounded-full border border-white/20 bg-white/5 px-2 py-1 text-[11px] text-white/75">
+                        {m.status}
+                      </span>
+                    </div>
+                          ))}
+                      </div>
+                    <div className="space-y-2 lg:col-span-2">
+                      <p className="text-[12px] uppercase tracking-[0.16em] text-white/55">Conflitos</p>
+                      {calendarConflicts.length === 0 && (
+                        <p className="text-[12px] text-emerald-200/80">Sem conflitos detetados.</p>
+                      )}
+                      {calendarConflicts.slice(0, 6).map((c) => (
+                        <div
+                          key={`${c.type}-${c.aId}-${c.bId}`}
+                          className={`flex items-center justify-between rounded-lg px-3 py-2 text-[12px] shadow-[0_12px_35px_rgba(0,0,0,0.35)] ${
+                            c.type === "outside_event_window" || c.type === "availability_match"
+                              ? "border border-amber-300/40 bg-amber-500/10 text-amber-50"
+                              : "border border-red-300/40 bg-red-500/10 text-red-50"
+                          }`}
+                        >
+                          <div className="space-y-1">
+                            <p className="font-semibold">{c.summary}</p>
+                            <p className="text-red-100/80">Registos #{c.aId} e #{c.bId}</p>
+                            {c.type === "player_match" && (
+                              <p className="text-[11px] text-red-100/70">Dupla/jogador duplicado no mesmo horário.</p>
+                            )}
+                            {c.type === "outside_event_window" && (
+                              <p className="text-[11px] text-amber-100/80">Fora da janela do evento.</p>
+                            )}
+                          </div>
+                          <span className="rounded-full border border-red-200/40 bg-red-200/15 px-2 py-[6px] text-[11px] text-red-50">
+                            {c.type}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                    </div>
+                  </div>
+                )}
             </div>
             <div className="space-y-3 rounded-2xl border border-white/12 bg-white/5 p-4 text-white/80 shadow-[0_16px_50px_rgba(0,0,0,0.45)]">
               <p className="text-sm font-semibold text-white">Legenda & próximos passos</p>
@@ -1036,17 +1926,221 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
                 <li>• Bloqueios de court e indisponibilidades de jogador.</li>
                 <li>• Conflitos: sobreposição, jogador em dois jogos, fora de horário.</li>
                 <li>• Vista por clube ou todos os clubes ativos do torneio.</li>
+                <li>• Horas em {calendarTimezone} com buffer de {calendarBuffer} min entre registos.</li>
               </ul>
               <div className="rounded-xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0f1c3d]/50 to-[#050912]/90 p-3 text-[13px] text-white/75">
                 A seguir: endpoints de indisponibilidade + slots de bloqueio; depois ligamos o drag & drop.
               </div>
+            </div>
+            <div className="space-y-3 rounded-2xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0f1c3d]/55 to-[#050912]/90 p-4 text-white shadow-[0_18px_55px_rgba(0,0,0,0.45)]">
+              <p className="text-sm font-semibold text-white">Novo bloqueio</p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <input
+                  type="datetime-local"
+                  value={blockForm.start}
+                  onChange={(e) => setBlockForm((p) => ({ ...p, start: e.target.value }))}
+                  className="rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
+                  placeholder="Início"
+                  disabled={!eventId || savingCalendar}
+                />
+                <input
+                  type="datetime-local"
+                  value={blockForm.end}
+                  onChange={(e) => setBlockForm((p) => ({ ...p, end: e.target.value }))}
+                  className="rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
+                  placeholder="Fim"
+                  disabled={!eventId || savingCalendar}
+                />
+              </div>
+              <input
+                type="text"
+                value={blockForm.label}
+                onChange={(e) => setBlockForm((p) => ({ ...p, label: e.target.value }))}
+                className="w-full rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
+                placeholder="Título do bloqueio (opcional)"
+                disabled={!eventId || savingCalendar}
+              />
+              <input
+                type="text"
+                value={blockForm.note}
+                onChange={(e) => setBlockForm((p) => ({ ...p, note: e.target.value }))}
+                className="w-full rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
+                placeholder="Nota (opcional)"
+                disabled={!eventId || savingCalendar}
+              />
+              <button
+                type="button"
+                onClick={() => saveCalendarItem("block")}
+                disabled={!eventId || savingCalendar}
+                className="inline-flex items-center justify-center rounded-full bg-white px-4 py-2 text-sm font-semibold text-black shadow hover:scale-[1.01] disabled:opacity-60"
+              >
+                {savingCalendar ? "A guardar…" : editingBlockId ? "Atualizar bloqueio" : "Guardar bloqueio"}
+              </button>
+              {lastAction && lastAction.type === "block" && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!lastAction) return;
+                    setCalendarMessage(null);
+                    setCalendarWarning(null);
+                    setCalendarError(null);
+                    setSavingCalendar(true);
+                    fetch("/api/padel/calendar", {
+                      method: "PATCH",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        type: "block",
+                        id: lastAction.id,
+                        startAt: lastAction.prevStart,
+                        endAt: lastAction.prevEnd,
+                        courtId: lastAction.prevCourtId ?? undefined,
+                        version: lastAction.version ?? undefined,
+                      }),
+                    })
+                      .then((res) => res.json().then((json) => ({ res, json })))
+                      .then(({ res, json }) => {
+                        if (!res.ok || json?.ok === false) {
+                          setCalendarError(json?.error || "Não foi possível desfazer.");
+                          toast(json?.error || "Não foi possível desfazer.", "err");
+                        } else {
+                          setCalendarMessage("Desfeito.");
+                          toast("Desfeito", "ok");
+                          setLastAction(null);
+                          mutateCalendar();
+                        }
+                      })
+                      .catch(() => {
+                        setCalendarError("Erro ao desfazer.");
+                      })
+                      .finally(() => setSavingCalendar(false));
+                  }}
+                  className="inline-flex items-center justify-center rounded-full border border-white/25 px-4 py-2 text-sm font-semibold text-white hover:border-white/40"
+                >
+                  Desfazer último
+                </button>
+              )}
+              {editingBlockId && (
+                <button
+                  type="button"
+                  onClick={resetCalendarForms}
+                  className="inline-flex items-center justify-center rounded-full border border-white/25 px-4 py-2 text-sm font-semibold text-white hover:border-white/40"
+                >
+                  Cancelar edição
+                </button>
+              )}
+              {!eventId && <p className="text-[12px] text-white/55">Precisas de eventId no URL.</p>}
+            </div>
+            <div className="space-y-3 rounded-2xl border border-white/12 bg-gradient-to-br from-white/8 via-[#130c24]/55 to-[#050912]/90 p-4 text-white shadow-[0_18px_55px_rgba(0,0,0,0.45)]">
+              <p className="text-sm font-semibold text-white">Nova indisponibilidade</p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <input
+                  type="datetime-local"
+                  value={availabilityForm.start}
+                  onChange={(e) => setAvailabilityForm((p) => ({ ...p, start: e.target.value }))}
+                  className="rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
+                  placeholder="Início"
+                  disabled={!eventId || savingCalendar}
+                />
+                <input
+                  type="datetime-local"
+                  value={availabilityForm.end}
+                  onChange={(e) => setAvailabilityForm((p) => ({ ...p, end: e.target.value }))}
+                  className="rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
+                  placeholder="Fim"
+                  disabled={!eventId || savingCalendar}
+                />
+              </div>
+              <input
+                type="text"
+                value={availabilityForm.playerName}
+                onChange={(e) => setAvailabilityForm((p) => ({ ...p, playerName: e.target.value }))}
+                className="w-full rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
+                placeholder="Nome do jogador (opcional)"
+                disabled={!eventId || savingCalendar}
+              />
+              <input
+                type="email"
+                value={availabilityForm.playerEmail}
+                onChange={(e) => setAvailabilityForm((p) => ({ ...p, playerEmail: e.target.value }))}
+                className="w-full rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
+                placeholder="Email (opcional)"
+                disabled={!eventId || savingCalendar}
+              />
+              <input
+                type="text"
+                value={availabilityForm.note}
+                onChange={(e) => setAvailabilityForm((p) => ({ ...p, note: e.target.value }))}
+                className="w-full rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
+                placeholder="Nota (opcional)"
+                disabled={!eventId || savingCalendar}
+              />
+              <button
+                type="button"
+                onClick={() => saveCalendarItem("availability")}
+                disabled={!eventId || savingCalendar}
+                className="inline-flex items-center justify-center rounded-full bg-white px-4 py-2 text-sm font-semibold text-black shadow hover:scale-[1.01] disabled:opacity-60"
+              >
+                {savingCalendar ? "A guardar…" : editingAvailabilityId ? "Atualizar indisponibilidade" : "Guardar indisponibilidade"}
+              </button>
+              {lastAction && lastAction.type === "availability" && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!lastAction) return;
+                    setCalendarMessage(null);
+                    setCalendarWarning(null);
+                    setCalendarError(null);
+                    setSavingCalendar(true);
+                    fetch("/api/padel/calendar", {
+                      method: "PATCH",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        type: "availability",
+                        id: lastAction.id,
+                        startAt: lastAction.prevStart,
+                        endAt: lastAction.prevEnd,
+                        version: lastAction.version ?? undefined,
+                      }),
+                    })
+                      .then((res) => res.json().then((json) => ({ res, json })))
+                      .then(({ res, json }) => {
+                        if (!res.ok || json?.ok === false) {
+                          setCalendarError(json?.error || "Não foi possível desfazer.");
+                          toast(json?.error || "Não foi possível desfazer.", "err");
+                        } else {
+                          setCalendarMessage("Desfeito.");
+                          toast("Desfeito", "ok");
+                          setLastAction(null);
+                          mutateCalendar();
+                        }
+                      })
+                      .catch(() => {
+                        setCalendarError("Erro ao desfazer.");
+                      })
+                      .finally(() => setSavingCalendar(false));
+                  }}
+                  className="inline-flex items-center justify-center rounded-full border border-white/25 px-4 py-2 text-sm font-semibold text-white hover:border-white/40"
+                >
+                  Desfazer último
+                </button>
+              )}
+              {editingAvailabilityId && (
+                <button
+                  type="button"
+                  onClick={resetCalendarForms}
+                  className="inline-flex items-center justify-center rounded-full border border-white/25 px-4 py-2 text-sm font-semibold text-white hover:border-white/40"
+                >
+                  Cancelar edição
+                </button>
+              )}
+              {!eventId && <p className="text-[12px] text-white/55">Precisas de eventId no URL.</p>}
             </div>
           </div>
         </div>
       )}
 
       {!switchingTab && activeTab === "clubs" && (
-        <div className="space-y-4">
+        <div className="space-y-4 transition-all duration-250 ease-out opacity-100 translate-y-0">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <h2 className="text-sm font-semibold text-white">Clubes</h2>
@@ -1567,7 +2661,7 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
       )}
 
       {!switchingTab && activeTab === "players" && (
-        <div className="space-y-4 rounded-2xl border border-white/12 bg-gradient-to-br from-white/6 via-[#0c1628]/60 to-[#050912]/85 p-4 shadow-[0_18px_60px_rgba(0,0,0,0.5)]">
+        <div className="space-y-4 rounded-2xl border border-white/12 bg-gradient-to-br from-white/6 via-[#0c1628]/60 to-[#050912]/85 p-4 shadow-[0_18px_60px_rgba(0,0,0,0.5)] transition-all duration-250 ease-out opacity-100 translate-y-0">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <p className="text-[12px] uppercase tracking-[0.2em] text-white/60">Jogadores</p>
@@ -1618,7 +2712,7 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
       )}
 
       {!switchingTab && activeTab === "rankings" && (
-        <div className="rounded-2xl border border-white/12 bg-gradient-to-br from-white/6 via-[#0c1628]/60 to-[#050912]/85 p-4 text-sm text-white/75 space-y-2 shadow-[0_18px_60px_rgba(0,0,0,0.5)]">
+        <div className="rounded-2xl border border-white/12 bg-gradient-to-br from-white/6 via-[#0c1628]/60 to-[#050912]/85 p-4 text-sm text-white/75 space-y-2 shadow-[0_18px_60px_rgba(0,0,0,0.5)] transition-all duration-250 ease-out opacity-100 translate-y-0">
           <p className="text-[12px] uppercase tracking-[0.2em] text-white/60">Rankings</p>
           <p>Rankings multi-torneio chegam numa próxima versão.</p>
         </div>

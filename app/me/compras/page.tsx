@@ -106,11 +106,17 @@ export default function PurchasesPage() {
     });
 
   return (
-    <main className="relative min-h-screen bg-[radial-gradient(circle_at_15%_20%,#8a1ecb20_0%,transparent_28%),radial-gradient(circle_at_85%_10%,#00eaff20_0%,transparent_25%),radial-gradient(circle_at_30%_70%,#ff00c820_0%,transparent_35%),linear-gradient(135deg,#050611_0%,#040812_60%,#05060d_100%)] text-white">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_20%,rgba(255,255,255,0.04),transparent_55%)]" />
+    <main className="relative orya-body-bg min-h-screen w-full overflow-hidden text-white">
+      <div className="pointer-events-none fixed inset-0" aria-hidden="true">
+        <div className="absolute -top-36 right-[-140px] h-[420px] w-[420px] rounded-full bg-[radial-gradient(circle_at_35%_35%,rgba(255,0,200,0.28),transparent_60%)] opacity-80 blur-3xl" />
+        <div className="absolute top-[22vh] -left-40 h-[360px] w-[360px] rounded-full bg-[radial-gradient(circle_at_30%_30%,rgba(107,255,255,0.22),transparent_60%)] opacity-80 blur-3xl" />
+        <div className="absolute bottom-[-180px] right-[12%] h-[420px] w-[420px] rounded-full bg-[radial-gradient(circle_at_40%_40%,rgba(22,70,245,0.25),transparent_60%)] opacity-70 blur-3xl" />
+        <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.05),transparent_35%,rgba(0,0,0,0.65))] mix-blend-screen" />
+      </div>
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_20%,rgba(255,255,255,0.05),transparent_55%)]" />
 
       <div className="relative mx-auto flex max-w-5xl flex-col gap-6 px-4 pb-16 pt-10">
-        <header className="flex flex-col gap-3 rounded-3xl border border-white/10 bg-gradient-to-r from-white/5 via-[#111424]/35 to-white/5 px-5 py-6 shadow-[0_25px_60px_rgba(0,0,0,0.55)] backdrop-blur-3xl sm:flex-row sm:items-center sm:justify-between sm:px-8 sm:py-7">
+        <header className="flex flex-col gap-3 rounded-3xl border border-white/15 bg-white/5 px-5 py-6 shadow-[0_24px_60px_rgba(0,0,0,0.65)] backdrop-blur-2xl sm:flex-row sm:items-center sm:justify-between sm:px-8 sm:py-7">
           <div className="space-y-1">
             <p className="text-xs uppercase tracking-[0.24em] text-white/55">Área pessoal</p>
             <h1 className="bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] bg-clip-text text-3xl font-bold leading-tight text-transparent">
@@ -122,7 +128,7 @@ export default function PurchasesPage() {
           </div>
 
           <div className="flex flex-wrap items-center gap-3 text-sm">
-            <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-white/85 transition hover:border-white/30 hover:bg-white/10">
+            <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-white/30 bg-white/10 px-3 py-1.5 text-white/90 transition hover:border-white/45 hover:bg-white/20">
               <input
                 type="checkbox"
                 className="accent-[#6BFFFF]"
@@ -137,7 +143,7 @@ export default function PurchasesPage() {
                 <select
                   value={statusFilter ?? ""}
                   onChange={(e) => setStatusFilter(e.target.value || null)}
-                  className="rounded-full border border-white/15 bg-black/50 px-3 py-1.5 text-sm text-white/90 shadow-inner shadow-black/30 outline-none transition hover:border-white/30 focus:border-[#6BFFFF] focus:ring-2 focus:ring-[#6BFFFF]/40"
+                  className="rounded-full border border-white/25 bg-black/50 px-3 py-1.5 text-sm text-white/90 shadow-inner shadow-black/30 outline-none transition hover:border-white/40 focus:border-[#6BFFFF] focus:ring-2 focus:ring-[#6BFFFF]/40"
                 >
                   <option value="">Todos</option>
                   {statusOptions.map((s) => (
@@ -157,7 +163,7 @@ export default function PurchasesPage() {
             {Array.from({ length: 4 }).map((_, i) => (
               <div
                 key={i}
-                className="h-40 rounded-2xl border border-white/10 bg-gradient-to-br from-white/10 via-white/0 to-white/10 animate-pulse"
+                className="h-40 rounded-2xl border border-white/15 bg-white/5 animate-pulse shadow-[0_18px_50px_rgba(0,0,0,0.6)] backdrop-blur-2xl"
               />
             ))}
           </div>
@@ -171,12 +177,12 @@ export default function PurchasesPage() {
             return (
               <li
                 key={item.id}
-                className="rounded-3xl border border-white/12 bg-gradient-to-br from-[#0e1224] via-[#0a0f20]/80 to-[#0a0916] p-5 shadow-[0_25px_60px_rgba(0,0,0,0.55)] backdrop-blur-2xl"
+                className="rounded-3xl border border-white/15 bg-[linear-gradient(140deg,rgba(255,255,255,0.12),rgba(2,6,16,0.88))] p-5 shadow-[0_24px_60px_rgba(0,0,0,0.65)] backdrop-blur-2xl"
               >
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="space-y-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="rounded-full bg-white/10 px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-white/70">
+                      <span className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-white/80">
                         {purchaseLabel}
                       </span>
                       <span
@@ -185,7 +191,7 @@ export default function PurchasesPage() {
                         ● {statusStyle.label ?? item.status}
                       </span>
                       {item.purchaseId && (
-                        <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] text-white/65">
+                        <span className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] text-white/70">
                           ID {item.purchaseId}
                         </span>
                       )}
@@ -194,7 +200,7 @@ export default function PurchasesPage() {
                       {formatDate(item.createdAt)} · {formatMoney(item.totalCents, item.currency)}
                     </p>
                   </div>
-                  <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-white/80">
+                  <div className="flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs text-white/85">
                     <span className="text-white/60">Total</span>
                     <span className="text-white font-semibold">{formatMoney(item.totalCents, item.currency)}</span>
                   </div>
@@ -207,7 +213,7 @@ export default function PurchasesPage() {
                       {item.lines.map((l) => (
                         <div
                           key={l.id}
-                          className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/85"
+                          className="rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white/90"
                         >
                           <p className="font-semibold text-white">{l.eventTitle}</p>
                           <p className="text-xs text-white/65">{l.ticketTypeName}</p>
@@ -216,13 +222,13 @@ export default function PurchasesPage() {
                     </div>
                   </div>
 
-                  <div className="rounded-xl border border-white/12 bg-black/30 px-3 py-3 text-xs text-white/80">
+                  <div className="rounded-xl border border-white/15 bg-black/40 px-3 py-3 text-xs text-white/85">
                     <p className="mb-2 text-[11px] uppercase tracking-[0.16em] text-white/60">Linha temporal</p>
                     <div className="flex flex-wrap gap-2">
                       {item.timeline.map((t) => (
                         <span
                           key={t.id}
-                          className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] text-white/80"
+                          className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] text-white/85"
                           title={t.errorMessage || undefined}
                         >
                           {t.status} • {t.source} • {formatDate(t.createdAt)}
@@ -236,14 +242,14 @@ export default function PurchasesPage() {
           })}
 
           {!loading && !items.length && (
-            <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-[#150a23]/70 via-[#0b1224]/60 to-[#05060f]/80 px-6 py-8 text-center shadow-[0_24px_60px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
+            <div className="rounded-3xl border border-white/15 bg-white/5 px-6 py-8 text-center shadow-[0_24px_60px_rgba(0,0,0,0.65)] backdrop-blur-2xl">
               <p className="text-lg font-semibold text-white">Sem compras (ainda).</p>
               <p className="mt-2 text-sm text-white/70">
                 Quando comprares um bilhete ORYA, ele vai aparecer aqui com o mesmo efeito glassy da plataforma.
               </p>
               <Link
                 href="/explorar"
-                className="mt-4 inline-flex items-center justify-center rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-5 py-2 text-sm font-semibold text-black shadow-[0_0_28px_rgba(107,255,255,0.55)] transition hover:brightness-110"
+                className="mt-4 inline-flex items-center justify-center rounded-full bg-white px-5 py-2 text-sm font-semibold text-black shadow-[0_18px_45px_rgba(0,0,0,0.35)] transition hover:shadow-[0_22px_55px_rgba(255,255,255,0.25)]"
               >
                 Explorar eventos
               </Link>

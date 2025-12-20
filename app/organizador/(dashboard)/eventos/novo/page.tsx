@@ -10,6 +10,7 @@ import { useUser } from "@/app/hooks/useUser";
 import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
 import { StepperDots, type WizardStep } from "@/components/organizador/eventos/wizard/StepperDots";
 import { PT_CITIES, type PTCity } from "@/lib/constants/ptCities";
+import { computeCombinedFees } from "@/lib/fees";
 
 type TicketTypeRow = {
   name: string;
@@ -25,19 +26,19 @@ const DRAFT_KEY = "orya-organizer-new-event-draft";
 const CATEGORY_OPTIONS = [
   {
     key: "padel",
-    value: "SPORT",
+    value: "PADEL",
     label: "Padel / Torneio",
     accent: "from-[#6BFFFF] to-[#22c55e]",
     copy: "Setup rápido com courts, rankings e lógica de torneio.",
-    categories: ["DESPORTO"],
+    categories: ["PADEL"],
   },
   {
     key: "default",
-    value: "OTHER",
+    value: "DEFAULT",
     label: "Evento padrão",
     accent: "from-[#9ca3af] to-[#6b7280]",
     copy: "Fluxo base sem extras — serve para qualquer formato simples.",
-    categories: ["FESTA"],
+    categories: ["OUTRO"],
   },
 ] as const;
 
@@ -91,19 +92,24 @@ function computeFeePreview(
   stripeFees: { feeBps: number; feeFixedCents: number },
 ) {
   const baseCents = Math.round(Math.max(0, priceEuro) * 100);
-  const feeCents = Math.round((baseCents * platformFees.feeBps) / 10_000) + platformFees.feeFixedCents;
-
-  if (mode === "ON_TOP") {
-    const totalCliente = baseCents + feeCents;
-    const stripeOnTotal = Math.round((totalCliente * stripeFees.feeBps) / 10_000) + stripeFees.feeFixedCents;
-    const recebeOrganizador = Math.max(0, baseCents - stripeOnTotal);
-    return { baseCents, feeCents, totalCliente, recebeOrganizador, stripeFeeCents: stripeOnTotal };
-  }
-
-  const totalCliente = baseCents;
-  const stripeOnBase = Math.round((totalCliente * stripeFees.feeBps) / 10_000) + stripeFees.feeFixedCents;
-  const recebeOrganizador = Math.max(0, baseCents - feeCents - stripeOnBase);
-  return { baseCents, feeCents, totalCliente, recebeOrganizador, stripeFeeCents: stripeOnBase };
+  const combined = computeCombinedFees({
+    amountCents: baseCents,
+    discountCents: 0,
+    feeMode: mode === "ON_TOP" ? "ADDED" : "INCLUDED",
+    platformFeeBps: platformFees.feeBps,
+    platformFeeFixedCents: platformFees.feeFixedCents,
+    stripeFeeBps: stripeFees.feeBps,
+    stripeFeeFixedCents: stripeFees.feeFixedCents,
+  });
+  const recebeOrganizador = Math.max(0, combined.totalCents - combined.oryaFeeCents - combined.stripeFeeCentsEstimate);
+  return {
+    baseCents,
+    feeCents: combined.oryaFeeCents,
+    totalCliente: combined.totalCents,
+    recebeOrganizador,
+    stripeFeeCents: combined.stripeFeeCentsEstimate,
+    combinedFeeCents: combined.combinedFeeCents,
+  };
 }
 
 export default function NewOrganizerEventPage() {
@@ -877,8 +883,8 @@ export default function NewOrganizerEventPage() {
 
     try {
       const preset = selectedPreset ? presetMap.get(selectedPreset) : null;
-      const categoriesToSend = preset?.categories ?? ["FESTA"];
-      const templateToSend = preset?.value ?? "OTHER";
+      const categoriesToSend = preset?.categories ?? ["OUTRO"];
+      const templateToSend = selectedPreset === "padel" ? "PADEL" : "OTHER";
     const payload = {
       title: title.trim(),
       description: description.trim() || null,
@@ -893,12 +899,14 @@ export default function NewOrganizerEventPage() {
         coverImageUrl: coverUrl,
         feeMode,
         isTest: isAdmin ? isTest : undefined,
-        padelConfig:
+        padel:
           selectedPreset === "padel"
             ? {
-                clubId: selectedPadelClubId,
+                padelClubId: selectedPadelClubId,
                 courtIds: selectedPadelCourtIds,
                 staffIds: selectedPadelStaffIds,
+                numberOfCourts: selectedPadelCourtIds.length || 1,
+                padelV2Enabled: true,
               }
             : undefined,
     };
@@ -1543,7 +1551,7 @@ export default function NewOrganizerEventPage() {
               const parsed = Number((row.price ?? "0").toString().replace(",", "."));
               const priceEuro = Number.isFinite(parsed) ? parsed : 0;
               const preview = computeFeePreview(priceEuro, feeMode, platformFees, stripeFees);
-              const combinedFeeCents = preview.feeCents + preview.stripeFeeCents;
+              const combinedFeeCents = preview.combinedFeeCents ?? preview.feeCents + preview.stripeFeeCents;
               return (
                 <div
                   key={idx}
@@ -1610,8 +1618,8 @@ export default function NewOrganizerEventPage() {
                       <p className="text-[12px] font-semibold text-white/75">Pré-visualização</p>
                       <div className="text-[12px] rounded-lg border border-white/10 bg-black/25 px-3 py-2 text-white/85">
                         <p>Cliente: {(preview.totalCliente / 100).toFixed(2)} €</p>
-                        <p>Recebes: {(preview.recebeOrganizador / 100).toFixed(2)} €</p>
-                        <p className="text-white/50">Taxa ORYA: {(combinedFeeCents / 100).toFixed(2)} €</p>
+                        <p>Recebes (estimado): {(preview.recebeOrganizador / 100).toFixed(2)} €</p>
+                        <p className="text-white/50">Taxa da plataforma: {(combinedFeeCents / 100).toFixed(2)} €</p>
                       </div>
                     </div>
                   </div>

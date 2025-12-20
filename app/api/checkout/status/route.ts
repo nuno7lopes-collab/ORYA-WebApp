@@ -165,10 +165,10 @@ export async function GET(req: NextRequest) {
           RUNNING: "PROCESSING",
           FAILED: "FAILED",
           DEAD_LETTER: "FAILED",
-          SUCCEEDED: "PROCESSING",
+          SUCCEEDED: "PAID",
         };
         const mappedOp: Status = opStatusMap[op.status] ?? "PROCESSING";
-        const final = mappedOp === "FAILED";
+        const final = mappedOp === "FAILED" || mappedOp === "PAID";
         const nextAction =
           mappedOp === "FAILED"
             ? "CONTACT_SUPPORT"

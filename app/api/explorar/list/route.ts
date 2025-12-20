@@ -124,14 +124,16 @@ export async function GET(req: NextRequest) {
   // Map categorias pedidas para templateType conhecido (fallback)
   if (categoryFilters.length > 0) {
     const mapToTemplate: Record<string, EventTemplateType> = {
-      FESTA: "PARTY",
-      DESPORTO: "SPORT",
+      PADEL: "PADEL",
+      DESPORTO: "PADEL", // legacy -> padel
+      OUTRO: "OTHER",
+      GERAL: "OTHER",
+      FESTA: "OTHER",
       CONCERTO: "OTHER",
-      PALESTRA: "TALK",
+      PALESTRA: "OTHER",
       ARTE: "OTHER",
       COMIDA: "OTHER",
       DRINKS: "OTHER",
-      GERAL: "OTHER",
     };
     const templateTypes = categoryFilters.map((c) => mapToTemplate[c]).filter((v): v is EventTemplateType => Boolean(v));
 
@@ -301,7 +303,7 @@ export async function GET(req: NextRequest) {
 
       const templateToCategory: Record<string, string> = {
         PARTY: "FESTA",
-        SPORT: "DESPORTO",
+        PADEL: "PADEL",
         TALK: "PALESTRA",
       };
       const categories =

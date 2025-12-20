@@ -12,17 +12,23 @@ export async function upsertActiveHold(
   const minutes = ttlMinutes && ttlMinutes > 0 ? ttlMinutes : DEFAULT_HOLD_MINUTES;
   const expiresAt = new Date(Date.now() + minutes * 60 * 1000);
 
-  await tx.padelPairingHold.upsert({
-    where: { pairingId_status: { pairingId, status: PadelPairingHoldStatus.ACTIVE } },
-    update: { expiresAt },
-    create: {
-      pairingId,
-      eventId,
-      holds: 2,
-      status: PadelPairingHoldStatus.ACTIVE,
-      expiresAt,
-    },
+  // Alguns ambientes perderam o unique constraint, por isso evitamos upsert/ON CONFLICT.
+  const updated = await tx.padelPairingHold.updateMany({
+    where: { pairingId, status: PadelPairingHoldStatus.ACTIVE },
+    data: { expiresAt },
   });
+
+  if (updated.count === 0) {
+    await tx.padelPairingHold.create({
+      data: {
+        pairingId,
+        eventId,
+        holds: 2,
+        status: PadelPairingHoldStatus.ACTIVE,
+        expiresAt,
+      },
+    });
+  }
 
   return { expiresAt };
 }

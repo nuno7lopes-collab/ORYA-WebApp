@@ -95,7 +95,7 @@ export default async function OrganizerRouterPage() {
   // Tem org ativa → dashboard
   return (
     <AuthModalProvider>
-      <DashboardClient />
+      <DashboardClient hasOrganizer />
       <OrganizerTour organizerId={activeOrganizerId} />
     </AuthModalProvider>
   );

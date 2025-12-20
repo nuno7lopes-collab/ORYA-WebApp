@@ -5,6 +5,17 @@
 
 import type { SupabaseClient, User } from "@supabase/supabase-js";
 
+export class UnauthenticatedError extends Error {
+  constructor() {
+    super("UNAUTHENTICATED");
+    this.name = "UNAUTHENTICATED";
+  }
+}
+
+export function isUnauthenticatedError(err: unknown): boolean {
+  return err instanceof UnauthenticatedError || (err instanceof Error && err.message === "UNAUTHENTICATED");
+}
+
 /**
  * Garante que existe um utilizador autenticado.
  * - Se não houver sessão, lança um erro "UNAUTHENTICATED".
@@ -19,7 +30,7 @@ export async function ensureAuthenticated(
   } = await supabase.auth.getUser();
 
   if (error || !user) {
-    throw new Error("UNAUTHENTICATED");
+    throw new UnauthenticatedError();
   }
 
   return user;

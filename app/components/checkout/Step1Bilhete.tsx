@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useCheckout } from "./contextoCheckout";
 
 type Wave = {
@@ -57,8 +57,11 @@ export default function Step1Bilhete() {
       remaining === null ? Number.MAX_SAFE_INTEGER : Math.max(0, remaining);
     initialQuantidades[w.id] = Math.min(rawQty, maxForWave);
   }
-  const variant =
-    (safeDados.additional?.checkoutUiVariant as string) ?? "EVENT_DEFAULT";
+  const variant = (
+    typeof safeDados.additional?.checkoutUiVariant === "string"
+      ? safeDados.additional.checkoutUiVariant
+      : "DEFAULT"
+  ).toUpperCase();
 
   const [quantidades, setQuantidades] = useState<Record<string, number>>(
     initialQuantidades,
@@ -66,7 +69,28 @@ export default function Step1Bilhete() {
   const [padelSelection, setPadelSelection] = useState<
     "INDIVIDUAL" | "DUO_SPLIT" | "DUO_FULL"
   >("INDIVIDUAL");
-  const [padelJoinMode, setPadelJoinMode] = useState<"INVITE_PARTNER" | "LOOKING_FOR_PARTNER">("INVITE_PARTNER");
+  const [padelJoinMode, setPadelJoinMode] = useState<"INVITE_PARTNER" | "LOOKING_FOR_PARTNER">("LOOKING_FOR_PARTNER");
+  const [partnerContact, setPartnerContact] = useState("");
+  const [partnerError, setPartnerError] = useState<string | null>(null);
+  const [partnerResults, setPartnerResults] = useState<
+    { id: string; username: string | null; fullName: string | null; avatarUrl: string | null }[]
+  >([]);
+  const [partnerLoading, setPartnerLoading] = useState(false);
+  const [partnerSelected, setPartnerSelected] = useState<{
+    id: string;
+    username: string | null;
+    fullName: string | null;
+    avatarUrl: string | null;
+    label: string;
+  } | null>(null);
+  const partnerSelectedLabel = partnerSelected?.label ?? "";
+  const searchAbortRef = useRef<AbortController | null>(null);
+  const padelMeta = (safeDados.additional?.padelMeta as
+    | { eventId: number; organizerId: number | null; categoryId?: number | null }
+    | undefined) ?? null;
+  const partnerRequired = padelJoinMode === "INVITE_PARTNER";
+  const hasPartnerContact = partnerContact.trim().length > 0;
+  const canContinuePadel = !partnerRequired || hasPartnerContact;
 
   // Qual wave está expandida (tipo acordeão)
   const [aberto, setAberto] = useState<string | null>(
@@ -86,6 +110,55 @@ export default function Step1Bilhete() {
   function toggleWave(id: string) {
     setAberto((prev) => (prev === id ? null : id));
   }
+
+  // Sugestões de parceiro (procura por @username/nome)
+  useEffect(() => {
+    if (padelJoinMode !== "INVITE_PARTNER") {
+      setPartnerResults([]);
+      return;
+    }
+    const term = partnerContact.trim();
+    if (partnerSelected && term === partnerSelected.label) {
+      setPartnerResults([]);
+      return;
+    }
+    if (term.length < 2) {
+      setPartnerResults([]);
+      return;
+    }
+
+    if (searchAbortRef.current) {
+      searchAbortRef.current.abort();
+    }
+    const controller = new AbortController();
+    searchAbortRef.current = controller;
+
+    const timeout = setTimeout(async () => {
+      try {
+        setPartnerLoading(true);
+        const res = await fetch(`/api/users/search?q=${encodeURIComponent(term)}`, {
+          signal: controller.signal,
+        });
+        const json = await res.json().catch(() => null);
+        if (!res.ok || !json?.ok) {
+          setPartnerResults([]);
+        } else {
+          setPartnerResults(Array.isArray(json.results) ? json.results : []);
+        }
+      } catch (err) {
+        if ((err as Error).name !== "AbortError") {
+          setPartnerResults([]);
+        }
+      } finally {
+        setPartnerLoading(false);
+      }
+    }, 300);
+
+    return () => {
+      clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [partnerContact, padelJoinMode, partnerSelectedLabel]);
 
   function getMaxForWave(waveId: string) {
     const wave = stableWaves.find((w) => w.id === waveId);
@@ -117,30 +190,85 @@ export default function Step1Bilhete() {
   }
 
   function handleContinuar() {
-    if (variant === "PADEL_TOURNAMENT") {
+    if (variant === "PADEL") {
       const target = stableWaves.find((w) => normalizeStatus(w.status) !== "sold_out" && normalizeStatus(w.status) !== "closed");
       if (!target) return;
 
+      // Em modos com convite (INVITE_PARTNER), obrigar a indicar contacto do parceiro
+      if (partnerRequired && !hasPartnerContact) {
+        setPartnerError("Indica o contacto do parceiro para enviarmos o convite.");
+        return;
+      }
+
+      setPartnerError(null);
+
       const scenario =
-        padelSelection === "DUO_SPLIT"
-          ? "GROUP_SPLIT"
-          : padelSelection === "DUO_FULL"
-            ? "GROUP_FULL"
-            : "SINGLE";
+        padelSelection === "DUO_FULL"
+          ? "GROUP_FULL"
+          : "GROUP_SPLIT";
 
-      const nextQuantidades: Record<string, number> = { [target.id]: padelSelection === "DUO_FULL" ? 2 : 1 };
+      // Criar (ou reusar) pairing antes de avançar
+      const paymentMode = scenario === "GROUP_FULL" ? "FULL" : "SPLIT";
 
-      atualizarDados({
-        paymentScenario: scenario,
-        additional: {
-          ...(safeDados.additional && typeof safeDados.additional === "object" ? safeDados.additional : {}),
-          quantidades: nextQuantidades,
-          total: (target.price ?? 0) * (scenario === "GROUP_FULL" ? 2 : 1),
-          padelJoinMode: padelJoinMode,
-          checkoutUiVariant: variant,
-        },
+      const createPairing = async () => {
+        if (!padelMeta?.eventId) return null;
+        try {
+          const res = await fetch("/api/padel/pairings", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              eventId: padelMeta.eventId,
+              organizerId: padelMeta.organizerId ?? undefined,
+              categoryId: padelMeta.categoryId ?? undefined,
+              paymentMode,
+              pairingJoinMode: padelJoinMode,
+              invitedContact:
+                padelJoinMode === "INVITE_PARTNER" && partnerContact.trim() ? partnerContact.trim() : undefined,
+            }),
+          });
+          const json = await res.json().catch(() => null);
+          if (!res.ok || !json?.ok || !json?.pairing?.id) {
+            throw new Error(json?.error || "Falha ao preparar inscrição Padel.");
+          }
+          const pairing = json.pairing as { id: number; slots?: Array<{ id: number; slot_role?: string; slotRole?: string }> };
+          const slot =
+            pairing.slots?.find((s) => (s.slot_role ?? s.slotRole) === "CAPTAIN") ??
+            pairing.slots?.[0] ??
+            null;
+          return { pairingId: pairing.id, slotId: slot?.id ?? null };
+        } catch (err) {
+          console.error("[Step1Bilhete] pairing padel", err);
+          alert(err instanceof Error ? err.message : "Erro ao preparar inscrição Padel.");
+          return null;
+        }
+      };
+
+      void createPairing().then((pairingResult) => {
+        if (!pairingResult?.pairingId) return;
+        if ((scenario === "GROUP_FULL" || scenario === "GROUP_SPLIT") && !pairingResult.slotId) {
+          alert("Não foi possível identificar o teu slot na dupla. Atualiza a página e tenta novamente.");
+          return;
+        }
+
+        const nextQuantidades: Record<string, number> = { [target.id]: scenario === "GROUP_FULL" ? 2 : 1 };
+        const totalCalc = (target.price ?? 0) * (scenario === "GROUP_FULL" ? 2 : 1);
+
+        atualizarDados({
+          paymentScenario: scenario,
+          additional: {
+            ...(safeDados.additional && typeof safeDados.additional === "object" ? safeDados.additional : {}),
+            quantidades: nextQuantidades,
+            total: totalCalc,
+            padelJoinMode,
+            checkoutUiVariant: variant,
+            pairingId: pairingResult.pairingId,
+            pairingSlotId: pairingResult.slotId ?? undefined,
+            ticketTypeId: Number(target.id),
+          },
+        });
+        irParaPasso(2);
       });
-      irParaPasso(2);
+
       return;
     }
 
@@ -169,17 +297,17 @@ export default function Step1Bilhete() {
     );
   }
 
-  if (variant === "PADEL_TOURNAMENT") {
+  if (variant === "PADEL") {
     const baseWave = stableWaves.find((w) => normalizeStatus(w.status) !== "sold_out" && normalizeStatus(w.status) !== "closed") ?? stableWaves[0];
     const basePrice = baseWave?.price ?? 0;
     return (
-      <div className="flex flex-col gap-6 text-white max-h-[80vh] overflow-hidden">
+      <div className="flex flex-col gap-6 text-white">
         <header className="flex items-start justify-between gap-3">
           <div className="space-y-1">
             <p className="text-[11px] uppercase tracking-[0.18em] text-white/55">
               Passo 1 de 3
             </p>
-            <h2 className="text-xl font-semibold leading-tight">Escolhe como queres jogar</h2>
+            <h2 className="text-2xl font-semibold leading-tight">Escolhe como queres jogar</h2>
             <p className="text-[11px] text-white/60 max-w-sm">
               Padel: inscrição individual ou como dupla. Pagas já a tua parte ou a dupla completa.
             </p>
@@ -187,14 +315,14 @@ export default function Step1Bilhete() {
           <button
             type="button"
             onClick={fecharCheckout}
-            className="text-[11px] rounded-full border border-white/15 px-3 py-1 text-white/65 hover:text-white hover:border-white/40 transition-colors"
+            className="text-[11px] rounded-full border border-white/15 bg-white/5 px-3 py-1 text-white/75 hover:text-white hover:border-white/40 transition-colors"
           >
             Fechar
           </button>
         </header>
 
-        <div className="h-1 w-full rounded-full bg-white/10 overflow-hidden">
-          <div className="h-full w-1/3 rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5]" />
+        <div className="h-1 w-full rounded-full bg-white/10 overflow-hidden shadow-[0_6px_20px_rgba(0,0,0,0.35)]">
+          <div className="h-full w-1/3 rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] animate-pulse" />
         </div>
 
         <div className="grid gap-3 md:grid-cols-3">
@@ -202,35 +330,20 @@ export default function Step1Bilhete() {
             type="button"
             onClick={() => {
               setPadelSelection("INDIVIDUAL");
-              setPadelJoinMode("INVITE_PARTNER");
+              setPadelJoinMode("LOOKING_FOR_PARTNER");
             }}
-            className={`rounded-2xl border px-4 py-4 text-left transition shadow ${
+            className={`rounded-2xl border px-4 py-4 text-left transition shadow-lg ${
               padelSelection === "INDIVIDUAL"
-                ? "border-[#6BFFFF] bg-white/10 shadow-[0_0_24px_rgba(107,255,255,0.35)]"
-                : "border-white/12 bg-white/[0.03] hover:border-white/25"
+                ? "border-[#6BFFFF]/70 bg-white/12 shadow-[0_10px_40px_rgba(107,255,255,0.25)]"
+                : "border-white/10 bg-white/[0.04] hover:border-white/25"
             }`}
           >
             <p className="text-sm font-semibold">Inscrição individual</p>
-            <p className="text-[11px] text-white/65 mt-1">1 lugar. Pode entrar em matchmaking.</p>
+            <p className="text-[11px] text-white/65 mt-1">1 lugar. Entrar em matchmaking.</p>
             <p className="mt-3 text-lg font-semibold">{basePrice.toFixed(2)} €</p>
-            <div className="mt-3 space-y-2 text-[11px] text-white/70">
-              <label className="flex items-center gap-2">
-                <input
-                  type="radio"
-                  checked={padelJoinMode === "INVITE_PARTNER" && padelSelection === "INDIVIDUAL"}
-                  onChange={() => setPadelJoinMode("INVITE_PARTNER")}
-                />
-                Já tenho parceiro (convite)
-              </label>
-              <label className="flex items-center gap-2">
-                <input
-                  type="radio"
-                  checked={padelJoinMode === "LOOKING_FOR_PARTNER" && padelSelection === "INDIVIDUAL"}
-                  onChange={() => setPadelJoinMode("LOOKING_FOR_PARTNER")}
-                />
-                Estou à procura de parceiro
-              </label>
-            </div>
+            <p className="mt-3 text-[11px] text-white/70">
+              Pagas só a tua parte e ficas em procura de parceiro.
+            </p>
           </button>
 
           <button
@@ -239,13 +352,13 @@ export default function Step1Bilhete() {
               setPadelSelection("DUO_SPLIT");
               setPadelJoinMode("INVITE_PARTNER");
             }}
-            className={`rounded-2xl border px-4 py-4 text-left transition shadow ${
+            className={`rounded-2xl border px-4 py-4 text-left transition shadow-lg ${
               padelSelection === "DUO_SPLIT"
-                ? "border-[#6BFFFF] bg-white/10 shadow-[0_0_24px_rgba(107,255,255,0.35)]"
-                : "border-white/12 bg-white/[0.03] hover:border-white/25"
+                ? "border-[#6BFFFF]/70 bg-white/12 shadow-[0_10px_40px_rgba(107,255,255,0.25)]"
+                : "border-white/10 bg-white/[0.04] hover:border-white/25"
             }`}
           >
-            <p className="text-sm font-semibold">Dupla · pagar só a minha parte</p>
+            <p className="text-sm font-semibold">Dupla · já tenho parceiro</p>
             <p className="text-[11px] text-white/65 mt-1">1 lugar pago. O parceiro paga o dele.</p>
             <p className="mt-3 text-lg font-semibold">{basePrice.toFixed(2)} €</p>
           </button>
@@ -256,10 +369,10 @@ export default function Step1Bilhete() {
               setPadelSelection("DUO_FULL");
               setPadelJoinMode("INVITE_PARTNER");
             }}
-            className={`rounded-2xl border px-4 py-4 text-left transition shadow ${
+            className={`rounded-2xl border px-4 py-4 text-left transition shadow-lg ${
               padelSelection === "DUO_FULL"
-                ? "border-[#6BFFFF] bg-white/10 shadow-[0_0_24px_rgba(107,255,255,0.35)]"
-                : "border-white/12 bg-white/[0.03] hover:border-white/25"
+                ? "border-[#6BFFFF]/70 bg-white/12 shadow-[0_10px_40px_rgba(107,255,255,0.25)]"
+                : "border-white/10 bg-white/[0.04] hover:border-white/25"
             }`}
           >
             <p className="text-sm font-semibold">Dupla · pagar os dois lugares</p>
@@ -268,6 +381,109 @@ export default function Step1Bilhete() {
           </button>
         </div>
 
+        {padelJoinMode === "INVITE_PARTNER" && (
+          <div className="rounded-2xl border border-white/12 bg-white/[0.05] p-4 shadow-[0_14px_40px_rgba(0,0,0,0.55)]">
+            <p className="text-[12px] font-semibold text-white">Dados do parceiro (obrigatório)</p>
+            <p className="text-[11px] text-white/60 mt-1">
+              Adiciona o email, telefone ou @username para enviar o convite e prender o lugar dele.
+            </p>
+            <div className="mt-3">
+              {partnerSelected ? (
+                <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-2 py-1 text-sm text-white">
+                  <div className="h-7 w-7 rounded-full bg-white/10 overflow-hidden border border-white/10">
+                    {partnerSelected.avatarUrl ? (
+                      <img
+                        src={partnerSelected.avatarUrl}
+                        alt={partnerSelected.username ?? partnerSelected.fullName ?? "user"}
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      <div className="h-full w-full flex items-center justify-center text-[11px] text-white/70">
+                        {(partnerSelected.username ?? partnerSelected.fullName ?? "?").slice(0, 2).toUpperCase()}
+                      </div>
+                    )}
+                  </div>
+                  <span className="font-medium">
+                    {partnerSelected.username ? `@${partnerSelected.username}` : partnerSelected.fullName ?? "Utilizador"}
+                  </span>
+                  {partnerSelected.fullName && partnerSelected.username && (
+                    <span className="text-[11px] text-white/70">· {partnerSelected.fullName}</span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPartnerSelected(null);
+                      setPartnerContact("");
+                    }}
+                    className="ml-1 inline-flex h-6 w-6 items-center justify-center rounded-full border border-white/20 bg-white/10 text-[11px] text-white/80 hover:bg-white/20"
+                  >
+                    ×
+                  </button>
+                </div>
+              ) : (
+                <input
+                  type="text"
+                  value={partnerContact}
+                  onChange={(e) => {
+                    setPartnerContact(e.target.value);
+                    setPartnerSelected(null);
+                    if (partnerError) setPartnerError(null);
+                  }}
+                  placeholder="Email / telefone / @username"
+                  className={`w-full rounded-xl border bg-white/5 backdrop-blur-sm px-3 py-2 text-sm text-white placeholder:text-white/35 focus:outline-none ${
+                    partnerError
+                      ? "border-red-400/70 focus:border-red-300/90"
+                      : "border-white/15 focus:border-white/40"
+                  }`}
+                />
+              )}
+              {partnerError && (
+                <p className="mt-2 text-[11px] text-red-300">{partnerError}</p>
+              )}
+              {!partnerError && partnerLoading && (
+                <p className="mt-2 text-[11px] text-white/60">A procurar utilizadores…</p>
+              )}
+              {!partnerSelected && !partnerError && !partnerLoading && partnerResults.length > 0 && (
+                <div className="mt-2 max-h-48 overflow-y-auto rounded-xl border border-white/12 bg-black/70 shadow-[0_12px_30px_rgba(0,0,0,0.5)]">
+                  {partnerResults.map((user) => (
+                    <button
+                      key={user.id}
+                      type="button"
+                    onClick={() => {
+                      const username = user.username ? `@${user.username}` : user.fullName ?? "";
+                        setPartnerContact(username);
+                        setPartnerSelected({
+                          ...user,
+                          label: username,
+                        });
+                        setPartnerResults([]);
+                        setPartnerError(null);
+                      }}
+                      className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-white/5 transition-colors"
+                    >
+                      <div className="h-8 w-8 rounded-full bg-white/10 overflow-hidden border border-white/10">
+                        {user.avatarUrl ? (
+                          <img src={user.avatarUrl} alt={user.username ?? user.fullName ?? "user"} className="h-full w-full object-cover" />
+                        ) : (
+                          <div className="h-full w-full flex items-center justify-center text-[11px] text-white/70">
+                            {(user.username ?? user.fullName ?? "?").slice(0, 2).toUpperCase()}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="text-sm text-white">{user.username ? `@${user.username}` : user.fullName ?? "Utilizador"}</span>
+                        {user.fullName && (
+                          <span className="text-[11px] text-white/60">{user.fullName}</span>
+                        )}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         <div className="flex items-center justify-between gap-3 border-t border-white/10 pt-3">
           <div className="text-[11px] text-white/70">
             Seleciona uma opção para avançar.
@@ -275,7 +491,8 @@ export default function Step1Bilhete() {
           <button
             type="button"
             onClick={handleContinuar}
-            className="rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-5 py-2.5 text-xs font-semibold text-black shadow-[0_0_26px_rgba(107,255,255,0.55)] hover:scale-[1.02] active:scale-95 transition-transform"
+            disabled={!canContinuePadel}
+            className="rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-5 py-2.5 text-xs font-semibold text-black shadow-[0_0_26px_rgba(107,255,255,0.55)] hover:scale-[1.02] active:scale-95 transition-transform disabled:cursor-not-allowed disabled:opacity-50"
           >
             Continuar
           </button>
@@ -285,14 +502,14 @@ export default function Step1Bilhete() {
   }
 
   return (
-    <div className="flex flex-col gap-6 text-white max-h-[80vh] overflow-hidden">
+    <div className="flex flex-col gap-6 text-white">
       {/* Header */}
       <header className="flex items-start justify-between gap-3">
         <div className="space-y-1">
           <p className="text-[11px] uppercase tracking-[0.18em] text-white/55">
             Passo 1 de 3
           </p>
-          <h2 className="text-xl font-semibold leading-tight">
+          <h2 className="text-2xl font-semibold leading-tight">
             Escolhe o teu bilhete
           </h2>
           <p className="text-[11px] text-white/60 max-w-xs">
@@ -302,19 +519,19 @@ export default function Step1Bilhete() {
         <button
           type="button"
           onClick={fecharCheckout}
-          className="text-[11px] rounded-full border border-white/15 px-3 py-1 text-white/65 hover:text-white hover:border-white/40 transition-colors"
+          className="text-[11px] rounded-full border border-white/15 bg-white/5 px-3 py-1 text-white/75 hover:text-white hover:border-white/40 transition-colors"
         >
           Fechar
         </button>
       </header>
 
       {/* Barra de progresso */}
-      <div className="h-1 w-full rounded-full bg-white/10 overflow-hidden">
-        <div className="h-full w-1/3 rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5]" />
+      <div className="h-1 w-full rounded-full bg-white/10 overflow-hidden shadow-[0_6px_20px_rgba(0,0,0,0.35)]">
+        <div className="h-full w-1/3 rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] animate-pulse" />
       </div>
 
       {/* Lista de waves com scroll interno */}
-      <div className="flex-1 overflow-y-auto pr-2 space-y-3">
+      <div className="space-y-3">
         {stableWaves.map((wave: Wave) => {
           const q = quantidades[wave.id] ?? 0;
           const isOpen = aberto === wave.id;
@@ -336,7 +553,7 @@ export default function Step1Bilhete() {
           return (
             <div
               key={wave.id}
-              className="rounded-2xl border border-white/12 bg-white/[0.04] shadow-[0_6px_20px_rgba(0,0,0,0.55)]"
+              className="rounded-2xl border border-white/12 bg-white/[0.05] shadow-[0_10px_30px_rgba(0,0,0,0.55)] backdrop-blur-xl"
             >
               {/* Header Wave */}
               <button

@@ -58693,7 +58693,7 @@ export type Event = {
   remainingSpots?: number;
 
   minAge?: number;       // ex: 18
-  tags: string[];        // ["padel", "desporto", "torneio"]
+  tags: string[];        // ["padel", "torneio"]
 
   organizerName: string;
   organizerAvatarUrl?: string;
@@ -59454,8 +59454,8 @@ export default function BecomeOrganizerForm() {
 
             <div className="space-y-2 max-w-[65ch]">
               <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/75 shadow-[0_12px_40px_rgba(0,0,0,0.35)]">
-                Funciona para qualquer organização que cria eventos ou experiências — clubes, associações, marcas,
-                equipas de desporto, projectos independentes e muito mais.
+                Funciona para qualquer organização que cria eventos ou experiências — clubes, associações, marcas e
+                projectos independentes.
               </div>
               <p className="text-[12px] text-white/45">
                 Podes alterar todos os dados da organização mais tarde nas Definições.

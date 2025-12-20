@@ -25,12 +25,6 @@ function buildTimeline(params: { status: string; startsAt: Date | null; endsAt: 
 
   return [
     {
-      key: "draft",
-      label: "Pré-lançamento",
-      state: status === "DRAFT" ? "active" : "done",
-      date: startsAt ? startsAt.toISOString() : null,
-    },
-    {
       key: "signup",
       label: "Inscrições",
       state: status === "PUBLISHED" && !started ? "active" : status === "DRAFT" ? "pending" : "done",

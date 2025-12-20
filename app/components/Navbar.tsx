@@ -6,7 +6,6 @@ import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
 import { useUser } from "@/app/hooks/useUser";
 import Link from "next/link";
 import { NotificationBell } from "./notifications/NotificationBell";
-import { featureFlags } from "@/lib/flags";
 import { supabaseBrowser } from "@/lib/supabaseBrowser";
 import { OryaPortal } from "./OryaPortal";
 
@@ -29,7 +28,6 @@ export function Navbar() {
   const { user, profile, roles, isLoading } = useUser();
 
   const [isVisible, setIsVisible] = useState(true);
-  const [isAtTop, setIsAtTop] = useState(true);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
@@ -41,10 +39,9 @@ export function Navbar() {
   const searchPanelRef = useRef<HTMLDivElement | null>(null);
   const lastScrollYRef = useRef(0);
   const pathname = hydratedPathname ?? "";
-  const useNewNavbar = featureFlags.NEW_NAVBAR();
   const shouldHide = rawPathname?.startsWith("/organizador");
 
-  const LogoNew = () => {
+  const Logo = () => {
     const [logoState, setLogoState] = useState<"idle" | "hover" | "press">("idle");
     return (
       <button
@@ -85,7 +82,6 @@ export function Navbar() {
     const handleScroll = () => {
       const currentY = window.scrollY || 0;
       const atTop = currentY < 10;
-      setIsAtTop(atTop);
 
       const prevY = lastScrollYRef.current;
 
@@ -296,33 +292,10 @@ export function Navbar() {
           isVisible ? "translate-y-0" : "-translate-y-full"
         } ${shouldHide ? "hidden" : ""}`}
       >
-        <div
-          className={`relative flex w-full items-center gap-4 px-4 md:px-6 lg:px-8 transition-all duration-300 ${
-            isAtTop && !isSearchOpen ? "py-4 md:py-5" : "py-3.5 md:py-4"
-          } rounded-b-[28px] border-b border-white/12 bg-[radial-gradient(circle_at_12%_0%,rgba(255,0,200,0.08),transparent_30%),radial-gradient(circle_at_82%_0%,rgba(107,255,255,0.08),transparent_26%),linear-gradient(120deg,rgba(5,6,14,0.95),rgba(4,7,14,0.94),rgba(3,5,12,0.94))] backdrop-blur-2xl shadow-[0_20px_55px_rgba(0,0,0,0.68)]`}
-        >
+        <div className="relative flex w-full items-center gap-4 rounded-b-[28px] border-b border-white/10 bg-[linear-gradient(120deg,rgba(8,10,20,0.38),rgba(8,10,20,0.52))] px-4 py-4 shadow-[0_16px_40px_rgba(0,0,0,0.45)] backdrop-blur-[18px] transition-all duration-300 md:px-6 md:py-5 lg:px-8">
           {/* Logo + link explorar */}
           <div className="flex flex-1 items-center gap-3">
-            {useNewNavbar ? (
-              <LogoNew />
-            ) : (
-              <button
-                type="button"
-                onClick={() => router.push("/")}
-                className="flex items-center gap-2"
-              >
-                <div className="relative flex h-9 w-9 items-center justify-center rounded-2xl bg-gradient-to-br from-[#0f172a] via-[#111827] to-[#0b1224] text-xs font-black tracking-[0.2em] shadow-[0_0_18px_rgba(107,255,255,0.25)]">
-                  <span className="absolute inset-0 rounded-2xl border border-white/10" />
-                  <span className="absolute inset-0 rounded-2xl bg-gradient-to-tr from-[#FF00C8]/35 via-[#6BFFFF]/20 to-transparent animate-[spin_9s_linear_infinite]" />
-                  <span className="relative z-10 bg-gradient-to-r from-[#FF9CF2] to-[#6BFFFF] bg-clip-text text-transparent">
-                    OY
-                  </span>
-                </div>
-                <span className="hidden text-sm font-semibold uppercase tracking-[0.22em] text-zinc-100 sm:inline">
-                  ORYA
-                </span>
-              </button>
-            )}
+            <Logo />
 
             <nav className="hidden items-center gap-3 text-xs text-zinc-300 md:flex">
               <button
@@ -397,7 +370,7 @@ export function Navbar() {
               </button>
             ) : (
               <div className="relative flex items-center gap-2" ref={profileMenuRef}>
-                {useNewNavbar && <NotificationBell />}
+                <NotificationBell />
                 <button
                   type="button"
                   onClick={() => setIsProfileMenuOpen((open) => !open)}

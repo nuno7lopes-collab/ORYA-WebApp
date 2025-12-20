@@ -212,12 +212,9 @@ const formatDateTime = (date: Date | null, options?: Intl.DateTimeFormatOptions)
 const formatDateOnly = (date: Date | null, options?: Intl.DateTimeFormatOptions) =>
   date ? date.toLocaleDateString(DATE_LOCALE, { timeZone: DATE_TIMEZONE, ...options }) : "";
 
-function OrganizadorPageInner() {
+function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
   const { user, profile, isLoading: userLoading, mutate: mutateUser } = useUser();
   const { openModal } = useAuthModal();
-  const [ctaLoading, setCtaLoading] = useState(false);
-  const [ctaError, setCtaError] = useState<string | null>(null);
-  const [ctaSuccess, setCtaSuccess] = useState<string | null>(null);
   const [stripeCtaLoading, setStripeCtaLoading] = useState(false);
   const [stripeCtaError, setStripeCtaError] = useState<string | null>(null);
   const [billingSaving, setBillingSaving] = useState(false);
@@ -527,51 +524,6 @@ function OrganizadorPageInner() {
 
   const currentQuery = searchParams?.toString() || "";
 
-  async function handleBecomeOrganizer() {
-    if (!user) {
-      openModal({ mode: "login", redirectTo: "/organizador", showGoogle: true });
-      return;
-    }
-    setCtaSuccess(null);
-    if (!entityType.trim() || !businessName.trim() || !city.trim()) {
-      setCtaError("Preenche tipo de entidade, nome e cidade.");
-      return;
-    }
-    if (payoutIban && payoutIban.length < 10) {
-      setCtaError("IBAN inválido. Deixa vazio ou insere um IBAN válido.");
-      return;
-    }
-    setCtaLoading(true);
-    setCtaError(null);
-    try {
-      const res = await fetch("/api/organizador/become", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          entityType,
-          businessName,
-          city,
-          payoutIban,
-        }),
-      });
-      const data = await res.json().catch(() => null);
-      if (!res.ok || data?.ok === false) {
-        setCtaError(data?.error || "Não foi possível ativar a conta de organizador.");
-        setCtaLoading(false);
-        return;
-      }
-
-      await mutateOrganizer();
-      await mutateUser();
-      setCtaSuccess("Conta de organizador ativa. Podes começar a criar eventos.");
-    } catch (err) {
-      console.error("Erro inesperado ao tornar organizador", err);
-      setCtaError("Erro inesperado ao ativar conta de organizador.");
-    } finally {
-      setCtaLoading(false);
-    }
-  }
-
   async function handleStripeConnect() {
     import("@/lib/analytics").then(({ trackEvent }) =>
       trackEvent("connect_stripe_clicked", { status: paymentsStatus }),
@@ -690,7 +642,7 @@ function OrganizadorPageInner() {
   const partnerClubOptions = useMemo(() => {
     const map = new Map<number, string>();
     eventsList.forEach((ev) => {
-      if (ev.templateType !== "SPORT" && ev.templateType !== "PADEL") return;
+      if (ev.templateType !== "PADEL") return;
       if (Number.isFinite(ev.padelClubId as number)) {
         map.set(ev.padelClubId as number, ev.padelClubName || `Clube ${ev.padelClubId}`);
       }
@@ -1072,100 +1024,28 @@ function OrganizadorPageInner() {
     );
   }
 
-  if (organizer?.status !== "ACTIVE") {
+  if (!hasOrganizer || organizer?.status !== "ACTIVE") {
     return (
-      <div className={`${containerClasses} space-y-8`}>
-        <div className="grid gap-6 max-w-3xl">
-          <div className="space-y-4">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-white/60">
-              Organizar com a ORYA
-            </p>
-            <div className="space-y-2">
-              <h1 className="text-3xl md:text-4xl font-bold leading-tight">
-                Abre o teu espaço ou evento ao público em minutos.
-              </h1>
-              <p className="text-sm text-white/70 max-w-2xl">
-                Self-serve, sem convites: cria eventos, vende bilhetes e recebe pagamentos. Sem mensalidades nem contratos longos.
-              </p>
-            </div>
-            <div className="grid gap-3 md:grid-cols-2 w-full max-w-2xl">
-              <div className="space-y-2">
-                <label className="text-xs text-white/70">Tipo de entidade</label>
-                <select
-                  value={entityType}
-                  onChange={(e) => setEntityType(e.target.value)}
-                  className="w-full rounded-xl bg-black/40 border border-white/15 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]"
-                >
-                  <option value="">Seleciona</option>
-                  <option value="Clube">Clube</option>
-                  <option value="Bar">Bar</option>
-                  <option value="Associação">Associação</option>
-                  <option value="Freelance">Freelance</option>
-                  <option value="Outro">Outro</option>
-                </select>
-              </div>
-              <div className="space-y-2">
-                <label className="text-xs text-white/70">Nome do espaço/negócio</label>
-                <input
-                  type="text"
-                  value={businessName}
-                  onChange={(e) => setBusinessName(e.target.value)}
-                  placeholder="Ex.: Clube XPTO"
-                  className="w-full rounded-xl bg-black/40 border border-white/15 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]"
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-xs text-white/70">Cidade</label>
-                <input
-                  type="text"
-                  value={city}
-                  onChange={(e) => setCity(e.target.value)}
-                  placeholder="Ex.: Lisboa"
-                  className="w-full rounded-xl bg-black/40 border border-white/15 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]"
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-xs text-white/70">IBAN para payouts (opcional)</label>
-                <input
-                  type="text"
-                  value={payoutIban}
-                  onChange={(e) => setPayoutIban(e.target.value)}
-                  placeholder="PT50 ...."
-                  className="w-full rounded-xl bg-black/40 border border-white/15 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]"
-                />
-              </div>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={handleBecomeOrganizer}
-                disabled={ctaLoading}
-                className="px-5 py-2.5 rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] font-semibold text-black shadow-lg disabled:opacity-60"
-              >
-                {ctaLoading ? "A ativar conta..." : "Começar a organizar"}
-              </button>
-              {!user && (
-                <button
-                  type="button"
-                  onClick={() =>
-                    openModal({ mode: "login", redirectTo: "/organizador", showGoogle: true })
-                  }
-                  className="px-5 py-2.5 rounded-full border border-white/20 text-white/80 hover:bg-white/10 transition"
-                >
-                  Criar conta / Entrar
-                </button>
-              )}
-            </div>
-            {ctaError && (
-              <div className="rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-100">
-                {ctaError}
-              </div>
-            )}
-            {ctaSuccess && (
-              <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">
-                {ctaSuccess}
-              </div>
-            )}
+      <div className={`${containerClasses} space-y-6`}>
+        <div className="max-w-xl space-y-3 rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-6 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
+          <p className="text-[11px] uppercase tracking-[0.24em] text-white/70">Sem organização ativa</p>
+          <h1 className="text-2xl font-semibold text-white">Liga-te a uma organização para continuares.</h1>
+          <p className="text-sm text-white/70">
+            Precisas de criar ou escolher uma organização para aceder ao dashboard.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <a
+              href="/organizador/become"
+              className="inline-flex items-center justify-center rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-4 py-2 text-sm font-semibold text-black shadow-[0_0_20px_rgba(107,255,255,0.4)] hover:scale-[1.01]"
+            >
+              Criar organização
+            </a>
+            <a
+              href="/organizador/organizations"
+              className="inline-flex items-center justify-center rounded-full border border-white/20 bg-white/5 px-4 py-2 text-sm font-semibold text-white hover:bg-white/10"
+            >
+              Escolher organização
+            </a>
           </div>
         </div>
       </div>
@@ -1500,24 +1380,25 @@ function OrganizadorPageInner() {
 
       {activeTab === "events" && (
         <section className="space-y-4">
-          <div className="relative overflow-hidden rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0c152f]/75 to-[#050a15]/90 p-5 shadow-[0_28px_90px_rgba(0,0,0,0.6)] backdrop-blur-3xl">
+          <div className="relative overflow-hidden rounded-3xl border border-white/18 bg-gradient-to-br from-[#c7f5ff]/14 via-[#6e8cff]/12 to-[#0a0f1f]/88 p-5 shadow-[0_36px_120px_rgba(0,0,0,0.65)] backdrop-blur-3xl">
             <div className="pointer-events-none absolute inset-0">
-              <div className="absolute -left-6 top-2 h-36 w-36 rounded-full bg-[#6BFFFF]/15 blur-[70px]" />
-              <div className="absolute right-0 top-10 h-28 w-28 rounded-full bg-[#FF00C8]/18 blur-[80px]" />
-              <div className="absolute -right-10 -bottom-12 h-40 w-40 rounded-full bg-[#1646F5]/16 blur-[78px]" />
+              <div className="absolute -left-20 top-2 h-56 w-56 rounded-full bg-[#7cf2ff]/32 blur-[110px]" />
+              <div className="absolute right-10 top-0 h-48 w-48 rounded-full bg-[#ff9ae3]/30 blur-[120px]" />
+              <div className="absolute -right-18 -bottom-20 h-64 w-64 rounded-full bg-[#7b8cff]/26 blur-[120px]" />
+              <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-white/8 to-transparent" />
             </div>
 
             <div className="relative space-y-4">
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-start">
                 <div className="space-y-1">
                   <p className="text-[11px] uppercase tracking-[0.26em] text-white/70">Eventos</p>
-                  <h2 className="text-2xl font-semibold text-white">Gestão dos teus eventos</h2>
-                  <p className="text-sm text-white/65">Pesquisa focada com estados e períodos claros.</p>
+                  <h2 className="text-2xl font-semibold text-white drop-shadow-[0_14px_40px_rgba(0,0,0,0.45)]">Gestão dos teus eventos</h2>
+                  <p className="text-sm text-white/80">Pesquisa focada com estados e períodos claros.</p>
                 </div>
               </div>
 
               <div className="grid gap-3 lg:grid-cols-[1.4fr,1fr]">
-                <div className="rounded-2xl border border-white/12 bg-black/30 backdrop-blur-2xl px-3 py-3 shadow-inner shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
+                <div className="rounded-2xl border border-white/20 bg-gradient-to-br from-white/24 via-[#1a3f6e]/55 to-[#0b1328]/85 backdrop-blur-2xl px-3 py-3 shadow-[0_26px_90px_rgba(0,0,0,0.55)]">
                   <label className="text-[10px] uppercase tracking-[0.24em] text-white/55">Pesquisa</label>
                   <div className="mt-1 flex items-center gap-2">
                     <input
@@ -1531,19 +1412,19 @@ function OrganizadorPageInner() {
                   </div>
                 </div>
 
-                <div className="rounded-2xl border border-white/12 bg-black/30 backdrop-blur-2xl p-3 shadow-inner shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
+                <div className="rounded-2xl border border-white/20 bg-gradient-to-br from-white/24 via-[#1a3f6e]/55 to-[#0b1328]/85 backdrop-blur-2xl p-3 shadow-[0_26px_90px_rgba(0,0,0,0.55)]">
                   <p className="text-[10px] uppercase tracking-[0.24em] text-white/55">Período</p>
-                  <div className="mt-2 inline-flex w-full rounded-2xl border border-white/10 bg-white/5 p-1 shadow-[0_10px_30px_rgba(0,0,0,0.35)]">
+                  <div className="mt-2 inline-flex w-full rounded-2xl border border-white/18 bg-white/12 p-1 shadow-[0_18px_50px_rgba(0,0,0,0.48)]">
                     {(["all", "upcoming", "ongoing", "past"] as const).map((opt) => (
                       <button
                         key={opt}
                         type="button"
                         onClick={() => setTimeScope(opt)}
                         className={cn(
-                          "flex-1 rounded-xl px-3 py-2 text-[12px] transition",
+                          "flex-1 rounded-xl px-3 py-2 text-[12px] transition border",
                           timeScope === opt
-                            ? "bg-gradient-to-r from-[#6BFFFF] via-[#AEE4FF] to-[#FF00C8] text-black font-semibold shadow-[0_0_18px_rgba(107,255,255,0.4)]"
-                            : "text-white/75 hover:bg-white/5",
+                            ? "border-white/40 bg-gradient-to-r from-[#8cf7ff]/80 via-[#8e8eff]/70 to-[#ff9ae3]/78 text-slate-950 font-semibold shadow-[0_0_26px_rgba(140,247,255,0.5)]"
+                            : "border-white/12 text-white/88 hover:border-white/22 hover:bg-white/14",
                         )}
                       >
                         {opt === "all" ? "Todos" : opt === "upcoming" ? "Próximos" : opt === "ongoing" ? "A decorrer" : "Passados"}
@@ -1556,7 +1437,7 @@ function OrganizadorPageInner() {
               <div className="flex flex-wrap items-center gap-3">
                 <div className="space-y-1">
                   <p className="text-[10px] uppercase tracking-[0.22em] text-white/55">Estados</p>
-                  <div className="inline-flex flex-wrap rounded-2xl border border-white/12 bg-white/5 p-1 shadow-[0_10px_30px_rgba(0,0,0,0.35)] backdrop-blur-xl">
+                  <div className="inline-flex flex-wrap rounded-2xl border border-white/12 bg-gradient-to-r from-white/8 via-white/6 to-white/4 p-1 shadow-[0_14px_40px_rgba(0,0,0,0.4)] backdrop-blur-xl">
                     {[
                       { key: "all", label: "Todos" },
                       { key: "active", label: "Ativos" },
@@ -1648,13 +1529,19 @@ function OrganizadorPageInner() {
             </div>
           )}
 
-          <div className="space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2 text-sm text-white/80">
-                <h3 className="text-lg font-semibold">Eventos</h3>
-                <span className="text-[11px] rounded-full bg-white/10 px-2 py-0.5">{filteredEvents.length}</span>
-              </div>
-            </div>
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 text-sm text-white/80">
+                    <h3 className="text-lg font-semibold">Eventos</h3>
+                    <span className="text-[11px] rounded-full bg-white/10 px-2 py-0.5">{filteredEvents.length}</span>
+                  </div>
+                  <Link
+                    href="/organizador/eventos/novo"
+                    className="inline-flex items-center gap-2 rounded-full border border-white/30 bg-gradient-to-r from-[#9ffbff]/80 via-[#9aa6ff]/70 to-[#ffb2ea]/80 px-4 py-2 text-sm font-semibold text-slate-950 shadow-[0_0_30px_rgba(140,247,255,0.5)] transition hover:scale-[1.025]"
+                  >
+                    <span className="text-slate-950">Criar evento</span>
+                  </Link>
+                </div>
 
             {eventsListLoading && (
               <div className="grid gap-2 md:grid-cols-2">
@@ -1716,9 +1603,9 @@ function OrganizadorPageInner() {
             )}
 
             {filteredEvents.length > 0 && (
-              <div className="overflow-hidden rounded-3xl border border-white/12 bg-gradient-to-br from-white/6 via-[#0a1227]/70 to-[#050912]/90 shadow-[0_22px_70px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
-                <table className="min-w-full text-sm text-white/85">
-                  <thead className="bg-white/5 text-left text-[11px] uppercase tracking-wide text-white/65">
+              <div className="overflow-hidden rounded-3xl border border-white/16 bg-gradient-to-br from-white/18 via-[#15284c]/75 to-[#070d19]/92 shadow-[0_34px_110px_rgba(0,0,0,0.62)] backdrop-blur-3xl">
+                <table className="min-w-full text-sm text-white/90">
+                  <thead className="bg-white/10 text-left text-[11px] uppercase tracking-wide text-white/75">
                     <tr>
                       <th className="px-4 py-3 font-semibold">Evento</th>
                       <th className="px-4 py-3 font-semibold">Data</th>
@@ -1748,26 +1635,12 @@ function OrganizadorPageInner() {
                       const ticketsSold = ev.ticketsSold ?? 0;
                       const capacity = ev.capacity ?? null;
                       const revenue = ((ev.revenueCents ?? 0) / 100).toFixed(2);
-                      const typeLabel =
-                        ev.templateType === "SPORT"
-                          ? "Padel"
-                          : ev.templateType === "COMIDA"
-                            ? "Restaurantes & Jantares"
-                            : ev.templateType === "VOLUNTEERING"
-                              ? "Solidário / Voluntariado"
-                              : ev.templateType === "PARTY"
-                                ? "Festas & Noite"
-                                : ev.templateType || "Outro";
+                      const normalizedTemplate = ev.templateType ?? "OTHER";
+                      const typeLabel = normalizedTemplate === "PADEL" ? "Padel" : "Evento padrão";
                       const typeTone =
-                        ev.templateType === "SPORT"
+                        normalizedTemplate === "PADEL"
                           ? "border-sky-400/40 bg-sky-400/10 text-sky-100"
-                          : ev.templateType === "COMIDA"
-                            ? "border-amber-300/40 bg-amber-300/10 text-amber-100"
-                            : ev.templateType === "VOLUNTEERING"
-                              ? "border-emerald-300/40 bg-emerald-300/10 text-emerald-100"
-                              : ev.templateType === "PARTY"
-                                ? "border-fuchsia-300/40 bg-fuchsia-300/10 text-fuchsia-100"
-                                : "border-white/20 bg-white/5 text-white/80";
+                          : "border-white/20 bg-white/5 text-white/80";
                       const statusBadge =
                         ev.status === "CANCELLED"
                           ? { label: "Cancelado", classes: "border-red-400/60 bg-red-500/10 text-red-100" }
@@ -1790,7 +1663,7 @@ function OrganizadorPageInner() {
                       };
 
                       return (
-                        <tr key={ev.id} className="hover:bg-white/5 transition">
+                        <tr key={ev.id} className="hover:bg-white/10 transition duration-150">
                           <td className="px-4 py-3">
                             <button
                               type="button"
@@ -1802,12 +1675,12 @@ function OrganizadorPageInner() {
                           </td>
                           <td className="px-4 py-3 text-[12px] text-white/80">{dateLabel}</td>
                           <td className="px-4 py-3">
-                            <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] ${statusBadge.classes}`}>
+                            <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] shadow-[0_10px_24px_rgba(0,0,0,0.35)] ${statusBadge.classes}`}>
                               {statusBadge.label}
                             </span>
                           </td>
                           <td className="px-4 py-3">
-                            <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] ${typeTone}`}>
+                            <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] shadow-[0_8px_20px_rgba(0,0,0,0.3)] ${typeTone}`}>
                               {typeLabel}
                             </span>
                           </td>
@@ -2190,19 +2063,23 @@ function OrganizadorPageInner() {
       )}
 
       {activeTab === "finance" && (
-        <section className="space-y-4">
-          <div className="flex flex-col gap-2">
-            <p className="text-[11px] uppercase tracking-[0.3em] text-white/60">Finanças</p>
-            <h2 className="text-2xl font-semibold">Receita, bilhetes e Stripe</h2>
-            <p className="text-sm text-white/65">Visão simples do dinheiro e estado da conta Stripe.</p>
+        <section className="space-y-5">
+          <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/10 via-[#0d1530]/75 to-[#050912]/90 px-5 py-4 shadow-[0_30px_110px_rgba(0,0,0,0.6)] backdrop-blur-3xl">
+            <div className="flex flex-col gap-2">
+              <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] uppercase tracking-[0.24em] text-white/80 shadow-[0_10px_30px_rgba(0,0,0,0.4)]">
+                Finanças & Payouts
+              </div>
+              <h2 className="text-3xl font-semibold text-white drop-shadow-[0_12px_40px_rgba(0,0,0,0.55)]">Receita, liquidez e Stripe.</h2>
+              <p className="text-sm text-white/70">Glassmorphism premium para veres o dinheiro, taxas e o estado da conta Stripe.</p>
+            </div>
           </div>
 
           {paymentsMode === "CONNECT" && paymentsStatus !== "READY" && (
             <div
-              className={`rounded-2xl px-4 py-3 text-sm ${
+              className={`rounded-2xl border px-4 py-3 text-sm shadow-[0_18px_60px_rgba(0,0,0,0.55)] ${
                 stripeIncomplete
-                  ? "border border-amber-400/40 bg-amber-400/10 text-amber-50"
-                  : "border border-amber-400/30 bg-amber-400/10 text-amber-50"
+                  ? "border-amber-400/50 bg-gradient-to-r from-amber-400/15 via-amber-500/10 to-orange-500/15 text-amber-50"
+                  : "border-amber-400/35 bg-gradient-to-r from-amber-400/12 via-amber-500/10 to-orange-500/12 text-amber-50"
               }`}
             >
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -2210,7 +2087,7 @@ function OrganizadorPageInner() {
                   <p className="font-semibold">
                     {stripeIncomplete ? "Onboarding incompleto no Stripe." : "Liga o Stripe para começar a receber."}
                   </p>
-                  <p className="text-[12px] text-amber-100/80">
+                  <p className="text-[12px] text-amber-100/85">
                     {paymentsStatus === "NO_STRIPE"
                       ? "Sem ligação Stripe não há payouts. O resto da gestão continua disponível."
                       : stripeRequirements.length > 0
@@ -2222,7 +2099,7 @@ function OrganizadorPageInner() {
                   type="button"
                   onClick={handleStripeConnect}
                   disabled={stripeCtaLoading}
-                  className="rounded-full bg-white px-3 py-1.5 text-[12px] font-semibold text-black shadow hover:scale-[1.01] disabled:opacity-60"
+                  className="rounded-full bg-white px-4 py-2 text-[12px] font-semibold text-black shadow hover:scale-[1.01] disabled:opacity-60"
                 >
                   {stripeCtaLoading ? "A ligar..." : stripeIncomplete ? "Continuar configuração" : "Ligar conta Stripe"}
                 </button>
@@ -2230,11 +2107,11 @@ function OrganizadorPageInner() {
             </div>
           )}
           {paymentsMode === "PLATFORM" && (
-            <div className="rounded-2xl border border-emerald-400/40 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-50">
+            <div className="rounded-2xl border border-emerald-400/45 bg-gradient-to-r from-emerald-500/20 via-emerald-500/15 to-teal-500/20 px-4 py-3 text-sm text-emerald-50 shadow-[0_18px_60px_rgba(0,0,0,0.55)]">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="space-y-1">
                   <p className="font-semibold">Conta interna ORYA</p>
-                  <p className="text-[12px] text-emerald-50/80">
+                  <p className="text-[12px] text-emerald-50/85">
                     Pagamentos processados na conta principal da ORYA. Não precisas de ligar Stripe Connect.
                   </p>
                 </div>
@@ -2242,7 +2119,7 @@ function OrganizadorPageInner() {
             </div>
           )}
           {stripeSuccessMessage && (
-            <div className="rounded-2xl border border-emerald-400/40 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-50">
+            <div className="rounded-2xl border border-emerald-400/45 bg-gradient-to-r from-emerald-500/20 via-emerald-500/15 to-teal-500/20 px-4 py-3 text-sm text-emerald-50 shadow-[0_18px_60px_rgba(0,0,0,0.55)]">
               {stripeSuccessMessage}
             </div>
           )}
@@ -2283,28 +2160,31 @@ function OrganizadorPageInner() {
                 hint: "Eventos pagos com pelo menos 1 bilhete.",
               },
             ].map((card) => (
-              <div key={card.label} className="rounded-2xl border border-white/10 bg-white/5 p-3">
-                <p className="text-[11px] text-white/60">{card.label}</p>
-                <p className="text-2xl font-bold text-white mt-1">{card.value}</p>
-                <p className="text-[11px] text-white/50">{card.hint}</p>
+              <div
+                key={card.label}
+                className="rounded-2xl border border-white/12 bg-gradient-to-br from-white/10 via-[#0b1124]/65 to-[#050810]/90 p-3 shadow-[0_18px_60px_rgba(0,0,0,0.55)] backdrop-blur-2xl"
+              >
+                <p className="text-[11px] uppercase tracking-[0.18em] text-white/70">{card.label}</p>
+                <p className="mt-1 text-2xl font-bold text-white drop-shadow-[0_10px_25px_rgba(0,0,0,0.45)]">{card.value}</p>
+                <p className="text-[11px] text-white/60">{card.hint}</p>
               </div>
             ))}
           </div>
 
           <div className="grid gap-4 md:grid-cols-2">
-            <div className="rounded-3xl border border-white/10 bg-white/5 backdrop-blur-xl p-4 space-y-3 shadow-[0_18px_60px_rgba(0,0,0,0.65)]">
+            <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/10 via-[#0b1124]/70 to-[#050810]/90 backdrop-blur-3xl p-4 space-y-3 shadow-[0_22px_70px_rgba(0,0,0,0.65)]">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
-                  <h3 className="text-lg font-semibold">Stripe</h3>
+                  <h3 className="text-lg font-semibold text-white">Stripe</h3>
                   <span
-                    className={`rounded-full px-2 py-0.5 text-[11px] ${
+                    className={`rounded-full px-2.5 py-0.5 text-[11px] shadow-[0_10px_30px_rgba(0,0,0,0.35)] ${
                       stripeState.tone === "success"
-                        ? "border-emerald-400/50 bg-emerald-500/10 text-emerald-100"
+                        ? "border-emerald-400/60 bg-emerald-500/15 text-emerald-100"
                         : stripeState.tone === "warning"
-                          ? "border-amber-400/50 bg-amber-500/10 text-amber-100"
+                          ? "border-amber-400/60 bg-amber-500/15 text-amber-100"
                           : stripeState.tone === "error"
-                            ? "border-red-400/50 bg-red-500/10 text-red-100"
-                            : "border-white/20 bg-white/5 text-white/70"
+                            ? "border-red-400/60 bg-red-500/15 text-red-100"
+                            : "border-white/25 bg-white/10 text-white/70"
                     }`}
                   >
                     {stripeState.badge}
@@ -2316,7 +2196,7 @@ function OrganizadorPageInner() {
                       href="https://dashboard.stripe.com/"
                       target="_blank"
                       rel="noreferrer"
-                      className="text-[11px] rounded-full border border-white/20 px-3 py-1 text-white/80 hover:bg-white/10"
+                      className="text-[11px] rounded-full border border-white/25 px-3 py-1 text-white/85 hover:bg-white/10"
                     >
                       {stripeState.cta}
                     </a>
@@ -2325,22 +2205,22 @@ function OrganizadorPageInner() {
                       type="button"
                       onClick={handleStripeConnect}
                       disabled={stripeCtaLoading}
-                      className="text-[11px] rounded-full border border-white/20 px-3 py-1 text-white/80 hover:bg-white/10 disabled:opacity-60"
+                      className="text-[11px] rounded-full border border-white/25 px-3 py-1 text-white/85 hover:bg-white/10 disabled:opacity-60"
                     >
                       {stripeState.cta}
                     </button>
                   )}
                 </div>
               </div>
-              <div className="rounded-2xl border border-white/10 bg-black/40 p-3 text-sm space-y-1">
-                <p className="text-white/60">Conta: {organizer.stripeAccountId ? `…${organizer.stripeAccountId.slice(-6)}` : "Por ligar"}</p>
-                <p className="text-white/60">Cobranças: {organizer.stripeChargesEnabled ? "Ativo" : "Inativo"}</p>
-                <p className="text-white/60">Payouts: {organizer.stripePayoutsEnabled ? "Ativo" : "Inativo"}</p>
+              <div className="rounded-2xl border border-white/12 bg-black/35 p-3 text-sm space-y-1">
+                <p className="text-white/70">Conta: {organizer.stripeAccountId ? `…${organizer.stripeAccountId.slice(-6)}` : "Por ligar"}</p>
+                <p className="text-white/70">Cobranças: {organizer.stripeChargesEnabled ? "Ativo" : "Inativo"}</p>
+                <p className="text-white/70">Payouts: {organizer.stripePayoutsEnabled ? "Ativo" : "Inativo"}</p>
               </div>
-              <div className="text-[11px] text-white/70 space-y-2">
+              <div className="text-[11px] text-white/75 space-y-2">
                 <p>{stripeState.desc}</p>
                 {stripeRequirements.length > 0 && (
-                  <p className="text-white/65">
+                  <p className="text-white/70">
                     {stripeRequirements.length} itens pendentes no Stripe. Conclui-os no painel Connect para ativares payouts.
                   </p>
                 )}
@@ -2348,49 +2228,49 @@ function OrganizadorPageInner() {
               {stripeCtaError && <div className="text-xs text-red-300">{stripeCtaError}</div>}
             </div>
 
-            <div className="rounded-3xl border border-white/10 bg-black/30 backdrop-blur-xl p-4 space-y-3 shadow-[0_18px_60px_rgba(0,0,0,0.65)]">
+            <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/10 via-[#0b1124]/70 to-[#050810]/90 backdrop-blur-3xl p-4 space-y-3 shadow-[0_22px_70px_rgba(0,0,0,0.65)]">
               <div className="flex items-center justify-between">
-                <h3 className="text-lg font-semibold">Payouts</h3>
-                <span className="text-[11px] text-white/65">Informativo</span>
+                <h3 className="text-lg font-semibold text-white">Payouts</h3>
+                <span className="text-[11px] text-white/70">Informativo</span>
               </div>
               <div className="grid gap-2 sm:grid-cols-2 text-sm">
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-                  <p className="text-white/60 text-xs">Próximo payout (estimado)</p>
+                <div className="rounded-2xl border border-white/12 bg-white/8 p-3">
+                  <p className="text-white/70 text-xs">Próximo payout (estimado)</p>
                   <p className="text-xl font-semibold text-white">
                     {financeData ? (financeData.upcomingPayoutCents / 100).toFixed(2) : financeSummary ? (financeSummary.estimatedPayoutCents / 100).toFixed(2) : "—"} €
                   </p>
-                  <p className="text-[11px] text-white/55">Baseado em vendas recentes. Funcionalidade de payouts automáticos em breve.</p>
+                  <p className="text-[11px] text-white/60">Baseado em vendas recentes. Funcionalidade de payouts automáticos em breve.</p>
                 </div>
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-                  <p className="text-white/60 text-xs">Receita bruta (total)</p>
+                <div className="rounded-2xl border border-white/12 bg-white/8 p-3">
+                  <p className="text-white/70 text-xs">Receita bruta (total)</p>
                   <p className="text-xl font-semibold text-white">
                     {financeData ? (financeData.totals.grossCents / 100).toFixed(2) : financeSummary ? (financeSummary.revenueCents / 100).toFixed(2) : "—"} €
                   </p>
-                  <p className="text-[11px] text-white/55">Inclui todos os eventos.</p>
+                  <p className="text-[11px] text-white/60">Inclui todos os eventos.</p>
                 </div>
               </div>
               <div className="grid gap-2 sm:grid-cols-2 text-sm">
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-                  <p className="text-white/60 text-xs">Taxas acumuladas</p>
+                <div className="rounded-2xl border border-white/12 bg-white/8 p-3">
+                  <p className="text-white/70 text-xs">Taxas acumuladas</p>
                   <p className="text-xl font-semibold text-white">
                     {financeData ? (financeData.totals.feesCents / 100).toFixed(2) : financeSummary ? (financeSummary.platformFeesCents / 100).toFixed(2) : "—"} €
                   </p>
-                  <p className="text-[11px] text-white/55">Inclui processamento Stripe e fees aplicadas.</p>
+                  <p className="text-[11px] text-white/60">Inclui processamento Stripe e fees aplicadas.</p>
                 </div>
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-                  <p className="text-white/60 text-xs">Eventos com vendas</p>
+                <div className="rounded-2xl border border-white/12 bg-white/8 p-3">
+                  <p className="text-white/70 text-xs">Eventos com vendas</p>
                   <p className="text-xl font-semibold text-white">
                     {financeData ? financeData.totals.eventsWithSales : financeSummary ? financeSummary.eventsWithSales : "—"}
                   </p>
                 </div>
               </div>
-              <p className="text-[11px] text-white/60">
+              <p className="text-[11px] text-white/65">
                 Payouts automáticos e gestão avançada de taxas chegam em breve. Estes valores são informativos.
               </p>
             </div>
           </div>
 
-            <div className="rounded-3xl border border-white/10 bg-black/35 backdrop-blur-xl p-4 space-y-3 shadow-[0_18px_60px_rgba(0,0,0,0.65)]">
+            <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/92 backdrop-blur-3xl p-4 space-y-3 shadow-[0_22px_70px_rgba(0,0,0,0.65)]">
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="text-lg font-semibold text-white">Por evento</h3>
@@ -2468,23 +2348,26 @@ function OrganizadorPageInner() {
       )}
 
       {activeTab === "marketing" && (
-        <section className="space-y-4">
-          <div className="rounded-3xl border border-white/12 bg-white/5/60 bg-black/20 px-3 py-3 sm:px-4 sm:py-4 backdrop-blur-2xl shadow-[0_24px_80px_rgba(0,0,0,0.55)]">
+        <section className="space-y-5">
+          <div className="rounded-3xl border border-white/12 bg-gradient-to-r from-[#0b1226]/80 via-[#101b39]/75 to-[#050811]/90 px-4 py-4 sm:px-6 sm:py-5 backdrop-blur-2xl shadow-[0_26px_90px_rgba(0,0,0,0.55)]">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div className="space-y-1">
-                <p className="text-[11px] uppercase tracking-[0.28em] text-white/60">Dashboard · Marketing</p>
-                <h2 className="text-xl sm:text-2xl font-semibold text-white">Marketing</h2>
+                <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] uppercase tracking-[0.28em] text-white/70 shadow-[0_12px_32px_rgba(0,0,0,0.4)]">
+                  Dashboard · Marketing
+                </div>
+                <h2 className="text-2xl sm:text-3xl font-semibold text-white drop-shadow-[0_12px_45px_rgba(0,0,0,0.6)]">Marketing</h2>
+                <p className="text-sm text-white/70">Promoções, audiência e ações para encher o evento.</p>
               </div>
               {marketingSection === "promos" && (
                 <Link
                   href="/organizador?tab=marketing&section=promos"
-                  className="rounded-full border border-white/20 px-4 py-2 text-sm text-white/85 hover:bg-white/10"
+                  className="inline-flex items-center rounded-full border border-white/25 bg-white/10 px-4 py-2 text-sm font-semibold text-white shadow-[0_14px_40px_rgba(0,0,0,0.35)] hover:border-white/40 hover:bg-white/15 transition"
                 >
                   Ver todos os códigos
                 </Link>
               )}
             </div>
-            <div className="mt-3 flex flex-wrap gap-2 rounded-2xl border border-white/10 bg-white/5/70 bg-black/30 px-2 py-2 text-sm">
+            <div className="mt-4 flex flex-wrap gap-2 rounded-2xl border border-white/10 bg-white/5 px-2 py-2 text-sm shadow-[0_16px_50px_rgba(0,0,0,0.4)]">
               {[
                 { key: "overview", label: "Visão geral" },
                 { key: "promos", label: "Códigos promocionais" },
@@ -2495,9 +2378,9 @@ function OrganizadorPageInner() {
                   key={opt.key}
                   type="button"
                   onClick={() => setMarketingSection(opt.key as typeof marketingSection)}
-                  className={`rounded-xl px-3 py-2 transition ${
+                  className={`rounded-xl px-3 py-2 font-semibold transition ${
                     marketingSection === opt.key
-                      ? "bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] text-black font-semibold shadow-[0_0_16px_rgba(107,255,255,0.35)]"
+                      ? "bg-gradient-to-r from-[#FF7AD1]/60 via-[#7FE0FF]/35 to-[#6A7BFF]/55 text-white shadow-[0_14px_36px_rgba(107,255,255,0.45)]"
                       : "text-white/80 hover:bg-white/10"
                   }`}
                 >
@@ -2532,15 +2415,25 @@ function OrganizadorPageInner() {
                         value: marketingKpis.activePromos,
                         hint: "Disponíveis para vender agora.",
                       },
-                    ].map((card) => (
-                      <div key={card.label} className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                    ].map((card, idx) => (
+                      <div
+                        key={card.label}
+                        className={`rounded-2xl border border-white/10 p-3 shadow-[0_18px_55px_rgba(0,0,0,0.45)] ${
+                          idx % 2 === 0
+                            ? "bg-gradient-to-br from-[#0f1c3d]/70 via-[#0b1124]/65 to-[#050810]/85"
+                            : "bg-gradient-to-br from-[#170b1f]/70 via-[#0e122a]/65 to-[#050810]/85"
+                        }`}
+                      >
                         <p className="text-[11px] text-white/60">{card.label}</p>
-                        <p className="text-2xl font-bold text-white mt-1">{card.value}</p>
+                        <p className="mt-1 text-2xl font-bold text-white drop-shadow-[0_10px_30px_rgba(0,0,0,0.35)]">{card.value}</p>
                         <p className="text-[11px] text-white/50">{card.hint}</p>
                       </div>
                     ))
                   : [...Array(4)].map((_, idx) => (
-                      <div key={idx} className="rounded-2xl border border-white/10 bg-white/5 p-3 space-y-2 animate-pulse">
+                      <div
+                        key={idx}
+                        className="rounded-2xl border border-white/10 bg-gradient-to-br from-white/8 via-[#0f1c3d]/50 to-[#050810]/85 p-3 space-y-2 animate-pulse"
+                      >
                         <div className="h-3 w-24 rounded bg-white/15" />
                         <div className="h-6 w-20 rounded bg-white/20" />
                         <div className="h-3 w-32 rounded bg-white/10" />
@@ -2548,15 +2441,15 @@ function OrganizadorPageInner() {
                     ))}
               </div>
 
-              <div className="rounded-3xl border border-white/10 bg-black/35 p-4 space-y-3">
+              <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0c162c]/65 to-[#050912]/90 p-4 space-y-3 shadow-[0_24px_90px_rgba(0,0,0,0.55)]">
                 <div className="flex items-center justify-between">
                   <div>
-                    <h3 className="text-lg font-semibold text-white">Fill the Room</h3>
+                    <h3 className="text-lg font-semibold text-white drop-shadow-[0_10px_30px_rgba(0,0,0,0.45)]">Fill the Room</h3>
                     <p className="text-[12px] text-white/65">Próximos eventos com ocupação e ação sugerida.</p>
                   </div>
                   <Link
                     href="/organizador?tab=marketing&section=promos"
-                    className="rounded-full border border-white/20 px-3 py-1 text-[12px] text-white/80 hover:bg-white/10"
+                    className="rounded-full border border-white/20 bg-white/5 px-3 py-1 text-[12px] text-white/85 shadow-[0_14px_40px_rgba(0,0,0,0.35)] hover:bg-white/10"
                   >
                     Ver todas as ações
                   </Link>
@@ -2573,14 +2466,14 @@ function OrganizadorPageInner() {
                     {fillTheRoomEvents.map((ev) => (
                       <div
                         key={ev.id}
-                        className="flex flex-col gap-2 rounded-2xl border border-white/10 bg-white/5 p-3 md:flex-row md:items-center md:justify-between"
+                        className="flex flex-col gap-2 rounded-2xl border border-white/12 bg-gradient-to-r from-[#130c24]/70 via-[#0b162c]/65 to-[#050912]/85 p-3 shadow-[0_18px_50px_rgba(0,0,0,0.45)] md:flex-row md:items-center md:justify-between"
                       >
                         <div className="space-y-1">
                           <div className="flex flex-wrap items-center gap-2">
                             <p className="text-sm font-semibold">{ev.title}</p>
                             <span className={`rounded-full border px-2 py-0.5 text-[11px] ${ev.tag.tone}`}>{ev.tag.label}</span>
                             <span className="rounded-full border border-white/20 bg-white/5 px-2 py-0.5 text-[11px] text-white/75">
-                              {ev.templateType || "Evento"}
+                              {ev.templateType === "PADEL" ? "Padel" : "Evento"}
                             </span>
                             {typeof ev.diffDays === "number" && (
                               <span className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[11px] text-white/70">
@@ -2612,7 +2505,7 @@ function OrganizadorPageInner() {
                           <div className="flex items-center gap-2 text-[11px] text-white/70">
                             <div className="h-2 w-28 rounded-full bg-white/10">
                               <div
-                                className="h-2 rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5]"
+                                className="h-2 rounded-full bg-gradient-to-r from-[#FF7AD1] via-[#7FE0FF] to-[#6A7BFF]"
                                 style={{ width: `${Math.min(100, Math.round((ev.occupancy ?? 0) * 100))}%` }}
                               />
                             </div>
@@ -2621,19 +2514,19 @@ function OrganizadorPageInner() {
                           <div className="flex flex-wrap justify-end gap-2 text-[11px]">
                             <Link
                               href="/organizador?tab=marketing&section=promos"
-                              className="rounded-full border border-white/20 px-2.5 py-1 text-white/80 hover:bg-white/10"
+                              className="rounded-full border border-white/20 bg-white/5 px-2.5 py-1 text-white/85 hover:bg-white/12"
                             >
                               {ev.tag.suggestion}
                             </Link>
                             <Link
                               href={`/organizador/eventos/${ev.id}/edit`}
-                              className="rounded-full border border-white/20 px-2.5 py-1 text-white/80 hover:bg-white/10"
+                              className="rounded-full border border-white/20 bg-white/5 px-2.5 py-1 text-white/85 hover:bg-white/12"
                             >
                               Ajustar evento
                             </Link>
                             <Link
                               href={`/eventos/${ev.slug}`}
-                              className="rounded-full border border-white/20 px-2.5 py-1 text-white/80 hover:bg-white/10"
+                              className="rounded-full border border-white/20 bg-white/5 px-2.5 py-1 text-white/85 hover:bg-white/12"
                             >
                               Partilhar
                             </Link>
@@ -2645,7 +2538,7 @@ function OrganizadorPageInner() {
                 )}
               </div>
 
-              <div className="rounded-3xl border border-white/10 bg-black/35 p-4">
+              <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#101b39]/60 to-[#050912]/90 p-4 shadow-[0_24px_90px_rgba(0,0,0,0.55)]">
                 <div className="flex items-center justify-between gap-2">
                   <div>
                     <h4 className="text-lg font-semibold text-white">Funil de marketing (v1)</h4>
@@ -2659,7 +2552,7 @@ function OrganizadorPageInner() {
                     { label: "Bilhetes com promo", value: marketingKpis.ticketsWithPromo ?? 0 },
                     { label: "Guest / convidados", value: marketingKpis.guestTickets ?? 0 },
                   ].map((item) => (
-                    <div key={item.label} className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                    <div key={item.label} className="rounded-2xl border border-white/10 bg-white/5/80 bg-black/20 p-3 shadow-[0_14px_45px_rgba(0,0,0,0.4)]">
                       <p className="text-[11px] text-white/60">{item.label}</p>
                       <p className="text-xl font-bold text-white mt-1">{item.value}</p>
                     </div>
@@ -2843,10 +2736,10 @@ function OrganizadorPageInner() {
   );
 }
 
-export default function OrganizadorPage() {
+export default function DashboardClient({ hasOrganizer = false }: { hasOrganizer?: boolean }) {
   return (
     <AuthModalProvider>
-      <OrganizadorPageInner />
+      <OrganizadorPageInner hasOrganizer={hasOrganizer} />
     </AuthModalProvider>
   );
 }

@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import useSWR from "swr";
 
 type Player = {
   id: number;
@@ -27,6 +28,25 @@ type Props = {
   organizerId: number | null;
 };
 
+const fetcher = (url: string) => fetch(url).then((r) => r.json());
+
+type PadelFormat =
+  | "TODOS_CONTRA_TODOS"
+  | "QUADRO_ELIMINATORIO"
+  | "GRUPOS_ELIMINATORIAS"
+  | "CAMPEONATO_LIGA"
+  | "QUADRO_AB"
+  | "NON_STOP";
+
+const formatOptions: Array<{ value: PadelFormat; label: string }> = [
+  { value: "TODOS_CONTRA_TODOS", label: "Todos contra todos" },
+  { value: "QUADRO_ELIMINATORIO", label: "Quadro eliminatório" },
+  { value: "GRUPOS_ELIMINATORIAS", label: "Grupos + eliminatórias" },
+  { value: "CAMPEONATO_LIGA", label: "Campeonato/Liga" },
+  { value: "QUADRO_AB", label: "Quadro A/B" },
+  { value: "NON_STOP", label: "Non-stop" },
+];
+
 export default function PadelTournamentSection({ eventId, organizerId }: Props) {
   const [teams, setTeams] = useState<Team[]>([]);
   const [matches, setMatches] = useState<Match[]>([]);
@@ -35,7 +55,11 @@ export default function PadelTournamentSection({ eventId, organizerId }: Props) 
   const [error, setError] = useState<string | null>(null);
   const [players, setPlayers] = useState<Player[]>([]);
   const [teamForm, setTeamForm] = useState({ p1: "", p2: "", p1Id: "", p2Id: "" });
-  const [format, setFormat] = useState<"TODOS_CONTRA_TODOS" | "QUADRO_ELIMINATORIO">("TODOS_CONTRA_TODOS");
+  const [format, setFormat] = useState<PadelFormat>("TODOS_CONTRA_TODOS");
+  const formatLabelMap = useMemo(() => Object.fromEntries(formatOptions.map((f) => [f.value, f.label])), []);
+  const { data: configRes } = useSWR(eventId ? `/api/padel/tournaments/config?eventId=${eventId}` : null, fetcher);
+  const formatRequested = (configRes?.config?.advancedSettings as any)?.formatRequested as PadelFormat | undefined;
+  const formatEffective = (configRes?.config?.advancedSettings as any)?.formatEffective as PadelFormat | undefined;
 
   async function fetchTeams() {
     const res = await fetch(`/api/padel/teams?eventId=${eventId}`);
@@ -63,6 +87,27 @@ export default function PadelTournamentSection({ eventId, organizerId }: Props) 
     const json = await res.json();
     if (!res.ok || !json?.ok) throw new Error(json?.error || "Erro ao carregar ranking");
     setRankings(json.items);
+  }
+
+  async function generateKnockout() {
+    setError(null);
+    const totalGroupMatches = matches.filter((m) => m.roundType === "GROUPS").length;
+    const finishedGroupMatches = matches.filter((m) => m.roundType === "GROUPS" && m.status === "DONE").length;
+    if (totalGroupMatches > 0 && finishedGroupMatches < totalGroupMatches) {
+      setError(`Faltam ${totalGroupMatches - finishedGroupMatches} jogos de grupos para fechar classificação.`);
+      return;
+    }
+    const res = await fetch("/api/padel/matches/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ eventId, format, phase: "KNOCKOUT" }),
+    });
+    const json = await res.json();
+    if (!res.ok || !json?.ok) {
+      setError(json?.error || "Erro ao gerar eliminatórias");
+      return;
+    }
+    await fetchMatches();
   }
 
   useEffect(() => {
@@ -159,10 +204,20 @@ export default function PadelTournamentSection({ eventId, organizerId }: Props) 
           onChange={(e) => setFormat(e.target.value as any)}
           className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[12px] text-white/80"
         >
-          <option value="TODOS_CONTRA_TODOS">Todos contra todos</option>
-          <option value="QUADRO_ELIMINATORIO">Quadro eliminatório</option>
+          {formatOptions.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+              {["CAMPEONATO_LIGA", "NON_STOP", "QUADRO_AB"].includes(opt.value) ? " (Beta)" : ""}
+            </option>
+          ))}
         </select>
       </div>
+      {formatRequested && formatEffective && formatRequested !== formatEffective && (
+        <div className="rounded-xl border border-amber-400/30 bg-amber-500/10 px-3 py-2 text-[12px] text-amber-50">
+          Formato pedido: {formatLabelMap[formatRequested] ?? formatRequested}. Este torneio está a usar:{" "}
+          {formatLabelMap[formatEffective] ?? formatEffective} (modo Beta).
+        </div>
+      )}
 
       {error && <p className="text-[12px] text-red-300">{error}</p>}
       {loading && <p className="text-sm text-white/70">A carregar torneio…</p>}
@@ -234,6 +289,24 @@ export default function PadelTournamentSection({ eventId, organizerId }: Props) 
               className="rounded-full bg-white/10 px-3 py-1.5 text-[12px] text-white hover:bg-white/20"
             >
               Gerar jogos
+            </button>
+            <button
+              onClick={generateKnockout}
+              className="rounded-full bg-white/10 px-3 py-1.5 text-[12px] text-white hover:bg-white/20 disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={
+                matches.filter((m) => m.roundType === "GROUPS").length > 0 &&
+                matches.filter((m) => m.roundType === "GROUPS" && m.status === "DONE").length <
+                  matches.filter((m) => m.roundType === "GROUPS").length
+              }
+              title={
+                matches.filter((m) => m.roundType === "GROUPS").length > 0 &&
+                matches.filter((m) => m.roundType === "GROUPS" && m.status === "DONE").length <
+                  matches.filter((m) => m.roundType === "GROUPS").length
+                  ? "Termina os jogos dos grupos antes de gerar eliminatórias"
+                  : undefined
+              }
+            >
+              Gerar eliminatórias
             </button>
           </div>
           <div className="space-y-2 max-h-60 overflow-auto text-sm">

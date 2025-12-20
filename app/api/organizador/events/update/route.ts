@@ -2,10 +2,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { ensureAuthenticated } from "@/lib/security";
+import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { TicketTypeStatus, Prisma, EventTemplateType } from "@prisma/client";
 import { isOrgAdminOrAbove } from "@/lib/organizerPermissions";
-import { PORTUGAL_CITIES } from "@/config/cities";
 
 type TicketTypeUpdate = {
   id: number;
@@ -57,37 +56,128 @@ export async function POST(req: NextRequest) {
     }
 
     // Autorização: perfil + membership no organizer do evento
-    const profile = await prisma.profile.findUnique({ where: { id: user.id } });
+    let event: {
+      id: number;
+      organizerId: number | null;
+      isFree: boolean;
+      ticketTypes: { id: number; soldQuantity: number; price: number; status: TicketTypeStatus }[];
+      organizer: { stripeAccountId: string | null; stripeChargesEnabled: boolean; stripePayoutsEnabled: boolean } | null;
+      _count: { tickets: number; reservations: number; saleLines: number };
+    } | null = null;
+
+    const [profile, eventResult] = await Promise.all([
+      prisma.profile.findUnique({ where: { id: user.id }, select: { roles: true } }),
+      (async () => {
+        try {
+          return await prisma.event.findUnique({
+            where: { id: eventId },
+            select: {
+              id: true,
+              organizerId: true,
+              isFree: true,
+              ticketTypes: {
+                select: {
+                  id: true,
+                  soldQuantity: true,
+                  price: true,
+                  status: true,
+                },
+              },
+              organizer: {
+                select: {
+                  stripeAccountId: true,
+                  stripeChargesEnabled: true,
+                  stripePayoutsEnabled: true,
+                },
+              },
+              _count: {
+                select: {
+                  tickets: true,
+                  reservations: true,
+                  saleLines: true,
+                },
+              },
+            },
+          });
+        } catch (err) {
+          if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2022") {
+            const rows = await prisma.$queryRaw<
+              { id: number; organizer_id: number | null; is_free: boolean }[]
+            >(Prisma.sql`SELECT id, organizer_id, is_free FROM app_v3.events WHERE id = ${eventId} LIMIT 1`);
+            const row = rows[0];
+            if (!row) return null;
+            const [ticketTypes, organizerRows, counts] = await Promise.all([
+              prisma.$queryRaw<
+                { id: number; sold_quantity: number; price: number; status: TicketTypeStatus }[]
+              >(Prisma.sql`SELECT id, sold_quantity, price, status FROM app_v3.ticket_types WHERE event_id = ${eventId}`),
+              row.organizer_id
+                ? prisma.$queryRaw<
+                    { stripe_account_id: string | null; stripe_charges_enabled: boolean; stripe_payouts_enabled: boolean }[]
+                  >(Prisma.sql`SELECT stripe_account_id, stripe_charges_enabled, stripe_payouts_enabled FROM app_v3.organizers WHERE id = ${row.organizer_id} LIMIT 1`)
+                : Promise.resolve([]),
+              prisma.$queryRaw<{ tickets: number; reservations: number; sale_lines: number }[]>(Prisma.sql`
+                SELECT
+                  (SELECT COUNT(*)::int FROM app_v3.tickets WHERE event_id = ${eventId}) AS tickets,
+                  (SELECT COUNT(*)::int FROM app_v3.ticket_reservations WHERE event_id = ${eventId}) AS reservations,
+                  (SELECT COUNT(*)::int FROM app_v3.sale_lines WHERE event_id = ${eventId}) AS sale_lines
+              `),
+            ]);
+
+            return {
+              id: row.id,
+              organizerId: row.organizer_id,
+              isFree: row.is_free,
+              ticketTypes: ticketTypes.map((t) => ({
+                id: t.id,
+                soldQuantity: Number(t.sold_quantity ?? 0),
+                price: Number(t.price ?? 0),
+                status: t.status,
+              })),
+              organizer: organizerRows[0]
+                ? {
+                    stripeAccountId: organizerRows[0].stripe_account_id,
+                    stripeChargesEnabled: organizerRows[0].stripe_charges_enabled,
+                    stripePayoutsEnabled: organizerRows[0].stripe_payouts_enabled,
+                  }
+                : null,
+              _count: {
+                tickets: counts[0]?.tickets ?? 0,
+                reservations: counts[0]?.reservations ?? 0,
+                saleLines: counts[0]?.sale_lines ?? 0,
+              },
+            };
+          }
+          throw err;
+        }
+      })(),
+    ]);
+
     if (!profile) {
       return NextResponse.json(
         { ok: false, error: "Perfil não encontrado. Completa o onboarding." },
         { status: 400 },
       );
     }
-    const event = await prisma.event.findUnique({
-      where: { id: eventId },
-      include: {
-        ticketTypes: true,
-        organizer: true,
-        _count: {
-          select: {
-            tickets: true,
-            reservations: true,
-            saleLines: true,
-          },
-        },
-      },
-    });
+
+    event = eventResult;
 
     if (!event) {
       return NextResponse.json({ ok: false, error: "Evento não encontrado." }, { status: 404 });
     }
 
-    const membership = await prisma.organizerMember.findUnique({
-      where: { organizerId_userId: { organizerId: event.organizerId, userId: user.id } },
-    });
-    if (!membership || !isOrgAdminOrAbove(membership.role)) {
-      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    let membership: { role: string } | null = null;
+    if (event.organizerId == null) {
+      // Evento criado fora do fluxo de organizer: permitir o owner original editar
+      if (event.ownerUserId !== user.id) {
+        return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      }
+    } else {
+      membership = await prisma.organizerMember.findUnique({
+        where: { organizerId_userId: { organizerId: event.organizerId, userId: user.id } },
+      });
+      if (!membership || !isOrgAdminOrAbove(membership.role)) {
+        return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      }
     }
 
     const isAdmin = Array.isArray(profile.roles) ? profile.roles.includes("admin") : false;
@@ -141,18 +231,15 @@ export async function POST(req: NextRequest) {
     if (body.locationName !== undefined) dataUpdate.locationName = body.locationName ?? "";
     if (body.locationCity !== undefined) {
       const city = body.locationCity ?? "";
-      if (city && !PORTUGAL_CITIES.includes(city as (typeof PORTUGAL_CITIES)[number])) {
-        return NextResponse.json(
-          { ok: false, error: "Cidade inválida. Escolhe uma cidade da lista disponível na ORYA." },
-          { status: 400 },
-        );
-      }
+      // Permitimos cidades fora da whitelist para compatibilidade com dados existentes
       dataUpdate.locationCity = city;
     }
     if (body.address !== undefined) dataUpdate.address = body.address ?? null;
     if (body.templateType) {
       const tpl = body.templateType.toUpperCase();
-      if ((Object.values(EventTemplateType) as string[]).includes(tpl)) {
+      if (tpl === "SPORT") {
+        dataUpdate.templateType = "PADEL";
+      } else if ((Object.values(EventTemplateType) as string[]).includes(tpl)) {
         dataUpdate.templateType = tpl as EventTemplateType;
       }
     }
@@ -188,12 +275,13 @@ export async function POST(req: NextRequest) {
       : [];
     const newTicketTypes = Array.isArray(body.newTicketTypes) ? body.newTicketTypes : [];
 
-    const payoutMode = event.payoutMode ?? "ORGANIZER";
+    const payoutMode = (event.payoutMode ?? "ORGANIZER").toUpperCase();
     const hasExistingPaid = event.ticketTypes.some(
       (t) => (t.price ?? 0) > 0 && t.status !== TicketTypeStatus.CANCELLED
     );
     const hasNewPaid = newTicketTypes.some((nt) => Number(nt.price ?? 0) > 0);
     if (
+      event.organizerId &&
       payoutMode === "ORGANIZER" &&
       (hasExistingPaid || hasNewPaid) &&
       paymentsStatus !== "READY" &&
@@ -221,6 +309,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (ticketTypeUpdates.length > 0) {
+      const updatesByStatus = new Map<TicketTypeStatus, number[]>();
       for (const upd of ticketTypeUpdates) {
         const tt = event.ticketTypes.find((t) => t.id === upd.id);
         if (!tt) continue;
@@ -228,19 +317,23 @@ export async function POST(req: NextRequest) {
           upd.status && Object.values(TicketTypeStatus).includes(upd.status)
             ? upd.status
             : null;
-        if (status) {
-          transactions.push(
-            prisma.ticketType.update({
-              where: { id: tt.id },
-              data: { status },
-            }),
-          );
-        }
+        if (!status) continue;
+        const list = updatesByStatus.get(status) ?? [];
+        list.push(tt.id);
+        updatesByStatus.set(status, list);
       }
+      updatesByStatus.forEach((ids, status) => {
+        transactions.push(
+          prisma.ticketType.updateMany({
+            where: { id: { in: ids } },
+            data: { status },
+          }),
+        );
+      });
     }
 
     if (newTicketTypes.length > 0) {
-      for (const nt of newTicketTypes) {
+      const newTicketData = newTicketTypes.map((nt) => {
         const price = Number(nt.price ?? 0);
         const totalQuantity =
           typeof nt.totalQuantity === "number" && nt.totalQuantity > 0
@@ -249,21 +342,23 @@ export async function POST(req: NextRequest) {
         const startsAt = nt.startsAt ? new Date(nt.startsAt) : null;
         const endsAt = nt.endsAt ? new Date(nt.endsAt) : null;
 
-        transactions.push(
-          prisma.ticketType.create({
-            data: {
-              eventId,
-              name: nt.name?.trim() || "Bilhete",
-              description: nt.description ?? null,
-              price,
-              totalQuantity,
-              status: TicketTypeStatus.ON_SALE,
-              startsAt: startsAt && !Number.isNaN(startsAt.getTime()) ? startsAt : null,
-              endsAt: endsAt && !Number.isNaN(endsAt.getTime()) ? endsAt : null,
-            },
-          }),
-        );
-      }
+        return {
+          eventId,
+          name: nt.name?.trim() || "Bilhete",
+          description: nt.description ?? null,
+          price,
+          totalQuantity,
+          status: TicketTypeStatus.ON_SALE,
+          startsAt: startsAt && !Number.isNaN(startsAt.getTime()) ? startsAt : null,
+          endsAt: endsAt && !Number.isNaN(endsAt.getTime()) ? endsAt : null,
+        };
+      });
+
+      transactions.push(
+        prisma.ticketType.createMany({
+          data: newTicketData,
+        }),
+      );
     }
 
     if (transactions.length === 0) {
@@ -275,6 +370,23 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true }, { status: 200 });
   } catch (err) {
     console.error("POST /api/organizador/events/update error:", err);
+    const message = err instanceof Error ? err.message : "";
+    if (message === "UNAUTHENTICATED") {
+      return NextResponse.json({ ok: false, error: "Não autenticado." }, { status: 401 });
+    }
+    if (isUnauthenticatedError(err)) {
+      return NextResponse.json({ ok: false, error: "Não autenticado." }, { status: 401 });
+    }
+    if (err instanceof Prisma.PrismaClientKnownRequestError) {
+      const code = err.code;
+      const column =
+        typeof err.meta?.column === "string" ? err.meta.column : null;
+      const error =
+        code === "P2022" && column
+          ? `Erro de base de dados ao atualizar evento (coluna em falta: ${column}).`
+          : "Erro de base de dados ao atualizar evento.";
+      return NextResponse.json({ ok: false, error, code }, { status: 400 });
+    }
     return NextResponse.json(
       {
         ok: false,

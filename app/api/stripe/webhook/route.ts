@@ -13,7 +13,7 @@ import crypto from "crypto";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { sendPurchaseConfirmationEmail } from "@/lib/emailSender";
 import { parsePhoneNumberFromString } from "libphonenumber-js/min";
-import { computePricing } from "@/lib/pricing";
+import { computeCombinedFees } from "@/lib/fees";
 import { getStripeBaseFees } from "@/lib/platformSettings";
 import { normalizePaymentScenario } from "@/lib/paymentScenario";
 import { checkoutMetadataSchema, normalizeItemsForMetadata, parseCheckoutItems } from "@/lib/checkoutSchemas";
@@ -699,24 +699,22 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent, stripeEventId
 
   // Sanity-check opcional: garantir que breakdown bate com o amount recebido
   if (parsedBreakdown && typeof intent.amount_received === "number") {
-    const recalculated = computePricing(parsedBreakdown.subtotalCents, parsedBreakdown.discountCents, {
-      eventFeeModeOverride: null,
-      eventFeeMode: parsedBreakdown.feeMode as FeeMode | null,
-      organizerFeeMode: parsedBreakdown.feeMode as FeeMode | null,
-      platformDefaultFeeMode: parsedBreakdown.feeMode as FeeMode | null,
-      eventPlatformFeeBpsOverride: parsedBreakdown.feeBpsApplied ?? null,
-      eventPlatformFeeFixedCentsOverride: parsedBreakdown.feeFixedApplied ?? null,
-      organizerPlatformFeeBps: parsedBreakdown.feeBpsApplied ?? null,
-      organizerPlatformFeeFixedCents: parsedBreakdown.feeFixedApplied ?? null,
-      platformDefaultFeeBps: parsedBreakdown.feeBpsApplied ?? 0,
-      platformDefaultFeeFixedCents: parsedBreakdown.feeFixedApplied ?? 0,
+    const combined = computeCombinedFees({
+      amountCents: parsedBreakdown.subtotalCents ?? 0,
+      discountCents: parsedBreakdown.discountCents ?? 0,
+      feeMode: (parsedBreakdown.feeMode as FeeMode | null) ?? FeeMode.ADDED,
+      platformFeeBps: parsedBreakdown.feeBpsApplied ?? 0,
+      platformFeeFixedCents: parsedBreakdown.feeFixedApplied ?? 0,
+      stripeFeeBps: stripeBaseFees.feeBps ?? 0,
+      stripeFeeFixedCents: stripeBaseFees.feeFixedCents ?? 0,
     });
 
-    if (recalculated.totalCents !== intent.amount_received) {
+    const drift = Math.abs((combined.totalCents ?? 0) - intent.amount_received);
+    if (drift > 2) {
       console.warn("[fulfillPayment] Divergência entre breakdown.totalCents e amount_received", {
         intentId: intent.id,
         breakdownTotal: parsedBreakdown.totalCents,
-        recalculatedTotal: recalculated.totalCents,
+        recalculatedTotal: combined.totalCents,
         amountReceived: intent.amount_received,
       });
     }

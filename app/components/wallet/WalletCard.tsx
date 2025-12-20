@@ -27,7 +27,7 @@ export function WalletCard({ item, compact = false }: Props) {
 
   return (
     <article
-      className={`group relative overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03] backdrop-blur-xl shadow-[0_18px_50px_rgba(0,0,0,0.7)] ${
+      className={`group relative overflow-hidden rounded-2xl border border-white/15 bg-[linear-gradient(160deg,rgba(255,255,255,0.1),rgba(2,6,16,0.9))] backdrop-blur-2xl shadow-[0_20px_55px_rgba(0,0,0,0.7)] ${
         compact ? "aspect-[1/1.05] w-[220px] min-w-[220px]" : "aspect-[1/1.1] flex flex-col"
       }`}
     >
@@ -69,7 +69,9 @@ export function WalletCard({ item, compact = false }: Props) {
             Ver detalhe
           </Link>
           {item.actions?.canShowQr && (
-            <span className="inline-flex items-center rounded-lg bg-white/15 px-2 py-1 text-[10px]">QR pronto</span>
+            <span className="inline-flex items-center rounded-lg border border-white/20 bg-white/15 px-2 py-1 text-[10px] text-white/90">
+              QR pronto
+            </span>
           )}
         </div>
       </div>

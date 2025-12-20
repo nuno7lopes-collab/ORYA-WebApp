@@ -4,9 +4,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { ensureAuthenticated } from "@/lib/security";
+import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { getActiveOrganizerForUser } from "@/lib/organizerContext";
-import { PORTUGAL_CITIES } from "@/config/cities";
 import { isOrgAdminOrAbove } from "@/lib/organizerPermissions";
 
 // Tipos esperados no body do pedido
@@ -23,7 +22,7 @@ type CreateOrganizerEventBody = {
   endsAt?: string;
   locationName?: string;
   locationCity?: string;
-  templateType?: string; // PARTY | SPORT | VOLUNTEERING | TALK | OTHER
+  templateType?: string; // PADEL | OTHER (legacy values are normalized)
   ticketTypes?: TicketTypeInput[];
   address?: string | null;
   categories?: string[];
@@ -39,6 +38,10 @@ type CreateOrganizerEventBody = {
     numberOfCourts?: number;
     ruleSetId?: number | null;
     defaultCategoryId?: number | null;
+    padelV2Enabled?: boolean;
+    padelClubId?: number | null;
+    courtIds?: number[];
+    staffIds?: number[];
   } | null;
 };
 
@@ -50,6 +53,9 @@ type PadelConfigInput = {
   ruleSetId?: number | null;
   defaultCategoryId?: number | null;
   advancedSettings?: unknown;
+  padelV2Enabled?: boolean;
+  courtIds?: number[];
+  staffIds?: number[];
 } | null;
 
 function slugify(input: string): string {
@@ -108,13 +114,7 @@ export async function POST(req: NextRequest) {
     const locationName = body.locationName?.trim() ?? "";
     const locationCity = body.locationCity?.trim() ?? "";
     const address = body.address?.trim() || null;
-    const templateTypeRaw = body.templateType?.toUpperCase() as
-      | "PARTY"
-      | "SPORT"
-      | "VOLUNTEERING"
-      | "TALK"
-      | "OTHER"
-      | undefined;
+    const templateTypeRaw = body.templateType?.toUpperCase();
     const resaleModeRaw = body.resaleMode?.toUpperCase() as
       | "ALWAYS"
       | "AFTER_SOLD_OUT"
@@ -142,34 +142,18 @@ export async function POST(req: NextRequest) {
         { status: 400 },
       );
     }
-    const cityAllowed = PORTUGAL_CITIES.includes(locationCity as (typeof PORTUGAL_CITIES)[number]);
-    if (!cityAllowed) {
-      return NextResponse.json(
-        { ok: false, error: "Cidade inválida. Escolhe uma cidade da lista disponível na ORYA." },
-        { status: 400 },
-      );
-    }
+    // Permitimos cidades fora da whitelist para não bloquear dados existentes
 
     const categoriesInput = Array.isArray(body.categories) ? body.categories : [];
-    const allowedCategories = [
-      "FESTA",
-      "DESPORTO",
-      "CONCERTO",
-      "PALESTRA",
-      "ARTE",
-      "COMIDA",
-      "DRINKS",
-    ];
-    const categories = categoriesInput
-      .map((c) => c.trim().toUpperCase())
+    const normalizeCategory = (c: string) => {
+      const upper = c.trim().toUpperCase();
+      if (upper === "DESPORTO") return "PADEL";
+      return upper;
+    };
+    const allowedCategories = ["PADEL", "OUTRO"];
+    let categories = categoriesInput
+      .map((c) => normalizeCategory(c))
       .filter((c) => allowedCategories.includes(c));
-
-    if (categories.length === 0) {
-      return NextResponse.json(
-        { ok: false, error: "Escolhe pelo menos uma categoria." },
-        { status: 400 },
-      );
-    }
 
     const parseDate = (raw?: string | null) => {
       if (!raw) return null;
@@ -194,15 +178,25 @@ export async function POST(req: NextRequest) {
     const endsAtParsed = parseDate(endsAtRaw);
     const endsAt = endsAtParsed && endsAtParsed >= startsAt ? endsAtParsed : startsAt;
 
-    const templateType =
-      templateTypeRaw ??
-      (categories.includes("FESTA")
-        ? "PARTY"
-        : categories.includes("DESPORTO")
-          ? "SPORT"
-          : categories.includes("PALESTRA")
-            ? "TALK"
-            : "OTHER");
+    const padelRequested = Boolean(body.padel);
+    const templateTypeFromBody =
+      templateTypeRaw === "PADEL"
+        ? "PADEL"
+        : templateTypeRaw === "SPORT" // legacy fallback
+          ? "PADEL"
+          : "OTHER";
+
+    let templateType = templateTypeFromBody;
+    if (padelRequested || categories.includes("PADEL")) {
+      templateType = "PADEL";
+      categories = ["PADEL"];
+    }
+    if (categories.length === 0) {
+      categories = ["OUTRO"];
+      if (!templateType) {
+        templateType = "OTHER";
+      }
+    }
 
     const ticketTypesInput = body.ticketTypes ?? [];
     const coverImageUrl = body.coverImageUrl?.trim?.() || null;
@@ -286,7 +280,7 @@ export async function POST(req: NextRequest) {
     let partnerClubIds: number[] = [];
     let advancedSettings: unknown = null;
 
-    if (templateType === "SPORT" && body.padel && organizer) {
+    if (padelRequested && organizer) {
       padelConfigInput = body.padel as PadelConfigInput;
       padelClubId =
         typeof padelConfigInput?.padelClubId === "number" && Number.isFinite(padelConfigInput.padelClubId)
@@ -344,7 +338,11 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    if (templateType === "SPORT" && padelConfigInput && organizer) {
+    if (templateType === "PADEL" && padelConfigInput && organizer) {
+      const padelV2Enabled = padelConfigInput?.padelV2Enabled ?? true;
+      const courtIds = Array.isArray(padelConfigInput?.courtIds) ? padelConfigInput?.courtIds : [];
+      const staffIds = Array.isArray(padelConfigInput?.staffIds) ? padelConfigInput?.staffIds : [];
+      const computedCourts = Math.max(1, padelConfigInput.numberOfCourts || courtIds.length || 1);
       try {
         await prisma.padelTournamentConfig.upsert({
           where: { eventId: event.id },
@@ -353,20 +351,22 @@ export async function POST(req: NextRequest) {
             organizerId: organizer.id,
             padelClubId,
             partnerClubIds,
-            numberOfCourts: Math.max(1, padelConfigInput.numberOfCourts || 1),
+            numberOfCourts: computedCourts,
             format: (padelConfigInput.format as any) ?? "TODOS_CONTRA_TODOS",
             ruleSetId: padelConfigInput.ruleSetId || undefined,
             defaultCategoryId: padelConfigInput.defaultCategoryId || undefined,
-            advancedSettings: advancedSettings as any,
+            padelV2Enabled,
+            advancedSettings: { ...((advancedSettings as any) ?? {}), courtIds, staffIds },
           },
           update: {
             padelClubId,
             partnerClubIds,
-            numberOfCourts: Math.max(1, padelConfigInput.numberOfCourts || 1),
+            numberOfCourts: computedCourts,
             format: (padelConfigInput.format as any) ?? "TODOS_CONTRA_TODOS",
             ruleSetId: padelConfigInput.ruleSetId || undefined,
             defaultCategoryId: padelConfigInput.defaultCategoryId || undefined,
-            advancedSettings: advancedSettings as any,
+            padelV2Enabled,
+            advancedSettings: { ...((advancedSettings as any) ?? {}), courtIds, staffIds },
           },
         });
       } catch (padelErr) {
@@ -397,6 +397,9 @@ export async function POST(req: NextRequest) {
       { status: 201 }
     );
   } catch (err) {
+    if (isUnauthenticatedError(err)) {
+      return NextResponse.json({ ok: false, error: "Não autenticado." }, { status: 401 });
+    }
     console.error("POST /api/organizador/events/create error:", err);
     return NextResponse.json(
       { ok: false, error: "Erro interno ao criar evento." },

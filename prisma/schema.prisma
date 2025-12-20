@@ -193,6 +193,15 @@ model Notification {
   @@schema("app_v3")
 }
 
+/// Locks simples para operações concorrentes (drag/edit)
+model Lock {
+  key       String   @id
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(6)
+
+  @@map("locks")
+  @@schema("app_v3")
+}
+
 model NotificationPreference {
   userId                   String   @id @map("userId") @db.Uuid
   allowEmailNotifications  Boolean  @default(true) @map("allow_email_notifications")
@@ -316,7 +325,7 @@ model Event {
   description                       String
   /// "EXPERIENCE" (user) ou "ORGANIZER_EVENT" (organizador)
   type                              EventType               @default(EXPERIENCE)
-  /// Template de apoio (festa, desporto, voluntariado, palestra...)
+  /// Template de apoio (padel, evento padrão)
   templateType                      EventTemplateType?      @map("template_type")
   /// Liga ao Organizer quando é evento de organizador
   organizerId                       Int?                    @map("organizer_id")
@@ -900,6 +909,7 @@ model PadelClubCourt {
   updatedAt    DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   club         PadelClub @relation(fields: [padelClubId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   calendarBlocks PadelCourtBlock[]
+  matches       PadelMatch[]     @relation("PadelMatchCourt")
 
   @@index([padelClubId], map: "padel_club_courts_club_idx")
   @@map("padel_club_courts")
@@ -1036,7 +1046,7 @@ model PadelAvailability {
   eventId          Int                 @map("event_id")
   playerProfileId  Int?                @map("player_profile_id")
   playerName       String?             @map("player_name")
-  playerEmail      String?             @map("player_email") @db.Citext
+  playerEmail      String?             @map("player_email")
   startAt          DateTime            @map("start_at") @db.Timestamptz(6)
   endAt            DateTime            @map("end_at") @db.Timestamptz(6)
   note             String?
@@ -1211,8 +1221,14 @@ model PadelMatch {
   id              Int                @id @default(autoincrement())
   eventId         Int                @map("event_id")
   categoryId      Int?               @map("category_id")
+  courtId         Int?               @map("court_id")
   courtNumber     Int?               @map("court_number")
   startTime       DateTime?          @map("start_time") @db.Timestamptz(6)
+  plannedStartAt  DateTime?          @map("planned_start_at") @db.Timestamptz(6)
+  plannedEndAt    DateTime?          @map("planned_end_at") @db.Timestamptz(6)
+  plannedDurationMinutes Int?        @map("planned_duration_minutes")
+  actualStartAt   DateTime?          @map("actual_start_at") @db.Timestamptz(6)
+  actualEndAt     DateTime?          @map("actual_end_at") @db.Timestamptz(6)
   roundLabel      String?            @map("round_label")
   teamAId         Int?               @map("team_a_id")
   teamBId         Int?               @map("team_b_id")
@@ -1229,6 +1245,7 @@ model PadelMatch {
   courtName       String?            @map("court_name")
   category        PadelCategory?     @relation(fields: [categoryId], references: [id], onUpdate: NoAction)
   event           Event              @relation(fields: [eventId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  court           PadelClubCourt?    @relation("PadelMatchCourt", fields: [courtId], references: [id], onUpdate: NoAction, onDelete: SetNull, map: "padel_matches_court_fk")
   pairingA        PadelPairing?      @relation("MatchPairingA", fields: [pairingAId], references: [id], onUpdate: NoAction, map: "padel_matches_pairing_a_fk")
   pairingB        PadelPairing?      @relation("MatchPairingB", fields: [pairingBId], references: [id], onUpdate: NoAction, map: "padel_matches_pairing_b_fk")
   teamA           PadelTeam?         @relation("PadelMatchTeamA", fields: [teamAId], references: [id], onUpdate: NoAction)
@@ -1236,6 +1253,7 @@ model PadelMatch {
   winnerPairing   PadelPairing?      @relation("MatchWinnerPairing", fields: [winnerPairingId], references: [id], onUpdate: NoAction, map: "padel_matches_winner_fk")
 
   @@index([pairingAId, pairingBId], map: "padel_matches_pairings_idx")
+  @@index([courtId], map: "padel_matches_court_idx")
   @@map("padel_matches")
   @@schema("app_v3")
 }
@@ -1969,7 +1987,7 @@ enum AccountStatus {
 
 enum EventCategoryType {
   FESTA
-  DESPORTO
+  PADEL
   CONCERTO
   PALESTRA
   ARTE
@@ -1981,7 +1999,6 @@ enum EventCategoryType {
 
 enum EventTemplateType {
   PARTY
-  SPORT
   VOLUNTEERING
   TALK
   OTHER

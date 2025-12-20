@@ -6,13 +6,14 @@ import { prisma } from "@/lib/prisma";
 import crypto from "crypto";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { stripe } from "@/lib/stripeClient";
-import { getPlatformFees } from "@/lib/platformSettings";
+import { getPlatformFees, getStripeBaseFees } from "@/lib/platformSettings";
 import { shouldNotify, createNotification } from "@/lib/notifications";
 import { NotificationType, PaymentEventSource, type FeeMode } from "@prisma/client";
 import { paymentScenarioSchema, type PaymentScenario } from "@/lib/paymentScenario";
 import { parsePhoneNumberFromString } from "libphonenumber-js/min";
 import { computePromoDiscountCents } from "@/lib/promoMath";
 import { computePricing } from "@/lib/pricing";
+import { computeCombinedFees } from "@/lib/fees";
 import {
   checkoutMetadataSchema,
   createPurchaseId,
@@ -124,35 +125,36 @@ async function upsertPadelPlayerProfile(params: {
   const phoneClean = phone?.trim() || null;
 
   try {
-    if (emailClean) {
-      await prisma.padelPlayerProfile.upsert({
-        where: { organizerId_email: { organizerId, email: emailClean } },
-        update: {
-          fullName,
-          phone: phoneClean ?? undefined,
-          gender: gender ?? undefined,
-          level: level ?? undefined,
-        },
-        create: {
-          organizerId,
-          fullName,
-          email: emailClean,
-          phone: phoneClean ?? undefined,
-          gender: gender ?? undefined,
-          level: level ?? undefined,
-        },
-      });
-    } else {
-      await prisma.padelPlayerProfile.create({
+    const existing = emailClean
+      ? await prisma.padelPlayerProfile.findFirst({
+          where: { organizerId, email: emailClean },
+          select: { id: true },
+        })
+      : null;
+
+    if (existing?.id) {
+      await prisma.padelPlayerProfile.update({
+        where: { id: existing.id },
         data: {
-          organizerId,
           fullName,
           phone: phoneClean ?? undefined,
           gender: gender ?? undefined,
           level: level ?? undefined,
         },
       });
+      return;
     }
+
+    await prisma.padelPlayerProfile.create({
+      data: {
+        organizerId,
+        fullName,
+        email: emailClean || undefined,
+        phone: phoneClean ?? undefined,
+        gender: gender ?? undefined,
+        level: level ?? undefined,
+      },
+    });
   } catch (err) {
     console.warn("[padel] upsertPadelPlayerProfile falhou (ignorado)", err);
   }
@@ -740,6 +742,7 @@ export async function POST(req: NextRequest) {
     const amountAfterDiscountCents = preDiscountAmountCents - discountCents;
 
     const { feeBps: defaultFeeBps, feeFixedCents: defaultFeeFixed } = await getPlatformFees();
+    const stripeBaseFees = await getStripeBaseFees();
 
     // Org da plataforma? (org_type = PLATFORM → não cobra application fee, usa conta da plataforma)
     const isPlatformOrg = (event.org_type || "").toString().toUpperCase() === "PLATFORM";
@@ -757,7 +760,19 @@ export async function POST(req: NextRequest) {
       platformDefaultFeeFixedCents: defaultFeeFixed,
       isPlatformOrg,
     });
-    const platformFeeCents = pricing.platformFeeCents;
+    const combinedFees = computeCombinedFees({
+      amountCents: preDiscountAmountCents,
+      discountCents,
+      feeMode: pricing.feeMode,
+      platformFeeBps: pricing.feeBpsApplied,
+      platformFeeFixedCents: pricing.feeFixedApplied,
+      stripeFeeBps: stripeBaseFees.feeBps,
+      stripeFeeFixedCents: stripeBaseFees.feeFixedCents,
+    });
+
+    const platformFeeCents = pricing.platformFeeCents; // ORYA (application_fee)
+    const platformFeeCombinedCents = combinedFees.combinedFeeCents; // ORYA + Stripe (mostrado ao cliente)
+    const stripeFeeEstimateCents = combinedFees.stripeFeeCentsEstimate;
 
     // Stripe account rules
     let stripeAccountId = event.org_stripe_account_id ?? null;
@@ -783,7 +798,7 @@ export async function POST(req: NextRequest) {
 
     const isPartnerEvent = Boolean(stripeAccountId);
 
-    const totalAmountInCents = pricing.totalCents;
+    const totalAmountInCents = combinedFees.totalCents;
 
     // Validação do total do cliente (tolerante): alguns FE enviam subtotal, outros enviam total.
     if (clientExpectedTotalCents !== null) {
@@ -810,7 +825,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    if (totalAmountInCents < 0 || platformFeeCents > Math.max(totalAmountInCents, 0)) {
+    if (totalAmountInCents < 0 || platformFeeCombinedCents > Math.max(totalAmountInCents, 0)) {
       return intentError("INVALID_TOTAL", "Montante total inválido para este checkout.", { httpStatus: 400 });
     }
 
@@ -827,6 +842,10 @@ export async function POST(req: NextRequest) {
       typeof rawScenario === "string" ? rawScenario.toUpperCase() : rawScenario,
     );
     const requestedScenario: PaymentScenario | null = parsedScenario.success ? parsedScenario.data : null;
+    const bodyPairingId = typeof body?.pairingId === "number" ? body.pairingId : null;
+    const bodySlotId = typeof body?.slotId === "number" ? body.slotId : null;
+    const bodyTicketTypeId = typeof body?.ticketTypeId === "number" ? body.ticketTypeId : null;
+    const bodyEventId = typeof body?.eventId === "number" ? body.eventId : null;
 
     const paymentScenario: PaymentScenario =
       totalAmountInCents === 0
@@ -842,6 +861,73 @@ export async function POST(req: NextRequest) {
       if (paymentScenario === "FREE_CHECKOUT") return "FREE_CHECKOUT";
       return "SINGLE";
     })();
+
+    // Padel group scenarios exigem pairingId válido
+    if (scenarioAdjusted === "GROUP_FULL" || scenarioAdjusted === "GROUP_SPLIT") {
+      if (!bodyPairingId) {
+        return intentError("PAIRING_REQUIRED", "Precisas de uma dupla ativa para continuar.", {
+          httpStatus: 400,
+          status: "FAILED",
+          retryable: false,
+        });
+      }
+      if (!bodySlotId) {
+        return intentError("PAIRING_SLOT_REQUIRED", "Slot da dupla em falta.", {
+          httpStatus: 400,
+          status: "FAILED",
+          retryable: false,
+        });
+      }
+      const pairing = await prisma.padelPairing.findUnique({
+        where: { id: bodyPairingId },
+        select: {
+          id: true,
+          eventId: true,
+          lifecycleStatus: true,
+          payment_mode: true,
+          slots: { select: { id: true, profileId: true } },
+        },
+      });
+      if (!pairing || pairing.eventId !== event.id || pairing.lifecycleStatus === "CANCELLED_INCOMPLETE") {
+        return intentError("PAIRING_INVALID", "A dupla não é válida para este evento.", {
+          httpStatus: 400,
+          status: "FAILED",
+          retryable: false,
+        });
+      }
+      const slot = pairing.slots.find((s) => s.id === bodySlotId);
+      if (!slot) {
+        return intentError("PAIRING_SLOT_INVALID", "Slot da dupla não encontrado.", {
+          httpStatus: 400,
+          status: "FAILED",
+          retryable: false,
+        });
+      }
+      if (scenarioAdjusted === "GROUP_SPLIT" && pairing.payment_mode !== "SPLIT") {
+        return intentError("PAIRING_MODE_MISMATCH", "A dupla não está em modo split.", {
+          httpStatus: 400,
+          status: "FAILED",
+          retryable: false,
+        });
+      }
+      if (scenarioAdjusted === "GROUP_FULL" && pairing.payment_mode !== "FULL") {
+        return intentError("PAIRING_MODE_MISMATCH", "A dupla não está em modo full.", {
+          httpStatus: 400,
+          status: "FAILED",
+          retryable: false,
+        });
+      }
+      if (userId) {
+        const matchesUser = pairing.slots.some((s) => s.profileId === userId);
+        if (!matchesUser) {
+          return intentError("PAIRING_NOT_OWNED", "Esta dupla pertence a outro utilizador.", {
+            httpStatus: 403,
+            status: "FAILED",
+            retryable: false,
+          });
+        }
+      }
+    }
 
     // Revendas desativadas (só admins internos podem usar via outros canais)
     if (scenarioAdjusted === "RESALE") {
@@ -903,7 +989,7 @@ export async function POST(req: NextRequest) {
         ? `g:${guestEmail.toLowerCase()}`
         : "anon";
 
-    const FINGERPRINT_VERSION = "v2"; // bump to avoid clashes com intents antigos
+    const FINGERPRINT_VERSION = "v3"; // bump to evitar colisões com modelo antigo de fees
 
     const intentFingerprint = crypto
       .createHash("sha256")
@@ -920,7 +1006,9 @@ export async function POST(req: NextRequest) {
           discountCents,
           totalCents: totalAmountInCents,
           currency: currency.toLowerCase(),
-          platformFeeCents,
+          platformFeeCents: platformFeeCents,
+          platformFeeCombinedCents,
+          stripeFeeEstimateCents,
         }),
       )
       .digest("hex")
@@ -991,7 +1079,9 @@ export async function POST(req: NextRequest) {
                   lines,
                   subtotalCents: pricing.subtotalCents,
                   feeMode: pricing.feeMode,
-                  platformFeeCents: pricing.platformFeeCents,
+                  platformFeeCents: platformFeeCombinedCents,
+                  platformFeeOryaCents: platformFeeCents,
+                  stripeFeeEstimateCents,
                   totalCents: totalAmountInCents,
                   currency: currency.toUpperCase(),
                 },
@@ -1016,6 +1106,8 @@ export async function POST(req: NextRequest) {
       eventSlug: event.slug,
       owner: ownerForMetadata,
       pairingId: typeof body?.pairingId === "number" ? body?.pairingId : undefined,
+      slotId: bodySlotId ?? undefined,
+      ticketTypeId: bodyTicketTypeId ?? undefined,
     });
 
     if (!metadataValidation.success) {
@@ -1179,7 +1271,9 @@ export async function POST(req: NextRequest) {
           lines,
           subtotalCents: pricing.subtotalCents,
           feeMode: pricing.feeMode,
-          platformFeeCents: pricing.platformFeeCents,
+          platformFeeCents: 0,
+          platformFeeOryaCents: pricing.platformFeeCents,
+          stripeFeeEstimateCents: 0,
           totalCents: 0,
           currency: currency.toUpperCase(),
         },
@@ -1201,6 +1295,8 @@ export async function POST(req: NextRequest) {
       platformFeeBps: String(pricing.feeBpsApplied),
       platformFeeFixedCents: String(pricing.feeFixedApplied),
       platformFeeCents: String(pricing.platformFeeCents),
+      platformFeeCombinedCents: String(platformFeeCombinedCents),
+      stripeFeeEstimateCents: String(stripeFeeEstimateCents),
       contact: contact?.trim() ?? "",
       stripeAccountId: stripeAccountId ?? "orya",
       guestName: guestName ?? "",
@@ -1215,7 +1311,9 @@ export async function POST(req: NextRequest) {
         subtotalCents: pricing.subtotalCents,
         feeMode: pricing.feeMode,
         platformFeeCents: pricing.platformFeeCents,
-        totalCents: pricing.totalCents,
+        platformFeeCombinedCents,
+        stripeFeeEstimateCents,
+        totalCents: totalAmountInCents,
         currency: currency.toUpperCase(),
       }),
     };
@@ -1356,7 +1454,9 @@ export async function POST(req: NextRequest) {
         lines,
         subtotalCents: pricing.subtotalCents,
         feeMode: pricing.feeMode,
-        platformFeeCents: pricing.platformFeeCents,
+        platformFeeCents: platformFeeCombinedCents,
+        platformFeeOryaCents: platformFeeCents,
+        stripeFeeEstimateCents,
         totalCents: totalAmountInCents,
         currency: currency.toUpperCase(),
       },

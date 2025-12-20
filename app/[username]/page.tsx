@@ -38,7 +38,7 @@ export default async function UserProfilePage({ params }: PageProps) {
     redirect("/me");
   }
 
-  const [viewerId, profile] = await Promise.all([
+  const [viewerId, profile, organizerProfile] = await Promise.all([
     getViewerId(),
     prisma.profile.findUnique({
       where: { username: usernameParam },
@@ -52,6 +52,10 @@ export default async function UserProfilePage({ params }: PageProps) {
         visibility: true,
         createdAt: true,
       },
+    }),
+    prisma.organizer.findFirst({
+      where: { username: usernameParam },
+      select: { id: true, displayName: true },
     }),
   ]);
 
@@ -144,14 +148,26 @@ export default async function UserProfilePage({ params }: PageProps) {
     }
   }
 
-  const displayName = profile.fullName?.trim() || profile.username || "Utilizador ORYA";
+  const displayName =
+    organizerProfile?.displayName?.trim() ||
+    profile.fullName?.trim() ||
+    profile.username ||
+    "Utilizador ORYA";
+  const isOrganizationProfile = Boolean(organizerProfile);
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_12%_18%,rgba(255,0,200,0.06),transparent_38%),radial-gradient(circle_at_88%_12%,rgba(107,255,255,0.06),transparent_32%),radial-gradient(circle_at_42%_78%,rgba(22,70,245,0.06),transparent_38%),linear-gradient(135deg,#050611_0%,#040812_60%,#05060f_100%)] text-white">
-      <section className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-10">
+    <main className="relative orya-body-bg min-h-screen w-full overflow-hidden text-white">
+      <div className="pointer-events-none fixed inset-0" aria-hidden="true">
+        <div className="absolute -top-36 right-[-140px] h-[420px] w-[420px] rounded-full bg-[radial-gradient(circle_at_35%_35%,rgba(255,0,200,0.28),transparent_60%)] opacity-80 blur-3xl" />
+        <div className="absolute top-[22vh] -left-40 h-[360px] w-[360px] rounded-full bg-[radial-gradient(circle_at_30%_30%,rgba(107,255,255,0.22),transparent_60%)] opacity-80 blur-3xl" />
+        <div className="absolute bottom-[-180px] right-[12%] h-[420px] w-[420px] rounded-full bg-[radial-gradient(circle_at_40%_40%,rgba(22,70,245,0.25),transparent_60%)] opacity-70 blur-3xl" />
+        <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.05),transparent_35%,rgba(0,0,0,0.65))] mix-blend-screen" />
+      </div>
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_20%,rgba(255,255,255,0.05),transparent_60%)]" />
+      <section className="relative mx-auto flex max-w-6xl flex-col gap-6 px-4 py-10">
         <ProfileHeader
           isOwner={isOwner}
-          name={profile.fullName}
+          name={displayName}
           username={profile.username}
           avatarUrl={profile.avatarUrl}
           bio={profile.bio}
@@ -162,11 +178,12 @@ export default async function UserProfilePage({ params }: PageProps) {
           following={followingCount}
           targetUserId={profile.id}
           initialIsFollowing={initialIsFollowing}
+          isOrganization={isOrganizationProfile}
         />
 
         {canShowPrivate ? (
           <>
-            <section className="rounded-3xl border border-white/12 bg-gradient-to-r from-white/6 via-[#0f1424]/35 to-white/6 p-5 shadow-[0_14px_46px_rgba(0,0,0,0.45)] backdrop-blur-3xl">
+            <section className="rounded-3xl border border-white/15 bg-white/5 p-5 shadow-[0_24px_60px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 <StatCard
                   title="Eventos com bilhete"
@@ -196,7 +213,7 @@ export default async function UserProfilePage({ params }: PageProps) {
             </section>
 
             {isOwner ? (
-              <section className="rounded-3xl border border-[#6BFFFF]/22 bg-gradient-to-br from-[#030816f2] via-[#050a18] to-[#05060f] backdrop-blur-2xl p-5 space-y-4 shadow-[0_18px_60px_rgba(5,6,16,0.55)] min-h-[280px] relative overflow-hidden">
+              <section className="rounded-3xl border border-white/15 bg-white/5 backdrop-blur-2xl p-5 space-y-4 shadow-[0_24px_60px_rgba(0,0,0,0.6)] min-h-[280px] relative overflow-hidden">
                 <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_15%_20%,rgba(255,255,255,0.04),transparent_38%),radial-gradient(circle_at_85%_18%,rgba(255,255,255,0.03),transparent_34%),radial-gradient(circle_at_50%_85%,rgba(255,255,255,0.03),transparent_40%)]" />
                 <div className="flex items-center justify-between gap-3 flex-wrap">
                   <div>
@@ -209,7 +226,7 @@ export default async function UserProfilePage({ params }: PageProps) {
                   </div>
                   <Link
                     href="/me/carteira"
-                    className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/8 text-white text-[11px] font-semibold px-4 py-1.5 shadow-[0_10px_26px_rgba(255,255,255,0.15)] hover:scale-[1.02] active:scale-95 transition-transform backdrop-blur"
+                    className="inline-flex items-center gap-2 rounded-full border border-white/30 bg-white/10 text-white text-[11px] font-semibold px-4 py-1.5 shadow-[0_10px_26px_rgba(255,255,255,0.15)] hover:border-white/45 hover:bg-white/20 hover:scale-[1.02] active:scale-95 transition-transform backdrop-blur"
                   >
                     Ver carteira
                     <span className="text-[12px]">↗</span>
@@ -217,7 +234,7 @@ export default async function UserProfilePage({ params }: PageProps) {
                 </div>
 
                 {recent.length === 0 ? (
-                  <div className="flex h-48 items-center justify-center rounded-2xl border border-white/12 bg-white/5 text-sm text-white/70">
+                  <div className="flex h-48 items-center justify-center rounded-2xl border border-white/15 bg-white/5 text-sm text-white/80">
                     Ainda não tens bilhetes ORYA.
                   </div>
                 ) : (
@@ -244,7 +261,7 @@ export default async function UserProfilePage({ params }: PageProps) {
             )}
           </>
         ) : (
-          <section className="rounded-3xl border border-white/14 bg-white/5 p-6 shadow-[0_26px_70px_rgba(0,0,0,0.55)] backdrop-blur-2xl text-center">
+          <section className="rounded-3xl border border-white/15 bg-white/5 p-6 shadow-[0_26px_70px_rgba(0,0,0,0.6)] backdrop-blur-2xl text-center">
             <h2 className="text-lg font-semibold text-white">Perfil privado</h2>
             <p className="mt-2 text-sm text-white/70">
               {displayName} mantém a timeline privada. Só o próprio consegue ver os eventos e
@@ -268,7 +285,7 @@ function toneClasses(tone: StatTone) {
     case "purple":
       return "border-purple-300/30 from-purple-500/16 via-purple-500/9 to-[#120d1f] shadow-[0_12px_26px_rgba(168,85,247,0.18)] text-purple-50";
     default:
-      return "border-white/14 from-white/10 via-[#0b1224]/75 to-[#0a0f1d] shadow-[0_12px_26px_rgba(0,0,0,0.45)] text-white";
+      return "border-white/15 from-white/12 via-[#0b1224]/78 to-[#0a0f1d] shadow-[0_12px_26px_rgba(0,0,0,0.45)] text-white";
   }
 }
 
@@ -310,7 +327,7 @@ function RecentCard({
   item: { id: string; title: string; venueName: string | null; coverUrl: string | null; startAt: Date | null };
 }) {
   return (
-    <div className="relative overflow-hidden rounded-2xl border border-white/12 bg-white/5 p-3 shadow-[0_12px_36px_rgba(0,0,0,0.5)]">
+    <div className="relative overflow-hidden rounded-2xl border border-white/15 bg-white/5 p-3 shadow-[0_12px_36px_rgba(0,0,0,0.5)] backdrop-blur-2xl">
       <div className="flex items-center gap-3">
         <div className="h-16 w-16 overflow-hidden rounded-xl border border-white/10 bg-[radial-gradient(circle_at_30%_30%,rgba(255,0,200,0.14),transparent_45%),radial-gradient(circle_at_70%_70%,rgba(107,255,255,0.14),transparent_50%),#0b0f1b]">
           {item.coverUrl ? (
@@ -346,12 +363,12 @@ function EventListCard({
   emptyLabel: string;
 }) {
   return (
-    <section className="rounded-3xl border border-white/14 bg-gradient-to-br from-white/8 via-[#0b0f1d]/75 to-[#070b18]/85 p-4 shadow-[0_16px_50px_rgba(0,0,0,0.5)] backdrop-blur-2xl">
+    <section className="rounded-3xl border border-white/15 bg-white/5 p-4 shadow-[0_16px_50px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
       <div className="mb-3 flex items-center justify-between">
         <h3 className="text-sm font-semibold text-white/90">{title}</h3>
       </div>
       {items.length === 0 ? (
-        <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-6 text-[12px] text-white/70">
+        <div className="rounded-2xl border border-white/15 bg-white/5 px-4 py-6 text-[12px] text-white/80">
           {emptyLabel}
         </div>
       ) : (

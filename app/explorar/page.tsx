@@ -58,7 +58,7 @@ const TYPE_OPTIONS: { value: TypeFilter; label: string }[] = [
 ];
 
 const CATEGORY_OPTIONS = [
-  { value: "DESPORTO", label: "Desporto", accent: "from-[#6BFFFF] to-[#4ADE80]" },
+  { value: "PADEL", label: "Padel", accent: "from-[#6BFFFF] to-[#4ADE80]" },
   { value: "GERAL", label: "Eventos gerais", accent: "from-[#FF00C8] via-[#9B8CFF] to-[#1646F5]" },
 ] as const;
 

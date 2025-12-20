@@ -133,6 +133,18 @@ export default function Step2Pagamento() {
   const scenario = safeDados?.paymentScenario ?? cachedIntent?.paymentScenario ?? null;
   const isFreeScenario = scenario === "FREE_CHECKOUT";
   const needsStripe = !isFreeScenario;
+  const pairingId =
+    safeDados?.additional && typeof safeDados.additional === "object"
+      ? (safeDados.additional as Record<string, unknown>).pairingId
+      : undefined;
+  const pairingSlotId =
+    safeDados?.additional && typeof safeDados.additional === "object"
+      ? (safeDados.additional as Record<string, unknown>).pairingSlotId
+      : undefined;
+  const pairingTicketTypeId =
+    safeDados?.additional && typeof safeDados.additional === "object"
+      ? (safeDados.additional as Record<string, unknown>).ticketTypeId
+      : undefined;
 
   const additionalForRules =
     safeDados?.additional && typeof safeDados.additional === "object"
@@ -346,6 +358,10 @@ export default function Step2Pagamento() {
       requiresAuth,
       idempotencyKey: idemKey,
       purchaseId: purchaseId || undefined,
+      pairingId: typeof pairingId === "number" ? pairingId : undefined,
+      slotId: typeof pairingSlotId === "number" ? pairingSlotId : undefined,
+      ticketTypeId: typeof pairingTicketTypeId === "number" ? pairingTicketTypeId : undefined,
+      eventId: safeDados.eventId ? Number(safeDados.eventId) : undefined,
     };
   }, [safeDados, promoCode, requiresAuth]);
 
@@ -959,6 +975,18 @@ export default function Step2Pagamento() {
             typeof breakdownFromResponse?.platformFeeCents === "number"
               ? breakdownFromResponse.platformFeeCents
               : null;
+          const platformFeeCombinedCentsNumber =
+            typeof (breakdownFromResponse as any)?.platformFeeCombinedCents === "number"
+              ? (breakdownFromResponse as any).platformFeeCombinedCents
+              : platformFeeCentsNumber;
+          const platformFeeOryaCentsNumber =
+            typeof (breakdownFromResponse as any)?.platformFeeOryaCents === "number"
+              ? (breakdownFromResponse as any).platformFeeOryaCents
+              : platformFeeCentsNumber;
+          const stripeFeeEstimateCentsNumber =
+            typeof (breakdownFromResponse as any)?.stripeFeeEstimateCents === "number"
+              ? (breakdownFromResponse as any).stripeFeeEstimateCents
+              : null;
           const totalCentsNumber =
             typeof breakdownFromResponse?.totalCents === "number"
               ? breakdownFromResponse.totalCents
@@ -997,7 +1025,9 @@ export default function Step2Pagamento() {
                 purchaseId: purchaseIdFromServer,
                 subtotalCents: subtotalCentsNumber ?? undefined,
                 discountCents: discountCentsNumber ?? undefined,
-                platformFeeCents: platformFeeCentsNumber ?? undefined,
+                platformFeeCents: platformFeeCombinedCentsNumber ?? undefined,
+                platformFeeOryaCents: platformFeeOryaCentsNumber ?? undefined,
+                stripeFeeEstimateCents: stripeFeeEstimateCentsNumber ?? undefined,
                 totalCents: totalCents,
                 currency: currencyFromResponse ?? undefined,
                 total: totalCents / 100,
@@ -1037,7 +1067,9 @@ export default function Step2Pagamento() {
                 safeDados?.additional?.paymentIntentId,
               subtotalCents: subtotalCentsNumber ?? undefined,
               discountCents: discountCentsNumber ?? undefined,
-              platformFeeCents: platformFeeCentsNumber ?? undefined,
+              platformFeeCents: platformFeeCombinedCentsNumber ?? undefined,
+              platformFeeOryaCents: platformFeeOryaCentsNumber ?? undefined,
+              stripeFeeEstimateCents: stripeFeeEstimateCentsNumber ?? undefined,
               totalCents: totalCentsNumber ?? undefined,
               currency: currencyFromResponse ?? undefined,
               promoCode: payload?.promoCode,
@@ -1119,19 +1151,30 @@ export default function Step2Pagamento() {
   const appearance: Appearance = {
     theme: "night",
     variables: {
-      colorPrimary: "#FF00C8",
-      colorBackground: "#0A0A0F",
-      colorText: "#F5F5F5",
-      colorDanger: "#FF4242",
+      colorPrimary: "#6BFFFF",
+      colorBackground: "#0B0F18",
+      colorText: "#F7F9FF",
+      colorDanger: "#FF5C7A",
       fontFamily:
-        "Inter, system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
-      borderRadius: "16px",
+        "SF Pro Text, system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
+      borderRadius: "14px",
     },
     rules: {
       ".Input": {
         padding: "14px",
-        backgroundColor: "#11131A",
-        border: "1px solid rgba(255,255,255,0.08)",
+        backgroundColor: "rgba(12,16,26,0.75)",
+        border: "1px solid rgba(255,255,255,0.12)",
+      },
+      ".Label": {
+        color: "rgba(255,255,255,0.7)",
+      },
+      ".Tab": {
+        backgroundColor: "rgba(255,255,255,0.06)",
+        border: "1px solid rgba(255,255,255,0.1)",
+      },
+      ".Tab--selected": {
+        backgroundColor: "rgba(107,255,255,0.12)",
+        border: "1px solid rgba(107,255,255,0.45)",
       },
     },
   };
@@ -1291,7 +1334,7 @@ export default function Step2Pagamento() {
           <p className="text-[11px] uppercase tracking-[0.18em] text-white/55">
             Passo 2 de 3
           </p>
-          <h2 className="text-xl font-semibold leading-tight">
+          <h2 className="text-2xl font-semibold leading-tight">
             {isFreeScenario ? "Inscrição gratuita" : "Pagamento"}
           </h2>
           <p className="text-[11px] text-white/60 max-w-xs">
@@ -1305,13 +1348,13 @@ export default function Step2Pagamento() {
         </div>
       </header>
 
-      <div className="h-1 w-full rounded-full bg-white/10 overflow-hidden">
-        <div className="h-full w-2/3 rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5]" />
+      <div className="h-1 w-full rounded-full bg-white/10 overflow-hidden shadow-[0_6px_20px_rgba(0,0,0,0.35)]">
+        <div className="h-full w-2/3 rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] animate-pulse" />
       </div>
 
       {/* 🔐 Se ainda estamos a verificar auth */}
       {authChecking && (
-        <div className="flex-1 rounded-2xl border border-white/10 bg-white/[0.03] px-6 py-12 flex flex-col justify-center items-center text-center shadow-[0_0_40px_rgba(255,0,200,0.25)]">
+        <div className="flex-1 rounded-2xl border border-white/12 bg-white/[0.05] px-6 py-12 flex flex-col justify-center items-center text-center shadow-[0_18px_50px_rgba(0,0,0,0.45)] backdrop-blur-xl">
           <div className="relative mb-6">
             <div className="h-14 w-14 rounded-full border-2 border-white/20 border-t-transparent animate-spin" />
             <div className="absolute inset-0 h-14 w-14 animate-pulse rounded-full border border-[#6BFFFF]/20" />
@@ -1345,7 +1388,7 @@ export default function Step2Pagamento() {
               </button>
             </div>
           ) : loading || (needsStripe && (!clientSecret || !options)) ? (
-            <div className="flex-1 rounded-2xl border border-white/10 bg-white/[0.03] px-6 py-12 flex flex-col justify-center items-center text-center shadow-[0_0_40px_rgba(255,0,200,0.25)]">
+            <div className="flex-1 rounded-2xl border border-white/12 bg-white/[0.05] px-6 py-12 flex flex-col justify-center items-center text-center shadow-[0_18px_50px_rgba(0,0,0,0.45)] backdrop-blur-xl">
               <div className="relative mb-6">
                 <div className="h-14 w-14 rounded-full border-2 border-white/20 border-t-transparent animate-spin" />
                 <div className="absolute inset-0 h-14 w-14 animate-pulse rounded-full border border-[#6BFFFF]/20" />
@@ -1372,7 +1415,7 @@ export default function Step2Pagamento() {
               </button>
             </div>
           ) : (
-            <div className="flex-1 rounded-2xl border border-white/12 bg-white/[0.05] px-6 py-6 shadow-[0_0_60px_rgba(0,0,0,0.6)] overflow-y-auto max-h-[65vh] space-y-4">
+            <div className="flex-1 rounded-2xl border border-white/12 bg-white/[0.05] px-6 py-6 shadow-[0_0_60px_rgba(0,0,0,0.6)] backdrop-blur-xl space-y-4">
               {promoWarning && (
                 <div className="rounded-md border border-amber-400/40 bg-amber-400/10 px-3 py-2 text-sm text-amber-100">
                   {promoWarning}
@@ -1383,7 +1426,7 @@ export default function Step2Pagamento() {
                   Desconto aplicado automaticamente 🎉
                 </div>
               )}
-              <div className="rounded-2xl border border-white/10 bg-black/30 p-4 space-y-2">
+              <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 space-y-2">
                 <label className="text-xs text-white/70">Tens um código promocional?</label>
                 <div className="flex flex-col gap-2 sm:flex-row">
                   <input
@@ -1391,7 +1434,7 @@ export default function Step2Pagamento() {
                     value={promoInput}
                     onChange={(e) => setPromoInput(e.target.value)}
                     placeholder="Insere o código"
-                    className="flex-1 rounded-xl bg-black/50 border border-white/15 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]"
+                    className="flex-1 rounded-xl bg-white/[0.05] border border-white/15 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]"
                   />
                   <button
                     type="button"
@@ -1475,7 +1518,7 @@ export default function Step2Pagamento() {
             </div>
           )}
           {!requiresAuth && (
-            <div className="flex items-center gap-2 text-[11px] bg-black/40 rounded-full p-1 border border-white/10 w-fit">
+            <div className="flex items-center gap-2 text-[11px] bg-white/10 rounded-full p-1 border border-white/15 w-fit backdrop-blur">
               <button
                 type="button"
                 onClick={() => setPurchaseMode("guest")}
@@ -1557,7 +1600,9 @@ function PaymentForm({ total, discount = 0, breakdown, clientSecret, onLoadError
       ? breakdown.feeMode.toUpperCase()
       : null;
   const payorPaysFee = feeMode === "ADDED" || feeMode === "ON_TOP";
-  const platformFeeCents = payorPaysFee ? breakdown?.platformFeeCents ?? 0 : 0;
+  const platformFeeCents = payorPaysFee
+    ? Math.max(0, (breakdown as any)?.platformFeeCombinedCents ?? breakdown?.platformFeeCents ?? 0)
+    : 0;
   const subtotalCents = breakdown?.subtotalCents ?? 0;
   const baseSubtotalCents =
     hasInvoice && discountCents > 0 ? subtotalCents + discountCents : subtotalCents;
@@ -1765,7 +1810,7 @@ function PaymentForm({ total, discount = 0, breakdown, clientSecret, onLoadError
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-5">
       {(hasInvoice || total !== null) && (
-        <div className="rounded-2xl border border-white/10 bg-black/40 px-5 py-4 shadow-inner shadow-black/40 space-y-3">
+        <div className="rounded-2xl border border-white/12 bg-white/[0.05] px-5 py-4 shadow-inner shadow-black/40 backdrop-blur-xl space-y-3">
           <div className="flex items-center justify-between text-xs text-white/70">
             <span className="uppercase tracking-[0.14em]">Resumo</span>
             <span className="inline-flex items-center gap-1 rounded-full bg-white/5 px-3 py-1 border border-white/10 text-[11px] text-white/70">
@@ -1821,7 +1866,7 @@ function PaymentForm({ total, discount = 0, breakdown, clientSecret, onLoadError
 
               {platformFeeCents > 0 && (
                 <div className="flex items-center justify-between text-sm text-white/70">
-                  <span>Taxas de serviço</span>
+                  <span>Taxa da plataforma (inclui processamento)</span>
                   <span>{formatMoney(platformFeeCents, currency)}</span>
                 </div>
               )}
@@ -1829,7 +1874,7 @@ function PaymentForm({ total, discount = 0, breakdown, clientSecret, onLoadError
           )}
 
           {total !== null && (
-            <div className="flex items-center justify-between rounded-xl bg-white/5 px-4 py-3 border border-white/10">
+          <div className="flex items-center justify-between rounded-xl bg-white/10 px-4 py-3 border border-white/12">
               <div className="flex flex-col text-white/80">
                 <span className="text-[12px]">Total a pagar</span>
                 {feeMode === "INCLUDED" && (
@@ -1846,7 +1891,17 @@ function PaymentForm({ total, discount = 0, breakdown, clientSecret, onLoadError
         </div>
       )}
 
-      <div className="rounded-xl bg-black/40 px-3 py-3 text-sm min-h-[320px] max-h-[400px] overflow-y-auto pr-1 payment-scroll">
+      <div className="rounded-2xl border border-white/12 bg-white/[0.05] px-4 py-4 text-sm backdrop-blur-xl payment-scroll">
+        <div className="flex items-center justify-between text-[11px] text-white/70 mb-3">
+          <span className="uppercase tracking-[0.16em]">Método de pagamento</span>
+          <span className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[10px] text-white/70">
+            Stripe
+          </span>
+        </div>
+        <div className="relative">
+          {!elementReady && (
+            <div className="absolute inset-0 rounded-xl border border-white/10 bg-white/5 animate-pulse pointer-events-none" />
+          )}
           <PaymentElement
             // key força remount quando o clientSecret muda para evitar usar intents antigos
             key={clientSecret ?? "payment-element"}
@@ -1868,6 +1923,7 @@ function PaymentForm({ total, discount = 0, breakdown, clientSecret, onLoadError
               }
             }}
           />
+        </div>
       </div>
 
       {error && (
@@ -2306,7 +2362,7 @@ function GuestCheckoutCard({
   onContinue,
 }: GuestCheckoutCardProps) {
   return (
-    <div className="flex-1 rounded-2xl border border-white/12 bg-white/[0.05] px-6 py-6 shadow-[0_0_40px_rgba(0,0,0,0.6)] flex flex-col gap-4">
+    <div className="flex-1 rounded-2xl border border-white/12 bg-white/[0.06] px-6 py-6 shadow-[0_20px_60px_rgba(0,0,0,0.55)] backdrop-blur-xl flex flex-col gap-4">
       <div className="flex items-start justify-between gap-4">
         <div>
           <h3 className="text-sm font-semibold mb-1">Continuar como convidado</h3>
@@ -2327,7 +2383,7 @@ function GuestCheckoutCard({
           <label className="text-white/70">Nome completo</label>
           <input
             type="text"
-            className={`w-full rounded-xl bg-black/60 border px-3 py-2 text-[12px] outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF] ${
+            className={`w-full rounded-xl bg-white/[0.05] border px-3 py-2 text-[12px] outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF] ${
               guestErrors.name ? "border-red-400/70" : "border-white/15"
             }`}
             placeholder="Como queres que apareça no bilhete"
@@ -2343,7 +2399,7 @@ function GuestCheckoutCard({
           <label className="text-white/70">Email</label>
           <input
             type="email"
-            className={`w-full rounded-xl bg-black/60 border px-3 py-2 text-[12px] outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF] ${
+            className={`w-full rounded-xl bg-white/[0.05] border px-3 py-2 text-[12px] outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF] ${
               guestErrors.email ? "border-red-400/70" : "border-white/15"
             }`}
             placeholder="nome@exemplo.com"
@@ -2359,7 +2415,7 @@ function GuestCheckoutCard({
           <label className="text-white/70">Confirmar email</label>
           <input
             type="email"
-            className={`w-full rounded-xl bg-black/60 border px-3 py-2 text-[12px] outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF] ${
+            className={`w-full rounded-xl bg-white/[0.05] border px-3 py-2 text-[12px] outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF] ${
               guestErrors.email ? "border-red-400/70" : "border-white/15"
             }`}
             placeholder="repete o teu email"
@@ -2373,7 +2429,7 @@ function GuestCheckoutCard({
           <input
             type="tel"
             inputMode="tel"
-            className={`w-full rounded-xl bg-black/60 border px-3 py-2 text-[12px] outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF] ${
+            className={`w-full rounded-xl bg-white/[0.05] border px-3 py-2 text-[12px] outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF] ${
               guestErrors.phone ? "border-red-400/70" : "border-white/15"
             }`}
             placeholder="+351 ..."

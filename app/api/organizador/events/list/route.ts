@@ -2,7 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { ensureAuthenticated } from "@/lib/security";
+import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { TicketStatus } from "@prisma/client";
 import { getActiveOrganizerForUser } from "@/lib/organizerContext";
 import { isOrgAdminOrAbove } from "@/lib/organizerPermissions";
@@ -50,7 +50,13 @@ export async function GET(req: NextRequest) {
     }
 
     const events = await prisma.event.findMany({
-      where: { organizerId: organizer.id, isDeleted: false },
+      where: {
+        isDeleted: false,
+        OR: [
+          { organizerId: organizer.id },
+          { organizerId: null, ownerUserId: profile.id },
+        ],
+      },
       orderBy: {
         startsAt: "asc",
       },
@@ -63,11 +69,15 @@ export async function GET(req: NextRequest) {
       take: limit,
     });
 
-    const capacityAgg = await prisma.ticketType.groupBy({
-      by: ["eventId"],
-      where: { eventId: { in: events.map((e) => e.id) } },
-      _sum: { totalQuantity: true },
-    });
+    const eventIds = events.map((e) => e.id);
+    const capacityAgg =
+      eventIds.length > 0
+        ? await prisma.ticketType.groupBy({
+            by: ["eventId"],
+            where: { eventId: { in: eventIds } },
+            _sum: { totalQuantity: true },
+          })
+        : [];
 
     const capacityMap = new Map<number, number>();
     capacityAgg.forEach((row) => {
@@ -75,15 +85,18 @@ export async function GET(req: NextRequest) {
       capacityMap.set(row.eventId, sum);
     });
 
-    const ticketStats = await prisma.ticket.groupBy({
-      by: ["eventId"],
-      where: {
-        status: { in: [TicketStatus.ACTIVE, TicketStatus.USED] },
-        event: { organizerId: organizer.id },
-      },
-      _count: { _all: true },
-      _sum: { pricePaid: true, totalPaidCents: true, platformFeeCents: true },
-    });
+    const ticketStats =
+      eventIds.length > 0
+        ? await prisma.ticket.groupBy({
+            by: ["eventId"],
+            where: {
+              status: { in: [TicketStatus.ACTIVE, TicketStatus.USED] },
+              eventId: { in: eventIds },
+            },
+            _count: { _all: true },
+            _sum: { pricePaid: true, totalPaidCents: true, platformFeeCents: true },
+          })
+        : [];
 
     const statsMap = new Map<
       number,
@@ -152,6 +165,9 @@ export async function GET(req: NextRequest) {
       { status: 200 }
     );
   } catch (err) {
+    if (isUnauthenticatedError(err)) {
+      return NextResponse.json({ ok: false, error: "Não autenticado." }, { status: 401 });
+    }
     console.error("GET /api/organizador/events/list error:", err);
     return NextResponse.json(
       {

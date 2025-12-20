@@ -83,12 +83,18 @@ export default function WalletDetailPage() {
 
   if (loading) {
     return (
-      <main className="relative mx-auto max-w-6xl px-4 py-14 text-white">
-        <div className="absolute inset-0 -z-10 bg-gradient-to-br from-indigo-900/40 via-slate-900 to-black" />
-        <div className="space-y-4">
-          <div className="h-12 w-48 rounded-full bg-white/5 border border-white/10 animate-pulse" />
-          <div className="h-[320px] rounded-3xl bg-white/5 border border-white/10 animate-pulse" />
-          <div className="h-[180px] rounded-3xl bg-white/5 border border-white/10 animate-pulse" />
+      <main className="relative orya-body-bg min-h-screen w-full overflow-hidden text-white">
+        <div className="pointer-events-none fixed inset-0" aria-hidden="true">
+          <div className="absolute -top-36 right-[-140px] h-[420px] w-[420px] rounded-full bg-[radial-gradient(circle_at_35%_35%,rgba(255,0,200,0.28),transparent_60%)] opacity-80 blur-3xl" />
+          <div className="absolute top-[22vh] -left-40 h-[360px] w-[360px] rounded-full bg-[radial-gradient(circle_at_30%_30%,rgba(107,255,255,0.22),transparent_60%)] opacity-80 blur-3xl" />
+          <div className="absolute bottom-[-180px] right-[12%] h-[420px] w-[420px] rounded-full bg-[radial-gradient(circle_at_40%_40%,rgba(22,70,245,0.25),transparent_60%)] opacity-70 blur-3xl" />
+          <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.05),transparent_35%,rgba(0,0,0,0.65))] mix-blend-screen" />
+        </div>
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_20%,rgba(255,255,255,0.05),transparent_55%)]" />
+        <div className="relative mx-auto max-w-6xl px-4 py-14 space-y-4">
+          <div className="h-12 w-48 rounded-full bg-white/5 border border-white/15 animate-pulse shadow-[0_18px_50px_rgba(0,0,0,0.6)] backdrop-blur-2xl" />
+          <div className="h-[320px] rounded-3xl bg-white/5 border border-white/15 animate-pulse shadow-[0_18px_50px_rgba(0,0,0,0.6)] backdrop-blur-2xl" />
+          <div className="h-[180px] rounded-3xl bg-white/5 border border-white/15 animate-pulse shadow-[0_18px_50px_rgba(0,0,0,0.6)] backdrop-blur-2xl" />
         </div>
       </main>
     );
@@ -96,16 +102,36 @@ export default function WalletDetailPage() {
 
   if (error) {
     return (
-      <main className="mx-auto max-w-4xl px-4 py-10 text-white space-y-4">
-        <div className="rounded-2xl border border-red-400/30 bg-red-500/10 p-4 text-sm">{error}</div>
+      <main className="relative orya-body-bg min-h-screen w-full overflow-hidden text-white">
+        <div className="pointer-events-none fixed inset-0" aria-hidden="true">
+          <div className="absolute -top-36 right-[-140px] h-[420px] w-[420px] rounded-full bg-[radial-gradient(circle_at_35%_35%,rgba(255,0,200,0.28),transparent_60%)] opacity-80 blur-3xl" />
+          <div className="absolute top-[22vh] -left-40 h-[360px] w-[360px] rounded-full bg-[radial-gradient(circle_at_30%_30%,rgba(107,255,255,0.22),transparent_60%)] opacity-80 blur-3xl" />
+          <div className="absolute bottom-[-180px] right-[12%] h-[420px] w-[420px] rounded-full bg-[radial-gradient(circle_at_40%_40%,rgba(22,70,245,0.25),transparent_60%)] opacity-70 blur-3xl" />
+          <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.05),transparent_35%,rgba(0,0,0,0.65))] mix-blend-screen" />
+        </div>
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_20%,rgba(255,255,255,0.05),transparent_55%)]" />
+        <div className="relative mx-auto max-w-4xl px-4 py-10 space-y-4">
+          <div className="rounded-2xl border border-red-400/30 bg-red-500/10 p-4 text-sm shadow-[0_16px_40px_rgba(127,29,29,0.35)] backdrop-blur-xl">
+            {error}
+          </div>
+        </div>
       </main>
     );
   }
 
   if (!item) {
     return (
-      <main className="mx-auto max-w-4xl px-4 py-10 text-white">
-        <p className="text-sm text-white/70">Entitlement não encontrado.</p>
+      <main className="relative orya-body-bg min-h-screen w-full overflow-hidden text-white">
+        <div className="pointer-events-none fixed inset-0" aria-hidden="true">
+          <div className="absolute -top-36 right-[-140px] h-[420px] w-[420px] rounded-full bg-[radial-gradient(circle_at_35%_35%,rgba(255,0,200,0.28),transparent_60%)] opacity-80 blur-3xl" />
+          <div className="absolute top-[22vh] -left-40 h-[360px] w-[360px] rounded-full bg-[radial-gradient(circle_at_30%_30%,rgba(107,255,255,0.22),transparent_60%)] opacity-80 blur-3xl" />
+          <div className="absolute bottom-[-180px] right-[12%] h-[420px] w-[420px] rounded-full bg-[radial-gradient(circle_at_40%_40%,rgba(22,70,245,0.25),transparent_60%)] opacity-70 blur-3xl" />
+          <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.05),transparent_35%,rgba(0,0,0,0.65))] mix-blend-screen" />
+        </div>
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_20%,rgba(255,255,255,0.05),transparent_55%)]" />
+        <div className="relative mx-auto max-w-4xl px-4 py-10">
+          <p className="text-sm text-white/70">Entitlement não encontrado.</p>
+        </div>
       </main>
     );
   }
@@ -193,13 +219,16 @@ export default function WalletDetailPage() {
   };
 
   return (
-    <main className="relative mx-auto max-w-6xl px-4 py-12 text-white">
-      <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
-        <div className="absolute left-[-10%] top-[-10%] h-[320px] w-[320px] rounded-full bg-fuchsia-600/25 blur-[140px]" />
-        <div className="absolute right-[-10%] top-[10%] h-[260px] w-[260px] rounded-full bg-cyan-500/20 blur-[140px]" />
-        <div className="absolute bottom-[-20%] left-[20%] h-[300px] w-[420px] rotate-12 rounded-[40%] bg-indigo-500/20 blur-[180px]" />
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(255,255,255,0.06),transparent_35%),radial-gradient(circle_at_80%_0%,rgba(255,255,255,0.05),transparent_30%)]" />
+    <main className="relative orya-body-bg min-h-screen w-full overflow-hidden text-white">
+      <div className="pointer-events-none fixed inset-0" aria-hidden="true">
+        <div className="absolute -top-36 right-[-140px] h-[420px] w-[420px] rounded-full bg-[radial-gradient(circle_at_35%_35%,rgba(255,0,200,0.28),transparent_60%)] opacity-80 blur-3xl" />
+        <div className="absolute top-[22vh] -left-40 h-[360px] w-[360px] rounded-full bg-[radial-gradient(circle_at_30%_30%,rgba(107,255,255,0.22),transparent_60%)] opacity-80 blur-3xl" />
+        <div className="absolute bottom-[-180px] right-[12%] h-[420px] w-[420px] rounded-full bg-[radial-gradient(circle_at_40%_40%,rgba(22,70,245,0.25),transparent_60%)] opacity-70 blur-3xl" />
+        <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.05),transparent_35%,rgba(0,0,0,0.65))] mix-blend-screen" />
       </div>
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_20%,rgba(255,255,255,0.05),transparent_55%)]" />
+
+      <div className="relative mx-auto max-w-6xl px-4 py-12">
 
       <div className="flex items-center justify-between gap-3 pb-6">
         <div className="space-y-1">

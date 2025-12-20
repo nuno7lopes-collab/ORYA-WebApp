@@ -8,7 +8,7 @@ import { InlineDateTimePicker } from "@/app/components/forms/InlineDateTimePicke
 
 const TEMPLATE_TYPES = [
   { value: "PARTY", label: "Festa" },
-  { value: "SPORT", label: "Desporto" },
+  { value: "PADEL", label: "Padel" },
   { value: "VOLUNTEERING", label: "Voluntariado" },
   { value: "TALK", label: "Palestra / Talk" },
   { value: "OTHER", label: "Outro" },
@@ -16,7 +16,7 @@ const TEMPLATE_TYPES = [
 
 const CATEGORY_OPTIONS = [
   { value: "FESTA", label: "Festa", accent: "from-[#FF00C8] to-[#FF8AD9]" },
-  { value: "DESPORTO", label: "Desporto", accent: "from-[#6BFFFF] to-[#4ADE80]" },
+  { value: "PADEL", label: "Padel", accent: "from-[#6BFFFF] to-[#4ADE80]" },
   { value: "CONCERTO", label: "Concerto", accent: "from-[#9B8CFF] to-[#6BFFFF]" },
   { value: "PALESTRA", label: "Palestra", accent: "from-[#FDE68A] to-[#F472B6]" },
   { value: "ARTE", label: "Arte", accent: "from-[#F472B6] to-[#A855F7]" },

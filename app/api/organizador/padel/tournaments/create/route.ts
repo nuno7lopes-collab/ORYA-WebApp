@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { ensureAuthenticated } from "@/lib/security";
+import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { getActiveOrganizerForUser } from "@/lib/organizerContext";
-import { PORTUGAL_CITIES } from "@/config/cities";
-import { FeeMode, RefundFeePayer, ResaleMode } from "@prisma/client";
+import { FeeMode, PadelFormat, RefundFeePayer, ResaleMode } from "@prisma/client";
 import { isOrgAdminOrAbove } from "@/lib/organizerPermissions";
 
 type TicketInput = {
@@ -114,12 +113,7 @@ export async function POST(req: NextRequest) {
 
     const locationCity = body.locationCity?.trim() || club.city?.trim() || "";
     if (!locationCity) return NextResponse.json({ ok: false, error: "Cidade é obrigatória." }, { status: 400 });
-    if (locationCity && !PORTUGAL_CITIES.includes(locationCity as (typeof PORTUGAL_CITIES)[number])) {
-      return NextResponse.json(
-        { ok: false, error: "Cidade inválida. Escolhe uma cidade da lista disponível na ORYA." },
-        { status: 400 },
-      );
-    }
+    // Permitimos cidades fora da whitelist para compatibilidade com dados existentes
 
     const ticketTypesInput = Array.isArray(body.ticketTypes) ? body.ticketTypes : [];
     const ticketTypes = ticketTypesInput
@@ -214,11 +208,11 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    // Categorias: força DESPORTO
+    // Categorias: força PADEL
     await prisma.eventCategory.create({
       data: {
         eventId: event.id,
-        category: "DESPORTO",
+        category: "PADEL",
       },
     });
 
@@ -245,14 +239,35 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Config Padel v2 (defaults globais)
-    const formatValue = "GRUPOS_ELIMINATORIAS";
+    // Config Padel v2 (defaults globais + versionamento de formato)
+    const formatValue: PadelFormat = "GRUPOS_ELIMINATORIAS";
+    const fallbackFormat: Record<PadelFormat, PadelFormat> = {
+      TODOS_CONTRA_TODOS: "TODOS_CONTRA_TODOS",
+      QUADRO_ELIMINATORIO: "QUADRO_ELIMINATORIO",
+      GRUPOS_ELIMINATORIAS: "GRUPOS_ELIMINATORIAS",
+      CAMPEONATO_LIGA: "TODOS_CONTRA_TODOS",
+      QUADRO_AB: "QUADRO_ELIMINATORIO",
+      NON_STOP: "TODOS_CONTRA_TODOS",
+    };
+    const formatEffective = fallbackFormat[formatValue];
+    const generationVersion = "v1-groups-ko";
+    const mergedAdvancedSettings = {
+      ...advancedSettings,
+      formatRequested: formatValue,
+      formatEffective,
+      generationVersion,
+      groupsConfig: (advancedSettings as any)?.groupsConfig ?? {
+        mode: "AUTO",
+        qualifyPerGroup: 2,
+        seeding: "SNAKE",
+      },
+    };
     await prisma.padelTournamentConfig.upsert({
       where: { eventId: event.id },
       create: {
         eventId: event.id,
         organizerId: organizer.id,
-        format: formatValue,
+        format: formatEffective,
         numberOfCourts: defaultCourts,
         ruleSetId: defaultRuleSetId,
         padelClubId: club.id,
@@ -266,7 +281,7 @@ export async function POST(req: NextRequest) {
         defaultPaymentMode: null,
         refundFeePayer,
         advancedSettings: {
-          ...advancedSettings,
+          ...mergedAdvancedSettings,
           courtsFromClubs: courtsFromClubs.map((c) => ({
             id: c.id,
             clubId: c.padelClubId,
@@ -286,7 +301,7 @@ export async function POST(req: NextRequest) {
         } as any,
       },
       update: {
-        format: formatValue,
+        format: formatEffective,
         numberOfCourts: defaultCourts,
         ruleSetId: defaultRuleSetId,
         padelClubId: club.id,
@@ -300,7 +315,7 @@ export async function POST(req: NextRequest) {
         defaultPaymentMode: null,
         refundFeePayer,
         advancedSettings: {
-          ...advancedSettings,
+          ...mergedAdvancedSettings,
           courtsFromClubs: courtsFromClubs.map((c) => ({
             id: c.id,
             clubId: c.padelClubId,
@@ -323,6 +338,9 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true, event: { id: event.id, slug: event.slug } }, { status: 201 });
   } catch (err) {
+    if (isUnauthenticatedError(err)) {
+      return NextResponse.json({ ok: false, error: "Não autenticado." }, { status: 401 });
+    }
     console.error("[organizador/padel/tournaments/create] error", err);
     return NextResponse.json({ ok: false, error: "Erro ao criar torneio de Padel." }, { status: 500 });
   }

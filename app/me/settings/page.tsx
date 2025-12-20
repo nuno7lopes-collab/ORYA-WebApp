@@ -9,12 +9,11 @@ import { supabaseBrowser } from "@/lib/supabaseBrowser";
 type Visibility = "PUBLIC" | "PRIVATE";
 type FilterKey = "ALL" | "ACTIVE" | "USED" | "REFUNDED" | "REVOKED" | "SUSPENDED";
 
-const pageBg =
-  "bg-[radial-gradient(circle_at_15%_20%,#8a1ecb20_0%,transparent_28%),radial-gradient(circle_at_85%_10%,#00eaff20_0%,transparent_25%),radial-gradient(circle_at_30%_70%,#ff00c820_0%,transparent_35%),linear-gradient(135deg,#050611_0%,#040812_60%,#05060f_100%)]";
+const pageBg = "orya-body-bg";
 
 function Card({ children }: { children: React.ReactNode }) {
   return (
-    <section className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1224]/70 to-[#0a0f1d] p-5 shadow-[0_22px_60px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
+    <section className="rounded-3xl border border-white/15 bg-white/5 p-5 shadow-[0_24px_60px_rgba(0,0,0,0.65)] backdrop-blur-2xl">
       {children}
     </section>
   );
@@ -197,9 +196,16 @@ export default function SettingsPage() {
 
   if (isLoading) {
     return (
-      <main className={`${pageBg} min-h-screen text-white`}>
-        <div className="max-w-4xl mx-auto px-5 py-10">
-          <div className="h-36 rounded-3xl border border-white/10 bg-white/5 animate-pulse blur-[0.2px]" />
+      <main className={`relative ${pageBg} min-h-screen w-full overflow-hidden text-white`}>
+        <div className="pointer-events-none fixed inset-0" aria-hidden="true">
+          <div className="absolute -top-36 right-[-140px] h-[420px] w-[420px] rounded-full bg-[radial-gradient(circle_at_35%_35%,rgba(255,0,200,0.28),transparent_60%)] opacity-80 blur-3xl" />
+          <div className="absolute top-[22vh] -left-40 h-[360px] w-[360px] rounded-full bg-[radial-gradient(circle_at_30%_30%,rgba(107,255,255,0.22),transparent_60%)] opacity-80 blur-3xl" />
+          <div className="absolute bottom-[-180px] right-[12%] h-[420px] w-[420px] rounded-full bg-[radial-gradient(circle_at_40%_40%,rgba(22,70,245,0.25),transparent_60%)] opacity-70 blur-3xl" />
+          <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.05),transparent_35%,rgba(0,0,0,0.65))] mix-blend-screen" />
+        </div>
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_20%,rgba(255,255,255,0.05),transparent_55%)]" />
+        <div className="relative max-w-4xl mx-auto px-5 py-10">
+          <div className="h-36 rounded-3xl border border-white/15 bg-white/5 animate-pulse shadow-[0_18px_50px_rgba(0,0,0,0.6)] backdrop-blur-2xl" />
         </div>
       </main>
     );
@@ -207,13 +213,20 @@ export default function SettingsPage() {
 
   if (error || !user) {
     return (
-      <main className={`${pageBg} min-h-screen text-white`}>
-        <div className="max-w-3xl mx-auto px-5 py-10 space-y-4">
+      <main className={`relative ${pageBg} min-h-screen w-full overflow-hidden text-white`}>
+        <div className="pointer-events-none fixed inset-0" aria-hidden="true">
+          <div className="absolute -top-36 right-[-140px] h-[420px] w-[420px] rounded-full bg-[radial-gradient(circle_at_35%_35%,rgba(255,0,200,0.28),transparent_60%)] opacity-80 blur-3xl" />
+          <div className="absolute top-[22vh] -left-40 h-[360px] w-[360px] rounded-full bg-[radial-gradient(circle_at_30%_30%,rgba(107,255,255,0.22),transparent_60%)] opacity-80 blur-3xl" />
+          <div className="absolute bottom-[-180px] right-[12%] h-[420px] w-[420px] rounded-full bg-[radial-gradient(circle_at_40%_40%,rgba(22,70,245,0.25),transparent_60%)] opacity-70 blur-3xl" />
+          <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.05),transparent_35%,rgba(0,0,0,0.65))] mix-blend-screen" />
+        </div>
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_20%,rgba(255,255,255,0.05),transparent_55%)]" />
+        <div className="relative max-w-3xl mx-auto px-5 py-10 space-y-4">
           <h1 className="text-xl font-semibold">Definições</h1>
           <p className="text-sm text-white/70">Precisas de iniciar sessão para aceder às definições da conta.</p>
           <Link
             href="/login?redirectTo=/me/settings"
-            className="inline-flex items-center gap-2 rounded-full bg-white text-black px-4 py-2 text-sm font-semibold"
+            className="inline-flex items-center gap-2 rounded-full bg-white text-black px-4 py-2 text-sm font-semibold shadow-[0_18px_45px_rgba(0,0,0,0.35)] transition hover:shadow-[0_22px_55px_rgba(255,255,255,0.25)]"
           >
             Entrar
           </Link>
@@ -223,10 +236,16 @@ export default function SettingsPage() {
   }
 
   return (
-    <main className={`relative min-h-screen text-white ${pageBg}`}>
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_20%,rgba(255,255,255,0.04),transparent_55%)]" />
+    <main className={`relative ${pageBg} min-h-screen w-full overflow-hidden text-white`}>
+      <div className="pointer-events-none fixed inset-0" aria-hidden="true">
+        <div className="absolute -top-36 right-[-140px] h-[420px] w-[420px] rounded-full bg-[radial-gradient(circle_at_35%_35%,rgba(255,0,200,0.28),transparent_60%)] opacity-80 blur-3xl" />
+        <div className="absolute top-[22vh] -left-40 h-[360px] w-[360px] rounded-full bg-[radial-gradient(circle_at_30%_30%,rgba(107,255,255,0.22),transparent_60%)] opacity-80 blur-3xl" />
+        <div className="absolute bottom-[-180px] right-[12%] h-[420px] w-[420px] rounded-full bg-[radial-gradient(circle_at_40%_40%,rgba(22,70,245,0.25),transparent_60%)] opacity-70 blur-3xl" />
+        <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.05),transparent_35%,rgba(0,0,0,0.65))] mix-blend-screen" />
+      </div>
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_20%,rgba(255,255,255,0.05),transparent_55%)]" />
       <section className="relative max-w-5xl mx-auto px-4 pb-14 pt-10 space-y-6">
-        <header className="flex flex-col gap-3 rounded-3xl border border-white/10 bg-gradient-to-r from-white/5 via-[#111424]/35 to-white/5 px-5 py-6 shadow-[0_25px_60px_rgba(0,0,0,0.55)] backdrop-blur-3xl sm:flex-row sm:items-center sm:justify-between sm:px-8 sm:py-7">
+        <header className="flex flex-col gap-3 rounded-3xl border border-white/15 bg-white/5 px-5 py-6 shadow-[0_24px_60px_rgba(0,0,0,0.65)] backdrop-blur-2xl sm:flex-row sm:items-center sm:justify-between sm:px-8 sm:py-7">
           <div className="space-y-1">
             <p className="text-xs uppercase tracking-[0.24em] text-white/55">Área pessoal</p>
             <h1 className="bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] bg-clip-text text-3xl font-bold leading-tight text-transparent">

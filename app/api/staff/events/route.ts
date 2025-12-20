@@ -3,7 +3,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { ensureAuthenticated } from "@/lib/security";
+import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { Prisma } from "@prisma/client";
 
 export async function GET() {
@@ -97,6 +97,9 @@ export async function GET() {
       { status: 200 }
     );
   } catch (err) {
+    if (isUnauthenticatedError(err)) {
+      return NextResponse.json({ ok: false, error: "Não autenticado." }, { status: 401 });
+    }
     console.error("GET /api/staff/events error:", err);
     return NextResponse.json(
       {

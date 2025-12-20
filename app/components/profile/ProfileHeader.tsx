@@ -31,6 +31,8 @@ export type ProfileHeaderProps = {
   targetUserId?: string | null;
   /** Estado inicial de follow (quando visitante) */
   initialIsFollowing?: boolean;
+  /** Se o perfil representa uma organização (badge visual) */
+  isOrganization?: boolean;
 };
 
 function formatJoinedDate(createdAt?: string | null): string | null {
@@ -57,6 +59,7 @@ export default function ProfileHeader({
   following,
   targetUserId,
   initialIsFollowing,
+  isOrganization,
 }: ProfileHeaderProps) {
   const router = useRouter();
   const displayName = name?.trim() || "Utilizador ORYA";
@@ -339,6 +342,11 @@ export default function ProfileHeader({
                     <h1 className="text-[22px] sm:text-3xl font-semibold tracking-tight text-white truncate">
                       {nameInput}
                     </h1>
+                    {isOrganization && (
+                      <span className="inline-flex items-center rounded-full border border-white/20 bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-black shadow-[0_0_18px_rgba(107,255,255,0.55)]">
+                        Org
+                      </span>
+                    )}
                     {isOwner && (
                       <button
                         className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[11px] text-white/75 hover:bg-white/12"

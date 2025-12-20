@@ -107,7 +107,7 @@ export async function POST(req: NextRequest) {
 
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
   const eventId = body && typeof body.eventId === "number" ? body.eventId : Number(body?.eventId);
-  const organizerId = body && typeof body.organizerId === "number" ? body.organizerId : Number(body?.organizerId);
+  const organizerIdRaw = body && typeof body.organizerId === "number" ? body.organizerId : Number(body?.organizerId);
   const categoryId = body && typeof body.categoryId === "number" ? body.categoryId : body?.categoryId === null ? null : Number(body?.categoryId);
   const paymentMode = typeof body?.paymentMode === "string" ? (body?.paymentMode as PadelPaymentMode) : null;
   const pairingJoinModeRaw = typeof body?.pairingJoinMode === "string" ? (body?.pairingJoinMode as PadelPairingJoinMode) : "INVITE_PARTNER";
@@ -116,9 +116,29 @@ export async function POST(req: NextRequest) {
   const inviteExpiresAt = body?.inviteExpiresAt ? new Date(String(body.inviteExpiresAt)) : null;
   const lockedUntil = body?.lockedUntil ? new Date(String(body.lockedUntil)) : null;
   const isPublicOpen = Boolean(body?.isPublicOpen);
+  const invitedContactNormalized =
+    typeof body?.invitedContact === "string" && body.invitedContact.trim().length > 0
+      ? body.invitedContact.trim()
+      : null;
 
-  if (!eventId || !organizerId || !paymentMode || !["FULL", "SPLIT"].includes(paymentMode)) {
+  if (!eventId || !paymentMode || !["FULL", "SPLIT"].includes(paymentMode)) {
     return NextResponse.json({ ok: false, error: "INVALID_INPUT" }, { status: 400 });
+  }
+
+  // Resolver organizer + flag padel v2
+  const event = await prisma.event.findUnique({
+    where: { id: eventId },
+    select: {
+      organizerId: true,
+      padelTournamentConfig: { select: { padelV2Enabled: true } },
+    },
+  });
+  if (!event || !event.padelTournamentConfig?.padelV2Enabled) {
+    return NextResponse.json({ ok: false, error: "EVENT_NOT_PADDEL_V2" }, { status: 400 });
+  }
+  const organizerId = Number.isFinite(organizerIdRaw) && organizerIdRaw ? organizerIdRaw : event.organizerId;
+  if (!organizerId) {
+    return NextResponse.json({ ok: false, error: "ORGANIZER_MISSING" }, { status: 400 });
   }
 
   // Basic guard: only proceed if padel_v2_enabled is active on the tournament config.
@@ -159,13 +179,21 @@ export async function POST(req: NextRequest) {
       lifecycleStatus: { not: "CANCELLED_INCOMPLETE" },
       OR: [{ player1UserId: user.id }, { player2UserId: user.id }],
     },
-    select: { id: true },
+    include: { slots: true },
   });
   if (existingActive) {
-    return NextResponse.json(
-      { ok: false, error: "PAIRING_ALREADY_ACTIVE" },
-      { status: 409 },
-    );
+    const shouldUpdateMode =
+      paymentMode && existingActive.payment_mode !== paymentMode;
+    const pairingReturn = shouldUpdateMode
+      ? await prisma.padelPairing.update({
+          where: { id: existingActive.id },
+          data: { payment_mode: paymentMode },
+          include: { slots: true },
+        })
+      : existingActive;
+
+    await upsertActiveHold(prisma, { pairingId: pairingReturn.id, eventId, ttlMinutes: 30 });
+    return NextResponse.json({ ok: true, pairing: pairingReturn }, { status: 200 });
   }
 
   // Build slots: se não vierem slots no payload, cria duas entradas (capitão + parceiro pendente)
@@ -182,7 +210,12 @@ export async function POST(req: NextRequest) {
   const normalizeSlot = (slot: IncomingSlot | unknown) => {
     if (typeof slot !== "object" || slot === null) return null;
     const s = slot as IncomingSlot;
-    const roleRaw = typeof s.slotRole === "string" ? s.slotRole : "PARTNER";
+    const roleRaw =
+      typeof s.slotRole === "string"
+        ? s.slotRole
+        : typeof (s as any).slot_role === "string"
+          ? (s as any).slot_role
+          : "PARTNER";
     const statusRaw = typeof s.slotStatus === "string" ? s.slotStatus : "PENDING";
     const payRaw = typeof s.paymentStatus === "string" ? s.paymentStatus : "UNPAID";
 
@@ -191,7 +224,7 @@ export async function POST(req: NextRequest) {
       profileId: typeof s.profileId === "string" ? s.profileId : null,
       invitedContact: typeof s.invitedContact === "string" ? s.invitedContact : null,
       isPublicOpen: Boolean(s.isPublicOpen),
-      slotRole: roleRaw === "CAPTAIN" ? PadelPairingSlotRole.CAPTAIN : PadelPairingSlotRole.PARTNER,
+      slot_role: roleRaw === "CAPTAIN" ? PadelPairingSlotRole.CAPTAIN : PadelPairingSlotRole.PARTNER,
       slotStatus:
         statusRaw === "FILLED"
           ? PadelPairingSlotStatus.FILLED
@@ -212,7 +245,7 @@ export async function POST(req: NextRequest) {
           profileId: string | null;
           invitedContact: string | null;
           isPublicOpen: boolean;
-          slotRole: PadelPairingSlotRole;
+          slot_role: PadelPairingSlotRole;
           slotStatus: PadelPairingSlotStatus;
           paymentStatus: PadelPairingPaymentStatus;
         }>)
@@ -222,16 +255,19 @@ export async function POST(req: NextRequest) {
             profileId: user.id,
             invitedContact: null,
             isPublicOpen,
-            slotRole: PadelPairingSlotRole.CAPTAIN,
+            slot_role: PadelPairingSlotRole.CAPTAIN,
             slotStatus: createdByTicketId ? PadelPairingSlotStatus.FILLED : PadelPairingSlotStatus.PENDING,
             paymentStatus: PadelPairingPaymentStatus.PAID,
           },
           {
             ticketId: null,
             profileId: null,
-            invitedContact: null,
+            invitedContact:
+              pairingJoinModeRaw === "INVITE_PARTNER" && invitedContactNormalized
+                ? invitedContactNormalized
+                : null,
             isPublicOpen,
-            slotRole: PadelPairingSlotRole.PARTNER,
+            slot_role: PadelPairingSlotRole.PARTNER,
             slotStatus: PadelPairingSlotStatus.PENDING,
             paymentStatus: paymentMode === "FULL" ? PadelPairingPaymentStatus.PAID : PadelPairingPaymentStatus.UNPAID,
           },
@@ -256,7 +292,7 @@ export async function POST(req: NextRequest) {
           eventId,
           organizerId,
           categoryId: Number.isFinite(categoryId as number) ? (categoryId as number) : null,
-          paymentMode,
+          payment_mode: paymentMode,
           createdByUserId: user.id,
           player1UserId: user.id,
           createdByTicketId,

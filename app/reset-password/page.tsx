@@ -16,7 +16,19 @@ function ResetPasswordInner() {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
 
-  const tokenFromUrl = useMemo(() => searchParams.get("code") || null, [searchParams]);
+  const tokenFromUrl = useMemo(
+    () =>
+      searchParams.get("code") ||
+      searchParams.get("token") ||
+      searchParams.get("access_token") ||
+      null,
+    [searchParams],
+  );
+  const refreshFromUrl = useMemo(() => searchParams.get("refresh_token"), [searchParams]);
+  const hashParams = useMemo(() => {
+    if (typeof window === "undefined") return new URLSearchParams();
+    return new URLSearchParams(window.location.hash.replace(/^#/, ""));
+  }, [searchParams]);
 
   useEffect(() => {
     let cancelled = false;
@@ -24,13 +36,28 @@ function ResetPasswordInner() {
       setStage("checking");
       setError(null);
 
+      const errorDesc =
+        hashParams.get("error_description") ||
+        hashParams.get("error") ||
+        hashParams.get("error_code") ||
+        null;
+      if (errorDesc) {
+        setError("Link inválido ou expirado. Pede um novo email de recuperação.");
+        setStage("error");
+        return;
+      }
+
       let token: string | null = tokenFromUrl;
-      let refreshToken: string | null = null;
+      let refreshToken: string | null = refreshFromUrl;
 
       if (typeof window !== "undefined" && !token) {
-        const hash = new URLSearchParams(window.location.hash.replace(/^#/, ""));
-        token = hash.get("code") || hash.get("token") || hash.get("access_token");
-        refreshToken = hash.get("refresh_token");
+        token =
+          hashParams.get("code") ||
+          hashParams.get("token") ||
+          hashParams.get("access_token");
+      }
+      if (typeof window !== "undefined" && !refreshToken) {
+        refreshToken = hashParams.get("refresh_token");
       }
 
       if (!token) {
@@ -67,7 +94,7 @@ function ResetPasswordInner() {
     return () => {
       cancelled = true;
     };
-  }, [tokenFromUrl]);
+  }, [tokenFromUrl, hashParams]);
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();

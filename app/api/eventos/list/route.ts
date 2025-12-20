@@ -57,7 +57,9 @@ export async function GET(req: NextRequest) {
     ];
 
     if (category && category !== "all") {
-      filters.push({ templateType: category.toUpperCase() as Prisma.EventWhereInput["templateType"] });
+      const normalizedCategory =
+        category.toUpperCase() === "DESPORTO" ? "PADEL" : category.toUpperCase();
+      filters.push({ templateType: normalizedCategory as Prisma.EventWhereInput["templateType"] });
     }
 
     if (typeFilter === "free") {

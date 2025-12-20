@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { ensureAuthenticated } from "@/lib/security";
+import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { getActiveOrganizerForUser } from "@/lib/organizerContext";
 import { isOrgAdminOrAbove } from "@/lib/organizerPermissions";
 
@@ -59,6 +59,9 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ ok: true, items: Array.from(unique.values()) });
   } catch (err) {
+    if (isUnauthenticatedError(err)) {
+      return NextResponse.json({ ok: false, error: "Não autenticado." }, { status: 401 });
+    }
     console.error("GET /api/organizador/venues/recent error:", err);
     return NextResponse.json({ ok: false, error: "Erro ao carregar locais recentes." }, { status: 500 });
   }
