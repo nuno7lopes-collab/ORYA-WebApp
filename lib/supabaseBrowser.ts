@@ -40,14 +40,4 @@ function getBrowserSupabaseClient() {
   return createBrowserClient(supabaseUrl, supabaseAnonKey);
 }
 
-// Export compatível com o que já usavas antes
-
 export const supabaseBrowser = getBrowserSupabaseClient();
-
-export function createSupabaseBrowserClient() {
-  return getBrowserSupabaseClient();
-}
-
-export function createSupabaseClient() {
-  return getBrowserSupabaseClient();
-}

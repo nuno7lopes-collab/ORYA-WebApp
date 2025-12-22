@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { resolveActions } from "@/lib/entitlements/accessResolver";
+import { buildDefaultCheckinWindow } from "@/lib/checkin/policy";
 import crypto from "crypto";
 
 function hashToken(token: string) {
@@ -42,13 +43,38 @@ export async function GET(_: Request, context: { params: Params | Promise<Params
     return NextResponse.json({ error: "FORBIDDEN_WALLET_ACCESS" }, { status: 403 });
   }
 
+  const event =
+    ent.eventId
+      ? await prisma.event.findUnique({
+          where: { id: ent.eventId },
+          select: {
+            id: true,
+            slug: true,
+            startsAt: true,
+            endsAt: true,
+            organizer: {
+              select: {
+                username: true,
+                publicName: true,
+                publicName: true,
+                businessName: true,
+              },
+            },
+          },
+        })
+      : null;
+
+  const checkinWindow = event ? buildDefaultCheckinWindow(event.startsAt, event.endsAt) : undefined;
+  const outsideWindow = event ? undefined : true;
+
   const actions = resolveActions({
     type: ent.type,
     status: ent.status,
     isOwner: true,
     isOrganizer: false,
     isAdmin,
-    checkinWindow: undefined,
+    checkinWindow,
+    outsideWindow,
     emailVerified: Boolean(data.user.email_confirmed_at),
     isGuestOwner: false,
   });
@@ -66,6 +92,12 @@ export async function GET(_: Request, context: { params: Params | Promise<Params
     qrToken = token;
   }
 
+  const organizerName =
+    event?.organizer?.publicName ||
+    event?.organizer?.publicName ||
+    event?.organizer?.businessName ||
+    null;
+
   return NextResponse.json({
     entitlementId: ent.id,
     type: ent.type,
@@ -80,6 +112,14 @@ export async function GET(_: Request, context: { params: Params | Promise<Params
     },
     actions,
     qrToken,
+    event: event?.slug
+      ? {
+          id: event.id,
+          slug: event.slug,
+          organizerName,
+          organizerUsername: event.organizer?.username ?? null,
+        }
+      : null,
     audit: {
       updatedAt: ent.updatedAt,
       createdAt: ent.createdAt,

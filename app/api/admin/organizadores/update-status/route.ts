@@ -99,7 +99,7 @@ export async function POST(req: NextRequest) {
       select: {
         id: true,
         status: true,
-        displayName: true,
+        publicName: true,
       },
     });
 
@@ -118,7 +118,7 @@ export async function POST(req: NextRequest) {
           organizer: {
             id: organizer.id,
             status: organizer.status,
-            displayName: organizer.displayName,
+            publicName: organizer.publicName,
             changed: false,
           },
         },
@@ -134,7 +134,7 @@ export async function POST(req: NextRequest) {
       select: {
         id: true,
         status: true,
-        displayName: true,
+        publicName: true,
         userId: true,
       },
     });
@@ -160,7 +160,7 @@ export async function POST(req: NextRequest) {
         organizer: {
           id: updated.id,
           status: updated.status,
-          displayName: updated.displayName,
+          publicName: updated.publicName,
           userId: updated.userId,
           changed: true,
         },

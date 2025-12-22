@@ -8,6 +8,7 @@ import { InlineDateTimePicker } from "@/app/components/forms/InlineDateTimePicke
 import { FlowStickyFooter } from "@/app/components/flows/FlowStickyFooter";
 import { useUser } from "@/app/hooks/useUser";
 import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
+import ObjectiveSubnav from "@/app/organizador/ObjectiveSubnav";
 import { StepperDots, type WizardStep } from "@/components/organizador/eventos/wizard/StepperDots";
 import { PT_CITIES, type PTCity } from "@/lib/constants/ptCities";
 import { computeCombinedFees } from "@/lib/fees";
@@ -33,11 +34,19 @@ const CATEGORY_OPTIONS = [
     categories: ["PADEL"],
   },
   {
+    key: "voluntariado",
+    value: "VOLUNTEERING",
+    label: "Voluntariado",
+    accent: "from-[#FCD34D] to-[#34D399]",
+    copy: "Ações, impacto e participação com um fluxo simples.",
+    categories: ["VOLUNTARIADO"],
+  },
+  {
     key: "default",
     value: "DEFAULT",
-    label: "Evento padrão",
-    accent: "from-[#9ca3af] to-[#6b7280]",
-    copy: "Fluxo base sem extras — serve para qualquer formato simples.",
+    label: "Evento",
+    accent: "from-[#FF00C8] via-[#6BFFFF] to-[#1646F5]",
+    copy: "Fluxo base com tudo o que precisas para publicar.",
     categories: ["OUTRO"],
   },
 ] as const;
@@ -87,7 +96,7 @@ type PadelStaffSummary = { id: number; fullName?: string | null; email?: string 
 
 function computeFeePreview(
   priceEuro: number,
-  mode: "ON_TOP" | "INCLUDED",
+  mode: "ADDED" | "INCLUDED" | "ON_TOP",
   platformFees: { feeBps: number; feeFixedCents: number },
   stripeFees: { feeBps: number; feeFixedCents: number },
 ) {
@@ -95,7 +104,7 @@ function computeFeePreview(
   const combined = computeCombinedFees({
     amountCents: baseCents,
     discountCents: 0,
-    feeMode: mode === "ON_TOP" ? "ADDED" : "INCLUDED",
+    feeMode: mode,
     platformFeeBps: platformFees.feeBps,
     platformFeeFixedCents: platformFees.feeFixedCents,
     stripeFeeBps: stripeFees.feeBps,
@@ -145,7 +154,7 @@ export default function NewOrganizerEventPage() {
   const [locationManuallySet, setLocationManuallySet] = useState(false);
   const [address, setAddress] = useState("");
   const [ticketTypes, setTicketTypes] = useState<TicketTypeRow[]>([{ name: "Geral", price: "", totalQuantity: "" }]);
-  const [feeMode, setFeeMode] = useState<"ON_TOP" | "INCLUDED">("ON_TOP");
+  const [feeMode, setFeeMode] = useState<"ADDED" | "INCLUDED">("ADDED");
   const [coverUrl, setCoverUrl] = useState<string | null>(null);
   const [uploadingCover, setUploadingCover] = useState(false);
   const [isTest, setIsTest] = useState(false);
@@ -272,7 +281,7 @@ export default function NewOrganizerEventPage() {
         locationCity: string;
         address: string;
         ticketTypes: TicketTypeRow[];
-        feeMode: "ON_TOP" | "INCLUDED";
+        feeMode: "ADDED" | "INCLUDED";
         coverUrl: string | null;
         selectedPreset: string | null;
         isFreeEvent: boolean;
@@ -298,7 +307,7 @@ export default function NewOrganizerEventPage() {
           ? draft.ticketTypes
           : [{ name: "Geral", price: "", totalQuantity: "" }],
       );
-      setFeeMode(draft.feeMode ?? "ON_TOP");
+      setFeeMode(draft.feeMode ?? "ADDED");
       setCoverUrl(draft.coverUrl ?? null);
       setSelectedPreset(draft.selectedPreset ?? null);
       setIsFreeEvent(Boolean(draft.isFreeEvent));
@@ -884,7 +893,12 @@ export default function NewOrganizerEventPage() {
     try {
       const preset = selectedPreset ? presetMap.get(selectedPreset) : null;
       const categoriesToSend = preset?.categories ?? ["OUTRO"];
-      const templateToSend = selectedPreset === "padel" ? "PADEL" : "OTHER";
+      const templateToSend =
+        selectedPreset === "padel"
+          ? "PADEL"
+          : selectedPreset === "voluntariado"
+            ? "VOLUNTEERING"
+            : "OTHER";
     const payload = {
       title: title.trim(),
       description: description.trim() || null,
@@ -976,39 +990,45 @@ export default function NewOrganizerEventPage() {
 
   if (isUserLoading) {
     return (
-      <div className="max-w-3xl mx-auto px-4 py-8">
-        <p>A carregar a tua conta…</p>
+      <div className="w-full px-4 py-8 md:px-6 lg:px-8">
+        <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-5 text-white/70 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
+          A carregar a tua conta…
+        </div>
       </div>
     );
   }
 
   if (!user) {
     return (
-      <div className="max-w-3xl mx-auto px-4 py-8 space-y-4">
-        <h1 className="text-2xl font-semibold">Criar novo evento</h1>
-        <p>Precisas de iniciar sessão para criar eventos como organizador.</p>
-        <button
-          type="button"
-          onClick={handleRequireLogin}
-          className="inline-flex items-center rounded-md border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium hover:bg-white/10"
-        >
-          Entrar
-        </button>
+      <div className="w-full px-4 py-8 md:px-6 lg:px-8">
+        <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-6 text-white shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl space-y-3">
+          <h1 className="text-2xl font-semibold">Criar novo evento</h1>
+          <p className="text-white/70">Precisas de iniciar sessão para criar eventos como organizador.</p>
+          <button
+            type="button"
+            onClick={handleRequireLogin}
+            className="inline-flex items-center rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-4 py-2 text-sm font-semibold text-black shadow"
+          >
+            Entrar
+          </button>
+        </div>
       </div>
     );
   }
 
   if (!isOrganizer) {
     return (
-      <div className="max-w-3xl mx-auto px-4 py-8 space-y-4">
-        <h1 className="text-2xl font-semibold">Criar novo evento</h1>
-        <p>Ainda não és organizador. Vai à área de organizador para ativar essa função.</p>
-        <Link
-          href="/organizador"
-          className="inline-flex items-center rounded-md border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium hover:bg-white/10"
-        >
-          Ir para área de organizador
-        </Link>
+      <div className="w-full px-4 py-8 md:px-6 lg:px-8">
+        <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-6 text-white shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl space-y-3">
+          <h1 className="text-2xl font-semibold">Criar novo evento</h1>
+          <p className="text-white/70">Ainda não és organizador. Vai à área de organizador para ativar essa função.</p>
+          <Link
+            href="/organizador"
+            className="inline-flex items-center rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-4 py-2 text-sm font-semibold text-black shadow"
+          >
+            Ir para área de organizador
+          </Link>
+        </div>
       </div>
     );
   }
@@ -1300,7 +1320,7 @@ export default function NewOrganizerEventPage() {
             </p>
           </div>
           <Link
-            href="/organizador?tab=padel"
+            href="/organizador?tab=manage&section=torneios"
             className="rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-[12px] font-semibold text-white hover:border-white/30 hover:bg-white/15 shadow-[0_12px_30px_rgba(0,0,0,0.35)]"
           >
             Abrir hub de Padel
@@ -1478,7 +1498,7 @@ export default function NewOrganizerEventPage() {
               {stripeNotReady && (
                 <button
                   type="button"
-                  onClick={() => router.push("/organizador?tab=finance")}
+                  onClick={() => router.push("/organizador?tab=analyze&section=financas")}
                   className="rounded-full border border-white/30 px-3 py-1 text-[11px] font-semibold text-amber-50 hover:bg-white/10"
                 >
                   Abrir Finanças & Payouts
@@ -1487,7 +1507,7 @@ export default function NewOrganizerEventPage() {
               {needsOfficialEmailVerification && (
                 <button
                   type="button"
-                  onClick={() => router.push("/organizador/settings")}
+                  onClick={() => router.push("/organizador?tab=manage&section=settings")}
                   className="rounded-full border border-white/30 px-3 py-1 text-[11px] font-semibold text-amber-50 hover:bg-white/10"
                 >
                   Definir / verificar email oficial
@@ -1633,9 +1653,9 @@ export default function NewOrganizerEventPage() {
             <div className="inline-flex rounded-full border border-white/15 bg-black/40 p-1 text-[13px]">
               <button
                 type="button"
-                onClick={() => setFeeMode("ON_TOP")}
+                onClick={() => setFeeMode("ADDED")}
                 className={`rounded-full px-3 py-1 font-semibold transition ${
-                  feeMode === "ON_TOP" ? "bg-white text-black shadow" : "text-white/70"
+                  feeMode === "ADDED" ? "bg-white text-black shadow" : "text-white/70"
                 }`}
               >
                 Cliente paga taxa
@@ -1661,8 +1681,18 @@ export default function NewOrganizerEventPage() {
 
   const renderReviewStep = () => {
     const previewTickets = buildTicketsPayload();
-    const presetLabel = selectedPreset === "padel" ? "Padel / Torneio" : "Evento padrão";
-    const presetDesc = selectedPreset === "padel" ? "Wizard Padel ativo" : "Fluxo base sem extras";
+    const presetLabel =
+      selectedPreset === "padel"
+        ? "Padel / Torneio"
+        : selectedPreset === "voluntariado"
+          ? "Voluntariado"
+          : "Evento";
+    const presetDesc =
+      selectedPreset === "padel"
+        ? "Wizard Padel ativo"
+        : selectedPreset === "voluntariado"
+          ? "Fluxo focado em participacao e impacto"
+          : "Fluxo base com tudo o que precisas";
     const pendingIssues = collectStepErrors("all");
     const pendingLabel = pendingIssues.length === 0 ? "Campos ok" : `Falta corrigir ${pendingIssues.length}`;
     return (
@@ -1809,8 +1839,9 @@ export default function NewOrganizerEventPage() {
         e.preventDefault();
         goNext();
       }}
-      className="relative mx-auto max-w-5xl space-y-6 px-4 py-8 text-white md:px-6 lg:px-8"
+      className="relative w-full space-y-6 px-4 py-8 text-white md:px-6 lg:px-8"
     >
+      <ObjectiveSubnav objective="create" activeId="primary" />
       <div className="relative overflow-hidden rounded-[28px] border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/92 p-5 shadow-[0_32px_110px_rgba(0,0,0,0.6)] backdrop-blur-3xl">
         <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.12),transparent_35%),linear-gradient(225deg,rgba(255,255,255,0.08),transparent_40%)]" />
         <div className="relative flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -1824,7 +1855,7 @@ export default function NewOrganizerEventPage() {
           </div>
           <div className="flex flex-wrap items-center gap-2 text-[11px]">
             <Link
-              href="/organizador"
+              href="/organizador?tab=overview"
               className="rounded-full border border-white/20 bg-white/5 px-3 py-1.5 text-[12px] font-semibold text-white/85 transition hover:border-white/35 hover:bg-white/10"
             >
               Voltar
@@ -1908,7 +1939,7 @@ export default function NewOrganizerEventPage() {
               title="Conclui os passos para vender"
               message={stripeAlert}
               actionLabel="Abrir Finanças & Payouts"
-              onAction={() => router.push("/organizador?tab=finance")}
+              onAction={() => router.push("/organizador?tab=analyze&section=financas")}
             />
           )}
           {validationAlert && <FormAlert variant="warning" message={validationAlert} />}
@@ -1948,7 +1979,7 @@ export default function NewOrganizerEventPage() {
       </div>
 
       {creationSuccess && (
-        <div className="fixed bottom-6 left-6 z-40 w-[320px] max-w-full rounded-2xl border border-emerald-400/50 bg-emerald-500/15 p-4 shadow-[0_18px_45px_rgba(0,0,0,0.55)] text-emerald-50">
+        <div className="fixed bottom-6 right-6 z-40 w-[320px] max-w-full rounded-2xl border border-emerald-400/50 bg-emerald-500/15 p-4 shadow-[0_18px_45px_rgba(0,0,0,0.55)] text-emerald-50">
           <div className="flex items-start justify-between gap-2">
             <div>
               <p className="text-sm font-semibold">Evento criado</p>

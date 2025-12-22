@@ -2,7 +2,7 @@
 
 import useSWR from "swr";
 import Link from "next/link";
-import { formatMoney, centsToEuro } from "@/lib/money";
+import { formatEuro, centsToEuro } from "@/lib/money";
 import { useUser } from "@/app/hooks/useUser";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
@@ -35,7 +35,7 @@ function PurchaseCard({ purchase }: { purchase: Purchase }) {
   const dateStr = startsAt ? startsAt.toLocaleString("pt-PT", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : null;
   const feeMode =
     typeof purchase.feeMode === "string" ? purchase.feeMode.toUpperCase() : null;
-  const payorPaysFee = feeMode === "ADDED" || feeMode === "ON_TOP";
+  const payorPaysFee = feeMode === "ADDED";
   const badgeLabel =
     purchase.badge === "FREE"
       ? "Gratuito"
@@ -74,7 +74,7 @@ function PurchaseCard({ purchase }: { purchase: Purchase }) {
           </div>
         </div>
         <div className="text-right text-sm text-white/80">
-          <p className="text-lg font-semibold text-white">{formatMoney(centsToEuro(purchase.totalCents) ?? 0)}</p>
+          <p className="text-lg font-semibold text-white">{formatEuro(centsToEuro(purchase.totalCents) ?? 0)}</p>
           <p className="text-[11px] text-white/60">{new Date(purchase.createdAt).toLocaleDateString("pt-PT")}</p>
         </div>
       </div>
@@ -87,14 +87,14 @@ function PurchaseCard({ purchase }: { purchase: Purchase }) {
         {purchase.lines.map((line) => (
           <div key={`${purchase.id}-${line.ticketTypeId}-${line.quantity}`} className="flex items-center justify-between text-[13px] text-white/70">
             <span>Bilhete #{line.ticketTypeId} × {line.quantity}</span>
-            <span>{formatMoney(centsToEuro(line.grossCents) ?? 0)}</span>
+            <span>{formatEuro(centsToEuro(line.grossCents) ?? 0)}</span>
           </div>
         ))}
       </div>
       <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[12px] text-white/60">
-        {purchase.discountCents > 0 && <span>Desconto: -{formatMoney(centsToEuro(purchase.discountCents) ?? 0)}</span>}
+        {purchase.discountCents > 0 && <span>Desconto: -{formatEuro(centsToEuro(purchase.discountCents) ?? 0)}</span>}
         {payorPaysFee && purchase.platformFeeCents > 0 && (
-          <span>Taxas: {formatMoney(centsToEuro(purchase.platformFeeCents) ?? 0)}</span>
+          <span>Taxas: {formatEuro(centsToEuro(purchase.platformFeeCents) ?? 0)}</span>
         )}
       </div>
       {purchase.event?.slug && (

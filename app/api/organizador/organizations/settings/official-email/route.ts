@@ -45,7 +45,6 @@ export async function POST(req: NextRequest) {
         id: true,
         officialEmail: true,
         officialEmailVerifiedAt: true,
-        displayName: true,
         publicName: true,
         username: true,
       },
@@ -104,7 +103,7 @@ export async function POST(req: NextRequest) {
     // Envia email de verificação (best-effort)
     try {
       const organizerName =
-        organizer.publicName || organizer.displayName || organizer.username || "Organização ORYA";
+        organizer.publicName || organizer.username || "Organização ORYA";
       await sendOfficialEmailVerificationEmail({
         to: emailRaw,
         organizerName,

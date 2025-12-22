@@ -192,7 +192,7 @@ export default function PromoCodesClient() {
         type: form.type,
         value:
           form.type === "PERCENTAGE"
-            ? Math.round(numericValue * 100) // guardamos em bps para manter compat
+            ? Math.round(numericValue * 100) // guardamos em bps
             : Math.round(numericValue * 100), // euros -> cents
         maxUses: form.maxUses ? Number(form.maxUses) : null,
         perUserLimit: form.perUserLimit ? Number(form.perUserLimit) : null,
@@ -350,8 +350,9 @@ export default function PromoCodesClient() {
   };
 
   return (
-    <section className="mx-auto max-w-6xl px-4 py-10 space-y-6 text-white md:px-6 lg:px-8">
-      <header className="space-y-1">
+    <section className="w-full px-4 py-8 space-y-6 text-white md:px-6 lg:px-8">
+      <header className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-5 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl space-y-1">
+        <p className="text-[11px] uppercase tracking-[0.3em] text-white/70">Marketing</p>
         <h1 className="text-2xl font-semibold">Códigos promocionais</h1>
         <p className="text-sm text-white/70">
           Cria códigos de desconto por evento ou globais. Podes ativar/desativar ou definir auto-aplicação a qualquer momento.
@@ -764,7 +765,7 @@ export default function PromoCodesClient() {
               className="w-full rounded-lg border border-white/15 bg-black/20 px-3 py-2 text-sm outline-none"
               placeholder="Ex.: 30"
             />
-            <p className="text-[11px] text-white/60">Opcional; preferível ao min total legacy.</p>
+            <p className="text-[11px] text-white/60">Opcional; preferível ao min total.</p>
           </label>
         </div>
 
@@ -829,8 +830,8 @@ export default function PromoCodesClient() {
         </div>
 
         {detailId !== null && (
-          <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/60 px-4 py-6 backdrop-blur-sm sm:items-center">
-            <div className="w-full max-w-3xl rounded-2xl border border-white/15 bg-neutral-900 p-5 shadow-2xl">
+          <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 px-4 py-6 backdrop-blur-sm">
+            <div className="mx-auto w-full max-w-3xl rounded-2xl border border-white/15 bg-neutral-900 p-5 shadow-2xl">
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <p className="text-[11px] uppercase tracking-[0.18em] text-white/60">Promo</p>

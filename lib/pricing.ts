@@ -63,17 +63,15 @@ function resolvePlatformFees(ctx: FeeContext) {
 /**
  * Função central de cálculo de checkout/fees.
  * - Prioridade: override do evento -> configs do organizer -> defaults da plataforma.
- * - feeMode: ADDED (ON_TOP) ou INCLUDED.
+ * - feeMode: ADDED ou INCLUDED.
  */
 export function computePricing(
   subtotalCents: number,
   discountCents: number,
   ctx: FeeContext,
 ): PricingResult {
-  // ON_TOP é mantido por retrocompatibilidade e equivale a ADDED (cliente paga a taxa).
   const resolvedFeeMode = resolveFeeMode(ctx);
-  const feeMode =
-    resolvedFeeMode === FeeMode.ON_TOP ? FeeMode.ADDED : resolvedFeeMode;
+  const feeMode = resolvedFeeMode === FeeMode.ON_TOP ? FeeMode.ADDED : resolvedFeeMode;
   const { feeBps, feeFixedCents } = resolvePlatformFees(ctx);
 
   const netSubtotal = Math.max(0, subtotalCents - Math.max(0, discountCents));

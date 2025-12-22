@@ -17,11 +17,12 @@ type OrganizationSwitcherOption = {
   organizer: {
     id: number;
     username: string | null;
-    publicName?: string | null;
-    displayName: string | null;
+    publicName: string | null;
     businessName: string | null;
     city: string | null;
     entityType: string | null;
+    organizationKind?: string | null;
+    organizationCategory?: string | null;
     status: string | null;
     brandingAvatarUrl?: string | null;
     brandingPrimaryColor?: string | null;
@@ -64,13 +65,14 @@ export default async function OrganizerDashboardLayout({ children }: { children:
         activeRole = membership.role;
         activeOrganizer = {
           id: organizer.id,
-          displayName: organizer.displayName,
-          publicName: (organizer as { publicName?: string | null }).publicName ?? null,
+          publicName: organizer.publicName,
           businessName: organizer.businessName,
           username: (organizer as { username?: string | null }).username ?? null,
           brandingAvatarUrl: (organizer as { brandingAvatarUrl?: string | null }).brandingAvatarUrl ?? null,
           brandingPrimaryColor: (organizer as { brandingPrimaryColor?: string | null }).brandingPrimaryColor ?? null,
           brandingSecondaryColor: (organizer as { brandingSecondaryColor?: string | null }).brandingSecondaryColor ?? null,
+          organizationKind: (organizer as { organizationKind?: string | null }).organizationKind ?? null,
+          organizationCategory: (organizer as { organizationCategory?: string | null }).organizationCategory ?? null,
           city: (organizer as { city?: string | null }).city ?? null,
           entityType: (organizer as { entityType?: string | null }).entityType ?? null,
           status: organizer.status ?? null,
@@ -96,11 +98,12 @@ export default async function OrganizerDashboardLayout({ children }: { children:
           organizer: {
             id: m.organizer!.id,
             username: m.organizer!.username,
-            displayName: m.organizer!.displayName,
-            publicName: (m.organizer as { publicName?: string | null }).publicName ?? null,
+            publicName: m.organizer!.publicName,
             businessName: m.organizer!.businessName,
             city: m.organizer!.city,
             entityType: m.organizer!.entityType,
+            organizationKind: (m.organizer as { organizationKind?: string | null }).organizationKind ?? null,
+            organizationCategory: (m.organizer as { organizationCategory?: string | null }).organizationCategory ?? null,
             status: m.organizer!.status,
             brandingAvatarUrl: (m.organizer as { brandingAvatarUrl?: string | null }).brandingAvatarUrl ?? null,
             brandingPrimaryColor: (m.organizer as { brandingPrimaryColor?: string | null }).brandingPrimaryColor ?? null,
@@ -118,7 +121,7 @@ export default async function OrganizerDashboardLayout({ children }: { children:
   }
 
   const organizerName =
-    activeOrganizer?.publicName || activeOrganizer?.displayName || activeOrganizer?.businessName || "Organizador";
+    activeOrganizer?.publicName || activeOrganizer?.businessName || "Organizador";
   const organizerAvatarUrl = activeOrganizer?.brandingAvatarUrl ?? null;
   const organizerUsername = activeOrganizer?.username ?? null;
   const brandPrimary = activeOrganizer?.brandingPrimaryColor ?? undefined;
@@ -140,6 +143,8 @@ export default async function OrganizerDashboardLayout({ children }: { children:
         name: organizerName,
         username: organizerUsername,
         avatarUrl: organizerAvatarUrl,
+        organizationKind: activeOrganizer.organizationKind ?? null,
+        organizationCategory: activeOrganizer.organizationCategory ?? null,
       }
     : null;
 

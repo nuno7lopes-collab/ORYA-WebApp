@@ -9,13 +9,13 @@ import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
 import { isValidPhone, sanitizePhone } from "@/lib/phone";
 import { PORTUGAL_CITIES } from "@/config/cities";
 import { ConfirmDestructiveActionDialog } from "@/app/components/ConfirmDestructiveActionDialog";
+import ObjectiveSubnav from "@/app/organizador/ObjectiveSubnav";
 
 type OrganizerMeResponse = {
   ok: boolean;
   organizer: {
     id: number;
-    displayName: string | null;
-    publicName?: string | null;
+    publicName: string | null;
     username?: string | null;
     businessName: string | null;
     entityType: string | null;
@@ -34,6 +34,14 @@ type OrganizerMeResponse = {
     organizationKind?: string | null;
     officialEmail?: string | null;
     officialEmailVerifiedAt?: string | null;
+    publicWebsite?: string | null;
+    publicDescription?: string | null;
+    publicHours?: string | null;
+    infoRules?: string | null;
+    infoFaq?: string | null;
+    infoRequirements?: string | null;
+    infoPolicies?: string | null;
+    infoLocationNotes?: string | null;
   } | null;
   profile: {
     fullName: string | null;
@@ -46,7 +54,11 @@ type OrganizerMeResponse = {
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
-export default function OrganizerSettingsPage() {
+type OrganizerSettingsPageProps = {
+  embedded?: boolean;
+};
+
+export default function OrganizerSettingsPage({ embedded }: OrganizerSettingsPageProps) {
   const router = useRouter();
   const { user } = useUser();
   const { openModal } = useAuthModal();
@@ -61,6 +73,7 @@ export default function OrganizerSettingsPage() {
   const organizer = data?.organizer ?? null;
   const profile = data?.profile ?? null;
   const contactEmailFromAccount = data?.contactEmail ?? null;
+  const redirectTo = embedded ? "/organizador?tab=manage&section=settings" : "/organizador/settings";
 
   const [organizationKind, setOrganizationKind] = useState("PESSOA_SINGULAR");
   const [entityName, setEntityName] = useState("");
@@ -88,6 +101,17 @@ export default function OrganizerSettingsPage() {
   const [usernameError, setUsernameError] = useState<string | null>(null);
   const [savingUsername, setSavingUsername] = useState(false);
 
+  const [publicWebsite, setPublicWebsite] = useState("");
+  const [publicDescription, setPublicDescription] = useState("");
+  const [publicHours, setPublicHours] = useState("");
+  const [infoRules, setInfoRules] = useState("");
+  const [infoFaq, setInfoFaq] = useState("");
+  const [infoRequirements, setInfoRequirements] = useState("");
+  const [infoPolicies, setInfoPolicies] = useState("");
+  const [infoLocationNotes, setInfoLocationNotes] = useState("");
+  const [publicProfileMessage, setPublicProfileMessage] = useState<string | null>(null);
+  const [savingPublicProfile, setSavingPublicProfile] = useState(false);
+
   const [dangerConfirm, setDangerConfirm] = useState("");
   const [dangerFeedback, setDangerFeedback] = useState<string | null>(null);
   const [dangerLoading, setDangerLoading] = useState(false);
@@ -97,12 +121,12 @@ export default function OrganizerSettingsPage() {
     if (!organizer) return;
     setOrganizationKind((organizer.organizationKind as string | null) ?? "PESSOA_SINGULAR");
     const name =
-      organizer.displayName ||
+      organizer.publicName ||
       organizer.businessName ||
       profile?.fullName ||
       "";
     setEntityName(name);
-    setPublicName(organizer.publicName || organizer.displayName || organizer.businessName || name);
+    setPublicName(organizer.publicName || organizer.businessName || name);
     setCity(organizer.city ?? profile?.city ?? "");
     setAddress((organizer as { address?: string | null }).address ?? "");
     setShowAddressPublicly((organizer as { showAddressPublicly?: boolean | null }).showAddressPublicly ?? false);
@@ -113,6 +137,14 @@ export default function OrganizerSettingsPage() {
     setBrandingPrimaryColor((organizer as { brandingPrimaryColor?: string | null }).brandingPrimaryColor ?? "");
     setBrandingSecondaryColor((organizer as { brandingSecondaryColor?: string | null }).brandingSecondaryColor ?? "");
     setUsername((organizer as { username?: string | null }).username ?? "");
+    setPublicWebsite((organizer as { publicWebsite?: string | null }).publicWebsite ?? "");
+    setPublicDescription((organizer as { publicDescription?: string | null }).publicDescription ?? "");
+    setPublicHours((organizer as { publicHours?: string | null }).publicHours ?? "");
+    setInfoRules((organizer as { infoRules?: string | null }).infoRules ?? "");
+    setInfoFaq((organizer as { infoFaq?: string | null }).infoFaq ?? "");
+    setInfoRequirements((organizer as { infoRequirements?: string | null }).infoRequirements ?? "");
+    setInfoPolicies((organizer as { infoPolicies?: string | null }).infoPolicies ?? "");
+    setInfoLocationNotes((organizer as { infoLocationNotes?: string | null }).infoLocationNotes ?? "");
   }, [organizer, profile, contactEmailFromAccount]);
 
   const hasOrganizer = useMemo(() => organizer && data?.ok, [organizer, data]);
@@ -133,7 +165,7 @@ export default function OrganizerSettingsPage() {
 
   async function handleSaveOrg() {
     if (!user) {
-      openModal({ mode: "login", redirectTo: "/organizador/settings", showGoogle: true });
+      openModal({ mode: "login", redirectTo, showGoogle: true });
       return;
     }
     if (!entityName.trim()) {
@@ -155,7 +187,6 @@ export default function OrganizerSettingsPage() {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          displayName: entityName,
           businessName: entityName,
           publicName,
           city,
@@ -179,6 +210,50 @@ export default function OrganizerSettingsPage() {
       setOrgMessage("Erro inesperado ao guardar.");
     } finally {
       setSavingOrg(false);
+    }
+  }
+
+  const normalizePublicWebsite = (value: string) => {
+    const trimmed = value.trim();
+    if (!trimmed) return "";
+    if (/^https?:\/\//i.test(trimmed)) return trimmed;
+    return `https://${trimmed}`;
+  };
+
+  async function handleSavePublicProfile() {
+    if (!user) {
+      openModal({ mode: "login", redirectTo, showGoogle: true });
+      return;
+    }
+    setSavingPublicProfile(true);
+    setPublicProfileMessage(null);
+    try {
+      const res = await fetch("/api/organizador/me", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          publicWebsite: publicWebsite ? normalizePublicWebsite(publicWebsite) : "",
+          publicDescription,
+          publicHours,
+          infoRules,
+          infoFaq,
+          infoRequirements,
+          infoPolicies,
+          infoLocationNotes,
+        }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || json?.ok === false) {
+        setPublicProfileMessage(json?.error || "Não foi possível guardar o perfil público.");
+      } else {
+        setPublicProfileMessage("Perfil público atualizado.");
+        mutate();
+      }
+    } catch (err) {
+      console.error("[organizador/settings] save public profile", err);
+      setPublicProfileMessage("Erro inesperado ao guardar.");
+    } finally {
+      setSavingPublicProfile(false);
     }
   }
 
@@ -279,7 +354,7 @@ export default function OrganizerSettingsPage() {
 
   const handleSaveUsername = async () => {
     if (!user) {
-      openModal({ mode: "login", redirectTo: "/organizador/settings", showGoogle: true });
+      openModal({ mode: "login", redirectTo, showGoogle: true });
       return;
     }
     setUsernameMessage(null);
@@ -341,30 +416,49 @@ export default function OrganizerSettingsPage() {
 
   if (!user) {
     return (
-      <div className="mx-auto max-w-5xl px-4 py-10 space-y-4 text-white md:px-6 lg:px-10">
-        <h1 className="text-2xl font-semibold">Definições do organizador</h1>
-        <p>Precisas de iniciar sessão para aceder a estas definições.</p>
-        <button
-          type="button"
-          onClick={() => openModal({ mode: "login", redirectTo: "/organizador/settings", showGoogle: true })}
-          className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-black"
-        >
-          Entrar
-        </button>
+      <div
+        className={
+          embedded
+            ? "space-y-4 text-white"
+            : "w-full px-4 py-8 space-y-4 text-white md:px-6 lg:px-10"
+        }
+      >
+        <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-6 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl space-y-3">
+          <h1 className="text-2xl font-semibold">Definições do organizador</h1>
+          <p className="text-white/70">Precisas de iniciar sessão para aceder a estas definições.</p>
+          <button
+            type="button"
+            onClick={() => openModal({ mode: "login", redirectTo, showGoogle: true })}
+            className="rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-4 py-2 text-sm font-semibold text-black shadow"
+          >
+            Entrar
+          </button>
+        </div>
       </div>
     );
   }
 
   if (isLoading || !hasOrganizer) {
     return (
-      <div className="mx-auto max-w-5xl px-4 py-10 text-white md:px-6 lg:px-10">
-        {isLoading ? "A carregar definições…" : "Ativa a conta de organizador para gerir estas definições."}
+      <div
+        className={
+          embedded ? "text-white" : "w-full px-4 py-8 text-white md:px-6 lg:px-10"
+        }
+      >
+        <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-6 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
+          {isLoading ? "A carregar definições…" : "Ativa a conta de organizador para gerir estas definições."}
+        </div>
       </div>
     );
   }
 
+  const wrapperClass = embedded
+    ? "space-y-6 text-white"
+    : "w-full px-4 py-8 space-y-6 text-white md:px-8 lg:px-10";
+
   return (
-    <div className="mx-auto max-w-6xl px-4 py-8 space-y-6 text-white md:px-8 lg:px-10">
+    <div className={wrapperClass}>
+      {!embedded && <ObjectiveSubnav objective="manage" activeId="settings" />}
       <div className="relative overflow-hidden rounded-[28px] border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/75 to-[#050810]/92 p-5 shadow-[0_30px_110px_rgba(0,0,0,0.6)] backdrop-blur-3xl">
         <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.12),transparent_35%),linear-gradient(225deg,rgba(255,255,255,0.08),transparent_40%)]" />
         <div className="relative flex flex-wrap items-center justify-between gap-3">
@@ -377,7 +471,7 @@ export default function OrganizerSettingsPage() {
           </div>
           {organizer?.username && (
             <a
-              href={`/org/${organizer.username}`}
+              href={`/${organizer.username}`}
               target="_blank"
               rel="noreferrer"
               className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-[12px] text-white hover:border-white/30 hover:bg-white/15"
@@ -494,7 +588,105 @@ export default function OrganizerSettingsPage() {
             {phoneError && <p className="text-[11px] text-red-300">{phoneError}</p>}
           </div>
         </div>
-        {orgMessage && <p className="text-[12px] text-white/70">{orgMessage}</p>}
+      {orgMessage && <p className="text-[12px] text-white/70">{orgMessage}</p>}
+      </section>
+
+      <section className="relative overflow-hidden rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1226]/75 to-[#050912]/90 p-5 space-y-3 shadow-[0_26px_90px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold">Perfil público</h2>
+            <p className="text-[12px] text-white/65">Blocos de informação visíveis na página pública da organização.</p>
+          </div>
+          <button
+            type="button"
+            onClick={handleSavePublicProfile}
+            disabled={savingPublicProfile}
+            className="rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-4 py-2 text-sm font-semibold text-black shadow disabled:opacity-60"
+          >
+            {savingPublicProfile ? "A guardar…" : "Guardar perfil público"}
+          </button>
+        </div>
+        <div className="grid gap-3 md:grid-cols-2">
+          <div className="space-y-1">
+            <label className="text-[12px] text-white/70">Website (opcional)</label>
+            <input
+              value={publicWebsite}
+              onChange={(e) => setPublicWebsite(e.target.value)}
+              className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
+              placeholder="ex: https://orya.pt"
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-[12px] text-white/70">Horários (opcional)</label>
+            <input
+              value={publicHours}
+              onChange={(e) => setPublicHours(e.target.value)}
+              className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
+              placeholder="Seg-Sex 09:00-18:00"
+            />
+          </div>
+        </div>
+        <div className="grid gap-3 md:grid-cols-2">
+          <div className="space-y-1">
+            <label className="text-[12px] text-white/70">Descrição principal</label>
+            <textarea
+              value={publicDescription}
+              onChange={(e) => setPublicDescription(e.target.value)}
+              className="min-h-[120px] w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
+              placeholder="Explica o que é a tua organização e o que as pessoas podem esperar."
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-[12px] text-white/70">Como chegar / notas de localização</label>
+            <textarea
+              value={infoLocationNotes}
+              onChange={(e) => setInfoLocationNotes(e.target.value)}
+              className="min-h-[120px] w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
+              placeholder="Indicações úteis, acessos, estacionamento, ponto de encontro."
+            />
+          </div>
+        </div>
+        <div className="grid gap-3 md:grid-cols-2">
+          <div className="space-y-1">
+            <label className="text-[12px] text-white/70">Regras</label>
+            <textarea
+              value={infoRules}
+              onChange={(e) => setInfoRules(e.target.value)}
+              className="min-h-[120px] w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
+              placeholder="Regras essenciais, o que é permitido ou não."
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-[12px] text-white/70">FAQ</label>
+            <textarea
+              value={infoFaq}
+              onChange={(e) => setInfoFaq(e.target.value)}
+              className="min-h-[120px] w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
+              placeholder="Perguntas frequentes e respostas curtas."
+            />
+          </div>
+        </div>
+        <div className="grid gap-3 md:grid-cols-2">
+          <div className="space-y-1">
+            <label className="text-[12px] text-white/70">Requisitos</label>
+            <textarea
+              value={infoRequirements}
+              onChange={(e) => setInfoRequirements(e.target.value)}
+              className="min-h-[120px] w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
+              placeholder="Requisitos de participação, idade, equipamento, etc."
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-[12px] text-white/70">Políticas</label>
+            <textarea
+              value={infoPolicies}
+              onChange={(e) => setInfoPolicies(e.target.value)}
+              className="min-h-[120px] w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
+              placeholder="Cancelamentos, no-show, reembolsos, outros."
+            />
+          </div>
+        </div>
+        {publicProfileMessage && <p className="text-[12px] text-white/70">{publicProfileMessage}</p>}
       </section>
 
       <section className="relative overflow-hidden rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1226]/75 to-[#050912]/90 p-5 space-y-3 shadow-[0_26px_90px_rgba(0,0,0,0.6)] backdrop-blur-2xl">

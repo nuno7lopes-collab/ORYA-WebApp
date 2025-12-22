@@ -40,7 +40,7 @@ type Invitation = {
   } | null;
   organizer: {
     id: number;
-    displayName: string | null;
+    publicName: string | null;
   } | null;
 };
 
@@ -178,7 +178,7 @@ export default function StaffEventsPage() {
                       {dateLabel} · {event?.locationName ?? event?.locationCity ?? "Local a definir"}
                     </p>
                     <p className="text-[11px] text-white/50">
-                      Organizador: {inv.organizer?.displayName ?? "ORYA"}
+                      Organizador: {inv.organizer?.publicName ?? "ORYA"}
                     </p>
                   </div>
                   <div className="flex gap-2">

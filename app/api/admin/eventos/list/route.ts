@@ -59,7 +59,7 @@ export async function GET(req: NextRequest) {
         { slug: { contains: search, mode: "insensitive" } },
         {
           organizer: {
-            displayName: { contains: search, mode: "insensitive" },
+            publicName: { contains: search, mode: "insensitive" },
           },
         },
       ];
@@ -79,7 +79,7 @@ export async function GET(req: NextRequest) {
         organizer: {
           select: {
             id: true,
-            displayName: true,
+            publicName: true,
           },
         },
       },
@@ -101,7 +101,7 @@ export async function GET(req: NextRequest) {
       organizer: evt.organizer
         ? {
             id: evt.organizer.id,
-            displayName: evt.organizer.displayName,
+            publicName: evt.organizer.publicName,
           }
         : null,
     }));

@@ -1,24 +1,19 @@
-"use client";
+import { redirect } from "next/navigation";
 
-import { useEffect } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+type Props = {
+  searchParams?: Record<string, string | string[] | undefined>;
+};
 
-// LEGACY – conteúdo vive em Finanças & Pagamentos (tab=finance)
-export default function PaymentsLegacyRedirect() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-
-  useEffect(() => {
-    const params = new URLSearchParams(searchParams?.toString() || "");
-    params.set("tab", "finance");
-    router.replace(`/organizador?${params.toString()}`);
-  }, [router, searchParams]);
-
-  return (
-    <div className="mx-auto max-w-3xl px-4 py-10 text-white">
-      <p className="text-sm text-white/70">
-        Pagamentos foi integrado na tab Finanças & Pagamentos. A redirecionar…
-      </p>
-    </div>
-  );
+export default function OrganizerPaymentsRedirect({ searchParams }: Props) {
+  const params = new URLSearchParams();
+  if (searchParams) {
+    Object.entries(searchParams).forEach(([key, value]) => {
+      if (key === "tab" || key === "section") return;
+      if (typeof value === "string") params.set(key, value);
+      if (Array.isArray(value) && value[0]) params.set(key, value[0]);
+    });
+  }
+  params.set("tab", "analyze");
+  params.set("section", "financas");
+  redirect(`/organizador?${params.toString()}`);
 }

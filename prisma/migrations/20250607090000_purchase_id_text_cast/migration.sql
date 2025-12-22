@@ -13,7 +13,7 @@ ALTER TABLE app_v3.tickets
 ALTER TABLE app_v3.promo_redemptions
   ALTER COLUMN purchase_id TYPE text USING purchase_id::text;
 
--- Refresca unique para compatibilidade com Prisma (create DB index if missing)
+-- Refresca unique para Prisma (create DB index if missing)
 DO $$
 BEGIN
   IF NOT EXISTS (

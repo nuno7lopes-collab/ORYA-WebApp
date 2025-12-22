@@ -46,64 +46,32 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
     }
 
-    let tickets = [];
-    try {
-      tickets = await prisma.ticket.findMany({
-        where: {
-          eventId: event.id,
-          status: {
-            in: [
-              TicketStatus.ACTIVE,
-              TicketStatus.USED,
-              TicketStatus.REFUNDED,
-              TicketStatus.TRANSFERRED,
-              TicketStatus.RESALE_LISTED,
-            ],
-          },
+    const tickets = await prisma.ticket.findMany({
+      where: {
+        eventId: event.id,
+        status: {
+          in: [
+            TicketStatus.ACTIVE,
+            TicketStatus.USED,
+            TicketStatus.REFUNDED,
+            TicketStatus.TRANSFERRED,
+            TicketStatus.RESALE_LISTED,
+          ],
         },
-        orderBy: { purchasedAt: "desc" },
-        select: {
-          id: true,
-          pricePaid: true,
-          totalPaidCents: true,
-          status: true,
-          purchasedAt: true,
-          userId: true,
-          stripePaymentIntentId: true,
-          ticketType: { select: { name: true } },
-          guestLink: { select: { guestEmail: true, guestName: true } },
-        },
-      });
-    } catch (err: any) {
-      const code = typeof err === "object" && err && "code" in err ? (err as { code?: string }).code : undefined;
-      console.warn("[organizador/buyers] fallback sem ordered select", err);
-      if (code === "P2022") {
-        // Fallback minimal para schemas legacy
-        tickets = await prisma.ticket.findMany({
-          where: {
-            eventId: event.id,
-            status: {
-              in: [
-                TicketStatus.ACTIVE,
-                TicketStatus.USED,
-                TicketStatus.REFUNDED,
-                TicketStatus.TRANSFERRED,
-                TicketStatus.RESALE_LISTED,
-              ],
-            },
-          },
-          select: {
-            id: true,
-            status: true,
-            userId: true,
-            ticketType: { select: { name: true } },
-            guestLink: { select: { guestEmail: true, guestName: true } },
-          },
-        });
-      } else {
-        throw err;
-      }
-    }
+      },
+      orderBy: { purchasedAt: "desc" },
+      select: {
+        id: true,
+        pricePaid: true,
+        totalPaidCents: true,
+        status: true,
+        purchasedAt: true,
+        userId: true,
+        stripePaymentIntentId: true,
+        ticketType: { select: { name: true } },
+        guestLink: { select: { guestEmail: true, guestName: true } },
+      },
+    });
 
     const userIds = tickets.map((t) => t.userId).filter(Boolean) as string[];
     const profiles = userIds.length

@@ -24,7 +24,7 @@ type Body = {
   address?: string | null;
   templateType?: string;
   categories?: string[];
-  feeMode?: "ON_TOP" | "INCLUDED" | "ADDED";
+  feeMode?: "ADDED" | "INCLUDED";
   refundFeePayer?: RefundFeePayer;
   ticketTypes?: TicketInput[];
   padel?: unknown; // ignorado para já, usamos defaults globais
@@ -113,7 +113,7 @@ export async function POST(req: NextRequest) {
 
     const locationCity = body.locationCity?.trim() || club.city?.trim() || "";
     if (!locationCity) return NextResponse.json({ ok: false, error: "Cidade é obrigatória." }, { status: 400 });
-    // Permitimos cidades fora da whitelist para compatibilidade com dados existentes
+    // Permitimos cidades fora da whitelist
 
     const ticketTypesInput = Array.isArray(body.ticketTypes) ? body.ticketTypes : [];
     const ticketTypes = ticketTypesInput
@@ -241,15 +241,7 @@ export async function POST(req: NextRequest) {
 
     // Config Padel v2 (defaults globais + versionamento de formato)
     const formatValue: PadelFormat = "GRUPOS_ELIMINATORIAS";
-    const fallbackFormat: Record<PadelFormat, PadelFormat> = {
-      TODOS_CONTRA_TODOS: "TODOS_CONTRA_TODOS",
-      QUADRO_ELIMINATORIO: "QUADRO_ELIMINATORIO",
-      GRUPOS_ELIMINATORIAS: "GRUPOS_ELIMINATORIAS",
-      CAMPEONATO_LIGA: "TODOS_CONTRA_TODOS",
-      QUADRO_AB: "QUADRO_ELIMINATORIO",
-      NON_STOP: "TODOS_CONTRA_TODOS",
-    };
-    const formatEffective = fallbackFormat[formatValue];
+    const formatEffective = formatValue;
     const generationVersion = "v1-groups-ko";
     const mergedAdvancedSettings = {
       ...advancedSettings,

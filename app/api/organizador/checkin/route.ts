@@ -2,7 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { EntitlementStatus, CheckinResultCode, OrganizerMemberRole } from "@prisma/client";
+import {
+  EntitlementStatus,
+  CheckinResultCode,
+  OrganizerMemberRole,
+  StaffStatus,
+  StaffScope,
+} from "@prisma/client";
 import { buildDefaultCheckinWindow, isOutsideWindow } from "@/lib/checkin/policy";
 
 type Body = { qrToken?: string; eventId?: number; deviceId?: string };
@@ -30,11 +36,27 @@ async function ensureOrganizer(userId: string, eventId: number) {
     where: { organizerId_userId: { organizerId: event.organizerId, userId } },
     select: { id: true, role: true },
   });
-  if (!membership) return { ok: false as const, reason: "FORBIDDEN_CHECKIN_ACCESS" };
-  if (membership.role === OrganizerMemberRole.VIEWER) {
-    return { ok: false as const, reason: "FORBIDDEN_CHECKIN_ACCESS" };
+  if (membership && membership.role !== OrganizerMemberRole.VIEWER) {
+    return { ok: true as const, isAdmin };
   }
-  return { ok: true as const, isAdmin };
+
+  const staffAssignment = await prisma.staffAssignment.findFirst({
+    where: {
+      userId,
+      status: StaffStatus.ACCEPTED,
+      revokedAt: null,
+      OR: [
+        { scope: StaffScope.GLOBAL, organizerId: event.organizerId },
+        { scope: StaffScope.EVENT, eventId },
+      ],
+    },
+    select: { id: true },
+  });
+  if (staffAssignment) {
+    return { ok: true as const, isAdmin };
+  }
+
+  return { ok: false as const, reason: "FORBIDDEN_CHECKIN_ACCESS" };
 }
 
 export async function POST(req: NextRequest) {
@@ -79,7 +101,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ code: CheckinResultCode.OUTSIDE_WINDOW }, { status: 200 });
   }
 
-  if (ent.eventId && ent.eventId !== eventId) {
+  if (!ent.eventId || ent.eventId !== eventId) {
     return NextResponse.json({ code: CheckinResultCode.NOT_ALLOWED }, { status: 200 });
   }
 

@@ -9,16 +9,38 @@ import { NotificationBell } from "./notifications/NotificationBell";
 import { supabaseBrowser } from "@/lib/supabaseBrowser";
 import { OryaPortal } from "./OryaPortal";
 
-type Suggestion = {
+type SearchEvent = {
   id: number;
-  type: "EVENT" | "EXPERIENCE";
   slug: string;
   title: string;
   startsAt: string | null;
   locationName: string | null;
   locationCity: string | null;
   coverImageUrl: string | null;
+  priceFrom: number | null;
+  isFree: boolean;
 };
+
+type SearchOrganizer = {
+  id: number;
+  username: string | null;
+  publicName: string | null;
+  businessName: string | null;
+  brandingAvatarUrl: string | null;
+  organizationCategory: string | null;
+  city: string | null;
+  isFollowing?: boolean;
+};
+
+type SearchUser = {
+  id: string;
+  username: string | null;
+  fullName: string | null;
+  avatarUrl: string | null;
+  isFollowing?: boolean;
+};
+
+type SearchTab = "all" | "events" | "organizers" | "users";
 
 export function Navbar() {
   const router = useRouter();
@@ -28,11 +50,16 @@ export function Navbar() {
   const { user, profile, roles, isLoading } = useUser();
 
   const [isVisible, setIsVisible] = useState(true);
+  const [isAtTop, setIsAtTop] = useState(true);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  const [eventResults, setEventResults] = useState<SearchEvent[]>([]);
+  const [organizerResults, setOrganizerResults] = useState<SearchOrganizer[]>([]);
+  const [userResults, setUserResults] = useState<SearchUser[]>([]);
   const [isSuggestLoading, setIsSuggestLoading] = useState(false);
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
+  const [activeSearchTab, setActiveSearchTab] = useState<SearchTab>("all");
+  const [followPending, setFollowPending] = useState<Record<string, boolean>>({});
   const [hydratedPathname, setHydratedPathname] = useState<string | null>(null);
   const [lastOrganizerUsername, setLastOrganizerUsername] = useState<string | null>(null);
   const profileMenuRef = useRef<HTMLDivElement | null>(null);
@@ -81,7 +108,8 @@ export function Navbar() {
 
     const handleScroll = () => {
       const currentY = window.scrollY || 0;
-      const atTop = currentY < 10;
+      const atTop = currentY < 12;
+      setIsAtTop((prev) => (prev === atTop ? prev : atTop));
 
       const prevY = lastScrollYRef.current;
 
@@ -124,6 +152,12 @@ export function Navbar() {
     return () => {
       document.body.style.overflow = originalOverflow;
     };
+  }, [isSearchOpen]);
+
+  useEffect(() => {
+    if (isSearchOpen) {
+      setActiveSearchTab("all");
+    }
   }, [isSearchOpen]);
 
   useEffect(() => {
@@ -195,8 +229,8 @@ export function Navbar() {
     }
   };
 
-  const buildSlug = (item: Pick<Suggestion, "type" | "slug">) =>
-    item.type === "EXPERIENCE" ? `/experiencias/${item.slug}` : `/eventos/${item.slug}`;
+  const buildEventHref = (slug: string) => `/eventos/${slug}`;
+  const buildProfileHref = (username?: string | null) => (username ? `/${username}` : "/me");
 
   // Sugestões ao digitar (tipo DICE)
   useEffect(() => {
@@ -205,45 +239,82 @@ export function Navbar() {
 
     async function load() {
       const q = searchQuery.trim();
-      if (q.length < 2) {
-        setSuggestions([]);
+      if (q.length < 1) {
+        setEventResults([]);
+        setOrganizerResults([]);
+        setUserResults([]);
+        setIsSuggestLoading(false);
         return;
       }
       try {
         setIsSuggestLoading(true);
-        const res = await fetch(`/api/explorar/list?q=${encodeURIComponent(q)}&limit=6`, {
-          cache: "no-store",
-          signal: controller.signal,
-        });
-        if (!res.ok) throw new Error("erro sugestões");
-        const data = await res.json();
+        const query = encodeURIComponent(q);
+        const [eventsData, usersData, organizersData] = await Promise.all([
+          fetch(`/api/explorar/list?q=${query}&limit=6`, {
+            cache: "no-store",
+            signal: controller.signal,
+          })
+            .then((res) => (res.ok ? res.json() : null))
+            .catch(() => null),
+          fetch(`/api/users/search?q=${query}&limit=6`, {
+            cache: "no-store",
+            signal: controller.signal,
+          })
+            .then((res) => (res.ok ? res.json() : null))
+            .catch(() => null),
+          fetch(`/api/organizers/search?q=${query}&limit=6`, {
+            cache: "no-store",
+            signal: controller.signal,
+          })
+            .then((res) => (res.ok ? res.json() : null))
+            .catch(() => null),
+        ]);
+
         if (!active) return;
-        const items = Array.isArray(data?.items)
-          ? (data.items as Array<{
+
+        const eventItems = Array.isArray(eventsData?.items)
+          ? (eventsData.items as Array<{
               id: number;
-              type: "EVENT" | "EXPERIENCE";
               slug: string;
               title: string;
               startsAt?: string | null;
               location?: { name?: string | null; city?: string | null };
               coverImageUrl?: string | null;
+              priceFrom?: number | null;
+              isFree?: boolean;
             }>)
           : [];
-        setSuggestions(
-          items.map((it) => ({
+
+        const userItems = Array.isArray(usersData?.results)
+          ? (usersData.results as SearchUser[])
+          : [];
+
+        const organizerItems = Array.isArray(organizersData?.results)
+          ? (organizersData.results as SearchOrganizer[])
+          : [];
+
+        setEventResults(
+          eventItems.map((it) => ({
             id: it.id,
-            type: it.type,
             slug: it.slug,
             title: it.title,
             startsAt: it.startsAt ?? null,
             locationName: it.location?.name ?? null,
             locationCity: it.location?.city ?? null,
             coverImageUrl: it.coverImageUrl ?? null,
+            priceFrom: typeof it.priceFrom === "number" ? it.priceFrom : null,
+            isFree: Boolean(it.isFree),
           })),
         );
+        setUserResults(userItems);
+        setOrganizerResults(organizerItems);
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") return;
-        if (active) setSuggestions([]);
+        if (active) {
+          setEventResults([]);
+          setOrganizerResults([]);
+          setUserResults([]);
+        }
       } finally {
         if (active) setIsSuggestLoading(false);
       }
@@ -268,13 +339,112 @@ export function Navbar() {
   }, [user, profile, pathname, openAuthModal, isAuthOpen, inAuthPage]);
 
   const isAuthenticated = !!user;
-  const isOrganizer = roles?.includes("organizer");
   const userLabel =
     profile?.username ||
     profile?.fullName ||
     (typeof user?.email === "string" ? user.email : "");
   const userInitial =
     (userLabel || "O").trim().charAt(0).toUpperCase() || "O";
+
+  const formatEventDate = (startsAt: string | null) =>
+    startsAt
+      ? new Date(startsAt).toLocaleString("pt-PT", {
+          weekday: "short",
+          day: "2-digit",
+          month: "short",
+          hour: "2-digit",
+          minute: "2-digit",
+        })
+      : "Data a anunciar";
+
+  const hasResults =
+    eventResults.length > 0 || organizerResults.length > 0 || userResults.length > 0;
+  const normalizedQuery = searchQuery.trim();
+  const hasActiveQuery = normalizedQuery.length >= 1;
+
+  const setFollowPendingFlag = (key: string, value: boolean) => {
+    setFollowPending((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const updateUserFollowState = (targetId: string, next: boolean) => {
+    setUserResults((prev) =>
+      prev.map((item) =>
+        item.id === targetId ? { ...item, isFollowing: next } : item,
+      ),
+    );
+  };
+
+  const updateOrganizerFollowState = (targetId: number, next: boolean) => {
+    setOrganizerResults((prev) =>
+      prev.map((item) =>
+        item.id === targetId ? { ...item, isFollowing: next } : item,
+      ),
+    );
+  };
+
+  const ensureAuthForFollow = () => {
+    if (isAuthenticated) return true;
+    const redirect = pathname && pathname !== "/" ? pathname : "/";
+    openAuthModal({ mode: "login", redirectTo: redirect });
+    return false;
+  };
+
+  const toggleUserFollow = async (targetId: string, next: boolean) => {
+    if (!ensureAuthForFollow()) return;
+    const key = `user_${targetId}`;
+    setFollowPendingFlag(key, true);
+    updateUserFollowState(targetId, next);
+    try {
+      const res = await fetch(next ? "/api/social/follow" : "/api/social/unfollow", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ targetUserId: targetId }),
+      });
+      if (!res.ok) {
+        updateUserFollowState(targetId, !next);
+      }
+    } catch {
+      updateUserFollowState(targetId, !next);
+    } finally {
+      setFollowPendingFlag(key, false);
+    }
+  };
+
+  const toggleOrganizerFollow = async (targetId: number, next: boolean) => {
+    if (!ensureAuthForFollow()) return;
+    const key = `org_${targetId}`;
+    setFollowPendingFlag(key, true);
+    updateOrganizerFollowState(targetId, next);
+    try {
+      const res = await fetch(
+        next ? "/api/social/follow-organizer" : "/api/social/unfollow-organizer",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ organizerId: targetId }),
+        },
+      );
+      if (!res.ok) {
+        updateOrganizerFollowState(targetId, !next);
+      }
+    } catch {
+      updateOrganizerFollowState(targetId, !next);
+    } finally {
+      setFollowPendingFlag(key, false);
+    }
+  };
+
+  const goTo = (href: string) => {
+    setIsSearchOpen(false);
+    router.push(href);
+  };
+
+  const searchTabs: Array<{ key: SearchTab; label: string }> = [
+    { key: "all", label: "Global" },
+    { key: "events", label: "Eventos" },
+    { key: "organizers", label: "Organizadores" },
+    { key: "users", label: "Utilizadores" },
+  ];
 
   useEffect(() => {
     try {
@@ -292,7 +462,13 @@ export function Navbar() {
           isVisible ? "translate-y-0" : "-translate-y-full"
         } ${shouldHide ? "hidden" : ""}`}
       >
-        <div className="relative flex w-full items-center gap-4 rounded-b-[28px] border-b border-white/10 bg-[linear-gradient(120deg,rgba(8,10,20,0.38),rgba(8,10,20,0.52))] px-4 py-4 shadow-[0_16px_40px_rgba(0,0,0,0.45)] backdrop-blur-[18px] transition-all duration-300 md:px-6 md:py-5 lg:px-8">
+        <div
+          className={`relative flex w-full items-center gap-4 rounded-b-[28px] border-b px-4 py-4 transition-all duration-300 md:px-6 md:py-5 lg:px-8 ${
+            isAtTop
+              ? "border-transparent bg-transparent shadow-none backdrop-blur-[6px]"
+              : "border-white/10 bg-[linear-gradient(120deg,rgba(8,10,20,0.38),rgba(8,10,20,0.52))] shadow-[0_16px_40px_rgba(0,0,0,0.45)] backdrop-blur-[18px]"
+          }`}
+        >
           {/* Logo + link explorar */}
           <div className="flex flex-1 items-center gap-3">
             <Logo />
@@ -430,7 +606,7 @@ export function Navbar() {
                     </Link>
                     {lastOrganizerUsername && (
                       <Link
-                        href={`/o/${lastOrganizerUsername}`}
+                        href={`/${lastOrganizerUsername}`}
                         onClick={() => setIsProfileMenuOpen(false)}
                         className="flex w-full items-center justify-between rounded-xl px-2.5 py-2 text-left hover:bg-white/8"
                       >
@@ -465,7 +641,7 @@ export function Navbar() {
       {/* Overlay de pesquisa estilo full-screen, com sugestões */}
       {isSearchOpen && (
         <div
-              className="fixed inset-0 z-40 bg-[radial-gradient(circle_at_10%_20%,rgba(255,0,200,0.07),transparent_35%),radial-gradient(circle_at_80%_0%,rgba(107,255,255,0.08),transparent_30%),rgba(3,5,12,0.82)] backdrop-blur-[18px]"
+              className="fixed inset-0 z-40 bg-black/25 backdrop-blur-[28px] backdrop-saturate-150"
           role="dialog"
           aria-modal="true"
           onClick={(e) => {
@@ -476,12 +652,12 @@ export function Navbar() {
         >
           <div ref={searchPanelRef} className="mx-auto mt-24 md:mt-28 max-w-3xl px-4">
             <div
-              className="rounded-3xl border border-white/14 bg-[radial-gradient(circle_at_12%_0%,rgba(255,0,200,0.1),transparent_38%),radial-gradient(circle_at_88%_0%,rgba(107,255,255,0.12),transparent_34%),linear-gradient(120deg,rgba(6,10,22,0.94),rgba(8,10,20,0.9),rgba(6,9,16,0.94))] p-4 shadow-[0_32px_90px_rgba(0,0,0,0.9)] backdrop-blur-2xl"
+              className="rounded-3xl border border-white/14 bg-[radial-gradient(circle_at_12%_0%,rgba(255,0,200,0.14),transparent_40%),radial-gradient(circle_at_88%_0%,rgba(107,255,255,0.16),transparent_36%),linear-gradient(120deg,rgba(8,10,20,0.75),rgba(8,10,20,0.58),rgba(8,10,20,0.7))] p-4 shadow-[0_28px_80px_rgba(0,0,0,0.75)] backdrop-blur-2xl"
               aria-label="Pesquisa de eventos ORYA"
             >
               <form
                 onSubmit={handleSubmitSearch}
-                className="flex items-center gap-3 rounded-2xl border border-white/16 bg-[linear-gradient(120deg,rgba(255,0,200,0.08),rgba(107,255,255,0.08)),rgba(255,255,255,0.03)] px-4 py-2.5 shadow-[0_14px_40px_rgba(0,0,0,0.55)] backdrop-blur-xl"
+                className="flex items-center gap-3 rounded-2xl border border-white/16 bg-[linear-gradient(120deg,rgba(255,0,200,0.08),rgba(107,255,255,0.08)),rgba(8,10,20,0.22)] px-4 py-2.5 shadow-[0_12px_32px_rgba(0,0,0,0.45)] backdrop-blur-2xl"
               >
                 <span className="flex h-6 w-6 items-center justify-center rounded-full border border-white/30 text-[12px] text-white/80">
                   ⌕
@@ -491,6 +667,7 @@ export function Navbar() {
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="O que queres fazer hoje?"
                   className="flex-1 bg-transparent text-base text-white placeholder:text-white/65 focus:outline-none"
+                  autoFocus
                 />
                 <button
                   type="button"
@@ -501,66 +678,448 @@ export function Navbar() {
                 </button>
               </form>
 
-              <div className="mt-4 grid gap-4 md:grid-cols-3">
-                <div className="md:col-span-3 rounded-2xl border border-white/12 bg-[linear-gradient(140deg,rgba(255,255,255,0.05),rgba(255,255,255,0.02))] p-3 shadow-[0_18px_60px_rgba(0,0,0,0.45)]">
+              <div className="mt-4">
+                <div
+                  className="flex flex-wrap items-center gap-2 rounded-full border border-white/12 bg-white/5 p-1 text-[11px] text-white/70"
+                  role="tablist"
+                  aria-label="Resultados da pesquisa"
+                >
+                  {searchTabs.map((tab) => (
+                    <button
+                      key={tab.key}
+                      type="button"
+                      onClick={() => setActiveSearchTab(tab.key)}
+                      role="tab"
+                      aria-selected={activeSearchTab === tab.key}
+                      className={`rounded-full px-3 py-1.5 font-semibold transition ${
+                        activeSearchTab === tab.key
+                          ? "bg-white/15 text-white shadow-[0_0_18px_rgba(255,255,255,0.15)]"
+                          : "text-white/70 hover:text-white hover:bg-white/10"
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="mt-4 rounded-2xl border border-white/12 bg-[linear-gradient(140deg,rgba(255,255,255,0.05),rgba(255,255,255,0.02))] p-3 shadow-[0_18px_60px_rgba(0,0,0,0.45)]">
                   <div className="flex items-center justify-between text-[11px] text-white/75">
                     <span>Resultados</span>
-                    {isSuggestLoading && <span className="animate-pulse text-white/65">a carregar…</span>}
+                    {isSuggestLoading && (
+                      <span className="animate-pulse text-white/65">a carregar…</span>
+                    )}
                   </div>
-                  <div className="mt-2 space-y-2">
-                  {suggestions.length === 0 && !isSuggestLoading && (
-                    <p className="text-[11px] text-white/70">
-                      Começa a escrever para ver eventos, locais e cidades.
-                    </p>
-                  )}
-                  {suggestions.map((item) => (
-                    <button
-                      key={`${item.type}-${item.id}`}
-                      type="button"
-                      onClick={() => {
-                        setIsSearchOpen(false);
-                          router.push(buildSlug(item));
-                        }}
-                        className="w-full rounded-xl border border-white/12 bg-[linear-gradient(120deg,rgba(255,255,255,0.04),rgba(8,10,22,0.7))] p-2.5 text-left hover:border-white/20 hover:bg-white/8 transition flex gap-3 shadow-[0_12px_40px_rgba(0,0,0,0.5)]"
-                      >
-                        <div className="h-14 w-14 overflow-hidden rounded-lg border border-white/10 bg-[radial-gradient(circle_at_30%_30%,rgba(255,0,200,0.14),transparent_45%),radial-gradient(circle_at_70%_70%,rgba(107,255,255,0.14),transparent_50%),#0b0f1b]">
-                          {item.coverImageUrl ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img
-                              src={item.coverImageUrl}
-                              alt={item.title}
-                              className="h-full w-full object-cover"
-                            />
-                          ) : (
-                            <div className="flex h-full w-full items-center justify-center text-[10px] font-semibold uppercase tracking-wide text-white/55">
-                              ORYA
+
+                  <div className="mt-3 max-h-[60vh] space-y-4 overflow-y-auto pr-1">
+                    {!hasActiveQuery && (
+                      <p className="text-[11px] text-white/70">
+                        Começa a escrever para veres eventos, organizadores e utilizadores.
+                      </p>
+                    )}
+
+                    {hasActiveQuery && !isSuggestLoading && !hasResults && (
+                      <p className="text-[11px] text-white/70">
+                        Sem resultados para “{normalizedQuery}”.
+                      </p>
+                    )}
+
+                    {hasActiveQuery && activeSearchTab === "all" && (
+                      <div className="space-y-4">
+                        <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                          <div className="flex items-center justify-between text-[11px] text-white/75">
+                            <span>Eventos</span>
+                            {eventResults.length > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => setActiveSearchTab("events")}
+                                className="rounded-full border border-white/12 bg-white/5 px-2 py-0.5 text-[10px] text-white/70 hover:bg-white/10"
+                              >
+                                Ver tudo
+                              </button>
+                            )}
+                          </div>
+                          <div className="mt-2 space-y-2">
+                            {eventResults.slice(0, 3).map((item) => (
+                              <button
+                                key={`event-${item.id}`}
+                                type="button"
+                                onClick={() => goTo(buildEventHref(item.slug))}
+                                className="w-full rounded-xl border border-white/12 bg-[linear-gradient(120deg,rgba(255,255,255,0.04),rgba(8,10,22,0.7))] p-2.5 text-left hover:border-white/20 hover:bg-white/8 transition flex gap-3"
+                              >
+                                <div className="h-12 w-12 overflow-hidden rounded-lg border border-white/10 bg-[radial-gradient(circle_at_30%_30%,rgba(255,0,200,0.14),transparent_45%),radial-gradient(circle_at_70%_70%,rgba(107,255,255,0.14),transparent_50%),#0b0f1b]">
+                                  {item.coverImageUrl ? (
+                                    // eslint-disable-next-line @next/next/no-img-element
+                                    <img
+                                      src={item.coverImageUrl}
+                                      alt={item.title}
+                                      className="h-full w-full object-cover"
+                                    />
+                                  ) : (
+                                    <div className="flex h-full w-full items-center justify-center text-[10px] font-semibold uppercase tracking-wide text-white/55">
+                                      ORYA
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-[12px] font-semibold text-white line-clamp-1">
+                                    {item.title}
+                                  </p>
+                                  <p className="text-[10px] text-white/80 line-clamp-1">
+                                    {item.locationName || item.locationCity || "Local a anunciar"}
+                                  </p>
+                                  <p className="text-[10px] text-white/70">
+                                    {formatEventDate(item.startsAt)}
+                                  </p>
+                                </div>
+                                <div className="flex flex-col items-end gap-1 text-[10px] text-white/70">
+                                  <span>
+                                    {item.isFree
+                                      ? "Grátis"
+                                      : item.priceFrom !== null
+                                        ? `Desde ${item.priceFrom.toFixed(2)} €`
+                                        : "Preço a anunciar"}
+                                  </span>
+                                  <span className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[10px] text-white/85">
+                                    Ver
+                                  </span>
+                                </div>
+                              </button>
+                            ))}
+                            {eventResults.length === 0 && (
+                              <p className="text-[11px] text-white/60">Nenhum evento encontrado.</p>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                          <div className="flex items-center justify-between text-[11px] text-white/75">
+                            <span>Organizadores</span>
+                            {organizerResults.length > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => setActiveSearchTab("organizers")}
+                                className="rounded-full border border-white/12 bg-white/5 px-2 py-0.5 text-[10px] text-white/70 hover:bg-white/10"
+                              >
+                                Ver tudo
+                              </button>
+                            )}
+                          </div>
+                          <div className="mt-2 space-y-2">
+                            {organizerResults.slice(0, 3).map((item) => {
+                              const isFollowing = Boolean(item.isFollowing);
+                              const pending = followPending[`org_${item.id}`];
+                              const displayName =
+                                item.publicName?.trim() ||
+                                item.businessName?.trim() ||
+                                item.username ||
+                                "Organizador ORYA";
+                              return (
+                                <div
+                                  key={`org-${item.id}`}
+                                  className="flex items-center gap-3 rounded-xl border border-white/12 bg-[linear-gradient(120deg,rgba(255,255,255,0.04),rgba(8,10,22,0.7))] p-2.5"
+                                >
+                                  <button
+                                    type="button"
+                                    onClick={() => goTo(buildProfileHref(item.username))}
+                                    className="flex flex-1 items-center gap-3 text-left"
+                                  >
+                                    <div className="h-12 w-12 overflow-hidden rounded-full border border-white/12 bg-[radial-gradient(circle_at_30%_30%,rgba(255,0,200,0.14),transparent_45%),radial-gradient(circle_at_70%_70%,rgba(107,255,255,0.14),transparent_50%),#0b0f1b]">
+                                      {item.brandingAvatarUrl ? (
+                                        // eslint-disable-next-line @next/next/no-img-element
+                                        <img
+                                          src={item.brandingAvatarUrl}
+                                          alt={displayName}
+                                          className="h-full w-full object-cover"
+                                        />
+                                      ) : (
+                                        <div className="flex h-full w-full items-center justify-center text-[10px] font-semibold uppercase tracking-wide text-white/55">
+                                          ORYA
+                                        </div>
+                                      )}
+                                    </div>
+                                    <div className="min-w-0">
+                                      <p className="text-[12px] font-semibold text-white line-clamp-1">
+                                        {displayName}
+                                      </p>
+                                      <p className="text-[10px] text-white/70 line-clamp-1">
+                                        {item.username ? `@${item.username}` : item.city || "Organizador"}
+                                      </p>
+                                    </div>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={pending}
+                                    onClick={() => toggleOrganizerFollow(item.id, !isFollowing)}
+                                    className={`rounded-full px-3 py-1 text-[10px] font-semibold transition ${
+                                      isFollowing
+                                        ? "border border-emerald-300/40 bg-emerald-400/15 text-emerald-100"
+                                        : "border border-white/20 bg-white/10 text-white/80 hover:bg-white/15"
+                                    } ${pending ? "opacity-60" : ""}`}
+                                  >
+                                    {pending ? "…" : isFollowing ? "A seguir" : "Seguir"}
+                                  </button>
+                                </div>
+                              );
+                            })}
+                            {organizerResults.length === 0 && (
+                              <p className="text-[11px] text-white/60">Nenhum organizador encontrado.</p>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                          <div className="flex items-center justify-between text-[11px] text-white/75">
+                            <span>Utilizadores</span>
+                            {userResults.length > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => setActiveSearchTab("users")}
+                                className="rounded-full border border-white/12 bg-white/5 px-2 py-0.5 text-[10px] text-white/70 hover:bg-white/10"
+                              >
+                                Ver tudo
+                              </button>
+                            )}
+                          </div>
+                          <div className="mt-2 space-y-2">
+                            {userResults.slice(0, 3).map((item) => {
+                              const isFollowing = Boolean(item.isFollowing);
+                              const pending = followPending[`user_${item.id}`];
+                              const displayName =
+                                item.fullName?.trim() || item.username || "Utilizador ORYA";
+                              return (
+                                <div
+                                  key={`user-${item.id}`}
+                                  className="flex items-center gap-3 rounded-xl border border-white/12 bg-[linear-gradient(120deg,rgba(255,255,255,0.04),rgba(8,10,22,0.7))] p-2.5"
+                                >
+                                  <button
+                                    type="button"
+                                    onClick={() => goTo(buildProfileHref(item.username))}
+                                    className="flex flex-1 items-center gap-3 text-left"
+                                  >
+                                    <div className="h-12 w-12 overflow-hidden rounded-full border border-white/12 bg-[radial-gradient(circle_at_30%_30%,rgba(255,0,200,0.14),transparent_45%),radial-gradient(circle_at_70%_70%,rgba(107,255,255,0.14),transparent_50%),#0b0f1b]">
+                                      {item.avatarUrl ? (
+                                        // eslint-disable-next-line @next/next/no-img-element
+                                        <img
+                                          src={item.avatarUrl}
+                                          alt={displayName}
+                                          className="h-full w-full object-cover"
+                                        />
+                                      ) : (
+                                        <div className="flex h-full w-full items-center justify-center text-[10px] font-semibold uppercase tracking-wide text-white/55">
+                                          ORYA
+                                        </div>
+                                      )}
+                                    </div>
+                                    <div className="min-w-0">
+                                      <p className="text-[12px] font-semibold text-white line-clamp-1">
+                                        {displayName}
+                                      </p>
+                                      <p className="text-[10px] text-white/70 line-clamp-1">
+                                        {item.username ? `@${item.username}` : "Utilizador"}
+                                      </p>
+                                    </div>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={pending}
+                                    onClick={() => toggleUserFollow(item.id, !isFollowing)}
+                                    className={`rounded-full px-3 py-1 text-[10px] font-semibold transition ${
+                                      isFollowing
+                                        ? "border border-emerald-300/40 bg-emerald-400/15 text-emerald-100"
+                                        : "border border-white/20 bg-white/10 text-white/80 hover:bg-white/15"
+                                    } ${pending ? "opacity-60" : ""}`}
+                                  >
+                                    {pending ? "…" : isFollowing ? "A seguir" : "Seguir"}
+                                  </button>
+                                </div>
+                              );
+                            })}
+                            {userResults.length === 0 && (
+                              <p className="text-[11px] text-white/60">Nenhum utilizador encontrado.</p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {hasActiveQuery && activeSearchTab === "events" && (
+                      <div className="space-y-2">
+                        {eventResults.map((item) => (
+                          <button
+                            key={`event-tab-${item.id}`}
+                            type="button"
+                            onClick={() => goTo(buildEventHref(item.slug))}
+                            className="w-full rounded-xl border border-white/12 bg-[linear-gradient(120deg,rgba(255,255,255,0.04),rgba(8,10,22,0.7))] p-2.5 text-left hover:border-white/20 hover:bg-white/8 transition flex gap-3"
+                          >
+                            <div className="h-12 w-12 overflow-hidden rounded-lg border border-white/10 bg-[radial-gradient(circle_at_30%_30%,rgba(255,0,200,0.14),transparent_45%),radial-gradient(circle_at_70%_70%,rgba(107,255,255,0.14),transparent_50%),#0b0f1b]">
+                              {item.coverImageUrl ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img
+                                  src={item.coverImageUrl}
+                                  alt={item.title}
+                                  className="h-full w-full object-cover"
+                                />
+                              ) : (
+                                <div className="flex h-full w-full items-center justify-center text-[10px] font-semibold uppercase tracking-wide text-white/55">
+                                  ORYA
+                                </div>
+                              )}
                             </div>
-                          )}
-                        </div>
-                        <div className="flex-1">
-                          <p className="text-[12px] font-semibold text-white line-clamp-1">
-                            {item.title}
-                          </p>
-                          <p className="text-[10px] text-white/80 line-clamp-1">
-                            {item.locationName || item.locationCity || "Local a anunciar"}
-                          </p>
-                          <p className="text-[10px] text-white/75">
-                            {item.startsAt
-                              ? new Date(item.startsAt).toLocaleString("pt-PT", {
-                                  weekday: "short",
-                                  day: "2-digit",
-                                  month: "short",
-                                  hour: "2-digit",
-                                  minute: "2-digit",
-                                })
-                              : "Data a anunciar"}
-                          </p>
-                        </div>
-                        <span className="self-center rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[10px] text-white/85">
-                          {item.type === "EXPERIENCE" ? "Experiência" : "Evento"}
-                        </span>
-                      </button>
-                    ))}
+                            <div className="flex-1 min-w-0">
+                              <p className="text-[12px] font-semibold text-white line-clamp-1">
+                                {item.title}
+                              </p>
+                              <p className="text-[10px] text-white/80 line-clamp-1">
+                                {item.locationName || item.locationCity || "Local a anunciar"}
+                              </p>
+                              <p className="text-[10px] text-white/70">
+                                {formatEventDate(item.startsAt)}
+                              </p>
+                            </div>
+                            <div className="flex flex-col items-end gap-1 text-[10px] text-white/70">
+                              <span>
+                                {item.isFree
+                                  ? "Grátis"
+                                  : item.priceFrom !== null
+                                    ? `Desde ${item.priceFrom.toFixed(2)} €`
+                                    : "Preço a anunciar"}
+                              </span>
+                              <span className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[10px] text-white/85">
+                                Ver
+                              </span>
+                            </div>
+                          </button>
+                        ))}
+                        {eventResults.length === 0 && (
+                          <p className="text-[11px] text-white/60">Nenhum evento encontrado.</p>
+                        )}
+                      </div>
+                    )}
+
+                    {hasActiveQuery && activeSearchTab === "organizers" && (
+                      <div className="space-y-2">
+                        {organizerResults.map((item) => {
+                          const isFollowing = Boolean(item.isFollowing);
+                          const pending = followPending[`org_${item.id}`];
+                          const displayName =
+                            item.publicName?.trim() ||
+                            item.businessName?.trim() ||
+                            item.username ||
+                            "Organizador ORYA";
+                          return (
+                            <div
+                              key={`org-tab-${item.id}`}
+                              className="flex items-center gap-3 rounded-xl border border-white/12 bg-[linear-gradient(120deg,rgba(255,255,255,0.04),rgba(8,10,22,0.7))] p-2.5"
+                            >
+                              <button
+                                type="button"
+                                onClick={() => goTo(buildProfileHref(item.username))}
+                                className="flex flex-1 items-center gap-3 text-left"
+                              >
+                                <div className="h-12 w-12 overflow-hidden rounded-full border border-white/12 bg-[radial-gradient(circle_at_30%_30%,rgba(255,0,200,0.14),transparent_45%),radial-gradient(circle_at_70%_70%,rgba(107,255,255,0.14),transparent_50%),#0b0f1b]">
+                                  {item.brandingAvatarUrl ? (
+                                    // eslint-disable-next-line @next/next/no-img-element
+                                    <img
+                                      src={item.brandingAvatarUrl}
+                                      alt={displayName}
+                                      className="h-full w-full object-cover"
+                                    />
+                                  ) : (
+                                    <div className="flex h-full w-full items-center justify-center text-[10px] font-semibold uppercase tracking-wide text-white/55">
+                                      ORYA
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="min-w-0">
+                                  <p className="text-[12px] font-semibold text-white line-clamp-1">
+                                    {displayName}
+                                  </p>
+                                  <p className="text-[10px] text-white/70 line-clamp-1">
+                                    {item.username ? `@${item.username}` : item.city || "Organizador"}
+                                  </p>
+                                </div>
+                              </button>
+                              <button
+                                type="button"
+                                disabled={pending}
+                                onClick={() => toggleOrganizerFollow(item.id, !isFollowing)}
+                                className={`rounded-full px-3 py-1 text-[10px] font-semibold transition ${
+                                  isFollowing
+                                    ? "border border-emerald-300/40 bg-emerald-400/15 text-emerald-100"
+                                    : "border border-white/20 bg-white/10 text-white/80 hover:bg-white/15"
+                                } ${pending ? "opacity-60" : ""}`}
+                              >
+                                {pending ? "…" : isFollowing ? "A seguir" : "Seguir"}
+                              </button>
+                            </div>
+                          );
+                        })}
+                        {organizerResults.length === 0 && (
+                          <p className="text-[11px] text-white/60">Nenhum organizador encontrado.</p>
+                        )}
+                      </div>
+                    )}
+
+                    {hasActiveQuery && activeSearchTab === "users" && (
+                      <div className="space-y-2">
+                        {userResults.map((item) => {
+                          const isFollowing = Boolean(item.isFollowing);
+                          const pending = followPending[`user_${item.id}`];
+                          const displayName =
+                            item.fullName?.trim() || item.username || "Utilizador ORYA";
+                          return (
+                            <div
+                              key={`user-tab-${item.id}`}
+                              className="flex items-center gap-3 rounded-xl border border-white/12 bg-[linear-gradient(120deg,rgba(255,255,255,0.04),rgba(8,10,22,0.7))] p-2.5"
+                            >
+                              <button
+                                type="button"
+                                onClick={() => goTo(buildProfileHref(item.username))}
+                                className="flex flex-1 items-center gap-3 text-left"
+                              >
+                                <div className="h-12 w-12 overflow-hidden rounded-full border border-white/12 bg-[radial-gradient(circle_at_30%_30%,rgba(255,0,200,0.14),transparent_45%),radial-gradient(circle_at_70%_70%,rgba(107,255,255,0.14),transparent_50%),#0b0f1b]">
+                                  {item.avatarUrl ? (
+                                    // eslint-disable-next-line @next/next/no-img-element
+                                    <img
+                                      src={item.avatarUrl}
+                                      alt={displayName}
+                                      className="h-full w-full object-cover"
+                                    />
+                                  ) : (
+                                    <div className="flex h-full w-full items-center justify-center text-[10px] font-semibold uppercase tracking-wide text-white/55">
+                                      ORYA
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="min-w-0">
+                                  <p className="text-[12px] font-semibold text-white line-clamp-1">
+                                    {displayName}
+                                  </p>
+                                  <p className="text-[10px] text-white/70 line-clamp-1">
+                                    {item.username ? `@${item.username}` : "Utilizador"}
+                                  </p>
+                                </div>
+                              </button>
+                              <button
+                                type="button"
+                                disabled={pending}
+                                onClick={() => toggleUserFollow(item.id, !isFollowing)}
+                                className={`rounded-full px-3 py-1 text-[10px] font-semibold transition ${
+                                  isFollowing
+                                    ? "border border-emerald-300/40 bg-emerald-400/15 text-emerald-100"
+                                    : "border border-white/20 bg-white/10 text-white/80 hover:bg-white/15"
+                                } ${pending ? "opacity-60" : ""}`}
+                              >
+                                {pending ? "…" : isFollowing ? "A seguir" : "Seguir"}
+                              </button>
+                            </div>
+                          );
+                        })}
+                        {userResults.length === 0 && (
+                          <p className="text-[11px] text-white/60">Nenhum utilizador encontrado.</p>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

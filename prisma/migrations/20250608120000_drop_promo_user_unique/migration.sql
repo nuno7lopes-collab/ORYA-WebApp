@@ -1,4 +1,4 @@
--- Remove legacy unique constraints que impedem múltiplas redemptions por utilizador/guest
+-- Remove unique constraints que impedem múltiplas redemptions por utilizador/guest
 ALTER TABLE app_v3.promo_redemptions DROP CONSTRAINT IF EXISTS promo_redemptions_user_unique;
 ALTER TABLE app_v3.promo_redemptions DROP CONSTRAINT IF EXISTS promo_redemptions_guest_unique;
 

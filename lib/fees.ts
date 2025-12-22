@@ -1,6 +1,6 @@
 import { FeeMode } from "@prisma/client";
 
-type FeeModeInput = FeeMode | "ADDED" | "INCLUDED" | "ON_TOP";
+type FeeModeInput = FeeMode;
 
 type ComputeCombinedFeesParams = {
   amountCents: number;
@@ -23,7 +23,7 @@ export type CombinedFeesResult = {
 
 /**
  * Calcula taxa ORYA + estimativa Stripe para apresentar como "taxa da plataforma".
- * - Quando feeMode = ADDED/ON_TOP, ajusta o total para que o organizador receba aprox. o subtotal depois de ORYA + Stripe.
+ * - Quando feeMode = ADDED, ajusta o total para que o organizador receba aprox. o subtotal depois de ORYA + Stripe.
  * - Quando feeMode = INCLUDED, as taxas são deduzidas do preço base.
  */
 export function computeCombinedFees(params: ComputeCombinedFeesParams): CombinedFeesResult {
@@ -38,7 +38,7 @@ export function computeCombinedFees(params: ComputeCombinedFeesParams): Combined
   } = params;
 
   const netSubtotal = Math.max(0, Math.round(amountCents) - Math.max(0, Math.round(discountCents)));
-  const feeMode = rawFeeMode === "ON_TOP" ? FeeMode.ADDED : (rawFeeMode as FeeMode);
+  const feeMode = rawFeeMode === FeeMode.ON_TOP ? FeeMode.ADDED : (rawFeeMode as FeeMode);
 
   const oryaFeeCents =
     netSubtotal === 0
@@ -73,7 +73,7 @@ export function computeCombinedFees(params: ComputeCombinedFeesParams): Combined
     };
   }
 
-  // ADDED/ON_TOP: resolver total para que (total - orya - stripe(total)) ~= subtotal.
+  // ADDED: resolver total para que (total - orya - stripe(total)) ~= subtotal.
   const denom = 1 - stripeRate;
   const totalRaw = denom > 0 ? (netSubtotal + oryaFeeCents + stripeFixed) / denom : netSubtotal + oryaFeeCents + stripeFixed;
   const totalCents = Math.max(0, Math.round(totalRaw));

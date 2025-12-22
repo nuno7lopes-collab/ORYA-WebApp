@@ -37,7 +37,7 @@ const MOOD_BACKDROPS: Record<Mood, { light: string; dark: string }> = {
   },
 };
 
-const TAGS = ["Eventos", "Tickets", "Experiências", "Comunidade", "Vendas"];
+const TAGS = ["Eventos", "Tickets", "Comunidade", "Vendas"];
 
 function Swatch({ color, isLight }: { color: string; isLight: boolean }) {
   return (
@@ -111,7 +111,7 @@ export default function BrandTestPage() {
   const profile = {
     name: "Inês Duarte",
     handle: "@inesduarte",
-    role: "Curadora de experiências · Comunidade Aurora",
+    role: "Curadora de eventos · Comunidade Aurora",
     location: "Lisboa, PT",
     tagline: "Cria eventos imersivos e cuida das pessoas — o foco é sempre a energia no dia seguinte.",
   };
@@ -146,7 +146,7 @@ export default function BrandTestPage() {
       tone: "soft",
     },
     {
-      title: "Aurora Experience",
+      title: "Aurora Evento",
       time: "1 semana",
       detail: "Survey pós-evento: NPS 72 e comentários positivos",
       tag: "Feedback",
@@ -397,7 +397,7 @@ export default function BrandTestPage() {
                         {tagline || "Uma linha forte define o ritmo."}
                       </p>
                       <div className="flex flex-wrap gap-2">
-                        {["Experiências imersivas", "Comunidade", "Brand lovers", "Rapidez de venda"].map((tag) => (
+                        {["Eventos imersivos", "Comunidade", "Brand lovers", "Rapidez de venda"].map((tag) => (
                           <span
                             key={tag}
                             className="rounded-full px-3 py-1 text-[11px] font-semibold"

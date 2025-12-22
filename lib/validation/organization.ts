@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ORGANIZATION_CATEGORIES, ORGANIZATION_MODULES } from "@/lib/organizationCategories";
 
 /**
  * Valida NIF português (9 dígitos, dígito de controlo módulo 11).
@@ -47,22 +48,16 @@ export function isValidIBAN(value: string): boolean {
 }
 
 /**
- * Valida website ou handle de Instagram.
+ * Valida website (URL com domínio válido).
  */
-export function isValidWebsiteOrInstagram(value: string): boolean {
+export function isValidWebsite(value: string): boolean {
   const trimmed = value.trim();
   if (!trimmed) return true;
 
-  if (trimmed.startsWith("@")) {
-    return /^@[a-zA-Z0-9_.]{2,30}$/.test(trimmed);
-  }
-
   const normalized = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
   try {
-    // Valida hostname e URL globalmente
-     
-    new URL(normalized);
-    return true;
+    const url = new URL(normalized);
+    return Boolean(url.hostname);
   } catch {
     return false;
   }
@@ -72,7 +67,17 @@ const optionalTrimmedString = z
   .union([z.string(), z.undefined(), z.null()])
   .transform((v) => (v ?? "").trim());
 
+const moduleKeys = ORGANIZATION_MODULES as unknown as [string, ...string[]];
+
 export const becomeOrganizerSchema = z.object({
+  organizationCategory: z
+    .string()
+    .trim()
+    .min(1, "Escolhe a categoria principal.")
+    .refine((value) => ORGANIZATION_CATEGORIES.includes(value as (typeof ORGANIZATION_CATEGORIES)[number]), {
+      message: "Categoria inválida.",
+    }),
+  modules: z.array(z.enum(moduleKeys)).default([]),
   entityType: z
     .string()
     .trim()
@@ -91,10 +96,9 @@ export const becomeOrganizerSchema = z.object({
     .min(1, "O username é obrigatório.")
     .max(30, "Máximo 30 caracteres."),
   website: optionalTrimmedString.refine(
-    (value) => value === "" || isValidWebsiteOrInstagram(value),
+    (value) => value === "" || isValidWebsite(value),
     {
-      message:
-        "Website ou Instagram inválido. Usa um URL válido (ex: orya.pt) ou um @handle de Instagram.",
+      message: "Website inválido. Usa um URL válido (ex: https://orya.pt).",
     },
   ),
   iban: optionalTrimmedString.refine(
@@ -108,4 +112,4 @@ export const becomeOrganizerSchema = z.object({
 });
 
 export type BecomeOrganizerSchema = typeof becomeOrganizerSchema;
-export type BecomeOrganizerFormValues = z.infer<typeof becomeOrganizerSchema>;
+export type BecomeOrganizerFormValues = z.input<typeof becomeOrganizerSchema>;

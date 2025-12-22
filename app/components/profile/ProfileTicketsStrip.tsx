@@ -1,7 +1,6 @@
 import Link from "next/link";
 
 // Tipo de bilhete simplificado para uso no perfil
-// Mantém compatibilidade com a estrutura vinda de /me e /me/tickets
 export type ProfileTicketItem = {
   id: string;
   quantity?: number | null;

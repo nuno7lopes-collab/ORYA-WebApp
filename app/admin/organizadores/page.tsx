@@ -15,7 +15,7 @@ type AdminOrganizerOwner = {
 
 type AdminOrganizerItem = {
   id: number | string;
-  displayName: string;
+  publicName: string;
   status: OrganizerStatus;
   createdAt: string;
   owner?: AdminOrganizerOwner | null;
@@ -371,7 +371,7 @@ export default function AdminOrganizadoresPage() {
                   className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-300/30 bg-black/40 px-3 py-2"
                 >
                   <div className="flex flex-col">
-                    <span className="text-white">{org.displayName}</span>
+                    <span className="text-white">{org.publicName}</span>
                     <span className="text-amber-100/80">
                       Dono: {formatOwner(org.owner)}
                     </span>
@@ -435,7 +435,7 @@ export default function AdminOrganizadoresPage() {
                   <div className="space-y-1 text-[11px]">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="text-sm font-semibold text-white/90">
-                        {org.displayName}
+                        {org.publicName}
                       </span>
                       <span
                         className={

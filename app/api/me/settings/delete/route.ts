@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
         },
       });
       if (otherOwners === 0) {
-        blockedOrgs.push(mem.organizer.displayName || mem.organizer.businessName || `Organização #${mem.organizerId}`);
+        blockedOrgs.push(mem.organizer.publicName || mem.organizer.businessName || `Organização #${mem.organizerId}`);
       }
     }
 

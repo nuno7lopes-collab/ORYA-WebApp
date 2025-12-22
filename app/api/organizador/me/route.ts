@@ -6,8 +6,14 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getOrgTransferEnabled, getPlatformFees } from "@/lib/platformSettings";
 import { isValidPhone, normalizePhone } from "@/lib/phone";
 import { getActiveOrganizerForUser } from "@/lib/organizerContext";
+import { isValidWebsite } from "@/lib/validation/organization";
 import { Resend } from "resend";
 import { cookies } from "next/headers";
+import {
+  DEFAULT_ORGANIZATION_CATEGORY,
+  parseOrganizationCategory,
+  parseOrganizationModules,
+} from "@/lib/organizationCategories";
 
 const resendApiKey = process.env.RESEND_API_KEY;
 const resendFromEmail = process.env.RESEND_FROM_EMAIL;
@@ -51,7 +57,17 @@ export async function GET(req: NextRequest) {
     const { organizer, membership } = await getActiveOrganizerForUser(profile.id, {
       organizerId: Number.isFinite(forcedOrgId) ? forcedOrgId : undefined,
     });
-    const [platformFees, orgTransferEnabled] = await Promise.all([getPlatformFees(), getOrgTransferEnabled()]);
+    const [platformFees, orgTransferEnabled, organizerModules] = await Promise.all([
+      getPlatformFees(),
+      getOrgTransferEnabled(),
+      organizer
+        ? prisma.organizationModuleEntry.findMany({
+            where: { organizerId: organizer.id, enabled: true },
+            select: { moduleKey: true },
+            orderBy: { moduleKey: "asc" },
+          })
+        : Promise.resolve([]),
+    ]);
 
     const profilePayload = {
       id: profile.id,
@@ -70,7 +86,6 @@ export async function GET(req: NextRequest) {
     const organizerPayload = organizer
       ? {
           id: organizer.id,
-          displayName: organizer.displayName,
           username: organizer.username,
           stripeAccountId: organizer.stripeAccountId,
           status: organizer.status,
@@ -94,9 +109,21 @@ export async function GET(req: NextRequest) {
           brandingPrimaryColor: (organizer as { brandingPrimaryColor?: string | null }).brandingPrimaryColor ?? null,
           brandingSecondaryColor: (organizer as { brandingSecondaryColor?: string | null }).brandingSecondaryColor ?? null,
           organizationKind: (organizer as any).organizationKind ?? "PESSOA_SINGULAR",
-          publicName: (organizer as { publicName?: string | null }).publicName ?? organizer.displayName ?? organizer.businessName ?? null,
+          organizationCategory:
+            (organizer as { organizationCategory?: string | null }).organizationCategory ??
+            DEFAULT_ORGANIZATION_CATEGORY,
+          modules: organizerModules.map((module) => module.moduleKey),
+          publicName: organizer.publicName,
           address: (organizer as { address?: string | null }).address ?? null,
           showAddressPublicly: (organizer as { showAddressPublicly?: boolean | null }).showAddressPublicly ?? false,
+          publicWebsite: (organizer as { publicWebsite?: string | null }).publicWebsite ?? null,
+          publicDescription: (organizer as { publicDescription?: string | null }).publicDescription ?? null,
+          publicHours: (organizer as { publicHours?: string | null }).publicHours ?? null,
+          infoRules: (organizer as { infoRules?: string | null }).infoRules ?? null,
+          infoFaq: (organizer as { infoFaq?: string | null }).infoFaq ?? null,
+          infoRequirements: (organizer as { infoRequirements?: string | null }).infoRequirements ?? null,
+          infoPolicies: (organizer as { infoPolicies?: string | null }).infoPolicies ?? null,
+          infoLocationNotes: (organizer as { infoLocationNotes?: string | null }).infoLocationNotes ?? null,
           padelDefaults: {
             shortName: (organizer as any).padelDefaultShortName ?? null,
             city: (organizer as any).padelDefaultCity ?? null,
@@ -118,7 +145,7 @@ export async function GET(req: NextRequest) {
         ? "OK"
         : "MISSING_CONTACT";
 
-    const lowerName = (organizer?.displayName ?? organizer?.username ?? "").toLowerCase();
+    const lowerName = (organizer?.publicName ?? organizer?.username ?? "").toLowerCase();
     const isPlatformAccount =
       isAdmin ||
       (organizer as { payoutMode?: string | null })?.payoutMode === "PLATFORM" ||
@@ -182,7 +209,6 @@ export async function PATCH(req: NextRequest) {
     }
 
     const {
-      displayName,
       businessName,
       entityType,
       city,
@@ -199,6 +225,14 @@ export async function PATCH(req: NextRequest) {
       brandingSecondaryColor,
       organizationKind,
       publicName,
+      publicWebsite,
+      publicDescription,
+      publicHours,
+      infoRules,
+      infoFaq,
+      infoRequirements,
+      infoPolicies,
+      infoLocationNotes,
       address,
       showAddressPublicly,
       padelDefaultShortName,
@@ -209,6 +243,29 @@ export async function PATCH(req: NextRequest) {
       padelDefaultRuleSetId,
       padelFavoriteCategories,
     } = body as Record<string, unknown>;
+    const organizationCategoryRaw = (body as Record<string, unknown>).organizationCategory;
+    const modulesRaw = (body as Record<string, unknown>).modules;
+
+    const organizationCategoryProvided = Object.prototype.hasOwnProperty.call(body, "organizationCategory");
+    const modulesProvided = Object.prototype.hasOwnProperty.call(body, "modules");
+
+    const organizationCategory = organizationCategoryProvided
+      ? parseOrganizationCategory(organizationCategoryRaw)
+      : null;
+    if (organizationCategoryProvided && !organizationCategory) {
+      return NextResponse.json(
+        { ok: false, error: "organizationCategory inválido. Usa EVENTOS, PADEL ou VOLUNTARIADO." },
+        { status: 400 },
+      );
+    }
+
+    const parsedModules = modulesProvided ? parseOrganizationModules(modulesRaw) : null;
+    if (modulesProvided && parsedModules === null) {
+      return NextResponse.json(
+        { ok: false, error: "modules inválido. Usa uma lista de módulos válidos (ex.: INSCRICOES)." },
+        { status: 400 },
+      );
+    }
 
     // Validação de telefone (opcional, mas consistente com checkout)
     if (typeof contactPhone === "string" && contactPhone.trim()) {
@@ -221,7 +278,6 @@ export async function PATCH(req: NextRequest) {
       }
     }
 
-    // Garantir que existe organizer (via membership ou legacy userId)
     const { organizer, membership } = await getActiveOrganizerForUser(user.id, {
       roles: ["OWNER", "CO_OWNER", "ADMIN"],
     });
@@ -246,28 +302,58 @@ export async function PATCH(req: NextRequest) {
     }
 
     const organizerUpdates: Record<string, unknown> = {};
-    const entityName = typeof displayName === "string" ? displayName.trim() : undefined;
     const businessNameClean = typeof businessName === "string" ? businessName.trim() : undefined;
     const publicNameInput = typeof publicName === "string" ? publicName.trim() : undefined;
     const addressInput = typeof address === "string" ? address.trim() : undefined;
     const showAddressPubliclyInput = typeof showAddressPublicly === "boolean" ? showAddressPublicly : undefined;
 
-    if (entityName !== undefined) organizerUpdates.displayName = entityName || null;
     if (businessNameClean !== undefined) organizerUpdates.businessName = businessNameClean || null;
-    if (entityName !== undefined && businessNameClean === undefined) {
-      organizerUpdates.businessName = entityName || null;
-    }
     if (publicNameInput !== undefined) {
       const fallbackPublic =
-        entityName ??
         businessNameClean ??
-        organizer.displayName ??
         organizer.businessName ??
+        organizer.publicName ??
         null;
       organizerUpdates.publicName = publicNameInput || fallbackPublic || null;
     }
     if (addressInput !== undefined) organizerUpdates.address = addressInput || null;
     if (showAddressPubliclyInput !== undefined) organizerUpdates.showAddressPublicly = showAddressPubliclyInput;
+    if (typeof publicWebsite === "string") {
+      const trimmed = publicWebsite.trim();
+      if (!trimmed) {
+        organizerUpdates.publicWebsite = null;
+      } else {
+        const normalized = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+        if (!isValidWebsite(normalized)) {
+          return NextResponse.json(
+            { ok: false, error: "Website inválido. Usa um URL válido (ex: https://orya.pt)." },
+            { status: 400 },
+          );
+        }
+        organizerUpdates.publicWebsite = normalized;
+      }
+    }
+    if (typeof publicDescription === "string") {
+      organizerUpdates.publicDescription = publicDescription.trim() || null;
+    }
+    if (typeof publicHours === "string") {
+      organizerUpdates.publicHours = publicHours.trim() || null;
+    }
+    if (typeof infoRules === "string") {
+      organizerUpdates.infoRules = infoRules.trim() || null;
+    }
+    if (typeof infoFaq === "string") {
+      organizerUpdates.infoFaq = infoFaq.trim() || null;
+    }
+    if (typeof infoRequirements === "string") {
+      organizerUpdates.infoRequirements = infoRequirements.trim() || null;
+    }
+    if (typeof infoPolicies === "string") {
+      organizerUpdates.infoPolicies = infoPolicies.trim() || null;
+    }
+    if (typeof infoLocationNotes === "string") {
+      organizerUpdates.infoLocationNotes = infoLocationNotes.trim() || null;
+    }
     if (typeof entityType === "string") organizerUpdates.entityType = entityType.trim() || null;
     if (typeof city === "string") organizerUpdates.city = city.trim() || null;
     if (typeof payoutIban === "string") organizerUpdates.payoutIban = payoutIban.trim() || null;
@@ -283,6 +369,9 @@ export async function PATCH(req: NextRequest) {
     if (typeof brandingPrimaryColor === "string") organizerUpdates.brandingPrimaryColor = brandingPrimaryColor.trim() || null;
     if (typeof brandingSecondaryColor === "string")
       organizerUpdates.brandingSecondaryColor = brandingSecondaryColor.trim() || null;
+    if (organizationCategoryProvided && organizationCategory) {
+      organizerUpdates.organizationCategory = organizationCategory;
+    }
     if (typeof organizationKind === "string") {
       const kind = organizationKind.toUpperCase();
       const allowed = ["CLUBE_PADEL", "RESTAURANTE", "EMPRESA_EVENTOS", "ASSOCIACAO", "PESSOA_SINGULAR"];
@@ -327,24 +416,36 @@ export async function PATCH(req: NextRequest) {
     }
 
     if (Object.keys(organizerUpdates).length > 0) {
-      try {
-        await prisma.organizer.update({
-          where: { id: organizer.id },
-          data: organizerUpdates,
-        });
-      } catch (err) {
-        const code = (err as { code?: string })?.code;
-        const message = err instanceof Error ? err.message : "";
-        const missingColumn = code === "P2022" && message.toLowerCase().includes("public_name");
-        if (!missingColumn) throw err;
-        const fallbackData = { ...organizerUpdates };
-        delete (fallbackData as Record<string, unknown>).publicName;
-        await prisma.organizer.update({
-          where: { id: organizer.id },
-          data: fallbackData,
+      await prisma.organizer.update({
+        where: { id: organizer.id },
+        data: organizerUpdates,
+      });
+    }
+
+    if (modulesProvided) {
+      await prisma.organizationModuleEntry.deleteMany({
+        where: { organizerId: organizer.id },
+      });
+      if (parsedModules && parsedModules.length > 0) {
+        await prisma.organizationModuleEntry.createMany({
+          data: parsedModules.map((moduleKey) => ({
+            organizerId: organizer.id,
+            moduleKey,
+            enabled: true,
+          })),
         });
       }
     }
+
+    const nextModules = modulesProvided
+      ? parsedModules ?? []
+      : (
+          await prisma.organizationModuleEntry.findMany({
+            where: { organizerId: organizer.id, enabled: true },
+            select: { moduleKey: true },
+            orderBy: { moduleKey: "asc" },
+          })
+        ).map((module) => module.moduleKey);
 
     const verifiedOfficialEmail =
       organizer && (organizer as { officialEmailVerifiedAt?: Date | null })?.officialEmailVerifiedAt
@@ -367,7 +468,19 @@ export async function PATCH(req: NextRequest) {
       }
     }
 
-    return NextResponse.json({ ok: true }, { status: 200 });
+    return NextResponse.json(
+      {
+        ok: true,
+        organizer: {
+          organizationCategory:
+            organizationCategory ??
+            (organizer as { organizationCategory?: string | null }).organizationCategory ??
+            DEFAULT_ORGANIZATION_CATEGORY,
+          modules: nextModules,
+        },
+      },
+      { status: 200 },
+    );
   } catch (err) {
     console.error("PATCH /api/organizador/me error:", err);
     return NextResponse.json({ ok: false, error: "Erro interno." }, { status: 500 });

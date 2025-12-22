@@ -97,22 +97,16 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 6. Determinar o preço em cêntimos (compatível com diferentes schemas)
-    const rawAmount =
-      (resale as { priceCents?: number | null; price?: number | null })
-        .priceCents ??
-      (resale as { priceCents?: number | null; price?: number | null }).price ??
-      null;
+    // 6. Determinar o preço em cêntimos
+    const amountCents = resale.price;
 
-    if (typeof rawAmount !== "number" || rawAmount <= 0) {
-      console.error("Invalid resale price for resaleId:", resaleId, rawAmount);
+    if (typeof amountCents !== "number" || amountCents <= 0) {
+      console.error("Invalid resale price for resaleId:", resaleId, amountCents);
       return NextResponse.json(
         { ok: false, error: "INVALID_RESALE_PRICE" },
         { status: 400 }
       );
     }
-
-    const amountCents = rawAmount;
     let baseUrl = env.appBaseUrl;
     if (!baseUrl) {
       console.error("[/api/checkout/resale] APP_BASE_URL/NEXT_PUBLIC_BASE_URL em falta");

@@ -107,8 +107,8 @@ export async function POST(_req: NextRequest) {
     const baseUrl = getBaseUrl();
     const link = await stripe.accountLinks.create({
       account: accountId,
-      refresh_url: `${baseUrl}/organizador?tab=finance&onboarding=refresh`,
-      return_url: `${baseUrl}/organizador?tab=finance&onboarding=done`,
+      refresh_url: `${baseUrl}/organizador?tab=analyze&section=financas&onboarding=refresh`,
+      return_url: `${baseUrl}/organizador?tab=analyze&section=financas&onboarding=done`,
       type: "account_onboarding",
     });
 

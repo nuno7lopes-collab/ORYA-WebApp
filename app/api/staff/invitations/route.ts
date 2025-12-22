@@ -38,7 +38,7 @@ export async function GET() {
       organizer: inv.organizer
         ? {
             id: inv.organizer.id,
-            displayName: inv.organizer.displayName,
+            publicName: inv.organizer.publicName,
           }
         : null,
     }));

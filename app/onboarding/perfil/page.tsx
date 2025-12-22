@@ -157,7 +157,7 @@ function ProfileForm({
         <h1 className="text-xl font-semibold mb-1">Completa o teu perfil</h1>
         <p className="text-sm text-gray-500 mb-6">
           Só precisas de definir o teu nome e um username. Depois disto já estás
-          pronto para criar experiências e juntar-te a eventos.
+          pronto para criar eventos e juntar-te aos certos.
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-4">

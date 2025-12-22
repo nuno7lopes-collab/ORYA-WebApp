@@ -7,7 +7,21 @@ import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
 import { prisma } from "@/lib/prisma";
 import { env } from "@/lib/env";
-import { Prisma, PadelPairingPaymentStatus, PadelPairingSlotStatus, PadelPaymentMode, TicketStatus, FeeMode, PromoType, PaymentEventSource, PadelPairingLifecycleStatus, PadelPairingStatus, SaleSummaryStatus } from "@prisma/client";
+import {
+  EntitlementStatus,
+  EntitlementType,
+  FeeMode,
+  PadelPairingLifecycleStatus,
+  PadelPairingPaymentStatus,
+  PadelPairingSlotStatus,
+  PadelPairingStatus,
+  PadelPaymentMode,
+  PaymentEventSource,
+  Prisma,
+  PromoType,
+  SaleSummaryStatus,
+  TicketStatus,
+} from "@prisma/client";
 import { stripe } from "@/lib/stripeClient";
 import crypto from "crypto";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
@@ -1142,11 +1156,100 @@ async function handlePadelSplitPayment(intent: Stripe.PaymentIntent) {
 
   const ticketType = await prisma.ticketType.findUnique({
     where: { id: ticketTypeId },
-    select: { id: true, price: true, currency: true, soldQuantity: true, eventId: true },
+    select: { id: true, price: true, currency: true, soldQuantity: true, totalQuantity: true, eventId: true },
   });
   if (!ticketType || ticketType.eventId !== eventId) {
     console.warn("[handlePadelSplitPayment] ticketType inválido", { ticketTypeId, eventId });
     return;
+  }
+
+  const event = await prisma.event.findUnique({
+    where: { id: eventId },
+    select: {
+      id: true,
+      title: true,
+      coverImageUrl: true,
+      locationName: true,
+      startsAt: true,
+      timezone: true,
+    },
+  });
+  if (!event) {
+    console.warn("[handlePadelSplitPayment] evento inválido", { eventId });
+    return;
+  }
+
+  const amountCents = intent.amount_received ?? intent.amount ?? ticketType.price;
+  let stripeFeeForIntentValue = 0;
+  try {
+    if (intent.latest_charge) {
+      const charge = await stripe.charges.retrieve(intent.latest_charge as string, {
+        expand: ["balance_transaction"],
+      });
+      const balanceTx = charge.balance_transaction as Stripe.BalanceTransaction | null;
+      if (balanceTx?.fee != null) stripeFeeForIntentValue = balanceTx.fee;
+    }
+  } catch (err) {
+    console.warn("[handlePadelSplitPayment] Não foi possível obter balance_transaction; a usar estimativa", err);
+  }
+  if (!stripeFeeForIntentValue) {
+    const stripeBaseFees = await getStripeBaseFees();
+    stripeFeeForIntentValue = Math.max(
+      0,
+      Math.round((amountCents * (stripeBaseFees.feeBps ?? 0)) / 10_000) + (stripeBaseFees.feeFixedCents ?? 0),
+    );
+  }
+
+  if (ticketType.totalQuantity !== null && ticketType.totalQuantity !== undefined) {
+    const remaining = ticketType.totalQuantity - ticketType.soldQuantity;
+    if (remaining < 1) {
+      console.warn("[handlePadelSplitPayment] stock insuficiente", {
+        ticketTypeId,
+        remaining,
+        pairingId,
+      });
+      await prisma.$transaction(async (tx) => {
+        await tx.padelPairing.update({
+          where: { id: pairingId },
+          data: {
+            pairingStatus: PadelPairingStatus.CANCELLED,
+            lifecycleStatus: PadelPairingLifecycleStatus.CANCELLED_INCOMPLETE,
+            guaranteeStatus: "FAILED",
+          },
+        });
+        await tx.padelPairingHold.updateMany({
+          where: { pairingId, status: "ACTIVE" },
+          data: { status: "CANCELLED" },
+        });
+        await tx.paymentEvent.upsert({
+          where: { stripePaymentIntentId: intent.id },
+          update: {
+            status: "ERROR",
+            errorMessage: "Stock insuficiente para completar inscrição Padel.",
+            updatedAt: new Date(),
+            purchaseId: purchaseId ?? intent.id,
+            source: PaymentEventSource.WEBHOOK,
+            dedupeKey: purchaseId ?? intent.id,
+            attempt: { increment: 1 },
+          },
+          create: {
+            stripePaymentIntentId: intent.id,
+            status: "ERROR",
+            amountCents: intent.amount,
+            eventId,
+            userId: userId ?? undefined,
+            purchaseId: purchaseId ?? intent.id,
+            errorMessage: "Stock insuficiente para completar inscrição Padel.",
+            source: PaymentEventSource.WEBHOOK,
+            dedupeKey: purchaseId ?? intent.id,
+            attempt: 1,
+            mode: intent.livemode ? "LIVE" : "TEST",
+            isTest: !intent.livemode,
+          },
+        });
+      });
+      return;
+    }
   }
 
   const qrSecret = crypto.randomUUID();
@@ -1156,7 +1259,7 @@ async function handlePadelSplitPayment(intent: Stripe.PaymentIntent) {
       where: { id: pairingId },
       include: { slots: true },
     });
-    if (!pairing || pairing.paymentMode !== PadelPaymentMode.SPLIT) {
+    if (!pairing || pairing.payment_mode !== PadelPaymentMode.SPLIT) {
       throw new Error("PAIRING_NOT_SPLIT");
     }
     if (pairing.pairingStatus === "CANCELLED") {
@@ -1175,7 +1278,7 @@ async function handlePadelSplitPayment(intent: Stripe.PaymentIntent) {
         eventId,
         ticketTypeId,
         pricePaid: ticketType.price,
-        totalPaidCents: intent.amount,
+        totalPaidCents: amountCents,
         currency: ticketType.currency || intent.currency.toUpperCase(),
         stripePaymentIntentId: intent.id,
         status: "ACTIVE",
@@ -1194,7 +1297,100 @@ async function handlePadelSplitPayment(intent: Stripe.PaymentIntent) {
       data: { soldQuantity: ticketType.soldQuantity + 1 },
     });
 
-    const updated = await tx.padelPairing.update({
+    const saleSummary =
+      (purchaseId
+        ? await tx.saleSummary.findUnique({ where: { purchaseId } })
+        : null) ||
+      (await tx.saleSummary.findUnique({ where: { paymentIntentId: intent.id } }));
+
+    const summaryData = {
+      eventId,
+      userId: userId ?? null,
+      ownerUserId: userId ?? null,
+      ownerIdentityId: null,
+      purchaseId: purchaseId ?? intent.id,
+      subtotalCents: ticketType.price,
+      discountCents: 0,
+      platformFeeCents: 0,
+      stripeFeeCents: stripeFeeForIntentValue,
+      totalCents: amountCents,
+      netCents: amountCents,
+      feeMode: null as any,
+      currency: (ticketType.currency || intent.currency || "EUR").toUpperCase(),
+      status: "PAID" as const,
+    };
+
+    const sale = saleSummary
+      ? await tx.saleSummary.update({
+          where: { id: saleSummary.id },
+          data: { ...summaryData, paymentIntentId: intent.id },
+        })
+      : await tx.saleSummary.create({
+          data: { ...summaryData, paymentIntentId: intent.id },
+        });
+
+    await tx.saleLine.deleteMany({ where: { saleSummaryId: sale.id } });
+    const saleLine = await tx.saleLine.create({
+      data: {
+        saleSummaryId: sale.id,
+        eventId,
+        ticketTypeId: ticketType.id,
+        promoCodeId: null,
+        quantity: 1,
+        unitPriceCents: ticketType.price,
+        discountPerUnitCents: 0,
+        grossCents: amountCents,
+        netCents: amountCents,
+        platformFeeCents: 0,
+      },
+    });
+
+    await tx.ticket.update({
+      where: { id: ticket.id },
+      data: { saleSummaryId: sale.id },
+    });
+
+    const ownerKey = userId ? `user:${userId}` : "unknown";
+    await tx.entitlement.upsert({
+      where: {
+        purchaseId_saleLineId_lineItemIndex_ownerKey_type: {
+          purchaseId: sale.purchaseId,
+          saleLineId: saleLine.id,
+          lineItemIndex: 0,
+          ownerKey,
+          type: EntitlementType.PADEL_ENTRY,
+        },
+      },
+      update: {
+        status: EntitlementStatus.ACTIVE,
+        ownerUserId: userId ?? null,
+        ownerIdentityId: null,
+        eventId,
+        snapshotTitle: event.title,
+        snapshotCoverUrl: event.coverImageUrl,
+        snapshotVenueName: event.locationName,
+        snapshotStartAt: event.startsAt,
+        snapshotTimezone: event.timezone,
+      },
+      create: {
+        purchaseId: sale.purchaseId,
+        saleLineId: saleLine.id,
+        lineItemIndex: 0,
+        ownerKey,
+        ownerUserId: userId ?? null,
+        ownerIdentityId: null,
+        type: EntitlementType.PADEL_ENTRY,
+        status: EntitlementStatus.ACTIVE,
+        eventId,
+        snapshotTitle: event.title,
+        snapshotCoverUrl: event.coverImageUrl,
+        snapshotVenueName: event.locationName,
+        snapshotStartAt: event.startsAt,
+        snapshotTimezone: event.timezone,
+      },
+    });
+
+    let updated = await tx.padelPairing.update({
       where: { id: pairingId },
       data: {
         slots: {
@@ -1211,6 +1407,18 @@ async function handlePadelSplitPayment(intent: Stripe.PaymentIntent) {
       },
       include: { slots: true },
     });
+
+    const allPaid = updated.slots.every((s) => s.paymentStatus === PadelPairingPaymentStatus.PAID);
+    const nextLifecycle = allPaid
+      ? PadelPairingLifecycleStatus.CONFIRMED_BOTH_PAID
+      : PadelPairingLifecycleStatus.PENDING_PARTNER_PAYMENT;
+    if (updated.lifecycleStatus !== nextLifecycle) {
+      updated = await tx.padelPairing.update({
+        where: { id: pairingId },
+        data: { lifecycleStatus: nextLifecycle },
+        include: { slots: true },
+      });
+    }
 
     const stillPending = updated.slots.some((s) => s.slotStatus === "PENDING" || s.paymentStatus === "UNPAID");
     if (!stillPending && updated.pairingStatus !== "COMPLETE") {
@@ -1377,6 +1585,10 @@ async function handlePadelFullPayment(intent: Stripe.PaymentIntent) {
   const ticketTypeId = Number(meta.ticketTypeId);
   const eventId = Number(meta.eventId);
   const userId = typeof meta.userId === "string" ? meta.userId : null;
+  const purchaseId =
+    typeof meta.purchaseId === "string" && meta.purchaseId.trim() !== ""
+      ? meta.purchaseId.trim()
+      : null;
 
   if (!Number.isFinite(pairingId) || !Number.isFinite(ticketTypeId) || !Number.isFinite(eventId)) {
     console.warn("[handlePadelFullPayment] metadata incompleta", meta);
@@ -1385,10 +1597,98 @@ async function handlePadelFullPayment(intent: Stripe.PaymentIntent) {
 
   const ticketType = await prisma.ticketType.findUnique({
     where: { id: ticketTypeId },
-    select: { id: true, price: true, currency: true, soldQuantity: true, eventId: true },
+    select: { id: true, price: true, currency: true, soldQuantity: true, totalQuantity: true, eventId: true },
   });
   if (!ticketType || ticketType.eventId !== eventId) {
     console.warn("[handlePadelFullPayment] ticketType inválido", { ticketTypeId, eventId });
+    return;
+  }
+
+  if (ticketType.totalQuantity !== null && ticketType.totalQuantity !== undefined) {
+    const remaining = ticketType.totalQuantity - ticketType.soldQuantity;
+    if (remaining < 2) {
+      console.warn("[handlePadelFullPayment] stock insuficiente", {
+        ticketTypeId,
+        remaining,
+        pairingId,
+      });
+      await prisma.$transaction(async (tx) => {
+        await tx.padelPairing.update({
+          where: { id: pairingId },
+          data: {
+            pairingStatus: PadelPairingStatus.CANCELLED,
+            lifecycleStatus: PadelPairingLifecycleStatus.CANCELLED_INCOMPLETE,
+            guaranteeStatus: "FAILED",
+          },
+        });
+        await tx.padelPairingHold.updateMany({
+          where: { pairingId, status: "ACTIVE" },
+          data: { status: "CANCELLED" },
+        });
+        await tx.paymentEvent.upsert({
+          where: { stripePaymentIntentId: intent.id },
+          update: {
+            status: "ERROR",
+            errorMessage: "Stock insuficiente para completar inscrição Padel.",
+            updatedAt: new Date(),
+            purchaseId: purchaseId ?? intent.id,
+            source: PaymentEventSource.WEBHOOK,
+            dedupeKey: purchaseId ?? intent.id,
+            attempt: { increment: 1 },
+          },
+          create: {
+            stripePaymentIntentId: intent.id,
+            status: "ERROR",
+            amountCents: intent.amount,
+            eventId,
+            userId: userId ?? undefined,
+            purchaseId: purchaseId ?? intent.id,
+            errorMessage: "Stock insuficiente para completar inscrição Padel.",
+            source: PaymentEventSource.WEBHOOK,
+            dedupeKey: purchaseId ?? intent.id,
+            attempt: 1,
+            mode: intent.livemode ? "LIVE" : "TEST",
+            isTest: !intent.livemode,
+          },
+        });
+      });
+      return;
+    }
+  }
+
+  const existingTicket = await prisma.ticket.findFirst({
+    where: { stripePaymentIntentId: intent.id },
+    select: { id: true },
+  });
+  if (existingTicket) {
+    await prisma.paymentEvent.updateMany({
+      where: { stripePaymentIntentId: intent.id },
+      data: {
+        status: "OK",
+        updatedAt: new Date(),
+        errorMessage: null,
+        purchaseId: purchaseId ?? intent.id,
+        source: PaymentEventSource.WEBHOOK,
+        dedupeKey: purchaseId ?? intent.id,
+        attempt: { increment: 1 },
+      },
+    });
+    return;
+  }
+
+  const event = await prisma.event.findUnique({
+    where: { id: eventId },
+    select: {
+      id: true,
+      title: true,
+      coverImageUrl: true,
+      locationName: true,
+      startsAt: true,
+      timezone: true,
+    },
+  });
+  if (!event) {
+    console.warn("[handlePadelFullPayment] evento inválido", { eventId });
     return;
   }
 
@@ -1397,20 +1697,21 @@ async function handlePadelFullPayment(intent: Stripe.PaymentIntent) {
   const rot1 = crypto.randomUUID();
   const rot2 = crypto.randomUUID();
 
+  let shouldEnsureEntries = false;
   await prisma.$transaction(async (tx) => {
     const pairing = await tx.padelPairing.findUnique({
       where: { id: pairingId },
       include: { slots: true },
     });
-    if (!pairing || pairing.paymentMode !== PadelPaymentMode.FULL) {
+    if (!pairing || pairing.payment_mode !== PadelPaymentMode.FULL) {
       throw new Error("PAIRING_NOT_FULL");
     }
     if (pairing.pairingStatus === "CANCELLED") {
       throw new Error("PAIRING_CANCELLED");
     }
 
-    const captainSlot = pairing.slots.find((s) => s.slotRole === "CAPTAIN");
-    const partnerSlot = pairing.slots.find((s) => s.slotRole === "PARTNER");
+    const captainSlot = pairing.slots.find((s) => s.slot_role === "CAPTAIN");
+    const partnerSlot = pairing.slots.find((s) => s.slot_role === "PARTNER");
     if (!captainSlot || !partnerSlot) throw new Error("SLOTS_INVALID");
 
     // Cria 2 tickets (capitão e parceiro vazio)
@@ -1456,10 +1757,113 @@ async function handlePadelFullPayment(intent: Stripe.PaymentIntent) {
       data: { soldQuantity: ticketType.soldQuantity + 2 },
     });
 
+    const saleSummary =
+      (purchaseId
+        ? await tx.saleSummary.findUnique({ where: { purchaseId } })
+        : null) ||
+      (await tx.saleSummary.findUnique({ where: { paymentIntentId: intent.id } }));
+
+    const summaryData = {
+      eventId,
+      userId: userId ?? null,
+      ownerUserId: userId ?? null,
+      ownerIdentityId: null,
+      purchaseId: purchaseId ?? intent.id,
+      subtotalCents: ticketType.price * 2,
+      discountCents: 0,
+      platformFeeCents: 0,
+      stripeFeeCents: 0,
+      totalCents: intent.amount ?? ticketType.price * 2,
+      netCents: intent.amount ?? ticketType.price * 2,
+      feeMode: null as any,
+      currency: (ticketType.currency || intent.currency || "EUR").toUpperCase(),
+      status: "PAID" as const,
+    };
+
+    const sale = saleSummary
+      ? await tx.saleSummary.update({
+          where: { id: saleSummary.id },
+          data: { ...summaryData, paymentIntentId: intent.id },
+        })
+      : await tx.saleSummary.create({
+          data: { ...summaryData, paymentIntentId: intent.id },
+        });
+
+    await tx.saleLine.deleteMany({ where: { saleSummaryId: sale.id } });
+    const saleLine = await tx.saleLine.create({
+      data: {
+        saleSummaryId: sale.id,
+        eventId,
+        ticketTypeId: ticketType.id,
+        promoCodeId: null,
+        quantity: 2,
+        unitPriceCents: ticketType.price,
+        discountPerUnitCents: 0,
+        grossCents: intent.amount ?? ticketType.price * 2,
+        netCents: intent.amount ?? ticketType.price * 2,
+        platformFeeCents: 0,
+      },
+    });
+
+    const ownerKey = userId ? `user:${userId}` : "unknown";
+    const entitlementBase = {
+      purchaseId: sale.purchaseId,
+      saleLineId: saleLine.id,
+      ownerKey,
+      ownerUserId: userId ?? null,
+      ownerIdentityId: null,
+      type: EntitlementType.PADEL_ENTRY,
+      status: EntitlementStatus.ACTIVE,
+      eventId,
+      snapshotTitle: event.title,
+      snapshotCoverUrl: event.coverImageUrl,
+      snapshotVenueName: event.locationName,
+      snapshotStartAt: event.startsAt,
+      snapshotTimezone: event.timezone,
+    };
+
+    await tx.entitlement.upsert({
+      where: {
+        purchaseId_saleLineId_lineItemIndex_ownerKey_type: {
+          purchaseId: sale.purchaseId,
+          saleLineId: saleLine.id,
+          lineItemIndex: 0,
+          ownerKey,
+          type: EntitlementType.PADEL_ENTRY,
+        },
+      },
+      update: entitlementBase,
+      create: { ...entitlementBase, lineItemIndex: 0 },
+    });
+
+    await tx.entitlement.upsert({
+      where: {
+        purchaseId_saleLineId_lineItemIndex_ownerKey_type: {
+          purchaseId: sale.purchaseId,
+          saleLineId: saleLine.id,
+          lineItemIndex: 1,
+          ownerKey,
+          type: EntitlementType.PADEL_ENTRY,
+        },
+      },
+      update: entitlementBase,
+      create: { ...entitlementBase, lineItemIndex: 1 },
+    });
+
+    await tx.ticket.updateMany({
+      where: { id: { in: [ticketCaptain.id, ticketPartner.id] } },
+      data: { saleSummaryId: sale.id },
+    });
+
+    const partnerFilled = Boolean(partnerSlot.profileId || partnerSlot.playerProfileId);
+    const partnerSlotStatus = partnerFilled ? PadelPairingSlotStatus.FILLED : PadelPairingSlotStatus.PENDING;
+    const pairingStatus = partnerSlotStatus === PadelPairingSlotStatus.FILLED ? "COMPLETE" : "INCOMPLETE";
+
     await tx.padelPairing.update({
       where: { id: pairingId },
       data: {
-        pairingStatus: "INCOMPLETE",
+        pairingStatus,
+        lifecycleStatus: PadelPairingLifecycleStatus.CONFIRMED_CAPTAIN_FULL,
         slots: {
           update: [
             {
@@ -1476,13 +1880,15 @@ async function handlePadelFullPayment(intent: Stripe.PaymentIntent) {
               data: {
                 ticketId: ticketPartner.id,
                 paymentStatus: PadelPairingPaymentStatus.PAID,
-                slotStatus: PadelPairingSlotStatus.PENDING,
+                slotStatus: partnerSlotStatus,
               },
             },
           ],
         },
       },
     });
+
+    shouldEnsureEntries = partnerFilled;
 
     await tx.paymentEvent.upsert({
       where: { stripePaymentIntentId: intent.id },
@@ -1515,6 +1921,10 @@ async function handlePadelFullPayment(intent: Stripe.PaymentIntent) {
       },
     });
   });
+
+  if (shouldEnsureEntries) {
+    await ensureEntriesForConfirmedPairing(pairingId);
+  }
 }
 
 export async function handleRefund(charge: Stripe.Charge) {

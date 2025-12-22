@@ -4,14 +4,62 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { Breadcrumb, BreadcrumbItem, BreadcrumbList, BreadcrumbSeparator, BreadcrumbPage } from "@/components/ui/breadcrumb";
 
-function resolveLabel(pathname: string, tab: string) {
-  if (pathname.startsWith("/organizador/eventos/novo")) return "Criar Evento";
-  if (pathname.includes("/eventos/") && pathname.endsWith("/edit")) return "Editar Evento";
+const SECTION_LABELS: Record<string, string> = {
+  overview: "Visão geral",
+  eventos: "Eventos",
+  torneios: "Torneios",
+  acoes: "Ações",
+  inscricoes: "Inscrições",
+  checkin: "Check-in",
+  staff: "Staff",
+  settings: "Definições",
+  perfil: "Perfil público",
+  updates: "Canal oficial",
+  marketing: "Marketing",
+  promos: "Códigos promocionais",
+  promoters: "Promotores e parcerias",
+  content: "Conteúdos e kits",
+  sales: "Vendas",
+  vendas: "Vendas",
+  finance: "Finanças",
+  financas: "Finanças",
+  invoices: "Faturação",
+};
+
+const OBJECTIVE_LABELS: Record<string, string> = {
+  create: "Resumo",
+  manage: "Gerir",
+  promote: "Promover",
+  analyze: "Analisar",
+};
+
+function resolveLabel(pathname: string, tab: string, section?: string | null, marketing?: string | null) {
+  if (pathname.startsWith("/organizador/eventos/novo")) return "Criar evento";
+  if (pathname.startsWith("/organizador/eventos/novo")) return "Criar evento";
+  if (pathname.includes("/eventos/") && pathname.endsWith("/edit")) return "Editar evento";
   if (pathname.includes("/eventos/")) return "Eventos";
+  if (pathname.startsWith("/organizador/inscricoes")) return "Inscrições";
+  if (pathname.startsWith("/organizador/updates")) return "Canal oficial";
+  if (pathname.startsWith("/organizador/scan")) return "Check-in";
+  if (pathname.startsWith("/organizador/faturacao")) return "Finanças";
+  if (pathname.startsWith("/organizador/pagamentos/invoices")) return "Faturação";
+  if (pathname.startsWith("/organizador/tournaments/") && pathname.endsWith("/finance")) return "Finanças do torneio";
+  if (pathname.startsWith("/organizador/tournaments/") && pathname.endsWith("/live")) return "Live do torneio";
+  if (pathname.startsWith("/organizador/tournaments/")) return "Torneios";
   if (pathname.startsWith("/organizador/staff")) return "Staff";
   if (pathname.startsWith("/organizador/settings")) return "Definições";
+
+  const objectiveLabel = OBJECTIVE_LABELS[tab];
+  const sectionKey =
+    tab === "promote" && section === "marketing" && marketing ? marketing : section;
+  const sectionLabel = sectionKey ? SECTION_LABELS[sectionKey] : null;
+  if (objectiveLabel && sectionLabel) {
+    return `${objectiveLabel} · ${sectionLabel}`;
+  }
+  if (objectiveLabel) return objectiveLabel;
+
   const map: Record<string, string> = {
-    overview: "Resumos",
+    overview: "Resumo",
     events: "Eventos",
     sales: "Vendas",
     finance: "Finanças",
@@ -20,7 +68,7 @@ function resolveLabel(pathname: string, tab: string) {
     padel: "Padel",
     staff: "Staff",
     settings: "Definições",
-    create: "Criar Evento",
+    create: "Resumo",
   };
   return map[tab] ?? "Dashboard";
 }
@@ -29,7 +77,9 @@ export function OrganizerBreadcrumb() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const tabParamRaw = searchParams?.get("tab") || "overview";
-  const label = resolveLabel(pathname || "", tabParamRaw);
+  const sectionParamRaw = searchParams?.get("section");
+  const marketingParamRaw = searchParams?.get("marketing");
+  const label = resolveLabel(pathname || "", tabParamRaw, sectionParamRaw, marketingParamRaw);
 
   return (
     <Breadcrumb className="text-base md:text-lg font-semibold text-white/80">

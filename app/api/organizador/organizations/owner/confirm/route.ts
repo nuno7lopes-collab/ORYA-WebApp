@@ -74,7 +74,7 @@ export async function POST(req: NextRequest) {
     const [organizer, fromProfile, toProfile] = await Promise.all([
       prisma.organizer.findUnique({
         where: { id: transfer.organizerId },
-        select: { displayName: true, publicName: true, username: true },
+        select: { publicName: true, username: true },
       }),
       prisma.profile.findUnique({
         where: { id: transfer.fromUserId },
@@ -107,7 +107,7 @@ export async function POST(req: NextRequest) {
     });
 
     // Notificar o antigo OWNER (best-effort)
-    const organizerName = organizer?.publicName || organizer?.displayName || organizer?.username || "Organização ORYA";
+    const organizerName = organizer?.publicName || organizer?.username || "Organização ORYA";
     const toName = toProfile?.fullName || toProfile?.username || "novo OWNER";
     const baseUrl = process.env.NEXT_PUBLIC_BASE_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? "https://orya.pt";
     try {
@@ -120,9 +120,9 @@ export async function POST(req: NextRequest) {
           html: `<div style="font-family: Arial, sans-serif; color:#0f172a;">
             <h2>Transferência de OWNER concluída</h2>
             <p>O papel de OWNER em <strong>${organizerName}</strong> foi assumido por <strong>${toName}</strong>.</p>
-            <p>Podes rever o staff aqui: <a href="${baseUrl}/organizador?tab=staff" style="color:#2563eb;">Ver staff</a></p>
+            <p>Podes rever o staff aqui: <a href="${baseUrl}/organizador?tab=manage&section=staff" style="color:#2563eb;">Ver staff</a></p>
           </div>`,
-          text: `Transferência de OWNER concluída\n${organizerName}\nNovo OWNER: ${toName}\nStaff: ${baseUrl}/organizador?tab=staff`,
+          text: `Transferência de OWNER concluída\n${organizerName}\nNovo OWNER: ${toName}\nStaff: ${baseUrl}/organizador?tab=manage&section=staff`,
         });
       } else {
         console.warn("[owner/confirm] fromUser sem email para notificar", { fromUserId: transfer.fromUserId });

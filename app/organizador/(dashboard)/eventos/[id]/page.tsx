@@ -1,7 +1,10 @@
 // app/organizador/eventos/[id]/page.tsx
 /* eslint-disable @next/next/no-html-link-for-pages */
+import { OrganizerMemberRole } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
+import { getActiveOrganizerForUser } from "@/lib/organizerContext";
+import { canManageEvents } from "@/lib/organizerPermissions";
 import { notFound, redirect } from "next/navigation";
 import PadelTournamentTabs from "./PadelTournamentTabs";
 
@@ -58,24 +61,15 @@ export default async function OrganizerEventDetailPage({ params }: PageProps) {
 
   const userId = data.user.id;
 
-  const organizer = await prisma.organizer.findFirst({
-    where: { userId },
-  });
-
-  if (!organizer) {
-    redirect("/organizador");
-  }
-
   const eventId = Number.parseInt(resolved.id, 10);
   if (!Number.isFinite(eventId)) {
     notFound();
   }
 
   // 2) Buscar evento + tipos de bilhete (waves)
-      const event = (await prisma.event.findFirst({
+      const event = (await prisma.event.findUnique({
         where: {
           id: eventId,
-          organizerId: organizer.id,
         },
         include: {
           ticketTypes: {
@@ -91,6 +85,29 @@ export default async function OrganizerEventDetailPage({ params }: PageProps) {
 
   if (!event) {
     notFound();
+  }
+  if (!event.organizerId) {
+    notFound();
+  }
+
+  let { organizer, membership } = await getActiveOrganizerForUser(userId, {
+    organizerId: event.organizerId,
+  });
+  if (!organizer) {
+    const legacyOrganizer = await prisma.organizer.findFirst({
+      where: { id: event.organizerId, userId },
+    });
+    if (legacyOrganizer) {
+      organizer = legacyOrganizer;
+      membership = { role: OrganizerMemberRole.OWNER };
+    }
+  }
+
+  if (!organizer || !membership) {
+    redirect("/organizador");
+  }
+  if (!canManageEvents(membership.role)) {
+    redirect("/organizador?tab=manage");
   }
 
   const now = new Date();
@@ -171,6 +188,7 @@ export default async function OrganizerEventDetailPage({ params }: PageProps) {
       }
     | null;
   const categoriesMeta = advancedSettings?.categoriesMeta ?? [];
+  const backAnchor = event.templateType === "PADEL" ? "torneios" : "eventos";
 
   const timeline = [
     { key: "OCULTO", label: "Oculto", active: ["DRAFT"].includes(event.status), done: event.status !== "DRAFT" },
@@ -180,31 +198,33 @@ export default async function OrganizerEventDetailPage({ params }: PageProps) {
   ];
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-8 md:px-6 lg:px-8 space-y-7 text-white">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div className="space-y-1">
-          <p className="text-[11px] uppercase tracking-[0.3em] text-white/60">Gestão de evento</p>
-          <h1 className="text-2xl font-semibold tracking-tight">Detalhes &amp; waves</h1>
-          <p className="text-sm text-white/70 line-clamp-2">{event.title}</p>
-        </div>
-        <div className="flex flex-wrap gap-2 text-[11px]">
-          <a
-            href="/organizador/eventos"
-            className="px-3 py-1.5 rounded-xl border border-white/20 bg-white/5 text-white/80 hover:bg-white/10 transition"
-          >
-            ← Voltar à lista
-          </a>
-          <a
-            href={`/eventos/${event.slug}`}
-            className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] font-semibold text-black hover:scale-[1.03] active:scale-95 transition-transform shadow-[0_0_22px_rgba(107,255,255,0.7)]"
-          >
-            Ver página pública
-          </a>
+    <div className="w-full space-y-7 px-4 py-8 text-white md:px-6 lg:px-8">
+      <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-5 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="space-y-1">
+            <p className="text-[11px] uppercase tracking-[0.3em] text-white/70">Gestão de evento</p>
+            <h1 className="text-2xl font-semibold tracking-tight">Detalhes &amp; waves</h1>
+            <p className="line-clamp-2 text-sm text-white/70">{event.title}</p>
+          </div>
+          <div className="flex flex-wrap gap-2 text-[11px]">
+            <a
+              href={`/organizador?tab=manage&section=${backAnchor}`}
+              className="rounded-full border border-white/20 bg-white/5 px-3 py-1.5 text-white/80 transition hover:bg-white/10"
+            >
+              ← Voltar à lista
+            </a>
+            <a
+              href={`/eventos/${event.slug}`}
+              className="rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-3 py-1.5 font-semibold text-black shadow transition hover:scale-[1.03] active:scale-95"
+            >
+              Ver página pública
+            </a>
+          </div>
         </div>
       </div>
 
       <div className="grid grid-cols-1 gap-5 md:grid-cols-[minmax(0,1.7fr)_minmax(0,1.1fr)]">
-        <div className="rounded-2xl border border-white/14 bg-black/45 backdrop-blur-xl p-5 space-y-3">
+        <div className="space-y-3 rounded-2xl border border-white/14 bg-gradient-to-br from-white/8 via-[#0b1226]/70 to-[#050912]/90 p-5 backdrop-blur-xl">
           <div className="flex items-start justify-between gap-3">
             <div>
               <h2 className="text-xl md:text-2xl font-semibold tracking-tight">

@@ -10,6 +10,7 @@ import {
   PadelPairingSlotStatus,
   PadelPaymentMode,
   PadelPairingJoinMode,
+  OrganizerMemberRole,
 } from "@prisma/client";
 import { randomUUID } from "crypto";
 import { createSupabaseServer } from "@/lib/supabaseServer";
@@ -22,6 +23,10 @@ import {
   computeDeadlineAt,
   computePartnerLinkExpiresAt,
 } from "@/domain/padelDeadlines";
+import { getActiveOrganizerForUser } from "@/lib/organizerContext";
+import { isPadelStaff } from "@/lib/padel/staff";
+
+const allowedRoles: OrganizerMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
 
 async function syncPlayersFromSlots({
   organizerId,
@@ -76,8 +81,8 @@ async function syncPlayersFromSlots({
     const email = isEmail ? contact.toLowerCase() : null;
     const phone = !isEmail ? contact : null;
     if (email) {
-      const exists = await prisma.padelPlayerProfile.findUnique({
-        where: { organizerId_email: { organizerId, email } },
+      const exists = await prisma.padelPlayerProfile.findFirst({
+        where: { organizerId, email },
         select: { id: true },
       });
       if (exists) continue;
@@ -96,7 +101,6 @@ async function syncPlayersFromSlots({
 }
 
 // Cria pairing Padel v2 após checkout ou setup inicial.
-// Evita mexer no legacy; valida flag padel_v2_enabled.
 export async function POST(req: NextRequest) {
   const supabase = await createSupabaseServer();
   const {
@@ -182,18 +186,104 @@ export async function POST(req: NextRequest) {
     include: { slots: true },
   });
   if (existingActive) {
-    const shouldUpdateMode =
-      paymentMode && existingActive.payment_mode !== paymentMode;
-    const pairingReturn = shouldUpdateMode
+    const updates: Record<string, unknown> = {};
+    const slotUpdates: Record<string, unknown> = {};
+    const partnerSlot = existingActive.slots.find((s) => s.slot_role === "PARTNER");
+    const canUpdatePartner = partnerSlot && !partnerSlot.profileId;
+
+    if (paymentMode && existingActive.payment_mode !== paymentMode) {
+      updates.payment_mode = paymentMode;
+    }
+
+    if (canUpdatePartner) {
+      const joinModeChanged = existingActive.pairingJoinMode !== pairingJoinModeRaw;
+      if (joinModeChanged) {
+        updates.pairingJoinMode = pairingJoinModeRaw;
+      }
+
+      if (pairingJoinModeRaw === "LOOKING_FOR_PARTNER") {
+        updates.partnerInviteToken = null;
+        updates.partnerLinkToken = null;
+        updates.partnerLinkExpiresAt = null;
+        updates.partnerInvitedAt = null;
+        if (partnerSlot?.invitedContact) {
+          slotUpdates.invitedContact = null;
+        }
+      } else {
+        const now = new Date();
+        const inviteExpired =
+          existingActive.partnerLinkExpiresAt &&
+          existingActive.partnerLinkExpiresAt.getTime() < now.getTime();
+        const shouldResetInvite =
+          !existingActive.partnerInviteToken ||
+          existingActive.pairingJoinMode !== "INVITE_PARTNER" ||
+          inviteExpired;
+        const inviteTokenToUse = shouldResetInvite
+          ? randomUUID()
+          : existingActive.partnerInviteToken!;
+        if (shouldResetInvite) {
+          updates.partnerInviteToken = inviteTokenToUse;
+          updates.partnerLinkToken = inviteTokenToUse;
+          updates.partnerLinkExpiresAt = computePartnerLinkExpiresAt(now, undefined);
+          updates.partnerInvitedAt = now;
+        } else if (!existingActive.partnerLinkExpiresAt) {
+          updates.partnerLinkExpiresAt = computePartnerLinkExpiresAt(now, undefined);
+        }
+        if (invitedContactNormalized && partnerSlot?.invitedContact !== invitedContactNormalized) {
+          slotUpdates.invitedContact = invitedContactNormalized;
+        }
+      }
+    }
+
+    const shouldUpdate =
+      Object.keys(updates).length > 0 || Object.keys(slotUpdates).length > 0;
+    const pairingReturn = shouldUpdate
       ? await prisma.padelPairing.update({
           where: { id: existingActive.id },
-          data: { payment_mode: paymentMode },
+          data: {
+            ...updates,
+            ...(Object.keys(slotUpdates).length > 0 && partnerSlot
+              ? {
+                  slots: {
+                    update: {
+                      where: { id: partnerSlot.id },
+                      data: slotUpdates,
+                    },
+                  },
+                }
+              : {}),
+          },
           include: { slots: true },
         })
       : existingActive;
 
     await upsertActiveHold(prisma, { pairingId: pairingReturn.id, eventId, ttlMinutes: 30 });
     return NextResponse.json({ ok: true, pairing: pairingReturn }, { status: 200 });
+  }
+
+  let validatedTicketId: string | null = null;
+  if (createdByTicketId) {
+    const ticket = await prisma.ticket.findUnique({
+      where: { id: createdByTicketId },
+      select: { id: true, eventId: true, status: true, userId: true, ownerUserId: true, pairingId: true },
+    });
+    if (!ticket || ticket.eventId !== eventId || ticket.status !== "ACTIVE") {
+      return NextResponse.json({ ok: false, error: "INVALID_TICKET" }, { status: 400 });
+    }
+    if (ticket.userId !== user.id && ticket.ownerUserId !== user.id) {
+      return NextResponse.json({ ok: false, error: "FORBIDDEN_TICKET" }, { status: 403 });
+    }
+    if (ticket.pairingId) {
+      return NextResponse.json({ ok: false, error: "TICKET_ALREADY_USED" }, { status: 409 });
+    }
+    const slotUsingTicket = await prisma.padelPairingSlot.findUnique({
+      where: { ticketId: createdByTicketId },
+      select: { id: true },
+    });
+    if (slotUsingTicket) {
+      return NextResponse.json({ ok: false, error: "TICKET_ALREADY_USED" }, { status: 409 });
+    }
+    validatedTicketId = ticket.id;
   }
 
   // Build slots: se não vierem slots no payload, cria duas entradas (capitão + parceiro pendente)
@@ -236,6 +326,7 @@ export async function POST(req: NextRequest) {
   };
 
   const incomingSlots = Array.isArray(body?.slots) ? (body!.slots as unknown[]) : [];
+  const captainPaid = Boolean(validatedTicketId);
   const slotsToCreate =
     incomingSlots.length > 0
       ? (incomingSlots
@@ -251,13 +342,13 @@ export async function POST(req: NextRequest) {
         }>)
       : [
           {
-            ticketId: createdByTicketId,
+            ticketId: validatedTicketId,
             profileId: user.id,
             invitedContact: null,
             isPublicOpen,
             slot_role: PadelPairingSlotRole.CAPTAIN,
-            slotStatus: createdByTicketId ? PadelPairingSlotStatus.FILLED : PadelPairingSlotStatus.PENDING,
-            paymentStatus: PadelPairingPaymentStatus.PAID,
+            slotStatus: captainPaid ? PadelPairingSlotStatus.FILLED : PadelPairingSlotStatus.PENDING,
+            paymentStatus: captainPaid ? PadelPairingPaymentStatus.PAID : PadelPairingPaymentStatus.UNPAID,
           },
           {
             ticketId: null,
@@ -269,7 +360,10 @@ export async function POST(req: NextRequest) {
             isPublicOpen,
             slot_role: PadelPairingSlotRole.PARTNER,
             slotStatus: PadelPairingSlotStatus.PENDING,
-            paymentStatus: paymentMode === "FULL" ? PadelPairingPaymentStatus.PAID : PadelPairingPaymentStatus.UNPAID,
+            paymentStatus:
+              paymentMode === "FULL" && captainPaid
+                ? PadelPairingPaymentStatus.PAID
+                : PadelPairingPaymentStatus.UNPAID,
           },
         ];
 
@@ -286,6 +380,12 @@ export async function POST(req: NextRequest) {
         ? inviteToken || randomUUID()
         : null;
 
+    const initialLifecycleStatus = captainPaid
+      ? paymentMode === "FULL"
+        ? PadelPairingLifecycleStatus.CONFIRMED_CAPTAIN_FULL
+        : PadelPairingLifecycleStatus.PENDING_PARTNER_PAYMENT
+      : PadelPairingLifecycleStatus.PENDING_ONE_PAID;
+
     const pairing = await prisma.$transaction(async (tx) => {
       const created = await tx.padelPairing.create({
         data: {
@@ -295,18 +395,18 @@ export async function POST(req: NextRequest) {
           payment_mode: paymentMode,
           createdByUserId: user.id,
           player1UserId: user.id,
-          createdByTicketId,
+          createdByTicketId: validatedTicketId,
           partnerInviteToken,
-        partnerLinkToken: partnerInviteToken,
-        partnerLinkExpiresAt: partnerInviteToken ? partnerLinkExpiresAtNormalized : null,
-        partnerInvitedAt: partnerInviteToken ? now : null,
-        partnerSwapAllowedUntilAt: deadlineAt,
-        deadlineAt,
-        guaranteeStatus: paymentMode === "SPLIT" ? "ARMED" : "NONE",
-        lockedUntil,
-        isPublicOpen,
-        pairingJoinMode: pairingJoinModeRaw ?? PadelPairingJoinMode.INVITE_PARTNER,
-        lifecycleStatus: PadelPairingLifecycleStatus.PENDING_ONE_PAID,
+          partnerLinkToken: partnerInviteToken,
+          partnerLinkExpiresAt: partnerInviteToken ? partnerLinkExpiresAtNormalized : null,
+          partnerInvitedAt: partnerInviteToken ? now : null,
+          partnerSwapAllowedUntilAt: deadlineAt,
+          deadlineAt,
+          guaranteeStatus: paymentMode === "SPLIT" ? "ARMED" : "NONE",
+          lockedUntil,
+          isPublicOpen,
+          pairingJoinMode: pairingJoinModeRaw ?? PadelPairingJoinMode.INVITE_PARTNER,
+          lifecycleStatus: initialLifecycleStatus,
           slots: {
             create: slotsToCreate,
           },
@@ -351,9 +451,25 @@ export async function GET(req: NextRequest) {
       where: { id: pairingId },
       include: {
         slots: { include: { playerProfile: true } },
+        event: { select: { organizerId: true } },
       },
     });
     if (!pairing) return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
+
+    const isParticipant =
+      pairing.player1UserId === user.id ||
+      pairing.player2UserId === user.id ||
+      pairing.slots.some((s) => s.profileId === user.id);
+    if (!isParticipant) {
+      const { organizer } = await getActiveOrganizerForUser(user.id, {
+        organizerId: pairing.organizerId,
+        roles: allowedRoles,
+      });
+      const isStaff = await isPadelStaff(user.id, pairing.organizerId, pairing.eventId);
+      if (!organizer && !isStaff) {
+        return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      }
+    }
 
     const ticketTypes = await prisma.ticketType.findMany({
       where: { eventId: pairing.eventId, status: "ON_SALE" },
@@ -370,6 +486,22 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "INVALID_ID" }, { status: 400 });
   }
 
+  const event = await prisma.event.findUnique({
+    where: { id: eventId },
+    select: { organizerId: true },
+  });
+  if (!event?.organizerId) {
+    return NextResponse.json({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+  }
+  const { organizer } = await getActiveOrganizerForUser(user.id, {
+    organizerId: event.organizerId,
+    roles: allowedRoles,
+  });
+  const isStaff = await isPadelStaff(user.id, event.organizerId, eventId);
+  if (!organizer && !isStaff) {
+    return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  }
+
   const pairings = await prisma.padelPairing.findMany({
     where: { eventId },
     include: {
@@ -378,5 +510,15 @@ export async function GET(req: NextRequest) {
     orderBy: [{ createdAt: "asc" }],
   });
 
-  return NextResponse.json({ ok: true, pairings }, { status: 200 });
+  const mapped = pairings.map(({ payment_mode, partnerInviteToken, slots, ...rest }) => ({
+    ...rest,
+    paymentMode: payment_mode,
+    inviteToken: partnerInviteToken,
+    slots: slots.map(({ slot_role, ...slotRest }) => ({
+      ...slotRest,
+      slotRole: slot_role,
+    })),
+  }));
+
+  return NextResponse.json({ ok: true, pairings: mapped }, { status: 200 });
 }

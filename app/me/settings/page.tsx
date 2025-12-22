@@ -332,7 +332,7 @@ export default function SettingsPage() {
           <div className="mt-3 flex flex-col gap-2 text-sm text-white/80">
             {[
               { value: allowEmailNotifications, setter: setAllowEmailNotifications, label: "Email de novidades e segurança" },
-              { value: allowEventReminders, setter: setAllowEventReminders, label: "Lembretes de eventos / experiências" },
+              { value: allowEventReminders, setter: setAllowEventReminders, label: "Lembretes de eventos" },
               { value: allowFriendRequests, setter: setAllowFriendRequests, label: "Pedidos de amizade / convites" },
               { value: allowSalesAlerts, setter: setAllowSalesAlerts, label: "Alertas de vendas / estado Stripe" },
               { value: allowSystemAnnouncements, setter: setAllowSystemAnnouncements, label: "Anúncios do sistema / updates críticos" },

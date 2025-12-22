@@ -44,7 +44,7 @@ export async function GET(_req: NextRequest) {
         },
         organizer: {
           select: {
-            displayName: true,
+            publicName: true,
           },
         },
       },
@@ -105,7 +105,7 @@ export async function GET(_req: NextRequest) {
         basePrice,
         timezone: event.timezone,
         coverImageUrl: event.coverImageUrl,
-        organizerName: event.organizer?.displayName ?? null,
+        organizerName: event.organizer?.publicName ?? null,
         waves,
       };
     });

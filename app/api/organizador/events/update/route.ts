@@ -231,7 +231,7 @@ export async function POST(req: NextRequest) {
     if (body.locationName !== undefined) dataUpdate.locationName = body.locationName ?? "";
     if (body.locationCity !== undefined) {
       const city = body.locationCity ?? "";
-      // Permitimos cidades fora da whitelist para compatibilidade com dados existentes
+    // Permitimos cidades fora da whitelist
       dataUpdate.locationCity = city;
     }
     if (body.address !== undefined) dataUpdate.address = body.address ?? null;

@@ -40,10 +40,18 @@ export async function GET(req: NextRequest) {
       },
       orderBy: { updatedAt: "desc" },
     });
-    return NextResponse.json({ ok: true, pairings }, { status: 200 });
+    const mapped = pairings.map(({ payment_mode, partnerInviteToken, slots, ...rest }) => ({
+      ...rest,
+      paymentMode: payment_mode,
+      inviteToken: partnerInviteToken,
+      slots: slots.map(({ slot_role, ...slotRest }) => ({
+        ...slotRest,
+        slotRole: slot_role,
+      })),
+    }));
+    return NextResponse.json({ ok: true, pairings: mapped }, { status: 200 });
   } catch (err) {
     console.error("[padel/pairings/my] query error", err);
-    // fallback seguro para não partir o UI se a tabela ainda não existir ou schema estiver desfasado
-    return NextResponse.json({ ok: true, pairings: [], warning: "PAIRINGS_UNAVAILABLE" }, { status: 200 });
+    return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }

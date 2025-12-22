@@ -86,7 +86,7 @@ export default function MinhasDuplasPage() {
           {pairings.map((p) => {
             const pendingSlot = p.slots.find((s) => s.slotStatus === "PENDING");
             const canPayPending = pendingSlot && pendingSlot.paymentStatus === "UNPAID" && p.paymentMode === "SPLIT";
-            const inviteLink = p.inviteToken ? `${typeof window !== "undefined" ? window.location.origin : ""}/eventos/${p.eventSlug ?? ""}?inviteToken=${p.inviteToken}` : null;
+            const inviteLink = p.inviteToken ? `${typeof window !== "undefined" ? window.location.origin : ""}/eventos/${p.event?.slug ?? ""}?inviteToken=${p.inviteToken}` : null;
             return (
               <div key={p.id} className="rounded-2xl border border-white/10 bg-white/5 p-4 shadow">
                 <div className="flex items-center justify-between gap-2 flex-wrap">

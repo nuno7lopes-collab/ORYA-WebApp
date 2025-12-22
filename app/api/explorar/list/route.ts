@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { createSupabaseServer } from "@/lib/supabaseServer";
 import { Prisma, EventTemplateType } from "@prisma/client";
 
 const DEFAULT_PAGE_SIZE = 12;
 
 type ExploreItem = {
   id: number;
-  type: "EVENT" | "EXPERIENCE";
+  type: "EVENT";
   slug: string;
   title: string;
   shortDescription: string | null;
@@ -64,7 +65,7 @@ function clampTake(value: number | null): number {
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
 
-  const typeParam = searchParams.get("type"); // event | experience | all
+  const typeParam = searchParams.get("type"); // event | all
   const categoriesParam = searchParams.get("categories"); // comma separated
   const cityParam = searchParams.get("city");
   const searchParam = searchParams.get("q");
@@ -91,14 +92,21 @@ export async function GET(req: NextRequest) {
     .filter(Boolean);
 
   const where: Prisma.EventWhereInput = {
-    status: "PUBLISHED",
-    isTest: false,
+    status: { in: ["PUBLISHED", "DATE_CHANGED"] },
+    isTest: { not: true },
   };
 
+  const listingFilter: Prisma.EventWhereInput = {
+    OR: [
+      { organizerId: null },
+      { organizer: { status: "ACTIVE", publicListingEnabled: true } },
+      { organizer: { status: "ACTIVE", publicListingEnabled: null } },
+    ],
+  };
+  where.AND = Array.isArray(where.AND) ? [...where.AND, listingFilter] : [listingFilter];
+
   if (typeParam === "event") {
-    where.type = "ORGANIZER_EVENT";
-  } else if (typeParam === "experience") {
-    where.type = "EXPERIENCE";
+    // Sem filtro extra: todos os eventos publicados entram.
   }
 
   const normalizedCity = cityParam?.trim();
@@ -121,24 +129,40 @@ export async function GET(req: NextRequest) {
     ];
   }
 
-  // Map categorias pedidas para templateType conhecido (fallback)
+  // Categorias principais: Padel vs Eventos gerais (tudo o resto)
   if (categoryFilters.length > 0) {
-    const mapToTemplate: Record<string, EventTemplateType> = {
-      PADEL: "PADEL",
-      DESPORTO: "PADEL", // legacy -> padel
-      OUTRO: "OTHER",
-      GERAL: "OTHER",
-      FESTA: "OTHER",
-      CONCERTO: "OTHER",
-      PALESTRA: "OTHER",
-      ARTE: "OTHER",
-      COMIDA: "OTHER",
-      DRINKS: "OTHER",
-    };
-    const templateTypes = categoryFilters.map((c) => mapToTemplate[c]).filter((v): v is EventTemplateType => Boolean(v));
+    const hasPadel = categoryFilters.includes("PADEL");
+    const hasGeneral = categoryFilters.includes("GERAL");
+    const andFilters: Prisma.EventWhereInput[] = [];
 
-    if (templateTypes.length > 0) {
-      where.templateType = { in: templateTypes };
+    if (hasPadel && !hasGeneral) {
+      andFilters.push({ templateType: "PADEL" });
+    } else if (!hasPadel && hasGeneral) {
+      andFilters.push({
+        OR: [{ templateType: { not: "PADEL" } }, { templateType: null }],
+      });
+    } else if (!hasPadel && !hasGeneral) {
+      const mapToTemplate: Record<string, EventTemplateType> = {
+        OUTRO: "OTHER",
+        FESTA: "PARTY",
+        CONCERTO: "OTHER",
+        PALESTRA: "TALK",
+        ARTE: "OTHER",
+        COMIDA: "OTHER",
+        DRINKS: "OTHER",
+        VOLUNTARIADO: "VOLUNTEERING",
+      };
+      const templateTypes = categoryFilters
+        .map((c) => mapToTemplate[c])
+        .filter((v): v is EventTemplateType => Boolean(v));
+
+      if (templateTypes.length > 0) {
+        andFilters.push({ templateType: { in: templateTypes } });
+      }
+    }
+
+    if (andFilters.length > 0) {
+      where.AND = Array.isArray(where.AND) ? [...where.AND, ...andFilters] : andFilters;
     }
   }
 
@@ -239,7 +263,7 @@ export async function GET(req: NextRequest) {
       },
       organizer: {
         select: {
-          displayName: true,
+          publicName: true,
         },
       },
     },
@@ -252,6 +276,23 @@ export async function GET(req: NextRequest) {
 
   try {
     const events = await prisma.event.findMany(query);
+
+    let viewerId: string | null = null;
+    try {
+      const supabase = await createSupabaseServer();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      viewerId = user?.id ?? null;
+    } catch {
+      viewerId = null;
+    }
+
+    let nextCursor: number | null = null;
+    if (events.length > take) {
+      const nextItem = events.pop();
+      nextCursor = nextItem?.id ?? null;
+    }
 
     const ownerIds = Array.from(
       new Set(
@@ -269,15 +310,38 @@ export async function GET(req: NextRequest) {
         : [];
     const ownerMap = new Map(owners.map((o) => [o.id, o]));
 
-    let nextCursor: number | null = null;
-    if (events.length > take) {
-      const nextItem = events.pop();
-      nextCursor = nextItem?.id ?? null;
+    let orderedEvents = events;
+    if (viewerId && events.length > 0 && searchParam && searchParam.trim().length >= 1) {
+      const organizerIds = Array.from(
+        new Set(
+          events
+            .map((event) => event.organizerId)
+            .filter((id): id is number => typeof id === "number"),
+        ),
+      );
+      if (organizerIds.length > 0) {
+        const rows = await prisma.organizer_follows.findMany({
+          where: { follower_id: viewerId, organizer_id: { in: organizerIds } },
+          select: { organizer_id: true },
+        });
+        if (rows.length > 0) {
+          const followedIds = new Set(rows.map((row) => row.organizer_id));
+          const followed: typeof events = [];
+          const rest: typeof events = [];
+          events.forEach((event) => {
+            if (event.organizerId && followedIds.has(event.organizerId)) {
+              followed.push(event);
+            } else {
+              rest.push(event);
+            }
+          });
+          orderedEvents = [...followed, ...rest];
+        }
+      }
     }
 
-    const items: ExploreItem[] = events.map((event) => {
-      const isExperience = event.type === "EXPERIENCE";
-      const mappedType: ExploreItem["type"] = isExperience ? "EXPERIENCE" : "EVENT";
+    const items: ExploreItem[] = orderedEvents.map((event) => {
+      const mappedType: ExploreItem["type"] = "EVENT";
       const status = resolveStatus({
         status: event.status,
         endsAt: event.endsAt,
@@ -291,25 +355,27 @@ export async function GET(req: NextRequest) {
         : [];
 
       let priceFrom: number | null = null;
-      if (event.isFree || isExperience) {
+      if (event.isFree) {
         priceFrom = 0;
       } else if (ticketPrices.length > 0) {
         priceFrom = Math.min(...ticketPrices) / 100;
       }
 
       const ownerProfile = event.ownerUserId ? ownerMap.get(event.ownerUserId) : null;
-      const hostName = event.organizer?.displayName ?? ownerProfile?.fullName ?? null;
+      const hostName = event.organizer?.publicName ?? ownerProfile?.fullName ?? null;
       const hostUsername = ownerProfile?.username ?? null;
 
       const templateToCategory: Record<string, string> = {
         PARTY: "FESTA",
         PADEL: "PADEL",
         TALK: "PALESTRA",
+        VOLUNTEERING: "VOLUNTARIADO",
+        OTHER: "GERAL",
       };
       const categories =
         event.templateType != null
-          ? [templateToCategory[String(event.templateType)] ?? "OUTROS"]
-          : [];
+          ? [templateToCategory[String(event.templateType)] ?? "GERAL"]
+          : ["GERAL"];
 
       return {
         id: event.id,
@@ -326,7 +392,7 @@ export async function GET(req: NextRequest) {
           lng: event.longitude ?? null,
         },
         coverImageUrl: event.coverImageUrl ?? null,
-        isFree: event.isFree || isExperience,
+        isFree: event.isFree,
         priceFrom,
         categories,
         hostName,

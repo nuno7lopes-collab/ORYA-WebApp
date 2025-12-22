@@ -82,7 +82,7 @@ export async function GET() {
             type: NotificationType.STRIPE_STATUS,
             title: "Stripe precisa de atenção",
             body: "Faltam dados no Stripe para ativar pagamentos/payouts.",
-            ctaUrl: "/organizador?tab=finance",
+            ctaUrl: "/organizador?tab=analyze&section=financas",
             ctaLabel: "Rever Stripe",
             payload: { requirements_due },
           });

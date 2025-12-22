@@ -28,9 +28,9 @@ export default async function BecomeOrganizerPage() {
           <div className="mx-auto inline-flex items-center rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] uppercase tracking-[0.16em] text-white/70">
             Organizador • Onboarding
           </div>
-          <h1 className="text-3xl font-semibold md:text-[32px]">Cria a tua organização na ORYA</h1>
+          <h1 className="text-3xl font-semibold md:text-[32px]">Cria o teu painel de organização</h1>
           <p className="mx-auto max-w-3xl text-[15px] text-white/75 md:text-base">
-            Em menos de 1 minuto ficas pronto para vender bilhetes, sem burocracias.
+            Em 3 passos escolhes a categoria (Eventos, PADEL ou Voluntariado), ligas módulos e publicas o teu perfil.
           </p>
         </header>
 

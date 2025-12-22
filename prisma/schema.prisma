@@ -36,6 +36,7 @@ model Profile {
   deletedAtFinal                                                   DateTime?               @map("deleted_at_final") @db.Timestamptz(6)
   follows_follows_follower_idToprofiles                            follows[]               @relation("follows_follower_idToprofiles")
   follows_follows_following_idToprofiles                           follows[]               @relation("follows_following_idToprofiles")
+  organizer_follows_organizer_follows_follower_idToprofiles        organizer_follows[]     @relation("organizer_follows_follower_idToprofiles")
   notificationsSent                                                Notification[]          @relation("NotificationSender")
   notifications                                                    Notification[]
   notificationPreference                                           NotificationPreference?
@@ -48,6 +49,7 @@ model Profile {
   padelPairingsPlayer1                                             PadelPairing[]          @relation("PadelPairingPlayer1")
   padelPairingsPlayer2                                             PadelPairing[]          @relation("PadelPairingPlayer2")
   tournamentEntries                                                TournamentEntry[]
+  organizationFormSubmissions                                      OrganizationFormSubmission[]
   tournamentsGenerated                                             Tournament[]            @relation("TournamentGeneratedBy")
   tournamentAuditLogs                                              TournamentAuditLog[]    @relation("TournamentAuditLogUser")
   users                                                            users                   @relation(fields: [id], references: [id], onDelete: Cascade, onUpdate: NoAction)
@@ -61,7 +63,6 @@ model Profile {
 /// Entidade organizadora (marca, página de eventos)
 model Organizer {
   id                      Int                             @id @default(autoincrement())
-  displayName             String                          @map("display_name")
   stripeAccountId         String?                         @map("stripe_account_id")
   status                  OrganizerStatus                 @default(PENDING)
   createdAt               DateTime                        @default(now()) @map("created_at")
@@ -87,6 +88,7 @@ model Organizer {
   brandingSecondaryColor  String?                         @map("branding_secondary_color")
   refundFeePayer          RefundFeePayer                  @default(CUSTOMER) @map("refund_fee_payer")
   organizationKind        OrganizationKind                @default(PESSOA_SINGULAR) @map("organization_kind")
+  organizationCategory    OrganizationCategory            @default(EVENTOS) @map("organization_category")
   padelDefaultShortName   String?                         @map("padel_default_short_name")
   padelDefaultCity        String?                         @map("padel_default_city")
   padelDefaultAddress     String?                         @map("padel_default_address")
@@ -94,9 +96,17 @@ model Organizer {
   padelDefaultHours       String?                         @map("padel_default_hours")
   padelDefaultRuleSetId   Int?                            @map("padel_default_rule_set_id")
   padelFavoriteCategories Int[]                           @default([]) @map("padel_favorite_categories")
-  publicName              String?                         @map("public_name")
+  publicName              String                          @map("public_name")
   address                 String?                         @map("address")
   showAddressPublicly     Boolean                         @default(false) @map("show_address_publicly")
+  publicWebsite           String?                         @map("public_website")
+  publicDescription       String?                         @map("public_description")
+  publicHours             String?                         @map("public_hours")
+  infoRules               String?                         @map("info_rules")
+  infoFaq                 String?                         @map("info_faq")
+  infoRequirements        String?                         @map("info_requirements")
+  infoPolicies            String?                         @map("info_policies")
+  infoLocationNotes       String?                         @map("info_location_notes")
   is_platform_owned       Boolean                         @default(false)
   orgType                 OrgType                         @default(EXTERNAL) @map("org_type")
   officialEmail           String?                         @map("official_email")
@@ -106,6 +116,11 @@ model Organizer {
   notifications           Notification[]                  @relation("NotificationOrganizer")
   memberInvites           OrganizerMemberInvite[]
   members                 OrganizerMember[]
+  organizationModules     OrganizationModuleEntry[]
+  organizationForms       OrganizationForm[]
+  organizationUpdates     OrganizationUpdate[]
+  organizationAuditLogs   OrganizationAuditLog[]
+  ownerTransfers          OrganizerOwnerTransfer[]
   padelDefaultRuleSet     PadelRuleSet?                   @relation("OrganizerPadelDefaultRuleSet", fields: [padelDefaultRuleSetId], references: [id], onUpdate: NoAction, map: "organizers_padel_default_rule_set_fk")
   user                    Profile?                        @relation(fields: [userId], references: [id], onUpdate: NoAction)
   padelCategories         PadelCategory[]
@@ -118,9 +133,101 @@ model Organizer {
   padelCourtBlocks        PadelCourtBlock[]
   padelAvailabilities     PadelAvailability[]
   staffAssignments        StaffAssignment[]
+  organizer_follows_organizer_follows_organizer_idToorganizers organizer_follows[] @relation("organizer_follows_organizer_idToorganizers")
 
   @@index([userId])
   @@map("organizers")
+  @@schema("app_v3")
+}
+
+model OrganizationForm {
+  id              Int                             @id @default(autoincrement())
+  organizerId     Int                             @map("organizer_id")
+  title           String
+  description     String?
+  status          OrganizationFormStatus          @default(DRAFT)
+  capacity        Int?
+  waitlistEnabled Boolean                         @default(true) @map("waitlist_enabled")
+  startAt         DateTime?                       @map("start_at") @db.Timestamptz(6)
+  endAt           DateTime?                       @map("end_at") @db.Timestamptz(6)
+  createdAt       DateTime                        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime                        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  organizer       Organizer                       @relation(fields: [organizerId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "organization_forms_organizer_fk")
+  fields          OrganizationFormField[]
+  submissions     OrganizationFormSubmission[]
+
+  @@index([organizerId])
+  @@map("organization_forms")
+  @@schema("app_v3")
+}
+
+model OrganizationFormField {
+  id          Int                         @id @default(autoincrement())
+  formId      Int                         @map("form_id")
+  label       String
+  fieldType   OrganizationFormFieldType   @map("field_type")
+  required    Boolean                     @default(false)
+  helpText    String?                     @map("help_text")
+  placeholder String?
+  options     Json?
+  order       Int                         @default(0)
+  createdAt   DateTime                    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime                    @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  form        OrganizationForm            @relation(fields: [formId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "organization_form_fields_form_fk")
+
+  @@index([formId])
+  @@map("organization_form_fields")
+  @@schema("app_v3")
+}
+
+model OrganizationFormSubmission {
+  id         Int                               @id @default(autoincrement())
+  formId     Int                               @map("form_id")
+  userId     String?                           @map("user_id") @db.Uuid
+  guestEmail String?                           @map("guest_email")
+  status     OrganizationFormSubmissionStatus  @default(SUBMITTED)
+  answers    Json                              @default("{}")
+  createdAt  DateTime                          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime                          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  form       OrganizationForm                  @relation(fields: [formId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "organization_form_submissions_form_fk")
+  user       Profile?                          @relation(fields: [userId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([formId])
+  @@index([userId])
+  @@map("organization_form_submissions")
+  @@schema("app_v3")
+}
+
+model OrganizationUpdate {
+  id          Int                        @id @default(autoincrement())
+  organizerId Int                        @map("organizer_id")
+  eventId     Int?                       @map("event_id")
+  title       String
+  body        String?
+  category    OrganizationUpdateCategory @default(TODAY)
+  status      OrganizationUpdateStatus   @default(DRAFT)
+  isPinned    Boolean                    @default(false) @map("is_pinned")
+  publishedAt DateTime?                  @map("published_at") @db.Timestamptz(6)
+  createdAt   DateTime                   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime                   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  organizer   Organizer                  @relation(fields: [organizerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  event       Event?                     @relation(fields: [eventId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([organizerId])
+  @@index([eventId])
+  @@index([status])
+  @@map("organization_updates")
+  @@schema("app_v3")
+}
+
+model OrganizationModuleEntry {
+  organizerId Int                @map("organizer_id")
+  moduleKey   OrganizationModule @map("module_key")
+  enabled     Boolean            @default(true)
+  organizer   Organizer          @relation(fields: [organizerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([organizerId, moduleKey])
+  @@map("organization_modules")
   @@schema("app_v3")
 }
 
@@ -237,6 +344,18 @@ model NotificationOutbox {
   @@schema("app_v3")
 }
 
+model MatchNotification {
+  id        Int      @id @default(autoincrement())
+  matchId   Int      @map("match_id")
+  dedupeKey String   @unique @map("dedupe_key")
+  createdAt DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
+  payload   Json?
+
+  @@index([matchId], map: "match_notifications_match_idx")
+  @@map("match_notifications")
+  @@schema("app_v3")
+}
+
 model EmailIdentity {
   id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   emailNormalized String   @unique @map("email_normalized") @db.Citext
@@ -317,6 +436,45 @@ model OrganizerMemberInvite {
   @@schema("app_v3")
 }
 
+model OrganizationAuditLog {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizerId Int      @map("organizer_id")
+  actorUserId String?  @map("actor_user_id") @db.Uuid
+  action      String
+  fromUserId  String?  @map("from_user_id") @db.Uuid
+  toUserId    String?  @map("to_user_id") @db.Uuid
+  metadata    Json?    @default("{}")
+  ip          String?
+  userAgent   String?  @map("user_agent")
+  createdAt   DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
+  organizer   Organizer @relation(fields: [organizerId], references: [id], onDelete: Cascade)
+
+  @@index([organizerId], map: "organization_audit_logs_org_idx")
+  @@index([actorUserId], map: "organization_audit_logs_actor_idx")
+  @@map("organization_audit_logs")
+  @@schema("app_v3")
+}
+
+model OrganizerOwnerTransfer {
+  id          String                       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizerId Int                          @map("organizer_id")
+  fromUserId  String                       @map("from_user_id") @db.Uuid
+  toUserId    String                       @map("to_user_id") @db.Uuid
+  status      OrganizerOwnerTransferStatus @default(PENDING)
+  token       String                       @unique
+  expiresAt   DateTime                     @map("expires_at") @db.Timestamptz(6)
+  createdAt   DateTime?                    @default(now()) @map("created_at") @db.Timestamptz(6)
+  confirmedAt DateTime?                    @map("confirmed_at") @db.Timestamptz(6)
+  cancelledAt DateTime?                    @map("cancelled_at") @db.Timestamptz(6)
+  organizer   Organizer                    @relation(fields: [organizerId], references: [id], onDelete: Cascade)
+
+  @@index([organizerId], map: "organization_owner_transfers_org_idx")
+  @@index([fromUserId], map: "organization_owner_transfers_from_idx")
+  @@index([toUserId], map: "organization_owner_transfers_to_idx")
+  @@map("organization_owner_transfers")
+  @@schema("app_v3")
+}
+
 /// Evento/Experiência — único tipo com campo `type` a separar
 model Event {
   id                                Int                     @id @default(autoincrement())
@@ -376,6 +534,8 @@ model Event {
   reservations                      TicketReservation[]
   ticketTypes                       TicketType[]
   tickets                           Ticket[]
+  ticketCheckins                    TicketCheckin[]
+  organizationUpdates               OrganizationUpdate[]
 
   @@index([type, status])
   @@index([ownerUserId])
@@ -448,6 +608,7 @@ model Ticket {
   emissionIndex         Int               @default(0) @map("emission_index")
   guestLink             GuestTicketLink?
   notifications         Notification[]    @relation("NotificationTicket")
+  ticketCheckins        TicketCheckin[]
   pairingSlot           PadelPairingSlot? @relation("TicketPairingSlot")
   createdPadelPairings  PadelPairing[]    @relation("PadelPairingCreatedByTicket")
   resales               TicketResale[]
@@ -469,6 +630,23 @@ model Ticket {
   @@index([pairingId])
   @@index([saleSummaryId])
   @@map("tickets")
+  @@schema("app_v3")
+}
+
+model TicketCheckin {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ticketId    String    @map("ticket_id")
+  eventId     Int       @map("event_id")
+  staffUserId String?   @map("staff_user_id") @db.Uuid
+  deviceId    String?   @map("device_id")
+  createdAt   DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
+  ticket      Ticket    @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  event       Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId], map: "ticket_checkins_ticket_idx")
+  @@index([eventId], map: "ticket_checkins_event_idx")
+  @@index([staffUserId], map: "ticket_checkins_staff_idx")
+  @@map("ticket_checkins")
   @@schema("app_v3")
 }
 
@@ -1388,6 +1566,21 @@ model follows {
   @@schema("app_v3")
 }
 
+model organizer_follows {
+  id                                                      Int      @id @default(autoincrement())
+  follower_id                                             String   @db.Uuid
+  organizer_id                                            Int
+  created_at                                              DateTime @default(now()) @db.Timestamptz(6)
+  profiles_organizer_follows_follower_idToprofiles        Profile  @relation("organizer_follows_follower_idToprofiles", fields: [follower_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  organizer_organizer_follows_organizer_idToorganizers    Organizer @relation("organizer_follows_organizer_idToorganizers", fields: [organizer_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([follower_id, organizer_id], map: "organizer_follows_unique")
+  @@index([follower_id], map: "idx_organizer_follows_follower")
+  @@index([organizer_id], map: "idx_organizer_follows_organizer")
+  @@map("organizer_follows")
+  @@schema("app_v3")
+}
+
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model audit_log_entries {
@@ -1920,6 +2113,15 @@ enum OrganizerMemberRole {
   @@schema("app_v3")
 }
 
+enum OrganizerOwnerTransferStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  EXPIRED
+
+  @@schema("app_v3")
+}
+
 enum PaymentMode {
   LIVE
   TEST
@@ -2003,6 +2205,69 @@ enum EventTemplateType {
   TALK
   OTHER
   PADEL
+
+  @@schema("app_v3")
+}
+
+enum OrganizationCategory {
+  EVENTOS
+  PADEL
+  VOLUNTARIADO
+
+  @@schema("app_v3")
+}
+
+enum OrganizationModule {
+  INSCRICOES
+
+  @@schema("app_v3")
+}
+
+enum OrganizationFormStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+
+  @@schema("app_v3")
+}
+
+enum OrganizationUpdateCategory {
+  TODAY
+  CHANGES
+  RESULTS
+  CALL_UPS
+
+  @@schema("app_v3")
+}
+
+enum OrganizationUpdateStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+
+  @@schema("app_v3")
+}
+
+enum OrganizationFormFieldType {
+  TEXT
+  TEXTAREA
+  EMAIL
+  PHONE
+  NUMBER
+  DATE
+  SELECT
+  CHECKBOX
+
+  @@schema("app_v3")
+}
+
+enum OrganizationFormSubmissionStatus {
+  SUBMITTED
+  IN_REVIEW
+  ACCEPTED
+  WAITLISTED
+  INVITED
+  REJECTED
 
   @@schema("app_v3")
 }

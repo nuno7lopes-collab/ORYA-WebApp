@@ -9,6 +9,7 @@ import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
 import { ConfirmDestructiveActionDialog } from "@/app/components/ConfirmDestructiveActionDialog";
 import { trackEvent } from "@/lib/analytics";
 import { RoleBadge } from "../../RoleBadge";
+import { CTA_DANGER, CTA_GHOST, CTA_NEUTRAL, CTA_PRIMARY, CTA_SECONDARY, CTA_SUCCESS } from "@/app/organizador/dashboardUi";
 
 type MemberRole = "OWNER" | "CO_OWNER" | "ADMIN" | "STAFF" | "VIEWER";
 
@@ -155,7 +156,11 @@ function Avatar({ name, avatarUrl }: { name: string; avatarUrl: string | null })
 
 type Toast = { id: number; message: string; type: "error" | "success" };
 
-export default function OrganizerStaffPage() {
+type OrganizerStaffPageProps = {
+  embedded?: boolean;
+};
+
+export default function OrganizerStaffPage({ embedded }: OrganizerStaffPageProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user, profile, isLoading: isUserLoading } = useUser();
@@ -186,7 +191,7 @@ export default function OrganizerStaffPage() {
 
   const [toasts, setToasts] = useState<Toast[]>([]);
 
-  const { data: meData } = useSWR<{ ok: boolean; organizer?: { id: number; displayName?: string | null } | null; orgTransferEnabled?: boolean | null }>(
+  const { data: meData } = useSWR<{ ok: boolean; organizer?: { id: number; publicName?: string | null } | null; orgTransferEnabled?: boolean | null }>(
     user ? "/api/organizador/me" : null,
     fetcher,
     { revalidateOnFocus: false },
@@ -262,7 +267,11 @@ export default function OrganizerStaffPage() {
   };
 
   const handleRequireLogin = () => {
-    openModal({ mode: "login", redirectTo: "/organizador/staff", showGoogle: true });
+    openModal({
+      mode: "login",
+      redirectTo: embedded ? "/organizador?tab=manage&section=staff" : "/organizador/staff",
+      showGoogle: true,
+    });
   };
 
   const handleInviteSubmit = async () => {
@@ -488,39 +497,53 @@ export default function OrganizerStaffPage() {
 
   if (isUserLoading) {
     return (
-      <div className="mx-auto max-w-5xl px-4 py-10 md:px-6 lg:px-8">
-        <p className="text-sm text-white/70">A carregar a tua conta…</p>
+      <div className="w-full px-4 py-8 md:px-6 lg:px-8">
+        <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-5 text-sm text-white/70 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
+          A carregar a tua conta…
+        </div>
       </div>
     );
   }
 
   if (!user) {
     return (
-      <div className="mx-auto max-w-5xl px-4 py-10 space-y-4 md:px-6 lg:px-8">
-        <h1 className="text-2xl font-semibold">Staff</h1>
-        <p>Precisas de iniciar sessão para gerir o staff.</p>
-        <button
-          type="button"
-          onClick={handleRequireLogin}
-          className="inline-flex items-center rounded-md border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium hover:bg-white/10"
-        >
-          Entrar
-        </button>
+      <div className="w-full px-4 py-8 md:px-6 lg:px-8">
+        <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-6 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl space-y-3 text-white">
+          <h1 className="text-2xl font-semibold">Staff</h1>
+          <p className="text-white/70">Precisas de iniciar sessão para gerir o staff.</p>
+          <button
+            type="button"
+            onClick={handleRequireLogin}
+            className="inline-flex items-center rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-4 py-2 text-sm font-semibold text-black shadow"
+          >
+            Entrar
+          </button>
+        </div>
       </div>
     );
   }
 
+  const emptyClass = embedded
+    ? "space-y-4 text-white"
+    : "w-full px-4 py-8 space-y-4 text-white md:px-6 lg:px-8";
+  const wrapperClass = embedded
+    ? "space-y-6 text-white"
+    : "w-full px-4 py-8 space-y-6 text-white md:px-6 lg:px-8";
+
   if (!isOrganizerProfile && !hasMembership) {
     return (
-      <div className="mx-auto max-w-5xl px-4 py-10 space-y-4 md:px-6 lg:px-8">
-        <h1 className="text-2xl font-semibold">Staff</h1>
-        <p className="text-sm text-white/70">Ativa primeiro o perfil de organizador ou aceita um convite para entrares.</p>
+      <div className={emptyClass}>
+        <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-6 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl space-y-2">
+          <h1 className="text-2xl font-semibold">Staff</h1>
+          <p className="text-sm text-white/70">Ativa primeiro o perfil de organizador ou aceita um convite para entrares.</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-10 space-y-6 md:px-6 lg:px-8">
+    <div className={wrapperClass}>
+      {!embedded && <ObjectiveSubnav objective="manage" activeId="staff" />}
       <div className="relative overflow-hidden rounded-[28px] border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/75 to-[#050810]/92 p-5 shadow-[0_30px_110px_rgba(0,0,0,0.6)] backdrop-blur-3xl">
         <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.12),transparent_35%),linear-gradient(225deg,rgba(255,255,255,0.08),transparent_40%)]" />
         <div className="relative flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -529,7 +552,7 @@ export default function OrganizerStaffPage() {
               Staff &amp; segurança
             </div>
             <h1 className="text-3xl font-semibold drop-shadow-[0_10px_40px_rgba(0,0,0,0.55)]">
-              Controla quem tem acesso {meData?.organizer?.displayName ? ` · ${meData.organizer.displayName}` : ""}
+              Controla quem tem acesso {meData?.organizer?.publicName ? ` · ${meData.organizer.publicName}` : ""}
             </h1>
             <p className="text-sm text-white/70">
               Define papéis, gere convites e, quando ativo, transfere a organização de forma segura. Pelo menos um Owner tem de existir sempre.

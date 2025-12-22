@@ -16,10 +16,10 @@ const eslintConfig = defineConfig([
   {
     files: ["**/*.{ts,tsx,js,jsx}"],
     rules: {
-      // Desativamos regras ruidosas até conseguirmos um cleanup completo do legado.
+      // Desativamos regras ruidosas até concluirmos um cleanup completo do código existente.
       "@typescript-eslint/no-explicit-any": "off",
       "@typescript-eslint/no-unused-vars": "off",
-      // Allow CommonJS-style imports in scripts and legacy modules.
+      // Allow CommonJS-style imports in scripts and transitional modules.
       "@typescript-eslint/no-require-imports": "off",
       // React compiler-aware rules are noisy for existing code; surface as warnings instead of errors.
       "react-hooks/exhaustive-deps": "off",

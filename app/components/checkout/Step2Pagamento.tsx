@@ -145,6 +145,10 @@ export default function Step2Pagamento() {
     safeDados?.additional && typeof safeDados.additional === "object"
       ? (safeDados.additional as Record<string, unknown>).ticketTypeId
       : undefined;
+  const inviteToken =
+    safeDados?.additional && typeof safeDados.additional === "object"
+      ? (safeDados.additional as Record<string, unknown>).inviteToken
+      : undefined;
 
   const additionalForRules =
     safeDados?.additional && typeof safeDados.additional === "object"
@@ -362,6 +366,7 @@ export default function Step2Pagamento() {
       slotId: typeof pairingSlotId === "number" ? pairingSlotId : undefined,
       ticketTypeId: typeof pairingTicketTypeId === "number" ? pairingTicketTypeId : undefined,
       eventId: safeDados.eventId ? Number(safeDados.eventId) : undefined,
+      inviteToken: typeof inviteToken === "string" && inviteToken.trim() ? inviteToken.trim() : undefined,
     };
   }, [safeDados, promoCode, requiresAuth]);
 
@@ -1599,7 +1604,7 @@ function PaymentForm({ total, discount = 0, breakdown, clientSecret, onLoadError
     typeof breakdown?.feeMode === "string"
       ? breakdown.feeMode.toUpperCase()
       : null;
-  const payorPaysFee = feeMode === "ADDED" || feeMode === "ON_TOP";
+  const payorPaysFee = feeMode === "ADDED";
   const platformFeeCents = payorPaysFee
     ? Math.max(0, (breakdown as any)?.platformFeeCombinedCents ?? breakdown?.platformFeeCents ?? 0)
     : 0;

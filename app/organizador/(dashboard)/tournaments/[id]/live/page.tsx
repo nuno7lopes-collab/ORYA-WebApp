@@ -200,8 +200,9 @@ export default function OrganizerTournamentLivePage({ params }: PageProps) {
   };
 
   return (
-    <div className="space-y-4 rounded-2xl border border-white/10 bg-black/40 p-4">
-      <div className="flex items-center justify-between gap-2">
+    <div className="space-y-4">
+      <div className="space-y-4 rounded-2xl border border-white/10 bg-black/40 p-4">
+        <div className="flex items-center justify-between gap-2">
         <div>
           <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Live Torneio</p>
           <h1 className="text-xl font-semibold text-white">{tournament?.event?.title ?? "Torneio"}</h1>
@@ -211,7 +212,7 @@ export default function OrganizerTournamentLivePage({ params }: PageProps) {
           <p>Jogos: {flatMatches.length}</p>
           <p>Pendentes {summary.pending} · Em jogo {summary.inProgress} · Terminados {summary.done}</p>
         </div>
-      </div>
+        </div>
 
       {warnings.length > 0 && (
         <div className="rounded-xl border border-amber-400/40 bg-amber-400/10 p-3 text-sm text-amber-100">
@@ -231,7 +232,7 @@ export default function OrganizerTournamentLivePage({ params }: PageProps) {
 
       <Filters stages={stages} setFilters={setFilters} />
 
-      <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid gap-4 md:grid-cols-2">
         {stages.map((stage: any) => (
           <div key={stage.id} className="rounded-xl border border-white/10 bg-white/5 p-3 space-y-3">
             <div className="flex items-center justify-between">

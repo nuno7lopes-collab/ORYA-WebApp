@@ -135,25 +135,21 @@ export default async function AdminDashboardPage() {
     redirect("/");
   }
 
-  // prisma.paymentEvent pode não existir se o client não estiver regenerado;
-  // fallback defensivo para evitar crash em caso de client antigo.
-  const paymentEventQuery = prisma.paymentEvent
-    ? prisma.paymentEvent.findMany({
-        orderBy: { createdAt: "desc" },
-        take: 8,
-        select: {
-          id: true,
-          stripePaymentIntentId: true,
-          status: true,
-          eventId: true,
-          amountCents: true,
-          platformFeeCents: true,
-          errorMessage: true,
-          createdAt: true,
-          updatedAt: true,
-        },
-      })
-    : Promise.resolve([]);
+  const paymentEventQuery = prisma.paymentEvent.findMany({
+    orderBy: { createdAt: "desc" },
+    take: 8,
+    select: {
+      id: true,
+      stripePaymentIntentId: true,
+      status: true,
+      eventId: true,
+      amountCents: true,
+      platformFeeCents: true,
+      errorMessage: true,
+      createdAt: true,
+      updatedAt: true,
+    },
+  });
 
   const [usersCount, organizersCount, eventsCount, ticketsCount, revenueAgg, recentEvents, recentTickets, recentPaymentEvents] =
     await Promise.all([

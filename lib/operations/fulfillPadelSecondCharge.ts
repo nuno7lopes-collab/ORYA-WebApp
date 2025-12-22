@@ -14,6 +14,7 @@ type IntentLike = {
 
 export async function fulfillPadelSecondCharge(intent: IntentLike): Promise<boolean> {
   const meta = intent.metadata ?? {};
+  const ownerUserId = typeof meta.ownerUserId === "string" ? meta.ownerUserId : null;
   const pairingId = Number(meta.pairingId);
   if (!Number.isFinite(pairingId)) return false;
   const now = new Date();
@@ -61,7 +62,7 @@ export async function fulfillPadelSecondCharge(intent: IntentLike): Promise<bool
           status: "OK",
           amountCents: intent.amount,
           eventId: Number(meta.eventId) || undefined,
-          userId: typeof meta.userId === "string" ? meta.userId : undefined,
+          userId: ownerUserId ?? undefined,
           purchaseId: (meta as Record<string, unknown>)?.purchaseId as string | undefined ?? intent.id,
           source: PaymentEventSource.WEBHOOK,
           dedupeKey: (meta as Record<string, unknown>)?.purchaseId as string | undefined ?? intent.id,

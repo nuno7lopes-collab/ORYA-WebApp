@@ -13,6 +13,30 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { validateEligibility } from "@/domain/padelEligibility";
 import { PairingAction, transition } from "@/domain/padelPairingStateMachine";
+import { ensureEntriesForConfirmedPairing } from "@/domain/tournaments/ensureEntriesForConfirmedPairing";
+
+async function ensurePlayerProfile(params: { organizerId: number; userId: string }) {
+  const { organizerId, userId } = params;
+  const existing = await prisma.padelPlayerProfile.findFirst({
+    where: { organizerId, userId },
+    select: { id: true },
+  });
+  if (existing) return existing.id;
+  const profile = await prisma.profile.findUnique({ where: { id: userId }, select: { fullName: true, email: true } });
+  const name = profile?.fullName?.trim() || "Jogador Padel";
+  const email = profile?.email || null;
+  const created = await prisma.padelPlayerProfile.create({
+    data: {
+      organizerId,
+      userId,
+      fullName: name,
+      displayName: name,
+      email: email ?? undefined,
+    },
+    select: { id: true },
+  });
+  return created.id;
+}
 
 // Permite um parceiro juntar-se a um pairing com mode LOOKING_FOR_PARTNER / isPublicOpen sem token.
 export async function POST(req: NextRequest) {
@@ -87,8 +111,17 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "NO_PENDING_SLOT" }, { status: 400 });
   }
 
-  if (pairing.paymentMode === PadelPaymentMode.SPLIT && pendingSlot.paymentStatus !== PadelPairingPaymentStatus.PAID) {
+  if (pairing.payment_mode === PadelPaymentMode.SPLIT && pendingSlot.paymentStatus !== PadelPairingPaymentStatus.PAID) {
     return NextResponse.json({ ok: false, error: "PAYMENT_REQUIRED", action: "CHECKOUT_PARTNER" }, { status: 402 });
+  }
+  if (pairing.payment_mode === PadelPaymentMode.FULL) {
+    const captainSlot = pairing.slots.find((s) => s.slot_role === "CAPTAIN");
+    if (!captainSlot || captainSlot.paymentStatus !== PadelPairingPaymentStatus.PAID) {
+      return NextResponse.json({ ok: false, error: "PAYMENT_REQUIRED", action: "CHECKOUT_CAPTAIN" }, { status: 402 });
+    }
+    if (pendingSlot.paymentStatus !== PadelPairingPaymentStatus.PAID) {
+      return NextResponse.json({ ok: false, error: "PAYMENT_REQUIRED", action: "CHECKOUT_CAPTAIN" }, { status: 402 });
+    }
   }
 
   try {
@@ -101,8 +134,9 @@ export async function POST(req: NextRequest) {
     const partnerAcceptedAt = new Date();
     const partnerPaidAt =
       pendingSlot.paymentStatus === PadelPairingPaymentStatus.PAID ? new Date() : null;
+    const playerProfileId = await ensurePlayerProfile({ organizerId: pairing.event.organizerId, userId: user.id });
 
-    const updated = await prisma.$transaction(async (tx) => {
+    const { pairing: updated, shouldEnsureEntries } = await prisma.$transaction(async (tx) => {
       const updatedPairing = await tx.padelPairing.update({
         where: { id: pairing.id },
         data: {
@@ -123,28 +157,41 @@ export async function POST(req: NextRequest) {
               data: {
                 profileId: user.id,
                 slotStatus: PadelPairingSlotStatus.FILLED,
-                paymentStatus:
-                  pendingSlot.paymentStatus === "PAID"
-                    ? pendingSlot.paymentStatus
-                    : PadelPairingPaymentStatus.PAID,
+                paymentStatus: pendingSlot.paymentStatus,
+                playerProfileId,
               },
             },
           },
         },
         include: { slots: true },
       });
-      const stillPending = updatedPairing.slots.some((s) => s.slotStatus === "PENDING");
-      if (!stillPending && updatedPairing.pairingStatus !== "COMPLETE") {
-        return tx.padelPairing.update({
+
+      const allFilled = updatedPairing.slots.every((s) => s.slotStatus === "FILLED");
+      const allPaid = updatedPairing.slots.every((s) => s.paymentStatus === PadelPairingPaymentStatus.PAID);
+      if (allFilled && allPaid && updatedPairing.pairingStatus !== "COMPLETE") {
+        const completed = await tx.padelPairing.update({
           where: { id: pairing.id },
           data: { pairingStatus: "COMPLETE" },
           include: { slots: true },
         });
+        return { pairing: completed, shouldEnsureEntries: true };
       }
-      return updatedPairing;
+      return { pairing: updatedPairing, shouldEnsureEntries: allFilled && allPaid };
     });
 
-    return NextResponse.json({ ok: true, pairing: updated }, { status: 200 });
+    if (shouldEnsureEntries) {
+      await ensureEntriesForConfirmedPairing(updated.id);
+    }
+
+    const pairingPayload = {
+      ...updated,
+      paymentMode: updated.payment_mode,
+      slots: updated.slots.map(({ slot_role, ...slotRest }) => ({
+        ...slotRest,
+        slotRole: slot_role,
+      })),
+    };
+    return NextResponse.json({ ok: true, pairing: pairingPayload }, { status: 200 });
   } catch (err) {
     console.error("[padel/pairings][open][POST]", err);
     return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });

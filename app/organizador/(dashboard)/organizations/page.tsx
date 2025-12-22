@@ -15,7 +15,7 @@ type OrgPayload = {
   organizer: {
     id: number;
     username: string | null;
-    displayName: string | null;
+    publicName: string | null;
     businessName: string | null;
     city: string | null;
     entityType: string | null;
@@ -51,7 +51,7 @@ export default async function OrganizationsHubPage() {
         organizer: {
           id: m.organizer!.id,
           username: m.organizer!.username,
-          displayName: m.organizer!.displayName,
+          publicName: m.organizer!.publicName,
           businessName: m.organizer!.businessName,
           city: m.organizer!.city,
           entityType: m.organizer!.entityType,

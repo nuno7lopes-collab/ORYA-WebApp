@@ -9,7 +9,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 function buildEventLink(event: EventCardDTO) {
-  return event.type === "EXPERIENCE" ? `/experiencias/${event.slug}` : `/eventos/${event.slug}`;
+  return `/eventos/${event.slug}`;
 }
 
 const eventSelect = {

@@ -22,7 +22,7 @@ type CreateOrganizerEventBody = {
   endsAt?: string;
   locationName?: string;
   locationCity?: string;
-  templateType?: string; // PADEL | OTHER (legacy values are normalized)
+  templateType?: string; // PADEL | OTHER
   ticketTypes?: TicketTypeInput[];
   address?: string | null;
   categories?: string[];
@@ -98,7 +98,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Buscar organizer associado a este profile (membership > legacy)
     const { organizer, membership } = await getActiveOrganizerForUser(profile.id, {
       roles: ["OWNER", "CO_OWNER", "ADMIN"],
     });
@@ -145,12 +144,8 @@ export async function POST(req: NextRequest) {
     // Permitimos cidades fora da whitelist para não bloquear dados existentes
 
     const categoriesInput = Array.isArray(body.categories) ? body.categories : [];
-    const normalizeCategory = (c: string) => {
-      const upper = c.trim().toUpperCase();
-      if (upper === "DESPORTO") return "PADEL";
-      return upper;
-    };
-    const allowedCategories = ["PADEL", "OUTRO"];
+    const normalizeCategory = (c: string) => c.trim().toUpperCase();
+    const allowedCategories = ["PADEL", "OUTRO", "VOLUNTARIADO"];
     let categories = categoriesInput
       .map((c) => normalizeCategory(c))
       .filter((c) => allowedCategories.includes(c));
@@ -182,14 +177,18 @@ export async function POST(req: NextRequest) {
     const templateTypeFromBody =
       templateTypeRaw === "PADEL"
         ? "PADEL"
-        : templateTypeRaw === "SPORT" // legacy fallback
-          ? "PADEL"
+        : templateTypeRaw === "VOLUNTEERING"
+          ? "VOLUNTEERING"
           : "OTHER";
 
     let templateType = templateTypeFromBody;
     if (padelRequested || categories.includes("PADEL")) {
       templateType = "PADEL";
       categories = ["PADEL"];
+    }
+    if (categories.includes("VOLUNTARIADO")) {
+      templateType = "VOLUNTEERING";
+      categories = ["VOLUNTARIADO"];
     }
     if (categories.length === 0) {
       categories = ["OUTRO"];

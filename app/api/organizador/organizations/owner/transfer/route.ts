@@ -64,7 +64,7 @@ export async function POST(req: NextRequest) {
     const [organizer, actorProfile] = await Promise.all([
       prisma.organizer.findUnique({
         where: { id: organizerId },
-        select: { displayName: true, username: true, publicName: true },
+        select: { publicName: true, username: true },
       }),
       prisma.profile.findUnique({
         where: { id: user.id },
@@ -109,7 +109,7 @@ export async function POST(req: NextRequest) {
       const targetUser = await supabaseAdmin.auth.admin.getUserById(targetUserId);
       const targetEmail = targetUser.data?.user?.email ?? null;
       const organizerName =
-        organizer?.publicName || organizer?.displayName || organizer?.username || "Organização ORYA";
+        organizer?.publicName || organizer?.username || "Organização ORYA";
       const actorName = actorProfile?.fullName || actorProfile?.username || "OWNER atual";
 
       if (targetEmail) {

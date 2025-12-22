@@ -67,35 +67,45 @@ export async function POST(req: NextRequest) {
 
   try {
     const player = email
-      ? await prisma.padelPlayerProfile.upsert({
-          where: { organizerId_email: { organizerId: organizer.id, email } },
-          create: {
-            organizerId: organizer.id,
-            fullName,
-            displayName: displayName || fullName,
-            email,
-            phone,
-            gender,
-            level,
-            isActive,
-            notes: notes || undefined,
-            preferredSide: preferredSide || undefined,
-            clubName: clubName || undefined,
-            birthDate: birthDate && !Number.isNaN(birthDate.getTime()) ? birthDate : undefined,
-          },
-          update: {
-            fullName,
-            displayName: displayName || fullName,
-            phone,
-            gender,
-            level,
-            isActive,
-            notes: notes || undefined,
-            preferredSide: preferredSide || undefined,
-            clubName: clubName || undefined,
-            birthDate: birthDate && !Number.isNaN(birthDate.getTime()) ? birthDate : undefined,
-          },
-        })
+      ? await (async () => {
+          const existing = await prisma.padelPlayerProfile.findFirst({
+            where: { organizerId: organizer.id, email },
+            select: { id: true },
+          });
+          if (existing?.id) {
+            return prisma.padelPlayerProfile.update({
+              where: { id: existing.id },
+              data: {
+                fullName,
+                displayName: displayName || fullName,
+                phone,
+                gender,
+                level,
+                isActive,
+                notes: notes || undefined,
+                preferredSide: preferredSide || undefined,
+                clubName: clubName || undefined,
+                birthDate: birthDate && !Number.isNaN(birthDate.getTime()) ? birthDate : undefined,
+              },
+            });
+          }
+          return prisma.padelPlayerProfile.create({
+            data: {
+              organizerId: organizer.id,
+              fullName,
+              displayName: displayName || fullName,
+              email,
+              phone,
+              gender,
+              level,
+              isActive,
+              notes: notes || undefined,
+              preferredSide: preferredSide || undefined,
+              clubName: clubName || undefined,
+              birthDate: birthDate && !Number.isNaN(birthDate.getTime()) ? birthDate : undefined,
+            },
+          });
+        })()
       : await prisma.padelPlayerProfile.create({
           data: {
             organizerId: organizer.id,

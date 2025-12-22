@@ -4,6 +4,9 @@ import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import ProfileHeader from "@/app/components/profile/ProfileHeader";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 type PageProps = {
   params: { username: string } | Promise<{ username: string }>;
 };
@@ -30,6 +33,74 @@ function formatDate(date?: Date | null) {
   }).format(date);
 }
 
+type OrganizationCategory = "EVENTOS" | "PADEL" | "VOLUNTARIADO";
+
+const CATEGORY_META: Record<
+  OrganizationCategory,
+  { label: string; cta: string; noun: string; nounPlural: string }
+> = {
+  EVENTOS: {
+    label: "Eventos",
+    cta: "Ver eventos",
+    noun: "evento",
+    nounPlural: "eventos",
+  },
+  PADEL: {
+    label: "PADEL",
+    cta: "Ver torneios",
+    noun: "torneio",
+    nounPlural: "torneios",
+  },
+  VOLUNTARIADO: {
+    label: "Voluntariado",
+    cta: "Participar",
+    noun: "ação",
+    nounPlural: "ações",
+  },
+};
+
+const CATEGORY_TEMPLATE: Record<OrganizationCategory, "PADEL" | "VOLUNTEERING" | null> = {
+  EVENTOS: null,
+  PADEL: "PADEL",
+  VOLUNTARIADO: "VOLUNTEERING",
+};
+
+const UPDATE_CATEGORY_LABELS: Record<string, string> = {
+  TODAY: "Hoje",
+  CHANGES: "Alterações",
+  RESULTS: "Resultados",
+  CALL_UPS: "Convocatórias",
+};
+
+function formatEventDateRange(start: Date | null, end: Date | null, timezone: string) {
+  if (!start) return "Data a definir";
+  const optsDay: Intl.DateTimeFormatOptions = {
+    weekday: "short",
+    day: "2-digit",
+    month: "short",
+  };
+  const optsTime: Intl.DateTimeFormatOptions = {
+    hour: "2-digit",
+    minute: "2-digit",
+  };
+  const dayStr = new Intl.DateTimeFormat("pt-PT", { ...optsDay, timeZone: timezone }).format(start);
+  const startTimeStr = new Intl.DateTimeFormat("pt-PT", { ...optsTime, timeZone: timezone }).format(start);
+  const endTimeStr = end
+    ? new Intl.DateTimeFormat("pt-PT", { ...optsTime, timeZone: timezone }).format(end)
+    : null;
+  return `${dayStr} · ${startTimeStr}${endTimeStr ? ` – ${endTimeStr}` : ""}`;
+}
+
+function initialsFromName(name: string) {
+  const trimmed = name.trim();
+  if (!trimmed) return "OR";
+  return trimmed
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join("");
+}
+
 export default async function UserProfilePage({ params }: PageProps) {
   const resolvedParams = await params;
   const usernameParam = resolvedParams?.username;
@@ -38,7 +109,7 @@ export default async function UserProfilePage({ params }: PageProps) {
     redirect("/me");
   }
 
-  const [viewerId, profile, organizerProfile] = await Promise.all([
+  const [viewerId, profile, organizerProfileRaw] = await Promise.all([
     getViewerId(),
     prisma.profile.findUnique({
       where: { username: usernameParam },
@@ -54,13 +125,507 @@ export default async function UserProfilePage({ params }: PageProps) {
       },
     }),
     prisma.organizer.findFirst({
-      where: { username: usernameParam },
-      select: { id: true, displayName: true },
+      where: { username: usernameParam, status: "ACTIVE" },
+      select: {
+        id: true,
+        username: true,
+        publicName: true,
+        businessName: true,
+        city: true,
+        organizationCategory: true,
+        brandingAvatarUrl: true,
+        officialEmail: true,
+        publicListingEnabled: true,
+        status: true,
+        publicWebsite: true,
+        publicDescription: true,
+        publicHours: true,
+        infoRules: true,
+        infoFaq: true,
+        infoRequirements: true,
+        infoPolicies: true,
+        infoLocationNotes: true,
+        address: true,
+        showAddressPublicly: true,
+      },
     }),
   ]);
 
-  if (!profile || !profile.username) {
+  const organizerProfile =
+    organizerProfileRaw && organizerProfileRaw.publicListingEnabled !== false ? organizerProfileRaw : null;
+
+  if (!profile?.username && !organizerProfile) {
     notFound();
+  }
+
+  if (!profile?.username && organizerProfile) {
+    const now = new Date();
+    const organizationCategory =
+      (organizerProfile.organizationCategory as OrganizationCategory | null) ?? "EVENTOS";
+    const categoryMeta = CATEGORY_META[organizationCategory];
+    const categoryTemplate = CATEGORY_TEMPLATE[organizationCategory];
+    const orgDisplayName =
+      organizerProfile.publicName?.trim() ||
+      organizerProfile.businessName?.trim() ||
+      "Organização ORYA";
+    const orgInitials = initialsFromName(orgDisplayName);
+    const contactEmail = organizerProfile.officialEmail?.trim() || null;
+    const publicWebsite = organizerProfile.publicWebsite?.trim() || null;
+    const publicWebsiteHref = publicWebsite
+      ? (() => {
+          const normalized = /^https?:\/\//i.test(publicWebsite)
+            ? publicWebsite
+            : `https://${publicWebsite}`;
+          try {
+            new URL(normalized);
+            return normalized;
+          } catch {
+            return null;
+          }
+        })()
+      : null;
+    const publicWebsiteLabel = publicWebsiteHref
+      ? publicWebsiteHref.replace(/^https?:\/\//i, "").replace(/\/$/, "")
+      : "A definir";
+    const publicHours = organizerProfile.publicHours?.trim() || null;
+    const publicDescription = organizerProfile.publicDescription?.trim() || null;
+    const showAddress = organizerProfile.showAddressPublicly && organizerProfile.address;
+
+    const events = await prisma.event.findMany({
+      where: {
+        organizerId: organizerProfile.id,
+        status: "PUBLISHED",
+        isDeleted: false,
+        type: "ORGANIZER_EVENT",
+      },
+      orderBy: [{ startsAt: "asc" }],
+      select: {
+        id: true,
+        slug: true,
+        title: true,
+        startsAt: true,
+        endsAt: true,
+        locationName: true,
+        locationCity: true,
+        address: true,
+        isFree: true,
+        timezone: true,
+        templateType: true,
+        coverImageUrl: true,
+        ticketTypes: { select: { price: true } },
+      },
+    });
+
+    const updates = await prisma.organizationUpdate.findMany({
+      where: { organizerId: organizerProfile.id, status: "PUBLISHED" },
+      include: {
+        event: { select: { slug: true, title: true } },
+      },
+      orderBy: [{ isPinned: "desc" }, { publishedAt: "desc" }, { createdAt: "desc" }],
+      take: 6,
+    });
+
+    const formattedUpdates = updates.map((update) => ({
+      ...update,
+      dateLabel: formatDate(update.publishedAt ?? update.createdAt),
+      categoryLabel: UPDATE_CATEGORY_LABELS[update.category] ?? update.category,
+    }));
+
+    const categoryEvents = categoryTemplate
+      ? events.filter(
+          (event) =>
+            event.templateType === categoryTemplate ||
+            event.templateType === null ||
+            event.templateType === "OTHER",
+        )
+      : events;
+    const upcomingEvents = categoryEvents.filter(
+      (event) => event.startsAt && event.startsAt >= now,
+    );
+    const pastEvents = categoryEvents.filter((event) => event.startsAt && event.startsAt < now);
+    const nextEvent = upcomingEvents[0] ?? null;
+
+    const padelPlayersCount =
+      organizationCategory === "PADEL"
+        ? await prisma.padelPlayerProfile.count({ where: { organizerId: organizerProfile.id } })
+        : 0;
+
+    const padelTopPlayers =
+      organizationCategory === "PADEL"
+        ? await prisma.padelPlayerProfile.findMany({
+            where: { organizerId: organizerProfile.id, isActive: true },
+            orderBy: { createdAt: "desc" },
+            take: 4,
+            select: {
+              id: true,
+              displayName: true,
+              fullName: true,
+              level: true,
+              gender: true,
+            },
+          })
+        : [];
+
+    const highlights = [
+      {
+        label: `Próximo ${categoryMeta.noun}`,
+        value: nextEvent ? formatDate(nextEvent.startsAt) : "Por anunciar",
+        hint: nextEvent ? nextEvent.title : `Sem ${categoryMeta.nounPlural} publicados`,
+      },
+      {
+        label: `${categoryMeta.nounPlural} publicados`,
+        value: categoryEvents.length,
+        hint: categoryEvents.length ? "Ativos no perfil público" : "Começa pela primeira publicação",
+      },
+      organizationCategory === "PADEL"
+        ? {
+            label: "Jogadores registados",
+            value: padelPlayersCount,
+            hint: padelPlayersCount ? "Perfis ativos em competição" : "Ainda sem atletas",
+          }
+        : {
+            label: "Histórico recente",
+            value: pastEvents.length,
+            hint: pastEvents.length ? "Eventos concluídos" : "Sem histórico",
+      },
+    ];
+
+    const infoBlocks = [
+      { key: "rules", title: "Regras", body: organizerProfile.infoRules },
+      { key: "faq", title: "FAQ", body: organizerProfile.infoFaq },
+      { key: "requirements", title: "Requisitos", body: organizerProfile.infoRequirements },
+      { key: "policies", title: "Políticas", body: organizerProfile.infoPolicies },
+      { key: "location", title: "Chegar lá", body: organizerProfile.infoLocationNotes },
+    ].filter((block) => block.body && block.body.trim().length > 0);
+
+    const ctaHref = nextEvent ? `/eventos/${nextEvent.slug}` : "#agenda";
+    const ctaLabel = nextEvent ? categoryMeta.cta : "Ver agenda";
+
+    return (
+      <main className="relative orya-body-bg min-h-screen w-full overflow-hidden text-white">
+        <div className="pointer-events-none fixed inset-0" aria-hidden="true">
+          <div className="absolute -top-36 right-[-140px] h-[420px] w-[420px] rounded-full bg-[radial-gradient(circle_at_35%_35%,rgba(255,0,200,0.28),transparent_60%)] opacity-80 blur-3xl" />
+          <div className="absolute top-[22vh] -left-40 h-[360px] w-[360px] rounded-full bg-[radial-gradient(circle_at_30%_30%,rgba(107,255,255,0.22),transparent_60%)] opacity-80 blur-3xl" />
+          <div className="absolute bottom-[-180px] right-[12%] h-[420px] w-[420px] rounded-full bg-[radial-gradient(circle_at_40%_40%,rgba(22,70,245,0.25),transparent_60%)] opacity-70 blur-3xl" />
+          <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.05),transparent_35%,rgba(0,0,0,0.65))] mix-blend-screen" />
+        </div>
+
+        <section className="relative mx-auto flex max-w-6xl flex-col gap-8 px-4 py-10">
+          <header className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#050914]/85 to-[#05070f]/95 p-6 shadow-[0_26px_80px_rgba(0,0,0,0.75)] backdrop-blur-2xl">
+            <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
+              <div className="flex flex-col gap-4">
+                <div className="flex items-center gap-4">
+                  <div className="relative h-16 w-16 overflow-hidden rounded-2xl border border-white/15 bg-gradient-to-tr from-[#FF00C8]/60 via-[#6BFFFF]/40 to-[#1646F5]/60 p-[1px]">
+                    <div className="flex h-full w-full items-center justify-center rounded-[14px] bg-black/80 text-sm font-semibold uppercase tracking-[0.2em] text-white/70">
+                      {organizerProfile.brandingAvatarUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={organizerProfile.brandingAvatarUrl}
+                          alt={orgDisplayName}
+                          className="h-full w-full rounded-[14px] object-cover"
+                        />
+                      ) : (
+                        orgInitials
+                      )}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="inline-flex items-center rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-white/70">
+                      {categoryMeta.label}
+                    </div>
+                    <h1 className="mt-2 text-2xl font-semibold text-white">{orgDisplayName}</h1>
+                    <p className="text-sm text-white/60">
+                      @{organizerProfile.username ?? usernameParam}
+                      {organizerProfile.city ? ` · ${organizerProfile.city}` : ""}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 text-[12px] text-white/65">
+                  {nextEvent ? (
+                    <>
+                      <span className="rounded-full border border-white/15 bg-white/8 px-3 py-1">
+                        Próximo: {formatEventDateRange(nextEvent.startsAt, nextEvent.endsAt, nextEvent.timezone)}
+                      </span>
+                      <span className="rounded-full border border-white/15 bg-white/8 px-3 py-1">
+                        {nextEvent.locationCity || nextEvent.locationName}
+                      </span>
+                    </>
+                  ) : (
+                    <span className="rounded-full border border-white/15 bg-white/8 px-3 py-1">
+                      Agenda em preparação
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex flex-col items-start gap-2">
+                <Link
+                  href={ctaHref}
+                  className="inline-flex items-center justify-center rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-5 py-2 text-sm font-semibold text-black shadow-[0_0_25px_rgba(107,255,255,0.35)] transition hover:brightness-110"
+                >
+                  {ctaLabel}
+                </Link>
+                <span className="text-[11px] text-white/55">
+                  {nextEvent ? "Segue para o destaque principal" : "Agenda a atualizar"}
+                </span>
+              </div>
+            </div>
+          </header>
+
+          <section className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">Destaques</p>
+                <h2 className="text-xl font-semibold text-white">O essencial agora</h2>
+              </div>
+            </div>
+            <div className="grid gap-4 md:grid-cols-3">
+            {highlights.map((item) => (
+              <div
+                key={item.label}
+                className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/10 via-[#0a1122]/80 to-[#05070f]/90 p-4 text-sm shadow-[0_24px_80px_rgba(0,0,0,0.6)] backdrop-blur-2xl"
+              >
+                <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">{item.label}</p>
+                <p className="mt-2 text-xl font-semibold text-white">{item.value}</p>
+                <p className="mt-1 text-[12px] text-white/60">{item.hint}</p>
+              </div>
+            ))}
+            </div>
+          </section>
+
+          <section id="agenda" className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">
+                  {categoryMeta.nounPlural}
+                </p>
+                <h2 className="text-xl font-semibold text-white">Agenda pública</h2>
+              </div>
+              <Link href={ctaHref} className="text-sm text-white/60 hover:text-white">
+                {categoryMeta.cta}
+              </Link>
+            </div>
+            {upcomingEvents.length === 0 ? (
+              <div className="rounded-3xl border border-white/10 bg-white/5 p-5 text-sm text-white/70 shadow-[0_20px_70px_rgba(0,0,0,0.5)] backdrop-blur-2xl">
+                Ainda não existem {categoryMeta.nounPlural} publicados. Assim que houver datas confirmadas, aparecem aqui.
+              </div>
+            ) : (
+              <div className="grid gap-3">
+                {upcomingEvents.slice(0, 4).map((event) => (
+                  <Link
+                    key={event.id}
+                    href={`/eventos/${event.slug}`}
+                    className="group rounded-2xl border border-white/12 bg-white/5 p-4 text-sm transition hover:border-white/30 hover:bg-white/10"
+                  >
+                    <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                      <div>
+                        <p className="text-[11px] uppercase tracking-[0.2em] text-white/55">
+                          {formatEventDateRange(event.startsAt, event.endsAt, event.timezone)}
+                        </p>
+                        <p className="text-base font-semibold text-white">{event.title}</p>
+                        <p className="text-[12px] text-white/60">
+                          {event.locationName}
+                          {event.locationCity ? ` · ${event.locationCity}` : ""}
+                        </p>
+                      </div>
+                      <span className="inline-flex items-center rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[12px] text-white/70 transition group-hover:border-white/40 group-hover:text-white">
+                        Ver detalhe →
+                      </span>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section className="space-y-4">
+            <div>
+              <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">Canal oficial</p>
+              <h2 className="text-xl font-semibold text-white">Atualizações da organização</h2>
+            </div>
+            {formattedUpdates.length === 0 ? (
+              <div className="rounded-3xl border border-white/10 bg-white/5 p-5 text-sm text-white/70 shadow-[0_20px_70px_rgba(0,0,0,0.5)] backdrop-blur-2xl">
+                Sem atualizações oficiais por agora. As novidades aparecem sempre aqui primeiro.
+              </div>
+            ) : (
+              <div className="grid gap-3">
+                {formattedUpdates.map((update) => (
+                  <div
+                    key={update.id}
+                    className="rounded-2xl border border-white/12 bg-white/5 p-4 text-sm text-white/80 shadow-[0_18px_60px_rgba(0,0,0,0.5)] backdrop-blur-2xl"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">
+                          {update.categoryLabel}
+                          {update.isPinned ? " · Fixado" : ""}
+                        </p>
+                        <h3 className="text-base font-semibold text-white">{update.title}</h3>
+                        {update.event?.slug && (
+                          <Link
+                            href={`/eventos/${update.event.slug}`}
+                            className="text-[12px] text-white/60 hover:text-white"
+                          >
+                            Evento: {update.event.title}
+                          </Link>
+                        )}
+                      </div>
+                      <span className="text-[11px] text-white/55">{update.dateLabel}</span>
+                    </div>
+                    {update.body && (
+                      <p className="mt-2 text-[12px] text-white/70 whitespace-pre-line">
+                        {update.body}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
+          {organizationCategory === "PADEL" && (
+            <section className="space-y-4">
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">Centro de competição</p>
+                <h2 className="text-xl font-semibold text-white">PADEL oficial</h2>
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="rounded-3xl border border-white/12 bg-white/5 p-5 text-sm text-white/75 shadow-[0_24px_70px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
+                  <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Jogadores</p>
+                  <p className="mt-2 text-2xl font-semibold text-white">{padelPlayersCount}</p>
+                  <p className="text-[12px] text-white/60">Perfis ativos na competição.</p>
+                  {padelTopPlayers.length > 0 ? (
+                    <div className="mt-3 flex flex-wrap gap-2 text-[12px] text-white/70">
+                      {padelTopPlayers.map((player) => (
+                        <span
+                          key={player.id}
+                          className="rounded-full border border-white/15 bg-white/10 px-3 py-1"
+                        >
+                          {player.displayName || player.fullName || "Jogador"}{player.level ? ` · ${player.level}` : ""}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="mt-3 text-[12px] text-white/50">Top players a definir.</p>
+                  )}
+                </div>
+                <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050912]/90 p-5 text-sm text-white/75 shadow-[0_24px_70px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
+                  <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Ranking & histórico</p>
+                  <p className="mt-2 text-[12px] text-white/70">
+                    Aqui vês rankings, campeões e resultados oficiais assim que forem publicados.
+                  </p>
+                  <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-[12px] text-white/70">
+                    Temporada atual em preparação.
+                  </div>
+                </div>
+              </div>
+            </section>
+          )}
+
+          {organizationCategory === "VOLUNTARIADO" && (
+            <section className="space-y-4">
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">Missão</p>
+                <h2 className="text-xl font-semibold text-white">Impacto e participação</h2>
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="rounded-3xl border border-white/12 bg-white/5 p-5 text-sm text-white/75 shadow-[0_24px_70px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
+                  <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Missão</p>
+                  <p className="mt-2 text-[12px] text-white/70">
+                    {publicDescription ||
+                      "Esta organização cria ações com impacto real. A missão e os objetivos serão atualizados em breve."}
+                  </p>
+                </div>
+                <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050912]/90 p-5 text-sm text-white/75 shadow-[0_24px_70px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
+                  <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Como participar</p>
+                  <p className="mt-2 text-[12px] text-white/70">
+                    {organizerProfile.infoRequirements ||
+                      organizerProfile.infoRules ||
+                      "Segue a organização, inscreve-te nas próximas ações e confirma a tua disponibilidade."}
+                  </p>
+                </div>
+              </div>
+            </section>
+          )}
+
+          <section className="grid gap-4 md:grid-cols-2">
+            <div className="rounded-3xl border border-white/12 bg-white/5 p-5 text-sm text-white/75 shadow-[0_24px_70px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
+              <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Informação</p>
+              <h3 className="mt-2 text-lg font-semibold text-white">Sobre esta organização</h3>
+              <p className="mt-2 text-[12px] text-white/60">
+                {publicDescription ||
+                  `Esta página representa a estrutura oficial para ${categoryMeta.nounPlural}. Mais detalhes e regras serão adicionados em breve.`}
+              </p>
+              <div className="mt-4 space-y-2 text-[12px]">
+                <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-3 py-2">
+                  <span>Localização base</span>
+                  <span className="font-semibold text-white">{organizerProfile.city ?? "Por definir"}</span>
+                </div>
+                <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-3 py-2">
+                  <span>Morada pública</span>
+                  <span className="font-semibold text-white">
+                    {showAddress ? organizerProfile.address : "Apenas na confirmação"}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/10 via-[#0a1122]/80 to-[#05070f]/90 p-5 text-sm text-white/75 shadow-[0_24px_70px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
+              <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Contacto oficial</p>
+              <h3 className="mt-2 text-lg font-semibold text-white">Fala com a equipa</h3>
+              <p className="mt-2 text-[12px] text-white/60">
+                Mensagens importantes, alterações e confirmações chegam sempre pelos canais oficiais.
+              </p>
+              <div className="mt-4 space-y-2 text-[12px]">
+                <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-3 py-2">
+                  <span>Website</span>
+                  {publicWebsiteHref ? (
+                    <a
+                      href={publicWebsiteHref}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="font-semibold text-white hover:text-white/80"
+                    >
+                      {publicWebsiteLabel}
+                    </a>
+                  ) : (
+                    <span className="font-semibold text-white">{publicWebsiteLabel}</span>
+                  )}
+                </div>
+                <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-3 py-2">
+                  <span>Email</span>
+                  <span className="font-semibold text-white">{contactEmail ?? "A definir"}</span>
+                </div>
+                <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-3 py-2">
+                  <span>Horário</span>
+                  <span className="font-semibold text-white">{publicHours ?? "A definir"}</span>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {infoBlocks.length > 0 && (
+            <section className="space-y-4">
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">Blocos de informação</p>
+                <h2 className="text-xl font-semibold text-white">Detalhes úteis</h2>
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                {infoBlocks.map((block) => (
+                  <div
+                    key={block.key}
+                    className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050912]/90 p-5 text-sm text-white/75 shadow-[0_24px_70px_rgba(0,0,0,0.55)] backdrop-blur-2xl"
+                  >
+                    <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">{block.title}</p>
+                    <p className="mt-2 text-[13px] text-white/80 whitespace-pre-line">{block.body?.trim()}</p>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+        </section>
+      </main>
+    );
   }
 
   const isOwner = viewerId === profile.id;
@@ -149,7 +714,7 @@ export default async function UserProfilePage({ params }: PageProps) {
   }
 
   const displayName =
-    organizerProfile?.displayName?.trim() ||
+    organizerProfile?.publicName?.trim() ||
     profile.fullName?.trim() ||
     profile.username ||
     "Utilizador ORYA";

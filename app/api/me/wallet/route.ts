@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { resolveActions } from "@/lib/entitlements/accessResolver";
+import { buildDefaultCheckinWindow } from "@/lib/checkin/policy";
 import { EntitlementStatus, EntitlementType } from "@prisma/client";
 import crypto from "crypto";
 
@@ -130,15 +131,34 @@ export async function GET(req: NextRequest) {
           })
         : null;
 
+    const eventIds = Array.from(
+      new Set(pageItems.map((e) => e.eventId).filter((id): id is number => typeof id === "number")),
+    );
+    const events =
+      eventIds.length > 0
+        ? await prisma.event.findMany({
+            where: { id: { in: eventIds } },
+            select: { id: true, startsAt: true, endsAt: true },
+          })
+        : [];
+    const eventMap = new Map(events.map((event) => [event.id, event]));
+
     const responseItems = await Promise.all(
       pageItems.map(async (e) => {
+        const eventInfo = e.eventId ? eventMap.get(e.eventId) ?? null : null;
+        const checkinWindow = eventInfo
+          ? buildDefaultCheckinWindow(eventInfo.startsAt, eventInfo.endsAt)
+          : undefined;
+        const outsideWindow = eventInfo ? undefined : true;
+
         const actions = resolveActions({
           type: e.type,
           status: e.status,
           isOwner: true,
           isOrganizer: false,
           isAdmin,
-          checkinWindow: undefined,
+          checkinWindow,
+          outsideWindow,
           emailVerified: Boolean(data.user.email_confirmed_at),
           isGuestOwner: false,
         });

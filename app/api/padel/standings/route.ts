@@ -29,19 +29,17 @@ export async function GET(req: NextRequest) {
 
     // Standings por grupos (roundType=GROUPS) com desempates
     const matches = await prisma.padelMatch.findMany({
-      where: { eventId, roundType: "GROUPS", status: "DONE" },
+      where: { eventId, roundType: "GROUPS" },
       select: {
         id: true,
         pairingAId: true,
         pairingBId: true,
         scoreSets: true,
         groupLabel: true,
+        status: true,
       },
     });
-    const pairings = await prisma.padelPairing.findMany({
-      where: { eventId },
-      select: { id: true, categoryId: true },
-    });
+    const scoredMatches = matches.filter((m) => m.status === "DONE");
 
     type StandingRow = {
       pairingId: number;
@@ -63,13 +61,17 @@ export async function GET(req: NextRequest) {
       return map[pid];
     };
 
-    // Pré-criar linhas para parings existentes
-    pairings.forEach((p) => ensure("A", p.id)); // fallback group if none
+    // Pré-criar linhas apenas para parings já atribuídos a grupos
+    matches.forEach((m) => {
+      const group = m.groupLabel || "A";
+      if (m.pairingAId) ensure(group, m.pairingAId);
+      if (m.pairingBId) ensure(group, m.pairingBId);
+    });
 
     // head-to-head quick map: group+pair => winner (1 for A, -1 for B, 0 tie)
     const headToHead = new Map<string, number>();
 
-    matches.forEach((m) => {
+    scoredMatches.forEach((m) => {
       if (!m.pairingAId || !m.pairingBId) return;
       const group = m.groupLabel || "A";
       const aRow = ensure(group, m.pairingAId);
@@ -150,7 +152,7 @@ export async function GET(req: NextRequest) {
           const miniMap = new Map<number, StandingRow>();
           mini.forEach((m) => miniMap.set(m.pairingId, m));
 
-          matches
+          scoredMatches
             .filter((m) => m.groupLabel === label && cluster.some((c) => c.pairingId === m.pairingAId || c.pairingId === m.pairingBId))
             .forEach((m) => {
               if (!m.pairingAId || !m.pairingBId) return;

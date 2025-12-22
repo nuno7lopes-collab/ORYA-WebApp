@@ -44,10 +44,10 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   }
 
   const pending =
-    pairing.paymentMode === PadelPaymentMode.SPLIT
+    pairing.payment_mode === PadelPaymentMode.SPLIT
       ? pairing.slots.find((s) => s.slotStatus === "PENDING")
       : null;
-  if (pairing.paymentMode === PadelPaymentMode.SPLIT) {
+  if (pairing.payment_mode === PadelPaymentMode.SPLIT) {
     if (!pending) {
       return NextResponse.json({ ok: false, error: "NO_PENDING_SLOT" }, { status: 400 });
     }
@@ -112,11 +112,11 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   }
 
   const currency = ticketType.currency || "EUR";
-  const paymentScenario = pairing.paymentMode === PadelPaymentMode.FULL ? "GROUP_FULL" : "GROUP_SPLIT";
+  const paymentScenario = pairing.payment_mode === PadelPaymentMode.FULL ? "GROUP_FULL" : "GROUP_SPLIT";
   const items = [
     {
       ticketId: ticketTypeId,
-      quantity: pairing.paymentMode === PadelPaymentMode.FULL ? 2 : 1,
+      quantity: pairing.payment_mode === PadelPaymentMode.FULL ? 2 : 1,
       unitPriceCents: ticketType.price,
       currency: currency.toUpperCase(),
     },
@@ -144,6 +144,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         paymentScenario,
         pairingId: pairing.id,
         slotId: pending?.id ?? undefined,
+        inviteToken: inviteToken ?? undefined,
       }),
     });
 
@@ -156,11 +157,11 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       );
     }
 
-    // Marcar slot como PAYMENT_PENDING para bloquear alterações enquanto paga
+    // Não existe estado PAYMENT_PENDING no enum; mantemos UNPAID
     if (pending) {
       await prisma.padelPairingSlot.update({
         where: { id: pending.id },
-        data: { paymentStatus: PadelPairingPaymentStatus.PAYMENT_PENDING },
+        data: { paymentStatus: PadelPairingPaymentStatus.UNPAID },
       });
     }
 

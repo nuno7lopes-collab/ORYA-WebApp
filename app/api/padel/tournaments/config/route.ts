@@ -40,7 +40,18 @@ export async function GET(req: NextRequest) {
     },
   });
 
-  return NextResponse.json({ ok: true, config }, { status: 200 });
+  return NextResponse.json(
+    {
+      ok: true,
+      config: config
+        ? {
+            ...config,
+            organizerId: config.organizerId,
+          }
+        : null,
+    },
+    { status: 200 },
+  );
 }
 
 export async function POST(req: NextRequest) {
@@ -87,20 +98,16 @@ export async function POST(req: NextRequest) {
   }
 
   // Formatos suportados (alinhados com geração de jogos)
-  const allowedFormats = new Set<PadelFormat>(Object.values(PadelFormat));
+  const allowedFormats = new Set<PadelFormat>([
+    "TODOS_CONTRA_TODOS",
+    "QUADRO_ELIMINATORIO",
+    "GRUPOS_ELIMINATORIAS",
+  ]);
   if (!allowedFormats.has(format)) {
     return NextResponse.json({ ok: false, error: "FORMAT_NOT_SUPPORTED" }, { status: 400 });
   }
 
-  const fallbackFormat: Record<PadelFormat, PadelFormat> = {
-    TODOS_CONTRA_TODOS: "TODOS_CONTRA_TODOS",
-    QUADRO_ELIMINATORIO: "QUADRO_ELIMINATORIO",
-    GRUPOS_ELIMINATORIAS: "GRUPOS_ELIMINATORIAS",
-    CAMPEONATO_LIGA: "TODOS_CONTRA_TODOS",
-    QUADRO_AB: "QUADRO_ELIMINATORIO",
-    NON_STOP: "TODOS_CONTRA_TODOS",
-  } as const;
-  const formatEffective = fallbackFormat[format];
+  const formatEffective = format;
 
   try {
     const existing = await prisma.padelTournamentConfig.findUnique({

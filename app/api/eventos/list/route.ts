@@ -52,14 +52,29 @@ export async function GET(req: NextRequest) {
 
   try {
     const filters: Prisma.EventWhereInput[] = [
-      { status: "PUBLISHED" },
-      { OR: [{ organizerId: null }, { organizer: { publicListingEnabled: true } }] },
+      { status: { in: ["PUBLISHED", "DATE_CHANGED"] } },
+      { isTest: { not: true } },
+      {
+        OR: [
+          { organizerId: null },
+          { organizer: { status: "ACTIVE", publicListingEnabled: true } },
+          { organizer: { status: "ACTIVE", publicListingEnabled: null } },
+        ],
+      },
     ];
 
     if (category && category !== "all") {
-      const normalizedCategory =
-        category.toUpperCase() === "DESPORTO" ? "PADEL" : category.toUpperCase();
-      filters.push({ templateType: normalizedCategory as Prisma.EventWhereInput["templateType"] });
+      const normalized = category.toUpperCase();
+      if (normalized === "PADEL") {
+        filters.push({ templateType: "PADEL" });
+      } else if (normalized === "GERAL" || normalized === "EVENTOS") {
+        filters.push({
+          OR: [{ templateType: { not: "PADEL" } }, { templateType: null }],
+        });
+      } else {
+        const normalizedCategory = normalized === "DESPORTO" ? "PADEL" : normalized;
+        filters.push({ templateType: normalizedCategory as Prisma.EventWhereInput["templateType"] });
+      }
     }
 
     if (typeFilter === "free") {

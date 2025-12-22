@@ -5,7 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
 import { prisma } from "@/lib/prisma";
 import { stripe } from "@/lib/stripeClient";
-import { fulfillPayment, handleRefund } from "@/app/api/stripe/webhook/route";
+import { handleRefund } from "@/app/api/stripe/webhook/route";
 import { OperationRecord, OperationType } from "./types";
 import { refundPurchase } from "@/lib/refunds/refundService";
 import { PaymentEventSource, RefundReason, EntitlementType, EntitlementStatus, Prisma } from "@prisma/client";
@@ -13,7 +13,6 @@ import { FulfillPayload } from "@/lib/operations/types";
 import { fulfillPaidIntent } from "@/lib/operations/fulfillPaid";
 import { markSaleDisputed } from "@/domain/finance/disputes";
 import { enqueueOperation } from "@/lib/operations/enqueue";
-import crypto from "crypto";
 import {
   sendPurchaseConfirmationEmail,
   sendEntitlementDeliveredEmail,
@@ -377,6 +376,19 @@ async function processOperation(op: OperationRecord) {
   }
 }
 
+async function performPaymentFulfillment(intent: Stripe.PaymentIntent, stripeEventId?: string) {
+  const handledResale = await fulfillResaleIntent(intent as Stripe.PaymentIntent);
+  const handledPadelSplit = await fulfillPadelSplitIntent(intent as Stripe.PaymentIntent, null);
+  const handledPadelFull = await fulfillPadelFullIntent(intent as Stripe.PaymentIntent);
+  const handledSecondCharge = await fulfillPadelSecondCharge(intent as Stripe.PaymentIntent);
+  const handledPaid =
+    handledResale || handledPadelSplit || handledPadelFull || handledSecondCharge
+      ? true
+      : await fulfillPaidIntent(intent as Stripe.PaymentIntent, stripeEventId);
+
+  return handledResale || handledPadelSplit || handledPadelFull || handledSecondCharge || handledPaid;
+}
+
 async function processStripeEvent(op: OperationRecord) {
   const payload = op.payload || {};
   const eventType = typeof payload.stripeEventType === "string" ? payload.stripeEventType : null;
@@ -386,7 +398,31 @@ async function processStripeEvent(op: OperationRecord) {
       (typeof payload.paymentIntentId === "string" ? payload.paymentIntentId : null);
     if (!piId) throw new Error("Missing paymentIntentId");
     const intent = await stripe.paymentIntents.retrieve(piId, { expand: ["latest_charge"] });
-    return fulfillPayment(intent as Stripe.PaymentIntent, op.stripeEventId ?? undefined);
+    try {
+      const handled = await performPaymentFulfillment(intent as Stripe.PaymentIntent, op.stripeEventId ?? undefined);
+      if (!handled) {
+        throw new Error("PAYMENT_INTENT_NOT_HANDLED");
+      }
+      await prisma.paymentEvent.updateMany({
+        where: { stripePaymentIntentId: piId },
+        data: {
+          status: "OK",
+          errorMessage: null,
+          updatedAt: new Date(),
+        },
+      });
+      return;
+    } catch (err) {
+      await prisma.paymentEvent.updateMany({
+        where: { stripePaymentIntentId: piId },
+        data: {
+          status: "ERROR",
+          errorMessage: err instanceof Error ? err.message : String(err),
+          updatedAt: new Date(),
+        },
+      });
+      throw err;
+    }
   }
   if (eventType === "charge.refunded") {
     const chargeId = typeof payload.chargeId === "string" ? payload.chargeId : null;
@@ -409,21 +445,10 @@ async function processFulfillPayment(op: OperationRecord) {
       ? await stripe.paymentIntents.retrieve(piId, { expand: ["latest_charge"] })
       : await stripe.paymentIntents.retrieve(piId, { expand: ["latest_charge"] });
 
-  // Tenta caminho granular; se não suportado, recai no legacy fulfillPayment
   try {
-    const handledResale = await fulfillResaleIntent(intent as Stripe.PaymentIntent);
-    const handledPadelSplit = await fulfillPadelSplitIntent(
-      intent as Stripe.PaymentIntent,
-      null,
-    );
-    const handledPadelFull = await fulfillPadelFullIntent(intent as Stripe.PaymentIntent);
-    const handledSecondCharge = await fulfillPadelSecondCharge(intent as Stripe.PaymentIntent);
-    const handledPaid =
-      handledResale || handledPadelSplit || handledPadelFull || handledSecondCharge
-        ? true
-        : await fulfillPaidIntent(intent as Stripe.PaymentIntent, op.stripeEventId ?? undefined);
-    if (!handledResale && !handledPadelSplit && !handledPadelFull && !handledSecondCharge && !handledPaid) {
-      await fulfillPayment(intent as Stripe.PaymentIntent, op.stripeEventId ?? undefined);
+    const handled = await performPaymentFulfillment(intent as Stripe.PaymentIntent, op.stripeEventId ?? undefined);
+    if (!handled) {
+      throw new Error("PAYMENT_INTENT_NOT_HANDLED");
     }
     await prisma.paymentEvent.updateMany({
       where: { stripePaymentIntentId: piId },
@@ -574,35 +599,6 @@ async function processUpsertLedger(op: OperationRecord) {
       type: EntitlementType.EVENT_TICKET,
     } as any);
 
-    // Tickets legacy (mantido para compat) + stock
-    const existing = await prisma.ticket.findMany({
-      where: { purchaseId, ticketTypeId: tt.id },
-      select: { emissionIndex: true },
-    });
-    const existingIdx = new Set(existing.map((t) => t.emissionIndex ?? 0));
-    for (let i = 0; i < line.quantity; i++) {
-      if (existingIdx.has(i)) continue;
-      await prisma.ticket.create({
-        data: {
-          userId,
-          ownerUserId: userId,
-          ownerIdentityId,
-          eventId: event.id,
-          ticketTypeId: tt.id,
-          status: "ACTIVE",
-          purchasedAt: new Date(),
-          qrSecret: crypto.randomUUID(),
-          pricePaid: 0,
-          currency: tt.currency?.toUpperCase() ?? currency,
-          platformFeeCents: 0,
-          totalPaidCents: 0,
-          stripePaymentIntentId: purchaseId,
-          purchaseId,
-          saleSummaryId: saleSummary.id,
-          emissionIndex: i,
-        },
-      });
-    }
     await prisma.ticketType.update({
       where: { id: tt.id },
       data: { soldQuantity: { increment: line.quantity } },

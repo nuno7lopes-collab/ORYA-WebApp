@@ -12,7 +12,7 @@ import { trackEvent } from "@/lib/analytics";
 
 type ExploreItem = {
   id: number;
-  type: "EVENT" | "EXPERIENCE";
+  type: "EVENT";
   slug: string;
   title: string;
   shortDescription: string | null;
@@ -43,7 +43,7 @@ type ApiResponse = {
 };
 
 type DateFilter = "all" | "today" | "weekend" | "custom";
-type TypeFilter = "all" | "event" | "experience";
+type TypeFilter = "all" | "event";
 
 const DATE_FILTER_OPTIONS = [
   { value: "all", label: "Todas as datas" },
@@ -54,7 +54,6 @@ const DATE_FILTER_OPTIONS = [
 const TYPE_OPTIONS: { value: TypeFilter; label: string }[] = [
   { value: "all", label: "Tudo" },
   { value: "event", label: "Eventos" },
-  { value: "experience", label: "Experiências" },
 ];
 
 const CATEGORY_OPTIONS = [
@@ -150,8 +149,8 @@ function statusTag(status: ExploreItem["status"]) {
   return { text: "Em breve", className: "text-[#6BFFFF]" };
 }
 
-function buildSlug(type: ExploreItem["type"], slug: string) {
-  return type === "EXPERIENCE" ? `/experiencias/${slug}` : `/eventos/${slug}`;
+function buildSlug(_type: ExploreItem["type"], slug: string) {
+  return `/eventos/${slug}`;
 }
 
 const exploreMainClass =
@@ -636,7 +635,7 @@ function ExplorarContent() {
       setDateFilter("custom");
       setCustomDate(dayQ);
     }
-    if (typeQ === "event" || typeQ === "experience") {
+    if (typeQ === "event") {
       setTypeFilter(typeQ);
     }
     if (catsQ) {
@@ -889,7 +888,7 @@ function ExplorarContent() {
               </span>
             </span>
             <span className="text-white/45">
-              Eventos e experiências em{" "}
+              Eventos em{" "}
               <span className="text-white/85">{headingCity}</span>
             </span>
           </div>
@@ -949,7 +948,7 @@ function ExplorarContent() {
         {/* SEM RESULTADOS */}
         {!loading && !error && items.length === 0 && (
           <div className="mt-10 flex flex-col items-center text-center gap-2 text-sm text-white/60">
-            <p>Não encontrámos eventos ou experiências com estes filtros.</p>
+            <p>Não encontrámos eventos com estes filtros.</p>
             <p className="text-xs text-white/40 max-w-sm">
               Ajusta a cidade, categorias ou preço — ou volta mais tarde. A cidade está sempre a
               mexer.
@@ -980,21 +979,12 @@ function ExplorarContent() {
             <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
               {[...items.map((item) => ({ item })), ...Array.from({ length: Math.max(0, 3 - items.length) }).map((_, idx) => ({ item: null, key: `placeholder-${idx}` }))].map((entry, idx) =>
                 entry.item ? (
-                  entry.item.type === "EVENT" ? (
-                    <EventCard
-                      key={`${entry.item.type}-${entry.item.id}`}
-                      item={entry.item}
-                      onLike={toggleLike}
-                      liked={likedItems.includes(entry.item.id)}
-                    />
-                  ) : (
-                    <ExperienceCard
-                      key={`${entry.item.type}-${entry.item.id}`}
-                      item={entry.item}
-                      onLike={toggleLike}
-                      liked={likedItems.includes(entry.item.id)}
-                    />
-                  )
+                  <EventCard
+                    key={`${entry.item.type}-${entry.item.id}`}
+                    item={entry.item}
+                    onLike={toggleLike}
+                    liked={likedItems.includes(entry.item.id)}
+                  />
                 ) : (
                   <PlaceholderCard key={entry.key ?? `placeholder-${idx}`} />
                 ),
@@ -1285,17 +1275,6 @@ function EventCard(props: CardProps) {
       accentClass="from-[#FF00C8]/45 via-[#6BFFFF]/25 to-[#1646F5]/45"
       badge="Evento"
       neonClass="shadow-[0_14px_32px_rgba(0,0,0,0.45)]"
-    />
-  );
-}
-
-function ExperienceCard(props: CardProps) {
-  return (
-    <BaseCard
-      {...props}
-      accentClass="from-[#22d3ee]/45 via-[#34d399]/25 to-[#0ea5e9]/45"
-      badge="Experiência"
-      neonClass="shadow-[0_14px_32px_rgba(0,0,0,0.42)]"
     />
   );
 }

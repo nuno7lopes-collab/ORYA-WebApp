@@ -217,7 +217,7 @@ export default function AdminSettingsPage() {
 
           <div className="grid gap-3 pt-3 text-sm text-white/85 md:grid-cols-2">
             <div className="rounded-xl border border-white/10 bg-black/20 p-3">
-              <p className="mb-2 text-xs uppercase tracking-[0.15em] text-white/60">Cliente paga (ON_TOP)</p>
+              <p className="mb-2 text-xs uppercase tracking-[0.15em] text-white/60">Cliente paga</p>
               <p className="flex justify-between">
                 <span>Preço base</span>
                 <span>10,00 €</span>

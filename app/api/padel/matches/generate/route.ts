@@ -109,7 +109,7 @@ export async function POST(req: NextRequest) {
   });
   if (!event || !event.organizerId) return NextResponse.json({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
 
-  const { organizer } = await getActiveOrganizerForUser(user.id, {
+  const { organizer, membership } = await getActiveOrganizerForUser(user.id, {
     organizerId: event.organizerId,
     roles: allowedRoles,
   });
@@ -187,6 +187,15 @@ export async function POST(req: NextRequest) {
         : 2;
 
     const groups = distributeIntoGroups(pairingIds, groupCount, seeding);
+    if (groups.length === 0 || groups.every((g) => g.length === 0)) {
+      return NextResponse.json({ ok: false, error: "NO_GROUPS" }, { status: 400 });
+    }
+
+    const maxQualify = Math.max(...groups.map((g) => g.length));
+    if (qualifyPerGroup > maxQualify) {
+      return NextResponse.json({ ok: false, error: "QUALIFY_EXCEEDS_GROUP_SIZE" }, { status: 400 });
+    }
+
     const matchesToCreate: Array<Parameters<typeof prisma.padelMatch.create>[0]["data"]> = [];
 
     groups.forEach((groupIds, groupIdx) => {
@@ -236,6 +245,9 @@ export async function POST(req: NextRequest) {
 
   // Fase eliminatória a partir dos grupos
   if (format === "GRUPOS_ELIMINATORIAS" && phase === "KNOCKOUT") {
+    if (allowIncomplete && membership?.role && !["OWNER", "CO_OWNER"].includes(membership.role)) {
+      return NextResponse.json({ ok: false, error: "OVERRIDE_NOT_ALLOWED" }, { status: 403 });
+    }
     const existingKo = await prisma.padelMatch.findFirst({
       where: { eventId, roundType: "KNOCKOUT" },
       select: { id: true },
@@ -353,8 +365,9 @@ export async function POST(req: NextRequest) {
     standingsByGroup
       .sort((a, b) => a.label.localeCompare(b.label))
       .forEach((g) => {
+        const limit = Math.min(qualifyPerGroup, g.rows.length);
         qualifiers.push(
-          ...g.rows.slice(0, qualifyPerGroup).map((r, idx) => ({
+          ...g.rows.slice(0, limit).map((r, idx) => ({
             pairingId: r.pairingId,
             groupLabel: g.label,
             rank: idx + 1,
@@ -386,17 +399,20 @@ export async function POST(req: NextRequest) {
     const byeCount = Math.max(0, bracketSize - seeds.length);
     const entrants: Array<typeof seeds[number] | null> = [...seeds, ...Array(byeCount).fill(null)];
 
-    // Evitar confrontos do mesmo grupo na 1ª ronda quando possível
+    // Evitar confrontos do mesmo grupo na 1ª ronda quando possível: tentar swaps preservando seeding base
     const pairs: Array<{ a: typeof seeds[number] | null; b: typeof seeds[number] | null }> = [];
-    for (let i = 0; i < entrants.length; i += 2) {
+    // Standard bracket seeding: 1 vs last, 2 vs last-1, etc.
+    for (let i = 0; i < bracketSize / 2; i += 1) {
       let a = entrants[i] ?? null;
-      let b = entrants[i + 1] ?? null;
+      let b = entrants[bracketSize - 1 - i] ?? null;
       if (a && b && a.groupLabel === b.groupLabel) {
-        const swapIndex = entrants.slice(i + 2).findIndex((cand) => cand && cand.groupLabel !== a?.groupLabel);
+        const swapIndex = entrants.findIndex(
+          (cand, idx) => idx !== i && idx !== bracketSize - 1 - i && cand && cand.groupLabel !== a?.groupLabel,
+        );
         if (swapIndex !== -1) {
-          const realIndex = i + 2 + swapIndex;
-          [entrants[i + 1], entrants[realIndex]] = [entrants[realIndex], entrants[i + 1]];
-          b = entrants[i + 1] ?? null;
+          const tmp = entrants[swapIndex];
+          entrants[swapIndex] = b;
+          b = tmp ?? null;
         }
       }
       pairs.push({ a, b });
@@ -416,31 +432,53 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "NO_KO_MATCHES" }, { status: 400 });
     }
 
-    await prisma.padelMatch.createMany({
-      data: koPairs.map((p, idx) => {
-        const court = courtsList[idx % courtsList.length];
-        const matchCount = koPairs.length;
-        const roundLabel =
-          matchCount === 1
-            ? "FINAL"
-            : matchCount === 2
-              ? "SEMIFINAL"
-              : matchCount === 4
-                ? "QUARTERFINAL"
-                : `R${bracketSize}`;
-        return {
+    // Criar primeira ronda e rounds seguintes com placeholders (para auto avanço)
+    const matchCreateData: Array<Parameters<typeof prisma.padelMatch.create>[0]["data"]> = [];
+    const firstRoundLabel =
+      koPairs.length === 1 ? "FINAL" : koPairs.length === 2 ? "SEMIFINAL" : koPairs.length === 4 ? "QUARTERFINAL" : `R${koPairs.length * 2}`;
+    koPairs.forEach((p, idx) => {
+      const court = courtsList[idx % courtsList.length];
+      matchCreateData.push({
+        eventId,
+        pairingAId: p.a,
+        pairingBId: p.b,
+        status: "PENDING",
+        roundType: "KNOCKOUT",
+        roundLabel: firstRoundLabel,
+        courtNumber: court ? (idx % courtsList.length) + 1 : null,
+        courtName: court?.name || null,
+        score: {},
+      });
+    });
+
+    let currentCount = koPairs.length;
+    let roundIdx = 1;
+    while (currentCount > 1) {
+      const nextCount = Math.ceil(currentCount / 2);
+      const roundLabel =
+        nextCount === 1
+          ? "FINAL"
+          : nextCount === 2
+            ? "SEMIFINAL"
+            : nextCount === 4
+              ? "QUARTERFINAL"
+              : `R${nextCount * 2}`;
+      for (let i = 0; i < nextCount; i += 1) {
+        matchCreateData.push({
           eventId,
-          pairingAId: p.a,
-          pairingBId: p.b,
+          pairingAId: null,
+          pairingBId: null,
           status: "PENDING",
           roundType: "KNOCKOUT",
           roundLabel,
-          courtNumber: court ? (idx % courtsList.length) + 1 : null,
-          courtName: court?.name || null,
           score: {},
-        };
-      }),
-    });
+        });
+      }
+      currentCount = nextCount;
+      roundIdx += 1;
+    }
+
+    await prisma.padelMatch.createMany({ data: matchCreateData });
 
     // Snapshot do quadro KO para transparência
     const existingAdvanced = (config?.advancedSettings as Record<string, unknown>) ?? {};
@@ -458,6 +496,10 @@ export async function POST(req: NextRequest) {
         },
       },
     });
+
+    if (userIds.length) {
+      await queueBracketPublished(userIds, eventId);
+    }
 
     return NextResponse.json(
       {

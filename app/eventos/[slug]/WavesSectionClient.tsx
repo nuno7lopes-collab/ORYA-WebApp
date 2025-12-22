@@ -161,8 +161,8 @@ export default function WavesSectionClient({
 
   return (
     <div className="mt-6 w-full">
-      <div className="rounded-2xl bg-white/5 border border-white/10 px-5 py-4 backdrop-blur-xl flex flex-col gap-3 shadow-[0_0_30px_rgba(0,0,0,0.45)]">
-        <p className="text-white/80 text-sm">
+      <div className="rounded-2xl border border-white/15 bg-[linear-gradient(140deg,rgba(255,255,255,0.14),rgba(4,8,20,0.85))] px-5 py-4 backdrop-blur-xl flex flex-col gap-3 shadow-[0_0_35px_rgba(0,0,0,0.55)]">
+        <p className="text-white/85 text-sm">
           {minPrice !== null ? (
             <>
               A partir de{" "}

@@ -12,7 +12,7 @@ type AdminEventItem = {
   status: string;
   type: string;
   startsAt: string | null;
-  organizer?: { id: number; displayName: string | null } | null;
+  organizer?: { id: number; publicName: string | null } | null;
   ticketsSold?: number;
   revenueCents?: number;
   revenueTotalCents?: number;
@@ -212,7 +212,7 @@ export default function AdminEventosPage() {
             >
               <option value="ALL">Todos</option>
               <option value="ORGANIZER_EVENT">Organizador</option>
-              <option value="EXPERIENCE">Experiência</option>
+              <option value="EXPERIENCE">Evento (utilizador)</option>
             </select>
           </div>
           <div>
@@ -292,7 +292,7 @@ export default function AdminEventosPage() {
                         </div>
                       </td>
                       <td className="px-4 py-3 align-middle text-white/80">
-                        {ev.organizer?.displayName ?? "-"} {ev.organizer ? `(ID ${ev.organizer.id})` : ""}
+                        {ev.organizer?.publicName ?? "-"} {ev.organizer ? `(ID ${ev.organizer.id})` : ""}
                       </td>
                       <td className="px-4 py-3 align-middle text-white/80">{formatDate(ev.startsAt)}</td>
                       <td className="px-4 py-3 align-middle text-white/80">{ev.type || "-"}</td>

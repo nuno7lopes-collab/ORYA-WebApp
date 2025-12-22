@@ -294,7 +294,7 @@ export function OrganizerTour({ organizerId }: OrganizerTourProps) {
 
   useEffect(() => {
     if (!shouldShow) return;
-    if (step.anchor !== "[data-tour='user-experience']") return;
+    if (step.anchor !== "[data-tour='user-event']") return;
     const el = document.querySelector(step.anchor);
     if (!el) return;
     const details = el.closest("details");

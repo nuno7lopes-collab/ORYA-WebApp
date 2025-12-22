@@ -10,8 +10,7 @@ export type OrganizationSwitcherOption = {
   organizer: {
     id: number;
     username: string | null;
-    publicName?: string | null;
-    displayName: string | null;
+    publicName: string | null;
     businessName: string | null;
     city: string | null;
     entityType: string | null;
@@ -48,7 +47,7 @@ export function OrganizationSwitcher({ currentId, initialOrgs = [] }: Props) {
 
   if (!current) {
     return (
-      <div data-tour="user-experience">
+      <div data-tour="user-event">
         <Link
           href="/organizador/organizations"
           className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-2 text-[12px] text-white/80 hover:border-white/20"
@@ -69,7 +68,7 @@ export function OrganizationSwitcher({ currentId, initialOrgs = [] }: Props) {
   };
 
   return (
-    <div className="relative" data-tour="user-experience">
+    <div className="relative" data-tour="user-event">
       <details
         className="group"
         ref={detailsRef}
@@ -84,12 +83,12 @@ export function OrganizationSwitcher({ currentId, initialOrgs = [] }: Props) {
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={current.organizer.brandingAvatarUrl}
-              alt={current.organizer.publicName || current.organizer.displayName || "Organização"}
+              alt={current.organizer.publicName || "Organização"}
               className="h-8 w-8 rounded-full border border-white/10 object-cover"
             />
           ) : (
             <span className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/5 text-[11px] font-semibold">
-              {(current.organizer.publicName || current.organizer.displayName || current.organizer.businessName || "O")[0]}
+              {(current.organizer.publicName || current.organizer.businessName || "O")[0]}
             </span>
           )}
           <span className="text-white/70 group-open:rotate-180 transition-transform pr-1">▾</span>
@@ -105,7 +104,7 @@ export function OrganizationSwitcher({ currentId, initialOrgs = [] }: Props) {
               <span className="text-[10px] text-white/60">↗</span>
             </Link>
             <Link
-              href={current.organizer.username ? `/org/${current.organizer.username}` : "/explorar"}
+              href={current.organizer.username ? `/${current.organizer.username}` : "/explorar"}
               target={current.organizer.username ? "_blank" : undefined}
               rel={current.organizer.username ? "noreferrer" : undefined}
               className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm text-white hover:bg-white/10"

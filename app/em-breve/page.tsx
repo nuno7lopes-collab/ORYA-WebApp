@@ -10,7 +10,7 @@ export default function EmBrevePage() {
         <h1 className="text-2xl font-semibold">Em breve</h1>
         <p className="text-sm text-white/70">
           Esta área está temporariamente disponível apenas para administradores. Estamos a preparar a melhor
-          experiência para ti.
+          evento para ti.
         </p>
         <div className="flex flex-col gap-3 pt-2">
           <Link

@@ -3,7 +3,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { TicketStatus, EventStatus, Prisma } from "@prisma/client";
+import { EventStatus, Prisma } from "@prisma/client";
 import { getActiveOrganizerForUser } from "@/lib/organizerContext";
 import { isOrgAdminOrAbove } from "@/lib/organizerPermissions";
 
@@ -114,41 +114,6 @@ export async function GET(req: NextRequest) {
     let netRevenueCents = summaries.reduce((acc, s) => acc + (s.netCents ?? 0), 0);
 
     let eventsWithSalesCount = new Set(summaries.map((s) => s.eventId)).size;
-
-    // Fallback para legacy (caso ainda não haja sale_summaries)
-    if (summaries.length === 0) {
-      const ticketWhere: Prisma.TicketWhereInput = {
-        status: {
-          in: [TicketStatus.ACTIVE, TicketStatus.USED],
-        },
-        event: {
-          organizerId: organizer.id,
-        },
-      };
-
-      if (fromDate && toDate) {
-        ticketWhere.purchasedAt = {
-          gte: fromDate,
-          lte: toDate,
-        };
-      }
-
-      const tickets = await prisma.ticket.findMany({
-        where: ticketWhere,
-        select: {
-          pricePaid: true,
-          eventId: true,
-        },
-      });
-
-      totalTickets = tickets.length;
-      grossCents = tickets.reduce((sum, t) => sum + (t.pricePaid ?? 0), 0);
-      // sem breakdown legacy: assumimos sem desconto/fee explícito
-      discountCents = 0;
-      platformFeeCents = 0;
-      netRevenueCents = grossCents;
-      eventsWithSalesCount = new Set(tickets.map((t) => t.eventId)).size;
-    }
 
     // Contar eventos publicados do organizador (no geral, não só no período)
     const activeEventsCount = await prisma.event.count({

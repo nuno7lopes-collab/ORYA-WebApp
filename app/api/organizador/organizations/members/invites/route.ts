@@ -83,7 +83,7 @@ const serializeInvite = (
   };
 };
 
-async function sendInviteEmail(invite: { id: string; organizerId: number; targetIdentifier: string; role: string; organizer?: { displayName: string | null } | null }) {
+async function sendInviteEmail(invite: { id: string; organizerId: number; targetIdentifier: string; role: string; organizer?: { publicName: string | null } | null }) {
   const normalized = invite.targetIdentifier.toLowerCase();
   if (!normalized.includes("@")) return;
 
@@ -91,7 +91,7 @@ async function sendInviteEmail(invite: { id: string; organizerId: number; target
   const acceptUrl = `${origin}/organizador/organizations?organizerId=${invite.organizerId}&invite=${invite.id}`;
   const roleLabel =
     invite.role === "OWNER" ? "Owner" : invite.role === "CO_OWNER" ? "Co-owner" : invite.role.toUpperCase();
-  const orgName = invite.organizer?.displayName ?? "ORYA";
+  const orgName = invite.organizer?.publicName ?? "ORYA";
 
   try {
     await sendEmail({
@@ -319,7 +319,7 @@ export async function POST(req: NextRequest) {
             visibility: true,
           },
         },
-        organizer: { select: { id: true, displayName: true } },
+        organizer: { select: { id: true, publicName: true } },
       },
     });
 
@@ -335,7 +335,7 @@ export async function POST(req: NextRequest) {
         userId: targetUserId,
         type: NotificationType.ORGANIZER_INVITE,
         title: "Convite para organização",
-        body: `Foste convidado para a organização ${invite.organizer?.displayName ?? "ORYA"}.`,
+        body: `Foste convidado para a organização ${invite.organizer?.publicName ?? "ORYA"}.`,
         ctaUrl: `/organizador/organizations`,
         ctaLabel: "Ver convites",
         senderVisibility: "PUBLIC",
@@ -556,7 +556,7 @@ export async function PATCH(req: NextRequest) {
             avatarUrl: true,
           },
         },
-        organizer: { select: { id: true, displayName: true } },
+        organizer: { select: { id: true, publicName: true } },
       },
     });
 

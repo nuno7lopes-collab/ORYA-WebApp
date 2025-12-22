@@ -562,7 +562,7 @@ function AuthModalContent({
     mode === "login"
       ? "Acede à tua conta e continua onde ficaste."
       : mode === "signup"
-      ? "Demora segundos. Depois é só viver experiências."
+      ? "Demora segundos. Depois é só viver eventos."
       : mode === "verify"
       ? "Valida o código que enviámos para o teu email."
       : "Só falta isto para ficares pronto.";

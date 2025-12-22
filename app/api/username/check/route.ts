@@ -1,28 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
-import { normalizeAndValidateUsername } from "@/lib/globalUsernames";
+import { checkUsernameAvailability } from "@/lib/globalUsernames";
 
 export async function GET(req: NextRequest) {
-  const { searchParams } = new URL(req.url);
-  const usernameParam = searchParams.get("username") ?? "";
+  try {
+    const username = req.nextUrl.searchParams.get("username");
+    if (!username) {
+      return NextResponse.json({ ok: false, error: "username é obrigatório" }, { status: 400 });
+    }
 
-  const validated = normalizeAndValidateUsername(usernameParam);
-  if (!validated.ok) {
-    return NextResponse.json({ ok: false, error: validated.error }, { status: 400 });
+    const result = await checkUsernameAvailability(username);
+    if (!result.ok) {
+      return NextResponse.json({ ok: false, error: result.error }, { status: 400 });
+    }
+
+    return NextResponse.json({ ok: true, available: result.available, username: result.username }, { status: 200 });
+  } catch (err) {
+    console.error("[api/username/check][GET]", err);
+    return NextResponse.json({ ok: false, error: "Erro ao verificar username" }, { status: 500 });
   }
-
-  const existing = await prisma.globalUsername.findUnique({
-    where: { username: validated.username },
-    select: { ownerType: true, ownerId: true },
-  });
-
-  return NextResponse.json(
-    {
-      ok: true,
-      username: validated.username,
-      available: !existing,
-      takenBy: existing ?? null,
-    },
-    { status: 200 },
-  );
 }

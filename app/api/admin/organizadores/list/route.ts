@@ -9,7 +9,7 @@ import { OrganizerStatus, Prisma } from "@prisma/client";
  * GET /api/admin/organizadores/list
  *
  * Query params opcionais:
- *  - search: string (filtra por displayName com contains, case-insensitive)
+ *  - search: string (filtra por publicName com contains, case-insensitive)
  *  - status: 'PENDING' | 'ACTIVE' | 'SUSPENDED' (ou outros valores do enum OrganizerStatus)
  *  - page: número da página (1-based, default 1)
  *  - pageSize: tamanho da página (default 20, máx 100)
@@ -108,7 +108,7 @@ export async function GET(req: NextRequest) {
 
     if (searchParam && searchParam.trim() !== "") {
       const search = searchParam.trim();
-      where.displayName = {
+      where.publicName = {
         contains: search,
         mode: "insensitive",
       };

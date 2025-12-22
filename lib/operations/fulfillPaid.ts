@@ -1,7 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { normalizePaymentScenario } from "@/lib/paymentScenario";
 import { Prisma, EntitlementType, EntitlementStatus } from "@prisma/client";
-import crypto from "crypto";
 import { enqueueOperation } from "@/lib/operations/enqueue";
 import { normalizeEmail } from "@/lib/utils/email";
 
@@ -34,12 +33,12 @@ type IntentLike = {
 
 /**
  * Fulfillment simplificado para intents pagos (SINGLE/default) via worker.
- * Retorna true se tratou o intent; false para cair no legacy `fulfillPayment`.
+ * Retorna true se tratou o intent; false se não aplicável.
  */
 export async function fulfillPaidIntent(intent: IntentLike, stripeEventId?: string): Promise<boolean> {
   const meta = intent.metadata ?? {};
   const scenario = normalizePaymentScenario(typeof meta.paymentScenario === "string" ? meta.paymentScenario : null);
-  // Deixar cenários especiais para o legacy handler.
+  // Deixar cenários especiais para handlers dedicados.
   if (scenario && ["RESALE", "GROUP_SPLIT", "GROUP_FULL", "GROUP_SPLIT_SECOND_CHARGE"].includes(scenario)) {
     return false;
   }
@@ -69,8 +68,10 @@ export async function fulfillPaidIntent(intent: IntentLike, stripeEventId?: stri
 
   const purchaseId =
     typeof meta.purchaseId === "string" && meta.purchaseId.trim() !== "" ? meta.purchaseId.trim() : intent.id;
-  const userId = typeof meta.userId === "string" ? meta.userId : typeof meta.ownerUserId === "string" ? meta.ownerUserId : null;
+  const ownerUserId = typeof meta.ownerUserId === "string" ? meta.ownerUserId : null;
   const ownerIdentityId = typeof meta.ownerIdentityId === "string" ? meta.ownerIdentityId : null;
+  const ownerEmail = typeof meta.emailNormalized === "string" ? meta.emailNormalized : null;
+  const userId = ownerUserId;
   const eventId =
     typeof meta.eventId === "string" && Number.isFinite(Number(meta.eventId))
       ? Number(meta.eventId)
@@ -111,12 +112,6 @@ export async function fulfillPaidIntent(intent: IntentLike, stripeEventId?: stri
   }
 
   const ticketTypeMap = new Map(event.ticketTypes.map((t) => [t.id, t]));
-  const totalTickets = breakdown.lines.reduce((sum, l) => sum + Math.max(1, Number(l.quantity ?? 0)), 0);
-  const platformFeeTotal = breakdown.platformFeeCents ?? 0;
-  const perTicketPlatformFee = totalTickets > 0 ? Math.floor(platformFeeTotal / totalTickets) : 0;
-  let feeRemainder = totalTickets > 0 ? platformFeeTotal % totalTickets : 0;
-
-  const guestEmail = typeof meta.guestEmail === "string" ? meta.guestEmail : null;
 
   await prisma.$transaction(async (tx) => {
     // Evitar conflito por purchaseId já existente: se já existir, atualizamos, senão criamos.
@@ -177,18 +172,7 @@ export async function fulfillPaidIntent(intent: IntentLike, stripeEventId?: stri
       const tt = ticketTypeMap.get(line.ticketTypeId);
       if (!tt) continue;
       const qty = Math.max(1, Number(line.quantity ?? 0));
-      const existing = await tx.ticket.findMany({
-        where: { purchaseId, ticketTypeId: tt.id },
-        select: { emissionIndex: true },
-      });
-      const existingIdx = new Set(existing.map((t) => t.emissionIndex ?? 0));
-      const grossLine = line.lineTotalCents ?? line.unitPriceCents * qty;
-      const netLine =
-        line.lineNetCents ??
-        Math.max(0, grossLine - (line.discountPerUnitCents ?? 0) * qty);
-      const perTicketNet = Math.round(netLine / Math.max(1, qty));
-
-      const ownerKey = buildOwnerKey({ ownerUserId: userId, ownerIdentityId, guestEmail });
+      const ownerKey = buildOwnerKey({ ownerUserId: userId, ownerIdentityId, guestEmail: ownerEmail });
       for (let i = 0; i < qty; i++) {
         // Entitlement (SSOT)
         await tx.entitlement.upsert({
@@ -230,30 +214,6 @@ export async function fulfillPaidIntent(intent: IntentLike, stripeEventId?: stri
           },
         });
 
-        // Tickets legacy (mantido por compat)
-        if (existingIdx.has(i)) continue;
-        const feeForTicket = perTicketPlatformFee + (feeRemainder > 0 ? 1 : 0);
-        if (feeRemainder > 0) feeRemainder -= 1;
-        await tx.ticket.create({
-          data: {
-            userId,
-            ownerUserId: userId,
-            ownerIdentityId,
-            eventId: event.id,
-            ticketTypeId: tt.id,
-            status: "ACTIVE",
-            purchasedAt: new Date(),
-            qrSecret: crypto.randomUUID(),
-            pricePaid: perTicketNet,
-            currency: tt.currency ?? intent.currency?.toUpperCase() ?? "EUR",
-            platformFeeCents: feeForTicket,
-            totalPaidCents: perTicketNet + feeForTicket,
-            stripePaymentIntentId: intent.id,
-            purchaseId,
-            saleSummaryId: saleSummary.id,
-            emissionIndex: i,
-          },
-        });
       }
 
       await tx.ticketType.update({
@@ -277,10 +237,10 @@ export async function fulfillPaidIntent(intent: IntentLike, stripeEventId?: stri
     });
   });
 
-  // Enfileirar email de recibo se houver guestEmail
+  // Enfileirar email de recibo se houver email associado
   const ownerUserId = userId;
-  const emailDedupe = guestEmail
-    ? `${purchaseId}:${guestEmail}`
+  const emailDedupe = ownerEmail
+    ? `${purchaseId}:${ownerEmail}`
     : ownerUserId
       ? `${purchaseId}:${ownerUserId}`
       : null;
@@ -290,7 +250,7 @@ export async function fulfillPaidIntent(intent: IntentLike, stripeEventId?: stri
         operationType: "SEND_EMAIL_RECEIPT",
         dedupeKey: emailDedupe,
         correlations: { purchaseId, paymentIntentId: intent.id },
-        payload: { purchaseId, email: guestEmail, userId: ownerUserId ?? null },
+        payload: { purchaseId, email: ownerEmail, userId: ownerUserId ?? null },
       });
     } catch (err) {
       console.warn("[fulfillPaidIntent] Falha ao enfileirar email de recibo", err);
@@ -316,7 +276,7 @@ export async function fulfillPaidIntent(intent: IntentLike, stripeEventId?: stri
         operationType: "APPLY_PROMO_REDEMPTION",
         dedupeKey: `APPLY_PROMO_REDEMPTION:${purchaseId}`,
         correlations: { purchaseId, paymentIntentId: intent.id, eventId },
-        payload: { purchaseId, paymentIntentId: intent.id, promoCodeId, userId: ownerUserId, guestEmail },
+        payload: { purchaseId, paymentIntentId: intent.id, promoCodeId, userId: ownerUserId, guestEmail: ownerEmail },
       });
     } catch (err) {
       console.warn("[fulfillPaidIntent] Falha ao enfileirar APPLY_PROMO_REDEMPTION", err);

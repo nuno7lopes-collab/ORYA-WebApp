@@ -10,7 +10,7 @@ type IntentLike = {
 
 /**
  * Trata revenda de bilhete (RESALE) de forma idempotente.
- * Retorna true se tratado; false para deixar o legacy assumir.
+ * Retorna true se tratado; false se não aplicável.
  */
 export async function fulfillResaleIntent(intent: IntentLike): Promise<boolean> {
   const meta = intent.metadata ?? {};

@@ -10,11 +10,10 @@ import { trackEvent } from "@/lib/analytics";
 import { useUser } from "@/app/hooks/useUser";
 import { AuthModalProvider, useAuthModal } from "@/app/components/autenticação/AuthModalContext";
 import PromoCodesPage from "./promo/PromoCodesClient";
-import OrganizerSettingsPage from "./(dashboard)/settings/page";
-import OrganizerStaffPage from "./(dashboard)/staff/page";
-import PadelHubClient from "./(dashboard)/padel/PadelHubClient";
+import OrganizerUpdatesPage from "./(dashboard)/updates/page";
 import { SalesAreaChart } from "@/app/components/charts/SalesAreaChart";
 import InvoicesClient from "./pagamentos/invoices/invoices-client";
+import ObjectiveSubnav from "./ObjectiveSubnav";
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
@@ -151,19 +150,6 @@ type MarketingOverviewResponse = {
     revenueCents: number;
   }[];
 };
-type AudienceSummaryResponse =
-  | {
-      ok: true;
-      segments: {
-        frequent: number;
-        newLast60d: number;
-        highSpenders: number;
-        groups: number;
-        dormant90d: number;
-        local: number;
-      };
-    }
-  | { ok: false; error?: string };
 type OrganizerStatus = {
   paymentsStatus?: "NO_STRIPE" | "PENDING" | "READY";
   paymentsMode?: "CONNECT" | "PLATFORM";
@@ -174,7 +160,7 @@ type OrganizerLite = {
   id?: number;
   status?: string | null;
   entityType?: string | null;
-  displayName?: string | null;
+  publicName?: string | null;
   city?: string | null;
   payoutIban?: string | null;
   officialEmail?: string | null;
@@ -182,23 +168,16 @@ type OrganizerLite = {
   stripeAccountId?: string | null;
   stripeChargesEnabled?: boolean | null;
   stripePayoutsEnabled?: boolean | null;
+  organizationCategory?: string | null;
+  organizationKind?: string | null;
+  username?: string | null;
+  modules?: string[] | null;
 };
 
-type TabKey =
-  | "overview"
-  | "events"
-  | "sales"
-  | "finance"
-  | "invoices"
-  | "marketing"
-  | "padel"
-  | "restaurants"
-  | "volunteer"
-  | "night"
-  | "staff"
-  | "settings";
+type ObjectiveTab = "create" | "manage" | "promote" | "analyze";
+type OrgCategory = "EVENTOS" | "PADEL" | "VOLUNTARIADO";
 
-const ALL_TABS: TabKey[] = ["overview", "events", "sales", "marketing", "staff", "finance", "invoices", "padel", "settings"];
+const OBJECTIVE_TABS: ObjectiveTab[] = ["create", "manage", "promote", "analyze"];
 type SalesRange = "7d" | "30d" | "90d" | "365d" | "all";
 
 type EventStatusFilter = "all" | "active" | "draft" | "finished" | "ongoing" | "archived";
@@ -211,6 +190,43 @@ const formatDateTime = (date: Date | null, options?: Intl.DateTimeFormatOptions)
 
 const formatDateOnly = (date: Date | null, options?: Intl.DateTimeFormatOptions) =>
   date ? date.toLocaleDateString(DATE_LOCALE, { timeZone: DATE_TIMEZONE, ...options }) : "";
+
+const mapTabToObjective = (tab?: string | null): ObjectiveTab => {
+  if (OBJECTIVE_TABS.includes((tab as ObjectiveTab) || "create")) {
+    return (tab as ObjectiveTab) || "create";
+  }
+  switch (tab) {
+    case "overview":
+      return "create";
+    case "events":
+    case "padel":
+    case "staff":
+    case "volunteer":
+      return "manage";
+    case "marketing":
+      return "promote";
+    case "sales":
+    case "finance":
+    case "invoices":
+      return "analyze";
+    default:
+      return "create";
+  }
+};
+
+const normalizeOrganizationCategory = (category?: string | null): OrgCategory => {
+  const normalized = category?.toUpperCase() ?? "";
+  if (normalized === "PADEL") return "PADEL";
+  if (normalized === "VOLUNTARIADO") return "VOLUNTARIADO";
+  return "EVENTOS";
+};
+
+const CATEGORY_LABELS: Record<OrgCategory, string> = {
+  EVENTOS: "Eventos",
+  PADEL: "Padel",
+  VOLUNTARIADO: "Voluntariado",
+};
+
 
 function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
   const { user, profile, isLoading: userLoading, mutate: mutateUser } = useUser();
@@ -236,7 +252,9 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const [marketingSection, setMarketingSection] = useState<"overview" | "promos" | "promoters" | "content">("overview");
+  const [marketingSection, setMarketingSection] = useState<
+    "perfil" | "overview" | "promos" | "updates" | "promoters" | "content"
+  >("overview");
   const [salesRange, setSalesRange] = useState<SalesRange>("30d");
   const salesRangeLabelShort = (range: SalesRange) => {
     switch (range) {
@@ -267,8 +285,46 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
     }
   };
 
-  const tabParam = searchParams?.get("tab") || undefined;
-  const activeTab: TabKey = ALL_TABS.includes((tabParam as TabKey) || "overview") ? ((tabParam as TabKey) || "overview") : "overview";
+  const tabParamRaw = searchParams?.get("tab");
+  const sectionParamRaw = searchParams?.get("section");
+  const marketingParamRaw = searchParams?.get("marketing");
+  const activeObjective = mapTabToObjective(tabParamRaw);
+  const isLegacyStandaloneTab = false;
+  const normalizedSection = useMemo(() => {
+    if (!sectionParamRaw) return undefined;
+    if (activeObjective === "manage") {
+      if (sectionParamRaw === "events") return "eventos";
+      if (sectionParamRaw === "padel") return "torneios";
+      if (sectionParamRaw === "volunteer") return "acoes";
+    }
+    if (activeObjective === "analyze") {
+      if (sectionParamRaw === "sales") return "vendas";
+      if (sectionParamRaw === "finance") return "financas";
+    }
+    if (activeObjective === "promote") {
+      const marketingSections = ["perfil", "overview", "promos", "updates", "promoters", "content"];
+      if (marketingSections.includes(sectionParamRaw)) return "marketing";
+    }
+    return sectionParamRaw;
+  }, [activeObjective, sectionParamRaw]);
+
+  const scrollSection = useMemo(() => {
+    if (!sectionParamRaw) return undefined;
+    if (activeObjective === "promote") {
+      const marketingSections = ["perfil", "overview", "promos", "updates", "promoters", "content"];
+      if (marketingSections.includes(sectionParamRaw)) return "marketing";
+    }
+    if (activeObjective === "analyze") {
+      if (sectionParamRaw === "sales") return "vendas";
+      if (sectionParamRaw === "finance") return "financas";
+    }
+    if (activeObjective === "manage") {
+      if (sectionParamRaw === "events") return "eventos";
+      if (sectionParamRaw === "padel") return "torneios";
+      if (sectionParamRaw === "volunteer") return "acoes";
+    }
+    return sectionParamRaw;
+  }, [activeObjective, sectionParamRaw]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -284,19 +340,94 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
     }
   }, []);
 
-  // Redirecionar view=categories legacy para a nova página de categorias
   useEffect(() => {
     if (!searchParams) return;
-    const viewParam = searchParams.get("view");
     const tabParam = searchParams.get("tab");
-    if (tabParam === "events" && viewParam === "categories") {
-      router.replace("/organizador/categorias", { scroll: false });
+    if (!tabParam) return;
+    const orgParam = searchParams.get("org");
+    const orgSuffix = orgParam ? `&org=${orgParam}` : "";
+
+    if (tabParam === "settings") {
+      router.replace(`/organizador?tab=manage&section=settings${orgSuffix}`, { scroll: false });
       return;
     }
-    if (tabParam === "settings") {
-      router.replace("/organizador/settings", { scroll: false });
+    if (tabParam === "staff") {
+      router.replace(`/organizador?tab=manage&section=staff${orgSuffix}`, { scroll: false });
+      return;
     }
-  }, [router, searchParams]);
+    if (tabParam === "invoices") {
+      router.replace(`/organizador?tab=analyze&section=invoices${orgSuffix}`, { scroll: false });
+      return;
+    }
+    if (tabParam === "events") {
+      router.replace(`/organizador?tab=manage&section=eventos${orgSuffix}`, { scroll: false });
+      return;
+    }
+    if (tabParam === "padel") {
+      router.replace(`/organizador?tab=manage&section=torneios${orgSuffix}`, { scroll: false });
+      return;
+    }
+    if (tabParam === "volunteer") {
+      router.replace(`/organizador?tab=manage&section=acoes${orgSuffix}`, { scroll: false });
+      return;
+    }
+    if (tabParam === "marketing") {
+      router.replace(`/organizador?tab=promote&section=marketing${orgSuffix}`, { scroll: false });
+      return;
+    }
+    if (tabParam === "sales") {
+      router.replace(`/organizador?tab=analyze&section=vendas${orgSuffix}`, { scroll: false });
+      return;
+    }
+    if (tabParam === "finance") {
+      router.replace(`/organizador?tab=analyze&section=financas${orgSuffix}`, { scroll: false });
+    }
+  }, [router, searchParams, sectionParamRaw]);
+
+  useEffect(() => {
+    if (!sectionParamRaw || !searchParams) return;
+    const legacyMap: Record<string, string> = {
+      events: "eventos",
+      padel: "torneios",
+      volunteer: "acoes",
+      sales: "vendas",
+      finance: "financas",
+    };
+    if (activeObjective === "promote") {
+      const marketingLegacy = ["perfil", "overview", "promos", "updates", "promoters", "content"];
+      if (marketingLegacy.includes(sectionParamRaw)) {
+        const params = new URLSearchParams(searchParams);
+        params.set("section", "marketing");
+        params.set("marketing", sectionParamRaw);
+        router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+        return;
+      }
+    }
+    const normalized = legacyMap[sectionParamRaw];
+    if (!normalized || normalized === sectionParamRaw) return;
+    const params = new URLSearchParams(searchParams);
+    params.set("section", normalized);
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+  }, [sectionParamRaw, searchParams, router, pathname, activeObjective]);
+
+  useEffect(() => {
+    if (!scrollSection) return;
+    if (typeof window === "undefined") return;
+
+    const scrollTargets: Record<ObjectiveTab, string[]> = {
+      create: ["overview"],
+      manage: ["eventos"],
+      promote: ["marketing"],
+      analyze: ["financas", "invoices"],
+    };
+
+    const allowed = scrollTargets[activeObjective] ?? [];
+    if (!allowed.includes(scrollSection)) return;
+    const target = document.getElementById(scrollSection);
+    if (target) {
+      target.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [scrollSection, activeObjective]);
 
   useEffect(() => {
     const statusParam = searchParams?.get("status");
@@ -305,7 +436,12 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
     const searchParam = searchParams?.get("search");
     const scopeParam = searchParams?.get("scope");
     const eventIdParam = searchParams?.get("eventId");
-    const marketingSectionParam = searchParams?.get("section");
+    const marketingSectionParam =
+      marketingParamRaw && ["perfil", "overview", "promos", "updates", "promoters", "content"].includes(marketingParamRaw)
+        ? marketingParamRaw
+        : ["perfil", "overview", "promos", "updates", "promoters", "content"].includes(sectionParamRaw ?? "")
+          ? sectionParamRaw
+          : null;
 
     if (statusParam) setEventStatusFilter(statusParam as typeof eventStatusFilter);
     if (catParam) setEventCategoryFilter(catParam);
@@ -314,12 +450,14 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
     if (scopeParam) setTimeScope(scopeParam as typeof timeScope);
     if (eventIdParam) setSalesEventId(Number(eventIdParam));
     if (marketingSectionParam) {
-      const allowed = ["overview", "promos", "promoters", "content"] as const;
+      const allowed = ["perfil", "overview", "promos", "updates", "promoters", "content"] as const;
       if (allowed.includes(marketingSectionParam as (typeof allowed)[number])) {
         setMarketingSection(marketingSectionParam as typeof marketingSection);
       }
+    } else if (activeObjective === "promote" && sectionParamRaw === "marketing") {
+      setMarketingSection("overview");
     }
-  }, [searchParams]);
+  }, [searchParams, marketingParamRaw, sectionParamRaw, activeObjective]);
 
   const orgParam = searchParams?.get("org");
   const orgMeUrl = useMemo(() => {
@@ -337,6 +475,13 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
   >(orgMeUrl, fetcher);
 
   const organizer = organizerData?.organizer ?? null;
+  const organizationCategory = organizer?.organizationCategory ?? null;
+  const orgCategory = normalizeOrganizationCategory(organizationCategory);
+  const categoryLabel = CATEGORY_LABELS[orgCategory];
+  const categoryNounPlural =
+    orgCategory === "PADEL" ? "torneios" : orgCategory === "VOLUNTARIADO" ? "ações" : "eventos";
+  const categoryGender = orgCategory === "VOLUNTARIADO" ? "f" : "m";
+  const categoryPluralArticle = categoryGender === "f" ? "as tuas" : "os teus";
   const loading = userLoading || organizerLoading;
   const paymentsStatus = organizerData?.paymentsStatus ?? "NO_STRIPE";
   const paymentsMode = organizerData?.paymentsMode ?? "CONNECT";
@@ -366,10 +511,10 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
         console.error("[stripe][refresh-status] err", err);
       }
     };
-    if (activeTab === "finance") {
+    if (activeObjective === "analyze" && !isLegacyStandaloneTab) {
       refreshStripe();
     }
-  }, [onboardingParam, activeTab, mutateOrganizer]);
+  }, [onboardingParam, activeObjective, isLegacyStandaloneTab, mutateOrganizer]);
 
   // Prefill onboarding fields quando já existirem dados
   useEffect(() => {
@@ -377,7 +522,7 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
     if (!city && profile?.city) setCity(profile.city);
     if (organizer) {
       if (!entityType && organizer.entityType) setEntityType(organizer.entityType);
-      if (!businessName && organizer.displayName) setBusinessName(organizer.displayName);
+      if (!businessName && organizer.publicName) setBusinessName(organizer.publicName);
       if (!city && organizer.city) setCity(organizer.city);
       if (!payoutIban && organizer.payoutIban) setPayoutIban(organizer.payoutIban);
     }
@@ -389,9 +534,15 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
     { revalidateOnFocus: false }
   );
 
+  const shouldLoadOverviewSeries =
+    organizer?.status === "ACTIVE" &&
+    activeObjective === "analyze" &&
+    normalizedSection === "overview" &&
+    !isLegacyStandaloneTab;
+
   type TimeSeriesResponse = { ok: boolean; points: TimeSeriesPoint[]; range: { from: string | null; to: string | null } };
   const { data: timeSeries } = useSWR<TimeSeriesResponse>(
-    organizer?.status === "ACTIVE" ? "/api/organizador/estatisticas/time-series?range=30d" : null,
+    shouldLoadOverviewSeries ? "/api/organizador/estatisticas/time-series?range=30d" : null,
     fetcher,
     { revalidateOnFocus: false }
   );
@@ -399,7 +550,6 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
   const {
     data: events,
     error: eventsError,
-    isLoading: eventsLoading,
     mutate: mutateEvents,
   } = useSWR<EventsResponse>(
     organizer?.status === "ACTIVE" ? "/api/organizador/events/list" : null,
@@ -407,11 +557,18 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
     { revalidateOnFocus: false }
   );
 
+  const shouldLoadSales =
+    organizer?.status === "ACTIVE" &&
+    activeObjective === "analyze" &&
+    normalizedSection === "vendas" &&
+    !isLegacyStandaloneTab;
+
   useEffect(() => {
+    if (!shouldLoadSales) return;
     if (!salesEventId && events?.items?.length) {
       setSalesEventId(events.items[0].id);
     }
-  }, [events, salesEventId]);
+  }, [events, salesEventId, shouldLoadSales]);
 
   const { data: payoutSummary } = useSWR<PayoutSummaryResponse>(
     organizer?.status === "ACTIVE" ? "/api/organizador/payouts/summary" : null,
@@ -419,7 +576,9 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
     { revalidateOnFocus: false }
   );
   const { data: financeOverview } = useSWR<FinanceOverviewResponse>(
-    organizer?.status === "ACTIVE" && activeTab === "finance" ? "/api/organizador/finance/overview" : null,
+    organizer?.status === "ACTIVE" && activeObjective === "analyze" && !isLegacyStandaloneTab
+      ? "/api/organizador/finance/overview"
+      : null,
     fetcher,
     { revalidateOnFocus: false }
   );
@@ -432,7 +591,7 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
   }, []);
 
   const salesSeriesKey = useMemo(() => {
-    if (!salesEventId) return null;
+    if (!shouldLoadSales || !salesEventId) return null;
     if (salesRange === "7d" || salesRange === "30d" || salesRange === "90d") {
       return `/api/organizador/estatisticas/time-series?range=${salesRange}&eventId=${salesEventId}`;
     }
@@ -440,7 +599,7 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
       return `/api/organizador/estatisticas/time-series?eventId=${salesEventId}&from=${oneYearAgoIso}`;
     }
     return `/api/organizador/estatisticas/time-series?eventId=${salesEventId}`;
-  }, [salesEventId, salesRange, oneYearAgoIso]);
+  }, [salesEventId, salesRange, oneYearAgoIso, shouldLoadSales]);
 
   const { data: salesSeries } = useSWR<TimeSeriesResponse>(
     salesSeriesKey,
@@ -449,7 +608,7 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
   );
 
   const { data: buyers } = useSWR<BuyersResponse>(
-    salesEventId ? `/api/organizador/estatisticas/buyers?eventId=${salesEventId}` : null,
+    shouldLoadSales && salesEventId ? `/api/organizador/estatisticas/buyers?eventId=${salesEventId}` : null,
     fetcher,
     { revalidateOnFocus: false }
   );
@@ -493,35 +652,18 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
     [mutateEvents],
   );
   const { data: marketingOverview } = useSWR<MarketingOverviewResponse>(
-    organizer?.status === "ACTIVE" && activeTab === "marketing" ? "/api/organizador/marketing/overview" : null,
+    organizer?.status === "ACTIVE" && activeObjective === "promote" && !isLegacyStandaloneTab
+      ? "/api/organizador/marketing/overview"
+      : null,
     fetcher,
     { revalidateOnFocus: false }
   );
 
-  const [marketingFilters, setMarketingFilters] = useState({ eventId: "all", status: "all" as "all" | "active" | "inactive" });
-  const { data: promoData, mutate: mutatePromos } = useSWR<PromoListResponse>(
+  const { data: promoData } = useSWR<PromoListResponse>(
     organizer?.status === "ACTIVE" ? "/api/organizador/promo" : null,
     fetcher,
     { revalidateOnFocus: false }
   );
-  const { data: audienceSummary } = useSWR<AudienceSummaryResponse>(
-    organizer?.status === "ACTIVE" && activeTab === "marketing" ? "/api/organizador/marketing/audience/summary" : null,
-    fetcher,
-    { revalidateOnFocus: false }
-  );
-  const { data: padelClubs } = useSWR<{ ok: boolean; items: any[] }>(
-    organizer?.status === "ACTIVE" && activeTab === "padel" ? "/api/padel/clubs?includeInactive=1" : null,
-    fetcher,
-    { revalidateOnFocus: false }
-  );
-  const { data: padelPlayers } = useSWR<{ ok: boolean; items: any[] }>(
-    organizer?.status === "ACTIVE" && activeTab === "padel" ? "/api/padel/players" : null,
-    fetcher,
-    { revalidateOnFocus: false }
-  );
-  const padelLoading =
-    organizer?.status === "ACTIVE" && activeTab === "padel" && !padelClubs && !padelPlayers;
-
   const currentQuery = searchParams?.toString() || "";
 
   async function handleStripeConnect() {
@@ -637,7 +779,32 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
     past: "Passados",
   };
   const eventsList = useMemo(() => events?.items ?? [], [events]);
-  const eventsListLoading = organizer?.status === "ACTIVE" && activeTab === "events" && !events;
+  const eventSummary = useMemo(() => {
+    const now = new Date();
+    let upcoming = 0;
+    let ongoing = 0;
+    let finished = 0;
+    eventsList.forEach((ev) => {
+      if (ev.status === "ARCHIVED") return;
+      const startsAt = ev.startsAt ? new Date(ev.startsAt) : null;
+      const endsAt = ev.endsAt ? new Date(ev.endsAt) : null;
+      const isFinished = ev.status === "FINISHED" || (endsAt ? endsAt.getTime() < now.getTime() : false);
+      const isOngoing =
+        startsAt && endsAt
+          ? startsAt.getTime() <= now.getTime() && now.getTime() <= endsAt.getTime()
+          : false;
+      const isUpcoming = startsAt ? startsAt.getTime() > now.getTime() : false;
+      if (isFinished) finished += 1;
+      else if (isOngoing) ongoing += 1;
+      else if (isUpcoming) upcoming += 1;
+    });
+    return { upcoming, ongoing, finished, total: eventsList.length };
+  }, [eventsList]);
+  const eventsListLoading =
+    organizer?.status === "ACTIVE" &&
+    activeObjective === "manage" &&
+    !isLegacyStandaloneTab &&
+    !events;
   const overviewLoading = organizer?.status === "ACTIVE" && !overview;
   const partnerClubOptions = useMemo(() => {
     const map = new Map<number, string>();
@@ -666,7 +833,7 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
         club: eventPartnerClubFilter,
         search: searchTerm,
         scope: timeScope,
-        section: marketingSection,
+        marketing: marketingSection,
       };
       if (typeof window !== "undefined") {
         localStorage.setItem("organizadorFilters", JSON.stringify(payload));
@@ -685,33 +852,6 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
     ]
   );
   useEffect(() => {
-    const params = new URLSearchParams(currentQuery);
-    const setParam = (key: string, value: string, defaultVal: string) => {
-      if (!value || value === defaultVal) params.delete(key);
-      else params.set(key, value);
-    };
-    setParam("status", eventStatusFilter, "all");
-    setParam("cat", eventCategoryFilter, "all");
-    setParam("club", eventPartnerClubFilter, "all");
-    setParam("search", searchTerm, "");
-    setParam("scope", timeScope, "all");
-    setParam("section", marketingSection, "overview");
-    if (salesEventId) params.set("eventId", String(salesEventId));
-    else params.delete("eventId");
-    persistFilters(params);
-  }, [
-    eventCategoryFilter,
-    eventPartnerClubFilter,
-    eventStatusFilter,
-    marketingSection,
-    persistFilters,
-    salesEventId,
-    searchTerm,
-    timeScope,
-    currentQuery,
-  ]);
-
-  useEffect(() => {
     if (typeof window === "undefined") return;
     if (searchParams?.toString()) return;
     const saved = localStorage.getItem("organizadorFilters");
@@ -724,17 +864,19 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
         search?: string;
         scope?: string;
         section?: string;
+        marketing?: string;
       };
       if (parsed.status) setEventStatusFilter(parsed.status as typeof eventStatusFilter);
       if (parsed.cat) setEventCategoryFilter(parsed.cat);
       if (parsed.club) setEventPartnerClubFilter(parsed.club);
       if (parsed.search) setSearchTerm(parsed.search);
       if (parsed.scope) setTimeScope(parsed.scope as typeof timeScope);
+      const persistedMarketing = parsed.marketing ?? parsed.section;
       if (
-        parsed.section &&
-        ["overview", "campaigns", "audience", "promoters", "content", "automation"].includes(parsed.section)
+        persistedMarketing &&
+        ["perfil", "overview", "promos", "updates", "promoters", "content"].includes(persistedMarketing)
       ) {
-        setMarketingSection(parsed.section as typeof marketingSection);
+        setMarketingSection(persistedMarketing as typeof marketingSection);
       }
     } catch {
       // ignore parse errors
@@ -814,15 +956,6 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
   }, [paymentsStatus, stripeRequirements]);
 
   const marketingPromos = useMemo(() => promoData?.promoCodes ?? [], [promoData]);
-  const marketingEvents = useMemo(() => promoData?.events ?? [], [promoData]);
-  const filteredPromos = useMemo(() => {
-    return marketingPromos.filter((p) => {
-      if (marketingFilters.eventId !== "all" && `${p.eventId ?? "global"}` !== marketingFilters.eventId) return false;
-      if (marketingFilters.status === "active" && !p.active) return false;
-      if (marketingFilters.status === "inactive" && p.active) return false;
-      return true;
-    });
-  }, [marketingFilters.eventId, marketingFilters.status, marketingPromos]);
   const marketingKpis = useMemo(() => {
     const activePromos = marketingPromos.filter((p) => p.active).length;
     const fallbackTop = [...marketingPromos].sort(
@@ -1015,6 +1148,65 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
       });
   }, [eventsList, marketingOverview?.events]);
 
+  const isPlatformStripe = paymentsMode === "PLATFORM";
+  const stripeReady = isPlatformStripe || paymentsStatus === "READY";
+  const stripeIncomplete = !isPlatformStripe && paymentsStatus === "PENDING";
+  const nextEvent = events?.items?.[0] ?? null;
+  const publicProfileUrl = organizer?.username ? `/${organizer.username}` : null;
+  const activeSection = useMemo(() => {
+    const baseSections: Record<ObjectiveTab, string[]> = {
+      create: ["overview"],
+      manage: ["eventos"],
+      promote: ["marketing"],
+      analyze: ["financas", "invoices"],
+    };
+    const allowed = baseSections[activeObjective] ?? ["overview"];
+    const candidate =
+      normalizedSection ??
+      (activeObjective === "analyze" ? "financas" : activeObjective === "promote" ? "marketing" : "overview");
+    return allowed.includes(candidate) ? candidate : allowed[0];
+  }, [activeObjective, normalizedSection]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(currentQuery);
+    const setParam = (key: string, value: string, defaultVal: string) => {
+      if (!value || value === defaultVal) params.delete(key);
+      else params.set(key, value);
+    };
+    setParam("status", eventStatusFilter, "all");
+    setParam("cat", eventCategoryFilter, "all");
+    setParam("club", eventPartnerClubFilter, "all");
+    setParam("search", searchTerm, "");
+    setParam("scope", timeScope, "all");
+    if (activeObjective === "promote" && activeSection === "marketing") {
+      setParam("marketing", marketingSection, "overview");
+    } else {
+      params.delete("marketing");
+    }
+    if (salesEventId) params.set("eventId", String(salesEventId));
+    else params.delete("eventId");
+    persistFilters(params);
+  }, [
+    eventCategoryFilter,
+    eventPartnerClubFilter,
+    eventStatusFilter,
+    marketingSection,
+    persistFilters,
+    salesEventId,
+    searchTerm,
+    timeScope,
+    currentQuery,
+    activeObjective,
+    activeSection,
+  ]);
+  const [fadeIn, setFadeIn] = useState(true);
+  useEffect(() => {
+    setFadeIn(false);
+    const id = requestAnimationFrame(() => setFadeIn(true));
+    return () => cancelAnimationFrame(id);
+  }, [activeObjective, activeSection, marketingSection]);
+  const fadeClass = cn("transition-opacity duration-300", fadeIn ? "opacity-100" : "opacity-0");
+
   if (loading) {
     return (
       <div className={`${containerClasses} space-y-6`}>
@@ -1052,30 +1244,6 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
     );
   }
 
-  const isPlatformStripe = paymentsMode === "PLATFORM";
-  const stripeReady = isPlatformStripe || paymentsStatus === "READY";
-  const stripeIncomplete = !isPlatformStripe && paymentsStatus === "PENDING";
-  const quickTasks = [
-    {
-      label: "Liga Stripe para vender",
-      done: stripeReady,
-      href: "/organizador?tab=finance",
-    },
-    {
-      label: "Cria o teu primeiro evento",
-      done: (events?.items?.length ?? 0) > 0,
-      href: "/organizador/eventos/novo",
-    },
-    {
-      label: "Convida staff para check-in",
-      done: false,
-      href: "/organizador?tab=staff",
-    },
-  ];
-
-  const hasIban = Boolean(organizer.payoutIban);
-  const nextEvent = events?.items?.[0] ?? null;
-
   return (
     <div className={`${containerClasses} space-y-6 text-white`}>
       {showOfficialEmailWarning && (
@@ -1092,7 +1260,7 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
               </p>
             </div>
             <Link
-              href="/organizador/settings"
+              href="/organizador?tab=manage&section=settings"
               className="rounded-full bg-white px-3 py-1.5 text-[12px] font-semibold text-black shadow hover:scale-[1.01]"
             >
               Atualizar email oficial
@@ -1100,286 +1268,107 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
           </div>
         </div>
       )}
-      {activeTab === "overview" && (
-        <>
-          {/* Header + alerta onboarding */}
+      {!isLegacyStandaloneTab && activeObjective === "create" && (
+        <section className="space-y-4">
           <div
-            className="relative overflow-hidden rounded-[32px] border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/75 to-[#050912]/95 p-5 md:p-6 shadow-[0_30px_120px_rgba(0,0,0,0.6)] backdrop-blur-3xl"
-            data-tour="overview"
+            id="overview"
+            className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/75 to-[#050912]/95 p-5 shadow-[0_26px_90px_rgba(0,0,0,0.55)] backdrop-blur-3xl"
           >
-            <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(120deg,rgba(255,255,255,0.08),transparent_32%),linear-gradient(240deg,rgba(255,255,255,0.06),transparent_36%)]" />
-            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <div className="relative space-y-1">
-                <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] uppercase tracking-[0.3em] text-white/80 shadow-[0_10px_30px_rgba(0,0,0,0.4)]">
-                  <span className="h-2 w-2 rounded-full bg-[#6BFFFF] shadow-[0_0_16px_rgba(107,255,255,0.8)]" />
-                  Resumo
-                </div>
-                <h1 className="text-3xl font-bold leading-tight drop-shadow-[0_6px_30px_rgba(0,0,0,0.55)]">
-                  Olá, {organizer.displayName || profile?.fullName || "organizador"} 👋
-                </h1>
-                <p className="text-sm text-white/70">Aqui está o resumo dos teus eventos e vendas.</p>
-              </div>
-              <div className="relative flex flex-wrap items-center gap-2">
-                <span className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] text-white/80">
-                  Organização ativa
-                </span>
-                {overview?.eventsWithSalesCount ? (
-                  <span className="rounded-full border border-emerald-300/40 bg-emerald-400/10 px-3 py-1 text-[11px] text-emerald-50">
-                    {overview.eventsWithSalesCount} eventos com vendas
-                  </span>
-                ) : (
-                  <span className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[11px] text-white/70">
-                    Sem vendas ainda · prepara o próximo evento
-                  </span>
-                )}
-              </div>
-            </div>
-
-            {profileStatus === "MISSING_CONTACT" && (
-              <div className="mt-4 rounded-2xl border border-amber-400/40 bg-amber-400/10 p-3 text-sm text-amber-100 space-y-2">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="font-semibold">Completa os dados básicos do organizador (nome, tipo, cidade, email).</p>
-                  <Link
-                    href="/organizador/settings"
-                    className="rounded-full bg-white/10 px-3 py-1 text-[11px] text-white hover:bg-white/20"
-                  >
-                    Preencher dados
-                  </Link>
-                </div>
-              </div>
-            )}
-            {!stripeReady && paymentsMode === "CONNECT" && (
-              <div className="mt-4 rounded-2xl border border-amber-400/40 bg-amber-400/10 p-3 text-sm text-amber-100 space-y-2">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="font-semibold">
-                    Podes publicar eventos gratuitos. Para bilhetes pagos, liga a tua conta Stripe.
-                  </p>
-                  <Link
-                    href="/organizador?tab=finance"
-                    className="rounded-full bg-white/10 px-3 py-1 text-[11px] text-white hover:bg-white/20"
-                  >
-                    Ligar Stripe
-                  </Link>
-                </div>
-              </div>
-            )}
-            {isPlatformStripe && (
-              <div className="mt-4 rounded-2xl border border-emerald-400/40 bg-gradient-to-r from-emerald-400/10 via-emerald-500/15 to-white/5 p-3 text-sm text-emerald-50 shadow-[0_18px_60px_rgba(0,0,0,0.45)]">
-                <div className="flex items-center gap-2">
-                  <span className="h-2.5 w-2.5 rounded-full bg-emerald-300 shadow-[0_0_16px_rgba(52,211,153,0.7)]" />
-                  <p className="font-semibold">Conta interna ORYA</p>
-                </div>
-                <p className="text-white/80 text-xs mt-1">
-                  Este organizador usa a conta Stripe principal da ORYA. Não é necessário onboarding em Connect.
-                </p>
-              </div>
-            )}
-            <div className="mt-5 grid gap-3 md:grid-cols-2">
-              <Link
-                href="/organizador/scan"
-                className="relative overflow-hidden rounded-2xl border border-white/12 bg-gradient-to-br from-[#6BFFFF]/15 via-[#0a1326]/80 to-[#050b18]/90 p-4 shadow-[0_24px_70px_rgba(0,0,0,0.55)] transition hover:border-white/25 hover:shadow-[0_28px_90px_rgba(0,0,0,0.65)]"
-              >
-                <p className="text-[11px] uppercase tracking-[0.24em] text-white/50">Check-in rápido</p>
-                <p className="text-lg font-semibold">Scanner em breve</p>
-                <p className="text-sm text-white/70">Estamos a otimizar o check-in dedicado para organizadores.</p>
-              </Link>
-              <Link
-                href="/organizador/staff"
-                className="relative overflow-hidden rounded-2xl border border-white/12 bg-gradient-to-br from-[#FF00C8]/15 via-[#120c1f]/80 to-[#060912]/90 p-4 shadow-[0_24px_70px_rgba(0,0,0,0.55)] transition hover:border-white/25 hover:shadow-[0_28px_90px_rgba(0,0,0,0.65)]"
-              >
-                <p className="text-[11px] uppercase tracking-[0.24em] text-white/50">Equipa & acessos</p>
-                <p className="text-lg font-semibold">Gerir staff</p>
-                <p className="text-sm text-white/70">Convida staff e controla quem pode fazer check-in.</p>
-              </Link>
-            </div>
-          </div>
-
-          <div className="grid gap-4 xl:grid-cols-4 md:grid-cols-2">
-            {overviewLoading
-              ? [...Array(4)].map((_, idx) => (
-                  <div
-                    key={idx}
-                    className="rounded-3xl border border-white/12 bg-white/5 p-4 shadow-[0_24px_70px_rgba(0,0,0,0.55)] animate-pulse space-y-2"
-                  >
-                    <div className="h-3 w-24 rounded bg-white/15" />
-                    <div className="h-6 w-20 rounded bg-white/20" />
-                    <div className="h-3 w-32 rounded bg-white/10" />
-                  </div>
-                ))
-              : statsCards.map((card, idx) => (
-                  <div
-                    key={card.label}
-                    className={cn(
-                      "relative overflow-hidden rounded-3xl border border-white/12 p-4 shadow-[0_24px_70px_rgba(0,0,0,0.55)] transition hover:-translate-y-0.5 hover:border-white/25 hover:shadow-[0_30px_90px_rgba(0,0,0,0.65)]",
-                      "bg-gradient-to-br",
-                      statGradients[idx % statGradients.length],
-                    )}
-                  >
-                    <p className="text-white/70 text-xs">{card.label}</p>
-                    <p className="text-2xl font-bold text-white mt-1 drop-shadow-[0_8px_24px_rgba(0,0,0,0.5)]">{card.value}</p>
-                    <p className="text-[11px] text-white/60">{card.hint}</p>
-                    {idx === 0 && nextEvent && (
-                      <Link
-                        href={`/eventos/${nextEvent.slug}`}
-                        className="relative mt-2 inline-flex text-[11px] text-[#6BFFFF] hover:underline"
-                      >
-                        Ver evento →
-                      </Link>
-                    )}
-                  </div>
-                ))}
-          </div>
-
-          <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
-            <div className="relative overflow-hidden rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0a1226]/75 to-[#050a13]/90 p-4 space-y-3 shadow-[0_26px_90px_rgba(0,0,0,0.6)]">
-              <div className="relative flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <h3 className="text-lg font-semibold">Vendas ao longo do tempo</h3>
-                  <span className="rounded-full border border-white/15 bg-white/10 px-2 py-0.5 text-[11px] text-white/70">Últimos 30 dias</span>
-                </div>
-                <div className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[11px] text-white/70">
-                  Receita · 30 dias
-                </div>
-              </div>
-              <div className="relative h-48 rounded-2xl border border-white/10 bg-gradient-to-br from-white/6 via-[#0b1222]/60 to-white/0 shadow-inner overflow-hidden px-2 py-3">
-                {!timeSeries && (
-                  <div className="flex w-full items-center gap-3 px-4">
-                    <div className="h-28 flex-1 rounded-xl bg-white/10 animate-pulse" />
-                    <div className="hidden h-28 w-20 rounded-xl bg-white/10 animate-pulse md:block" />
-                  </div>
-                )}
-                {timeSeries && overviewChartPoints.length > 0 && (
-                  <SalesAreaChart data={overviewChartPoints} periodLabel="Últimos 30 dias" height={190} />
-                )}
-                {timeSeries && overviewChartPoints.length === 0 && (
-                  <span className="text-white/40 text-xs">Sem dados suficientes.</span>
-                )}
-              </div>
-              {overviewSeriesBreakdown && (
-                <div className="relative flex flex-wrap gap-3 text-[11px] text-white/75">
-                  <span>Bruto: {formatEuros(overviewSeriesBreakdown.gross)}</span>
-                  <span>Desconto: -{formatEuros(overviewSeriesBreakdown.discount)}</span>
-                  <span>Taxas: -{formatEuros(overviewSeriesBreakdown.fees)}</span>
-                  <span>Líquido: {formatEuros(overviewSeriesBreakdown.net)}</span>
-                </div>
-              )}
-            </div>
-
-            <div className="relative overflow-hidden rounded-3xl border border-white/12 bg-gradient-to-br from-emerald-400/10 via-[#0c161b]/75 to-[#060a11]/90 p-4 space-y-3 shadow-[0_26px_90px_rgba(0,0,0,0.6)]">
-              <div className="relative flex items-center justify-between">
-                <h3 className="text-lg font-semibold">Próximos passos</h3>
-                <span className="text-[11px] text-white/70">{quickTasks.filter((t) => t.done).length}/{quickTasks.length} feitos</span>
-              </div>
-              <div className="relative space-y-2 text-[12px]">
-                {quickTasks.map((task) => (
-                  <Link
-                    key={task.label}
-                    href={task.href}
-                    className={`flex items-center justify-between rounded-2xl border px-3 py-2 transition ${
-                      task.done
-                        ? "border-emerald-300/30 bg-emerald-400/15 text-emerald-50 shadow-[0_0_24px_rgba(16,185,129,0.25)]"
-                        : "border-white/15 bg-white/5 text-white/80 hover:border-white/30 hover:bg-white/10"
-                    }`}
-                  >
-                    <span>{task.label}</span>
-                    <span className={`text-[11px] rounded-full px-2 py-0.5 ${task.done ? "bg-emerald-400/30" : "bg-white/10"}`}>
-                      {task.done ? "Feito" : "Ir"}
-                    </span>
-                  </Link>
-                ))}
-              </div>
-              <div className="relative rounded-2xl border border-white/12 bg-white/5 p-3 text-[11px] text-white/70">
-                Organiza-te: cria eventos, ativa promo codes e convida staff. Tudo começa aqui.
-              </div>
-            </div>
-          </div>
-
-          <div className="relative overflow-hidden rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0a1224]/75 to-[#050912]/90 p-4 md:p-5 shadow-[0_26px_90px_rgba(0,0,0,0.6)] space-y-3">
-            <div className="relative flex items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <h3 className="text-lg font-semibold text-white">Os teus eventos</h3>
-                <p className="text-[11px] text-white/60">Próximos e passados ligados à tua conta de organizador.</p>
+                <p className="text-[11px] uppercase tracking-[0.26em] text-white/60">Resumo</p>
+                <h1 className="text-3xl font-semibold text-white">Estado atual da organização</h1>
+                <p className="text-sm text-white/70">Tudo o essencial num só olhar, sem distrações.</p>
               </div>
-            </div>
-            <div className="relative space-y-2">
-              {!events?.items && (
-                <div className="grid gap-2 md:grid-cols-2">
-                  {[1, 2].map((i) => (
-                    <div key={i} className="h-24 rounded-2xl border border-white/12 bg-white/5 animate-pulse" />
-                  ))}
-                </div>
-              )}
-              {events?.items?.length === 0 && (
-                <div className="rounded-2xl border border-dashed border-white/15 bg-white/5 px-4 py-3 text-[12px] text-white/70">
-                  Ainda não tens eventos. Cria o primeiro e começa a vender.
-                </div>
-              )}
-              {events?.items && events.items.length > 0 && (
-                <div className="grid gap-3 md:grid-cols-2">
-                  {events.items.slice(0, 6).map((ev) => {
-                    const date = ev.startsAt ? new Date(ev.startsAt) : null;
-                    const ticketsSold = ev.ticketsSold ?? 0;
-                    const revenue = ((ev.revenueCents ?? 0) / 100).toFixed(2);
-                    const dateLabel = date
-                      ? formatDateTime(date, {
-                          day: "2-digit",
-                          month: "short",
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })
-                      : "Data a confirmar";
-                    return (
-                      <div
-                        key={ev.id}
-                        className="relative overflow-hidden rounded-2xl border border-white/12 bg-gradient-to-br from-white/6 via-[#0c1626]/60 to-[#070c18]/85 p-3 flex flex-col gap-2 shadow-[0_18px_60px_rgba(0,0,0,0.45)]"
-                      >
-                        <div className="relative flex items-center justify-between gap-2">
-                          <div className="flex flex-col">
-                            <p className="text-sm font-semibold text-white line-clamp-2">{ev.title}</p>
-                            <p className="text-[11px] text-white/60">{dateLabel}</p>
-                            <p className="text-[11px] text-white/60">
-                              {ev.locationName || ev.locationCity || "Local a anunciar"}
-                            </p>
-                            <p className="text-[11px] text-white/60">
-                              {ticketsSold} bilhetes · {revenue} €
-                            </p>
-                          </div>
-                          <span className="rounded-full border border-white/20 bg-white/10 px-2 py-0.5 text-[10px] text-white/80">
-                            {ev.status}
-                          </span>
-                        </div>
-                        <div className="relative flex flex-wrap gap-2 text-[11px]">
-                          <Link
-                            href={`/organizador/eventos/${ev.id}/edit`}
-                            className="rounded-full border border-white/20 bg-white/5 px-2.5 py-1 text-white/80 hover:border-[#6BFFFF]/60"
-                          >
-                            Editar
-                          </Link>
-                          <Link
-                            href={`/eventos/${ev.slug}`}
-                            className="rounded-full border border-white/20 bg-white/5 px-2.5 py-1 text-white/80 hover:border-[#6BFFFF]/60"
-                          >
-                            Página pública
-                          </Link>
-                          <Link
-                            href={`/organizador?tab=sales&eventId=${ev.id}`}
-                            className="rounded-full border border-white/20 bg-white/5 px-2.5 py-1 text-white/80 hover:border-[#6BFFFF]/60"
-                          >
-                            Vendas
-                          </Link>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
+              <span className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] text-white/80">
+                {categoryLabel}
+              </span>
             </div>
           </div>
-        </>
+
+          <div className={cn("grid gap-3 md:grid-cols-3", fadeClass)}>
+            <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-[#0f1a2e]/80 via-[#0b1224]/70 to-[#050a12]/90 p-4 shadow-[0_22px_70px_rgba(0,0,0,0.55)]">
+              <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Conta</p>
+              <h3 className="text-lg font-semibold text-white">Estado da conta</h3>
+              <div className="mt-3 space-y-2 text-[12px] text-white/75">
+                <div className="flex items-center justify-between">
+                  <span>Perfil</span>
+                  <span className="rounded-full border border-white/20 bg-white/5 px-2 py-0.5">
+                    {profileStatus === "OK" ? "Completo" : "Incompleto"}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span>Stripe</span>
+                  <span className="rounded-full border border-white/20 bg-white/5 px-2 py-0.5">
+                    {paymentsMode === "PLATFORM" ? "Conta ORYA" : stripeReady ? "Ativo" : "Por ligar"}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span>Publicação</span>
+                  <span className="rounded-full border border-white/20 bg-white/5 px-2 py-0.5">
+                    {organizer?.status === "ACTIVE" ? "Ativa" : "Pendente"}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-[#101b39]/80 via-[#0b1124]/70 to-[#050a12]/92 p-4 shadow-[0_22px_70px_rgba(0,0,0,0.55)]">
+              <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Eventos</p>
+              <h3 className="text-lg font-semibold text-white">Resumo de atividade</h3>
+              <div className="mt-3 grid gap-2 text-[12px] text-white/75">
+                <div className="flex items-center justify-between">
+                  <span>Eventos ativos</span>
+                  <span className="font-semibold text-white">{overview?.activeEventsCount ?? eventsList.length}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span>Próximos</span>
+                  <span className="font-semibold text-white">{eventSummary.upcoming}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span>Concluídos</span>
+                  <span className="font-semibold text-white">{eventSummary.finished}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-[#120b24]/75 via-[#0b1124]/70 to-[#050a12]/92 p-4 shadow-[0_22px_70px_rgba(0,0,0,0.55)]">
+              <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Vendas</p>
+              <h3 className="text-lg font-semibold text-white">Últimos 30 dias</h3>
+              <div className="mt-3 grid gap-2 text-[12px] text-white/75">
+                <div className="flex items-center justify-between">
+                  <span>Bilhetes</span>
+                  <span className="font-semibold text-white">{overview?.totalTickets ?? "—"}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span>Receita líquida</span>
+                  <span className="font-semibold text-white">
+                    {overview ? `${((overview.netRevenueCents ?? overview.totalRevenueCents ?? 0) / 100).toFixed(2)} €` : "—"}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span>Eventos com vendas</span>
+                  <span className="font-semibold text-white">{overview?.eventsWithSalesCount ?? "—"}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
       )}
 
-      {activeTab === "events" && (
-        <section className="space-y-4">
+      {!isLegacyStandaloneTab && activeObjective === "manage" && (
+        <section className="space-y-3">
+          <ObjectiveSubnav
+            objective="manage"
+            activeId={activeSection}
+            category={orgCategory}
+            modules={organizer?.modules ?? []}
+            mode="dashboard"
+          />
+        </section>
+      )}
+
+      {!isLegacyStandaloneTab && activeObjective === "manage" && activeSection === "eventos" && (
+        <section className={cn("space-y-4", fadeClass)} id="eventos">
           <div className="relative overflow-hidden rounded-3xl border border-white/18 bg-gradient-to-br from-[#c7f5ff]/14 via-[#6e8cff]/12 to-[#0a0f1f]/88 p-5 shadow-[0_36px_120px_rgba(0,0,0,0.65)] backdrop-blur-3xl">
             <div className="pointer-events-none absolute inset-0">
               <div className="absolute -left-20 top-2 h-56 w-56 rounded-full bg-[#7cf2ff]/32 blur-[110px]" />
@@ -1535,12 +1524,6 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
                     <h3 className="text-lg font-semibold">Eventos</h3>
                     <span className="text-[11px] rounded-full bg-white/10 px-2 py-0.5">{filteredEvents.length}</span>
                   </div>
-                  <Link
-                    href="/organizador/eventos/novo"
-                    className="inline-flex items-center gap-2 rounded-full border border-white/30 bg-gradient-to-r from-[#9ffbff]/80 via-[#9aa6ff]/70 to-[#ffb2ea]/80 px-4 py-2 text-sm font-semibold text-slate-950 shadow-[0_0_30px_rgba(140,247,255,0.5)] transition hover:scale-[1.025]"
-                  >
-                    <span className="text-slate-950">Criar evento</span>
-                  </Link>
                 </div>
 
             {eventsListLoading && (
@@ -1655,23 +1638,18 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
                                   : isFinished
                                     ? { label: "Concluído", classes: "border-purple-400/60 bg-purple-500/10 text-purple-100" }
                                     : { label: ev.status, classes: "border-white/20 bg-white/5 text-white/70" };
-                      const goToTab = (tab: string) => {
-                        const params = new URLSearchParams(searchParams?.toString() || "");
-                        params.set("tab", tab);
-                        params.set("eventId", String(ev.id));
-                        router.replace(`${pathname}?${params.toString()}`, { scroll: false });
-                      };
+                      const hasTickets = (ev.capacity ?? 0) > 0 || (ev.ticketsSold ?? 0) > 0;
+                      const salesLabel = ev.isFree ? "Inscrições" : "Vendas";
 
                       return (
                         <tr key={ev.id} className="hover:bg-white/10 transition duration-150">
                           <td className="px-4 py-3">
-                            <button
-                              type="button"
+                            <Link
+                              href={`/organizador/eventos/${ev.id}`}
                               className="text-left text-white hover:underline"
-                              onClick={() => goToTab("sales")}
                             >
                               {ev.title}
-                            </button>
+                            </Link>
                           </td>
                           <td className="px-4 py-3 text-[12px] text-white/80">{dateLabel}</td>
                           <td className="px-4 py-3">
@@ -1691,21 +1669,28 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
                           <td className="px-4 py-3 text-[12px] font-semibold text-white">{revenue} €</td>
                           <td className="px-4 py-3 text-right text-[11px]">
                             <div className="flex flex-wrap items-center justify-end gap-2">
-                              {ev.status !== "ARCHIVED" && (
-                                <button
-                                  type="button"
-                                  onClick={() => goToTab("sales")}
-                                  className="rounded-full border border-white/20 bg-white/5 px-2.5 py-1 text-white/80 hover:border-[#6BFFFF]/60"
-                                >
-                                  Vendas
-                                </button>
-                              )}
                               <Link
                                 href={`/organizador/eventos/${ev.id}/edit`}
                                 className="rounded-full border border-white/20 bg-white/5 px-2.5 py-1 text-white/80 hover:border-[#6BFFFF]/60"
                               >
                                 Editar
                               </Link>
+                              {hasTickets && ev.status !== "ARCHIVED" && (
+                                <Link
+                                  href={`/organizador/scan?eventId=${ev.id}`}
+                                  className="rounded-full border border-white/20 bg-white/5 px-2.5 py-1 text-white/80 hover:border-[#6BFFFF]/60"
+                                >
+                                  Check-in
+                                </Link>
+                              )}
+                              {ev.status !== "ARCHIVED" && (
+                                <Link
+                                  href={`/organizador/eventos/${ev.id}`}
+                                  className="rounded-full border border-white/20 bg-white/5 px-2.5 py-1 text-white/80 hover:border-[#6BFFFF]/60"
+                                >
+                                  {salesLabel}
+                                </Link>
+                              )}
                               <Link
                                 href={`/eventos/${ev.slug}`}
                                 className="rounded-full border border-white/20 bg-white/5 px-2.5 py-1 text-white/80 hover:border-[#6BFFFF]/60"
@@ -1744,8 +1729,120 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
         </section>
       )}
 
-      {activeTab === "sales" && (
+      {!isLegacyStandaloneTab && activeObjective === "analyze" && (
         <section className="space-y-4">
+          <ObjectiveSubnav
+            objective="analyze"
+            activeId={activeSection}
+            category={orgCategory}
+            modules={organizer?.modules ?? []}
+            mode="dashboard"
+          />
+        </section>
+      )}
+
+      {!isLegacyStandaloneTab && activeObjective === "analyze" && activeSection === "overview" && (
+        <section className={cn("space-y-4", fadeClass)} id="overview">
+
+          <div className="grid gap-4 xl:grid-cols-4 md:grid-cols-2">
+            {overviewLoading
+              ? [...Array(4)].map((_, idx) => (
+                  <div
+                    key={idx}
+                    className="rounded-3xl border border-white/12 bg-white/5 p-4 shadow-[0_24px_70px_rgba(0,0,0,0.55)] animate-pulse space-y-2"
+                  >
+                    <div className="h-3 w-24 rounded bg-white/15" />
+                    <div className="h-6 w-20 rounded bg-white/20" />
+                    <div className="h-3 w-32 rounded bg-white/10" />
+                  </div>
+                ))
+              : statsCards.map((card, idx) => (
+                  <div
+                    key={card.label}
+                    className={cn(
+                      "relative overflow-hidden rounded-3xl border border-white/12 p-4 shadow-[0_24px_70px_rgba(0,0,0,0.55)] transition hover:-translate-y-0.5 hover:border-white/25 hover:shadow-[0_30px_90px_rgba(0,0,0,0.65)]",
+                      "bg-gradient-to-br",
+                      statGradients[idx % statGradients.length],
+                    )}
+                  >
+                    <p className="text-white/70 text-xs">{card.label}</p>
+                    <p className="text-2xl font-bold text-white mt-1 drop-shadow-[0_8px_24px_rgba(0,0,0,0.5)]">{card.value}</p>
+                    <p className="text-[11px] text-white/60">{card.hint}</p>
+                    {idx === 0 && nextEvent && (
+                      <Link
+                        href={`/eventos/${nextEvent.slug}`}
+                        className="relative mt-2 inline-flex text-[11px] text-[#6BFFFF] hover:underline"
+                      >
+                        Ver evento →
+                      </Link>
+                    )}
+                  </div>
+                ))}
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-[#0b1226]/80 via-[#101c38]/75 to-[#050810]/95 p-4 shadow-[0_22px_70px_rgba(0,0,0,0.55)]">
+              <p className="text-[11px] uppercase tracking-[0.26em] text-white/60">Faturação</p>
+              <h3 className="text-lg font-semibold text-white">Recibos e documentos</h3>
+              <p className="text-[12px] text-white/65">Consulta invoices emitidas e dados fiscais.</p>
+              <Link
+                href="/organizador?tab=analyze&section=invoices"
+                className="mt-3 inline-flex rounded-full border border-white/20 bg-white/5 px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-white/10"
+              >
+                Abrir faturação
+              </Link>
+            </div>
+            <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-[#0a1120]/85 via-[#0b1428]/80 to-[#05080f]/95 p-4 shadow-[0_22px_70px_rgba(0,0,0,0.55)]">
+              <p className="text-[11px] uppercase tracking-[0.26em] text-white/60">Payouts</p>
+              <h3 className="text-lg font-semibold text-white">Detalhe de receitas</h3>
+              <p className="text-[12px] text-white/65">Vê o detalhe de reservas e releases.</p>
+              <Link
+                href="/organizador?tab=analyze&section=financas"
+                className="mt-3 inline-flex rounded-full border border-white/20 bg-white/5 px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-white/10"
+              >
+                Ver detalhe
+              </Link>
+            </div>
+          </div>
+
+          <div className="relative overflow-hidden rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0a1226]/75 to-[#050a13]/90 p-4 space-y-3 shadow-[0_26px_90px_rgba(0,0,0,0.6)]">
+            <div className="relative flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <h3 className="text-lg font-semibold">Vendas ao longo do tempo</h3>
+                <span className="rounded-full border border-white/15 bg-white/10 px-2 py-0.5 text-[11px] text-white/70">Últimos 30 dias</span>
+              </div>
+              <div className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[11px] text-white/70">
+                Receita · 30 dias
+              </div>
+            </div>
+            <div className="relative h-48 rounded-2xl border border-white/10 bg-gradient-to-br from-white/6 via-[#0b1222]/60 to-white/0 shadow-inner overflow-hidden px-2 py-3">
+              {!timeSeries && (
+                <div className="flex w-full items-center gap-3 px-4">
+                  <div className="h-28 flex-1 rounded-xl bg-white/10 animate-pulse" />
+                  <div className="hidden h-28 w-20 rounded-xl bg-white/10 animate-pulse md:block" />
+                </div>
+              )}
+              {timeSeries && overviewChartPoints.length > 0 && (
+                <SalesAreaChart data={overviewChartPoints} periodLabel="Últimos 30 dias" height={190} />
+              )}
+              {timeSeries && overviewChartPoints.length === 0 && (
+                <span className="text-white/40 text-xs">Sem dados suficientes.</span>
+              )}
+            </div>
+            {overviewSeriesBreakdown && (
+              <div className="relative flex flex-wrap gap-3 text-[11px] text-white/75">
+                <span>Bruto: {formatEuros(overviewSeriesBreakdown.gross)}</span>
+                <span>Desconto: -{formatEuros(overviewSeriesBreakdown.discount)}</span>
+                <span>Taxas: -{formatEuros(overviewSeriesBreakdown.fees)}</span>
+                <span>Líquido: {formatEuros(overviewSeriesBreakdown.net)}</span>
+              </div>
+            )}
+          </div>
+        </section>
+      )}
+
+      {!isLegacyStandaloneTab && activeObjective === "analyze" && activeSection === "vendas" && (
+        <section className={cn("space-y-4", fadeClass)} id="vendas">
           <div className="relative overflow-hidden rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/75 to-[#050810]/92 p-5 shadow-[0_26px_90px_rgba(0,0,0,0.6)] backdrop-blur-3xl space-y-4">
             <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.12),transparent_35%),linear-gradient(225deg,rgba(255,255,255,0.08),transparent_40%)]" />
             <div className="relative flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -1942,7 +2039,7 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
                           <td className="py-2 pr-3 text-right text-[11px]">
                             <div className="flex items-center justify-end gap-2">
                               <Link
-                                href={`/organizador?tab=sales&eventId=${ev.id}`}
+                                href={`/organizador?tab=analyze&section=vendas&eventId=${ev.id}`}
                                 className="rounded-full border border-white/20 bg-white/5 px-2.5 py-1 text-white/80 hover:border-[#6BFFFF]/60"
                               >
                                 Dashboard de vendas
@@ -2062,8 +2159,8 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
         </section>
       )}
 
-      {activeTab === "finance" && (
-        <section className="space-y-5">
+      {!isLegacyStandaloneTab && activeObjective === "analyze" && activeSection === "financas" && (
+        <section className={cn("space-y-5", fadeClass)} id="financas">
           <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/10 via-[#0d1530]/75 to-[#050912]/90 px-5 py-4 shadow-[0_30px_110px_rgba(0,0,0,0.6)] backdrop-blur-3xl">
             <div className="flex flex-col gap-2">
               <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] uppercase tracking-[0.24em] text-white/80 shadow-[0_10px_30px_rgba(0,0,0,0.4)]">
@@ -2270,12 +2367,12 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
             </div>
           </div>
 
-            <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/92 backdrop-blur-3xl p-4 space-y-3 shadow-[0_22px_70px_rgba(0,0,0,0.65)]">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-lg font-semibold text-white">Por evento</h3>
-                  <p className="text-[12px] text-white/65">Bruto, taxas e líquido por evento.</p>
-                </div>
+          <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/92 backdrop-blur-3xl p-4 space-y-3 shadow-[0_22px_70px_rgba(0,0,0,0.65)]">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-semibold text-white">Por evento</h3>
+                <p className="text-[12px] text-white/65">Bruto, taxas e líquido por evento.</p>
+              </div>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
@@ -2294,11 +2391,11 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
                 Sem vendas ainda. Assim que venderes bilhetes, verás aqui os totais por evento.
               </div>
             )}
-          {stripeSuccessMessage && (
-            <div className="rounded-2xl border border-emerald-400/40 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-50">
-              {stripeSuccessMessage}
-            </div>
-          )}
+            {stripeSuccessMessage && (
+              <div className="rounded-2xl border border-emerald-400/40 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-50">
+                {stripeSuccessMessage}
+              </div>
+            )}
 
             {financeData && financeData.events.length > 0 && (
               <div className="overflow-auto">
@@ -2341,364 +2438,322 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
         </section>
       )}
 
-      {activeTab === "invoices" && (
-        <section className="space-y-4">
-          <InvoicesClient />
+      {!isLegacyStandaloneTab && activeObjective === "analyze" && activeSection === "invoices" && (
+        <section className={cn("space-y-4", fadeClass)} id="invoices">
+          <InvoicesClient basePath="/organizador?tab=analyze&section=invoices" fullWidth organizerId={organizer?.id ?? null} />
         </section>
       )}
 
-      {activeTab === "marketing" && (
-        <section className="space-y-5">
-          <div className="rounded-3xl border border-white/12 bg-gradient-to-r from-[#0b1226]/80 via-[#101b39]/75 to-[#050811]/90 px-4 py-4 sm:px-6 sm:py-5 backdrop-blur-2xl shadow-[0_26px_90px_rgba(0,0,0,0.55)]">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-              <div className="space-y-1">
-                <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] uppercase tracking-[0.28em] text-white/70 shadow-[0_12px_32px_rgba(0,0,0,0.4)]">
-                  Dashboard · Marketing
-                </div>
-                <h2 className="text-2xl sm:text-3xl font-semibold text-white drop-shadow-[0_12px_45px_rgba(0,0,0,0.6)]">Marketing</h2>
-                <p className="text-sm text-white/70">Promoções, audiência e ações para encher o evento.</p>
+  {!isLegacyStandaloneTab && activeObjective === "promote" && (
+    <section className="space-y-5">
+      <div
+        className={cn(
+          "rounded-3xl border border-white/12 bg-gradient-to-r from-[#0b1226]/80 via-[#101b39]/75 to-[#050811]/90 px-4 py-4 sm:px-6 sm:py-5 backdrop-blur-2xl shadow-[0_26px_90px_rgba(0,0,0,0.55)]",
+          fadeClass,
+        )}
+        id="marketing"
+      >
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="space-y-1">
+            <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] uppercase tracking-[0.28em] text-white/70 shadow-[0_12px_32px_rgba(0,0,0,0.4)]">
+              Dashboard · Marketing
+            </div>
+            <h2 className="text-2xl sm:text-3xl font-semibold text-white drop-shadow-[0_12px_45px_rgba(0,0,0,0.6)]">
+              Marketing
+            </h2>
+            <p className="text-sm text-white/70">Promoções, audiência e ações para encher o evento.</p>
+          </div>
+          {marketingSection === "promos" && (
+            <Link
+              href="/organizador?tab=promote&section=marketing&marketing=promos"
+              className="inline-flex items-center rounded-full border border-white/25 bg-white/10 px-4 py-2 text-sm font-semibold text-white shadow-[0_14px_40px_rgba(0,0,0,0.35)] hover:border-white/40 hover:bg-white/15 transition"
+            >
+              Ver todos os códigos
+            </Link>
+          )}
+        </div>
+
+        <div className="mt-4 flex flex-wrap gap-2 rounded-2xl border border-white/10 bg-white/5 px-2 py-2 text-sm shadow-[0_16px_50px_rgba(0,0,0,0.4)]">
+          {[
+            { key: "perfil", label: "Perfil público" },
+            { key: "overview", label: "Visão geral" },
+            { key: "promos", label: "Códigos promocionais" },
+            { key: "updates", label: "Canal oficial" },
+            { key: "promoters", label: "Promotores e parcerias" },
+            { key: "content", label: "Conteúdos e kits" },
+          ].map((opt) => (
+            <button
+              key={opt.key}
+              type="button"
+              onClick={() => setMarketingSection(opt.key as typeof marketingSection)}
+              className={`rounded-xl px-3 py-2 font-semibold transition ${
+                marketingSection === opt.key
+                  ? "bg-gradient-to-r from-[#FF7AD1]/60 via-[#7FE0FF]/35 to-[#6A7BFF]/55 text-white shadow-[0_14px_36px_rgba(107,255,255,0.45)]"
+                  : "text-white/80 hover:bg-white/10"
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+
+        {marketingSection === "perfil" && (
+          <div
+            className={cn(
+              "mt-4 rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/75 to-[#050912]/90 px-4 py-4 sm:px-6 sm:py-5 shadow-[0_24px_90px_rgba(0,0,0,0.55)]",
+              fadeClass,
+            )}
+          >
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.28em] text-white/70">Perfil público</p>
+                <h3 className="text-lg font-semibold text-white">A tua página pública</h3>
+                <p className="text-[12px] text-white/65">
+                  Mostra o perfil do organizador e partilha {categoryPluralArticle} {categoryNounPlural}.
+                </p>
               </div>
-              {marketingSection === "promos" && (
+              {publicProfileUrl ? (
                 <Link
-                  href="/organizador?tab=marketing&section=promos"
-                  className="inline-flex items-center rounded-full border border-white/25 bg-white/10 px-4 py-2 text-sm font-semibold text-white shadow-[0_14px_40px_rgba(0,0,0,0.35)] hover:border-white/40 hover:bg-white/15 transition"
+                  href={publicProfileUrl}
+                  className="rounded-full border border-white/20 bg-white/5 px-4 py-2 text-sm font-semibold text-white hover:bg-white/10"
                 >
-                  Ver todos os códigos
+                  Abrir perfil
+                </Link>
+              ) : (
+                <Link
+                  href="/organizador?tab=manage&section=settings"
+                  className="rounded-full border border-white/20 bg-white/5 px-4 py-2 text-sm font-semibold text-white hover:bg-white/10"
+                >
+                  Definir username
                 </Link>
               )}
             </div>
-            <div className="mt-4 flex flex-wrap gap-2 rounded-2xl border border-white/10 bg-white/5 px-2 py-2 text-sm shadow-[0_16px_50px_rgba(0,0,0,0.4)]">
-              {[
-                { key: "overview", label: "Visão geral" },
-                { key: "promos", label: "Códigos promocionais" },
-                { key: "promoters", label: "Promotores & Parcerias" },
-                { key: "content", label: "Conteúdo & Kits" },
-              ].map((opt) => (
-                <button
-                  key={opt.key}
-                  type="button"
-                  onClick={() => setMarketingSection(opt.key as typeof marketingSection)}
-                  className={`rounded-xl px-3 py-2 font-semibold transition ${
-                    marketingSection === opt.key
-                      ? "bg-gradient-to-r from-[#FF7AD1]/60 via-[#7FE0FF]/35 to-[#6A7BFF]/55 text-white shadow-[0_14px_36px_rgba(107,255,255,0.45)]"
-                      : "text-white/80 hover:bg-white/10"
-                  }`}
-                >
-                  {opt.label}
-                </button>
-              ))}
+            <div className="mt-3 rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-[12px] text-white/70">
+              {publicProfileUrl ? publicProfileUrl : "Define um username para ativar a página pública do organizador."}
             </div>
           </div>
+        )}
 
-          {marketingSection === "overview" && (
-            <div className="space-y-4">
-              <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
-                {marketingOverview
-                  ? [
-                      {
-                        label: "Receita atribuída a marketing",
-                        value: marketingKpis.marketingRevenueCents ? `${(marketingKpis.marketingRevenueCents / 100).toFixed(2)} €` : "—",
-                        hint: "Receita estimada através de códigos.",
-                      },
-                      {
-                        label: "Bilhetes via marketing",
-                        value: marketingKpis.ticketsWithPromo,
-                        hint: "Utilizações de códigos.",
-                      },
-                      {
-                        label: "Top código",
-                        value: marketingKpis.topPromo ? marketingKpis.topPromo.code : "—",
-                        hint: marketingKpis.topPromo ? `${marketingKpis.topPromo.redemptionsCount ?? 0} utilizações` : "Sem dados.",
-                      },
-                      {
-                        label: "Promo codes ativos",
-                        value: marketingKpis.activePromos,
-                        hint: "Disponíveis para vender agora.",
-                      },
-                    ].map((card, idx) => (
-                      <div
-                        key={card.label}
-                        className={`rounded-2xl border border-white/10 p-3 shadow-[0_18px_55px_rgba(0,0,0,0.45)] ${
-                          idx % 2 === 0
-                            ? "bg-gradient-to-br from-[#0f1c3d]/70 via-[#0b1124]/65 to-[#050810]/85"
-                            : "bg-gradient-to-br from-[#170b1f]/70 via-[#0e122a]/65 to-[#050810]/85"
-                        }`}
-                      >
-                        <p className="text-[11px] text-white/60">{card.label}</p>
-                        <p className="mt-1 text-2xl font-bold text-white drop-shadow-[0_10px_30px_rgba(0,0,0,0.35)]">{card.value}</p>
-                        <p className="text-[11px] text-white/50">{card.hint}</p>
-                      </div>
-                    ))
-                  : [...Array(4)].map((_, idx) => (
-                      <div
-                        key={idx}
-                        className="rounded-2xl border border-white/10 bg-gradient-to-br from-white/8 via-[#0f1c3d]/50 to-[#050810]/85 p-3 space-y-2 animate-pulse"
-                      >
-                        <div className="h-3 w-24 rounded bg-white/15" />
-                        <div className="h-6 w-20 rounded bg-white/20" />
-                        <div className="h-3 w-32 rounded bg-white/10" />
-                      </div>
-                    ))}
+        {marketingSection === "overview" && (
+          <div className={cn("mt-4 space-y-4", fadeClass)}>
+            <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+              {marketingOverview
+                ? [
+                    {
+                      label: "Receita atribuída a marketing",
+                      value: marketingKpis.marketingRevenueCents ? `${(marketingKpis.marketingRevenueCents / 100).toFixed(2)} €` : "—",
+                      hint: "Receita estimada através de códigos.",
+                    },
+                    {
+                      label: "Bilhetes via marketing",
+                      value: marketingKpis.ticketsWithPromo,
+                      hint: "Utilizações de códigos.",
+                    },
+                    {
+                      label: "Top código",
+                      value: marketingKpis.topPromo ? marketingKpis.topPromo.code : "—",
+                      hint: marketingKpis.topPromo ? `${marketingKpis.topPromo.redemptionsCount ?? 0} utilizações` : "Sem dados.",
+                    },
+                    {
+                      label: "Promo codes ativos",
+                      value: marketingKpis.activePromos,
+                      hint: "Disponíveis para vender agora.",
+                    },
+                  ].map((card, idx) => (
+                    <div
+                      key={card.label}
+                      className={`rounded-2xl border border-white/10 p-3 shadow-[0_18px_55px_rgba(0,0,0,0.45)] ${
+                        idx % 2 === 0
+                          ? "bg-gradient-to-br from-[#0f1c3d]/70 via-[#0b1124]/65 to-[#050810]/85"
+                          : "bg-gradient-to-br from-[#170b1f]/70 via-[#0e122a]/65 to-[#050810]/85"
+                      }`}
+                    >
+                      <p className="text-[11px] text-white/60">{card.label}</p>
+                      <p className="mt-1 text-2xl font-bold text-white drop-shadow-[0_10px_30px_rgba(0,0,0,0.35)]">{card.value}</p>
+                      <p className="text-[11px] text-white/50">{card.hint}</p>
+                    </div>
+                  ))
+                : [...Array(4)].map((_, idx) => (
+                    <div
+                      key={idx}
+                      className="rounded-2xl border border-white/10 bg-gradient-to-br from-white/8 via-[#0f1c3d]/50 to-[#050810]/85 p-3 space-y-2 animate-pulse"
+                    >
+                      <div className="h-3 w-24 rounded bg-white/15" />
+                      <div className="h-6 w-20 rounded bg-white/20" />
+                      <div className="h-3 w-32 rounded bg-white/10" />
+                    </div>
+                  ))}
+            </div>
+
+            <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0c162c]/65 to-[#050912]/90 p-4 space-y-3 shadow-[0_24px_90px_rgba(0,0,0,0.55)]">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold text-white drop-shadow-[0_10px_30px_rgba(0,0,0,0.45)]">Fill the Room</h3>
+                  <p className="text-[12px] text-white/65">Próximos eventos com ocupação e ação sugerida.</p>
+                </div>
+                <span className="rounded-full border border-white/20 bg-white/5 px-3 py-1 text-[12px] text-white/70">
+                  Ações sugeridas
+                </span>
               </div>
 
-              <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0c162c]/65 to-[#050912]/90 p-4 space-y-3 shadow-[0_24px_90px_rgba(0,0,0,0.55)]">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="text-lg font-semibold text-white drop-shadow-[0_10px_30px_rgba(0,0,0,0.45)]">Fill the Room</h3>
-                    <p className="text-[12px] text-white/65">Próximos eventos com ocupação e ação sugerida.</p>
-                  </div>
-                  <Link
-                    href="/organizador?tab=marketing&section=promos"
-                    className="rounded-full border border-white/20 bg-white/5 px-3 py-1 text-[12px] text-white/85 shadow-[0_14px_40px_rgba(0,0,0,0.35)] hover:bg-white/10"
-                  >
-                    Ver todas as ações
-                  </Link>
+              {fillTheRoomEvents.length === 0 && (
+                <div className="rounded-2xl border border-dashed border-white/15 bg-white/5 px-4 py-4 text-sm text-white/70">
+                  Sem eventos futuros para otimizar. Cria um evento ou define datas para ver sugestões.
                 </div>
+              )}
 
-                {fillTheRoomEvents.length === 0 && (
-                  <div className="rounded-2xl border border-dashed border-white/15 bg-white/5 px-4 py-4 text-sm text-white/70">
-                    Sem eventos futuros para otimizar. Cria um evento ou define datas para ver sugestões.
-                  </div>
-                )}
-
-                {fillTheRoomEvents.length > 0 && (
-                  <div className="space-y-2">
-                    {fillTheRoomEvents.map((ev) => (
-                      <div
-                        key={ev.id}
-                        className="flex flex-col gap-2 rounded-2xl border border-white/12 bg-gradient-to-r from-[#130c24]/70 via-[#0b162c]/65 to-[#050912]/85 p-3 shadow-[0_18px_50px_rgba(0,0,0,0.45)] md:flex-row md:items-center md:justify-between"
-                      >
-                        <div className="space-y-1">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <p className="text-sm font-semibold">{ev.title}</p>
-                            <span className={`rounded-full border px-2 py-0.5 text-[11px] ${ev.tag.tone}`}>{ev.tag.label}</span>
-                            <span className="rounded-full border border-white/20 bg-white/5 px-2 py-0.5 text-[11px] text-white/75">
-                              {ev.templateType === "PADEL" ? "Padel" : "Evento"}
+              {fillTheRoomEvents.length > 0 && (
+                <div className="space-y-2">
+                  {fillTheRoomEvents.map((ev) => (
+                    <div
+                      key={ev.id}
+                      className="flex flex-col gap-2 rounded-2xl border border-white/12 bg-gradient-to-r from-[#130c24]/70 via-[#0b162c]/65 to-[#050912]/85 p-3 shadow-[0_18px_50px_rgba(0,0,0,0.45)] md:flex-row md:items-center md:justify-between"
+                    >
+                      <div className="space-y-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="text-sm font-semibold">{ev.title}</p>
+                          <span className={`rounded-full border px-2 py-0.5 text-[11px] ${ev.tag.tone}`}>{ev.tag.label}</span>
+                          <span className="rounded-full border border-white/20 bg-white/5 px-2 py-0.5 text-[11px] text-white/75">
+                            {ev.templateType === "PADEL" ? "Padel" : "Evento"}
+                          </span>
+                          {typeof ev.diffDays === "number" && (
+                            <span className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[11px] text-white/70">
+                              Faltam {ev.diffDays} dia{ev.diffDays === 1 ? "" : "s"}
                             </span>
-                            {typeof ev.diffDays === "number" && (
-                              <span className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[11px] text-white/70">
-                                Faltam {ev.diffDays} dia{ev.diffDays === 1 ? "" : "s"}
-                              </span>
-                            )}
-                          </div>
-                          <div className="flex flex-wrap gap-2 text-[11px] text-white/70">
-                            <span>
-                              {ev.startsAt
-                                ? formatDateTime(new Date(ev.startsAt), {
-                                    day: "2-digit",
-                                    month: "short",
-                                    hour: "2-digit",
-                                    minute: "2-digit",
-                                  })
-                                : "Data a definir"}
-                            </span>
-                            <span>·</span>
-                            <span>{ev.locationCity || ev.locationName || "Local a anunciar"}</span>
-                            <span>·</span>
-                            <span>
-                              Lotação: {ev.ticketsSold ?? 0} / {ev.capacity ?? "—"}{" "}
-                              {ev.occupancy !== null ? `(${Math.round((ev.occupancy ?? 0) * 100)}%)` : ""}
-                            </span>
-                          </div>
+                          )}
                         </div>
-                        <div className="flex flex-col gap-2 text-[12px] md:text-right">
-                          <div className="flex items-center gap-2 text-[11px] text-white/70">
-                            <div className="h-2 w-28 rounded-full bg-white/10">
-                              <div
-                                className="h-2 rounded-full bg-gradient-to-r from-[#FF7AD1] via-[#7FE0FF] to-[#6A7BFF]"
-                                style={{ width: `${Math.min(100, Math.round((ev.occupancy ?? 0) * 100))}%` }}
-                              />
-                            </div>
-                            <span>{ev.occupancy !== null ? `${Math.round((ev.occupancy ?? 0) * 100)}%` : "—"}</span>
-                          </div>
-                          <div className="flex flex-wrap justify-end gap-2 text-[11px]">
-                            <Link
-                              href="/organizador?tab=marketing&section=promos"
-                              className="rounded-full border border-white/20 bg-white/5 px-2.5 py-1 text-white/85 hover:bg-white/12"
-                            >
-                              {ev.tag.suggestion}
-                            </Link>
-                            <Link
-                              href={`/organizador/eventos/${ev.id}/edit`}
-                              className="rounded-full border border-white/20 bg-white/5 px-2.5 py-1 text-white/85 hover:bg-white/12"
-                            >
-                              Ajustar evento
-                            </Link>
-                            <Link
-                              href={`/eventos/${ev.slug}`}
-                              className="rounded-full border border-white/20 bg-white/5 px-2.5 py-1 text-white/85 hover:bg-white/12"
-                            >
-                              Partilhar
-                            </Link>
-                          </div>
+                        <div className="flex flex-wrap gap-2 text-[11px] text-white/70">
+                          <span>
+                            {ev.startsAt
+                              ? formatDateTime(new Date(ev.startsAt), {
+                                  day: "2-digit",
+                                  month: "short",
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                })
+                              : "Data a definir"}
+                          </span>
+                          <span>·</span>
+                          <span>{ev.locationCity || ev.locationName || "Local a anunciar"}</span>
+                          <span>·</span>
+                          <span>
+                            Lotação: {ev.ticketsSold ?? 0} / {ev.capacity ?? "—"}{" "}
+                            {ev.occupancy !== null ? `(${Math.round((ev.occupancy ?? 0) * 100)}%)` : ""}
+                          </span>
                         </div>
                       </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#101b39]/60 to-[#050912]/90 p-4 shadow-[0_24px_90px_rgba(0,0,0,0.55)]">
-                <div className="flex items-center justify-between gap-2">
-                  <div>
-                    <h4 className="text-lg font-semibold text-white">Funil de marketing (v1)</h4>
-                    <p className="text-[12px] text-white/65">Bilhetes totais vs. com promo vs. convidados.</p>
-                  </div>
-                  <span className="rounded-full border border-white/15 bg-white/5 px-2 py-1 text-[11px] text-white/70">Baseado em códigos</span>
-                </div>
-                <div className="mt-3 grid gap-3 md:grid-cols-3">
-                  {[
-                    { label: "Bilhetes totais", value: marketingKpis.totalTickets ?? "—" },
-                    { label: "Bilhetes com promo", value: marketingKpis.ticketsWithPromo ?? 0 },
-                    { label: "Guest / convidados", value: marketingKpis.guestTickets ?? 0 },
-                  ].map((item) => (
-                    <div key={item.label} className="rounded-2xl border border-white/10 bg-white/5/80 bg-black/20 p-3 shadow-[0_14px_45px_rgba(0,0,0,0.4)]">
-                      <p className="text-[11px] text-white/60">{item.label}</p>
-                      <p className="text-xl font-bold text-white mt-1">{item.value}</p>
+                      <div className="flex flex-col gap-2 text-[12px] md:text-right">
+                        <div className="flex items-center gap-2 text-[11px] text-white/70">
+                          <div className="h-2 w-28 rounded-full bg-white/10">
+                            <div
+                              className="h-2 rounded-full bg-gradient-to-r from-[#FF7AD1] via-[#7FE0FF] to-[#6A7BFF]"
+                              style={{ width: `${Math.min(100, Math.round((ev.occupancy ?? 0) * 100))}%` }}
+                            />
+                          </div>
+                          <span>{ev.occupancy !== null ? `${Math.round((ev.occupancy ?? 0) * 100)}%` : "—"}</span>
+                        </div>
+                        <div className="flex flex-wrap justify-end gap-2 text-[11px]">
+                          <Link
+                            href="/organizador?tab=promote&section=marketing&marketing=promos"
+                            className="rounded-full border border-white/20 bg-white/5 px-2.5 py-1 text-white/85 hover:bg-white/12"
+                          >
+                            {ev.tag.suggestion}
+                          </Link>
+                          <Link
+                            href={`/organizador/eventos/${ev.id}/edit`}
+                            className="rounded-full border border-white/20 bg-white/5 px-2.5 py-1 text-white/85 hover:bg-white/12"
+                          >
+                            Editar evento
+                          </Link>
+                          <Link
+                            href={`/eventos/${ev.slug}`}
+                            className="rounded-full border border-white/20 bg-white/5 px-2.5 py-1 text-white/85 hover:bg-white/12"
+                          >
+                            Partilhar
+                          </Link>
+                        </div>
+                      </div>
                     </div>
                   ))}
                 </div>
+              )}
+            </div>
+
+            <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#101b39]/60 to-[#050912]/90 p-4 shadow-[0_24px_90px_rgba(0,0,0,0.55)]">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <h4 className="text-lg font-semibold text-white">Funil de marketing (v1)</h4>
+                  <p className="text-[12px] text-white/65">Bilhetes totais vs. com promo vs. convidados.</p>
+                </div>
+                <span className="rounded-full border border-white/15 bg-white/5 px-2 py-1 text-[11px] text-white/70">Baseado em códigos</span>
+              </div>
+              <div className="mt-3 grid gap-3 md:grid-cols-3">
+                {[
+                  { label: "Bilhetes totais", value: marketingKpis.totalTickets ?? "—" },
+                  { label: "Bilhetes com promo", value: marketingKpis.ticketsWithPromo ?? 0 },
+                  { label: "Guest / convidados", value: marketingKpis.guestTickets ?? 0 },
+                ].map((item) => (
+                  <div key={item.label} className="rounded-2xl border border-white/10 bg-white/5/80 bg-black/20 p-3 shadow-[0_14px_45px_rgba(0,0,0,0.4)]">
+                    <p className="text-[11px] text-white/60">{item.label}</p>
+                    <p className="text-xl font-bold text-white mt-1">{item.value}</p>
+                  </div>
+                ))}
               </div>
             </div>
-          )}
+          </div>
+        )}
 
-          {marketingSection === "promos" && (
+        {marketingSection === "promos" && (
+          <div className={cn("mt-4", fadeClass)}>
             <PromoCodesPage />
-          )}
+          </div>
+        )}
 
-          {marketingSection === "promoters" && (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-xl font-semibold text-white">Promotores &amp; Parcerias</h3>
-                  <p className="text-[12px] text-white/65">Quem te ajuda a vender (pessoas, grupos, parceiros).</p>
-                </div>
-                <button
-                  type="button"
-                  className="rounded-full border border-white/20 px-4 py-2 text-sm font-semibold text-white/70 cursor-not-allowed"
-                  disabled
-                >
-                  Em breve
-                </button>
+        {marketingSection === "updates" && (
+          <div className={cn("mt-4", fadeClass)}>
+            <OrganizerUpdatesPage embedded />
+          </div>
+        )}
+
+        {marketingSection === "promoters" && (
+          <div className={cn("mt-4 space-y-3", fadeClass)}>
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-xl font-semibold text-white">Promotores &amp; Parcerias</h3>
+                <p className="text-[12px] text-white/65">Quem te ajuda a vender (pessoas, grupos, parceiros).</p>
               </div>
-              <div className="rounded-3xl border border-white/10 bg-black/35 p-4 text-sm text-white/70 space-y-3">
-                <p className="text-white/80 font-semibold">Em breve</p>
-                <p className="text-[12px] text-white/65">Dashboard de vendas por promotor e links com comissão estimada.</p>
-              </div>
+              <button
+                type="button"
+                className="rounded-full border border-white/20 px-4 py-2 text-sm font-semibold text-white/70 cursor-not-allowed"
+                disabled
+              >
+                Em breve
+              </button>
             </div>
-          )}
-
-          {marketingSection === "content" && (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-xl font-semibold text-white">Conteúdo &amp; Kits</h3>
-                  <p className="text-[12px] text-white/65">Copiar e partilhar: textos rápidos por evento.</p>
-                </div>
-                <span className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[11px] text-white/70">Em breve</span>
-              </div>
-              <div className="rounded-3xl border border-white/10 bg-black/35 p-4 text-sm text-white/70">
-                Em breve: kits rápidos para Instagram, WhatsApp e email por evento, com botões de copiar.
-              </div>
+            <div className="rounded-3xl border border-white/10 bg-black/35 p-4 text-sm text-white/70 space-y-3">
+              <p className="text-white/80 font-semibold">Em breve</p>
+              <p className="text-[12px] text-white/65">Dashboard de vendas por promotor e links com comissão estimada.</p>
             </div>
-          )}
-        </section>
-      )}
+          </div>
+        )}
 
-          {activeTab === "padel" && (
-            <section className="space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <p className="text-[11px] uppercase tracking-[0.3em] text-white/60">Categorias</p>
-                  <h2 className="text-2xl font-semibold">Padel</h2>
-                  <p className="text-sm text-white/65">Clubes, courts, staff e jogadores num só sítio.</p>
-                </div>
-                <div className="flex flex-wrap gap-2" />
+        {marketingSection === "content" && (
+          <div className={cn("mt-4 space-y-3", fadeClass)}>
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-xl font-semibold text-white">Conteúdo &amp; Kits</h3>
+                <p className="text-[12px] text-white/65">Copiar e partilhar: textos rápidos por evento.</p>
               </div>
-
-              {!organizer?.id && <p className="text-sm text-white/70">Sem organização ativa.</p>}
-              {padelLoading && organizer?.id && (
-                <div className="space-y-3 rounded-3xl border border-white/10 bg-black/25 p-4 shadow-[0_18px_60px_rgba(0,0,0,0.6)]">
-                  <div className="h-5 w-32 rounded bg-white/10 animate-pulse" />
-                  <div className="grid gap-3 sm:grid-cols-3">
-                    {[...Array(3)].map((_, idx) => (
-                      <div
-                        key={idx}
-                        className="space-y-2 rounded-2xl border border-white/10 bg-white/5 p-3 shadow-inner animate-pulse"
-                      >
-                        <div className="h-4 w-20 rounded bg-white/15" />
-                        <div className="h-6 w-16 rounded bg-white/20" />
-                        <div className="h-3 w-24 rounded bg-white/10" />
-                      </div>
-                    ))}
-                  </div>
-                  <div className="rounded-2xl border border-white/10 bg-white/5 p-4 animate-pulse">
-                    <div className="h-4 w-32 rounded bg-white/10 mb-3" />
-                    <div className="grid gap-3 lg:grid-cols-2">
-                      {[...Array(2)].map((__, idx) => (
-                        <div key={idx} className="space-y-2 rounded-xl border border-white/10 bg-white/5 p-3">
-                          <div className="h-4 w-1/2 rounded bg-white/10" />
-                          <div className="h-10 rounded bg-white/10" />
-                          <div className="h-10 rounded bg-white/10" />
-                          <div className="h-3 w-28 rounded bg-white/10" />
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
-              {organizer?.id && (
-                <PadelHubClient
-                  organizerId={organizer.id}
-                  organizationKind={(organizer as { organizationKind?: string | null }).organizationKind ?? "PESSOA_SINGULAR"}
-                  initialClubs={padelClubs?.items ?? []}
-                  initialPlayers={padelPlayers?.items ?? []}
-                />
-              )}
-            </section>
-          )}
-
-      {activeTab === "restaurants" && (
-        <section className="space-y-3">
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-            <p className="text-[11px] uppercase tracking-[0.3em] text-white/60">Categorias</p>
-            <h2 className="text-xl font-semibold text-white">Restaurantes &amp; Jantares</h2>
-            <p className="text-sm text-white/65">Em breve — reservas e menus fixos.</p>
+              <span className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[11px] text-white/70">Em breve</span>
+            </div>
+            <div className="rounded-3xl border border-white/10 bg-black/35 p-4 text-sm text-white/70">
+              Em breve: kits rápidos para Instagram, WhatsApp e email por evento, com botões de copiar.
+            </div>
           </div>
-        </section>
-      )}
-
-      {activeTab === "volunteer" && (
-        <section className="space-y-3">
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-            <p className="text-[11px] uppercase tracking-[0.3em] text-white/60">Categorias</p>
-            <h2 className="text-xl font-semibold text-white">Solidário / Voluntariado</h2>
-            <p className="text-sm text-white/65">Em breve — inscrições de voluntários e donativos.</p>
-          </div>
-        </section>
-      )}
-
-      {activeTab === "night" && (
-        <section className="space-y-3">
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-            <p className="text-[11px] uppercase tracking-[0.3em] text-white/60">Categorias</p>
-            <h2 className="text-xl font-semibold text-white">Festas &amp; Noite</h2>
-            <p className="text-sm text-white/65">Em breve — guest lists, packs e consumo mínimo.</p>
-          </div>
-        </section>
-      )}
-
-      {activeTab === "staff" && (
-        <section className="space-y-3">
-          <OrganizerStaffPage />
-        </section>
-      )}
-
-      {activeTab === "settings" && (
-        <section className="space-y-3">
-          <OrganizerSettingsPage />
-        </section>
-      )}
+        )}
+      </div>
+    </section>
+  )}
 
       {eventDialog && (
         <ConfirmDestructiveActionDialog

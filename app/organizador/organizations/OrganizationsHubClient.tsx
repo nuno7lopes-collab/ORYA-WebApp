@@ -3,6 +3,10 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { sanitizeUsername, validateUsername, USERNAME_RULES_HINT } from "@/lib/username";
+import {
+  DEFAULT_ORGANIZATION_CATEGORY,
+  DEFAULT_ORGANIZATION_MODULES,
+} from "@/lib/organizationCategories";
 
 type OrgItem = {
   organizerId: number;
@@ -11,7 +15,7 @@ type OrgItem = {
   organizer: {
     id: number;
     username: string | null;
-    displayName: string | null;
+    publicName: string | null;
     businessName: string | null;
     city: string | null;
     entityType: string | null;
@@ -148,8 +152,10 @@ export default function OrganizationsHubClient({ initialOrgs, activeId }: Props)
           businessName: businessName.trim(),
           entityType: entityType.trim(),
           city: city.trim(),
-          displayName: businessName.trim(),
+          publicName: businessName.trim(),
           username: usernameValid.normalized,
+          organizationCategory: DEFAULT_ORGANIZATION_CATEGORY,
+          modules: [...DEFAULT_ORGANIZATION_MODULES],
         }),
       });
       const json = await res.json().catch(() => null);
@@ -174,7 +180,7 @@ export default function OrganizationsHubClient({ initialOrgs, activeId }: Props)
               organizer: {
                 id: newId,
                 username: usernameValid.normalized,
-                displayName: json.organizer.displayName ?? json.organizer.businessName ?? "Organização",
+                publicName: json.organizer.publicName ?? json.organizer.businessName ?? "Organização",
                 businessName: json.organizer.businessName ?? null,
                 city: json.organizer.city ?? null,
                 entityType: json.organizer.entityType ?? null,
@@ -238,18 +244,18 @@ export default function OrganizationsHubClient({ initialOrgs, activeId }: Props)
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={item.organizer.brandingAvatarUrl}
-                  alt={item.organizer.displayName || "Organização"}
+                  alt={item.organizer.publicName || "Organização"}
                   className="h-full w-full object-cover"
                 />
               ) : (
                 <div className="flex h-full w-full items-center justify-center text-sm font-semibold">
-                  {(item.organizer.displayName || item.organizer.businessName || "O")[0]}
+                  {(item.organizer.publicName || item.organizer.businessName || "O")[0]}
                 </div>
               )}
             </div>
             <div className="space-y-1">
               <h3 className="text-lg font-semibold">
-                {item.organizer.displayName || item.organizer.businessName || "Organização"}
+                {item.organizer.publicName || item.organizer.businessName || "Organização"}
               </h3>
               <p className="text-[12px] text-white/60">
                 {handle} · {typeLine}
@@ -285,13 +291,13 @@ export default function OrganizationsHubClient({ initialOrgs, activeId }: Props)
               onClick={() => handleSwitch(item.organizerId, true)}
               className="rounded-full border border-white/25 bg-white/10 px-5 py-2 text-sm font-semibold text-white hover:bg-white/15 transition"
             >
-              Entrar no dashboard de {item.organizer.displayName || "organização"}
+              Entrar no dashboard de {item.organizer.publicName || "organização"}
             </button>
           )}
           {isOwnerOrAdmin && (
             <button
               type="button"
-              onClick={() => router.push(`/organizador/staff?organizerId=${item.organizerId}`)}
+              onClick={() => router.push(`/organizador?tab=manage&section=staff&organizerId=${item.organizerId}`)}
               className="rounded-full border border-white/20 bg-white/5 px-5 py-2 text-sm text-white hover:bg-white/10 transition"
             >
               Gerir equipa
@@ -307,8 +313,8 @@ export default function OrganizationsHubClient({ initialOrgs, activeId }: Props)
   const hasError = false; // como não há fetch client, não há erro aqui
 
   return (
-    <div className="orya-body-bg min-h-screen text-white px-4 py-10 md:px-8 lg:px-12">
-      <div className="mx-auto max-w-6xl space-y-8">
+    <div className="w-full px-4 py-8 text-white md:px-6 lg:px-8">
+      <div className="space-y-8">
         {hasError && (
           <div className="rounded-2xl border border-red-400/40 bg-red-900/30 p-4 text-sm text-red-100">
             Não foi possível carregar as organizações neste momento.
@@ -327,9 +333,10 @@ export default function OrganizationsHubClient({ initialOrgs, activeId }: Props)
         )}
 
         {!loading && !hasError && !emptyState && (
-          <section className="space-y-3">
-            <div className="space-y-1">
-              <h2 className="text-lg font-semibold">As tuas organizações</h2>
+          <section className="space-y-4">
+            <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-5 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
+              <p className="text-[11px] uppercase tracking-[0.3em] text-white/70">Organizações</p>
+              <h2 className="text-2xl font-semibold">As tuas organizações</h2>
               <p className="text-[12px] text-white/65">Escolhe em que organização estás a trabalhar.</p>
             </div>
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">

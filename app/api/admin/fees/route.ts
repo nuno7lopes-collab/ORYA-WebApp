@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { prisma } from "@/lib/prisma";
 import { getPlatformAndStripeFees, setPlatformFees, setStripeBaseFees } from "@/lib/platformSettings";
 
 function rolesContainsAdmin(roles: unknown) {
@@ -20,18 +19,7 @@ async function isAdminUser(userId: string) {
   const supabase = await createSupabaseServer();
   const profileRes = await supabase.from("profiles").select("roles").eq("id", userId).maybeSingle();
   const rolesFromSupabase = profileRes.data?.roles ?? [];
-
-  if (rolesContainsAdmin(rolesFromSupabase)) {
-    return true;
-  }
-
-  // fallback via prisma (auth schema) in caso de erro/mismatch
-  const profileDb = await prisma.profile.findUnique({
-    where: { id: userId },
-    select: { roles: true },
-  });
-  const rolesDb = profileDb?.roles ?? [];
-  return rolesContainsAdmin(rolesDb);
+  return rolesContainsAdmin(rolesFromSupabase);
 }
 
 export async function GET(_req: NextRequest) {

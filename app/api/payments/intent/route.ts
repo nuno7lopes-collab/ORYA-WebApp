@@ -8,7 +8,16 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { stripe } from "@/lib/stripeClient";
 import { getPlatformFees, getStripeBaseFees } from "@/lib/platformSettings";
 import { shouldNotify, createNotification } from "@/lib/notifications";
-import { NotificationType, PaymentEventSource, type FeeMode } from "@prisma/client";
+import {
+  EntitlementStatus,
+  EntitlementType,
+  NotificationType,
+  PadelPairingLifecycleStatus,
+  PadelPairingPaymentStatus,
+  PadelPairingSlotStatus,
+  PaymentEventSource,
+  type FeeMode,
+} from "@prisma/client";
 import { paymentScenarioSchema, type PaymentScenario } from "@/lib/paymentScenario";
 import { parsePhoneNumberFromString } from "libphonenumber-js/min";
 import { computePromoDiscountCents } from "@/lib/promoMath";
@@ -21,6 +30,7 @@ import {
 } from "@/lib/checkoutSchemas";
 import { resolveOwner } from "@/lib/ownership/resolveOwner";
 import { enqueueOperation } from "@/lib/operations/enqueue";
+import { ensureEntriesForConfirmedPairing } from "@/domain/tournaments/ensureEntriesForConfirmedPairing";
 
 const FREE_PLACEHOLDER_INTENT_ID = "FREE_CHECKOUT";
 
@@ -169,6 +179,10 @@ export async function POST(req: NextRequest) {
     }
 
     const { slug, items, contact, guest, promoCode: rawPromo, paymentScenario: rawScenario, idempotencyKey: bodyIdemKey } = body;
+    const inviteToken =
+      typeof (body as { inviteToken?: unknown })?.inviteToken === "string"
+        ? (body as { inviteToken?: string }).inviteToken!.trim()
+        : null;
     const promoCodeInput = typeof rawPromo === "string" ? rawPromo.trim() : "";
     const idempotencyKeyHeader = req.headers.get("Idempotency-Key");
     const idempotencyKey = (bodyIdemKey || idempotencyKeyHeader || "").trim() || null;
@@ -187,13 +201,13 @@ export async function POST(req: NextRequest) {
     // Nota: o purchaseId final será decidido mais abaixo (de forma determinística quando possível)
     // depois de conhecermos descontos/pricing.
 
-    // Validar que o evento existe (fetch raw para evitar issues com enum legacy "ADDED")
+    // Validar que o evento existe (fetch raw para evitar issues com enum "ADDED")
     // Autenticação do utilizador
     const supabase = await createSupabaseServer();
     const { data: userData } = await supabase.auth.getUser();
     const userId = userData?.user?.id ?? null;
 
-    // Regra PADL: pagar só a tua parte (capitão / split) exige conta
+    // Regra PADEL: pagar só a tua parte (capitão / split) exige conta
     const parsedScenarioEarly = paymentScenarioSchema.safeParse(
       typeof rawScenario === "string" ? rawScenario.toUpperCase() : rawScenario,
     );
@@ -230,20 +244,13 @@ export async function POST(req: NextRequest) {
 
     const ownerResolved = await resolveOwner({ sessionUserId: userId, guestEmail });
     const ownerForMetadata =
-      ownerResolved.ownerUserId || ownerResolved.ownerIdentityId
+      ownerResolved.ownerUserId || ownerResolved.ownerIdentityId || ownerResolved.emailNormalized
         ? {
             ownerUserId: ownerResolved.ownerUserId ?? undefined,
             ownerIdentityId: ownerResolved.ownerIdentityId ?? undefined,
             emailNormalized: ownerResolved.emailNormalized ?? undefined,
           }
-        : userId || guestEmail
-          ? {
-              userId: userId ?? undefined,
-              guestEmail: guestEmail || undefined,
-              guestName: guestName || undefined,
-              guestPhone: guestPhone || undefined,
-            }
-          : undefined;
+        : undefined;
 
     const eventRows = await prisma.$queryRaw<
       {
@@ -849,7 +856,9 @@ export async function POST(req: NextRequest) {
 
     const paymentScenario: PaymentScenario =
       totalAmountInCents === 0
-        ? "FREE_CHECKOUT"
+        ? requestedScenario === "GROUP_FULL" || requestedScenario === "GROUP_SPLIT"
+          ? requestedScenario
+          : "FREE_CHECKOUT"
         : requestedScenario
           ? requestedScenario
           : "SINGLE";
@@ -861,6 +870,34 @@ export async function POST(req: NextRequest) {
       if (paymentScenario === "FREE_CHECKOUT") return "FREE_CHECKOUT";
       return "SINGLE";
     })();
+
+    let groupPairing:
+      | {
+          id: number;
+          eventId: number;
+          lifecycleStatus: string;
+          payment_mode: string;
+          pairingJoinMode: string;
+          partnerInviteToken: string | null;
+          partnerLinkExpiresAt: Date | null;
+          slots: Array<{
+            id: number;
+            profileId: string | null;
+            ticketId: string | null;
+            paymentStatus: string;
+            invitedContact: string | null;
+          }>;
+        }
+      | null = null;
+    let groupSlot:
+      | {
+          id: number;
+          profileId: string | null;
+          ticketId: string | null;
+          paymentStatus: string;
+          invitedContact: string | null;
+        }
+      | null = null;
 
     // Padel group scenarios exigem pairingId válido
     if (scenarioAdjusted === "GROUP_FULL" || scenarioAdjusted === "GROUP_SPLIT") {
@@ -885,7 +922,18 @@ export async function POST(req: NextRequest) {
           eventId: true,
           lifecycleStatus: true,
           payment_mode: true,
-          slots: { select: { id: true, profileId: true } },
+          pairingJoinMode: true,
+          partnerInviteToken: true,
+          partnerLinkExpiresAt: true,
+          slots: {
+            select: {
+              id: true,
+              profileId: true,
+              ticketId: true,
+              paymentStatus: true,
+              invitedContact: true,
+            },
+          },
         },
       });
       if (!pairing || pairing.eventId !== event.id || pairing.lifecycleStatus === "CANCELLED_INCOMPLETE") {
@@ -903,6 +951,8 @@ export async function POST(req: NextRequest) {
           retryable: false,
         });
       }
+      groupPairing = pairing;
+      groupSlot = slot;
       if (scenarioAdjusted === "GROUP_SPLIT" && pairing.payment_mode !== "SPLIT") {
         return intentError("PAIRING_MODE_MISMATCH", "A dupla não está em modo split.", {
           httpStatus: 400,
@@ -920,11 +970,68 @@ export async function POST(req: NextRequest) {
       if (userId) {
         const matchesUser = pairing.slots.some((s) => s.profileId === userId);
         if (!matchesUser) {
-          return intentError("PAIRING_NOT_OWNED", "Esta dupla pertence a outro utilizador.", {
-            httpStatus: 403,
-            status: "FAILED",
-            retryable: false,
-          });
+          const pendingSlot = pairing.slots.find((s) => s.id === bodySlotId) ?? null;
+          const isUnclaimed = pendingSlot && !pendingSlot.profileId;
+          let allowUnclaimed = false;
+          if (isUnclaimed) {
+            const now = new Date();
+            if (pairing.pairingJoinMode === "LOOKING_FOR_PARTNER") {
+              allowUnclaimed = true;
+            } else if (
+              inviteToken &&
+              pairing.partnerInviteToken &&
+              inviteToken === pairing.partnerInviteToken &&
+              (!pairing.partnerLinkExpiresAt || pairing.partnerLinkExpiresAt > now)
+            ) {
+              allowUnclaimed = true;
+            } else if (pendingSlot?.invitedContact) {
+              const invitedRaw = pendingSlot.invitedContact.trim().toLowerCase();
+              const invited =
+                invitedRaw.startsWith("@") ? invitedRaw.slice(1) : invitedRaw;
+              const username = profile?.username?.trim().toLowerCase() ?? "";
+              const email =
+                userData?.user?.email?.trim().toLowerCase() ??
+                profile?.email?.trim().toLowerCase() ??
+                "";
+              const normalizedInvitedPhone = normalizePhone(invited) ?? invited.replace(/[^\d]/g, "");
+              const normalizedUserPhone =
+                normalizePhone(userData?.user?.phone ?? profile?.contactPhone ?? null) ??
+                (userData?.user?.phone ?? profile?.contactPhone ?? "").replace(/[^\d]/g, "");
+              if (
+                (invited.includes("@") && email && invited === email) ||
+                (!invited.includes("@") && username && invited === username) ||
+                (normalizedInvitedPhone && normalizedUserPhone && normalizedInvitedPhone === normalizedUserPhone)
+              ) {
+                allowUnclaimed = true;
+              }
+            }
+          }
+          if (!allowUnclaimed) {
+            return intentError("PAIRING_NOT_OWNED", "Esta dupla pertence a outro utilizador.", {
+              httpStatus: 403,
+              status: "FAILED",
+              retryable: false,
+            });
+          }
+        }
+      }
+
+      if (scenarioAdjusted === "GROUP_SPLIT") {
+        const paidSlots = pairing.slots.filter((s) => Boolean(s.ticketId));
+        const requiredSlots = paidSlots.length === 0 ? 2 : 1;
+        const firstItem = normalizedItems[0];
+        const ticketType = firstItem ? ticketTypeMap.get(firstItem.ticketTypeId) : null;
+        if (ticketType && ticketType.totalQuantity !== null && ticketType.totalQuantity !== undefined) {
+          const reserved = reservedByType[ticketType.id] ?? 0;
+          const remaining = ticketType.totalQuantity - ticketType.soldQuantity - reserved;
+          if (remaining < requiredSlots) {
+            return intentError("INSUFFICIENT_STOCK", "Sem vagas suficientes para completar a dupla.", {
+              httpStatus: 409,
+              status: "FAILED",
+              retryable: false,
+              nextAction: "NONE",
+            });
+          }
         }
       }
     }
@@ -1123,6 +1230,533 @@ export async function POST(req: NextRequest) {
     // CHECKOUT GRATUITO (0 €)
     // --------------------------
     if (totalAmountInCents === 0) {
+      if (scenarioAdjusted === "GROUP_SPLIT" || scenarioAdjusted === "GROUP_FULL") {
+        if (!userId) {
+          return intentError("AUTH_REQUIRED", "Inicia sessão para concluir a inscrição Padel.", {
+            httpStatus: 401,
+            status: "FAILED",
+            nextAction: "LOGIN",
+          });
+        }
+        if (!profile?.username) {
+          return intentError("USERNAME_REQUIRED", "Define um username para concluir a inscrição Padel.", {
+            httpStatus: 403,
+            status: "FAILED",
+            nextAction: "LOGIN",
+          });
+        }
+
+        const pairing = groupPairing
+          ? await prisma.padelPairing.findUnique({
+              where: { id: groupPairing.id },
+              include: { slots: true },
+            })
+          : null;
+        const slot = pairing?.slots.find((s) => s.id === bodySlotId) ?? null;
+
+        if (!pairing || !slot) {
+          return intentError("PAIRING_INVALID", "A dupla não é válida para este evento.", {
+            httpStatus: 400,
+            status: "FAILED",
+          });
+        }
+
+        const firstItem = normalizedItems[0];
+        const ticketType = firstItem ? ticketTypeMap.get(firstItem.ticketTypeId) : null;
+        if (!ticketType) {
+          return intentError("TICKET_NOT_FOUND", "Bilhete inválido para inscrição Padel.", {
+            httpStatus: 400,
+            status: "FAILED",
+          });
+        }
+
+        const existingFreeTicket = await prisma.ticket.findFirst({
+          where: { stripePaymentIntentId: purchaseId },
+          select: { id: true },
+        });
+        if (existingFreeTicket) {
+          return NextResponse.json({
+            ok: true,
+            code: "OK",
+            status: "OK",
+            nextAction: "NONE",
+            retryable: false,
+            freeCheckout: true,
+            isFreeCheckout: true,
+            purchaseId,
+            paymentIntentId: FREE_PLACEHOLDER_INTENT_ID,
+            paymentScenario: scenarioAdjusted,
+            amount: 0,
+            currency: (ticketType.currency || "EUR").toUpperCase(),
+            discountCents,
+            breakdown: {
+              lines,
+              subtotalCents: pricing.subtotalCents,
+              feeMode: pricing.feeMode,
+              platformFeeCents: 0,
+              platformFeeOryaCents: pricing.platformFeeCents,
+              stripeFeeEstimateCents: 0,
+              totalCents: 0,
+              currency: (ticketType.currency || "EUR").toUpperCase(),
+            },
+            intentFingerprint,
+            idempotencyKey: clientIdempotencyKey ?? effectiveDedupeKey,
+          });
+        }
+
+        let shouldEnsureEntries = false;
+        await prisma.$transaction(async (tx) => {
+          if (scenarioAdjusted === "GROUP_SPLIT" && pairing.payment_mode !== "SPLIT") {
+            throw new Error("PAIRING_NOT_SPLIT");
+          }
+          if (scenarioAdjusted === "GROUP_FULL" && pairing.payment_mode !== "FULL") {
+            throw new Error("PAIRING_NOT_FULL");
+          }
+          if (pairing.pairingStatus === "CANCELLED") {
+            throw new Error("PAIRING_CANCELLED");
+          }
+
+          if (scenarioAdjusted === "GROUP_SPLIT") {
+            if (slot.paymentStatus === PadelPairingPaymentStatus.PAID && slot.ticketId) {
+              return;
+            }
+
+            const qrSecret = crypto.randomUUID();
+            const rotatingSeed = crypto.randomUUID();
+            const ticket = await tx.ticket.create({
+              data: {
+                eventId: event.id,
+                ticketTypeId: ticketType.id,
+                pricePaid: ticketType.price,
+                totalPaidCents: 0,
+                currency: (ticketType.currency || "EUR").toUpperCase(),
+                stripePaymentIntentId: purchaseId,
+                status: "ACTIVE",
+                qrSecret,
+                rotatingSeed,
+                userId,
+                ownerUserId: userId,
+                ownerIdentityId: null,
+                pairingId: pairing.id,
+                padelSplitShareCents: ticketType.price,
+              },
+            });
+
+            await tx.ticketType.update({
+              where: { id: ticketType.id },
+              data: { soldQuantity: ticketType.soldQuantity + 1 },
+            });
+
+            const saleSummary = await tx.saleSummary.upsert({
+              where: { paymentIntentId: purchaseId },
+              update: {
+                eventId: event.id,
+                userId,
+                ownerUserId: userId,
+                ownerIdentityId: null,
+                purchaseId,
+                subtotalCents: ticketType.price,
+                discountCents: 0,
+                platformFeeCents: 0,
+                stripeFeeCents: 0,
+                totalCents: 0,
+                netCents: 0,
+                feeMode: pricing.feeMode,
+                currency: (ticketType.currency || "EUR").toUpperCase(),
+                status: "PAID",
+              },
+              create: {
+                paymentIntentId: purchaseId,
+                eventId: event.id,
+                userId,
+                ownerUserId: userId,
+                ownerIdentityId: null,
+                purchaseId,
+                subtotalCents: ticketType.price,
+                discountCents: 0,
+                platformFeeCents: 0,
+                stripeFeeCents: 0,
+                totalCents: 0,
+                netCents: 0,
+                feeMode: pricing.feeMode,
+                currency: (ticketType.currency || "EUR").toUpperCase(),
+                status: "PAID",
+              },
+            });
+
+            await tx.saleLine.deleteMany({ where: { saleSummaryId: saleSummary.id } });
+            const saleLine = await tx.saleLine.create({
+              data: {
+                saleSummaryId: saleSummary.id,
+                eventId: event.id,
+                ticketTypeId: ticketType.id,
+                promoCodeId: promoCodeId ? Number(promoCodeId) : null,
+                quantity: 1,
+                unitPriceCents: ticketType.price,
+                discountPerUnitCents: 0,
+                grossCents: 0,
+                netCents: 0,
+                platformFeeCents: 0,
+              },
+            });
+
+            await tx.ticket.update({
+              where: { id: ticket.id },
+              data: { saleSummaryId: saleSummary.id },
+            });
+
+            const ownerKey = `user:${userId}`;
+            await tx.entitlement.upsert({
+              where: {
+                purchaseId_saleLineId_lineItemIndex_ownerKey_type: {
+                  purchaseId: saleSummary.purchaseId,
+                  saleLineId: saleLine.id,
+                  lineItemIndex: 0,
+                  ownerKey,
+                  type: EntitlementType.PADEL_ENTRY,
+                },
+              },
+              update: {
+                status: EntitlementStatus.ACTIVE,
+                ownerUserId: userId,
+                ownerIdentityId: null,
+                eventId: event.id,
+                snapshotTitle: event.title,
+                snapshotCoverUrl: event.coverImageUrl,
+                snapshotVenueName: event.locationName,
+                snapshotStartAt: event.startsAt,
+                snapshotTimezone: event.timezone,
+              },
+              create: {
+                purchaseId: saleSummary.purchaseId,
+                saleLineId: saleLine.id,
+                lineItemIndex: 0,
+                ownerKey,
+                ownerUserId: userId,
+                ownerIdentityId: null,
+                type: EntitlementType.PADEL_ENTRY,
+                status: EntitlementStatus.ACTIVE,
+                eventId: event.id,
+                snapshotTitle: event.title,
+                snapshotCoverUrl: event.coverImageUrl,
+                snapshotVenueName: event.locationName,
+                snapshotStartAt: event.startsAt,
+                snapshotTimezone: event.timezone,
+              },
+            });
+
+            let updated = await tx.padelPairing.update({
+              where: { id: pairing.id },
+              data: {
+                slots: {
+                  update: {
+                    where: { id: slot.id },
+                    data: {
+                      ticketId: ticket.id,
+                      profileId: userId,
+                      paymentStatus: PadelPairingPaymentStatus.PAID,
+                      slotStatus: PadelPairingSlotStatus.FILLED,
+                    },
+                  },
+                },
+              },
+              include: { slots: true },
+            });
+
+            const allPaid = updated.slots.every((s) => s.paymentStatus === PadelPairingPaymentStatus.PAID);
+            const nextLifecycle = allPaid
+              ? PadelPairingLifecycleStatus.CONFIRMED_BOTH_PAID
+              : PadelPairingLifecycleStatus.PENDING_PARTNER_PAYMENT;
+            if (updated.lifecycleStatus !== nextLifecycle) {
+              updated = await tx.padelPairing.update({
+                where: { id: pairing.id },
+                data: { lifecycleStatus: nextLifecycle },
+                include: { slots: true },
+              });
+            }
+
+            const stillPending = updated.slots.some(
+              (s) => s.slotStatus === PadelPairingSlotStatus.PENDING || s.paymentStatus === PadelPairingPaymentStatus.UNPAID,
+            );
+            if (!stillPending && updated.pairingStatus !== "COMPLETE") {
+              await tx.padelPairing.update({
+                where: { id: pairing.id },
+                data: { pairingStatus: "COMPLETE" },
+                select: { id: true },
+              });
+              shouldEnsureEntries = true;
+            }
+          } else {
+            const captainSlot = pairing.slots.find((s) => s.slot_role === "CAPTAIN");
+            const partnerSlot = pairing.slots.find((s) => s.slot_role === "PARTNER");
+            if (!captainSlot || !partnerSlot) {
+              throw new Error("SLOTS_INVALID");
+            }
+
+            const qr1 = crypto.randomUUID();
+            const qr2 = crypto.randomUUID();
+            const rot1 = crypto.randomUUID();
+            const rot2 = crypto.randomUUID();
+
+            const ticketCaptain = await tx.ticket.create({
+              data: {
+                eventId: event.id,
+                ticketTypeId: ticketType.id,
+                pricePaid: ticketType.price,
+                totalPaidCents: 0,
+                currency: (ticketType.currency || "EUR").toUpperCase(),
+                stripePaymentIntentId: purchaseId,
+                status: "ACTIVE",
+                qrSecret: qr1,
+                rotatingSeed: rot1,
+                userId,
+                ownerUserId: userId,
+                ownerIdentityId: null,
+                pairingId: pairing.id,
+                padelSplitShareCents: ticketType.price,
+              },
+            });
+
+            const ticketPartner = await tx.ticket.create({
+              data: {
+                eventId: event.id,
+                ticketTypeId: ticketType.id,
+                pricePaid: ticketType.price,
+                totalPaidCents: 0,
+                currency: (ticketType.currency || "EUR").toUpperCase(),
+                stripePaymentIntentId: purchaseId,
+                status: "ACTIVE",
+                qrSecret: qr2,
+                rotatingSeed: rot2,
+                pairingId: pairing.id,
+                padelSplitShareCents: ticketType.price,
+                ownerUserId: userId,
+                ownerIdentityId: null,
+              },
+            });
+
+            await tx.ticketType.update({
+              where: { id: ticketType.id },
+              data: { soldQuantity: ticketType.soldQuantity + 2 },
+            });
+
+            const saleSummary = await tx.saleSummary.upsert({
+              where: { paymentIntentId: purchaseId },
+              update: {
+                eventId: event.id,
+                userId,
+                ownerUserId: userId,
+                ownerIdentityId: null,
+                purchaseId,
+                subtotalCents: ticketType.price * 2,
+                discountCents: 0,
+                platformFeeCents: 0,
+                stripeFeeCents: 0,
+                totalCents: 0,
+                netCents: 0,
+                feeMode: pricing.feeMode,
+                currency: (ticketType.currency || "EUR").toUpperCase(),
+                status: "PAID",
+              },
+              create: {
+                paymentIntentId: purchaseId,
+                eventId: event.id,
+                userId,
+                ownerUserId: userId,
+                ownerIdentityId: null,
+                purchaseId,
+                subtotalCents: ticketType.price * 2,
+                discountCents: 0,
+                platformFeeCents: 0,
+                stripeFeeCents: 0,
+                totalCents: 0,
+                netCents: 0,
+                feeMode: pricing.feeMode,
+                currency: (ticketType.currency || "EUR").toUpperCase(),
+                status: "PAID",
+              },
+            });
+
+            await tx.saleLine.deleteMany({ where: { saleSummaryId: saleSummary.id } });
+            const saleLine = await tx.saleLine.create({
+              data: {
+                saleSummaryId: saleSummary.id,
+                eventId: event.id,
+                ticketTypeId: ticketType.id,
+                promoCodeId: promoCodeId ? Number(promoCodeId) : null,
+                quantity: 2,
+                unitPriceCents: ticketType.price,
+                discountPerUnitCents: 0,
+                grossCents: 0,
+                netCents: 0,
+                platformFeeCents: 0,
+              },
+            });
+
+            await tx.ticket.updateMany({
+              where: { id: { in: [ticketCaptain.id, ticketPartner.id] } },
+              data: { saleSummaryId: saleSummary.id },
+            });
+
+            const ownerKey = `user:${userId}`;
+            const entitlementBase = {
+              purchaseId: saleSummary.purchaseId,
+              saleLineId: saleLine.id,
+              ownerKey,
+              ownerUserId: userId,
+              ownerIdentityId: null,
+              type: EntitlementType.PADEL_ENTRY,
+              status: EntitlementStatus.ACTIVE,
+              eventId: event.id,
+              snapshotTitle: event.title,
+              snapshotCoverUrl: event.coverImageUrl,
+              snapshotVenueName: event.locationName,
+              snapshotStartAt: event.startsAt,
+              snapshotTimezone: event.timezone,
+            };
+
+            await tx.entitlement.upsert({
+              where: {
+                purchaseId_saleLineId_lineItemIndex_ownerKey_type: {
+                  purchaseId: saleSummary.purchaseId,
+                  saleLineId: saleLine.id,
+                  lineItemIndex: 0,
+                  ownerKey,
+                  type: EntitlementType.PADEL_ENTRY,
+                },
+              },
+              update: entitlementBase,
+              create: { ...entitlementBase, lineItemIndex: 0 },
+            });
+            await tx.entitlement.upsert({
+              where: {
+                purchaseId_saleLineId_lineItemIndex_ownerKey_type: {
+                  purchaseId: saleSummary.purchaseId,
+                  saleLineId: saleLine.id,
+                  lineItemIndex: 1,
+                  ownerKey,
+                  type: EntitlementType.PADEL_ENTRY,
+                },
+              },
+              update: entitlementBase,
+              create: { ...entitlementBase, lineItemIndex: 1 },
+            });
+
+            const partnerFilled = Boolean(partnerSlot.profileId || partnerSlot.playerProfileId);
+            const partnerSlotStatus = partnerFilled ? PadelPairingSlotStatus.FILLED : PadelPairingSlotStatus.PENDING;
+            const pairingStatus = partnerSlotStatus === PadelPairingSlotStatus.FILLED ? "COMPLETE" : "INCOMPLETE";
+
+            await tx.padelPairing.update({
+              where: { id: pairing.id },
+              data: {
+                pairingStatus,
+                lifecycleStatus: PadelPairingLifecycleStatus.CONFIRMED_CAPTAIN_FULL,
+                slots: {
+                  update: [
+                    {
+                      where: { id: captainSlot.id },
+                      data: {
+                        ticketId: ticketCaptain.id,
+                        profileId: userId,
+                        paymentStatus: PadelPairingPaymentStatus.PAID,
+                        slotStatus: PadelPairingSlotStatus.FILLED,
+                      },
+                    },
+                    {
+                      where: { id: partnerSlot.id },
+                      data: {
+                        ticketId: ticketPartner.id,
+                        paymentStatus: PadelPairingPaymentStatus.PAID,
+                        slotStatus: partnerSlotStatus,
+                      },
+                    },
+                  ],
+                },
+              },
+            });
+
+            shouldEnsureEntries = partnerFilled;
+          }
+
+          await tx.paymentEvent.upsert({
+            where: { stripePaymentIntentId: purchaseId },
+            update: {
+              status: "OK",
+              errorMessage: null,
+              purchaseId,
+              source: PaymentEventSource.API,
+              dedupeKey: effectiveDedupeKey,
+              attempt: { increment: 1 },
+              eventId: event.id,
+              userId,
+              amountCents: 0,
+              platformFeeCents: 0,
+              stripeFeeCents: 0,
+              updatedAt: new Date(),
+            },
+            create: {
+              stripePaymentIntentId: purchaseId,
+              status: "OK",
+              purchaseId,
+              source: PaymentEventSource.API,
+              dedupeKey: effectiveDedupeKey,
+              attempt: 1,
+              eventId: event.id,
+              userId,
+              amountCents: 0,
+              platformFeeCents: 0,
+              stripeFeeCents: 0,
+              mode: event.is_test ? "TEST" : "LIVE",
+              isTest: Boolean(event.is_test),
+            },
+          });
+        });
+
+        if (shouldEnsureEntries) {
+          await ensureEntriesForConfirmedPairing(pairing.id);
+        }
+
+        if (padelConfig) {
+          const fullName = userData?.user?.user_metadata?.full_name || profile?.fullName || "Jogador Padel";
+          const emailToSave = userData?.user?.email || profile?.email || null;
+          const phoneToSave = userData?.user?.phone || contact || profile?.contactPhone || null;
+          await upsertPadelPlayerProfile({
+            organizerId: padelConfig.organizerId,
+            fullName,
+            email: emailToSave,
+            phone: phoneToSave,
+          });
+        }
+
+        return NextResponse.json({
+          ok: true,
+          code: "OK",
+          status: "OK",
+          nextAction: "NONE",
+          retryable: false,
+          freeCheckout: true,
+          isFreeCheckout: true,
+          purchaseId,
+          paymentIntentId: FREE_PLACEHOLDER_INTENT_ID,
+          paymentScenario: scenarioAdjusted,
+          amount: 0,
+          currency: (ticketType.currency || "EUR").toUpperCase(),
+          discountCents,
+          breakdown: {
+            lines,
+            subtotalCents: pricing.subtotalCents,
+            feeMode: pricing.feeMode,
+            platformFeeCents: 0,
+            platformFeeOryaCents: pricing.platformFeeCents,
+            stripeFeeEstimateCents: 0,
+            totalCents: 0,
+            currency: (ticketType.currency || "EUR").toUpperCase(),
+          },
+          intentFingerprint,
+          idempotencyKey: clientIdempotencyKey ?? effectiveDedupeKey,
+        });
+      }
+
       if (!userId || !profile?.username?.trim()) {
         return intentError("USERNAME_REQUIRED_FOR_FREE", "Falta terminar o perfil (username) para concluir eventos gratuitos.", {
           httpStatus: 403,
@@ -1240,7 +1874,7 @@ export async function POST(req: NextRequest) {
                   type: NotificationType.EVENT_SALE,
                   title: "Nova reserva gratuita",
                   body: `Recebeste uma reserva para ${event.title}.`,
-                  ctaUrl: `/organizador?tab=sales&eventId=${event.id}`,
+                  ctaUrl: `/organizador?tab=analyze&section=vendas&eventId=${event.id}`,
                   ctaLabel: "Ver vendas",
                   payload: { eventId: event.id, title: event.title },
                 });
@@ -1299,10 +1933,6 @@ export async function POST(req: NextRequest) {
       stripeFeeEstimateCents: String(stripeFeeEstimateCents),
       contact: contact?.trim() ?? "",
       stripeAccountId: stripeAccountId ?? "orya",
-      guestName: guestName ?? "",
-      guestEmail: guestEmail ?? "",
-      guestPhone: guestPhone ?? "",
-      mode: guestName && guestEmail && !userId ? "GUEST" : "USER",
       promoCode: promoCodeId ? String(promoCodeId) : "",
       promoCodeRaw: promoCodeInput,
       totalQuantity: String(totalQuantity),
@@ -1318,9 +1948,6 @@ export async function POST(req: NextRequest) {
       }),
     };
 
-    if (userId) {
-      metadata.userId = userId;
-    }
     // Metadata idempotencyKey deve ser estável (purchaseId) para não disparar idempotency_error na Stripe.
     metadata.idempotencyKey = effectiveDedupeKey;
     if (clientIdempotencyKey) {

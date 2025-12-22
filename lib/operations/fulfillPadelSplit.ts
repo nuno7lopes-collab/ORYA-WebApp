@@ -1,5 +1,13 @@
 import { prisma } from "@/lib/prisma";
-import { PaymentEventSource, PadelPairingPaymentStatus, PadelPairingSlotStatus, PadelPaymentMode, EntitlementType, EntitlementStatus } from "@prisma/client";
+import {
+  EntitlementStatus,
+  EntitlementType,
+  PadelPairingLifecycleStatus,
+  PadelPairingPaymentStatus,
+  PadelPairingSlotStatus,
+  PadelPaymentMode,
+  PaymentEventSource,
+} from "@prisma/client";
 import crypto from "crypto";
 import { ensureEntriesForConfirmedPairing } from "@/domain/tournaments/ensureEntriesForConfirmedPairing";
 import { queuePartnerPaid } from "@/domain/notifications/splitPayments";
@@ -18,7 +26,10 @@ export async function fulfillPadelSplitIntent(intent: IntentLike, stripeFeeForIn
   const slotId = Number(meta.slotId);
   let ticketTypeId = Number(meta.ticketTypeId);
   const eventId = Number(meta.eventId);
-  const userId = typeof meta.userId === "string" ? meta.userId : null;
+  const ownerUserId = typeof meta.ownerUserId === "string" ? meta.ownerUserId : null;
+  const ownerIdentityId = typeof meta.ownerIdentityId === "string" ? meta.ownerIdentityId : null;
+  const ownerEmailNormalized = typeof meta.emailNormalized === "string" ? meta.emailNormalized : null;
+  const userId = ownerUserId;
   const purchaseId =
     typeof meta.purchaseId === "string" && meta.purchaseId.trim() !== ""
       ? meta.purchaseId.trim()
@@ -60,10 +71,16 @@ export async function fulfillPadelSplitIntent(intent: IntentLike, stripeFeeForIn
 
   const ticketType = await prisma.ticketType.findUnique({
     where: { id: ticketTypeId },
-    select: { id: true, price: true, currency: true, soldQuantity: true, eventId: true },
+    select: { id: true, price: true, currency: true, soldQuantity: true, totalQuantity: true, eventId: true },
   });
   if (!ticketType || ticketType.eventId !== eventId) {
     return false;
+  }
+  if (ticketType.totalQuantity !== null && ticketType.totalQuantity !== undefined) {
+    const remaining = ticketType.totalQuantity - ticketType.soldQuantity;
+    if (remaining < 1) {
+      throw new Error("INSUFFICIENT_STOCK");
+    }
   }
   const event = await prisma.event.findUnique({
     where: { id: eventId },
@@ -83,7 +100,7 @@ export async function fulfillPadelSplitIntent(intent: IntentLike, stripeFeeForIn
       where: { id: pairingId },
       include: { slots: true },
     });
-    if (!pairing || pairing.paymentMode !== PadelPaymentMode.SPLIT) {
+    if (!pairing || pairing.payment_mode !== PadelPaymentMode.SPLIT) {
       throw new Error("PAIRING_NOT_SPLIT");
     }
     if (pairing.pairingStatus === "CANCELLED") {
@@ -117,8 +134,8 @@ export async function fulfillPadelSplitIntent(intent: IntentLike, stripeFeeForIn
           qrSecret,
           rotatingSeed,
           userId: userId ?? undefined,
-          ownerUserId: userId ?? null,
-          ownerIdentityId: null,
+          ownerUserId: ownerUserId ?? null,
+          ownerIdentityId: ownerIdentityId ?? null,
           pairingId,
           padelSplitShareCents: ticketType.price,
         },
@@ -144,8 +161,8 @@ export async function fulfillPadelSplitIntent(intent: IntentLike, stripeFeeForIn
     const summaryData = {
       eventId,
       userId: userId ?? null,
-      ownerUserId: userId ?? null,
-      ownerIdentityId: null,
+      ownerUserId: ownerUserId ?? null,
+      ownerIdentityId: ownerIdentityId ?? null,
       purchaseId: purchaseId ?? intent.id,
       subtotalCents: ticketType.price,
       discountCents: 0,
@@ -190,7 +207,13 @@ export async function fulfillPadelSplitIntent(intent: IntentLike, stripeFeeForIn
       });
     }
 
-    const ownerKey = userId ? `user:${userId}` : "unknown";
+    const ownerKey = ownerUserId
+      ? `user:${ownerUserId}`
+      : ownerIdentityId
+        ? `identity:${ownerIdentityId}`
+        : ownerEmailNormalized
+          ? `email:${ownerEmailNormalized}`
+          : "unknown";
     await tx.entitlement.upsert({
       where: {
         purchaseId_saleLineId_lineItemIndex_ownerKey_type: {
@@ -203,8 +226,8 @@ export async function fulfillPadelSplitIntent(intent: IntentLike, stripeFeeForIn
       },
       update: {
         status: EntitlementStatus.ACTIVE,
-        ownerUserId: userId ?? null,
-        ownerIdentityId: null,
+        ownerUserId: ownerUserId ?? null,
+        ownerIdentityId: ownerIdentityId ?? null,
         eventId,
         snapshotTitle: event.title,
         snapshotCoverUrl: event.coverImageUrl,
@@ -217,8 +240,8 @@ export async function fulfillPadelSplitIntent(intent: IntentLike, stripeFeeForIn
         saleLineId: saleLine.id,
         lineItemIndex: 0,
         ownerKey,
-        ownerUserId: userId ?? null,
-        ownerIdentityId: null,
+        ownerUserId: ownerUserId ?? null,
+        ownerIdentityId: ownerIdentityId ?? null,
         type: EntitlementType.PADEL_ENTRY,
         status: EntitlementStatus.ACTIVE,
         eventId,
@@ -230,7 +253,7 @@ export async function fulfillPadelSplitIntent(intent: IntentLike, stripeFeeForIn
       },
     });
 
-    const updated = await tx.padelPairing.update({
+    let updated = await tx.padelPairing.update({
       where: { id: pairingId },
       data: {
         slots: {
@@ -247,6 +270,18 @@ export async function fulfillPadelSplitIntent(intent: IntentLike, stripeFeeForIn
       },
       include: { slots: true },
     });
+
+    const allPaid = updated.slots.every((s) => s.paymentStatus === PadelPairingPaymentStatus.PAID);
+    const nextLifecycle = allPaid
+      ? PadelPairingLifecycleStatus.CONFIRMED_BOTH_PAID
+      : PadelPairingLifecycleStatus.PENDING_PARTNER_PAYMENT;
+    if (updated.lifecycleStatus !== nextLifecycle) {
+      updated = await tx.padelPairing.update({
+        where: { id: pairingId },
+        data: { lifecycleStatus: nextLifecycle },
+        include: { slots: true },
+      });
+    }
 
     const stillPending = updated.slots.some((s) => s.slotStatus === "PENDING" || s.paymentStatus === "UNPAID");
     if (!stillPending && updated.pairingStatus !== "COMPLETE") {

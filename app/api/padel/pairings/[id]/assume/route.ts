@@ -21,7 +21,7 @@ export async function POST(_: NextRequest, { params }: { params: { id: string } 
     include: { slots: true, event: { select: { organizerId: true } } },
   });
   if (!pairing) return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
-  if (pairing.paymentMode !== PadelPaymentMode.SPLIT) {
+  if (pairing.payment_mode !== PadelPaymentMode.SPLIT) {
     return NextResponse.json({ ok: false, error: "NOT_SPLIT_MODE" }, { status: 400 });
   }
   if (pairing.pairingStatus === "CANCELLED") {

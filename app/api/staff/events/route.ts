@@ -86,7 +86,7 @@ export async function GET() {
       endsAt: event.endsAt,
       locationName: event.locationName,
       locationCity: event.locationCity,
-      organizerName: event.organizer?.displayName ?? null,
+      organizerName: event.organizer?.publicName ?? null,
     }));
 
     return NextResponse.json(

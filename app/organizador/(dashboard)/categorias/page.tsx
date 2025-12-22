@@ -64,16 +64,18 @@ export default function OrganizerCategoriesPage() {
 
   if (userLoading || !user) {
     return (
-      <div className="mx-auto max-w-6xl px-4 py-10 space-y-4 md:px-6 lg:px-8 text-white">
-        {userLoading ? "A carregar…" : "Precisas de iniciar sessão para veres as categorias."}
+      <div className="w-full px-4 py-8 md:px-6 lg:px-8 text-white">
+        <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-6 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
+          {userLoading ? "A carregar…" : "Precisas de iniciar sessão para veres as categorias."}
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-10 space-y-6 md:px-6 lg:px-8 text-white">
-      <div className="space-y-2">
-        <p className="text-[11px] uppercase tracking-[0.3em] text-white/60">Categorias</p>
+    <div className="w-full px-4 py-8 space-y-6 md:px-6 lg:px-8 text-white">
+      <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-6 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl space-y-2">
+        <p className="text-[11px] uppercase tracking-[0.3em] text-white/70">Categorias</p>
         <h1 className="text-3xl font-semibold">Escolhe o modo de trabalho</h1>
         <p className="text-sm text-white/65">
           Atalhos para criar eventos com a categoria certa e filtrar a tua lista. Em breve cada categoria terá UI própria.
@@ -84,7 +86,7 @@ export default function OrganizerCategoriesPage() {
         {cards.map((cat) => (
           <div
             key={cat.key}
-            className="rounded-2xl border border-white/10 bg-white/5 p-4 space-y-3 shadow-[0_16px_50px_rgba(0,0,0,0.45)]"
+            className="rounded-2xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/65 to-[#050810]/90 p-4 space-y-3 shadow-[0_18px_55px_rgba(0,0,0,0.5)] backdrop-blur-2xl"
           >
             <div className="flex items-center justify-between">
               <div>
@@ -106,13 +108,13 @@ export default function OrganizerCategoriesPage() {
             </div>
             <div className="flex gap-2">
               <Link
-                href={`/organizador?tab=events&type=${cat.template}`}
+                href={`/organizador?tab=manage&section=eventos&cat=${cat.template}`}
                 className="flex-1 rounded-full border border-white/20 px-3 py-1.5 text-[12px] text-white/80 hover:bg-white/10 text-center"
               >
                 Ver eventos
               </Link>
               <Link
-                href={`/organizador/(dashboard)/eventos/novo?preset=${cat.preset}`}
+                href={`/organizador/eventos/novo?preset=${cat.preset}`}
                 className="flex-1 rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-3 py-1.5 text-[12px] font-semibold text-black shadow text-center"
               >
                 Criar {cat.preset === "restaurante" ? "jantar" : cat.preset === "padel" ? "torneio" : "evento"}

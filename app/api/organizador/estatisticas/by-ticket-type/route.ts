@@ -3,7 +3,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { TicketStatus } from "@prisma/client";
 import { isOrgAdminOrAbove } from "@/lib/organizerPermissions";
 
 /**
@@ -170,63 +169,6 @@ export async function GET(req: NextRequest) {
         currency: tt?.currency ?? null,
       };
     });
-
-    // Fallback para legacy se não houver linhas em SaleLine
-    if (items.length === 0) {
-      const ticketsGrouped = await prisma.ticket.groupBy({
-        by: ["ticketTypeId"],
-        where: {
-          eventId: event.id,
-          status: {
-            in: [TicketStatus.ACTIVE, TicketStatus.USED],
-          },
-          ...(fromDate || toDate
-            ? {
-                purchasedAt: {
-                  ...(fromDate ? { gte: fromDate } : {}),
-                  ...(toDate ? { lte: toDate } : {}),
-                },
-              }
-            : {}),
-        },
-        _count: {
-          _all: true,
-        },
-        _sum: {
-          pricePaid: true,
-        },
-      });
-
-      const fallbackIds = ticketsGrouped
-        .map((g) => g.ticketTypeId)
-        .filter((id): id is number => id != null);
-
-      const fallbackTypes = await prisma.ticketType.findMany({
-        where: {
-          id: { in: fallbackIds },
-          eventId: event.id,
-        },
-      });
-      const fallbackMap = new Map(fallbackTypes.map((tt) => [tt.id, tt] as const));
-
-      items = ticketsGrouped.map((g) => {
-        const tt = g.ticketTypeId ? fallbackMap.get(g.ticketTypeId) : null;
-        const gross = g._sum.pricePaid ?? 0;
-        const fees = 0;
-        const discount = 0;
-        return {
-          ticketTypeId: g.ticketTypeId,
-          ticketTypeName: tt?.name ?? null,
-          soldTickets: g._count._all,
-          revenueCents: gross,
-          grossCents: gross,
-          discountCents: discount,
-          platformFeeCents: fees,
-          netCents: gross - fees,
-          currency: tt?.currency ?? null,
-        };
-      });
-    }
 
     return NextResponse.json(
       {

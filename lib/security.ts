@@ -47,13 +47,13 @@ export type BasicEventForSecurity = {
 };
 
 /**
- * Garante que o utilizador é o dono de uma experiência (event.type = "EXPERIENCE").
+ * Garante que o utilizador é o dono de um evento do utilizador (event.type = "EXPERIENCE").
  * - Lança "EVENT_NOT_FOUND" se o evento vier nulo/undefined.
- * - Lança "NOT_EXPERIENCE" se não for uma experiência.
+ * - Lança "NOT_USER_EVENT" se não for um evento do utilizador.
  * - Lança "NOT_EVENT_OWNER" se o ownerUserId não coincidir com o userId.
  * Se tudo estiver OK, não devolve nada (return void).
  */
-export function assertExperienceOwner(
+export function assertUserEventOwner(
   userId: string,
   event: BasicEventForSecurity | null | undefined
 ): void {
@@ -62,7 +62,7 @@ export function assertExperienceOwner(
   }
 
   if (event.type !== "EXPERIENCE") {
-    throw new Error("NOT_EXPERIENCE");
+    throw new Error("NOT_USER_EVENT");
   }
 
   if (event.ownerUserId !== userId) {
@@ -86,7 +86,7 @@ export function assertOrganizer(
     | { id: string; roles?: string[] | null }
     | null
     | undefined,
-  organizer?: { userId: string } | null
+  _organizer?: { userId: string } | null
 ): void {
   if (!user) {
     throw new Error("UNAUTHENTICATED");
@@ -94,10 +94,6 @@ export function assertOrganizer(
 
   if (!isOrganizer(profile)) {
     throw new Error("NOT_ORGANIZER");
-  }
-
-  if (organizer && (!profile || organizer.userId !== profile.id)) {
-    throw new Error("ORGANIZER_MISMATCH");
   }
 }
 

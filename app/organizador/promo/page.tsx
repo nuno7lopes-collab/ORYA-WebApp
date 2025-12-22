@@ -1,25 +1,19 @@
-"use client";
+import { redirect } from "next/navigation";
 
-import { useEffect } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+type Props = {
+  searchParams?: Record<string, string | string[] | undefined>;
+};
 
-// LEGACY – promo codes vivem agora dentro da tab Marketing (section=promos)
-export default function PromoCodesLegacyRedirect() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-
-  useEffect(() => {
-    const params = new URLSearchParams(searchParams?.toString() || "");
-    params.set("tab", "marketing");
-    params.set("section", "promos");
-    router.replace(`/organizador?${params.toString()}`);
-  }, [router, searchParams]);
-
-  return (
-    <div className="mx-auto max-w-3xl px-4 py-10 text-white">
-      <p className="text-sm text-white/70">
-        A área de códigos promocionais vive agora em Marketing. A redirecionar…
-      </p>
-    </div>
-  );
+export default function OrganizerPromoRedirect({ searchParams }: Props) {
+  const params = new URLSearchParams();
+  if (searchParams) {
+    Object.entries(searchParams).forEach(([key, value]) => {
+      if (key === "tab" || key === "section") return;
+      if (typeof value === "string") params.set(key, value);
+      if (Array.isArray(value) && value[0]) params.set(key, value[0]);
+    });
+  }
+  params.set("tab", "promote");
+  params.set("section", "promos");
+  redirect(`/organizador?${params.toString()}`);
 }

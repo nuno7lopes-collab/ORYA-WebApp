@@ -670,22 +670,32 @@ export async function PATCH(req: NextRequest) {
 
     // Colisão por jogador/dupla (pairing A/B) se houver info
     if (desiredStart && desiredEnd && (match.pairingAId || match.pairingBId)) {
-      const overlappingPlayerMatch = await prisma.padelMatch.findFirst({
-        where: {
-          eventId: match.eventId,
-          id: { not: id as number },
-          OR: [
-            { pairingAId: match.pairingAId },
-            { pairingBId: match.pairingAId },
-            { pairingAId: match.pairingBId },
-            { pairingBId: match.pairingBId },
-          ],
-          OR: [
-            { plannedStartAt: { lt: desiredEnd }, plannedEndAt: { gt: desiredStart } },
-            { startTime: { lt: desiredEnd }, plannedEndAt: { gt: desiredStart } },
-          ],
-        },
-      });
+      const pairingConditions = [
+        ...(match.pairingAId
+          ? [{ pairingAId: match.pairingAId }, { pairingBId: match.pairingAId }]
+          : []),
+        ...(match.pairingBId
+          ? [{ pairingAId: match.pairingBId }, { pairingBId: match.pairingBId }]
+          : []),
+      ];
+      const overlappingPlayerMatch =
+        pairingConditions.length > 0
+          ? await prisma.padelMatch.findFirst({
+              where: {
+                eventId: match.eventId,
+                id: { not: id as number },
+                AND: [
+                  { OR: pairingConditions },
+                  {
+                    OR: [
+                      { plannedStartAt: { lt: desiredEnd }, plannedEndAt: { gt: desiredStart } },
+                      { startTime: { lt: desiredEnd }, plannedEndAt: { gt: desiredStart } },
+                    ],
+                  },
+                ],
+              },
+            })
+          : null;
       if (overlappingPlayerMatch) {
         const otherStart = overlappingPlayerMatch.plannedStartAt || overlappingPlayerMatch.startTime;
         const otherEnd = overlappingPlayerMatch.plannedEndAt || overlappingPlayerMatch.startTime;

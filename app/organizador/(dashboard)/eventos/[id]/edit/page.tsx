@@ -1,7 +1,10 @@
 // app/organizador/(dashboard)/eventos/[id]/edit/page.tsx
 import { notFound, redirect } from "next/navigation";
+import { OrganizerMemberRole } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
+import { getActiveOrganizerForUser } from "@/lib/organizerContext";
+import { canManageEvents } from "@/lib/organizerPermissions";
 import { EventEditClient } from "@/app/organizador/(dashboard)/eventos/EventEditClient";
 
 type PageProps = {
@@ -16,24 +19,37 @@ export default async function OrganizerEventEditPage({ params }: PageProps) {
   const supabase = await createSupabaseServer();
   const { data, error } = await supabase.auth.getUser();
   if (error || !data?.user) {
-    redirect("/login?redirectTo=/organizador/eventos");
+    redirect(`/login?redirectTo=${encodeURIComponent("/organizador?tab=manage")}`);
   }
 
-  const organizer = await prisma.organizer.findFirst({
-    where: { userId: data.user.id },
-  });
-  if (!organizer) {
-    redirect("/organizador");
-  }
-
-  const event = await prisma.event.findFirst({
-    where: { id: eventId, organizerId: organizer.id },
+  const event = await prisma.event.findUnique({
+    where: { id: eventId },
     include: {
       ticketTypes: true,
     },
   });
 
-  if (!event) notFound();
+  if (!event || !event.organizerId) notFound();
+
+  let { organizer, membership } = await getActiveOrganizerForUser(data.user.id, {
+    organizerId: event.organizerId,
+  });
+  if (!organizer) {
+    const legacyOrganizer = await prisma.organizer.findFirst({
+      where: { id: event.organizerId, userId: data.user.id },
+    });
+    if (legacyOrganizer) {
+      organizer = legacyOrganizer;
+      membership = { role: OrganizerMemberRole.OWNER };
+    }
+  }
+
+  if (!organizer || !membership) {
+    redirect("/organizador");
+  }
+  if (!canManageEvents(membership.role)) {
+    redirect("/organizador?tab=manage");
+  }
 
   const tickets = event.ticketTypes.map((t) => ({
     id: t.id,
@@ -49,19 +65,23 @@ export default async function OrganizerEventEditPage({ params }: PageProps) {
   }));
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-10 space-y-6 text-white md:px-6 lg:px-8">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Editar evento</p>
-          <h1 className="text-2xl font-semibold">{event.title}</h1>
-          <p className="text-sm text-white/60">ID {event.id} · {event.slug}</p>
+    <div className="w-full px-4 py-8 space-y-6 text-white md:px-6 lg:px-8">
+      <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-5 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-[11px] uppercase tracking-[0.24em] text-white/70">Editar evento</p>
+            <h1 className="text-2xl font-semibold">{event.title}</h1>
+            <p className="text-sm text-white/60">
+              ID {event.id} · {event.slug}
+            </p>
+          </div>
+          <a
+            href={`/eventos/${event.slug}`}
+            className="rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-3 py-1.5 text-[11px] font-semibold text-black shadow"
+          >
+            Ver página pública
+          </a>
         </div>
-        <a
-          href={`/eventos/${event.slug}`}
-          className="rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-3 py-1.5 text-[11px] font-semibold text-black shadow"
-        >
-          Ver página pública
-        </a>
       </div>
 
       <EventEditClient

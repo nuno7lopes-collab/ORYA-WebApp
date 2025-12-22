@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useCheckout } from "./contextoCheckout";
-import { formatMoney } from "@/lib/money";
+import { formatEuro } from "@/lib/money";
 
 const FREE_PLACEHOLDER_INTENT_ID = "FREE_CHECKOUT";
 
@@ -151,7 +151,7 @@ export default function Step3Sucesso() {
         : numberFromUnknown(add.platformFeeCents) ?? platformFeeOryaCents;
 
     // Só mostrar/contabilizar taxa se o modo for ADDED (pago pelo comprador).
-    const payorPaysFee = feeMode === "ADDED" || feeMode === "ON_TOP";
+    const payorPaysFee = feeMode === "ADDED";
     const platformFeeCents = payorPaysFee ? platformFeeCombinedCents : 0;
 
     const totalCentsFromContext =
@@ -345,25 +345,25 @@ export default function Step3Sucesso() {
             <div className="flex items-center justify-between border-b border-white/10 pb-2">
               <span className="text-white/60 text-[11px] uppercase tracking-widest">Total dos bilhetes</span>
               <span className="font-semibold">
-                {formatMoney(subtotalEur)}
+                {formatEuro(subtotalEur)}
               </span>
             </div>
             {breakdown.discountCents > 0 && (
               <div className="flex items-center justify-between">
                 <span className="text-white/60">Desconto {breakdown.code ? `(${breakdown.code})` : ""}</span>
-                <span className="text-emerald-300">-{formatMoney(discountEur)}</span>
+                <span className="text-emerald-300">-{formatEuro(discountEur)}</span>
               </div>
             )}
             {(((breakdown as any).platformFeeCombinedCents ?? breakdown.platformFeeCents) ?? 0) > 0 && (
               <div className="flex items-center justify-between">
                 <span className="text-white/60">Taxa da plataforma</span>
-                <span className="text-orange-200">{formatMoney(platformFeeEur)}</span>
+                <span className="text-orange-200">{formatEuro(platformFeeEur)}</span>
               </div>
             )}
             <div className="flex items-center justify-between border-t border-white/10 pt-2">
               <span className="text-white text-[12px] font-semibold uppercase tracking-widest">Total Pago</span>
               <span className="text-xl font-semibold">
-                {formatMoney(totalEur)}
+                {formatEuro(totalEur)}
               </span>
             </div>
           </div>

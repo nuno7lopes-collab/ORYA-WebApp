@@ -10,42 +10,9 @@ const checkoutItemOutputSchema = z.object({
   currency: z.string().trim().min(1).optional().default("EUR"),
 });
 
-export const checkoutItemSchema = z.preprocess((raw) => {
-  if (!raw || typeof raw !== "object") return raw;
-  const v = raw as Record<string, unknown>;
-
-  // Compat: alguns flows antigos enviam `ticketId` em vez de `ticketTypeId`.
-  const ticketTypeId =
-    typeof v.ticketTypeId === "number"
-      ? v.ticketTypeId
-      : typeof v.ticketId === "number"
-        ? v.ticketId
-        : v.ticketTypeId;
-
-  // Compat: unitPriceCents/currency podem faltar (pricing é do BE).
-  const unitPriceCents =
-    typeof v.unitPriceCents === "number" && Number.isFinite(v.unitPriceCents)
-      ? v.unitPriceCents
-      : undefined;
-
-  const currencyRaw = typeof v.currency === "string" ? v.currency : undefined;
-
-  return {
-    ...v,
-    ticketTypeId,
-    unitPriceCents,
-    currency: currencyRaw,
-  };
-}, checkoutItemOutputSchema);
+export const checkoutItemSchema = checkoutItemOutputSchema;
 
 export type NormalizedCheckoutItem = z.infer<typeof checkoutItemSchema>;
-
-const legacyOwnerShape = z.object({
-  userId: z.string().uuid().nullish(),
-  guestEmail: z.string().email().trim().toLowerCase().nullish(),
-  guestName: z.string().trim().min(1).nullish(),
-  guestPhone: z.string().trim().nullish(),
-});
 
 const newOwnerShape = z.object({
   ownerUserId: z.string().uuid().nullish(),
@@ -53,21 +20,14 @@ const newOwnerShape = z.object({
   emailNormalized: z.string().email().trim().toLowerCase().nullish(),
 });
 
-export const checkoutOwnerSchema = newOwnerShape
-  .merge(legacyOwnerShape.partial())
-  .refine(
-    (value) =>
-      Boolean(
-        value.ownerUserId ||
-          value.ownerIdentityId ||
-          value.userId ||
-          value.guestEmail,
-      ),
-    {
-      message:
-        "Owner inválido: requer ownerUserId/ownerIdentityId ou userId/guestEmail.",
-    },
-  );
+export const checkoutOwnerSchema = newOwnerShape.refine(
+  (value) =>
+    Boolean(value.ownerUserId || value.ownerIdentityId || value.emailNormalized),
+  {
+    message:
+      "Owner inválido: requer ownerUserId/ownerIdentityId ou emailNormalized.",
+  },
+);
 
 export type CheckoutOwner = z.infer<typeof checkoutOwnerSchema>;
 
@@ -91,19 +51,7 @@ const checkoutMetadataOutputSchema = z.object({
   owner: checkoutOwnerSchema.optional(),
 });
 
-export const checkoutMetadataSchema = z.preprocess((raw) => {
-  if (!raw || typeof raw !== "object") return raw;
-  const v = raw as Record<string, unknown>;
-
-  // Compat: FE pode enviar `slug` em vez de `eventSlug`.
-  const slug = typeof v.slug === "string" ? v.slug : undefined;
-  const eventSlug = typeof v.eventSlug === "string" ? v.eventSlug : undefined;
-
-  return {
-    ...v,
-    eventSlug: eventSlug ?? slug,
-  };
-}, checkoutMetadataOutputSchema);
+export const checkoutMetadataSchema = checkoutMetadataOutputSchema;
 
 export type CheckoutMetadata = z.infer<typeof checkoutMetadataSchema>;
 

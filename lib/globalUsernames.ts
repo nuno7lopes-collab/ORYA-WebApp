@@ -24,19 +24,40 @@ export async function checkUsernameAvailability(username: string, tx: Tx = prism
   const normalizedResult = normalizeAndValidateUsername(username);
   if (!normalizedResult.ok) return normalizedResult;
 
+  const normalized = normalizedResult.username;
+
+  const checkLocalAvailability = async (client: Tx) => {
+    const [profile, organizer] = await Promise.all([
+      client.profile.findFirst({
+        where: { username: { equals: normalized, mode: "insensitive" } },
+        select: { id: true },
+      }),
+      client.organizer.findFirst({
+        where: { username: { equals: normalized, mode: "insensitive" } },
+        select: { id: true },
+      }),
+    ]);
+    return !profile && !organizer;
+  };
+
   try {
     const existing = await tx.globalUsername.findUnique({
-      where: { username: normalizedResult.username },
+      where: { username: normalized },
       select: { ownerType: true, ownerId: true },
     });
-    return { ok: true as const, available: !existing, username: normalizedResult.username };
+    if (existing) {
+      return { ok: true as const, available: false, username: normalized };
+    }
+    const available = await checkLocalAvailability(tx);
+    return { ok: true as const, available, username: normalized };
   } catch (err) {
     const code = (err as { code?: string })?.code;
     const msg = err instanceof Error ? err.message : "";
     const missingTable = code === "P2021" || code === "P2022" || msg.toLowerCase().includes("does not exist");
     if (missingTable) {
       console.warn("[globalUsernames] table/column missing while checking availability");
-      return { ok: true as const, available: true, username: normalizedResult.username };
+      const available = await checkLocalAvailability(tx);
+      return { ok: true as const, available, username: normalized };
     }
     throw err;
   }
@@ -58,8 +79,31 @@ export async function setUsernameForOwner(options: {
 
   const username = validated.username;
   const ownerIdStr = String(ownerId);
+  const ownerIdNumber = ownerType === "organizer" ? Number(ownerId) : null;
 
   const run = async (trx: Tx) => {
+    const [profile, organizer] = await Promise.all([
+      trx.profile.findFirst({
+        where: {
+          username: { equals: username, mode: "insensitive" },
+          ...(ownerType === "user" ? { NOT: { id: ownerIdStr } } : {}),
+        },
+        select: { id: true },
+      }),
+      trx.organizer.findFirst({
+        where: {
+          username: { equals: username, mode: "insensitive" },
+          ...(ownerType === "organizer" && ownerIdNumber && Number.isFinite(ownerIdNumber)
+            ? { NOT: { id: ownerIdNumber } }
+            : {}),
+        },
+        select: { id: true },
+      }),
+    ]);
+    if (profile || organizer) {
+      throw new UsernameTakenError(username);
+    }
+
     const existing = await trx.globalUsername.findUnique({
       where: { username },
       select: { ownerType: true, ownerId: true },

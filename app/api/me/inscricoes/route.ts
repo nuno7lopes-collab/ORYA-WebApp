@@ -61,7 +61,9 @@ export async function GET() {
           : "Pendente";
 
     const partnerSlot = pairing?.slots?.find((s) => s.profileId && s.profileId !== entry.userId);
-    const liveUrl = entry.event?.slug ? `/torneios/${entry.event.slug}/live${pairing?.id ? `?pairingId=${pairing.id}` : ""}` : null;
+    const liveUrl = entry.event?.slug
+      ? `/eventos/${entry.event.slug}/live${pairing?.id ? `?pairingId=${pairing.id}` : ""}`
+      : null;
     const ctaUrl =
       nextAction === "PAY_PARTNER"
         ? `/pairings/${pairing?.id ?? ""}/checkout`

@@ -33,7 +33,6 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    // 3) Encontrar o organizer ligado a este perfil (membership > legacy)
     const { organizer, membership } = await getActiveOrganizerForUser(profile.id, {
       roles: ["OWNER", "CO_OWNER", "ADMIN"],
     });

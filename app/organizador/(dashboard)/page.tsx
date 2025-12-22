@@ -1,5 +1,4 @@
 import { redirect } from "next/navigation";
-import { OrganizerMemberRole } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizerForUser } from "@/lib/organizerContext";
@@ -34,33 +33,6 @@ export default async function OrganizerRouterPage() {
       typeof err === "object" && err && "message" in err ? String((err as { message?: unknown }).message) : "";
     if (!(msg.includes("does not exist") || msg.includes("organizer_members"))) {
       throw err;
-    }
-  }
-
-  // Backfill automático para contas antigas (organizer.userId)
-  if (membershipCount === 0) {
-    try {
-      const legacyOrganizers = await prisma.organizer.findMany({
-        where: { userId: user.id, status: "ACTIVE" },
-        select: { id: true },
-      });
-      if (legacyOrganizers.length > 0) {
-        await prisma.organizerMember.createMany({
-          data: legacyOrganizers.map((org) => ({
-            organizerId: org.id,
-            userId: user.id,
-            role: OrganizerMemberRole.OWNER,
-          })),
-          skipDuplicates: true,
-        });
-        membershipCount = legacyOrganizers.length;
-      }
-    } catch (err: unknown) {
-      const msg =
-        typeof err === "object" && err && "message" in err ? String((err as { message?: unknown }).message) : "";
-      if (!(msg.includes("does not exist") || msg.includes("organizer_members"))) {
-        throw err;
-      }
     }
   }
 

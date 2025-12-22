@@ -14,6 +14,7 @@ import { prisma } from "@/lib/prisma";
 import { buildPadelEventSnapshot } from "@/lib/padel/eventSnapshot";
 import { validateEligibility } from "@/domain/padelEligibility";
 import { PairingAction, transition } from "@/domain/padelPairingStateMachine";
+import { ensureEntriesForConfirmedPairing } from "@/domain/tournaments/ensureEntriesForConfirmedPairing";
 
 async function ensurePlayerProfile(params: { organizerId: number; userId: string }) {
   const { organizerId, userId } = params;
@@ -51,12 +52,22 @@ export async function GET(_: NextRequest, { params }: { params: { token: string 
       lifecycleStatus: true,
       partnerLinkExpiresAt: true,
       lockedUntil: true,
-      paymentMode: true,
+      payment_mode: true,
       eventId: true,
       organizerId: true,
       player1UserId: true,
       player2UserId: true,
       deadlineAt: true,
+      slots: {
+        select: {
+          id: true,
+          slotStatus: true,
+          paymentStatus: true,
+          profileId: true,
+          invitedContact: true,
+          slot_role: true,
+        },
+      },
     },
   });
 
@@ -77,8 +88,16 @@ export async function GET(_: NextRequest, { params }: { params: { token: string 
 
   const padelEvent = await buildPadelEventSnapshot(pairing.eventId);
 
+  const pairingPayload = {
+    ...pairing,
+    paymentMode: pairing.payment_mode,
+    slots: pairing.slots.map(({ slot_role, ...slotRest }) => ({
+      ...slotRest,
+      slotRole: slot_role,
+    })),
+  };
   return NextResponse.json(
-    { ok: true, pairing, ticketTypes, organizerId: pairing.organizerId, status: "PREVIEW_ONLY", padelEvent },
+    { ok: true, pairing: pairingPayload, ticketTypes, organizerId: pairing.organizerId, status: "PREVIEW_ONLY", padelEvent },
     { status: 200 },
   );
 }
@@ -116,8 +135,17 @@ export async function POST(_: NextRequest, { params }: { params: { token: string
   }
 
   // SPLIT sem pagamento do parceiro: devolve ação para checkout
-  if (pairing.paymentMode === PadelPaymentMode.SPLIT && pendingSlot.paymentStatus !== PadelPairingPaymentStatus.PAID) {
+  if (pairing.payment_mode === PadelPaymentMode.SPLIT && pendingSlot.paymentStatus !== PadelPairingPaymentStatus.PAID) {
     return NextResponse.json({ ok: false, error: "PAYMENT_REQUIRED", action: "CHECKOUT_PARTNER" }, { status: 402 });
+  }
+  if (pairing.payment_mode === PadelPaymentMode.FULL) {
+    const captainSlot = pairing.slots.find((s) => s.slot_role === "CAPTAIN");
+    if (!captainSlot || captainSlot.paymentStatus !== PadelPairingPaymentStatus.PAID) {
+      return NextResponse.json({ ok: false, error: "PAYMENT_REQUIRED", action: "CHECKOUT_CAPTAIN" }, { status: 402 });
+    }
+    if (pendingSlot.paymentStatus !== PadelPairingPaymentStatus.PAID) {
+      return NextResponse.json({ ok: false, error: "PAYMENT_REQUIRED", action: "CHECKOUT_CAPTAIN" }, { status: 402 });
+    }
   }
   if (pairing.deadlineAt && pairing.deadlineAt.getTime() < Date.now()) {
     return NextResponse.json({ ok: false, error: "PAIRING_EXPIRED" }, { status: 410 });
@@ -163,7 +191,7 @@ export async function POST(_: NextRequest, { params }: { params: { token: string
 
   try {
     const playerProfileId = await ensurePlayerProfile({ organizerId: pairing.organizerId, userId: user.id });
-    const updated = await prisma.$transaction(async (tx) => {
+    const { pairing: updated, shouldEnsureEntries } = await prisma.$transaction(async (tx) => {
       // Se já tem ticket, validar apropriação
       if (pendingSlot.ticketId) {
         const ticket = await tx.ticket.findUnique({ where: { id: pendingSlot.ticketId } });
@@ -207,10 +235,7 @@ export async function POST(_: NextRequest, { params }: { params: { token: string
                 profileId: user.id,
                 playerProfileId,
                 slotStatus: PadelPairingSlotStatus.FILLED,
-                paymentStatus:
-                  pendingSlot.paymentStatus === "PAID"
-                    ? pendingSlot.paymentStatus
-                    : PadelPairingPaymentStatus.PAID,
+                paymentStatus: pendingSlot.paymentStatus,
               },
             },
           },
@@ -218,19 +243,33 @@ export async function POST(_: NextRequest, { params }: { params: { token: string
         include: { slots: true },
       });
 
-      const stillPending = updatedPairing.slots.some((s) => s.slotStatus === "PENDING");
-      if (!stillPending && updatedPairing.pairingStatus !== "COMPLETE") {
-        return tx.padelPairing.update({
+      const allFilled = updatedPairing.slots.every((s) => s.slotStatus === "FILLED");
+      const allPaid = updatedPairing.slots.every((s) => s.paymentStatus === PadelPairingPaymentStatus.PAID);
+      if (allFilled && allPaid && updatedPairing.pairingStatus !== "COMPLETE") {
+        const completed = await tx.padelPairing.update({
           where: { id: pairing.id },
           data: { pairingStatus: "COMPLETE" },
           include: { slots: true },
         });
+        return { pairing: completed, shouldEnsureEntries: true };
       }
 
-      return updatedPairing;
+      return { pairing: updatedPairing, shouldEnsureEntries: allFilled && allPaid };
     });
 
-    return NextResponse.json({ ok: true, pairing: updated }, { status: 200 });
+    if (shouldEnsureEntries) {
+      await ensureEntriesForConfirmedPairing(updated.id);
+    }
+
+    const pairingPayload = {
+      ...updated,
+      paymentMode: updated.payment_mode,
+      slots: updated.slots.map(({ slot_role, ...slotRest }) => ({
+        ...slotRest,
+        slotRole: slot_role,
+      })),
+    };
+    return NextResponse.json({ ok: true, pairing: pairingPayload }, { status: 200 });
   } catch (err) {
     if (err instanceof Error && err.message === "TICKET_ALREADY_CLAIMED") {
       return NextResponse.json({ ok: false, error: "TICKET_ALREADY_CLAIMED" }, { status: 409 });

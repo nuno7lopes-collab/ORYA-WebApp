@@ -1,10 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { useWallet } from "@/app/components/wallet/useWallet";
 import { WalletCard } from "@/app/components/wallet/WalletCard";
 import { useUser } from "@/app/hooks/useUser";
+import TicketLiveQr from "@/app/components/tickets/TicketLiveQr";
 
 type FilterKey = "ALL" | "ACTIVE" | "USED" | "REFUNDED" | "REVOKED" | "SUSPENDED";
 
@@ -12,13 +14,141 @@ export default function CarteiraPage() {
   const { items, loading, error, authRequired, refetch } = useWallet();
   const [filter, setFilter] = useState<FilterKey>("ALL");
   const { user, isLoading: userLoading } = useUser();
+  const searchParams = useSearchParams();
+  const entitlementId = searchParams.get("entitlementId");
+
+  const [passLoading, setPassLoading] = useState(false);
+  const [passError, setPassError] = useState<string | null>(null);
+  const [passData, setPassData] = useState<null | {
+    entitlementId: string;
+    status: string;
+    snapshot: {
+      title: string;
+      venueName?: string | null;
+      startAt?: string | null;
+    };
+    actions?: { canShowQr?: boolean };
+    qrToken?: string | null;
+    event?: {
+      slug: string;
+      organizerName: string | null;
+      organizerUsername: string | null;
+    } | null;
+    cached?: boolean;
+  }>(null);
+
+  useEffect(() => {
+    if (!entitlementId) {
+      setPassData(null);
+      setPassError(null);
+      setPassLoading(false);
+      return;
+    }
+
+    const cacheKey = `orya-pass-${entitlementId}`;
+    let cancelled = false;
+
+    const load = async () => {
+      setPassLoading(true);
+      setPassError(null);
+      try {
+        const res = await fetch(`/api/me/wallet/${entitlementId}`, { cache: "no-store" });
+        const data = await res.json().catch(() => null);
+        if (!res.ok) {
+          throw new Error(data?.error || "Erro ao carregar o Pass ORYA.");
+        }
+        if (cancelled) return;
+        const payload = {
+          entitlementId: data?.entitlementId ?? entitlementId,
+          status: data?.status ?? "ACTIVE",
+          snapshot: {
+            title: data?.snapshot?.title ?? "Pass ORYA",
+            venueName: data?.snapshot?.venueName ?? null,
+            startAt: data?.snapshot?.startAt ?? null,
+          },
+          actions: data?.actions ?? {},
+          qrToken: data?.qrToken ?? null,
+          event: data?.event ?? null,
+          cached: false,
+        };
+        setPassData(payload);
+        window.localStorage.setItem(cacheKey, JSON.stringify(payload));
+      } catch (err) {
+        const cached = window.localStorage.getItem(cacheKey);
+        if (cached) {
+          try {
+            const parsed = JSON.parse(cached);
+            if (!cancelled) {
+              setPassData({ ...parsed, cached: true });
+              setPassError("Sem ligação — a mostrar a última versão guardada.");
+            }
+          } catch {
+            setPassError(err instanceof Error ? err.message : "Erro ao carregar o Pass ORYA.");
+          }
+        } else {
+          setPassError(err instanceof Error ? err.message : "Erro ao carregar o Pass ORYA.");
+        }
+      } finally {
+        if (!cancelled) setPassLoading(false);
+      }
+    };
+
+    void load();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [entitlementId]);
 
   const list = useMemo(() => {
-    return (items ?? []).filter((item) => {
+    const filtered = (items ?? []).filter((item) => {
       if (filter === "ALL") return true;
       return item.status === filter;
     });
+    const now = Date.now();
+    const toTime = (value?: string | null) => {
+      if (!value) return null;
+      const parsed = new Date(value);
+      if (Number.isNaN(parsed.getTime())) return null;
+      return parsed.getTime();
+    };
+    return filtered.sort((a, b) => {
+      const aTime = toTime(a.snapshot?.startAt ?? null);
+      const bTime = toTime(b.snapshot?.startAt ?? null);
+      if (aTime === null && bTime === null) return 0;
+      if (aTime === null) return 1;
+      if (bTime === null) return -1;
+      const aUpcoming = aTime >= now;
+      const bUpcoming = bTime >= now;
+      if (aUpcoming !== bUpcoming) return aUpcoming ? -1 : 1;
+      if (aUpcoming) return aTime - bTime;
+      return bTime - aTime;
+    });
   }, [items, filter]);
+
+  const passStatusLabel = useMemo(() => {
+    if (!passData) return "";
+    const map: Record<string, string> = {
+      ACTIVE: "Confirmado",
+      USED: "Usado",
+      REFUNDED: "Reembolsado",
+      REVOKED: "Revogado",
+      SUSPENDED: "Suspenso",
+    };
+    return map[passData.status] ?? passData.status;
+  }, [passData]);
+
+  const passDateLabel = useMemo(() => {
+    if (!passData?.snapshot?.startAt) return "Data a anunciar";
+    const parsed = new Date(passData.snapshot.startAt);
+    if (Number.isNaN(parsed.getTime())) return "Data a anunciar";
+    return parsed.toLocaleString("pt-PT", {
+      day: "2-digit",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  }, [passData]);
 
   if (!user && !userLoading) {
     return (
@@ -99,6 +229,109 @@ export default function CarteiraPage() {
             </div>
           </div>
         </header>
+
+        {entitlementId && (
+          <section className="rounded-3xl border border-white/15 bg-white/5 p-6 shadow-[0_24px_60px_rgba(0,0,0,0.65)] backdrop-blur-2xl">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">Pass ORYA</p>
+                <h2 className="text-2xl font-semibold text-white">Credencial pessoal</h2>
+              </div>
+              <Link
+                href="/me/carteira"
+                className="text-[12px] text-white/60 hover:text-white"
+              >
+                Fechar Pass
+              </Link>
+            </div>
+
+            {passLoading && (
+              <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/70">
+                A carregar o teu Pass ORYA…
+              </div>
+            )}
+
+            {!passLoading && passData && (
+              <div className="mt-4 grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
+                <div className="space-y-4">
+                  <div className="rounded-2xl border border-white/15 bg-black/40 p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Evento</p>
+                        <h3 className="mt-2 text-lg font-semibold">{passData.snapshot.title}</h3>
+                        <p className="text-[12px] text-white/70">
+                          {passData.snapshot.venueName ?? "Local a anunciar"} · {passDateLabel}
+                        </p>
+                      </div>
+                      <span className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[12px] text-white/80">
+                        {passStatusLabel}
+                      </span>
+                    </div>
+                    {passData.event?.organizerName && (
+                      <p className="mt-3 text-[12px] text-white/60">
+                        Organização:{" "}
+                        {passData.event.organizerUsername ? (
+                          <Link
+                            href={`/${passData.event.organizerUsername}`}
+                            className="text-white hover:text-white/80"
+                          >
+                            {passData.event.organizerName}
+                          </Link>
+                        ) : (
+                          <span className="text-white">{passData.event.organizerName}</span>
+                        )}
+                      </p>
+                    )}
+                    <div className="mt-4 flex flex-wrap gap-2 text-[12px]">
+                      {passData.event?.slug && (
+                        <Link
+                          href={`/eventos/${passData.event.slug}`}
+                          className="rounded-full border border-white/30 bg-white/10 px-3 py-1 text-white/80 hover:bg-white/20"
+                        >
+                          Ver página do evento
+                        </Link>
+                      )}
+                    </div>
+                    {passData.cached && (
+                      <p className="mt-3 text-[11px] text-amber-200">
+                        Sem ligação — a mostrar a última versão guardada.
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="rounded-2xl border border-white/15 bg-black/40 p-4 text-[12px] text-white/70">
+                    <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Estado</p>
+                    <p className="mt-2">
+                      Usa o QR apenas quando fores chamado para check-in. Mantém o Pass aberto para atualizar a
+                      disponibilidade.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-white/15 bg-black/40 p-4 text-center">
+                  <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">QR do Pass</p>
+                  <div className="mt-4 flex items-center justify-center">
+                    {passData.actions?.canShowQr && passData.qrToken ? (
+                      <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                        <TicketLiveQr qrToken={passData.qrToken} />
+                      </div>
+                    ) : (
+                      <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-6 text-[12px] text-white/70">
+                        QR indisponível neste momento.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {!passLoading && passError && !passData?.cached && (
+              <div className="mt-4 rounded-2xl border border-red-400/30 bg-red-500/10 p-4 text-sm text-red-50">
+                {passError}
+              </div>
+            )}
+          </section>
+        )}
 
         {loading && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">

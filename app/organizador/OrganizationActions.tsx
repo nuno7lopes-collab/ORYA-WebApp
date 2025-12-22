@@ -13,13 +13,13 @@ export function OrganizationActions({ organizerId }: { organizerId: number }) {
       </div>
       <div className="flex flex-wrap gap-2">
         <Link
-          href={`/organizador/staff${organizerId ? `?organizerId=${organizerId}` : ""}`}
+          href={`/organizador?tab=manage&section=staff${organizerId ? `&organizerId=${organizerId}` : ""}`}
           className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-black shadow hover:opacity-90"
         >
           Abrir Staff
         </Link>
         <Link
-          href="/organizador/settings"
+          href="/organizador?tab=manage&section=settings"
           className="rounded-full border border-white/20 bg-white/5 px-4 py-2 text-sm text-white hover:bg-white/10"
         >
           Ir a Definições

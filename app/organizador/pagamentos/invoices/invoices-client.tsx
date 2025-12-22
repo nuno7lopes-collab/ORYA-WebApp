@@ -3,8 +3,7 @@
 import useSWR from "swr";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useMemo, useEffect } from "react";
-import { formatMoney } from "@/lib/money";
-import { useUser } from "@/app/hooks/useUser";
+import { formatEuro } from "@/lib/money";
 
 type InvoiceLine = { quantity: number };
 type InvoiceEvent = { id: number; title: string; slug?: string | null; payoutMode?: string | null };
@@ -23,8 +22,10 @@ type InvoiceSummary = { grossCents: number; discountCents: number; platformFeeCe
 type InvoiceResponse =
   | { ok: true; items: InvoiceItem[]; summary: InvoiceSummary }
   | { ok: false; error?: string };
+type OrganizerMeResponse = { organizer?: { id?: number | null } | null };
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json() as Promise<InvoiceResponse>);
+const orgFetcher = (url: string) => fetch(url).then((r) => r.json() as Promise<OrganizerMeResponse>);
 
 const toQuery = (params: Record<string, string | number | null | undefined>) => {
   const url = new URLSearchParams();
@@ -40,18 +41,37 @@ const toQuery = (params: Record<string, string | number | null | undefined>) => 
 const formatDateTime = (iso: string) =>
   new Date(iso).toLocaleString("pt-PT", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
 
-export default function InvoicesClient() {
+type InvoicesClientProps = {
+  basePath?: string;
+  fullWidth?: boolean;
+  organizerId?: number | null;
+};
+
+export default function InvoicesClient({
+  basePath = "/organizador/pagamentos/invoices",
+  fullWidth = false,
+  organizerId: organizerIdProp = null,
+}: InvoicesClientProps) {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const { organizerId: orgIdFromProfile } = useUser()?.organizer ?? {};
-  const organizerIdParam = searchParams?.get("organizerId") ?? (orgIdFromProfile ? String(orgIdFromProfile) : null);
+  const organizerIdParam = searchParams?.get("organizerId") ?? null;
   const from = searchParams?.get("from") ?? "";
   const to = searchParams?.get("to") ?? "";
-  const organizerId = organizerIdParam ? Number(organizerIdParam) : null;
-  const effectiveOrganizerId = organizerId ?? orgIdFromProfile ?? null;
-  const qs = toQuery({ organizerId: effectiveOrganizerId, from, to });
+  const organizerIdQuery = organizerIdParam ? Number(organizerIdParam) : null;
+  const shouldFetchOrganizer = !organizerIdProp && !organizerIdQuery;
+  const { data: organizerData } = useSWR<OrganizerMeResponse>(
+    () => (shouldFetchOrganizer ? "/api/organizador/me" : null),
+    orgFetcher,
+  );
+  const organizerIdFromMe = organizerData?.organizer?.id ?? null;
+  const organizerId =
+    organizerIdProp ??
+    (organizerIdQuery && !Number.isNaN(organizerIdQuery) ? organizerIdQuery : null) ??
+    organizerIdFromMe ??
+    null;
+  const qs = toQuery({ organizerId, from, to });
   const { data, isLoading, mutate } = useSWR(
-    () => (effectiveOrganizerId ? `/api/organizador/pagamentos/invoices${qs}` : null),
+    () => (organizerId ? `/api/organizador/pagamentos/invoices${qs}` : null),
     fetcher,
     { revalidateOnFocus: false },
   );
@@ -63,12 +83,18 @@ export default function InvoicesClient() {
     [data],
   );
 
-  // Se houver organizerId do perfil mas não na query, sincroniza a URL.
+  const withQuery = (path: string, params: Record<string, string | number | null | undefined>) => {
+    const query = toQuery(params);
+    if (!query) return path;
+    return path.includes("?") ? `${path}&${query.slice(1)}` : `${path}${query}`;
+  };
+
+  // Se houver organizerId mas não na query, sincroniza a URL.
   useEffect(() => {
-    if (!organizerId && orgIdFromProfile) {
-      router.replace(`/organizador${toQuery({ tab: "invoices", organizerId: orgIdFromProfile, from, to })}`);
+    if (!organizerIdParam && organizerId) {
+      router.replace(withQuery(basePath, { organizerId, from, to }));
     }
-  }, [organizerId, orgIdFromProfile, router, from, to]);
+  }, [organizerIdParam, organizerId, router, from, to, basePath]);
 
   const downloadCsv = () => {
     if (!items.length) return;
@@ -98,7 +124,13 @@ export default function InvoicesClient() {
   };
 
   const handleDateChange = (which: "from" | "to", value: string) => {
-    router.push(`/organizador${toQuery({ tab: "invoices", organizerId, from: which === "from" ? value : from, to: which === "to" ? value : to })}`);
+    router.push(
+      withQuery(basePath, {
+        organizerId,
+        from: which === "from" ? value : from,
+        to: which === "to" ? value : to,
+      }),
+    );
   };
 
   const stateCard = (() => {
@@ -117,6 +149,13 @@ export default function InvoicesClient() {
               <div key={idx} className="h-16 rounded-2xl border border-white/10 bg-white/5 animate-pulse" />
             ))}
           </div>
+        </div>
+      );
+    }
+    if (!organizerId) {
+      return (
+        <div className="rounded-3xl border border-white/12 bg-white/5 p-5 text-sm text-white/75 shadow-[0_18px_50px_rgba(0,0,0,0.55)]">
+          A carregar organização...
         </div>
       );
     }
@@ -146,7 +185,7 @@ export default function InvoicesClient() {
   })();
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-6 space-y-6 text-white">
+    <div className={fullWidth ? "w-full space-y-6 text-white" : "mx-auto max-w-6xl px-4 py-6 space-y-6 text-white"}>
       <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/10 via-[#0d1530]/75 to-[#050912]/90 p-5 shadow-[0_28px_90px_rgba(0,0,0,0.6)] backdrop-blur-3xl">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div className="space-y-2">
@@ -168,14 +207,13 @@ export default function InvoicesClient() {
                 type="button"
                 onClick={() =>
                   router.push(
-                    `/organizador${toQuery({
-                      tab: "invoices",
+                    withQuery(basePath, {
                       organizerId,
                       from: preset.key === "all" ? "" : new Date(Date.now() - (preset.key === "7d" ? 7 : preset.key === "30d" ? 30 : 90) * 86400000)
                         .toISOString()
                         .slice(0, 10),
                       to: preset.key === "all" ? "" : new Date().toISOString().slice(0, 10),
-                    })}`,
+                    }),
                   )
                 }
                 className={`rounded-full px-3 py-1.5 transition ${
@@ -216,10 +254,10 @@ export default function InvoicesClient() {
       {data?.ok && items.length > 0 && (
         <>
           <div className="grid gap-3 md:grid-cols-5">
-            <SummaryCard label="Receita bruta" value={formatMoney(summary.grossCents / 100)} tone="bright" />
-            <SummaryCard label="Descontos" value={formatMoney(summary.discountCents / 100)} tone="muted" />
-            <SummaryCard label="Taxas" value={formatMoney(summary.platformFeeCents / 100)} tone="muted" helper="Inclui Stripe + ORYA (se aplicável)." />
-            <SummaryCard label="Líquido" value={formatMoney(summary.netCents / 100)} tone="success" helper="Valor que recebes." />
+            <SummaryCard label="Receita bruta" value={formatEuro(summary.grossCents / 100)} tone="bright" />
+            <SummaryCard label="Descontos" value={formatEuro(summary.discountCents / 100)} tone="muted" />
+            <SummaryCard label="Taxas" value={formatEuro(summary.platformFeeCents / 100)} tone="muted" helper="Inclui Stripe + ORYA (se aplicável)." />
+            <SummaryCard label="Líquido" value={formatEuro(summary.netCents / 100)} tone="success" helper="Valor que recebes." />
             <SummaryCard label="Bilhetes" value={`${totalTickets}`} tone="slate" helper="Total no intervalo." />
           </div>
 
@@ -248,10 +286,10 @@ export default function InvoicesClient() {
                       </td>
                       <td className="py-3 pr-3 text-[12px] text-white/70">{formatDateTime(sale.createdAt)}</td>
                       <td className="py-3 pr-3 text-[12px]">{tickets}</td>
-                      <td className="py-3 pr-3">{formatMoney(sale.subtotalCents / 100)}</td>
-                      <td className="py-3 pr-3">{formatMoney(sale.discountCents / 100)}</td>
-                      <td className="py-3 pr-3">{formatMoney(sale.platformFeeCents / 100)}</td>
-                      <td className="py-3 pr-3 font-semibold text-white">{formatMoney(sale.netCents / 100)}</td>
+                      <td className="py-3 pr-3">{formatEuro(sale.subtotalCents / 100)}</td>
+                      <td className="py-3 pr-3">{formatEuro(sale.discountCents / 100)}</td>
+                      <td className="py-3 pr-3">{formatEuro(sale.platformFeeCents / 100)}</td>
+                      <td className="py-3 pr-3 font-semibold text-white">{formatEuro(sale.netCents / 100)}</td>
                       <td className="py-3 pr-3 text-[11px]">
                         <span className="rounded-full border border-white/25 bg-white/10 px-2.5 py-0.5 text-white shadow-[0_8px_18px_rgba(0,0,0,0.35)]">
                           {sale.event?.payoutMode ?? "STANDARD"}

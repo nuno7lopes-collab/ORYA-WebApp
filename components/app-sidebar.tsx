@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
-import { SidebarRail, useSidebar } from "@/components/ui/sidebar";
+import { SidebarRail } from "@/components/ui/sidebar";
 import { supabaseBrowser } from "@/lib/supabaseBrowser";
 import { cn } from "@/lib/utils";
 
@@ -13,11 +13,12 @@ type OrgOption = {
   organizer: {
     id: number;
     username: string | null;
-    publicName?: string | null;
-    displayName: string | null;
+    publicName: string | null;
     businessName: string | null;
     city: string | null;
     entityType: string | null;
+    organizationKind?: string | null;
+    organizationCategory?: string | null;
     status: string | null;
     brandingAvatarUrl?: string | null;
   };
@@ -28,6 +29,8 @@ type ActiveOrg = {
   name: string;
   username: string | null;
   avatarUrl: string | null;
+  organizationKind?: string | null;
+  organizationCategory?: string | null;
 };
 
 type UserInfo = {
@@ -37,22 +40,75 @@ type UserInfo = {
   avatarUrl?: string | null;
 };
 
-const baseTabHref = (tab: string) => {
-  if (tab === "settings") return "/organizador/settings";
-  return `/organizador?tab=${tab}`;
+type ObjectiveTab = "create" | "manage" | "promote" | "analyze";
+type OrgCategory = "EVENTOS" | "PADEL" | "VOLUNTARIADO";
+
+const OBJECTIVE_TABS = ["create", "manage", "promote", "analyze"] as const;
+
+const baseTabHref = (tab: ObjectiveTab) =>
+  tab === "create" ? "/organizador?tab=overview" : `/organizador?tab=${tab}`;
+
+const mapTabToObjective = (tab?: string | null): ObjectiveTab => {
+  if (OBJECTIVE_TABS.includes((tab as ObjectiveTab) || "create")) {
+    return (tab as ObjectiveTab) || "create";
+  }
+  switch (tab) {
+    case "overview":
+      return "create";
+    case "events":
+    case "padel":
+    case "staff":
+      return "manage";
+    case "marketing":
+      return "promote";
+    case "sales":
+    case "finance":
+    case "invoices":
+      return "analyze";
+    default:
+      return "create";
+  }
 };
 
-function buildNav(currentKey: string) {
-  const linkClass = (key: string) =>
+const normalizeOrganizationCategory = (category?: string | null): OrgCategory => {
+  const normalized = category?.toUpperCase() ?? "";
+  if (normalized === "PADEL") return "PADEL";
+  if (normalized === "VOLUNTARIADO") return "VOLUNTARIADO";
+  return "EVENTOS";
+};
+
+const CATEGORY_LABELS: Record<OrgCategory, string> = {
+  EVENTOS: "Eventos",
+  PADEL: "Padel",
+  VOLUNTARIADO: "Voluntariado",
+};
+
+const CATEGORY_CTA: Record<OrgCategory, { label: string; href: string }> = {
+  EVENTOS: { label: "Criar evento", href: "/organizador/eventos/novo" },
+  PADEL: { label: "Criar evento", href: "/organizador/eventos/novo?preset=padel" },
+  VOLUNTARIADO: { label: "Criar evento", href: "/organizador/eventos/novo?preset=voluntariado" },
+};
+
+function buildNav() {
+  const linkClass = (active: boolean) =>
     cn(
       "flex items-center justify-between rounded-xl px-3 py-2 transition border border-transparent text-sm",
-      currentKey === key
+      active
+        ? "bg-white/10 text-white font-semibold border-white/20 shadow-[0_10px_40px_rgba(0,0,0,0.35)]"
+        : "text-white/75 hover:bg-white/10 hover:text-white",
+    );
+
+  const subLinkClass = (active: boolean) =>
+    cn(
+      "flex items-center justify-between rounded-xl px-3 py-2 transition border border-transparent text-sm",
+      active
         ? "bg-white/10 text-white font-semibold border-white/20 shadow-[0_10px_40px_rgba(0,0,0,0.35)]"
         : "text-white/75 hover:bg-white/10 hover:text-white",
     );
 
   return {
     linkClass,
+    subLinkClass,
   };
 }
 
@@ -68,25 +124,38 @@ export function AppSidebar({
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const tabParamRaw = searchParams?.get("tab") || "overview";
-  const allowedTabs = ["overview", "events", "sales", "finance", "invoices", "marketing", "padel", "staff", "settings"] as const;
-  const tabParam = allowedTabs.includes(tabParamRaw as any) ? tabParamRaw : "overview";
-  const [catsOpen, setCatsOpen] = useState(true);
+  const tabParamRaw = searchParams?.get("tab");
+  const tabParam = mapTabToObjective(tabParamRaw);
   const [orgOpen, setOrgOpen] = useState(false);
   const [userOpen, setUserOpen] = useState(false);
   const [switchingOrgId, setSwitchingOrgId] = useState<number | null>(null);
 
-  const currentKey = useMemo(() => {
-    if (pathname?.startsWith("/organizador/pagamentos/invoices")) return "invoices";
-    if (pathname?.startsWith("/organizador/eventos/novo") || pathname?.endsWith("/edit")) return "create";
-    if (pathname?.startsWith("/organizador/eventos/")) return "events";
-    if (pathname?.startsWith("/organizador/staff")) return "staff";
-    if (pathname?.startsWith("/organizador/settings")) return "settings";
+  const currentObjective = useMemo(() => {
+    if (pathname?.startsWith("/organizador/updates")) return "promote";
+    if (pathname?.startsWith("/organizador/inscricoes")) return "manage";
+    if (pathname?.startsWith("/organizador/calendario")) return "manage";
+    if (pathname?.startsWith("/organizador/scan")) return "manage";
+    if (pathname?.startsWith("/organizador/staff")) return "manage";
+    if (pathname?.startsWith("/organizador/settings")) return "manage";
+    if (pathname?.startsWith("/organizador/faturacao")) return "analyze";
+    if (pathname?.startsWith("/organizador/pagamentos/invoices")) return "analyze";
+    if (pathname?.startsWith("/organizador/tournaments/") && pathname?.endsWith("/finance")) return "analyze";
+    if (pathname?.startsWith("/organizador/tournaments/")) return "manage";
+    if (pathname?.startsWith("/organizador/eventos/novo") || pathname?.startsWith("/organizador/padel/torneios/novo")) return "create";
+    if (pathname?.startsWith("/organizador/eventos/")) return "manage";
+    if (pathname?.startsWith("/organizador/padel")) return "manage";
     if (pathname === "/organizador") return tabParam;
     return tabParam;
   }, [pathname, tabParam]);
 
-  const { linkClass } = buildNav(currentKey);
+  const currentSubKey = useMemo(() => {
+    if (pathname?.startsWith("/organizador/updates")) return "updates";
+    if (pathname?.startsWith("/organizador/staff")) return "staff";
+    if (pathname?.startsWith("/organizador/settings")) return "settings";
+    return null;
+  }, [pathname]);
+
+  const { linkClass, subLinkClass } = buildNav();
 
   const orgDisplay = activeOrg?.name ?? "Organização";
   const orgAvatar = activeOrg?.avatarUrl ?? null;
@@ -129,8 +198,11 @@ export function AppSidebar({
   const orgList = orgOptions ?? [];
   const orgCurrent = orgList.find((o) => o.organizerId === activeOrg?.id) ?? orgList[0] ?? null;
   const orgButtonAvatar = orgCurrent?.organizer.brandingAvatarUrl || orgAvatar;
-
-  const { width } = useSidebar();
+  const orgCategoryValue =
+    orgCurrent?.organizer.organizationCategory ?? activeOrg?.organizationCategory ?? null;
+  const orgCategory = normalizeOrganizationCategory(orgCategoryValue);
+  const categoryLabel = CATEGORY_LABELS[orgCategory];
+  const categoryCta = CATEGORY_CTA[orgCategory];
 
   return (
     <>
@@ -150,22 +222,18 @@ export function AppSidebar({
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={orgButtonAvatar}
-                  alt={orgCurrent?.organizer.displayName || orgDisplay || "Organização"}
+                  alt={orgCurrent?.organizer.publicName || orgDisplay || "Organização"}
                   className="h-8 w-8 rounded-lg border border-white/10 object-cover"
                 />
               ) : (
                 <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-[11px] font-semibold">
-                  {(orgCurrent?.organizer.publicName ||
-                    orgCurrent?.organizer.displayName ||
-                    orgCurrent?.organizer.businessName ||
-                    "O")[0]}
+                  {(orgCurrent?.organizer.publicName || orgCurrent?.organizer.businessName || "O")[0]}
                 </span>
               )}
               <div className="text-left">
                 <p className="text-[11px] uppercase tracking-[0.18em] text-white/50">Organização</p>
                 <p className="text-sm font-semibold text-white">
                   {orgCurrent?.organizer.publicName ||
-                    orgCurrent?.organizer.displayName ||
                     orgCurrent?.organizer.businessName ||
                     "Selecionar"}
                 </p>
@@ -191,7 +259,7 @@ export function AppSidebar({
                     )}
                   >
                     <span className="text-left">
-                      {item.organizer.publicName || item.organizer.displayName || item.organizer.businessName}
+                      {item.organizer.publicName || item.organizer.businessName}
                     </span>
                     <div className="flex items-center gap-1 text-[10px] uppercase tracking-[0.12em]">
                       <span className="rounded-full border border-white/15 bg-white/5 px-2 py-[1px] text-white/70">
@@ -217,68 +285,42 @@ export function AppSidebar({
 
       {/* Navegação */}
       <nav className="mt-6 flex-1 space-y-3 px-3 text-sm">
-        <p className="px-2 text-[10px] uppercase tracking-[0.24em] text-white/45">Operação</p>
-        <Link href={baseTabHref("overview")} className={linkClass("overview")} data-tour="overview">
-          <span>Resumos</span>
-        </Link>
-        <Link href={baseTabHref("events")} className={linkClass("events")}>
-          <span>Eventos</span>
-        </Link>
-        <Link href="/organizador/eventos/novo" className={linkClass("create")} data-tour="criar-evento">
-          <span>Criar Evento</span>
-        </Link>
-        <Link href={baseTabHref("sales")} className={linkClass("sales")}>
-          <span>Vendas</span>
-        </Link>
-        <Link href={baseTabHref("finance")} className={linkClass("finance")} data-tour="finance">
-          <span>Finanças</span>
-        </Link>
-        <Link href={baseTabHref("invoices")} className={linkClass("invoices")}>
-          <span>Faturação</span>
-        </Link>
-        <Link href={baseTabHref("marketing")} className={linkClass("marketing")} data-tour="marketing">
-          <span>Marketing</span>
-        </Link>
+        <div className="rounded-xl border border-white/12 bg-white/5 px-3 py-2 text-sm text-white/80 backdrop-blur-xl">
+          <p className="text-[10px] uppercase tracking-[0.24em] text-white/55">Categoria ativa</p>
+          <p className="text-sm font-semibold text-white">{categoryLabel}</p>
+        </div>
 
-        <div className="border-t border-white/10 pt-3" />
-        <button
-          type="button"
-          onClick={() => setCatsOpen((v) => !v)}
-          className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-[11px] uppercase tracking-[0.22em] text-white/70 transition hover:bg-white/10"
+        <Link
+          href={categoryCta.href}
+          className="inline-flex w-full items-center justify-center rounded-xl bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-3 py-2 text-sm font-semibold text-black shadow-[0_0_20px_rgba(107,255,255,0.35)] transition hover:scale-[1.01]"
+          data-tour="criar-evento"
         >
-          <span>Categorias</span>
-          <span className="text-white/60">{catsOpen ? "▴" : "▾"}</span>
-        </button>
-        {catsOpen && (
-          <div className="space-y-1">
-            <Link href={baseTabHref("padel")} className={linkClass("padel")}>
-              <span>Padel</span>
-            </Link>
-            {[
-              { key: "restauracao", label: "Restauração" },
-              { key: "solidario", label: "Solidário" },
-              { key: "festa", label: "Festa" },
-            ].map((item) => (
-              <div
-                key={item.key}
-                className="flex items-center justify-between rounded-xl border border-white/5 bg-white/5 px-3 py-2 text-white/65"
-              >
-                <span>{item.label}</span>
-                <span className="rounded-full border border-amber-300/30 bg-amber-400/15 px-2 py-[1px] text-[10px] uppercase tracking-[0.12em] text-amber-100">
-                  Em breve
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
+          {categoryCta.label}
+        </Link>
 
-        <p className="px-2 pt-3 text-[10px] uppercase tracking-[0.24em] text-white/45">Estrutura</p>
-        <Link href={baseTabHref("staff")} className={linkClass("staff")} data-tour="staff">
-          <span>Staff</span>
+        <p className="px-2 pt-2 text-[10px] uppercase tracking-[0.24em] text-white/45">Objetivo</p>
+        <Link href={baseTabHref("create")} className={linkClass(currentObjective === "create")} data-tour="overview">
+          <span>Resumo</span>
         </Link>
-        <Link href={baseTabHref("settings")} className={linkClass("settings")}>
-          <span>Definições</span>
+        <Link href={baseTabHref("manage")} className={linkClass(currentObjective === "manage")}>
+          <span>Gerir</span>
         </Link>
+        <Link href={baseTabHref("promote")} className={linkClass(currentObjective === "promote")} data-tour="marketing">
+          <span>Promover</span>
+        </Link>
+        <Link href={baseTabHref("analyze")} className={linkClass(currentObjective === "analyze")} data-tour="finance">
+          <span>Analisar</span>
+        </Link>
+
+        <div className="pt-2">
+          <p className="px-2 text-[10px] uppercase tracking-[0.24em] text-white/45">Secundário</p>
+          <Link href="/organizador/staff" className={subLinkClass(currentSubKey === "staff")} data-tour="staff">
+            <span>Staff</span>
+          </Link>
+          <Link href="/organizador/settings" className={subLinkClass(currentSubKey === "settings")}>
+            <span>Definições</span>
+          </Link>
+        </div>
       </nav>
 
       {/* Utilizador */}

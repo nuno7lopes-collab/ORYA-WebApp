@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
+import { clearUsernameForOwner } from "@/lib/globalUsernames";
 
 type Body = {
   visibility?: "PUBLIC" | "PRIVATE";
@@ -52,6 +53,11 @@ export async function PATCH(req: NextRequest) {
     if (wantsHardDelete) {
       // Libera username e marca soft-delete
       const existing = await prisma.profile.findUnique({ where: { id: user.id }, select: { username: true } });
+      try {
+        await clearUsernameForOwner({ ownerType: "user", ownerId: user.id });
+      } catch (err) {
+        console.warn("[settings/save] falha ao libertar username global", err);
+      }
       if (existing?.username) {
         await prisma.profile.update({
           where: { id: user.id },

@@ -91,16 +91,25 @@ export default function PadelTournamentSection({ eventId, organizerId }: Props) 
 
   async function generateKnockout() {
     setError(null);
+    if (matches.some((m) => m.roundType === "KNOCKOUT")) {
+      setError("Eliminatórias já foram geradas.");
+      return;
+    }
     const totalGroupMatches = matches.filter((m) => m.roundType === "GROUPS").length;
     const finishedGroupMatches = matches.filter((m) => m.roundType === "GROUPS" && m.status === "DONE").length;
-    if (totalGroupMatches > 0 && finishedGroupMatches < totalGroupMatches) {
-      setError(`Faltam ${totalGroupMatches - finishedGroupMatches} jogos de grupos para fechar classificação.`);
-      return;
+    const missing = totalGroupMatches - finishedGroupMatches;
+    let allowIncomplete = false;
+    if (totalGroupMatches > 0 && missing > 0) {
+      const confirmed = window.confirm(
+        `Faltam ${missing} jogos de grupos para fechar classificação. Gerar eliminatórias mesmo assim? (apenas admins)`
+      );
+      if (!confirmed) return;
+      allowIncomplete = true;
     }
     const res = await fetch("/api/padel/matches/generate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ eventId, format, phase: "KNOCKOUT" }),
+      body: JSON.stringify({ eventId, format, phase: "KNOCKOUT", allowIncomplete }),
     });
     const json = await res.json();
     if (!res.ok || !json?.ok) {
@@ -150,6 +159,10 @@ export default function PadelTournamentSection({ eventId, organizerId }: Props) 
 
   const generateMatches = async () => {
     setError(null);
+    if (matches.some((m) => m.roundType === "GROUPS")) {
+      setError("Jogos de grupos já foram gerados.");
+      return;
+    }
     const res = await fetch("/api/padel/matches/generate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -286,23 +299,19 @@ export default function PadelTournamentSection({ eventId, organizerId }: Props) 
             <p className="text-[12px] uppercase tracking-[0.2em] text-white/60">Jogos</p>
             <button
               onClick={generateMatches}
-              className="rounded-full bg-white/10 px-3 py-1.5 text-[12px] text-white hover:bg-white/20"
+              className="rounded-full bg-white/10 px-3 py-1.5 text-[12px] text-white hover:bg-white/20 disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={matches.some((m) => m.roundType === "GROUPS")}
+              title={matches.some((m) => m.roundType === "GROUPS") ? "Jogos de grupos já existem." : undefined}
             >
               Gerar jogos
             </button>
             <button
               onClick={generateKnockout}
               className="rounded-full bg-white/10 px-3 py-1.5 text-[12px] text-white hover:bg-white/20 disabled:opacity-50 disabled:cursor-not-allowed"
-              disabled={
-                matches.filter((m) => m.roundType === "GROUPS").length > 0 &&
-                matches.filter((m) => m.roundType === "GROUPS" && m.status === "DONE").length <
-                  matches.filter((m) => m.roundType === "GROUPS").length
-              }
+              disabled={matches.some((m) => m.roundType === "KNOCKOUT")}
               title={
-                matches.filter((m) => m.roundType === "GROUPS").length > 0 &&
-                matches.filter((m) => m.roundType === "GROUPS" && m.status === "DONE").length <
-                  matches.filter((m) => m.roundType === "GROUPS").length
-                  ? "Termina os jogos dos grupos antes de gerar eliminatórias"
+                matches.some((m) => m.roundType === "KNOCKOUT")
+                  ? "Eliminatórias já foram geradas."
                   : undefined
               }
             >
