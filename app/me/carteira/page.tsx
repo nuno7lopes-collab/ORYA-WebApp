@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState, useEffect } from "react";
+import { Suspense, useMemo, useState, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import { useWallet } from "@/app/components/wallet/useWallet";
 import { WalletCard } from "@/app/components/wallet/WalletCard";
@@ -10,7 +10,7 @@ import TicketLiveQr from "@/app/components/tickets/TicketLiveQr";
 
 type FilterKey = "ALL" | "ACTIVE" | "USED" | "REFUNDED" | "REVOKED" | "SUSPENDED";
 
-export default function CarteiraPage() {
+function CarteiraContent() {
   const { items, loading, error, authRequired, refetch } = useWallet();
   const [filter, setFilter] = useState<FilterKey>("ALL");
   const { user, isLoading: userLoading } = useUser();
@@ -409,5 +409,19 @@ export default function CarteiraPage() {
         )}
       </section>
     </main>
+  );
+}
+
+export default function CarteiraPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="relative orya-body-bg min-h-screen w-full overflow-hidden text-white flex items-center justify-center px-4">
+          <p className="text-sm text-white/70">A carregar carteira...</p>
+        </main>
+      }
+    >
+      <CarteiraContent />
+    </Suspense>
   );
 }
