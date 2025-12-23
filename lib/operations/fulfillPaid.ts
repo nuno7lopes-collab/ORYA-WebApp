@@ -238,7 +238,6 @@ export async function fulfillPaidIntent(intent: IntentLike, stripeEventId?: stri
   });
 
   // Enfileirar email de recibo se houver email associado
-  const ownerUserId = userId;
   const emailDedupe = ownerEmail
     ? `${purchaseId}:${ownerEmail}`
     : ownerUserId

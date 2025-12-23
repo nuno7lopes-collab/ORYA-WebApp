@@ -203,37 +203,37 @@ export default function OrganizerTournamentLivePage({ params }: PageProps) {
     <div className="space-y-4">
       <div className="space-y-4 rounded-2xl border border-white/10 bg-black/40 p-4">
         <div className="flex items-center justify-between gap-2">
-        <div>
-          <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Live Torneio</p>
-          <h1 className="text-xl font-semibold text-white">{tournament?.event?.title ?? "Torneio"}</h1>
-          <p className="text-white/70 text-sm">Formato: {tournament.format}</p>
-        </div>
-        <div className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white/80">
-          <p>Jogos: {flatMatches.length}</p>
-          <p>Pendentes {summary.pending} · Em jogo {summary.inProgress} · Terminados {summary.done}</p>
-        </div>
+          <div>
+            <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Live Torneio</p>
+            <h1 className="text-xl font-semibold text-white">{tournament?.event?.title ?? "Torneio"}</h1>
+            <p className="text-white/70 text-sm">Formato: {tournament.format}</p>
+          </div>
+          <div className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white/80">
+            <p>Jogos: {flatMatches.length}</p>
+            <p>Pendentes {summary.pending} · Em jogo {summary.inProgress} · Terminados {summary.done}</p>
+          </div>
         </div>
 
-      {warnings.length > 0 && (
-        <div className="rounded-xl border border-amber-400/40 bg-amber-400/10 p-3 text-sm text-amber-100">
-          <p className="font-semibold">Avisos</p>
-          <ul className="list-disc pl-4 space-y-1">
-            {warnings.map((w: any, idx: number) => (
-              <li key={`${w.type}-${w.matchId ?? w.pairingId}-${idx}`}>
-                {w.type === "REQUIRES_ACTION" && <>Dupla #{w.pairingId} exige ação</>}
-                {w.type === "MISSING_COURT" && <>Jogo #{w.matchId}: sem court</>}
-                {w.type === "MISSING_START" && <>Jogo #{w.matchId}: sem horário definido</>}
-                {w.type === "INVALID_SCORE" && <>Jogo #{w.matchId}: score inválido</>}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+        {warnings.length > 0 && (
+          <div className="rounded-xl border border-amber-400/40 bg-amber-400/10 p-3 text-sm text-amber-100">
+            <p className="font-semibold">Avisos</p>
+            <ul className="list-disc pl-4 space-y-1">
+              {warnings.map((w: any, idx: number) => (
+                <li key={`${w.type}-${w.matchId ?? w.pairingId}-${idx}`}>
+                  {w.type === "REQUIRES_ACTION" && <>Dupla #{w.pairingId} exige ação</>}
+                  {w.type === "MISSING_COURT" && <>Jogo #{w.matchId}: sem court</>}
+                  {w.type === "MISSING_START" && <>Jogo #{w.matchId}: sem horário definido</>}
+                  {w.type === "INVALID_SCORE" && <>Jogo #{w.matchId}: score inválido</>}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
-      <Filters stages={stages} setFilters={setFilters} />
+        <Filters stages={stages} setFilters={setFilters} />
 
         <div className="grid gap-4 md:grid-cols-2">
-        {stages.map((stage: any) => (
+          {stages.map((stage: any) => (
           <div key={stage.id} className="rounded-xl border border-white/10 bg-white/5 p-3 space-y-3">
             <div className="flex items-center justify-between">
               <div>
@@ -302,7 +302,8 @@ export default function OrganizerTournamentLivePage({ params }: PageProps) {
               </div>
             )}
           </div>
-        ))}
+          ))}
+        </div>
       </div>
     </div>
   );
