@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { getActiveOrganizerForUser } from "@/lib/organizerContext";
+import { ensureLegacyOrganizerMemberships, getActiveOrganizerForUser } from "@/lib/organizerContext";
 import OrganizationsHubClient from "../../organizations/OrganizationsHubClient";
 import { cookies } from "next/headers";
 
@@ -36,11 +36,21 @@ export default async function OrganizationsHubPage() {
   let orgs: OrgPayload[] = [];
 
   try {
-    const memberships = await prisma.organizerMember.findMany({
+    let memberships = await prisma.organizerMember.findMany({
       where: { userId: user.id },
       include: { organizer: true },
       orderBy: [{ lastUsedAt: "desc" }, { createdAt: "asc" }],
     });
+    if (memberships.length === 0) {
+      const legacyCount = await ensureLegacyOrganizerMemberships(user.id);
+      if (legacyCount > 0) {
+        memberships = await prisma.organizerMember.findMany({
+          where: { userId: user.id },
+          include: { organizer: true },
+          orderBy: [{ lastUsedAt: "desc" }, { createdAt: "asc" }],
+        });
+      }
+    }
 
     orgs = memberships
       .filter((m) => m.organizer)

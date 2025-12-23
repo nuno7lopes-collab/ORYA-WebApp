@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { OrganizerStatus, OrganizerMemberRole } from "@prisma/client";
 import { normalizeAndValidateUsername, setUsernameForOwner, UsernameTakenError } from "@/lib/globalUsernames";
 import { requireUser } from "@/lib/auth/requireUser";
+import { ensureLegacyOrganizerMemberships } from "@/lib/organizerContext";
 import {
   DEFAULT_ORGANIZATION_CATEGORY,
   DEFAULT_ORGANIZATION_MODULES,
@@ -15,11 +16,21 @@ export async function GET() {
   try {
     const user = await requireUser();
 
-    const memberships = await prisma.organizerMember.findMany({
+    let memberships = await prisma.organizerMember.findMany({
       where: { userId: user.id },
       include: { organizer: true },
       orderBy: [{ lastUsedAt: "desc" }, { createdAt: "asc" }],
     });
+    if (memberships.length === 0) {
+      const legacyCount = await ensureLegacyOrganizerMemberships(user.id);
+      if (legacyCount > 0) {
+        memberships = await prisma.organizerMember.findMany({
+          where: { userId: user.id },
+          include: { organizer: true },
+          orderBy: [{ lastUsedAt: "desc" }, { createdAt: "asc" }],
+        });
+      }
+    }
 
     const organizerIds = (memberships || [])
       .map((m) => m.organizerId)

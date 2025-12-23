@@ -34,6 +34,7 @@ type TicketTypeUI = {
 type EventEditClientProps = {
   event: {
     id: number;
+    slug: string;
     title: string;
     description: string | null;
     startsAt: string;
@@ -43,19 +44,39 @@ type EventEditClientProps = {
     address: string | null;
     templateType: string | null;
     isFree: boolean;
+    inviteOnly: boolean;
     coverImageUrl: string | null;
+    liveHubMode: "DEFAULT" | "PREMIUM";
+    liveStreamUrl: string | null;
     feeModeOverride?: string | null;
     platformFeeBpsOverride?: number | null;
     platformFeeFixedCentsOverride?: number | null;
     payoutMode?: string | null;
   };
+  organizer: {
+    id: number;
+    liveHubPremiumEnabled: boolean;
+  };
   tickets: TicketTypeUI[];
   eventHasTickets?: boolean;
 };
 
+type EventInvite = {
+  id: number;
+  targetIdentifier: string;
+  targetUserId?: string | null;
+  createdAt?: string;
+  targetUser?: {
+    id: string;
+    username: string | null;
+    fullName: string | null;
+    avatarUrl: string | null;
+  } | null;
+};
+
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
-export function EventEditClient({ event, tickets }: EventEditClientProps) {
+export function EventEditClient({ event, organizer, tickets }: EventEditClientProps) {
   const { user, profile } = useUser();
   const { data: organizerStatus } = useSWR<{ paymentsStatus?: string }>(
     user ? "/api/organizador/me" : null,
@@ -71,12 +92,27 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
   const [address, setAddress] = useState(event.address ?? "");
   const [templateType] = useState(event.templateType ?? "OTHER");
   const [isFree] = useState(event.isFree);
+  const [inviteOnly, setInviteOnly] = useState(event.inviteOnly);
   const [coverUrl, setCoverUrl] = useState<string | null>(event.coverImageUrl);
+  const [liveHubMode, setLiveHubMode] = useState<"DEFAULT" | "PREMIUM">(event.liveHubMode ?? "DEFAULT");
+  const [liveStreamUrl, setLiveStreamUrl] = useState(event.liveStreamUrl ?? "");
   const [uploadingCover, setUploadingCover] = useState(false);
   const [ticketList, setTicketList] = useState<TicketTypeUI[]>(tickets);
   const [currentStep, setCurrentStep] = useState(0);
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<"title" | "startsAt" | "endsAt" | "locationCity" | "locationName", string>>>({});
   const [errorSummary, setErrorSummary] = useState<{ field: string; message: string }[]>([]);
+  const [inviteInput, setInviteInput] = useState("");
+  const [inviteError, setInviteError] = useState<string | null>(null);
+  const [inviteSaving, setInviteSaving] = useState(false);
+  const [inviteRemovingId, setInviteRemovingId] = useState<number | null>(null);
+  const { data: invitesData, mutate: mutateInvites, isLoading: invitesLoading } = useSWR<{
+    ok?: boolean;
+    items?: EventInvite[];
+  }>(user ? `/api/organizador/events/${event.id}/invites` : null, fetcher, { revalidateOnFocus: false });
+  const invites = useMemo(
+    () => (Array.isArray(invitesData?.items) ? invitesData.items : []),
+    [invitesData?.items],
+  );
   const steps = useMemo(
     () =>
       isFree
@@ -135,6 +171,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
   };
   const roles = Array.isArray(profile?.roles) ? (profile?.roles as string[]) : [];
   const isAdmin = roles.some((r) => r?.toLowerCase() === "admin");
+  const canUsePremium = isAdmin || organizer.liveHubPremiumEnabled;
   const payoutMode = (event.payoutMode ?? "ORGANIZER").toUpperCase();
   const isPlatformPayout = payoutMode === "PLATFORM";
   const paymentsStatusRaw = isAdmin ? "READY" : organizerStatus?.paymentsStatus ?? "NO_STRIPE";
@@ -146,6 +183,16 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
     [ticketList, newTicket.priceEuro],
   );
   const templateLabel = templateType === "PADEL" ? "Padel" : "Evento padrão";
+  const liveHubPreviewUrl = `/eventos/${event.slug}/live`;
+
+  const handleLiveHubModeChange = (value: "DEFAULT" | "PREMIUM") => {
+    if (value === "PREMIUM" && !canUsePremium) {
+      pushToast("O modo premium ainda não está disponível para esta organização.");
+      setLiveHubMode("DEFAULT");
+      return;
+    }
+    setLiveHubMode(value);
+  };
   const FormAlert = ({
     variant,
     title,
@@ -310,6 +357,59 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
     }
   };
 
+  const handleAddInvite = async () => {
+    if (!inviteInput.trim()) {
+      setInviteError("Indica um email ou @username.");
+      return;
+    }
+    setInviteSaving(true);
+    setInviteError(null);
+    try {
+      const res = await fetch(`/api/organizador/events/${event.id}/invites`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ identifier: inviteInput.trim() }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.error || "Erro ao criar convite.");
+      }
+      setInviteInput("");
+      await mutateInvites();
+      pushToast("Convite adicionado.", "success");
+    } catch (err) {
+      console.error("Erro ao criar convite", err);
+      setInviteError(err instanceof Error ? err.message : "Erro ao criar convite.");
+      pushToast(err instanceof Error ? err.message : "Erro ao criar convite.");
+    } finally {
+      setInviteSaving(false);
+    }
+  };
+
+  const handleRemoveInvite = async (inviteId: number) => {
+    setInviteRemovingId(inviteId);
+    setInviteError(null);
+    try {
+      const res = await fetch(`/api/organizador/events/${event.id}/invites`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ inviteId }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.error || "Erro ao remover convite.");
+      }
+      await mutateInvites();
+      pushToast("Convite removido.", "success");
+    } catch (err) {
+      console.error("Erro ao remover convite", err);
+      setInviteError(err instanceof Error ? err.message : "Erro ao remover convite.");
+      pushToast(err instanceof Error ? err.message : "Erro ao remover convite.");
+    } finally {
+      setInviteRemovingId(null);
+    }
+  };
+
   const handleSave = async () => {
     setStripeAlert(null);
     setValidationAlert(null);
@@ -370,7 +470,10 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
           address,
           templateType,
           isFree,
+          inviteOnly,
           coverImageUrl: coverUrl,
+          liveHubMode,
+          liveStreamUrl: liveStreamUrl.trim() || null,
           feeModeOverride: null,
           platformFeeBpsOverride: null,
           platformFeeFixedCentsOverride: null,
@@ -543,6 +646,55 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
           />
         </div>
 
+        <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">LiveHub</p>
+              <p className="text-sm text-white/80">Configura o modo e o stream do LiveHub.</p>
+            </div>
+            <a
+              href={liveHubPreviewUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="rounded-full border border-white/20 px-3 py-1 text-[11px] font-semibold text-white/80 hover:border-white/40"
+            >
+              Abrir LiveHub
+            </a>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1">
+              <label className="text-sm font-medium">Modo</label>
+              <select
+                value={liveHubMode}
+                onChange={(e) => handleLiveHubModeChange(e.target.value as "DEFAULT" | "PREMIUM")}
+                className="w-full rounded-md border border-white/15 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-white/60"
+              >
+                <option value="DEFAULT">Default (categoria)</option>
+                <option value="PREMIUM" disabled={!canUsePremium}>
+                  Premium (personalizado)
+                </option>
+              </select>
+              {!canUsePremium && (
+                <p className="text-[11px] text-white/55">
+                  Premium reservado para organizações com acesso ativo.
+                </p>
+              )}
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-sm font-medium">URL da livestream</label>
+              <input
+                value={liveStreamUrl}
+                onChange={(e) => setLiveStreamUrl(e.target.value)}
+                placeholder="https://youtu.be/..."
+                className="w-full rounded-md border border-white/15 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-white/60"
+              />
+              <p className="text-[11px] text-white/55">Se vazio, o LiveHub mostra o módulo de vídeo como indisponível.</p>
+            </div>
+          </div>
+        </div>
+
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="space-y-1">
             <label className="text-sm font-medium">Local *</label>
@@ -609,6 +761,95 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
               </span>
             )}
           </p>
+        </div>
+        <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-3 text-sm text-white/75 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="font-semibold text-white">Só por convite</p>
+              <p className="text-[12px] text-white/65">
+                Controla quem pode aceder ao checkout e às inscrições.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setInviteOnly((prev) => !prev);
+                setInviteError(null);
+              }}
+              className={`rounded-full border px-3 py-1 text-[11px] font-semibold ${
+                inviteOnly
+                  ? "border-emerald-400/60 bg-emerald-500/15 text-emerald-100"
+                  : "border-white/20 bg-white/10 text-white/70"
+              }`}
+            >
+              {inviteOnly ? "Ativo" : "Desativado"}
+            </button>
+          </div>
+
+          {inviteOnly ? (
+            <div className="space-y-3">
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <input
+                  value={inviteInput}
+                  onChange={(e) => setInviteInput(e.target.value)}
+                  placeholder="Email ou @username (podes separar por vírgulas)"
+                  className="w-full rounded-md border border-white/15 bg-black/20 px-3 py-2 text-sm outline-none focus:border-white/60"
+                />
+                <button
+                  type="button"
+                  onClick={handleAddInvite}
+                  disabled={inviteSaving}
+                  className="rounded-full border border-white/20 px-4 py-2 text-[12px] font-semibold text-white hover:bg-white/10 disabled:opacity-60"
+                >
+                  {inviteSaving ? "A adicionar…" : "Adicionar"}
+                </button>
+              </div>
+              {inviteError && (
+                <p className="text-[11px] font-semibold text-amber-100">{inviteError}</p>
+              )}
+              <div className="space-y-2">
+                {invitesLoading && (
+                  <p className="text-[11px] text-white/60">A carregar convites…</p>
+                )}
+                {!invitesLoading && invites.length === 0 && (
+                  <p className="text-[11px] text-white/60">Sem convites adicionados.</p>
+                )}
+                {invites.map((invite) => {
+                  const resolvedUsername = invite.targetUser?.username
+                    ? `@${invite.targetUser.username}`
+                    : null;
+                  return (
+                    <div
+                      key={invite.id}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-[12px]"
+                    >
+                      <div className="flex flex-col">
+                        <span className="font-semibold text-white">
+                          {resolvedUsername ?? invite.targetIdentifier}
+                        </span>
+                        {resolvedUsername && (
+                          <span className="text-[11px] text-white/60">{invite.targetIdentifier}</span>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveInvite(invite.id)}
+                        disabled={inviteRemovingId === invite.id}
+                        className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/70 hover:bg-white/10 disabled:opacity-60"
+                      >
+                        {inviteRemovingId === invite.id ? "A remover…" : "Remover"}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+              <p className="text-[11px] text-white/55">
+                Convites por email permitem checkout como convidado. Eventos grátis continuam a exigir conta e username.
+              </p>
+            </div>
+          ) : (
+            <p className="text-[12px] text-white/60">Qualquer pessoa pode comprar ou inscrever-se.</p>
+          )}
         </div>
       </div>
     );

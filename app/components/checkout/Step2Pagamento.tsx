@@ -876,6 +876,17 @@ export default function Step2Pagamento() {
             return;
           }
 
+          if (respCode === "INVITE_REQUIRED") {
+            if (!cancelled) {
+              setError("Este evento é apenas por convite.");
+              const inviteCopy = userId
+                ? "O teu acesso não está na lista. Confirma o email/username convidado."
+                : "Inicia sessão com a conta convidada ou usa o email do convite.";
+              setAuthInfo(inviteCopy);
+            }
+            return;
+          }
+
           const msg =
             respCode === "PRICE_CHANGED"
               ? "Os preços foram atualizados. Revê a seleção e tenta novamente."

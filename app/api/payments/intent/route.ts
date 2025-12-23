@@ -23,6 +23,7 @@ import { parsePhoneNumberFromString } from "libphonenumber-js/min";
 import { computePromoDiscountCents } from "@/lib/promoMath";
 import { computePricing } from "@/lib/pricing";
 import { computeCombinedFees } from "@/lib/fees";
+import { normalizeEmail } from "@/lib/utils/email";
 import {
   checkoutMetadataSchema,
   createPurchaseId,
@@ -31,6 +32,7 @@ import {
 import { resolveOwner } from "@/lib/ownership/resolveOwner";
 import { enqueueOperation } from "@/lib/operations/enqueue";
 import { ensureEntriesForConfirmedPairing } from "@/domain/tournaments/ensureEntriesForConfirmedPairing";
+import { sanitizeUsername } from "@/lib/username";
 
 const FREE_PLACEHOLDER_INTENT_ID = "FREE_CHECKOUT";
 
@@ -260,11 +262,13 @@ export async function POST(req: NextRequest) {
         status: string;
         type: string;
         is_deleted: boolean;
+        is_free: boolean;
         is_test: boolean;
         ends_at: Date | null;
         fee_mode: string | null;
         fee_mode_override: string | null;
         organizer_id: number | null;
+        invite_only: boolean | null;
         org_type: string | null;
         org_stripe_account_id: string | null;
         org_stripe_charges_enabled: boolean | null;
@@ -284,11 +288,13 @@ export async function POST(req: NextRequest) {
         e.status,
         e.type,
         e.is_deleted,
+        e.is_free,
         e.is_test,
         e.ends_at,
         e.fee_mode,
         e.fee_mode_override,
         e.organizer_id,
+        e.invite_only,
         o.org_type AS org_type,
         o.stripe_account_id AS org_stripe_account_id,
         o.stripe_charges_enabled AS org_stripe_charges_enabled,
@@ -336,6 +342,51 @@ export async function POST(req: NextRequest) {
 
     if (event.ends_at && event.ends_at < new Date()) {
       return intentError("EVENT_ENDED", "Vendas encerradas: evento já terminou.", { httpStatus: 400 });
+    }
+
+    const inviteOnly = Boolean(event.invite_only);
+    if (inviteOnly && !isAdmin) {
+      if (!userId) {
+        return intentError("INVITE_REQUIRED", "Este evento é apenas por convite.", {
+          httpStatus: 403,
+          status: "FAILED",
+          nextAction: "LOGIN",
+          retryable: false,
+          extra: { inviteOnly: true },
+        });
+      }
+
+      const identifiers: string[] = [];
+      const userEmail = normalizeEmail(userData?.user?.email ?? null);
+      const username = profile?.username ? sanitizeUsername(profile.username) : null;
+
+      if (userEmail) identifiers.push(userEmail);
+      if (username) identifiers.push(username);
+
+      if (identifiers.length === 0) {
+        return intentError("INVITE_REQUIRED", "Este evento é apenas por convite.", {
+          httpStatus: 403,
+          status: "FAILED",
+          nextAction: "NONE",
+          retryable: false,
+          extra: { inviteOnly: true },
+        });
+      }
+
+      const inviteMatch = await prisma.eventInvite.findFirst({
+        where: { eventId: event.id, targetIdentifier: { in: identifiers } },
+        select: { id: true },
+      });
+
+      if (!inviteMatch) {
+        return intentError("INVITE_REQUIRED", "Este evento é apenas por convite.", {
+          httpStatus: 403,
+          status: "FAILED",
+          nextAction: "NONE",
+          retryable: false,
+          extra: { inviteOnly: true },
+        });
+      }
     }
 
     const padelConfig = await prisma.padelTournamentConfig.findUnique({

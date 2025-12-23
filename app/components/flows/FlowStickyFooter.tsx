@@ -1,5 +1,7 @@
 "use client";
 
+import { CTA_PRIMARY, CTA_SECONDARY } from "@/app/organizador/dashboardUi";
+
 type FlowStickyFooterProps = {
   backLabel?: string;
   nextLabel: string;
@@ -46,7 +48,7 @@ export function FlowStickyFooter({
               type="button"
               onClick={onBack}
               disabled={disableBack}
-              className="rounded-full border border-white/12 bg-white/5 px-4 py-2 text-sm font-semibold text-white/80 transition hover:border-white/22 hover:bg-white/8 disabled:opacity-55"
+              className={`${CTA_SECONDARY} disabled:opacity-55`}
             >
               {backLabel}
             </button>
@@ -54,7 +56,7 @@ export function FlowStickyFooter({
               type="button"
               onClick={onNext}
               disabled={nextIsDisabled || loading}
-              className="btn-orya px-6 text-sm font-semibold shadow-none"
+              className={`${CTA_PRIMARY} px-6 text-sm font-semibold shadow-none disabled:opacity-60`}
               title={disabledReason ?? ""}
             >
               {loading ? loadingLabel || "A processar..." : nextLabel}

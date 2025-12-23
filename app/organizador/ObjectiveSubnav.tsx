@@ -25,6 +25,8 @@ type ObjectiveSubnavProps = {
   category?: string | null;
   modules?: string[] | null;
   mode?: "dashboard" | "page";
+  variant?: "full" | "tabs";
+  hideWhenSingle?: boolean;
   className?: string;
 };
 
@@ -34,6 +36,8 @@ export default function ObjectiveSubnav({
   category,
   modules,
   mode,
+  variant = "full",
+  hideWhenSingle = true,
   className,
 }: ObjectiveSubnavProps) {
   const { data } = useSWR(category || modules ? null : "/api/organizador/me", fetcher);
@@ -51,41 +55,49 @@ export default function ObjectiveSubnav({
       ? activeId
       : "overview";
 
+  if (hideWhenSingle && sections.length <= 1) return null;
+
+  const tabs = (
+    <div className="flex flex-wrap gap-2 rounded-2xl border border-white/10 bg-white/5 px-2 py-2 text-sm shadow-[0_16px_50px_rgba(0,0,0,0.4)]">
+      {sections.map((section) => {
+        const isActive = section.id === active;
+        return (
+          <Link
+            key={section.id}
+            href={section.href}
+            className={cn(
+              "rounded-xl px-3 py-2 font-semibold transition",
+              isActive
+                ? "bg-gradient-to-r from-[#FF7AD1]/60 via-[#7FE0FF]/35 to-[#6A7BFF]/55 text-white shadow-[0_14px_36px_rgba(107,255,255,0.45)]"
+                : "text-white/80 hover:bg-white/10",
+            )}
+            aria-current={isActive ? "page" : undefined}
+          >
+            {section.label}
+          </Link>
+        );
+      })}
+    </div>
+  );
+
+  if (variant === "tabs") {
+    return <div className={className}>{tabs}</div>;
+  }
+
   return (
     <div
       className={cn(
-        "rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/75 to-[#050912]/95 p-4 shadow-[0_22px_80px_rgba(0,0,0,0.55)] backdrop-blur-3xl",
+        "rounded-3xl border border-white/12 bg-gradient-to-r from-[#0b1226]/80 via-[#101b39]/75 to-[#050811]/90 p-4 shadow-[0_26px_90px_rgba(0,0,0,0.55)] backdrop-blur-2xl",
         className,
       )}
     >
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="text-[11px] uppercase tracking-[0.26em] text-white/65">
+        <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] uppercase tracking-[0.26em] text-white/70 shadow-[0_12px_32px_rgba(0,0,0,0.4)]">
           Objetivo · {OBJECTIVE_LABELS[objective]}
         </div>
-        <div className="text-[11px] text-white/60">
-          {sections.length} secções
-        </div>
+        <div className="text-[11px] text-white/60">{sections.length} secções</div>
       </div>
-      <div className="mt-3 flex flex-wrap gap-2">
-        {sections.map((section) => {
-          const isActive = section.id === active;
-          return (
-            <Link
-              key={section.id}
-              href={section.href}
-              className={cn(
-                "rounded-full border px-3 py-1.5 text-[12px] font-semibold transition",
-                isActive
-                  ? "border-white/30 bg-white/15 text-white shadow-[0_12px_30px_rgba(107,255,255,0.35)]"
-                  : "border-white/15 bg-white/5 text-white/70 hover:border-white/30 hover:bg-white/10",
-              )}
-              aria-current={isActive ? "page" : undefined}
-            >
-              {section.label}
-            </Link>
-          );
-        })}
-      </div>
+      <div className="mt-3">{tabs}</div>
     </div>
   );
 }

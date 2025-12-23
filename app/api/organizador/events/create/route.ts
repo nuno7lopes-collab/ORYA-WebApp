@@ -28,6 +28,7 @@ type CreateOrganizerEventBody = {
   categories?: string[];
   resaleMode?: string; // ALWAYS | AFTER_SOLD_OUT | DISABLED
   coverImageUrl?: string | null;
+  inviteOnly?: boolean;
   isTest?: boolean;
   payoutMode?: string; // ORGANIZER | PLATFORM
   feeMode?: string;
@@ -199,6 +200,7 @@ export async function POST(req: NextRequest) {
 
     const ticketTypesInput = body.ticketTypes ?? [];
     const coverImageUrl = body.coverImageUrl?.trim?.() || null;
+    const inviteOnly = body.inviteOnly === true;
     // Validar tipos de bilhete
     let ticketPriceError: string | null = null;
     const ticketTypesData = ticketTypesInput
@@ -329,6 +331,7 @@ export async function POST(req: NextRequest) {
         locationCity,
         address,
         isFree: ticketTypesData.every((t) => t.price === 0),
+        inviteOnly,
         status: "PUBLISHED",
         resaleMode,
         coverImageUrl,

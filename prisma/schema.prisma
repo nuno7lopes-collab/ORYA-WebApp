@@ -42,6 +42,8 @@ model Profile {
   notificationPreference                                           NotificationPreference?
   organizerInvitesSent                                             OrganizerMemberInvite[] @relation("OrganizerMemberInviteInviter")
   organizerInvitesReceived                                         OrganizerMemberInvite[] @relation("OrganizerMemberInviteTarget")
+  eventInvitesSent                                                 EventInvite[]           @relation("EventInviteInviter")
+  eventInvitesReceived                                             EventInvite[]           @relation("EventInviteTarget")
   organizer_members_organizer_members_invited_by_user_idToprofiles OrganizerMember[]       @relation("organizer_members_invited_by_user_idToprofiles")
   organizerMembers                                                 OrganizerMember[]
   organizers                                                       Organizer[]
@@ -89,6 +91,7 @@ model Organizer {
   refundFeePayer          RefundFeePayer                  @default(CUSTOMER) @map("refund_fee_payer")
   organizationKind        OrganizationKind                @default(PESSOA_SINGULAR) @map("organization_kind")
   organizationCategory    OrganizationCategory            @default(EVENTOS) @map("organization_category")
+  liveHubPremiumEnabled   Boolean                         @default(false) @map("live_hub_premium_enabled")
   padelDefaultShortName   String?                         @map("padel_default_short_name")
   padelDefaultCity        String?                         @map("padel_default_city")
   padelDefaultAddress     String?                         @map("padel_default_address")
@@ -485,6 +488,7 @@ model Event {
   type                              EventType               @default(EXPERIENCE)
   /// Template de apoio (padel, evento padrão)
   templateType                      EventTemplateType?      @map("template_type")
+  liveHubMode                        LiveHubMode              @default(DEFAULT) @map("live_hub_mode")
   /// Liga ao Organizer quando é evento de organizador
   organizerId                       Int?                    @map("organizer_id")
   startsAt                          DateTime                @map("starts_at")
@@ -495,9 +499,11 @@ model Event {
   latitude                          Float?                  @map("lat")
   longitude                         Float?                  @map("lng")
   isFree                            Boolean                 @default(false) @map("is_free")
+  inviteOnly                        Boolean                 @default(false) @map("invite_only")
   status                            EventStatus             @default(DRAFT)
   timezone                          String                  @default("Europe/Lisbon")
   coverImageUrl                     String?                 @map("cover_image_url")
+  liveStreamUrl                     String?                 @map("live_stream_url")
   createdAt                         DateTime                @default(now()) @map("created_at")
   updatedAt                         DateTime                @updatedAt @map("updated_at")
   /// auth.users.id de quem criou (user base)
@@ -536,11 +542,31 @@ model Event {
   tickets                           Ticket[]
   ticketCheckins                    TicketCheckin[]
   organizationUpdates               OrganizationUpdate[]
+  invites                           EventInvite[]
 
   @@index([type, status])
   @@index([ownerUserId])
   @@index([organizerId])
   @@map("events")
+  @@schema("app_v3")
+}
+
+model EventInvite {
+  id               Int      @id @default(autoincrement())
+  eventId          Int      @map("event_id")
+  invitedByUserId  String   @map("invited_by_user_id") @db.Uuid
+  targetIdentifier String   @map("target_identifier") @db.Citext
+  targetUserId     String?  @map("target_user_id") @db.Uuid
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  event            Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  invitedBy        Profile  @relation("EventInviteInviter", fields: [invitedByUserId], references: [id], onDelete: Cascade)
+  targetUser       Profile? @relation("EventInviteTarget", fields: [targetUserId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, targetIdentifier], map: "event_invites_event_identifier_uq")
+  @@index([eventId], map: "event_invites_event_idx")
+  @@index([targetUserId], map: "event_invites_target_idx")
+  @@map("event_invites")
   @@schema("app_v3")
 }
 
@@ -2205,6 +2231,13 @@ enum EventTemplateType {
   TALK
   OTHER
   PADEL
+
+  @@schema("app_v3")
+}
+
+enum LiveHubMode {
+  DEFAULT
+  PREMIUM
 
   @@schema("app_v3")
 }

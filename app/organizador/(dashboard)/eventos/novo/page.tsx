@@ -8,7 +8,7 @@ import { InlineDateTimePicker } from "@/app/components/forms/InlineDateTimePicke
 import { FlowStickyFooter } from "@/app/components/flows/FlowStickyFooter";
 import { useUser } from "@/app/hooks/useUser";
 import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
-import ObjectiveSubnav from "@/app/organizador/ObjectiveSubnav";
+import { CTA_PRIMARY, CTA_SECONDARY } from "@/app/organizador/dashboardUi";
 import { StepperDots, type WizardStep } from "@/components/organizador/eventos/wizard/StepperDots";
 import { PT_CITIES, type PTCity } from "@/lib/constants/ptCities";
 import { computeCombinedFees } from "@/lib/fees";
@@ -160,6 +160,7 @@ export default function NewOrganizerEventPage() {
   const [isTest, setIsTest] = useState(false);
   const [selectedPreset, setSelectedPreset] = useState<string | null>(null);
   const [isFreeEvent, setIsFreeEvent] = useState(false);
+  const [inviteOnly, setInviteOnly] = useState(false);
   const [freeTicketName, setFreeTicketName] = useState("Inscrição");
   const [freeCapacity, setFreeCapacity] = useState("");
   const [currentStep, setCurrentStep] = useState(0);
@@ -285,6 +286,7 @@ export default function NewOrganizerEventPage() {
         coverUrl: string | null;
         selectedPreset: string | null;
         isFreeEvent: boolean;
+        inviteOnly: boolean;
         freeTicketName: string;
         freeCapacity: string;
         currentStep: number;
@@ -311,6 +313,7 @@ export default function NewOrganizerEventPage() {
       setCoverUrl(draft.coverUrl ?? null);
       setSelectedPreset(draft.selectedPreset ?? null);
       setIsFreeEvent(Boolean(draft.isFreeEvent));
+      setInviteOnly(Boolean(draft.inviteOnly));
       setFreeTicketName(draft.freeTicketName || "Inscrição");
       setFreeCapacity(draft.freeCapacity || "");
       const draftCurrentStep =
@@ -471,6 +474,7 @@ export default function NewOrganizerEventPage() {
       coverUrl,
       selectedPreset,
       isFreeEvent,
+      inviteOnly,
       freeTicketName,
       freeCapacity,
       currentStep,
@@ -899,7 +903,7 @@ export default function NewOrganizerEventPage() {
           : selectedPreset === "voluntariado"
             ? "VOLUNTEERING"
             : "OTHER";
-    const payload = {
+      const payload = {
       title: title.trim(),
       description: description.trim() || null,
       startsAt,
@@ -911,6 +915,7 @@ export default function NewOrganizerEventPage() {
         categories: categoriesToSend,
         ticketTypes: preparedTickets,
         coverImageUrl: coverUrl,
+        inviteOnly,
         feeMode,
         isTest: isAdmin ? isTest : undefined,
         padel:
@@ -1007,7 +1012,7 @@ export default function NewOrganizerEventPage() {
           <button
             type="button"
             onClick={handleRequireLogin}
-            className="inline-flex items-center rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-4 py-2 text-sm font-semibold text-black shadow"
+            className={CTA_PRIMARY}
           >
             Entrar
           </button>
@@ -1024,7 +1029,7 @@ export default function NewOrganizerEventPage() {
           <p className="text-white/70">Ainda não és organizador. Vai à área de organizador para ativar essa função.</p>
           <Link
             href="/organizador"
-            className="inline-flex items-center rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-4 py-2 text-sm font-semibold text-black shadow"
+            className={CTA_PRIMARY}
           >
             Ir para área de organizador
           </Link>
@@ -1518,6 +1523,33 @@ export default function NewOrganizerEventPage() {
         )}
       </div>
 
+      <div className="space-y-3 rounded-2xl border border-white/12 bg-[rgba(14,14,20,0.7)] p-4 shadow-[0_14px_36px_rgba(0,0,0,0.45)]">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className={labelClass}>Acesso</p>
+            <p className="text-[12px] text-white/65">
+              Decide se o evento é aberto ou apenas para convidados.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setInviteOnly((prev) => !prev)}
+            className={`rounded-full border px-3 py-1 text-[12px] font-semibold transition ${
+              inviteOnly
+                ? "border-emerald-400/60 bg-emerald-500/15 text-emerald-100"
+                : "border-white/20 bg-black/40 text-white/70"
+            }`}
+          >
+            {inviteOnly ? "Só por convite" : "Aberto"}
+          </button>
+        </div>
+        <p className="text-[12px] text-white/60">
+          {inviteOnly
+            ? "Depois de criares o evento podes adicionar emails e @usernames na edição."
+            : "Qualquer pessoa pode comprar ou inscrever-se."}
+        </p>
+      </div>
+
       {isFreeEvent ? (
         <div className="space-y-3 rounded-2xl border border-white/12 bg-gradient-to-br from-white/6 via-[#0c1426]/65 to-[#050a14]/88 p-4 shadow-[0_16px_60px_rgba(0,0,0,0.45)]">
           <div className="flex items-center justify-between">
@@ -1841,7 +1873,6 @@ export default function NewOrganizerEventPage() {
       }}
       className="relative w-full space-y-6 px-4 py-8 text-white md:px-6 lg:px-8"
     >
-      <ObjectiveSubnav objective="create" activeId="primary" />
       <div className="relative overflow-hidden rounded-[28px] border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/92 p-5 shadow-[0_32px_110px_rgba(0,0,0,0.6)] backdrop-blur-3xl">
         <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.12),transparent_35%),linear-gradient(225deg,rgba(255,255,255,0.08),transparent_40%)]" />
         <div className="relative flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -1856,14 +1887,14 @@ export default function NewOrganizerEventPage() {
           <div className="flex flex-wrap items-center gap-2 text-[11px]">
             <Link
               href="/organizador?tab=overview"
-              className="rounded-full border border-white/20 bg-white/5 px-3 py-1.5 text-[12px] font-semibold text-white/85 transition hover:border-white/35 hover:bg-white/10"
+              className={CTA_SECONDARY}
             >
               Voltar
             </Link>
             <button
               type="button"
               onClick={saveDraft}
-              className="rounded-full border border-white/20 bg-white/5 px-3 py-1.5 text-[12px] font-semibold text-white/85 transition hover:border-white/35 hover:bg-white/10"
+              className={CTA_SECONDARY}
             >
               Guardar rascunho
             </button>

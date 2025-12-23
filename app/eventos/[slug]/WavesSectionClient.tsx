@@ -32,6 +32,7 @@ type WavesSectionClientProps = {
     organizerId: number | null;
     categoryId?: number | null;
   };
+  inviteEmail?: string | null;
 };
 
 type FeedbackType = "success" | "error";
@@ -101,11 +102,16 @@ export default function WavesSectionClient({
   isFreeEvent,
   checkoutUiVariant = "DEFAULT",
   padelMeta,
+  inviteEmail,
 }: WavesSectionClientProps) {
   const { abrirCheckout, atualizarDados } = useCheckout();
   const [tickets, setTickets] = useState<WaveTicket[]>(initialTickets);
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<FeedbackState>({});
+  const inviteAdditional =
+    inviteEmail && inviteEmail.trim()
+      ? { guestEmail: inviteEmail.trim(), guestEmailConfirm: inviteEmail.trim() }
+      : {};
 
   async function handlePurchase(ticketId: string) {
     const selectedTicket = tickets.find((t) => t.id === ticketId);
@@ -131,6 +137,7 @@ export default function WavesSectionClient({
         additional: {
           checkoutUiVariant,
           padelMeta,
+          ...inviteAdditional,
         },
         waves: tickets,
       });
@@ -158,12 +165,15 @@ export default function WavesSectionClient({
     purchasableTickets.length > 0
       ? Math.min(...purchasableTickets.map((t) => t.price))
       : null;
+  const isFreeLabel = Boolean(isFreeEvent);
 
   return (
     <div className="mt-6 w-full">
       <div className="rounded-2xl border border-white/15 bg-[linear-gradient(140deg,rgba(255,255,255,0.14),rgba(4,8,20,0.85))] px-5 py-4 backdrop-blur-xl flex flex-col gap-3 shadow-[0_0_35px_rgba(0,0,0,0.55)]">
         <p className="text-white/85 text-sm">
-          {minPrice !== null ? (
+          {isFreeLabel ? (
+            <span className="text-white font-semibold">Entrada gratuita</span>
+          ) : minPrice !== null ? (
             <>
               A partir de{" "}
               <span className="text-white font-semibold">
@@ -187,6 +197,7 @@ export default function WavesSectionClient({
               additional: {
                 checkoutUiVariant,
                 padelMeta,
+                ...inviteAdditional,
               },
             });
 
@@ -201,6 +212,7 @@ export default function WavesSectionClient({
               additional: {
                 checkoutUiVariant,
                 padelMeta,
+                ...inviteAdditional,
               },
               waves: visibleTickets,
             });
@@ -214,7 +226,11 @@ export default function WavesSectionClient({
           }}
           className="w-full rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] text-black font-semibold py-3 shadow-[0_0_20px_rgba(107,255,255,0.45)] hover:scale-[1.02] active:scale-95 transition-transform text-sm disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {purchasableTickets.length === 0 ? "Esgotado" : "Comprar agora"}
+          {purchasableTickets.length === 0
+            ? "Esgotado"
+            : isFreeLabel
+              ? "Garantir lugar"
+              : "Comprar agora"}
         </button>
       </div>
     </div>

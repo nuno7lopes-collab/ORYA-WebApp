@@ -32,7 +32,10 @@ type UpdateEventBody = {
   address?: string | null;
   templateType?: string | null;
   isFree?: boolean;
+  inviteOnly?: boolean;
   coverImageUrl?: string | null;
+  liveHubMode?: string | null;
+  liveStreamUrl?: string | null;
   ticketTypeUpdates?: TicketTypeUpdate[];
   newTicketTypes?: NewTicketType[];
   payoutMode?: string | null;
@@ -61,7 +64,12 @@ export async function POST(req: NextRequest) {
       organizerId: number | null;
       isFree: boolean;
       ticketTypes: { id: number; soldQuantity: number; price: number; status: TicketTypeStatus }[];
-      organizer: { stripeAccountId: string | null; stripeChargesEnabled: boolean; stripePayoutsEnabled: boolean } | null;
+      organizer: {
+        stripeAccountId: string | null;
+        stripeChargesEnabled: boolean;
+        stripePayoutsEnabled: boolean;
+        liveHubPremiumEnabled: boolean;
+      } | null;
       _count: { tickets: number; reservations: number; saleLines: number };
     } | null = null;
 
@@ -83,16 +91,17 @@ export async function POST(req: NextRequest) {
                   status: true,
                 },
               },
-              organizer: {
-                select: {
-                  stripeAccountId: true,
-                  stripeChargesEnabled: true,
-                  stripePayoutsEnabled: true,
-                },
-              },
-              _count: {
-                select: {
-                  tickets: true,
+      organizer: {
+        select: {
+          stripeAccountId: true,
+          stripeChargesEnabled: true,
+          stripePayoutsEnabled: true,
+          liveHubPremiumEnabled: true,
+        },
+      },
+      _count: {
+        select: {
+          tickets: true,
                   reservations: true,
                   saleLines: true,
                 },
@@ -138,6 +147,7 @@ export async function POST(req: NextRequest) {
                     stripeAccountId: organizerRows[0].stripe_account_id,
                     stripeChargesEnabled: organizerRows[0].stripe_charges_enabled,
                     stripePayoutsEnabled: organizerRows[0].stripe_payouts_enabled,
+                    liveHubPremiumEnabled: false,
                   }
                 : null,
               _count: {
@@ -261,7 +271,29 @@ export async function POST(req: NextRequest) {
       }
       dataUpdate.isFree = body.isFree;
     }
+    if (body.inviteOnly !== undefined) {
+      dataUpdate.inviteOnly = body.inviteOnly === true;
+    }
     if (body.coverImageUrl !== undefined) dataUpdate.coverImageUrl = body.coverImageUrl ?? null;
+    if (body.liveStreamUrl !== undefined) {
+      const trimmed = typeof body.liveStreamUrl === "string" ? body.liveStreamUrl.trim() : "";
+      dataUpdate.liveStreamUrl = trimmed ? trimmed : null;
+    }
+    if (body.liveHubMode !== undefined) {
+      const normalized = typeof body.liveHubMode === "string" ? body.liveHubMode.trim().toUpperCase() : "";
+      if (normalized === "PREMIUM") {
+        const premiumAllowed = isAdmin || Boolean(event.organizer?.liveHubPremiumEnabled);
+        if (!premiumAllowed) {
+          return NextResponse.json(
+            { ok: false, error: "LIVEHUB_PREMIUM_LOCKED" },
+            { status: 403 },
+          );
+        }
+      }
+      if (normalized === "PREMIUM" || normalized === "DEFAULT") {
+        dataUpdate.liveHubMode = normalized as Prisma.LiveHubMode;
+      }
+    }
     if (
       isAdmin &&
       body.payoutMode &&

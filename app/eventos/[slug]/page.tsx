@@ -15,6 +15,9 @@ import { defaultBlurDataURL, optimizeImageUrl } from "@/lib/image";
 import { buildPadelEventSnapshot } from "@/lib/padel/eventSnapshot";
 import type { CSSProperties } from "react";
 import EventBackgroundTuner from "./EventBackgroundTuner";
+import { normalizeEmail } from "@/lib/utils/email";
+import { sanitizeUsername } from "@/lib/username";
+import InviteGateClient from "./InviteGateClient";
 
 type EventPageParams = { slug: string };
 type EventPageParamsInput = EventPageParams | Promise<EventPageParams>;
@@ -196,6 +199,37 @@ export default async function EventPage({
   if (event.isTest && !isAdmin) {
     notFound();
   }
+  const inviteOnly = event.inviteOnly === true;
+  const userEmailNormalized = user ? normalizeEmail(user.email ?? null) : null;
+  const usernameNormalized = profile?.username ? sanitizeUsername(profile.username) : null;
+  const hasUsername = Boolean(usernameNormalized);
+  let isInvited = !inviteOnly;
+  if (inviteOnly && !isAdmin && user) {
+    const identifiers: string[] = [];
+    if (userEmailNormalized) identifiers.push(userEmailNormalized);
+    if (usernameNormalized) identifiers.push(usernameNormalized);
+    if (identifiers.length > 0) {
+      const invite = await prisma.eventInvite.findFirst({
+        where: { eventId: event.id, targetIdentifier: { in: identifiers } },
+        select: { id: true },
+      });
+      if (invite) {
+        isInvited = true;
+      }
+    }
+  } else if (inviteOnly && isAdmin) {
+    isInvited = true;
+  }
+  const showInviteGate = inviteOnly && !isInvited;
+  const canFreeCheckout = Boolean(user) && hasUsername && (!inviteOnly || isInvited);
+  const allowCheckout = !showInviteGate && (event.isFree ? canFreeCheckout : true);
+  const freeUsernameGateMessage = event.isFree
+    ? user
+      ? hasUsername
+        ? null
+        : "Define um username na tua conta para concluíres a inscrição gratuita."
+      : "Inicia sessão e define um username para garantires o lugar."
+    : null;
   const isPadel = event.templateType === "PADEL";
   const checkoutVariant =
     isPadel && event.padelTournamentConfig?.padelV2Enabled ? "PADEL" : "DEFAULT";
@@ -585,6 +619,11 @@ export default async function EventPage({
                     <span className={`rounded-full border px-3 py-1.5 text-[11px] font-semibold ${availabilityTone}`}>
                       {availabilityLabel}
                     </span>
+                    {inviteOnly && (
+                      <span className="rounded-full border border-white/30 bg-white/10 px-3 py-1.5 text-[11px] font-semibold text-white/80">
+                        Só por convite
+                      </span>
+                    )}
                     {event.isFree ? (
                       <span className="rounded-full border border-emerald-400/50 bg-emerald-500/15 px-3 py-1.5 text-[11px] font-semibold text-emerald-100">
                         Entrada gratuita
@@ -965,51 +1004,15 @@ export default async function EventPage({
                           )}
                         </div>
 
-                        {event.isFree ? (
-                          <div className="flex items-center justify-between gap-3 rounded-xl border border-emerald-500/40 bg-emerald-500/15 px-3.5 py-2.5 text-sm text-emerald-100">
-                            <div>
-                              <p className="font-semibold">Entrada gratuita</p>
-                              <p className="text-[11px] text-emerald-100/85">
-                                Basta garantir o teu lugar — não há custo de bilhete.
-                              </p>
-                            </div>
-                          </div>
-                        ) : uiTickets.length === 0 ? (
-                          <div className="rounded-xl border border-white/12 bg-black/45 px-3.5 py-2.5 text-sm text-white/80">
-                            Ainda não há waves configuradas para este evento.
-                          </div>
-                        ) : allSoldOut ? (
-                          <div className="rounded-xl border border-orange-400/40 bg-orange-500/15 px-3.5 py-2.5 text-sm text-orange-100">
-                            <div>
-                              <p className="font-semibold">Evento esgotado</p>
-                              <p className="text-[11px] text-orange-100/85">
-                                Não há mais bilhetes disponíveis para este evento.
-                              </p>
-                            </div>
-                          </div>
-                        ) : !anyOnSale && anyUpcoming ? (
-                          <div className="rounded-xl border border-yellow-400/40 bg-yellow-500/15 px-3.5 py-2.5 text-sm text-yellow-100">
-                            <div>
-                              <p className="font-semibold">Vendas ainda não abriram</p>
-                              <p className="text-[11px] text-yellow-100/85">
-                                As vendas de bilhetes para este evento ainda não abriram. Volta mais tarde!
-                              </p>
-                            </div>
-                          </div>
-                        ) : allClosed ? (
-                          <div className="rounded-xl border border-white/12 bg-black/45 px-3.5 py-2.5 text-sm text-white/80">
-                            <div>
-                              <p className="font-semibold">Vendas encerradas</p>
-                              <p className="text-[11px] text-white/70">
-                                As vendas para este evento já encerraram.
-                              </p>
-                            </div>
-                          </div>
-                        ) : (
-                          <WavesSectionClient
+                        {showInviteGate ? (
+                          <InviteGateClient
                             slug={event.slug}
-                            tickets={uiTickets}
-                            isFreeEvent={event.isFree}
+                            isFree={event.isFree}
+                            isAuthenticated={Boolean(user)}
+                            hasUsername={hasUsername}
+                            userEmailNormalized={userEmailNormalized}
+                            usernameNormalized={usernameNormalized}
+                            uiTickets={uiTickets}
                             checkoutUiVariant={checkoutVariant}
                             padelMeta={
                               checkoutVariant === "PADEL"
@@ -1022,6 +1025,79 @@ export default async function EventPage({
                                 : undefined
                             }
                           />
+                        ) : (
+                          <>
+                            {event.isFree && (
+                              <>
+                                <div className="flex items-center justify-between gap-3 rounded-xl border border-emerald-500/40 bg-emerald-500/15 px-3.5 py-2.5 text-sm text-emerald-100">
+                                  <div>
+                                    <p className="font-semibold">Entrada gratuita</p>
+                                    <p className="text-[11px] text-emerald-100/85">
+                                      Basta garantir o teu lugar — não há custo de bilhete.
+                                    </p>
+                                  </div>
+                                </div>
+                                {freeUsernameGateMessage && (
+                                  <div className="rounded-xl border border-white/12 bg-black/50 px-3.5 py-2.5 text-sm text-white/85">
+                                    <p className="font-semibold">Inscrição gratuita</p>
+                                    <p className="text-[11px] text-white/70">{freeUsernameGateMessage}</p>
+                                  </div>
+                                )}
+                              </>
+                            )}
+
+                            {allowCheckout ? (
+                              uiTickets.length === 0 ? (
+                                <div className="rounded-xl border border-white/12 bg-black/45 px-3.5 py-2.5 text-sm text-white/80">
+                                  Ainda não há waves configuradas para este evento.
+                                </div>
+                              ) : allSoldOut ? (
+                                <div className="rounded-xl border border-orange-400/40 bg-orange-500/15 px-3.5 py-2.5 text-sm text-orange-100">
+                                  <div>
+                                    <p className="font-semibold">Evento esgotado</p>
+                                    <p className="text-[11px] text-orange-100/85">
+                                      Não há mais bilhetes disponíveis para este evento.
+                                    </p>
+                                  </div>
+                                </div>
+                              ) : !anyOnSale && anyUpcoming ? (
+                                <div className="rounded-xl border border-yellow-400/40 bg-yellow-500/15 px-3.5 py-2.5 text-sm text-yellow-100">
+                                  <div>
+                                    <p className="font-semibold">Vendas ainda não abriram</p>
+                                    <p className="text-[11px] text-yellow-100/85">
+                                      As vendas de bilhetes para este evento ainda não abriram. Volta mais tarde!
+                                    </p>
+                                  </div>
+                                </div>
+                              ) : allClosed ? (
+                                <div className="rounded-xl border border-white/12 bg-black/45 px-3.5 py-2.5 text-sm text-white/80">
+                                  <div>
+                                    <p className="font-semibold">Vendas encerradas</p>
+                                    <p className="text-[11px] text-white/70">
+                                      As vendas para este evento já encerraram.
+                                    </p>
+                                  </div>
+                                </div>
+                              ) : (
+                                <WavesSectionClient
+                                  slug={event.slug}
+                                  tickets={uiTickets}
+                                  isFreeEvent={event.isFree}
+                                  checkoutUiVariant={checkoutVariant}
+                                  padelMeta={
+                                    checkoutVariant === "PADEL"
+                                      ? {
+                                          eventId: event.id,
+                                          organizerId: event.organizerId ?? null,
+                                          categoryId:
+                                            event.padelTournamentConfig?.defaultCategoryId ?? null,
+                                        }
+                                      : undefined
+                                  }
+                                />
+                              )
+                            ) : null}
+                          </>
                         )}
 
                         {resales.length > 0 && (

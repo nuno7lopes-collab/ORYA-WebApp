@@ -128,18 +128,12 @@ function InviteBadge({ status }: { status: InviteStatus }) {
   );
 }
 
-const primaryCta =
-  "inline-flex items-center gap-2 rounded-full border border-white/25 bg-gradient-to-r from-[#FF7AD1]/35 via-[#7FE0FF]/22 to-[#6A7BFF]/35 px-6 py-2.5 text-sm font-semibold text-white shadow-[0_18px_60px_rgba(107,255,255,0.45)] backdrop-blur-xl transition hover:scale-[1.02] hover:shadow-[0_22px_70px_rgba(107,255,255,0.55)] focus:outline-none focus:ring-2 focus:ring-[#6BFFFF]/60";
-const glassButton =
-  "inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/5 px-4 py-2 text-sm text-white shadow-[0_12px_38px_rgba(0,0,0,0.35)] backdrop-blur hover:border-white/35 hover:bg-white/10 transition focus:outline-none focus:ring-2 focus:ring-white/30";
-const ghostButton =
-  "inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/0 px-4 py-2 text-sm text-white/80 hover:bg-white/5 transition focus:outline-none focus:ring-2 focus:ring-white/20";
-const dangerPill =
-  "inline-flex items-center gap-2 rounded-full border border-red-400/60 bg-gradient-to-r from-red-600/30 via-red-500/25 to-red-700/35 px-3 py-1.5 text-[12px] font-semibold text-red-50 shadow-[0_12px_38px_rgba(239,68,68,0.35)] hover:brightness-110 transition";
-const neutralPill =
-  "inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-[12px] text-white/85 shadow-[0_10px_30px_rgba(0,0,0,0.35)] hover:bg-white/10 transition";
-const acceptPill =
-  "inline-flex items-center gap-2 rounded-full border border-emerald-300/60 bg-gradient-to-r from-emerald-500/30 via-emerald-400/25 to-emerald-600/35 px-4 py-1.5 text-[12px] font-semibold text-emerald-50 shadow-[0_14px_36px_rgba(16,185,129,0.35)] hover:brightness-110 transition";
+const primaryCta = CTA_PRIMARY;
+const glassButton = CTA_SECONDARY;
+const ghostButton = CTA_GHOST;
+const dangerPill = CTA_DANGER;
+const neutralPill = CTA_NEUTRAL;
+const acceptPill = CTA_SUCCESS;
 
 function Avatar({ name, avatarUrl }: { name: string; avatarUrl: string | null }) {
   const initial = name?.trim()?.[0]?.toUpperCase() || "U";
@@ -514,7 +508,7 @@ export default function OrganizerStaffPage({ embedded }: OrganizerStaffPageProps
           <button
             type="button"
             onClick={handleRequireLogin}
-            className="inline-flex items-center rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-4 py-2 text-sm font-semibold text-black shadow"
+            className={primaryCta}
           >
             Entrar
           </button>
@@ -543,7 +537,6 @@ export default function OrganizerStaffPage({ embedded }: OrganizerStaffPageProps
 
   return (
     <div className={wrapperClass}>
-      {!embedded && <ObjectiveSubnav objective="manage" activeId="staff" />}
       <div className="relative overflow-hidden rounded-[28px] border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/75 to-[#050810]/92 p-5 shadow-[0_30px_110px_rgba(0,0,0,0.6)] backdrop-blur-3xl">
         <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.12),transparent_35%),linear-gradient(225deg,rgba(255,255,255,0.08),transparent_40%)]" />
         <div className="relative flex flex-col gap-3 md:flex-row md:items-center md:justify-between">

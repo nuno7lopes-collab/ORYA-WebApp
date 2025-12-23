@@ -9,7 +9,7 @@ import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
 import { isValidPhone, sanitizePhone } from "@/lib/phone";
 import { PORTUGAL_CITIES } from "@/config/cities";
 import { ConfirmDestructiveActionDialog } from "@/app/components/ConfirmDestructiveActionDialog";
-import ObjectiveSubnav from "@/app/organizador/ObjectiveSubnav";
+import { CTA_DANGER, CTA_PRIMARY, CTA_SECONDARY } from "@/app/organizador/dashboardUi";
 
 type OrganizerMeResponse = {
   ok: boolean;
@@ -429,7 +429,7 @@ export default function OrganizerSettingsPage({ embedded }: OrganizerSettingsPag
           <button
             type="button"
             onClick={() => openModal({ mode: "login", redirectTo, showGoogle: true })}
-            className="rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-4 py-2 text-sm font-semibold text-black shadow"
+            className={CTA_PRIMARY}
           >
             Entrar
           </button>
@@ -458,7 +458,6 @@ export default function OrganizerSettingsPage({ embedded }: OrganizerSettingsPag
 
   return (
     <div className={wrapperClass}>
-      {!embedded && <ObjectiveSubnav objective="manage" activeId="settings" />}
       <div className="relative overflow-hidden rounded-[28px] border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/75 to-[#050810]/92 p-5 shadow-[0_30px_110px_rgba(0,0,0,0.6)] backdrop-blur-3xl">
         <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.12),transparent_35%),linear-gradient(225deg,rgba(255,255,255,0.08),transparent_40%)]" />
         <div className="relative flex flex-wrap items-center justify-between gap-3">
@@ -474,7 +473,7 @@ export default function OrganizerSettingsPage({ embedded }: OrganizerSettingsPag
               href={`/${organizer.username}`}
               target="_blank"
               rel="noreferrer"
-              className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-[12px] text-white hover:border-white/30 hover:bg-white/15"
+              className={CTA_SECONDARY}
             >
               Ver página pública ↗
             </a>
@@ -492,7 +491,7 @@ export default function OrganizerSettingsPage({ embedded }: OrganizerSettingsPag
             type="button"
             onClick={handleSaveOrg}
             disabled={savingOrg}
-            className="rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-4 py-2 text-sm font-semibold text-black shadow disabled:opacity-60"
+            className={`${CTA_PRIMARY} disabled:opacity-60`}
           >
             {savingOrg ? "A guardar…" : "Guardar"}
           </button>
@@ -601,7 +600,7 @@ export default function OrganizerSettingsPage({ embedded }: OrganizerSettingsPag
             type="button"
             onClick={handleSavePublicProfile}
             disabled={savingPublicProfile}
-            className="rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-4 py-2 text-sm font-semibold text-black shadow disabled:opacity-60"
+            className={`${CTA_PRIMARY} disabled:opacity-60`}
           >
             {savingPublicProfile ? "A guardar…" : "Guardar perfil público"}
           </button>
@@ -724,7 +723,7 @@ export default function OrganizerSettingsPage({ embedded }: OrganizerSettingsPag
                 type="button"
                 onClick={handleOfficialEmailUpdate}
                 disabled={!isOwner || officialEmailSaving}
-                className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-black shadow disabled:opacity-60"
+                className={`${CTA_PRIMARY} disabled:opacity-60`}
               >
                 {officialEmailSaving ? "A enviar…" : officialEmailVerifiedAt ? "Revalidar email" : "Enviar verificação"}
               </button>
@@ -743,7 +742,7 @@ export default function OrganizerSettingsPage({ embedded }: OrganizerSettingsPag
             <h2 className="text-lg font-semibold">Branding</h2>
             <p className="text-[12px] text-white/65">Logo e cores aplicados na página pública da organização.</p>
           </div>
-          <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-white/20 bg-white/5 px-3 py-1.5 text-[12px] text-white hover:bg-white/10">
+          <label className={`${CTA_SECONDARY} cursor-pointer`}>
             <input
               type="file"
               accept="image/*"
@@ -795,7 +794,7 @@ export default function OrganizerSettingsPage({ embedded }: OrganizerSettingsPag
               <button
                 type="button"
                 onClick={handleSaveBranding}
-                className="rounded-full border border-white/20 px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-white/10"
+                className={CTA_PRIMARY}
               >
                 Guardar cores
               </button>
@@ -822,7 +821,7 @@ export default function OrganizerSettingsPage({ embedded }: OrganizerSettingsPag
               type="button"
               onClick={handleSaveUsername}
               disabled={savingUsername}
-              className="rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-sm font-semibold text-white hover:bg-white/15 disabled:opacity-60"
+              className={`${CTA_PRIMARY} disabled:opacity-60`}
             >
               {savingUsername ? "A guardar…" : "Guardar"}
             </button>
@@ -865,7 +864,7 @@ export default function OrganizerSettingsPage({ embedded }: OrganizerSettingsPag
               type="button"
               onClick={() => setDangerDialogOpen(true)}
               disabled={!isOwner || !dangerReady || dangerLoading}
-              className="w-full rounded-full border border-red-400/60 bg-red-500/15 px-4 py-2 text-sm font-semibold text-red-100 shadow hover:bg-red-500/25 disabled:opacity-60 md:w-auto"
+              className={`${CTA_DANGER} w-full justify-center disabled:opacity-60 md:w-auto`}
             >
               {dangerLoading ? "A apagar…" : "Apagar organização"}
             </button>

@@ -4,6 +4,7 @@ import useSWR from "swr";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useMemo, useEffect } from "react";
 import { formatEuro } from "@/lib/money";
+import { CTA_PRIMARY, CTA_SECONDARY } from "@/app/organizador/dashboardUi";
 
 type InvoiceLine = { quantity: number };
 type InvoiceEvent = { id: number; title: string; slug?: string | null; payoutMode?: string | null };
@@ -49,7 +50,7 @@ type InvoicesClientProps = {
 
 export default function InvoicesClient({
   basePath = "/organizador/pagamentos/invoices",
-  fullWidth = false,
+  fullWidth = true,
   organizerId: organizerIdProp = null,
 }: InvoicesClientProps) {
   const searchParams = useSearchParams();
@@ -160,6 +161,21 @@ export default function InvoicesClient({
       );
     }
     if (!data || data.ok === false) {
+      const errorCode = data && "error" in data ? data.error : null;
+      if (errorCode && ["UNAUTHENTICATED", "FORBIDDEN"].includes(errorCode)) {
+        return (
+          <div className="rounded-3xl border border-white/12 bg-white/5 p-5 text-sm text-white/75 shadow-[0_18px_50px_rgba(0,0,0,0.55)]">
+            Não tens permissões para ver a faturação desta organização.
+          </div>
+        );
+      }
+      if (errorCode && errorCode !== "INTERNAL_ERROR") {
+        return (
+          <div className="rounded-3xl border border-white/10 bg-white/5 p-6 text-white/70 shadow-[0_18px_60px_rgba(0,0,0,0.55)]">
+            Ainda não há faturação para mostrar. Quando houver vendas, vais ver tudo aqui.
+          </div>
+        );
+      }
       return (
         <div className="rounded-3xl border border-white/15 bg-red-500/10 p-5 text-sm text-white/80 shadow-[0_18px_50px_rgba(0,0,0,0.55)]">
           <p className="font-semibold text-white">Não foi possível carregar faturação.</p>
@@ -167,7 +183,7 @@ export default function InvoicesClient({
           <button
             type="button"
             onClick={() => mutate()}
-            className="mt-3 rounded-full border border-white/25 px-3 py-1 text-[12px] text-white/85 hover:bg-white/10"
+            className={`${CTA_SECONDARY} mt-3 text-[12px]`}
           >
             Recarregar
           </button>
@@ -240,7 +256,7 @@ export default function InvoicesClient({
             <button
               type="button"
               onClick={downloadCsv}
-              className="rounded-full border border-white/30 bg-gradient-to-r from-white/20 via-white/10 to-white/5 px-4 py-2 text-sm font-semibold text-white shadow-[0_10px_30px_rgba(0,0,0,0.35)] transition hover:scale-[1.01] hover:bg-white/20 disabled:opacity-50"
+              className={`${CTA_PRIMARY} disabled:opacity-50`}
               disabled={!items.length}
             >
               Exportar CSV

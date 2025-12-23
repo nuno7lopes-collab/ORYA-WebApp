@@ -6,6 +6,7 @@ import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
 import { useUser } from "@/app/hooks/useUser";
 import { trackEvent } from "@/lib/analytics";
 import { ConfirmDestructiveActionDialog } from "@/app/components/ConfirmDestructiveActionDialog";
+import { CTA_DANGER, CTA_PRIMARY, CTA_SECONDARY } from "@/app/organizador/dashboardUi";
 
 type PromoCodeDto = {
   id: number;
@@ -565,28 +566,28 @@ export default function PromoCodesClient() {
                           <button
                             type="button"
                             onClick={() => handleOpenDetail(promo.id)}
-                            className="rounded-full border border-white/20 px-2 py-1 text-[11px] hover:bg-white/10"
+                            className={`${CTA_SECONDARY} px-3 py-1 text-[11px]`}
                           >
                             Ver detalhe
                           </button>
                           <button
                             type="button"
                             onClick={() => handleEdit(promo)}
-                            className="rounded-full border border-white/20 px-2 py-1 text-[11px] hover:bg-white/10"
+                            className={`${CTA_SECONDARY} px-3 py-1 text-[11px]`}
                           >
                             Editar
                           </button>
                           <button
                             type="button"
                             onClick={() => handleToggle(promo.id, !promo.active)}
-                            className="rounded-full border border-white/20 px-2 py-1 text-[11px] hover:bg-white/10"
+                            className={`${CTA_SECONDARY} px-3 py-1 text-[11px]`}
                           >
                             {promo.active ? "Desativar" : "Ativar"}
                           </button>
                           <button
                             type="button"
                             onClick={() => setDeleteId(promo.id)}
-                            className="text-[11px] text-red-300 hover:text-red-200"
+                            className={`${CTA_DANGER} px-3 py-1 text-[11px]`}
                           >
                             Apagar
                           </button>
@@ -802,7 +803,7 @@ export default function PromoCodesClient() {
             type="button"
             onClick={handleSubmit}
             disabled={saving}
-            className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-black shadow hover:scale-[1.01] disabled:opacity-60"
+            className={`${CTA_PRIMARY} disabled:opacity-60`}
           >
             {saving ? "A guardar..." : editingId ? "Guardar alterações" : "Criar código"}
           </button>
@@ -814,7 +815,7 @@ export default function PromoCodesClient() {
               setError(null);
               setSuccess(null);
             }}
-            className="rounded-full border border-white/20 px-3 py-2 text-[12px] text-white hover:bg-white/10"
+            className={`${CTA_SECONDARY} text-[12px]`}
           >
             Limpar
           </button>
@@ -849,7 +850,7 @@ export default function PromoCodesClient() {
                     setDetail(null);
                     setDetailError(null);
                   }}
-                  className="rounded-full border border-white/20 px-3 py-1 text-[12px] text-white hover:bg-white/10"
+                  className={`${CTA_SECONDARY} text-[12px]`}
                 >
                   Fechar
                 </button>

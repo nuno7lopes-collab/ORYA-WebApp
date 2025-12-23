@@ -6,6 +6,7 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizerForUser } from "@/lib/organizerContext";
 import { canManageEvents } from "@/lib/organizerPermissions";
 import { EventEditClient } from "@/app/organizador/(dashboard)/eventos/EventEditClient";
+import { CTA_SECONDARY } from "@/app/organizador/dashboardUi";
 
 type PageProps = {
   params: Promise<{ id: string }>;
@@ -77,7 +78,7 @@ export default async function OrganizerEventEditPage({ params }: PageProps) {
           </div>
           <a
             href={`/eventos/${event.slug}`}
-            className="rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-3 py-1.5 text-[11px] font-semibold text-black shadow"
+            className={CTA_SECONDARY}
           >
             Ver página pública
           </a>
@@ -87,6 +88,7 @@ export default async function OrganizerEventEditPage({ params }: PageProps) {
       <EventEditClient
         event={{
           id: event.id,
+          slug: event.slug,
           title: event.title,
           description: event.description,
           startsAt: event.startsAt.toISOString(),
@@ -96,11 +98,18 @@ export default async function OrganizerEventEditPage({ params }: PageProps) {
           address: event.address,
           templateType: event.templateType,
           isFree: event.isFree,
+          inviteOnly: event.inviteOnly,
           coverImageUrl: event.coverImageUrl,
+          liveHubMode: event.liveHubMode,
+          liveStreamUrl: event.liveStreamUrl,
           feeModeOverride: event.feeModeOverride,
           platformFeeBpsOverride: event.platformFeeBpsOverride,
           platformFeeFixedCentsOverride: event.platformFeeFixedCentsOverride,
           payoutMode: event.payoutMode,
+        }}
+        organizer={{
+          id: organizer.id,
+          liveHubPremiumEnabled: organizer.liveHubPremiumEnabled,
         }}
         tickets={tickets}
       />

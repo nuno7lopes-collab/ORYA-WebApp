@@ -7,6 +7,7 @@ import { getActiveOrganizerForUser } from "@/lib/organizerContext";
 import { canManageEvents } from "@/lib/organizerPermissions";
 import { notFound, redirect } from "next/navigation";
 import PadelTournamentTabs from "./PadelTournamentTabs";
+import { CTA_PRIMARY, CTA_SECONDARY } from "@/app/organizador/dashboardUi";
 
 type PageProps = {
   params: Promise<{
@@ -209,13 +210,13 @@ export default async function OrganizerEventDetailPage({ params }: PageProps) {
           <div className="flex flex-wrap gap-2 text-[11px]">
             <a
               href={`/organizador?tab=manage&section=${backAnchor}`}
-              className="rounded-full border border-white/20 bg-white/5 px-3 py-1.5 text-white/80 transition hover:bg-white/10"
+              className={CTA_SECONDARY}
             >
               ← Voltar à lista
             </a>
             <a
               href={`/eventos/${event.slug}`}
-              className="rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-3 py-1.5 font-semibold text-black shadow transition hover:scale-[1.03] active:scale-95"
+              className={CTA_PRIMARY}
             >
               Ver página pública
             </a>

@@ -6,6 +6,7 @@ import { useMemo, useState } from "react";
 import { SidebarRail } from "@/components/ui/sidebar";
 import { supabaseBrowser } from "@/lib/supabaseBrowser";
 import { cn } from "@/lib/utils";
+import { CTA_PRIMARY } from "@/app/organizador/dashboardUi";
 
 type OrgOption = {
   organizerId: number;
@@ -160,16 +161,33 @@ export function AppSidebar({
   const orgDisplay = activeOrg?.name ?? "Organização";
   const orgAvatar = activeOrg?.avatarUrl ?? null;
 
-  const switchOrg = (orgId: number) => {
+  const switchOrg = async (orgId: number) => {
+    if (switchingOrgId) return;
     setSwitchingOrgId(orgId);
     try {
-      document.cookie = `orya_org=${orgId}; path=/; SameSite=Lax`;
-    } catch {
-      /* ignore */
+      const res = await fetch("/api/organizador/organizations/switch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ organizerId: orgId }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || json?.ok === false) {
+        console.warn("[org switch] falhou", json?.error ?? res.statusText);
+        return;
+      }
+      try {
+        document.cookie = `orya_org=${orgId}; path=/; SameSite=Lax`;
+      } catch {
+        /* ignore */
+      }
+      setOrgOpen(false);
+      router.replace(`/organizador?tab=overview&org=${orgId}`);
+      router.refresh();
+    } catch (err) {
+      console.error("[org switch] erro inesperado", err);
+    } finally {
+      setSwitchingOrgId(null);
     }
-    setOrgOpen(false);
-    router.replace(`/organizador?tab=overview&org=${orgId}`);
-    router.refresh();
   };
 
   const goUserMode = () => {
@@ -292,7 +310,7 @@ export function AppSidebar({
 
         <Link
           href={categoryCta.href}
-          className="inline-flex w-full items-center justify-center rounded-xl bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-3 py-2 text-sm font-semibold text-black shadow-[0_0_20px_rgba(107,255,255,0.35)] transition hover:scale-[1.01]"
+          className={cn(CTA_PRIMARY, "w-full justify-center")}
           data-tour="criar-evento"
         >
           {categoryCta.label}

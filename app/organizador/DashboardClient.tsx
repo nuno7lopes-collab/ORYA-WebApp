@@ -14,6 +14,7 @@ import OrganizerUpdatesPage from "./(dashboard)/updates/page";
 import { SalesAreaChart } from "@/app/components/charts/SalesAreaChart";
 import InvoicesClient from "./pagamentos/invoices/invoices-client";
 import ObjectiveSubnav from "./ObjectiveSubnav";
+import { CTA_DANGER, CTA_NEUTRAL, CTA_PRIMARY, CTA_SECONDARY, CTA_SUCCESS } from "@/app/organizador/dashboardUi";
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
@@ -27,6 +28,11 @@ type OverviewResponse = {
   netRevenueCents?: number;
   eventsWithSalesCount: number;
   activeEventsCount: number;
+};
+type MembersResponse = {
+  ok: boolean;
+  items?: Array<{ userId: string }>;
+  error?: string;
 };
 
 type EventItem = {
@@ -553,6 +559,13 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
     mutate: mutateEvents,
   } = useSWR<EventsResponse>(
     organizer?.status === "ACTIVE" ? "/api/organizador/events/list" : null,
+    fetcher,
+    { revalidateOnFocus: false }
+  );
+  const { data: membersData } = useSWR<MembersResponse>(
+    organizer?.status === "ACTIVE" && organizer?.id
+      ? `/api/organizador/organizations/members?organizerId=${organizer.id}`
+      : null,
     fetcher,
     { revalidateOnFocus: false }
   );
@@ -1153,6 +1166,44 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
   const stripeIncomplete = !isPlatformStripe && paymentsStatus === "PENDING";
   const nextEvent = events?.items?.[0] ?? null;
   const publicProfileUrl = organizer?.username ? `/${organizer.username}` : null;
+  const membersCount = membersData?.ok ? membersData.items?.length ?? 0 : 0;
+  const hasInvitedStaff = membersCount > 1;
+  const summarySteps = [
+    {
+      id: "profile",
+      label: "Perfil completo",
+      done: profileStatus === "OK",
+      href: "/organizador/settings",
+    },
+    {
+      id: "stripe",
+      label: "Stripe ligado",
+      done: stripeReady,
+      href: "/organizador?tab=analyze&section=financas",
+    },
+    {
+      id: "event",
+      label: "Primeiro evento criado",
+      done: eventsList.length > 0,
+      href: "/organizador/eventos/novo",
+    },
+    {
+      id: "staff",
+      label: "Primeiro staff convidado",
+      done: hasInvitedStaff,
+      href: "/organizador/staff",
+    },
+    {
+      id: "public",
+      label: "Página pública definida",
+      done: Boolean(publicProfileUrl),
+      href: "/organizador/settings",
+    },
+  ];
+  const completedSteps = summarySteps.filter((step) => step.done).length;
+  const completionPercent = summarySteps.length
+    ? Math.round((completedSteps / summarySteps.length) * 100)
+    : 0;
   const activeSection = useMemo(() => {
     const baseSections: Record<ObjectiveTab, string[]> = {
       create: ["overview"],
@@ -1226,16 +1277,10 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
             Precisas de criar ou escolher uma organização para aceder ao dashboard.
           </p>
           <div className="flex flex-wrap gap-2">
-            <a
-              href="/organizador/become"
-              className="inline-flex items-center justify-center rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-4 py-2 text-sm font-semibold text-black shadow-[0_0_20px_rgba(107,255,255,0.4)] hover:scale-[1.01]"
-            >
+            <a href="/organizador/become" className={cn(CTA_PRIMARY, "justify-center")}>
               Criar organização
             </a>
-            <a
-              href="/organizador/organizations"
-              className="inline-flex items-center justify-center rounded-full border border-white/20 bg-white/5 px-4 py-2 text-sm font-semibold text-white hover:bg-white/10"
-            >
+            <a href="/organizador/organizations" className={cn(CTA_SECONDARY, "justify-center")}>
               Escolher organização
             </a>
           </div>
@@ -1261,7 +1306,7 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
             </div>
             <Link
               href="/organizador?tab=manage&section=settings"
-              className="rounded-full bg-white px-3 py-1.5 text-[12px] font-semibold text-black shadow hover:scale-[1.01]"
+              className={cn(CTA_SECONDARY, "text-[12px]")}
             >
               Atualizar email oficial
             </Link>
@@ -1352,28 +1397,63 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
               </div>
             </div>
           </div>
-        </section>
-      )}
 
-      {!isLegacyStandaloneTab && activeObjective === "manage" && (
-        <section className="space-y-3">
-          <ObjectiveSubnav
-            objective="manage"
-            activeId={activeSection}
-            category={orgCategory}
-            modules={organizer?.modules ?? []}
-            mode="dashboard"
-          />
+          <div className={cn("rounded-3xl border border-white/12 bg-gradient-to-br from-[#0b1226]/80 via-[#0b1124]/70 to-[#050a12]/92 p-4 shadow-[0_22px_70px_rgba(0,0,0,0.55)]", fadeClass)}>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Checklist</p>
+                <h3 className="text-lg font-semibold text-white">Próximos passos</h3>
+                <p className="text-[12px] text-white/65">Completa o básico para lançar sem fricção.</p>
+              </div>
+              <div className="text-right text-[11px] text-white/70">
+                <div>{completedSteps}/{summarySteps.length} concluídos</div>
+                <div className="text-white/50">{completionPercent}%</div>
+              </div>
+            </div>
+            <div className="mt-3 h-2 w-full rounded-full bg-white/10">
+              <div
+                className="h-2 rounded-full bg-gradient-to-r from-[#FF7AD1] via-[#7FE0FF] to-[#6A7BFF]"
+                style={{ width: `${completionPercent}%` }}
+              />
+            </div>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              {summarySteps.map((step) => (
+                <div
+                  key={step.id}
+                  className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/80 shadow-[0_12px_36px_rgba(0,0,0,0.35)]"
+                >
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={cn(
+                        "inline-flex h-6 w-6 items-center justify-center rounded-full border text-[12px] font-semibold",
+                        step.done
+                          ? "border-emerald-300/60 bg-emerald-500/15 text-emerald-50"
+                          : "border-white/20 bg-white/10 text-white/60",
+                      )}
+                    >
+                      {step.done ? "✓" : "•"}
+                    </span>
+                    <span>{step.label}</span>
+                  </div>
+                  {!step.done && (
+                    <Link href={step.href} className="text-[11px] text-[#6BFFFF] hover:underline">
+                      Completar
+                    </Link>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
         </section>
       )}
 
       {!isLegacyStandaloneTab && activeObjective === "manage" && activeSection === "eventos" && (
         <section className={cn("space-y-4", fadeClass)} id="eventos">
-          <div className="relative overflow-hidden rounded-3xl border border-white/18 bg-gradient-to-br from-[#c7f5ff]/14 via-[#6e8cff]/12 to-[#0a0f1f]/88 p-5 shadow-[0_36px_120px_rgba(0,0,0,0.65)] backdrop-blur-3xl">
+          <div className="relative overflow-hidden rounded-3xl border border-white/12 bg-gradient-to-r from-[#0b1226]/80 via-[#101b39]/75 to-[#050811]/90 p-5 shadow-[0_30px_110px_rgba(0,0,0,0.6)] backdrop-blur-3xl">
             <div className="pointer-events-none absolute inset-0">
-              <div className="absolute -left-20 top-2 h-56 w-56 rounded-full bg-[#7cf2ff]/32 blur-[110px]" />
-              <div className="absolute right-10 top-0 h-48 w-48 rounded-full bg-[#ff9ae3]/30 blur-[120px]" />
-              <div className="absolute -right-18 -bottom-20 h-64 w-64 rounded-full bg-[#7b8cff]/26 blur-[120px]" />
+              <div className="absolute -left-20 top-2 h-56 w-56 rounded-full bg-[#6BFFFF]/18 blur-[120px]" />
+              <div className="absolute right-10 top-0 h-48 w-48 rounded-full bg-[#FF7AD1]/18 blur-[120px]" />
+              <div className="absolute -right-18 -bottom-20 h-64 w-64 rounded-full bg-[#6A7BFF]/18 blur-[120px]" />
               <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-white/8 to-transparent" />
             </div>
 
@@ -1387,7 +1467,7 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
               </div>
 
               <div className="grid gap-3 lg:grid-cols-[1.4fr,1fr]">
-                <div className="rounded-2xl border border-white/20 bg-gradient-to-br from-white/24 via-[#1a3f6e]/55 to-[#0b1328]/85 backdrop-blur-2xl px-3 py-3 shadow-[0_26px_90px_rgba(0,0,0,0.55)]">
+                <div className="rounded-2xl border border-white/12 bg-gradient-to-br from-[#0b1226]/85 via-[#0b1124]/70 to-[#050912]/90 backdrop-blur-2xl px-3 py-3 shadow-[0_22px_80px_rgba(0,0,0,0.55)]">
                   <label className="text-[10px] uppercase tracking-[0.24em] text-white/55">Pesquisa</label>
                   <div className="mt-1 flex items-center gap-2">
                     <input
@@ -1401,19 +1481,19 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
                   </div>
                 </div>
 
-                <div className="rounded-2xl border border-white/20 bg-gradient-to-br from-white/24 via-[#1a3f6e]/55 to-[#0b1328]/85 backdrop-blur-2xl p-3 shadow-[0_26px_90px_rgba(0,0,0,0.55)]">
+                <div className="rounded-2xl border border-white/12 bg-gradient-to-br from-[#0b1226]/85 via-[#0b1124]/70 to-[#050912]/90 backdrop-blur-2xl p-3 shadow-[0_22px_80px_rgba(0,0,0,0.55)]">
                   <p className="text-[10px] uppercase tracking-[0.24em] text-white/55">Período</p>
-                  <div className="mt-2 inline-flex w-full rounded-2xl border border-white/18 bg-white/12 p-1 shadow-[0_18px_50px_rgba(0,0,0,0.48)]">
+                  <div className="mt-2 inline-flex w-full rounded-2xl border border-white/10 bg-white/5 p-1 shadow-[0_16px_50px_rgba(0,0,0,0.4)]">
                     {(["all", "upcoming", "ongoing", "past"] as const).map((opt) => (
                       <button
                         key={opt}
                         type="button"
                         onClick={() => setTimeScope(opt)}
                         className={cn(
-                          "flex-1 rounded-xl px-3 py-2 text-[12px] transition border",
+                          "flex-1 rounded-xl px-3 py-2 text-[12px] font-semibold transition",
                           timeScope === opt
-                            ? "border-white/40 bg-gradient-to-r from-[#8cf7ff]/80 via-[#8e8eff]/70 to-[#ff9ae3]/78 text-slate-950 font-semibold shadow-[0_0_26px_rgba(140,247,255,0.5)]"
-                            : "border-white/12 text-white/88 hover:border-white/22 hover:bg-white/14",
+                            ? "bg-gradient-to-r from-[#FF7AD1]/60 via-[#7FE0FF]/35 to-[#6A7BFF]/55 text-white shadow-[0_14px_36px_rgba(107,255,255,0.45)]"
+                            : "text-white/80 hover:bg-white/10",
                         )}
                       >
                         {opt === "all" ? "Todos" : opt === "upcoming" ? "Próximos" : opt === "ongoing" ? "A decorrer" : "Passados"}
@@ -1426,7 +1506,7 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
               <div className="flex flex-wrap items-center gap-3">
                 <div className="space-y-1">
                   <p className="text-[10px] uppercase tracking-[0.22em] text-white/55">Estados</p>
-                  <div className="inline-flex flex-wrap rounded-2xl border border-white/12 bg-gradient-to-r from-white/8 via-white/6 to-white/4 p-1 shadow-[0_14px_40px_rgba(0,0,0,0.4)] backdrop-blur-xl">
+                  <div className="inline-flex flex-wrap rounded-2xl border border-white/10 bg-white/5 p-1 shadow-[0_14px_40px_rgba(0,0,0,0.4)] backdrop-blur-xl">
                     {[
                       { key: "all", label: "Todos" },
                       { key: "active", label: "Ativos" },
@@ -1439,10 +1519,10 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
                         type="button"
                         onClick={() => setEventStatusFilter(opt.key as typeof eventStatusFilter)}
                         className={cn(
-                          "rounded-xl px-3 py-2 text-[12px] transition",
+                          "rounded-xl px-3 py-2 text-[12px] font-semibold transition",
                           eventStatusFilter === opt.key
-                            ? "bg-white text-black font-semibold shadow-[0_0_12px_rgba(255,255,255,0.35)]"
-                            : "text-white/75 hover:bg-white/5",
+                            ? "bg-gradient-to-r from-[#FF7AD1]/60 via-[#7FE0FF]/35 to-[#6A7BFF]/55 text-white shadow-[0_14px_36px_rgba(107,255,255,0.45)]"
+                            : "text-white/80 hover:bg-white/10",
                         )}
                       >
                         {opt.label}
@@ -1459,72 +1539,71 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
                     setSearchTerm("");
                     setTimeScope("all");
                   }}
-                  className="rounded-full border border-white/20 bg-white/5 px-4 py-2 text-[12px] text-white/80 transition hover:border-white/35 hover:bg-white/10"
+                  className={CTA_SECONDARY}
                 >
                   Limpar filtros
                 </button>
               </div>
-            </div>
-          </div>
 
-          {activeFilterCount > 0 && (
-            <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-white/12 bg-gradient-to-r from-white/8 via-white/6 to-white/4 px-3 py-2 text-[12px] text-white/80 shadow-[0_12px_36px_rgba(0,0,0,0.45)] backdrop-blur-2xl">
-              <span className="font-semibold text-white/75">Filtros ativos ({activeFilterCount})</span>
-              {eventStatusFilter !== "all" && (
-                <button
-                  type="button"
-                  onClick={() => setEventStatusFilter("all")}
-                  className="inline-flex items-center gap-1 rounded-full border border-white/25 bg-white/10 px-2.5 py-1 hover:border-white/40"
-                >
-                  Estado: {statusLabelMap[eventStatusFilter]} ×
-                </button>
-              )}
-              {eventCategoryFilter !== "all" && (
-                <button
-                  type="button"
-                  onClick={() => setEventCategoryFilter("all")}
-                  className="inline-flex items-center gap-1 rounded-full border border-white/25 bg-white/10 px-2.5 py-1 hover:border-white/40"
-                >
-                  Categoria: {eventCategoryFilter} ×
-                </button>
-              )}
-              {eventPartnerClubFilter !== "all" && (
-                <button
-                  type="button"
-                  onClick={() => setEventPartnerClubFilter("all")}
-                  className="inline-flex items-center gap-1 rounded-full border border-white/25 bg-white/10 px-2.5 py-1 hover:border-white/40"
-                >
-                  Clube: {partnerClubOptions.find((o) => `${o.id}` === eventPartnerClubFilter)?.name ?? eventPartnerClubFilter} ×
-                </button>
-              )}
-              {timeScope !== "all" && (
-                <button
-                  type="button"
-                  onClick={() => setTimeScope("all")}
-                  className="inline-flex items-center gap-1 rounded-full border border-white/25 bg-white/10 px-2.5 py-1 hover:border-white/40"
-                >
-                  Período: {timeScopeLabels[timeScope]} ×
-                </button>
-              )}
-              {searchTerm.trim() && (
-                <button
-                  type="button"
-                  onClick={() => setSearchTerm("")}
-                  className="inline-flex items-center gap-1 rounded-full border border-white/25 bg-white/10 px-2.5 py-1 hover:border-white/40"
-                >
-                  Pesquisa: “{searchTerm}” ×
-                </button>
-              )}
-            </div>
-          )}
-
-              <div className="space-y-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 text-sm text-white/80">
-                    <h3 className="text-lg font-semibold">Eventos</h3>
-                    <span className="text-[11px] rounded-full bg-white/10 px-2 py-0.5">{filteredEvents.length}</span>
+              <div className="mt-4 space-y-4">
+                {activeFilterCount > 0 && (
+                  <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-white/12 bg-gradient-to-r from-white/8 via-white/6 to-white/4 px-3 py-2 text-[12px] text-white/80 shadow-[0_12px_36px_rgba(0,0,0,0.45)] backdrop-blur-2xl">
+                    <span className="font-semibold text-white/75">Filtros ativos ({activeFilterCount})</span>
+                    {eventStatusFilter !== "all" && (
+                      <button
+                        type="button"
+                        onClick={() => setEventStatusFilter("all")}
+                        className="inline-flex items-center gap-1 rounded-full border border-white/25 bg-white/10 px-2.5 py-1 hover:border-white/40"
+                      >
+                        Estado: {statusLabelMap[eventStatusFilter]} ×
+                      </button>
+                    )}
+                    {eventCategoryFilter !== "all" && (
+                      <button
+                        type="button"
+                        onClick={() => setEventCategoryFilter("all")}
+                        className="inline-flex items-center gap-1 rounded-full border border-white/25 bg-white/10 px-2.5 py-1 hover:border-white/40"
+                      >
+                        Categoria: {eventCategoryFilter} ×
+                      </button>
+                    )}
+                    {eventPartnerClubFilter !== "all" && (
+                      <button
+                        type="button"
+                        onClick={() => setEventPartnerClubFilter("all")}
+                        className="inline-flex items-center gap-1 rounded-full border border-white/25 bg-white/10 px-2.5 py-1 hover:border-white/40"
+                      >
+                        Clube: {partnerClubOptions.find((o) => `${o.id}` === eventPartnerClubFilter)?.name ?? eventPartnerClubFilter} ×
+                      </button>
+                    )}
+                    {timeScope !== "all" && (
+                      <button
+                        type="button"
+                        onClick={() => setTimeScope("all")}
+                        className="inline-flex items-center gap-1 rounded-full border border-white/25 bg-white/10 px-2.5 py-1 hover:border-white/40"
+                      >
+                        Período: {timeScopeLabels[timeScope]} ×
+                      </button>
+                    )}
+                    {searchTerm.trim() && (
+                      <button
+                        type="button"
+                        onClick={() => setSearchTerm("")}
+                        className="inline-flex items-center gap-1 rounded-full border border-white/25 bg-white/10 px-2.5 py-1 hover:border-white/40"
+                      >
+                        Pesquisa: “{searchTerm}” ×
+                      </button>
+                    )}
                   </div>
-                </div>
+                )}
+
+                <div className="space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 text-sm text-white/80">
+                      <h3 className="text-lg font-semibold">Eventos</h3>
+                      <span className="text-[11px] rounded-full bg-white/10 px-2 py-0.5">{filteredEvents.length}</span>
+                    </div>
+                  </div>
 
             {eventsListLoading && (
               <div className="grid gap-2 md:grid-cols-2">
@@ -1543,7 +1622,7 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
                 <button
                   type="button"
                   onClick={() => mutateEvents()}
-                  className="rounded-full border border-red-200/50 px-3 py-1 text-[12px] font-semibold hover:bg-red-500/20"
+                  className={cn(CTA_SECONDARY, "text-[12px]")}
                 >
                   Tentar novamente
                 </button>
@@ -1571,13 +1650,13 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
                       setEventPartnerClubFilter("all");
                       setSearchTerm("");
                     }}
-                    className="rounded-full border border-white/20 px-3 py-1.5 text-white/80 hover:bg-white/10"
+                    className={cn(CTA_SECONDARY, "text-[12px]")}
                   >
                     Limpar filtros
                   </button>
                   <Link
                     href="/organizador/eventos/novo"
-                    className="rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-3 py-1.5 font-semibold text-black shadow"
+                    className={cn(CTA_PRIMARY, "text-[12px]")}
                   >
                     Criar novo evento
                   </Link>
@@ -1585,159 +1664,178 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
               </div>
             )}
 
-            {filteredEvents.length > 0 && (
-              <div className="overflow-hidden rounded-3xl border border-white/16 bg-gradient-to-br from-white/18 via-[#15284c]/75 to-[#070d19]/92 shadow-[0_34px_110px_rgba(0,0,0,0.62)] backdrop-blur-3xl">
-                <table className="min-w-full text-sm text-white/90">
-                  <thead className="bg-white/10 text-left text-[11px] uppercase tracking-wide text-white/75">
-                    <tr>
-                      <th className="px-4 py-3 font-semibold">Evento</th>
-                      <th className="px-4 py-3 font-semibold">Data</th>
-                      <th className="px-4 py-3 font-semibold">Estado</th>
-                      <th className="px-4 py-3 font-semibold">Tipo</th>
-                      <th className="px-4 py-3 font-semibold">Bilhetes</th>
-                      <th className="px-4 py-3 font-semibold">Receita</th>
-                      <th className="px-4 py-3 text-right font-semibold">Ações</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-white/5">
-                    {filteredEvents.map((ev) => {
-                      const date = ev.startsAt ? new Date(ev.startsAt) : null;
-                      const endsAt = ev.endsAt ? new Date(ev.endsAt) : null;
-                      const now = new Date();
-                      const isOngoing = date && endsAt ? date.getTime() <= now.getTime() && now.getTime() <= endsAt.getTime() : false;
-                      const isFuture = date ? date.getTime() > now.getTime() : false;
-                      const isFinished = endsAt ? endsAt.getTime() < now.getTime() : false;
-                      const dateLabel = date
-                        ? formatDateTime(date, {
-                            day: "2-digit",
-                            month: "short",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })
-                        : "Data a confirmar";
-                      const ticketsSold = ev.ticketsSold ?? 0;
-                      const capacity = ev.capacity ?? null;
-                      const revenue = ((ev.revenueCents ?? 0) / 100).toFixed(2);
-                      const normalizedTemplate = ev.templateType ?? "OTHER";
-                      const typeLabel = normalizedTemplate === "PADEL" ? "Padel" : "Evento padrão";
-                      const typeTone =
-                        normalizedTemplate === "PADEL"
-                          ? "border-sky-400/40 bg-sky-400/10 text-sky-100"
-                          : "border-white/20 bg-white/5 text-white/80";
-                      const statusBadge =
-                        ev.status === "CANCELLED"
-                          ? { label: "Cancelado", classes: "border-red-400/60 bg-red-500/10 text-red-100" }
-                          : ev.status === "ARCHIVED"
-                            ? { label: "Arquivado", classes: "border-amber-400/60 bg-amber-500/10 text-amber-100" }
-                            : ev.status === "DRAFT"
-                              ? { label: "Draft", classes: "border-white/20 bg-white/5 text-white/70" }
-                              : isOngoing
-                                ? { label: "A decorrer", classes: "border-emerald-400/60 bg-emerald-500/10 text-emerald-100" }
-                                : isFuture
-                                  ? { label: "Publicado", classes: "border-sky-400/60 bg-sky-500/10 text-sky-100" }
-                                  : isFinished
-                                    ? { label: "Concluído", classes: "border-purple-400/60 bg-purple-500/10 text-purple-100" }
-                                    : { label: ev.status, classes: "border-white/20 bg-white/5 text-white/70" };
-                      const hasTickets = (ev.capacity ?? 0) > 0 || (ev.ticketsSold ?? 0) > 0;
-                      const salesLabel = ev.isFree ? "Inscrições" : "Vendas";
+                {filteredEvents.length > 0 && (
+                  <div className="overflow-hidden rounded-3xl border border-white/16 bg-gradient-to-br from-white/18 via-[#15284c]/75 to-[#070d19]/92 shadow-[0_34px_110px_rgba(0,0,0,0.62)] backdrop-blur-3xl">
+                    <table className="min-w-full text-sm text-white/90">
+                      <thead className="bg-white/10 text-left text-[11px] uppercase tracking-wide text-white/75">
+                        <tr>
+                          <th className="px-4 py-3 font-semibold">Evento</th>
+                          <th className="px-4 py-3 font-semibold">Data</th>
+                          <th className="px-4 py-3 font-semibold">Estado</th>
+                          <th className="px-4 py-3 font-semibold">Tipo</th>
+                          <th className="px-4 py-3 font-semibold">Bilhetes</th>
+                          <th className="px-4 py-3 font-semibold">Receita</th>
+                          <th className="px-4 py-3 text-right font-semibold">Ações</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-white/5">
+                        {filteredEvents.map((ev) => {
+                          const date = ev.startsAt ? new Date(ev.startsAt) : null;
+                          const endsAt = ev.endsAt ? new Date(ev.endsAt) : null;
+                          const now = new Date();
+                          const isOngoing = date && endsAt ? date.getTime() <= now.getTime() && now.getTime() <= endsAt.getTime() : false;
+                          const isFuture = date ? date.getTime() > now.getTime() : false;
+                          const isFinished = endsAt ? endsAt.getTime() < now.getTime() : false;
+                          const dateLabel = date
+                            ? formatDateTime(date, {
+                                day: "2-digit",
+                                month: "short",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })
+                            : "Data a confirmar";
+                          const ticketsSold = ev.ticketsSold ?? 0;
+                          const capacity = ev.capacity ?? null;
+                          const revenue = ((ev.revenueCents ?? 0) / 100).toFixed(2);
+                          const normalizedTemplate = ev.templateType ?? "OTHER";
+                          const typeLabel = normalizedTemplate === "PADEL" ? "Padel" : "Evento padrão";
+                          const typeTone =
+                            normalizedTemplate === "PADEL"
+                              ? "border-sky-400/40 bg-sky-400/10 text-sky-100"
+                              : "border-white/20 bg-white/5 text-white/80";
+                          const statusBadge =
+                            ev.status === "CANCELLED"
+                              ? { label: "Cancelado", classes: "border-red-400/60 bg-red-500/10 text-red-100" }
+                              : ev.status === "ARCHIVED"
+                                ? { label: "Arquivado", classes: "border-amber-400/60 bg-amber-500/10 text-amber-100" }
+                                : ev.status === "DRAFT"
+                                  ? { label: "Draft", classes: "border-white/20 bg-white/5 text-white/70" }
+                                  : isOngoing
+                                    ? { label: "A decorrer", classes: "border-emerald-400/60 bg-emerald-500/10 text-emerald-100" }
+                                    : isFuture
+                                      ? { label: "Publicado", classes: "border-sky-400/60 bg-sky-500/10 text-sky-100" }
+                                      : isFinished
+                                        ? { label: "Concluído", classes: "border-purple-400/60 bg-purple-500/10 text-purple-100" }
+                                        : { label: ev.status, classes: "border-white/20 bg-white/5 text-white/70" };
+                          const hasTickets = (ev.capacity ?? 0) > 0 || (ev.ticketsSold ?? 0) > 0;
+                          const salesLabel = ev.isFree ? "Inscrições" : "Vendas";
 
-                      return (
-                        <tr key={ev.id} className="hover:bg-white/10 transition duration-150">
-                          <td className="px-4 py-3">
-                            <Link
-                              href={`/organizador/eventos/${ev.id}`}
-                              className="text-left text-white hover:underline"
-                            >
-                              {ev.title}
-                            </Link>
-                          </td>
-                          <td className="px-4 py-3 text-[12px] text-white/80">{dateLabel}</td>
-                          <td className="px-4 py-3">
-                            <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] shadow-[0_10px_24px_rgba(0,0,0,0.35)] ${statusBadge.classes}`}>
-                              {statusBadge.label}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3">
-                            <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] shadow-[0_8px_20px_rgba(0,0,0,0.3)] ${typeTone}`}>
-                              {typeLabel}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 text-[12px]">
-                            <span className="font-semibold text-white">{ticketsSold}</span>
-                            <span className="text-white/60"> / {capacity ?? "—"}</span>
-                          </td>
-                          <td className="px-4 py-3 text-[12px] font-semibold text-white">{revenue} €</td>
-                          <td className="px-4 py-3 text-right text-[11px]">
-                            <div className="flex flex-wrap items-center justify-end gap-2">
-                              <Link
-                                href={`/organizador/eventos/${ev.id}/edit`}
-                                className="rounded-full border border-white/20 bg-white/5 px-2.5 py-1 text-white/80 hover:border-[#6BFFFF]/60"
-                              >
-                                Editar
-                              </Link>
-                              {hasTickets && ev.status !== "ARCHIVED" && (
-                                <Link
-                                  href={`/organizador/scan?eventId=${ev.id}`}
-                                  className="rounded-full border border-white/20 bg-white/5 px-2.5 py-1 text-white/80 hover:border-[#6BFFFF]/60"
-                                >
-                                  Check-in
-                                </Link>
-                              )}
-                              {ev.status !== "ARCHIVED" && (
+                          return (
+                            <tr key={ev.id} className="hover:bg-white/10 transition duration-150">
+                              <td className="px-4 py-3">
                                 <Link
                                   href={`/organizador/eventos/${ev.id}`}
-                                  className="rounded-full border border-white/20 bg-white/5 px-2.5 py-1 text-white/80 hover:border-[#6BFFFF]/60"
+                                  className="text-left text-white hover:underline"
                                 >
-                                  {salesLabel}
+                                  {ev.title}
                                 </Link>
-                              )}
-                              <Link
-                                href={`/eventos/${ev.slug}`}
-                                className="rounded-full border border-white/20 bg-white/5 px-2.5 py-1 text-white/80 hover:border-[#6BFFFF]/60"
-                              >
-                                Página pública
-                              </Link>
-                              {ev.status === "ARCHIVED" ? (
-                                <button
-                                  type="button"
-                                  disabled={eventActionLoading === ev.id}
-                                  onClick={() => setEventDialog({ mode: "unarchive", ev })}
-                                  className="rounded-full border border-emerald-200/40 bg-emerald-500/10 px-2.5 py-1 text-emerald-100 hover:border-emerald-200/70 disabled:opacity-60"
-                                >
-                                  Reativar
-                                </button>
-                              ) : (
-                                <button
-                                  type="button"
-                                  disabled={eventActionLoading === ev.id}
-                                  onClick={() => setEventDialog({ mode: ev.status === "DRAFT" ? "delete" : "archive", ev })}
-                                  className="rounded-full border border-red-200/50 bg-red-500/10 px-2.5 py-1 text-red-100/90 hover:border-red-200/70 disabled:opacity-60"
-                                >
-                                  {ev.status === "DRAFT" ? "Apagar rascunho" : "Arquivar"}
-                                </button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                              </td>
+                              <td className="px-4 py-3 text-[12px] text-white/80">{dateLabel}</td>
+                              <td className="px-4 py-3">
+                                <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] shadow-[0_10px_24px_rgba(0,0,0,0.35)] ${statusBadge.classes}`}>
+                                  {statusBadge.label}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3">
+                                <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] shadow-[0_8px_20px_rgba(0,0,0,0.3)] ${typeTone}`}>
+                                  {typeLabel}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 text-[12px]">
+                                <span className="font-semibold text-white">{ticketsSold}</span>
+                                <span className="text-white/60"> / {capacity ?? "—"}</span>
+                              </td>
+                              <td className="px-4 py-3 text-[12px] font-semibold text-white">{revenue} €</td>
+                              <td className="px-4 py-3 text-right text-[11px]">
+                                <div className="flex flex-wrap items-center justify-end gap-2">
+                                  <Link
+                                    href={`/organizador/eventos/${ev.id}/edit`}
+                                    className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px]")}
+                                  >
+                                    Editar
+                                  </Link>
+                                  {hasTickets && ev.status !== "ARCHIVED" && (
+                                    <Link
+                                      href={`/organizador/scan?eventId=${ev.id}`}
+                                      className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px]")}
+                                    >
+                                      Check-in
+                                    </Link>
+                                  )}
+                                  {ev.status !== "ARCHIVED" && (
+                                    <Link
+                                      href={`/organizador/eventos/${ev.id}`}
+                                      className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px]")}
+                                    >
+                                      {salesLabel}
+                                    </Link>
+                                  )}
+                                  <Link
+                                    href={`/eventos/${ev.slug}`}
+                                    className={cn(CTA_NEUTRAL, "px-3 py-1 text-[11px]")}
+                                  >
+                                    Página pública
+                                  </Link>
+                                  {ev.status === "ARCHIVED" ? (
+                                    <button
+                                      type="button"
+                                      disabled={eventActionLoading === ev.id}
+                                      onClick={() => setEventDialog({ mode: "unarchive", ev })}
+                                      className={cn(CTA_SUCCESS, "px-3 py-1 text-[11px] disabled:opacity-60")}
+                                    >
+                                      Reativar
+                                    </button>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      disabled={eventActionLoading === ev.id}
+                                      onClick={() => setEventDialog({ mode: ev.status === "DRAFT" ? "delete" : "archive", ev })}
+                                      className={cn(CTA_DANGER, "px-3 py-1 text-[11px] disabled:opacity-60")}
+                                    >
+                                      {ev.status === "DRAFT" ? "Apagar rascunho" : "Arquivar"}
+                                    </button>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
-            )}
+            </div>
+          </div>
           </div>
         </section>
       )}
 
       {!isLegacyStandaloneTab && activeObjective === "analyze" && (
-        <section className="space-y-4">
-          <ObjectiveSubnav
-            objective="analyze"
-            activeId={activeSection}
-            category={orgCategory}
-            modules={organizer?.modules ?? []}
-            mode="dashboard"
-          />
+        <section className={cn("space-y-3", fadeClass)} id="analisar">
+          <div className="rounded-3xl border border-white/12 bg-gradient-to-r from-[#0b1226]/80 via-[#101b39]/75 to-[#050811]/90 px-4 py-4 sm:px-6 sm:py-5 backdrop-blur-2xl shadow-[0_26px_90px_rgba(0,0,0,0.55)]">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="space-y-1">
+                <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] uppercase tracking-[0.28em] text-white/70 shadow-[0_12px_32px_rgba(0,0,0,0.4)]">
+                  Dashboard · Analisar
+                </div>
+                <h2 className="text-2xl sm:text-3xl font-semibold text-white drop-shadow-[0_12px_45px_rgba(0,0,0,0.6)]">
+                  Finanças &amp; faturação
+                </h2>
+                <p className="text-sm text-white/70">Receitas, payouts e documentos fiscais num só lugar.</p>
+              </div>
+            </div>
+            <div className="mt-4">
+              <ObjectiveSubnav
+                objective="analyze"
+                activeId={activeSection}
+                category={orgCategory}
+                modules={organizer?.modules ?? []}
+                mode="dashboard"
+                variant="tabs"
+              />
+            </div>
+          </div>
         </section>
       )}
 
@@ -1787,7 +1885,7 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
               <p className="text-[12px] text-white/65">Consulta invoices emitidas e dados fiscais.</p>
               <Link
                 href="/organizador?tab=analyze&section=invoices"
-                className="mt-3 inline-flex rounded-full border border-white/20 bg-white/5 px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-white/10"
+                className={cn(CTA_SECONDARY, "mt-3 text-[12px]")}
               >
                 Abrir faturação
               </Link>
@@ -1798,7 +1896,7 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
               <p className="text-[12px] text-white/65">Vê o detalhe de reservas e releases.</p>
               <Link
                 href="/organizador?tab=analyze&section=financas"
-                className="mt-3 inline-flex rounded-full border border-white/20 bg-white/5 px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-white/10"
+                className={cn(CTA_SECONDARY, "mt-3 text-[12px]")}
               >
                 Ver detalhe
               </Link>
@@ -1965,7 +2063,7 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
                     type="button"
                     disabled={!salesSeries?.points?.length}
                     onClick={handleExportSalesCsv}
-                    className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10 disabled:opacity-50"
+                    className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px] disabled:opacity-50")}
                   >
                     Exportar vendas
                   </button>
@@ -2040,7 +2138,7 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
                             <div className="flex items-center justify-end gap-2">
                               <Link
                                 href={`/organizador?tab=analyze&section=vendas&eventId=${ev.id}`}
-                                className="rounded-full border border-white/20 bg-white/5 px-2.5 py-1 text-white/80 hover:border-[#6BFFFF]/60"
+                                className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px]")}
                               >
                                 Dashboard de vendas
                               </Link>
@@ -2293,7 +2391,7 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
                       href="https://dashboard.stripe.com/"
                       target="_blank"
                       rel="noreferrer"
-                      className="text-[11px] rounded-full border border-white/25 px-3 py-1 text-white/85 hover:bg-white/10"
+                      className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px]")}
                     >
                       {stripeState.cta}
                     </a>
@@ -2302,7 +2400,7 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
                       type="button"
                       onClick={handleStripeConnect}
                       disabled={stripeCtaLoading}
-                      className="text-[11px] rounded-full border border-white/25 px-3 py-1 text-white/85 hover:bg-white/10 disabled:opacity-60"
+                      className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px] disabled:opacity-60")}
                     >
                       {stripeState.cta}
                     </button>
@@ -2378,7 +2476,7 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
                   type="button"
                   onClick={exportFinanceCsv}
                   disabled={!financeData || financeData.events.length === 0}
-                  className="rounded-full border border-white/20 px-3 py-1 text-[12px] text-white/80 hover:bg-white/10 disabled:opacity-50"
+                  className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px] disabled:opacity-50")}
                 >
                   Exportar CSV
                 </button>
@@ -2463,14 +2561,6 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
             </h2>
             <p className="text-sm text-white/70">Promoções, audiência e ações para encher o evento.</p>
           </div>
-          {marketingSection === "promos" && (
-            <Link
-              href="/organizador?tab=promote&section=marketing&marketing=promos"
-              className="inline-flex items-center rounded-full border border-white/25 bg-white/10 px-4 py-2 text-sm font-semibold text-white shadow-[0_14px_40px_rgba(0,0,0,0.35)] hover:border-white/40 hover:bg-white/15 transition"
-            >
-              Ver todos os códigos
-            </Link>
-          )}
         </div>
 
         <div className="mt-4 flex flex-wrap gap-2 rounded-2xl border border-white/10 bg-white/5 px-2 py-2 text-sm shadow-[0_16px_50px_rgba(0,0,0,0.4)]">
@@ -2515,14 +2605,14 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
               {publicProfileUrl ? (
                 <Link
                   href={publicProfileUrl}
-                  className="rounded-full border border-white/20 bg-white/5 px-4 py-2 text-sm font-semibold text-white hover:bg-white/10"
+                  className={CTA_SECONDARY}
                 >
                   Abrir perfil
                 </Link>
               ) : (
                 <Link
                   href="/organizador?tab=manage&section=settings"
-                  className="rounded-full border border-white/20 bg-white/5 px-4 py-2 text-sm font-semibold text-white hover:bg-white/10"
+                  className={CTA_SECONDARY}
                 >
                   Definir username
                 </Link>
@@ -2655,19 +2745,19 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
                         <div className="flex flex-wrap justify-end gap-2 text-[11px]">
                           <Link
                             href="/organizador?tab=promote&section=marketing&marketing=promos"
-                            className="rounded-full border border-white/20 bg-white/5 px-2.5 py-1 text-white/85 hover:bg-white/12"
+                            className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px]")}
                           >
                             {ev.tag.suggestion}
                           </Link>
                           <Link
                             href={`/organizador/eventos/${ev.id}/edit`}
-                            className="rounded-full border border-white/20 bg-white/5 px-2.5 py-1 text-white/85 hover:bg-white/12"
+                            className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px]")}
                           >
                             Editar evento
                           </Link>
                           <Link
                             href={`/eventos/${ev.slug}`}
-                            className="rounded-full border border-white/20 bg-white/5 px-2.5 py-1 text-white/85 hover:bg-white/12"
+                            className={cn(CTA_NEUTRAL, "px-3 py-1 text-[11px]")}
                           >
                             Partilhar
                           </Link>

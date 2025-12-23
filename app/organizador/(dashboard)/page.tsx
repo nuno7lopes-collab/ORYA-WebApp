@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { getActiveOrganizerForUser } from "@/lib/organizerContext";
+import { ensureLegacyOrganizerMemberships, getActiveOrganizerForUser } from "@/lib/organizerContext";
 import DashboardClient from "../DashboardClient";
 import { OrganizerTour } from "../OrganizerTour";
 import { cookies } from "next/headers";
@@ -28,6 +28,12 @@ export default async function OrganizerRouterPage() {
   let membershipCount = 0;
   try {
     membershipCount = await prisma.organizerMember.count({ where: { userId: user.id } });
+    if (membershipCount === 0) {
+      const legacyCount = await ensureLegacyOrganizerMemberships(user.id);
+      if (legacyCount > 0) {
+        membershipCount = await prisma.organizerMember.count({ where: { userId: user.id } });
+      }
+    }
   } catch (err: unknown) {
     const msg =
       typeof err === "object" && err && "message" in err ? String((err as { message?: unknown }).message) : "";
