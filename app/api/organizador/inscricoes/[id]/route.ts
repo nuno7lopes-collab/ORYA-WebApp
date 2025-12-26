@@ -3,10 +3,19 @@ import { prisma } from "@/lib/prisma";
 import { OrganizationFormFieldType } from "@prisma/client";
 import { requireUser } from "@/lib/auth/requireUser";
 import { getActiveOrganizerForUser } from "@/lib/organizerContext";
+import { resolveOrganizerIdFromRequest } from "@/lib/organizerId";
+import { getCustomPremiumProfileModules, isCustomPremiumActive } from "@/lib/organizerPremium";
 
-async function ensureInscricoesEnabled(organizerId: number) {
+async function ensureInscricoesEnabled(organizer: {
+  id: number;
+  username?: string | null;
+  liveHubPremiumEnabled?: boolean | null;
+}) {
+  const premiumActive = isCustomPremiumActive(organizer);
+  const premiumModules = premiumActive ? getCustomPremiumProfileModules(organizer) ?? {} : {};
+  if (!premiumModules.inscricoes) return false;
   const enabled = await prisma.organizationModuleEntry.findFirst({
-    where: { organizerId, moduleKey: "INSCRICOES", enabled: true },
+    where: { organizerId: organizer.id, moduleKey: "INSCRICOES", enabled: true },
     select: { organizerId: true },
   });
   return Boolean(enabled);
@@ -39,16 +48,18 @@ function parseOptions(value: unknown) {
   return cleaned.length > 0 ? cleaned : null;
 }
 
-export async function GET(_req: NextRequest, context: { params: Promise<{ id: string }> }) {
+export async function GET(req: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
     const user = await requireUser();
+    const organizerId = resolveOrganizerIdFromRequest(req);
     const { organizer } = await getActiveOrganizerForUser(user.id, {
+      organizerId: organizerId ?? undefined,
       roles: ["OWNER", "CO_OWNER", "ADMIN"],
     });
     if (!organizer) {
       return NextResponse.json({ ok: false, error: "Sem organização ativa." }, { status: 403 });
     }
-    if (!(await ensureInscricoesEnabled(organizer.id))) {
+    if (!(await ensureInscricoesEnabled(organizer))) {
       return NextResponse.json({ ok: false, error: "Módulo de inscrições desativado." }, { status: 403 });
     }
 
@@ -109,13 +120,15 @@ export async function GET(_req: NextRequest, context: { params: Promise<{ id: st
 export async function PATCH(req: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
     const user = await requireUser();
+    const organizerId = resolveOrganizerIdFromRequest(req);
     const { organizer } = await getActiveOrganizerForUser(user.id, {
+      organizerId: organizerId ?? undefined,
       roles: ["OWNER", "CO_OWNER", "ADMIN"],
     });
     if (!organizer) {
       return NextResponse.json({ ok: false, error: "Sem organização ativa." }, { status: 403 });
     }
-    if (!(await ensureInscricoesEnabled(organizer.id))) {
+    if (!(await ensureInscricoesEnabled(organizer))) {
       return NextResponse.json({ ok: false, error: "Módulo de inscrições desativado." }, { status: 403 });
     }
 

@@ -10,6 +10,7 @@ import {
 } from "@prisma/client";
 import crypto from "crypto";
 import { ensureEntriesForConfirmedPairing } from "@/domain/tournaments/ensureEntriesForConfirmedPairing";
+import { checkoutKey } from "@/lib/stripe/idempotency";
 
 type IntentLike = {
   id: string;
@@ -32,6 +33,8 @@ export async function fulfillPadelFullIntent(intent: IntentLike): Promise<boolea
     typeof meta.purchaseId === "string" && meta.purchaseId.trim() !== ""
       ? meta.purchaseId.trim()
       : null;
+  const idempotencyKey = typeof meta.idempotencyKey === "string" ? meta.idempotencyKey.trim() : "";
+  const paymentDedupeKey = idempotencyKey || (purchaseId ? checkoutKey(purchaseId) : intent.id);
 
   if (!Number.isFinite(pairingId) || !Number.isFinite(ticketTypeId) || !Number.isFinite(eventId)) {
     return false;
@@ -286,7 +289,7 @@ export async function fulfillPadelFullIntent(intent: IntentLike): Promise<boolea
         isTest: !intent.livemode,
         purchaseId: purchaseId ?? intent.id,
         source: PaymentEventSource.WEBHOOK,
-        dedupeKey: purchaseId ?? intent.id,
+        dedupeKey: paymentDedupeKey,
         attempt: { increment: 1 },
       },
       create: {
@@ -299,7 +302,7 @@ export async function fulfillPadelFullIntent(intent: IntentLike): Promise<boolea
         isTest: !intent.livemode,
         purchaseId: purchaseId ?? intent.id,
         source: PaymentEventSource.WEBHOOK,
-        dedupeKey: purchaseId ?? intent.id,
+        dedupeKey: paymentDedupeKey,
         attempt: 1,
       },
     });

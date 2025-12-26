@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
 import { useRouter } from "next/navigation";
@@ -35,6 +34,8 @@ type OrganizerMeResponse = {
     officialEmail?: string | null;
     officialEmailVerifiedAt?: string | null;
     publicWebsite?: string | null;
+    publicInstagram?: string | null;
+    publicYoutube?: string | null;
     publicDescription?: string | null;
     publicHours?: string | null;
     infoRules?: string | null;
@@ -90,28 +91,6 @@ export default function OrganizerSettingsPage({ embedded }: OrganizerSettingsPag
   const [officialEmailMessage, setOfficialEmailMessage] = useState<string | null>(null);
   const [officialEmailSaving, setOfficialEmailSaving] = useState(false);
 
-  const [brandingAvatarUrl, setBrandingAvatarUrl] = useState("");
-  const [brandingPrimaryColor, setBrandingPrimaryColor] = useState("");
-  const [brandingSecondaryColor, setBrandingSecondaryColor] = useState("");
-  const [brandingUploading, setBrandingUploading] = useState(false);
-  const [brandingMessage, setBrandingMessage] = useState<string | null>(null);
-
-  const [username, setUsername] = useState("");
-  const [usernameMessage, setUsernameMessage] = useState<string | null>(null);
-  const [usernameError, setUsernameError] = useState<string | null>(null);
-  const [savingUsername, setSavingUsername] = useState(false);
-
-  const [publicWebsite, setPublicWebsite] = useState("");
-  const [publicDescription, setPublicDescription] = useState("");
-  const [publicHours, setPublicHours] = useState("");
-  const [infoRules, setInfoRules] = useState("");
-  const [infoFaq, setInfoFaq] = useState("");
-  const [infoRequirements, setInfoRequirements] = useState("");
-  const [infoPolicies, setInfoPolicies] = useState("");
-  const [infoLocationNotes, setInfoLocationNotes] = useState("");
-  const [publicProfileMessage, setPublicProfileMessage] = useState<string | null>(null);
-  const [savingPublicProfile, setSavingPublicProfile] = useState(false);
-
   const [dangerConfirm, setDangerConfirm] = useState("");
   const [dangerFeedback, setDangerFeedback] = useState<string | null>(null);
   const [dangerLoading, setDangerLoading] = useState(false);
@@ -133,18 +112,6 @@ export default function OrganizerSettingsPage({ embedded }: OrganizerSettingsPag
     setContactEmail(contactEmailFromAccount ?? "");
     setOfficialEmail((organizer as { officialEmail?: string | null })?.officialEmail ?? contactEmailFromAccount ?? "");
     if (profile?.contactPhone) setContactPhone(profile.contactPhone);
-    setBrandingAvatarUrl((organizer as { brandingAvatarUrl?: string | null }).brandingAvatarUrl ?? "");
-    setBrandingPrimaryColor((organizer as { brandingPrimaryColor?: string | null }).brandingPrimaryColor ?? "");
-    setBrandingSecondaryColor((organizer as { brandingSecondaryColor?: string | null }).brandingSecondaryColor ?? "");
-    setUsername((organizer as { username?: string | null }).username ?? "");
-    setPublicWebsite((organizer as { publicWebsite?: string | null }).publicWebsite ?? "");
-    setPublicDescription((organizer as { publicDescription?: string | null }).publicDescription ?? "");
-    setPublicHours((organizer as { publicHours?: string | null }).publicHours ?? "");
-    setInfoRules((organizer as { infoRules?: string | null }).infoRules ?? "");
-    setInfoFaq((organizer as { infoFaq?: string | null }).infoFaq ?? "");
-    setInfoRequirements((organizer as { infoRequirements?: string | null }).infoRequirements ?? "");
-    setInfoPolicies((organizer as { infoPolicies?: string | null }).infoPolicies ?? "");
-    setInfoLocationNotes((organizer as { infoLocationNotes?: string | null }).infoLocationNotes ?? "");
   }, [organizer, profile, contactEmailFromAccount]);
 
   const hasOrganizer = useMemo(() => organizer && data?.ok, [organizer, data]);
@@ -213,50 +180,6 @@ export default function OrganizerSettingsPage({ embedded }: OrganizerSettingsPag
     }
   }
 
-  const normalizePublicWebsite = (value: string) => {
-    const trimmed = value.trim();
-    if (!trimmed) return "";
-    if (/^https?:\/\//i.test(trimmed)) return trimmed;
-    return `https://${trimmed}`;
-  };
-
-  async function handleSavePublicProfile() {
-    if (!user) {
-      openModal({ mode: "login", redirectTo, showGoogle: true });
-      return;
-    }
-    setSavingPublicProfile(true);
-    setPublicProfileMessage(null);
-    try {
-      const res = await fetch("/api/organizador/me", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          publicWebsite: publicWebsite ? normalizePublicWebsite(publicWebsite) : "",
-          publicDescription,
-          publicHours,
-          infoRules,
-          infoFaq,
-          infoRequirements,
-          infoPolicies,
-          infoLocationNotes,
-        }),
-      });
-      const json = await res.json().catch(() => null);
-      if (!res.ok || json?.ok === false) {
-        setPublicProfileMessage(json?.error || "Não foi possível guardar o perfil público.");
-      } else {
-        setPublicProfileMessage("Perfil público atualizado.");
-        mutate();
-      }
-    } catch (err) {
-      console.error("[organizador/settings] save public profile", err);
-      setPublicProfileMessage("Erro inesperado ao guardar.");
-    } finally {
-      setSavingPublicProfile(false);
-    }
-  }
-
   async function handleOfficialEmailUpdate() {
     if (!organizer?.id) {
       setOfficialEmailMessage("Seleciona uma organização primeiro.");
@@ -293,99 +216,6 @@ export default function OrganizerSettingsPage({ embedded }: OrganizerSettingsPag
       setOfficialEmailSaving(false);
     }
   }
-
-  const handleLogoUpload = async (file: File | null) => {
-    if (!file) return;
-    setBrandingUploading(true);
-    setBrandingMessage(null);
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-      const uploadRes = await fetch("/api/upload", { method: "POST", body: formData });
-      const uploadJson = await uploadRes.json().catch(() => null);
-      if (!uploadRes.ok || !uploadJson?.url) {
-        setBrandingMessage(uploadJson?.error || "Falha no upload do logo.");
-        return;
-      }
-      setBrandingAvatarUrl(uploadJson.url);
-      const saveRes = await fetch("/api/organizador/me", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ brandingAvatarUrl: uploadJson.url }),
-      });
-      const saveJson = await saveRes.json().catch(() => null);
-      if (!saveRes.ok || saveJson?.ok === false) {
-        setBrandingMessage(saveJson?.error || "Não foi possível guardar o logo.");
-      } else {
-        setBrandingMessage("Logo atualizado.");
-        mutate();
-      }
-    } catch (err) {
-      console.error("[organizador/settings] upload logo", err);
-      setBrandingMessage("Erro inesperado ao fazer upload.");
-    } finally {
-      setBrandingUploading(false);
-    }
-  };
-
-  const handleSaveBranding = async () => {
-    setBrandingMessage(null);
-    try {
-      const res = await fetch("/api/organizador/me", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          brandingPrimaryColor,
-          brandingSecondaryColor,
-        }),
-      });
-      const json = await res.json().catch(() => null);
-      if (!res.ok || json?.ok === false) {
-        setBrandingMessage(json?.error || "Não foi possível guardar as cores.");
-      } else {
-        setBrandingMessage("Branding atualizado.");
-        mutate();
-      }
-    } catch (err) {
-      console.error("[organizador/settings] branding", err);
-      setBrandingMessage("Erro inesperado ao guardar branding.");
-    }
-  };
-
-  const handleSaveUsername = async () => {
-    if (!user) {
-      openModal({ mode: "login", redirectTo, showGoogle: true });
-      return;
-    }
-    setUsernameMessage(null);
-    const normalized = username.trim().toLowerCase();
-    if (!/^[a-z0-9_-]{3,}$/.test(normalized)) {
-      setUsernameError("Usa apenas letras minúsculas, números e - ou _. Mínimo 3 caracteres.");
-      return;
-    }
-    setUsernameError(null);
-    setSavingUsername(true);
-    try {
-      const res = await fetch("/api/organizador/username", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username: normalized }),
-      });
-      const json = await res.json().catch(() => null);
-      if (!res.ok || json?.ok === false) {
-        setUsernameMessage(json?.error || "Não foi possível atualizar o username.");
-      } else {
-        setUsernameMessage("Username atualizado.");
-        setUsername(normalized);
-        mutate();
-      }
-    } catch (err) {
-      console.error("[organizador/settings] username", err);
-      setUsernameMessage("Erro inesperado ao atualizar username.");
-    } finally {
-      setSavingUsername(false);
-    }
-  };
 
   const handleDeleteOrganization = async () => {
     if (!organizer?.id) return;
@@ -466,7 +296,7 @@ export default function OrganizerSettingsPage({ embedded }: OrganizerSettingsPag
               Definições
             </div>
             <h1 className="text-3xl font-semibold drop-shadow-[0_10px_40px_rgba(0,0,0,0.55)]">Perfil do organizador</h1>
-            <p className="text-sm text-white/70">Identidade, branding e contactos públicos.</p>
+            <p className="text-sm text-white/70">Identidade e contactos da organização.</p>
           </div>
           {organizer?.username && (
             <a
@@ -593,104 +423,6 @@ export default function OrganizerSettingsPage({ embedded }: OrganizerSettingsPag
       <section className="relative overflow-hidden rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1226]/75 to-[#050912]/90 p-5 space-y-3 shadow-[0_26px_90px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-lg font-semibold">Perfil público</h2>
-            <p className="text-[12px] text-white/65">Blocos de informação visíveis na página pública da organização.</p>
-          </div>
-          <button
-            type="button"
-            onClick={handleSavePublicProfile}
-            disabled={savingPublicProfile}
-            className={`${CTA_PRIMARY} disabled:opacity-60`}
-          >
-            {savingPublicProfile ? "A guardar…" : "Guardar perfil público"}
-          </button>
-        </div>
-        <div className="grid gap-3 md:grid-cols-2">
-          <div className="space-y-1">
-            <label className="text-[12px] text-white/70">Website (opcional)</label>
-            <input
-              value={publicWebsite}
-              onChange={(e) => setPublicWebsite(e.target.value)}
-              className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
-              placeholder="ex: https://orya.pt"
-            />
-          </div>
-          <div className="space-y-1">
-            <label className="text-[12px] text-white/70">Horários (opcional)</label>
-            <input
-              value={publicHours}
-              onChange={(e) => setPublicHours(e.target.value)}
-              className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
-              placeholder="Seg-Sex 09:00-18:00"
-            />
-          </div>
-        </div>
-        <div className="grid gap-3 md:grid-cols-2">
-          <div className="space-y-1">
-            <label className="text-[12px] text-white/70">Descrição principal</label>
-            <textarea
-              value={publicDescription}
-              onChange={(e) => setPublicDescription(e.target.value)}
-              className="min-h-[120px] w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
-              placeholder="Explica o que é a tua organização e o que as pessoas podem esperar."
-            />
-          </div>
-          <div className="space-y-1">
-            <label className="text-[12px] text-white/70">Como chegar / notas de localização</label>
-            <textarea
-              value={infoLocationNotes}
-              onChange={(e) => setInfoLocationNotes(e.target.value)}
-              className="min-h-[120px] w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
-              placeholder="Indicações úteis, acessos, estacionamento, ponto de encontro."
-            />
-          </div>
-        </div>
-        <div className="grid gap-3 md:grid-cols-2">
-          <div className="space-y-1">
-            <label className="text-[12px] text-white/70">Regras</label>
-            <textarea
-              value={infoRules}
-              onChange={(e) => setInfoRules(e.target.value)}
-              className="min-h-[120px] w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
-              placeholder="Regras essenciais, o que é permitido ou não."
-            />
-          </div>
-          <div className="space-y-1">
-            <label className="text-[12px] text-white/70">FAQ</label>
-            <textarea
-              value={infoFaq}
-              onChange={(e) => setInfoFaq(e.target.value)}
-              className="min-h-[120px] w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
-              placeholder="Perguntas frequentes e respostas curtas."
-            />
-          </div>
-        </div>
-        <div className="grid gap-3 md:grid-cols-2">
-          <div className="space-y-1">
-            <label className="text-[12px] text-white/70">Requisitos</label>
-            <textarea
-              value={infoRequirements}
-              onChange={(e) => setInfoRequirements(e.target.value)}
-              className="min-h-[120px] w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
-              placeholder="Requisitos de participação, idade, equipamento, etc."
-            />
-          </div>
-          <div className="space-y-1">
-            <label className="text-[12px] text-white/70">Políticas</label>
-            <textarea
-              value={infoPolicies}
-              onChange={(e) => setInfoPolicies(e.target.value)}
-              className="min-h-[120px] w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
-              placeholder="Cancelamentos, no-show, reembolsos, outros."
-            />
-          </div>
-        </div>
-        {publicProfileMessage && <p className="text-[12px] text-white/70">{publicProfileMessage}</p>}
-      </section>
-
-      <section className="relative overflow-hidden rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1226]/75 to-[#050912]/90 p-5 space-y-3 shadow-[0_26px_90px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
             <h2 className="text-lg font-semibold">Email oficial da organização</h2>
             <p className="text-[12px] text-white/65">Apenas o Owner pode definir. Usamos para invoices, alertas críticos e transferências.</p>
           </div>
@@ -734,103 +466,6 @@ export default function OrganizerSettingsPage({ embedded }: OrganizerSettingsPag
             )}
           </div>
         </div>
-      </section>
-
-      <section className="relative overflow-hidden rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1226]/75 to-[#050912]/90 p-5 space-y-3 shadow-[0_26px_90px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
-        <div className="flex items-center justify-between gap-2">
-          <div>
-            <h2 className="text-lg font-semibold">Branding</h2>
-            <p className="text-[12px] text-white/65">Logo e cores aplicados na página pública da organização.</p>
-          </div>
-          <label className={`${CTA_SECONDARY} cursor-pointer`}>
-            <input
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={(e) => handleLogoUpload(e.target.files?.[0] ?? null)}
-              disabled={brandingUploading}
-            />
-            {brandingUploading ? "A enviar…" : "Upload logo"}
-          </label>
-        </div>
-        <div className="grid gap-4 md:grid-cols-[1.1fr_0.9fr] md:items-start">
-          <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 p-3">
-            <div className="h-16 w-16 overflow-hidden rounded-2xl border border-white/10 bg-white/10">
-              {brandingAvatarUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={brandingAvatarUrl} alt="Logo" className="h-full w-full object-cover" />
-              ) : (
-                <div className="flex h-full w-full items-center justify-center text-sm text-white/70">Logo</div>
-              )}
-            </div>
-            <div className="space-y-1 text-sm text-white/70">
-              <p>PNG/JPG/SVG até 2MB. Guardamos logo otimizado.</p>
-              <p className="text-[11px] text-white/50">Fica visível no dashboard, listagens e página pública.</p>
-            </div>
-          </div>
-          <div className="space-y-2 rounded-xl border border-white/10 bg-white/5 p-3">
-            <div className="grid gap-2 md:grid-cols-2">
-              <div className="space-y-1">
-                <label className="text-[12px] text-white/70">Cor primária</label>
-                <input
-                  type="color"
-                  value={brandingPrimaryColor || "#6bffff"}
-                  onChange={(e) => setBrandingPrimaryColor(e.target.value)}
-                  className="h-10 w-full rounded border border-white/20 bg-black/30"
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[12px] text-white/70">Cor secundária</label>
-                <input
-                  type="color"
-                  value={brandingSecondaryColor || "#0f172a"}
-                  onChange={(e) => setBrandingSecondaryColor(e.target.value)}
-                  className="h-10 w-full rounded border border-white/20 bg-black/30"
-                />
-              </div>
-            </div>
-            <div className="flex items-center justify-between gap-2">
-              <p className="text-[11px] text-white/55">Clica Guardar para aplicar as cores.</p>
-              <button
-                type="button"
-                onClick={handleSaveBranding}
-                className={CTA_PRIMARY}
-              >
-                Guardar cores
-              </button>
-            </div>
-            {brandingMessage && <p className="text-[12px] text-white/70">{brandingMessage}</p>}
-          </div>
-        </div>
-      </section>
-
-      <section className="relative overflow-hidden rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1226]/75 to-[#050912]/90 p-5 space-y-3 shadow-[0_26px_90px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-semibold">Username ORYA</h2>
-            <p className="text-[12px] text-white/65">Handle público global do organizador.</p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <input
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              className="w-48 rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
-              placeholder="ex.: clube-xpto"
-            />
-            <button
-              type="button"
-              onClick={handleSaveUsername}
-              disabled={savingUsername}
-              className={`${CTA_PRIMARY} disabled:opacity-60`}
-            >
-              {savingUsername ? "A guardar…" : "Guardar"}
-            </button>
-          </div>
-        </div>
-        <p className="text-[11px] text-white/60">Letras minúsculas, números e - ou _. Mínimo 3 caracteres.</p>
-        {(usernameMessage || usernameError) && (
-          <p className="text-[12px] text-white/70">{usernameError || usernameMessage}</p>
-        )}
       </section>
 
       <section className="relative overflow-hidden rounded-3xl border border-white/12 bg-gradient-to-br from-white/6 via-[#0b0f1f]/75 to-[#04070f]/90 p-4 space-y-2 shadow-[0_22px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl">

@@ -16,6 +16,8 @@ type WaveTicket = {
   endsAt: string | null;
   available: boolean;
   isVisible: boolean;
+  padelCategoryId?: number | null;
+  padelCategoryLinkId?: number | null;
 };
 
 type EventPageClientProps = {
@@ -26,6 +28,7 @@ type EventPageClientProps = {
     eventId: number;
     organizerId: number | null;
     categoryId?: number | null;
+    categoryLinkId?: number | null;
   };
   defaultPadelTicketId?: number | null;
 };
@@ -54,6 +57,7 @@ export default function EventPageClient({
   const searchParams = useSearchParams();
   const { abrirCheckout, atualizarDados, irParaPasso } = useCheckout();
   const inviteHandledRef = useRef<string | null>(null);
+  const checkoutHandledRef = useRef(false);
 
   const inviteToken = searchParams.get("inviteToken");
 
@@ -61,6 +65,56 @@ export default function EventPageClient({
     if (uiTickets && uiTickets.length > 0) return uiTickets;
     return [];
   }, [uiTickets]);
+
+  useEffect(() => {
+    const wantsCheckout = searchParams.get("checkout");
+    if (!wantsCheckout || checkoutHandledRef.current) return;
+
+    const visibleTickets = fallbackWaves.filter((ticket) => ticket.isVisible);
+    const purchasableTickets = visibleTickets.filter(
+      (ticket) => ticket.status === "on_sale" || ticket.status === "upcoming",
+    );
+    const preferredTicket =
+      typeof defaultPadelTicketId === "number"
+        ? visibleTickets.find((ticket) => Number(ticket.id) === defaultPadelTicketId)
+        : null;
+    const selectedTicket = preferredTicket ?? purchasableTickets[0] ?? visibleTickets[0];
+
+    if (!selectedTicket) return;
+    checkoutHandledRef.current = true;
+
+    atualizarDados({
+      slug,
+      waves: visibleTickets,
+      additional: { checkoutUiVariant, padelMeta },
+    });
+
+    abrirCheckout({
+      slug,
+      ticketId: selectedTicket.id,
+      price: selectedTicket.price,
+      ticketName: selectedTicket.name,
+      eventId: padelMeta?.eventId ? String(padelMeta.eventId) : undefined,
+      waves: visibleTickets,
+      additional: { checkoutUiVariant, padelMeta },
+    });
+
+    setTimeout(() => {
+      try {
+        const evt = new Event("ORYA_CHECKOUT_FORCE_STEP1");
+        window.dispatchEvent(evt);
+      } catch {}
+    }, 30);
+  }, [
+    abrirCheckout,
+    atualizarDados,
+    checkoutUiVariant,
+    defaultPadelTicketId,
+    fallbackWaves,
+    padelMeta,
+    searchParams,
+    slug,
+  ]);
 
   useEffect(() => {
     if (!inviteToken) return;
@@ -93,8 +147,11 @@ export default function EventPageClient({
           Array.isArray(json.ticketTypes) ? json.ticketTypes : [];
 
         const preferredTicketId =
-          (typeof defaultPadelTicketId === "number" ? defaultPadelTicketId : null) ??
-          (ticketTypes.length > 0 ? ticketTypes[0].id : null);
+          typeof defaultPadelTicketId === "number" && ticketTypes.some((t) => t.id === defaultPadelTicketId)
+            ? defaultPadelTicketId
+            : ticketTypes.length > 0
+              ? ticketTypes[0].id
+              : null;
 
         const fallbackTicket =
           typeof preferredTicketId === "number"
@@ -104,7 +161,7 @@ export default function EventPageClient({
         const ticketFromWaves =
           typeof preferredTicketId === "number"
             ? fallbackWaves.find((w) => Number(w.id) === preferredTicketId)
-            : fallbackWaves[0];
+            : null;
 
         const ticketId = ticketFromWaves
           ? Number(ticketFromWaves.id)
@@ -141,10 +198,13 @@ export default function EventPageClient({
         const quantity = pairingMode === "GROUP_FULL" ? 2 : 1;
         const total = unitPrice * quantity;
 
+        const pairingCategoryId =
+          typeof json?.pairing?.categoryId === "number" ? json.pairing.categoryId : null;
         const metaFromInvite = {
           eventId: pairing.eventId,
           organizerId: json.organizerId ?? null,
-          categoryId: null,
+          categoryId: pairingCategoryId,
+          categoryLinkId: ticketFromWaves?.padelCategoryLinkId ?? null,
         };
 
         if (pendingSlot.paymentStatus === "PAID") {
@@ -161,7 +221,7 @@ export default function EventPageClient({
 
         const additional = {
           checkoutUiVariant,
-          padelMeta: padelMeta ?? metaFromInvite,
+          padelMeta: metaFromInvite,
           pairingId: pairing.id,
           pairingSlotId: pendingSlot.id,
           ticketTypeId: ticketId,

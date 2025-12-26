@@ -1,16 +1,17 @@
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { stripe } from "@/lib/stripeClient";
 import { getActiveOrganizerForUser } from "@/lib/organizerContext";
+import { resolveOrganizerIdFromRequest } from "@/lib/organizerId";
 import { isOrgOwner } from "@/lib/organizerPermissions";
 import { createNotification, shouldNotify } from "@/lib/notifications";
 import { NotificationType } from "@prisma/client";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
     const {
@@ -22,7 +23,10 @@ export async function GET() {
       return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
 
-    const { organizer, membership } = await getActiveOrganizerForUser(user.id);
+    const organizerId = resolveOrganizerIdFromRequest(req);
+    const { organizer, membership } = await getActiveOrganizerForUser(user.id, {
+      organizerId: organizerId ?? undefined,
+    });
 
     if (!organizer || !membership || !isOrgOwner(membership.role)) {
       return NextResponse.json({ ok: false, error: "APENAS_OWNER" }, { status: 403 });

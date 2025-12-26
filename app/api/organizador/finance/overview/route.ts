@@ -1,7 +1,8 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizerForUser } from "@/lib/organizerContext";
+import { resolveOrganizerIdFromRequest } from "@/lib/organizerId";
 import { isOrgAdminOrAbove } from "@/lib/organizerPermissions";
 import { getStripeBaseFees } from "@/lib/platformSettings";
 
@@ -12,7 +13,7 @@ type Aggregate = {
   tickets: number;
 };
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
     const {
@@ -24,7 +25,10 @@ export async function GET() {
       return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
 
-    const { organizer, membership } = await getActiveOrganizerForUser(user.id);
+    const organizerId = resolveOrganizerIdFromRequest(req);
+    const { organizer, membership } = await getActiveOrganizerForUser(user.id, {
+      organizerId: organizerId ?? undefined,
+    });
 
     if (!organizer || !membership || !isOrgAdminOrAbove(membership.role)) {
       return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });

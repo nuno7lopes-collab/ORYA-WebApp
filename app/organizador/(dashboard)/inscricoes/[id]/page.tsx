@@ -112,7 +112,10 @@ export default function InscricaoDetailPage() {
   const [description, setDescription] = useState("");
   const [status, setStatus] = useState<FormStatus>("DRAFT");
   const [capacity, setCapacity] = useState<string>("");
+  const [capacityEnabled, setCapacityEnabled] = useState(false);
   const [waitlistEnabled, setWaitlistEnabled] = useState(true);
+  const [dateEnabled, setDateEnabled] = useState(false);
+  const [endDateEnabled, setEndDateEnabled] = useState(false);
   const [startAt, setStartAt] = useState("");
   const [endAt, setEndAt] = useState("");
   const [fields, setFields] = useState<FieldDraft[]>([]);
@@ -123,13 +126,20 @@ export default function InscricaoDetailPage() {
 
   useEffect(() => {
     if (!form) return;
+    const hasCapacity = form.capacity !== null && form.capacity !== undefined;
+    const hasStartDate = Boolean(form.startAt);
+    const hasEndDate = Boolean(form.endAt);
+
     setTitle(form.title);
     setDescription(form.description ?? "");
     setStatus(form.status);
-    setCapacity(form.capacity !== null && form.capacity !== undefined ? String(form.capacity) : "");
-    setWaitlistEnabled(form.waitlistEnabled);
-    setStartAt(form.startAt ? form.startAt.slice(0, 16) : "");
-    setEndAt(form.endAt ? form.endAt.slice(0, 16) : "");
+    setCapacityEnabled(hasCapacity);
+    setCapacity(hasCapacity ? String(form.capacity) : "");
+    setWaitlistEnabled(hasCapacity ? form.waitlistEnabled : false);
+    setDateEnabled(hasStartDate || hasEndDate);
+    setEndDateEnabled(hasEndDate);
+    setStartAt(hasStartDate ? form.startAt!.slice(0, 16) : "");
+    setEndAt(hasEndDate ? form.endAt!.slice(0, 16) : "");
     setFields(
       form.fields.map((field) => ({
         key: String(field.id),
@@ -171,10 +181,10 @@ export default function InscricaoDetailPage() {
       title,
       description,
       status,
-      capacity: capacity ? Number(capacity) : null,
-      waitlistEnabled,
-      startAt: startAt || null,
-      endAt: endAt || null,
+      capacity: capacityEnabled && capacity ? Number(capacity) : null,
+      waitlistEnabled: capacityEnabled ? waitlistEnabled : false,
+      startAt: dateEnabled && startAt ? startAt : null,
+      endAt: dateEnabled && endDateEnabled && endAt ? endAt : null,
     };
     if (canEditFields) {
       base.fields = fields.map((field) => ({
@@ -282,7 +292,7 @@ export default function InscricaoDetailPage() {
   if (!form) {
     return (
       <div className="px-6 py-10 text-sm text-white/70">
-        {formError || "Formulário não encontrado."}
+        {formError || "Inscrição não encontrada."}
       </div>
     );
   }
@@ -292,10 +302,10 @@ export default function InscricaoDetailPage() {
       <ObjectiveSubnav objective="manage" activeId="inscricoes" />
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <p className="text-[11px] uppercase tracking-[0.3em] text-white/60">Formulário</p>
+          <p className="text-[11px] uppercase tracking-[0.3em] text-white/60">Inscrição</p>
           <h1 className="text-2xl font-semibold">{form.title}</h1>
           <p className="text-sm text-white/60">
-            {form.submissionsCount} inscrição{form.submissionsCount === 1 ? "" : "s"}
+            {form.submissionsCount} inscrição{form.submissionsCount === 1 ? "" : "s"} · formulário público
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 text-[12px]">
@@ -314,12 +324,12 @@ export default function InscricaoDetailPage() {
         </div>
       </div>
 
-      <div className="rounded-3xl border border-white/12 bg-white/5 p-5 space-y-4">
+      <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-5 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl space-y-5">
         <div className="grid gap-3 md:grid-cols-2">
           <div className="space-y-2">
             <label className="text-[12px] text-white/70">Título</label>
             <input
-              className="w-full rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
+              className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
             />
@@ -327,7 +337,7 @@ export default function InscricaoDetailPage() {
           <div className="space-y-2">
             <label className="text-[12px] text-white/70">Estado</label>
             <select
-              className="w-full rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
+              className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
               value={status}
               onChange={(e) => setStatus(e.target.value as FormStatus)}
             >
@@ -343,54 +353,123 @@ export default function InscricaoDetailPage() {
         <div className="space-y-2">
           <label className="text-[12px] text-white/70">Descrição</label>
           <textarea
-            className="w-full rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF] min-h-[96px]"
+            className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF] min-h-[96px]"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
           />
         </div>
 
-        <div className="grid gap-3 md:grid-cols-3">
-          <div className="space-y-2">
-            <label className="text-[12px] text-white/70">Capacidade (opcional)</label>
-            <input
-              className="w-full rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
-              type="number"
-              value={capacity}
-              onChange={(e) => setCapacity(e.target.value)}
-            />
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="space-y-3 rounded-2xl border border-white/12 bg-white/5 p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-white">Capacidade</p>
+                <p className="text-[12px] text-white/60">
+                  Ativa vagas limitadas e lista de espera opcional.
+                </p>
+              </div>
+              <Toggle
+                enabled={capacityEnabled}
+                onChange={(next) => {
+                  setCapacityEnabled(next);
+                  if (!next) {
+                    setCapacity("");
+                    setWaitlistEnabled(false);
+                  }
+                }}
+                label="Ativar capacidade"
+              />
+            </div>
+
+            {capacityEnabled ? (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <label className="text-[12px] text-white/70">Número de vagas</label>
+                  <input
+                    className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
+                    type="number"
+                    value={capacity}
+                    onChange={(e) => setCapacity(e.target.value)}
+                  />
+                </div>
+                <div className="flex items-center justify-between gap-3 rounded-xl border border-white/12 bg-black/30 px-3 py-2">
+                  <span className="text-[12px] text-white/70">Lista de espera</span>
+                  <Toggle
+                    enabled={waitlistEnabled}
+                    onChange={(next) => setWaitlistEnabled(next)}
+                    label="Ativar lista de espera"
+                  />
+                </div>
+              </div>
+            ) : (
+              <p className="text-[12px] text-white/60">Sem limite de vagas.</p>
+            )}
           </div>
-          <div className="space-y-2">
-            <label className="text-[12px] text-white/70">Início</label>
-            <input
-              className="w-full rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
-              type="datetime-local"
-              value={startAt}
-              onChange={(e) => setStartAt(e.target.value)}
-            />
-          </div>
-          <div className="space-y-2">
-            <label className="text-[12px] text-white/70">Fim</label>
-            <input
-              className="w-full rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
-              type="datetime-local"
-              value={endAt}
-              onChange={(e) => setEndAt(e.target.value)}
-            />
+
+          <div className="space-y-3 rounded-2xl border border-white/12 bg-white/5 p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-white">Datas</p>
+                <p className="text-[12px] text-white/60">
+                  Define início e, se quiseres, uma data limite.
+                </p>
+              </div>
+              <Toggle
+                enabled={dateEnabled}
+                onChange={(next) => {
+                  setDateEnabled(next);
+                  if (!next) {
+                    setStartAt("");
+                    setEndAt("");
+                    setEndDateEnabled(false);
+                  }
+                }}
+                label="Ativar datas"
+              />
+            </div>
+
+            {dateEnabled ? (
+              <div className="space-y-3">
+                <div className="space-y-2">
+                  <label className="text-[12px] text-white/70">Início</label>
+                  <input
+                    className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
+                    type="datetime-local"
+                    value={startAt}
+                    onChange={(e) => setStartAt(e.target.value)}
+                  />
+                </div>
+                <div className="flex items-center justify-between gap-3 rounded-xl border border-white/12 bg-black/30 px-3 py-2">
+                  <span className="text-[12px] text-white/70">Data limite</span>
+                  <Toggle
+                    enabled={endDateEnabled}
+                    onChange={(next) => {
+                      setEndDateEnabled(next);
+                      if (!next) setEndAt("");
+                    }}
+                    label="Ativar data limite"
+                  />
+                </div>
+                {endDateEnabled && (
+                  <div className="space-y-2">
+                    <label className="text-[12px] text-white/70">Fim</label>
+                    <input
+                      className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
+                      type="datetime-local"
+                      value={endAt}
+                      onChange={(e) => setEndAt(e.target.value)}
+                    />
+                  </div>
+                )}
+              </div>
+            ) : (
+              <p className="text-[12px] text-white/60">Sem datas configuradas.</p>
+            )}
           </div>
         </div>
-
-        <label className="flex items-center gap-2 text-sm text-white/80">
-          <input
-            type="checkbox"
-            className="h-4 w-4 rounded border-white/30 bg-black/40 text-[#6BFFFF]"
-            checked={waitlistEnabled}
-            onChange={(e) => setWaitlistEnabled(e.target.checked)}
-          />
-          Permitir lista de espera quando a capacidade estiver cheia
-        </label>
       </div>
 
-      <div className="rounded-3xl border border-white/12 bg-white/5 p-5 space-y-4">
+      <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-5 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl space-y-4">
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-lg font-semibold">Campos do formulário</h2>
@@ -494,7 +573,7 @@ export default function InscricaoDetailPage() {
         </div>
       </div>
 
-      <div className="rounded-3xl border border-white/12 bg-white/5 p-5 space-y-4">
+      <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-5 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl space-y-4">
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-lg font-semibold">Inscrições recebidas</h2>
@@ -593,5 +672,35 @@ export default function InscricaoDetailPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+function Toggle({
+  enabled,
+  onChange,
+  label,
+}: {
+  enabled: boolean;
+  onChange: (next: boolean) => void;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={enabled}
+      aria-label={label}
+      onClick={() => onChange(!enabled)}
+      className={`relative inline-flex h-6 w-11 items-center rounded-full border transition ${
+        enabled
+          ? "border-[#6BFFFF]/60 bg-gradient-to-r from-[#6BFFFF]/40 via-[#7FE0FF]/20 to-[#1646F5]/40 shadow-[0_0_12px_rgba(107,255,255,0.35)]"
+          : "border-white/20 bg-white/10"
+      }`}
+    >
+      <span
+        className={`inline-block h-4 w-4 rounded-full bg-white transition ${
+          enabled ? "translate-x-5" : "translate-x-1"
+        }`}
+      />
+    </button>
   );
 }

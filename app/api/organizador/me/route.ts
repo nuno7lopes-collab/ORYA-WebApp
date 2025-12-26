@@ -106,6 +106,7 @@ export async function GET(req: NextRequest) {
           officialEmail: (organizer as { officialEmail?: string | null }).officialEmail ?? null,
           officialEmailVerifiedAt: (organizer as { officialEmailVerifiedAt?: Date | null }).officialEmailVerifiedAt ?? null,
           brandingAvatarUrl: (organizer as { brandingAvatarUrl?: string | null }).brandingAvatarUrl ?? null,
+          brandingCoverUrl: (organizer as { brandingCoverUrl?: string | null }).brandingCoverUrl ?? null,
           brandingPrimaryColor: (organizer as { brandingPrimaryColor?: string | null }).brandingPrimaryColor ?? null,
           brandingSecondaryColor: (organizer as { brandingSecondaryColor?: string | null }).brandingSecondaryColor ?? null,
           organizationKind: (organizer as any).organizationKind ?? "PESSOA_SINGULAR",
@@ -118,6 +119,8 @@ export async function GET(req: NextRequest) {
           address: (organizer as { address?: string | null }).address ?? null,
           showAddressPublicly: (organizer as { showAddressPublicly?: boolean | null }).showAddressPublicly ?? false,
           publicWebsite: (organizer as { publicWebsite?: string | null }).publicWebsite ?? null,
+          publicInstagram: (organizer as { publicInstagram?: string | null }).publicInstagram ?? null,
+          publicYoutube: (organizer as { publicYoutube?: string | null }).publicYoutube ?? null,
           publicDescription: (organizer as { publicDescription?: string | null }).publicDescription ?? null,
           publicHours: (organizer as { publicHours?: string | null }).publicHours ?? null,
           infoRules: (organizer as { infoRules?: string | null }).infoRules ?? null,
@@ -222,11 +225,14 @@ export async function PATCH(req: NextRequest) {
       alertsSalesEnabled,
       alertsPayoutEnabled,
       brandingAvatarUrl,
+      brandingCoverUrl,
       brandingPrimaryColor,
       brandingSecondaryColor,
       organizationKind,
       publicName,
       publicWebsite,
+      publicInstagram,
+      publicYoutube,
       publicDescription,
       publicHours,
       infoRules,
@@ -249,6 +255,7 @@ export async function PATCH(req: NextRequest) {
 
     const organizationCategoryProvided = Object.prototype.hasOwnProperty.call(body, "organizationCategory");
     const modulesProvided = Object.prototype.hasOwnProperty.call(body, "modules");
+    const premiumProvided = Object.prototype.hasOwnProperty.call(body, "liveHubPremiumEnabled");
 
     const organizationCategory = organizationCategoryProvided
       ? parseOrganizationCategory(organizationCategoryRaw)
@@ -264,6 +271,12 @@ export async function PATCH(req: NextRequest) {
     if (modulesProvided && parsedModules === null) {
       return NextResponse.json(
         { ok: false, error: "modules inválido. Usa uma lista de módulos válidos (ex.: INSCRICOES)." },
+        { status: 400 },
+      );
+    }
+    if (premiumProvided) {
+      return NextResponse.json(
+        { ok: false, error: "O premium é gerido automaticamente pela subscrição." },
         { status: 400 },
       );
     }
@@ -307,6 +320,25 @@ export async function PATCH(req: NextRequest) {
     const publicNameInput = typeof publicName === "string" ? publicName.trim() : undefined;
     const addressInput = typeof address === "string" ? address.trim() : undefined;
     const showAddressPubliclyInput = typeof showAddressPublicly === "boolean" ? showAddressPublicly : undefined;
+    const normalizeSocialLink = (value: string, kind: "instagram" | "youtube") => {
+      const trimmed = value.trim();
+      if (!trimmed) return { value: null as string | null };
+      let normalized = trimmed;
+      if (trimmed.startsWith("@")) {
+        normalized =
+          kind === "instagram"
+            ? `https://instagram.com/${trimmed.slice(1)}`
+            : `https://youtube.com/@${trimmed.slice(1)}`;
+      } else if (!/^https?:\/\//i.test(trimmed)) {
+        normalized = `https://${trimmed}`;
+      }
+      if (!isValidWebsite(normalized)) {
+        return {
+          error: `${kind === "instagram" ? "Instagram" : "YouTube"} inválido. Usa um URL válido.`,
+        };
+      }
+      return { value: normalized };
+    };
 
     if (businessNameClean !== undefined) organizerUpdates.businessName = businessNameClean || null;
     if (publicNameInput !== undefined) {
@@ -333,6 +365,21 @@ export async function PATCH(req: NextRequest) {
         }
         organizerUpdates.publicWebsite = normalized;
       }
+    }
+
+    if (typeof publicInstagram === "string") {
+      const normalized = normalizeSocialLink(publicInstagram, "instagram");
+      if (normalized.error) {
+        return NextResponse.json({ ok: false, error: normalized.error }, { status: 400 });
+      }
+      organizerUpdates.publicInstagram = normalized.value;
+    }
+    if (typeof publicYoutube === "string") {
+      const normalized = normalizeSocialLink(publicYoutube, "youtube");
+      if (normalized.error) {
+        return NextResponse.json({ ok: false, error: normalized.error }, { status: 400 });
+      }
+      organizerUpdates.publicYoutube = normalized.value;
     }
     if (typeof publicDescription === "string") {
       organizerUpdates.publicDescription = publicDescription.trim() || null;
@@ -366,7 +413,10 @@ export async function PATCH(req: NextRequest) {
     if (typeof alertsEmail === "string") organizerUpdates.alertsEmail = alertsEmail.trim() || null;
     if (typeof alertsSalesEnabled === "boolean") organizerUpdates.alertsSalesEnabled = alertsSalesEnabled;
     if (typeof alertsPayoutEnabled === "boolean") organizerUpdates.alertsPayoutEnabled = alertsPayoutEnabled;
+    if (brandingAvatarUrl === null) organizerUpdates.brandingAvatarUrl = null;
     if (typeof brandingAvatarUrl === "string") organizerUpdates.brandingAvatarUrl = brandingAvatarUrl.trim() || null;
+    if (brandingCoverUrl === null) organizerUpdates.brandingCoverUrl = null;
+    if (typeof brandingCoverUrl === "string") organizerUpdates.brandingCoverUrl = brandingCoverUrl.trim() || null;
     if (typeof brandingPrimaryColor === "string") organizerUpdates.brandingPrimaryColor = brandingPrimaryColor.trim() || null;
     if (typeof brandingSecondaryColor === "string")
       organizerUpdates.brandingSecondaryColor = brandingSecondaryColor.trim() || null;

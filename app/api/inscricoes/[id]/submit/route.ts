@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { Prisma, OrganizationFormSubmissionStatus } from "@prisma/client";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { isValidPhone, normalizePhone } from "@/lib/phone";
+import { getCustomPremiumProfileModules, isCustomPremiumActive } from "@/lib/organizerPremium";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const COUNTED_STATUSES: OrganizationFormSubmissionStatus[] = [
@@ -54,11 +55,19 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
       where: { id: formId },
       include: {
         fields: { orderBy: { order: "asc" } },
-        organizer: { select: { id: true, status: true } },
+        organizer: { select: { id: true, status: true, username: true, liveHubPremiumEnabled: true } },
       },
     });
 
-    if (!form || form.status !== "PUBLISHED" || form.organizer.status !== "ACTIVE") {
+    if (!form || form.organizer.status !== "ACTIVE") {
+      return NextResponse.json({ ok: false, error: "Formulário não disponível." }, { status: 404 });
+    }
+
+    const premiumActive = isCustomPremiumActive(form.organizer);
+    const premiumModules = premiumActive ? getCustomPremiumProfileModules(form.organizer) ?? {} : {};
+    const allowInscricoes = Boolean(premiumModules.inscricoes);
+    const isPublic = form.status !== "ARCHIVED";
+    if (!isPublic) {
       return NextResponse.json({ ok: false, error: "Formulário não disponível." }, { status: 404 });
     }
 
@@ -66,7 +75,7 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
       where: { organizerId: form.organizer.id, moduleKey: "INSCRICOES", enabled: true },
       select: { organizerId: true },
     });
-    if (!moduleEnabled) {
+    if (!moduleEnabled || !allowInscricoes) {
       return NextResponse.json({ ok: false, error: "Formulário não disponível." }, { status: 404 });
     }
 

@@ -114,7 +114,7 @@ export default function MePage() {
   const isLoggedOut = !meLoading && !user;
 
   let content: JSX.Element = (
-    <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-8">
+    <div className="orya-page-width flex flex-col gap-6 px-4 py-8">
       <ProfileHeader
         displayName={displayName}
         handle={profile?.username || user?.email || "user"}

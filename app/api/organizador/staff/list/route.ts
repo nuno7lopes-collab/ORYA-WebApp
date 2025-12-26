@@ -4,9 +4,10 @@ import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { getActiveOrganizerForUser } from "@/lib/organizerContext";
+import { resolveOrganizerIdFromRequest } from "@/lib/organizerId";
 import { isOrgAdminOrAbove } from "@/lib/organizerPermissions";
 
-export async function GET(_req: NextRequest) {
+export async function GET(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
@@ -22,7 +23,9 @@ export async function GET(_req: NextRequest) {
       );
     }
 
+    const organizerId = resolveOrganizerIdFromRequest(req);
     const { organizer, membership } = await getActiveOrganizerForUser(user.id, {
+      organizerId: organizerId ?? undefined,
       roles: ["OWNER", "CO_OWNER", "ADMIN"],
     });
 

@@ -29,7 +29,6 @@ export default async function OrganizerEventLivePrepPage({ params }: PageProps) 
       slug: true,
       title: true,
       organizerId: true,
-      liveHubMode: true,
       liveHubVisibility: true,
       liveStreamUrl: true,
       templateType: true,
@@ -52,7 +51,14 @@ export default async function OrganizerEventLivePrepPage({ params }: PageProps) 
   }
 
   if (!organizer || !membership) redirect("/organizador");
-  if (!canManageEvents(membership.role)) redirect("/organizador?tab=manage");
+  const canOperateLive = [
+    OrganizerMemberRole.OWNER,
+    OrganizerMemberRole.CO_OWNER,
+    OrganizerMemberRole.ADMIN,
+    OrganizerMemberRole.STAFF,
+  ].includes(membership.role);
+  const canManageLiveConfig = canManageEvents(membership.role);
+  if (!canOperateLive) redirect("/organizador?tab=manage");
 
   return (
     <div className="w-full px-4 py-8 text-white md:px-6 lg:px-8">
@@ -61,17 +67,12 @@ export default async function OrganizerEventLivePrepPage({ params }: PageProps) 
           id: event.id,
           slug: event.slug,
           title: event.title,
-          liveHubMode: event.liveHubMode ?? "DEFAULT",
           liveHubVisibility: event.liveHubVisibility ?? "PUBLIC",
           liveStreamUrl: event.liveStreamUrl ?? null,
           templateType: event.templateType ?? null,
         }}
-        organizer={{
-          id: organizer.id,
-          liveHubPremiumEnabled: organizer.liveHubPremiumEnabled,
-          username: organizer.username ?? null,
-        }}
         tournamentId={event.tournament?.id ?? null}
+        canManageLiveConfig={canManageLiveConfig}
       />
     </div>
   );

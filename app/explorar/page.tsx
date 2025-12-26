@@ -686,7 +686,7 @@ function ExplorarContent() {
 
   return (
     <main className={exploreMainClass}>
-      <section className="max-w-6xl mx-auto px-6 md:px-10 py-6 md:py-8 space-y-6">
+      <section className="orya-page-width px-6 md:px-10 py-6 md:py-8 space-y-6">
         {/* TOPO – FILTROS PRINCIPAIS */}
         <div className={exploreFilterClass}>
           <div className="flex flex-wrap items-center gap-3">

@@ -31,7 +31,7 @@ type FormPayload = {
 };
 
 const formatDateTime = (value: string | null | undefined) => {
-  if (!value) return "Data a anunciar";
+  if (!value) return "Disponível sempre";
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return "Data a anunciar";
   return parsed.toLocaleString("pt-PT", {
@@ -63,14 +63,18 @@ export function FormSubmissionClient({ form }: { form: FormPayload }) {
     return `${form.capacity} vaga${form.capacity === 1 ? "" : "s"} disponíveis`;
   }, [form.capacity]);
 
-  const statusLabel = form.status === "PUBLISHED" ? "Inscrições abertas" : "Inscrições encerradas";
-  const statusTone =
-    form.status === "PUBLISHED"
-      ? "border-emerald-400/40 bg-emerald-500/10 text-emerald-50"
-      : "border-white/20 bg-white/10 text-white/70";
+  const hasStart = Boolean(form.startAt);
+  const hasEnd = Boolean(form.endAt);
+  const isOpen = form.status !== "ARCHIVED";
+  const statusLabel = isOpen ? "Inscrições abertas" : "Inscrições encerradas";
+  const statusTone = isOpen
+    ? "border-emerald-400/40 bg-emerald-500/10 text-emerald-50"
+    : "border-white/20 bg-white/10 text-white/70";
 
-  const dateLabel = formatDateTime(form.startAt);
-  const endLabel = form.endAt ? formatDateTime(form.endAt) : null;
+  const startLabel = hasStart ? formatDateTime(form.startAt) : null;
+  const endLabel = hasEnd ? formatDateTime(form.endAt) : null;
+  const dateLabel =
+    !hasStart && !hasEnd ? "Disponível sempre" : startLabel ?? (endLabel ? `Disponível até ${endLabel}` : null);
 
   const updateAnswer = (fieldId: number, value: string | number | boolean) => {
     setAnswers((prev) => ({ ...prev, [String(fieldId)]: value }));
@@ -112,7 +116,7 @@ export function FormSubmissionClient({ form }: { form: FormPayload }) {
         <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.05),transparent_35%,rgba(0,0,0,0.65))] mix-blend-screen" />
       </div>
 
-      <section className="relative mx-auto max-w-5xl px-4 pb-16 pt-10 space-y-6">
+      <section className="relative orya-page-width px-4 pb-16 pt-10 space-y-6">
         <header className="space-y-4 rounded-3xl border border-white/12 bg-gradient-to-br from-white/10 via-[#0b1124]/80 to-[#050912]/90 p-6 shadow-[0_30px_120px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="space-y-2">
@@ -124,8 +128,10 @@ export function FormSubmissionClient({ form }: { form: FormPayload }) {
           </div>
           <div className="flex flex-wrap items-center gap-3 text-[12px] text-white/70">
             <span className="rounded-full border border-white/15 bg-white/5 px-3 py-1">{capacityLabel}</span>
-            <span className="rounded-full border border-white/15 bg-white/5 px-3 py-1">{dateLabel}</span>
-            {endLabel && (
+            {dateLabel && (
+              <span className="rounded-full border border-white/15 bg-white/5 px-3 py-1">{dateLabel}</span>
+            )}
+            {hasStart && endLabel && (
               <span className="rounded-full border border-white/15 bg-white/5 px-3 py-1">
                 Até {endLabel}
               </span>

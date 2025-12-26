@@ -11,6 +11,7 @@ import {
 import crypto from "crypto";
 import { ensureEntriesForConfirmedPairing } from "@/domain/tournaments/ensureEntriesForConfirmedPairing";
 import { queuePartnerPaid } from "@/domain/notifications/splitPayments";
+import { checkoutKey } from "@/lib/stripe/idempotency";
 
 type IntentLike = {
   id: string;
@@ -34,6 +35,8 @@ export async function fulfillPadelSplitIntent(intent: IntentLike, stripeFeeForIn
     typeof meta.purchaseId === "string" && meta.purchaseId.trim() !== ""
       ? meta.purchaseId.trim()
       : null;
+  const idempotencyKey = typeof meta.idempotencyKey === "string" ? meta.idempotencyKey.trim() : "";
+  const paymentDedupeKey = idempotencyKey || (purchaseId ? checkoutKey(purchaseId) : intent.id);
 
   if (!Number.isFinite(ticketTypeId)) {
     const rawItems =
@@ -311,7 +314,7 @@ export async function fulfillPadelSplitIntent(intent: IntentLike, stripeFeeForIn
         stripeFeeCents: stripeFeeForIntentValue ?? 0,
         purchaseId: purchaseId ?? intent.id,
         source: PaymentEventSource.WEBHOOK,
-        dedupeKey: purchaseId ?? intent.id,
+        dedupeKey: paymentDedupeKey,
         attempt: { increment: 1 },
       },
       create: {
@@ -325,7 +328,7 @@ export async function fulfillPadelSplitIntent(intent: IntentLike, stripeFeeForIn
         stripeFeeCents: stripeFeeForIntentValue ?? 0,
         purchaseId: purchaseId ?? intent.id,
         source: PaymentEventSource.WEBHOOK,
-        dedupeKey: purchaseId ?? intent.id,
+        dedupeKey: paymentDedupeKey,
         attempt: 1,
       },
     });

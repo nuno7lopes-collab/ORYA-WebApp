@@ -14,6 +14,7 @@ import { prisma } from "@/lib/prisma";
 import { validateEligibility } from "@/domain/padelEligibility";
 import { PairingAction, transition } from "@/domain/padelPairingStateMachine";
 import { ensureEntriesForConfirmedPairing } from "@/domain/tournaments/ensureEntriesForConfirmedPairing";
+import { checkPadelCategoryLimit } from "@/domain/padelCategoryLimit";
 
 async function ensurePlayerProfile(params: { organizerId: number; userId: string }) {
   const { organizerId, userId } = params;
@@ -75,6 +76,7 @@ export async function POST(req: NextRequest) {
     where: {
       eventId: pairing.eventId,
       lifecycleStatus: { not: "CANCELLED_INCOMPLETE" },
+      categoryId: pairing.categoryId ?? undefined,
       OR: [{ player1UserId: user.id }, { player2UserId: user.id }],
       NOT: { id: pairing.id },
     },
@@ -82,6 +84,25 @@ export async function POST(req: NextRequest) {
   });
   if (existingActive) {
     return NextResponse.json({ ok: false, error: "PAIRING_ALREADY_ACTIVE" }, { status: 409 });
+  }
+
+  const limitCheck = await prisma.$transaction((tx) =>
+    checkPadelCategoryLimit({
+      tx,
+      eventId: pairing.eventId,
+      userId: user.id,
+      categoryId: pairing.categoryId ?? null,
+      excludePairingId: pairing.id,
+    }),
+  );
+  if (!limitCheck.ok) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: limitCheck.code === "ALREADY_IN_CATEGORY" ? "ALREADY_IN_CATEGORY" : "MAX_CATEGORIES",
+      },
+      { status: 409 },
+    );
   }
 
   const [captainProfile, partnerProfile] = await Promise.all([

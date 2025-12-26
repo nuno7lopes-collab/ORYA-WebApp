@@ -3,6 +3,14 @@ import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import ProfileHeader from "@/app/components/profile/ProfileHeader";
+import OrganizationProfileHeader from "@/app/components/profile/OrganizationProfileHeader";
+import OrganizerAgendaTabs from "@/app/components/profile/OrganizerAgendaTabs";
+import { optimizeImageUrl } from "@/lib/image";
+import {
+  getCustomPremiumKey,
+  getCustomPremiumProfileModules,
+  isCustomPremiumActive,
+} from "@/lib/organizerPremium";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -33,7 +41,66 @@ function formatDate(date?: Date | null) {
   }).format(date);
 }
 
+function formatDayLabel(date: Date, timezone: string) {
+  return new Intl.DateTimeFormat("pt-PT", {
+    weekday: "short",
+    day: "2-digit",
+    month: "short",
+    timeZone: timezone,
+  }).format(date);
+}
+
+function formatTimeLabel(date: Date | null, timezone: string) {
+  if (!date) return "—";
+  return new Intl.DateTimeFormat("pt-PT", {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: timezone,
+  }).format(date);
+}
+
 type OrganizationCategory = "EVENTOS" | "PADEL" | "VOLUNTARIADO";
+
+type OrganizerEvent = {
+  id: number;
+  slug: string;
+  title: string;
+  startsAt: Date | null;
+  endsAt: Date | null;
+  locationName: string | null;
+  locationCity: string | null;
+  timezone: string | null;
+  templateType: string | null;
+  coverImageUrl: string | null;
+  isFree: boolean;
+};
+
+type OrganizationFormPreview = {
+  id: number;
+  title: string;
+  description: string | null;
+  startAt: Date | null;
+  endAt: Date | null;
+  capacity: number | null;
+  waitlistEnabled: boolean;
+  status: "DRAFT" | "PUBLISHED" | "ARCHIVED";
+};
+
+type AgendaItem = {
+  id: number;
+  slug: string;
+  title: string;
+  timeLabel: string;
+  locationLabel: string;
+  isPast: boolean;
+  isFree: boolean;
+};
+
+type AgendaGroup = {
+  key: string;
+  label: string;
+  items: AgendaItem[];
+};
 
 const CATEGORY_META: Record<
   OrganizationCategory,
@@ -72,8 +139,9 @@ const UPDATE_CATEGORY_LABELS: Record<string, string> = {
   CALL_UPS: "Convocatórias",
 };
 
-function formatEventDateRange(start: Date | null, end: Date | null, timezone: string) {
+function formatEventDateRange(start: Date | null, end: Date | null, timezone?: string | null) {
   if (!start) return "Data a definir";
+  const safeTimezone = timezone || "Europe/Lisbon";
   const optsDay: Intl.DateTimeFormatOptions = {
     weekday: "short",
     day: "2-digit",
@@ -83,22 +151,54 @@ function formatEventDateRange(start: Date | null, end: Date | null, timezone: st
     hour: "2-digit",
     minute: "2-digit",
   };
-  const dayStr = new Intl.DateTimeFormat("pt-PT", { ...optsDay, timeZone: timezone }).format(start);
-  const startTimeStr = new Intl.DateTimeFormat("pt-PT", { ...optsTime, timeZone: timezone }).format(start);
+  const dayStr = new Intl.DateTimeFormat("pt-PT", { ...optsDay, timeZone: safeTimezone }).format(start);
+  const startTimeStr = new Intl.DateTimeFormat("pt-PT", { ...optsTime, timeZone: safeTimezone }).format(start);
   const endTimeStr = end
-    ? new Intl.DateTimeFormat("pt-PT", { ...optsTime, timeZone: timezone }).format(end)
+    ? new Intl.DateTimeFormat("pt-PT", { ...optsTime, timeZone: safeTimezone }).format(end)
     : null;
   return `${dayStr} · ${startTimeStr}${endTimeStr ? ` – ${endTimeStr}` : ""}`;
 }
 
-function initialsFromName(name: string) {
-  const trimmed = name.trim();
-  if (!trimmed) return "OR";
-  return trimmed
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase())
-    .join("");
+function buildAgendaGroups(events: OrganizerEvent[], pastEventIds?: Set<number>) {
+  const groups: AgendaGroup[] = [];
+  const groupMap = new Map<string, AgendaGroup>();
+
+  for (const event of events) {
+    const timezone = event.timezone || "Europe/Lisbon";
+    const hasDate = Boolean(event.startsAt);
+    const key = hasDate
+      ? new Intl.DateTimeFormat("pt-PT", {
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+          timeZone: timezone,
+        }).format(event.startsAt as Date)
+      : "data-a-definir";
+    const label = hasDate ? formatDayLabel(event.startsAt as Date, timezone) : "Data a definir";
+    const locationLabel =
+      [event.locationName, event.locationCity].filter(Boolean).join(" · ") || "Local a anunciar";
+    const item: AgendaItem = {
+      id: event.id,
+      slug: event.slug,
+      title: event.title,
+      timeLabel: hasDate ? formatTimeLabel(event.startsAt as Date, timezone) : "—",
+      locationLabel,
+      isPast: pastEventIds?.has(event.id) ?? false,
+      isFree: event.isFree,
+    };
+
+    if (!groupMap.has(key)) {
+      groupMap.set(key, { key, label, items: [item] });
+    } else {
+      groupMap.get(key)?.items.push(item);
+    }
+  }
+
+  for (const group of groupMap.values()) {
+    groups.push(group);
+  }
+
+  return groups;
 }
 
 export default async function UserProfilePage({ params }: PageProps) {
@@ -118,6 +218,7 @@ export default async function UserProfilePage({ params }: PageProps) {
         username: true,
         fullName: true,
         avatarUrl: true,
+        coverUrl: true,
         bio: true,
         city: true,
         visibility: true,
@@ -128,16 +229,21 @@ export default async function UserProfilePage({ params }: PageProps) {
       where: { username: usernameParam, status: "ACTIVE" },
       select: {
         id: true,
+        userId: true,
         username: true,
         publicName: true,
         businessName: true,
         city: true,
         organizationCategory: true,
         brandingAvatarUrl: true,
+        brandingCoverUrl: true,
         officialEmail: true,
+        officialEmailVerifiedAt: true,
         publicListingEnabled: true,
         status: true,
         publicWebsite: true,
+        publicInstagram: true,
+        publicYoutube: true,
         publicDescription: true,
         publicHours: true,
         infoRules: true,
@@ -147,6 +253,11 @@ export default async function UserProfilePage({ params }: PageProps) {
         infoLocationNotes: true,
         address: true,
         showAddressPublicly: true,
+        liveHubPremiumEnabled: true,
+        organizationModules: {
+          where: { enabled: true },
+          select: { moduleKey: true },
+        },
       },
     }),
   ]);
@@ -168,9 +279,19 @@ export default async function UserProfilePage({ params }: PageProps) {
       organizerProfile.publicName?.trim() ||
       organizerProfile.businessName?.trim() ||
       "Organização ORYA";
-    const orgInitials = initialsFromName(orgDisplayName);
+    const modules =
+      (organizerProfile.organizationModules?.map((module) => module.moduleKey) ?? []) as string[];
+    const ownerMembership = viewerId
+      ? await prisma.organizerMember.findFirst({
+          where: { organizerId: organizerProfile.id, userId: viewerId, role: "OWNER" },
+          select: { userId: true },
+        })
+      : null;
+    const isOrgOwner = Boolean(ownerMembership);
     const contactEmail = organizerProfile.officialEmail?.trim() || null;
     const publicWebsite = organizerProfile.publicWebsite?.trim() || null;
+    const publicInstagram = organizerProfile.publicInstagram?.trim() || null;
+    const publicYoutube = organizerProfile.publicYoutube?.trim() || null;
     const publicWebsiteHref = publicWebsite
       ? (() => {
           const normalized = /^https?:\/\//i.test(publicWebsite)
@@ -184,46 +305,80 @@ export default async function UserProfilePage({ params }: PageProps) {
           }
         })()
       : null;
-    const publicWebsiteLabel = publicWebsiteHref
-      ? publicWebsiteHref.replace(/^https?:\/\//i, "").replace(/\/$/, "")
-      : "A definir";
-    const publicHours = organizerProfile.publicHours?.trim() || null;
     const publicDescription = organizerProfile.publicDescription?.trim() || null;
-    const showAddress = organizerProfile.showAddressPublicly && organizerProfile.address;
+    const premiumKey = getCustomPremiumKey(organizerProfile);
+    const premiumActive = isCustomPremiumActive(organizerProfile);
+    const premiumModules = premiumActive ? getCustomPremiumProfileModules(organizerProfile) ?? {} : {};
+    const isOneVOnePremium = premiumActive && premiumKey === "ONEVONE";
+    const hasInscricoes = modules.includes("INSCRICOES") && Boolean(premiumModules.inscricoes);
+    const hasLoja = modules.includes("LOJA") && Boolean(premiumModules.loja);
+    const hasGaleria = modules.includes("GALERIA") && Boolean(premiumModules.galeria);
+    const shouldLoadForms = hasInscricoes || isOrgOwner;
 
-    const events = await prisma.event.findMany({
-      where: {
-        organizerId: organizerProfile.id,
-        status: "PUBLISHED",
-        isDeleted: false,
-        type: "ORGANIZER_EVENT",
-      },
-      orderBy: [{ startsAt: "asc" }],
-      select: {
-        id: true,
-        slug: true,
-        title: true,
-        startsAt: true,
-        endsAt: true,
-        locationName: true,
-        locationCity: true,
-        address: true,
-        isFree: true,
-        timezone: true,
-        templateType: true,
-        coverImageUrl: true,
-        ticketTypes: { select: { price: true } },
-      },
-    });
+    const formsWhere = {
+      organizerId: organizerProfile.id,
+      status: { in: ["PUBLISHED", "DRAFT"] },
+    };
 
-    const updates = await prisma.organizationUpdate.findMany({
-      where: { organizerId: organizerProfile.id, status: "PUBLISHED" },
-      include: {
-        event: { select: { slug: true, title: true } },
-      },
-      orderBy: [{ isPinned: "desc" }, { publishedAt: "desc" }, { createdAt: "desc" }],
-      take: 6,
-    });
+    const [events, updates, followersCount, followRow, forms] = await Promise.all([
+      prisma.event.findMany({
+        where: {
+          organizerId: organizerProfile.id,
+          status: "PUBLISHED",
+          isDeleted: false,
+          type: "ORGANIZER_EVENT",
+        },
+        orderBy: [{ startsAt: "asc" }],
+        select: {
+          id: true,
+          slug: true,
+          title: true,
+          startsAt: true,
+          endsAt: true,
+          locationName: true,
+          locationCity: true,
+          address: true,
+          isFree: true,
+          timezone: true,
+          templateType: true,
+          coverImageUrl: true,
+          ticketTypes: { select: { price: true } },
+        },
+      }),
+      prisma.organizationUpdate.findMany({
+        where: { organizerId: organizerProfile.id, status: "PUBLISHED" },
+        include: {
+          event: { select: { slug: true, title: true } },
+        },
+        orderBy: [{ isPinned: "desc" }, { publishedAt: "desc" }, { createdAt: "desc" }],
+        take: 6,
+      }),
+      prisma.organizer_follows.count({
+        where: { organizer_id: organizerProfile.id },
+      }),
+      viewerId
+        ? prisma.organizer_follows.findFirst({
+            where: { organizer_id: organizerProfile.id, follower_id: viewerId },
+            select: { follower_id: true },
+          })
+        : Promise.resolve(null),
+      shouldLoadForms
+        ? prisma.organizationForm.findMany({
+            where: formsWhere,
+            orderBy: [{ createdAt: "desc" }],
+            select: {
+              id: true,
+              title: true,
+              description: true,
+              startAt: true,
+              endAt: true,
+              capacity: true,
+              waitlistEnabled: true,
+              status: true,
+            },
+          })
+        : Promise.resolve([] as OrganizationFormPreview[]),
+    ]);
 
     const formattedUpdates = updates.map((update) => ({
       ...update,
@@ -232,18 +387,88 @@ export default async function UserProfilePage({ params }: PageProps) {
     }));
 
     const categoryEvents = categoryTemplate
-      ? events.filter(
+      ? (events as OrganizerEvent[]).filter(
           (event) =>
             event.templateType === categoryTemplate ||
             event.templateType === null ||
             event.templateType === "OTHER",
         )
-      : events;
-    const upcomingEvents = categoryEvents.filter(
-      (event) => event.startsAt && event.startsAt >= now,
-    );
-    const pastEvents = categoryEvents.filter((event) => event.startsAt && event.startsAt < now);
-    const nextEvent = upcomingEvents[0] ?? null;
+      : (events as OrganizerEvent[]);
+    const upcomingEvents = categoryEvents
+      .filter((event) => event.startsAt && event.startsAt >= now)
+      .sort((a, b) => (a.startsAt?.getTime() ?? 0) - (b.startsAt?.getTime() ?? 0));
+    const pastEvents = categoryEvents
+      .filter((event) => event.startsAt && event.startsAt < now)
+      .sort((a, b) => (b.startsAt?.getTime() ?? 0) - (a.startsAt?.getTime() ?? 0));
+    const spotlightEvent = upcomingEvents[0] ?? null;
+    const coverCandidate =
+      organizerProfile.brandingCoverUrl?.trim() ||
+      spotlightEvent?.coverImageUrl ||
+      upcomingEvents.find((event) => event.coverImageUrl)?.coverImageUrl ||
+      pastEvents.find((event) => event.coverImageUrl)?.coverImageUrl ||
+      null;
+    const headerCoverUrl = coverCandidate ? optimizeImageUrl(coverCandidate, 1400, 72) : null;
+    const galleryItems = categoryEvents.filter((event) => event.coverImageUrl).slice(0, 6);
+    const initialIsFollowing = Boolean(followRow);
+    const isVerified = Boolean(organizerProfile.officialEmailVerifiedAt);
+    const followersTotal = followersCount ?? 0;
+    const pastEventIds = new Set(pastEvents.map((event) => event.id));
+    const agendaUpcomingEvents = spotlightEvent
+      ? upcomingEvents.filter((event) => event.id !== spotlightEvent.id)
+      : upcomingEvents;
+    const upcomingGroups = buildAgendaGroups(agendaUpcomingEvents, pastEventIds);
+    const pastGroups = buildAgendaGroups(pastEvents, pastEventIds);
+    const allGroups = buildAgendaGroups([...upcomingEvents, ...pastEvents], pastEventIds);
+    const publicForms = forms.filter((form) => form.status !== "ARCHIVED");
+    const featuredForm =
+      publicForms.find((form) => /guarda[-\s]?redes/i.test(form.title)) ?? publicForms[0] ?? null;
+    const showInscricoes = hasInscricoes;
+    const spotlightCtaLabel = spotlightEvent?.isFree ? "Garantir lugar" : "Comprar bilhete";
+    const spotlightCtaHref = spotlightEvent ? buildTicketHref(spotlightEvent.slug) : null;
+    const inscriptionsCoverUrl = spotlightEvent?.coverImageUrl
+      ? optimizeImageUrl(spotlightEvent.coverImageUrl, 900, 70)
+      : "/images/placeholder-event.jpg";
+    const featuredFormDateLabel = featuredForm
+      ? formatFormDateRange(featuredForm.startAt, featuredForm.endAt)
+      : null;
+    const featuredFormCapacityLabel = featuredForm?.capacity
+      ? `${featuredForm.capacity} vagas`
+      : null;
+    const merchItems = hasLoja
+      ? isOneVOnePremium
+        ? [
+            {
+              title: "Camisola OneVOne",
+              description: "Edição limitada oficial dos torneios.",
+              price: "Em breve",
+              href: publicWebsiteHref,
+            },
+            {
+              title: "Pulseira OneVOne",
+              description: "Identidade premium para atletas e staff.",
+              price: "Em breve",
+              href: publicWebsiteHref,
+            },
+          ]
+        : [
+            {
+              title: "Camisola oficial",
+              description: "Edição limitada com assinatura da organização.",
+              price: "Em breve",
+              href: publicWebsiteHref,
+            },
+            {
+              title: "Pulseira de evento",
+              description: "Identidade premium para a equipa e atletas.",
+              price: "Em breve",
+              href: publicWebsiteHref,
+            },
+          ]
+      : [];
+    const agendaTotal = upcomingEvents.length + pastEvents.length;
+    const galleryPreview = galleryItems.slice(0, 4);
+    const galleryHref = publicInstagram || null;
+    const galleryLinkLabel = publicInstagram ? "Instagram" : null;
 
     const padelPlayersCount =
       organizationCategory === "PADEL"
@@ -266,176 +491,240 @@ export default async function UserProfilePage({ params }: PageProps) {
           })
         : [];
 
-    const highlights = [
-      {
-        label: `Próximo ${categoryMeta.noun}`,
-        value: nextEvent ? formatDate(nextEvent.startsAt) : "Por anunciar",
-        hint: nextEvent ? nextEvent.title : `Sem ${categoryMeta.nounPlural} publicados`,
-      },
-      {
-        label: `${categoryMeta.nounPlural} publicados`,
-        value: categoryEvents.length,
-        hint: categoryEvents.length ? "Ativos no perfil público" : "Começa pela primeira publicação",
-      },
-      organizationCategory === "PADEL"
-        ? {
-            label: "Jogadores registados",
-            value: padelPlayersCount,
-            hint: padelPlayersCount ? "Perfis ativos em competição" : "Ainda sem atletas",
-          }
-        : {
-            label: "Histórico recente",
-            value: pastEvents.length,
-            hint: pastEvents.length ? "Eventos concluídos" : "Sem histórico",
-      },
-    ];
-
-    const infoBlocks = [
-      { key: "rules", title: "Regras", body: organizerProfile.infoRules },
-      { key: "faq", title: "FAQ", body: organizerProfile.infoFaq },
-      { key: "requirements", title: "Requisitos", body: organizerProfile.infoRequirements },
-      { key: "policies", title: "Políticas", body: organizerProfile.infoPolicies },
-      { key: "location", title: "Chegar lá", body: organizerProfile.infoLocationNotes },
-    ].filter((block) => block.body && block.body.trim().length > 0);
-
-    const ctaHref = nextEvent ? `/eventos/${nextEvent.slug}` : "#agenda";
-    const ctaLabel = nextEvent ? categoryMeta.cta : "Ver agenda";
-
     return (
       <main className="relative orya-body-bg min-h-screen w-full overflow-hidden text-white">
-        <div className="pointer-events-none fixed inset-0" aria-hidden="true">
-          <div className="absolute -top-36 right-[-140px] h-[420px] w-[420px] rounded-full bg-[radial-gradient(circle_at_35%_35%,rgba(255,0,200,0.28),transparent_60%)] opacity-80 blur-3xl" />
-          <div className="absolute top-[22vh] -left-40 h-[360px] w-[360px] rounded-full bg-[radial-gradient(circle_at_30%_30%,rgba(107,255,255,0.22),transparent_60%)] opacity-80 blur-3xl" />
-          <div className="absolute bottom-[-180px] right-[12%] h-[420px] w-[420px] rounded-full bg-[radial-gradient(circle_at_40%_40%,rgba(22,70,245,0.25),transparent_60%)] opacity-70 blur-3xl" />
-          <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.05),transparent_35%,rgba(0,0,0,0.65))] mix-blend-screen" />
-        </div>
+        <section className="relative orya-page-width flex flex-col gap-8 py-10">
+          <OrganizationProfileHeader
+            name={orgDisplayName}
+            username={organizerProfile.username ?? usernameParam}
+            avatarUrl={organizerProfile.brandingAvatarUrl ?? null}
+            coverUrl={headerCoverUrl}
+            bio={publicDescription}
+            city={organizerProfile.city ?? null}
+            followersCount={followersTotal}
+            followingCount={0}
+            organizerId={organizerProfile.id}
+            initialIsFollowing={initialIsFollowing}
+            isOwner={isOrgOwner}
+            isPublic={organizerProfile.publicListingEnabled !== false}
+            isVerified={isVerified}
+            instagramHref={publicInstagram}
+            youtubeHref={publicYoutube}
+            websiteHref={publicWebsiteHref}
+            contactEmail={contactEmail}
+          />
 
-        <section className="relative mx-auto flex max-w-6xl flex-col gap-8 px-4 py-10">
-          <header className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#050914]/85 to-[#05070f]/95 p-6 shadow-[0_26px_80px_rgba(0,0,0,0.75)] backdrop-blur-2xl">
-            <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
-              <div className="flex flex-col gap-4">
-                <div className="flex items-center gap-4">
-                  <div className="relative h-16 w-16 overflow-hidden rounded-2xl border border-white/15 bg-gradient-to-tr from-[#FF00C8]/60 via-[#6BFFFF]/40 to-[#1646F5]/60 p-[1px]">
-                    <div className="flex h-full w-full items-center justify-center rounded-[14px] bg-black/80 text-sm font-semibold uppercase tracking-[0.2em] text-white/70">
-                      {organizerProfile.brandingAvatarUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={organizerProfile.brandingAvatarUrl}
-                          alt={orgDisplayName}
-                          className="h-full w-full rounded-[14px] object-cover"
-                        />
+          <section className="grid gap-6 px-5 sm:px-8 md:grid-cols-3 md:grid-rows-[auto_1fr] md:items-start">
+            <OrganizerAgendaTabs
+              title="Agenda pública"
+              anchorId="agenda"
+              layout="grid"
+              upcomingGroups={upcomingGroups}
+              pastGroups={pastGroups}
+              allGroups={allGroups}
+              upcomingCount={upcomingEvents.length}
+              pastCount={pastEvents.length}
+              totalCount={agendaTotal}
+              prelude={
+                <EventSpotlightCard
+                  event={spotlightEvent}
+                  label={`Próximo ${categoryMeta.noun}`}
+                  emptyLabel={`Sem ${categoryMeta.noun} anunciado`}
+                  ctaLabel={spotlightCtaLabel}
+                  ctaHref={spotlightCtaHref}
+                  variant="embedded"
+                />
+              }
+            />
+
+            <aside className="space-y-4 md:col-span-1 md:row-start-2 min-w-0">
+              {showInscricoes && (
+                <section className="relative overflow-hidden rounded-3xl border border-white/12 bg-[#05070f]/80 p-4 shadow-[0_20px_70px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
+                  <div className="absolute inset-0" aria-hidden="true">
+                    <div className="absolute inset-0 bg-gradient-to-r from-[#05070f]/95 via-[#0b1124]/85 to-transparent" />
+                    <div className="absolute inset-y-0 right-0 w-2/3">
+                      <div
+                        className="absolute inset-0 bg-cover bg-center opacity-80"
+                        style={{ backgroundImage: `url(${inscriptionsCoverUrl})` }}
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-l from-transparent via-black/40 to-[#05070f]/95" />
+                    </div>
+                  </div>
+
+                  <div className="relative z-10 space-y-2">
+                    <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">
+                      Inscrições
+                    </p>
+                    <h3 className="text-lg font-semibold text-white">
+                      {featuredForm?.title ||
+                        (isOneVOnePremium ? "Ficha Guarda-Redes OneVOne" : "Inscrições em preparação")}
+                    </h3>
+                    {featuredFormDateLabel || featuredFormCapacityLabel ? (
+                      <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-white/70">
+                        {featuredFormDateLabel && (
+                          <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1">
+                            {featuredFormDateLabel}
+                          </span>
+                        )}
+                        {featuredFormCapacityLabel && (
+                          <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1">
+                            {featuredFormCapacityLabel}
+                          </span>
+                        )}
+                      </div>
+                    ) : null}
+                    <div className="mt-4 flex flex-wrap items-center gap-2">
+                      {featuredForm ? (
+                        <Link
+                          href={`/inscricoes/${featuredForm.id}`}
+                          className="rounded-full bg-white px-4 py-2 text-[12px] font-semibold text-black shadow-[0_10px_30px_rgba(255,255,255,0.25)]"
+                        >
+                          Inscrever-me
+                        </Link>
                       ) : (
-                        orgInitials
+                        <span className="rounded-full border border-white/15 bg-white/10 px-4 py-2 text-[12px] font-semibold text-white/70">
+                          Em breve
+                        </span>
                       )}
                     </div>
                   </div>
-                  <div>
-                    <div className="inline-flex items-center rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-white/70">
-                      {categoryMeta.label}
+                </section>
+              )}
+
+              {hasLoja && (
+                <section className="rounded-3xl border border-white/12 bg-white/5 p-4 shadow-[0_18px_60px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">Loja</p>
+                      <h3 className="text-base font-semibold text-white">Merch premium</h3>
                     </div>
-                    <h1 className="mt-2 text-2xl font-semibold text-white">{orgDisplayName}</h1>
-                    <p className="text-sm text-white/60">
-                      @{organizerProfile.username ?? usernameParam}
-                      {organizerProfile.city ? ` · ${organizerProfile.city}` : ""}
-                    </p>
+                    {publicWebsiteHref && (
+                      <a
+                        href={publicWebsiteHref}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[11px] text-white/80 hover:border-white/30 hover:bg-white/10"
+                      >
+                        Ver loja
+                      </a>
+                    )}
                   </div>
-                </div>
-                <div className="flex flex-wrap items-center gap-2 text-[12px] text-white/65">
-                  {nextEvent ? (
-                    <>
-                      <span className="rounded-full border border-white/15 bg-white/8 px-3 py-1">
-                        Próximo: {formatEventDateRange(nextEvent.startsAt, nextEvent.endsAt, nextEvent.timezone)}
-                      </span>
-                      <span className="rounded-full border border-white/15 bg-white/8 px-3 py-1">
-                        {nextEvent.locationCity || nextEvent.locationName}
-                      </span>
-                    </>
-                  ) : (
-                    <span className="rounded-full border border-white/15 bg-white/8 px-3 py-1">
-                      Agenda em preparação
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              <div className="flex flex-col items-start gap-2">
-                <Link
-                  href={ctaHref}
-                  className="inline-flex items-center justify-center rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-5 py-2 text-sm font-semibold text-black shadow-[0_0_25px_rgba(107,255,255,0.35)] transition hover:brightness-110"
-                >
-                  {ctaLabel}
-                </Link>
-                <span className="text-[11px] text-white/55">
-                  {nextEvent ? "Segue para o destaque principal" : "Agenda a atualizar"}
-                </span>
-              </div>
-            </div>
-          </header>
-
-          <section className="space-y-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">Destaques</p>
-                <h2 className="text-xl font-semibold text-white">O essencial agora</h2>
-              </div>
-            </div>
-            <div className="grid gap-4 md:grid-cols-3">
-            {highlights.map((item) => (
-              <div
-                key={item.label}
-                className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/10 via-[#0a1122]/80 to-[#05070f]/90 p-4 text-sm shadow-[0_24px_80px_rgba(0,0,0,0.6)] backdrop-blur-2xl"
-              >
-                <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">{item.label}</p>
-                <p className="mt-2 text-xl font-semibold text-white">{item.value}</p>
-                <p className="mt-1 text-[12px] text-white/60">{item.hint}</p>
-              </div>
-            ))}
-            </div>
-          </section>
-
-          <section id="agenda" className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">
-                  {categoryMeta.nounPlural}
-                </p>
-                <h2 className="text-xl font-semibold text-white">Agenda pública</h2>
-              </div>
-              <Link href={ctaHref} className="text-sm text-white/60 hover:text-white">
-                {categoryMeta.cta}
-              </Link>
-            </div>
-            {upcomingEvents.length === 0 ? (
-              <div className="rounded-3xl border border-white/10 bg-white/5 p-5 text-sm text-white/70 shadow-[0_20px_70px_rgba(0,0,0,0.5)] backdrop-blur-2xl">
-                Ainda não existem {categoryMeta.nounPlural} publicados. Assim que houver datas confirmadas, aparecem aqui.
-              </div>
-            ) : (
-              <div className="grid gap-3">
-                {upcomingEvents.slice(0, 4).map((event) => (
-                  <Link
-                    key={event.id}
-                    href={`/eventos/${event.slug}`}
-                    className="group rounded-2xl border border-white/12 bg-white/5 p-4 text-sm transition hover:border-white/30 hover:bg-white/10"
-                  >
-                    <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                      <div>
-                        <p className="text-[11px] uppercase tracking-[0.2em] text-white/55">
-                          {formatEventDateRange(event.startsAt, event.endsAt, event.timezone)}
-                        </p>
-                        <p className="text-base font-semibold text-white">{event.title}</p>
-                        <p className="text-[12px] text-white/60">
-                          {event.locationName}
-                          {event.locationCity ? ` · ${event.locationCity}` : ""}
-                        </p>
-                      </div>
-                      <span className="inline-flex items-center rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[12px] text-white/70 transition group-hover:border-white/40 group-hover:text-white">
-                        Ver detalhe →
-                      </span>
+                  {merchItems.length === 0 ? (
+                    <div className="mt-3 rounded-2xl border border-white/10 bg-white/5 p-3 text-[12px] text-white/70">
+                      Produtos em preparação. Vamos lançar novidades em breve.
                     </div>
-                  </Link>
-                ))}
-              </div>
-            )}
+                  ) : (
+                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                      {merchItems.slice(0, 2).map((item) => {
+                        const titleLower = item.title.toLowerCase();
+                        const isCamisola = titleLower.includes("camisola");
+                        const isPulseira = titleLower.includes("pulseira");
+                        const imageStyle = isCamisola
+                          ? { backgroundImage: "url(/ov1.png)" }
+                          : isPulseira
+                            ? { backgroundImage: "url(/onevone-pulseira.png)" }
+                            : undefined;
+                        return (
+                          <div
+                            key={item.title}
+                            className="overflow-hidden rounded-2xl border border-white/12 bg-[#05070f]/85 text-[12px] text-white/80 shadow-[0_16px_50px_rgba(0,0,0,0.5)]"
+                          >
+                            <div className="relative aspect-square w-full overflow-hidden border-b border-white/10">
+                              <div
+                                className={`absolute inset-0 bg-cover bg-center ${
+                                  isCamisola
+                                    ? ""
+                                    : "bg-[radial-gradient(circle_at_30%_20%,rgba(255,255,255,0.25),transparent_55%),linear-gradient(135deg,#0b1124,#05070f)]"
+                                }`}
+                                style={imageStyle}
+                              />
+                              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent" />
+                              <div className="relative z-10 flex h-full flex-col justify-end p-3">
+                                <p className="text-sm font-semibold text-white drop-shadow">
+                                  {item.title}
+                                </p>
+                                <div className="mt-2 flex flex-wrap items-center gap-2">
+                                  {item.href ? (
+                                    <a
+                                      href={item.href}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="inline-flex rounded-full border border-white/30 bg-white/15 px-3 py-1 text-[10px] text-white"
+                                    >
+                                      Comprar
+                                    </a>
+                                  ) : (
+                                    <span className="inline-flex rounded-full border border-white/25 bg-white/10 px-3 py-1 text-[10px] text-white/80">
+                                      Comprar
+                                    </span>
+                                  )}
+                                  <span className="text-[10px] text-white/70">{item.price}</span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </section>
+              )}
+
+              {hasGaleria && (
+                <section className="rounded-3xl border border-white/12 bg-white/5 p-4 shadow-[0_18px_60px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">Galeria</p>
+                      <h3 className="text-base font-semibold text-white">Highlights</h3>
+                    </div>
+                    {galleryHref && galleryLinkLabel && (
+                      <a
+                        href={galleryHref}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[11px] text-white/80 hover:border-white/30 hover:bg-white/10"
+                      >
+                        Ver {galleryLinkLabel}
+                      </a>
+                    )}
+                  </div>
+                  {galleryPreview.length === 0 ? (
+                    <div className="mt-3 rounded-2xl border border-white/10 bg-white/5 p-3 text-[12px] text-white/70">
+                      Ainda não existem imagens publicadas.
+                    </div>
+                  ) : (
+                    <div className="mt-3 grid grid-cols-3 gap-2">
+                      {galleryPreview.map((event) => {
+                        const coverUrl = optimizeImageUrl(event.coverImageUrl, 600, 70);
+                        const content = (
+                          <div className="group relative h-20 overflow-hidden rounded-xl border border-white/10">
+                            <div
+                              className="absolute inset-0 bg-cover bg-center transition-transform duration-500 group-hover:scale-[1.04]"
+                              style={{ backgroundImage: `url(${coverUrl})` }}
+                            />
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
+                          </div>
+                        );
+
+                        return galleryHref ? (
+                          <a
+                            key={event.id}
+                            href={galleryHref}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="block"
+                          >
+                            {content}
+                          </a>
+                        ) : (
+                          <div key={event.id}>{content}</div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </section>
+              )}
+            </aside>
           </section>
 
           <section className="space-y-4">
@@ -548,81 +837,6 @@ export default async function UserProfilePage({ params }: PageProps) {
             </section>
           )}
 
-          <section className="grid gap-4 md:grid-cols-2">
-            <div className="rounded-3xl border border-white/12 bg-white/5 p-5 text-sm text-white/75 shadow-[0_24px_70px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
-              <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Informação</p>
-              <h3 className="mt-2 text-lg font-semibold text-white">Sobre esta organização</h3>
-              <p className="mt-2 text-[12px] text-white/60">
-                {publicDescription ||
-                  `Esta página representa a estrutura oficial para ${categoryMeta.nounPlural}. Mais detalhes e regras serão adicionados em breve.`}
-              </p>
-              <div className="mt-4 space-y-2 text-[12px]">
-                <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-3 py-2">
-                  <span>Localização base</span>
-                  <span className="font-semibold text-white">{organizerProfile.city ?? "Por definir"}</span>
-                </div>
-                <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-3 py-2">
-                  <span>Morada pública</span>
-                  <span className="font-semibold text-white">
-                    {showAddress ? organizerProfile.address : "Apenas na confirmação"}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/10 via-[#0a1122]/80 to-[#05070f]/90 p-5 text-sm text-white/75 shadow-[0_24px_70px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
-              <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Contacto oficial</p>
-              <h3 className="mt-2 text-lg font-semibold text-white">Fala com a equipa</h3>
-              <p className="mt-2 text-[12px] text-white/60">
-                Mensagens importantes, alterações e confirmações chegam sempre pelos canais oficiais.
-              </p>
-              <div className="mt-4 space-y-2 text-[12px]">
-                <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-3 py-2">
-                  <span>Website</span>
-                  {publicWebsiteHref ? (
-                    <a
-                      href={publicWebsiteHref}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="font-semibold text-white hover:text-white/80"
-                    >
-                      {publicWebsiteLabel}
-                    </a>
-                  ) : (
-                    <span className="font-semibold text-white">{publicWebsiteLabel}</span>
-                  )}
-                </div>
-                <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-3 py-2">
-                  <span>Email</span>
-                  <span className="font-semibold text-white">{contactEmail ?? "A definir"}</span>
-                </div>
-                <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-3 py-2">
-                  <span>Horário</span>
-                  <span className="font-semibold text-white">{publicHours ?? "A definir"}</span>
-                </div>
-              </div>
-            </div>
-          </section>
-
-          {infoBlocks.length > 0 && (
-            <section className="space-y-4">
-              <div>
-                <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">Blocos de informação</p>
-                <h2 className="text-xl font-semibold text-white">Detalhes úteis</h2>
-              </div>
-              <div className="grid gap-4 md:grid-cols-2">
-                {infoBlocks.map((block) => (
-                  <div
-                    key={block.key}
-                    className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050912]/90 p-5 text-sm text-white/75 shadow-[0_24px_70px_rgba(0,0,0,0.55)] backdrop-blur-2xl"
-                  >
-                    <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">{block.title}</p>
-                    <p className="mt-2 text-[13px] text-white/80 whitespace-pre-line">{block.body?.trim()}</p>
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
         </section>
       </main>
     );
@@ -718,6 +932,12 @@ export default async function UserProfilePage({ params }: PageProps) {
     profile.fullName?.trim() ||
     profile.username ||
     "Utilizador ORYA";
+  const coverCandidate =
+    profile.coverUrl?.trim() ||
+    recent.find((item) => item.coverUrl)?.coverUrl ||
+    profile.avatarUrl ||
+    null;
+  const headerCoverUrl = coverCandidate ? optimizeImageUrl(coverCandidate, 1400, 72) : null;
   const isOrganizationProfile = Boolean(organizerProfile);
 
   return (
@@ -729,12 +949,13 @@ export default async function UserProfilePage({ params }: PageProps) {
         <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.05),transparent_35%,rgba(0,0,0,0.65))] mix-blend-screen" />
       </div>
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_20%,rgba(255,255,255,0.05),transparent_60%)]" />
-      <section className="relative mx-auto flex max-w-6xl flex-col gap-6 px-4 py-10">
+      <section className="relative flex flex-col gap-6 py-10">
         <ProfileHeader
           isOwner={isOwner}
           name={displayName}
           username={profile.username}
           avatarUrl={profile.avatarUrl}
+          coverUrl={headerCoverUrl}
           bio={profile.bio}
           city={profile.city}
           visibility={profile.visibility as "PUBLIC" | "PRIVATE" | null}
@@ -746,96 +967,185 @@ export default async function UserProfilePage({ params }: PageProps) {
           isOrganization={isOrganizationProfile}
         />
 
-        {canShowPrivate ? (
-          <>
-            <section className="rounded-3xl border border-white/15 bg-white/5 p-5 shadow-[0_24px_60px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                <StatCard
-                  title="Eventos com bilhete"
-                  value={stats.total}
-                  subtitle="Timeline ORYA."
-                  tone="default"
-                />
-                <StatCard
-                  title="Próximos"
-                  value={stats.upcoming}
-                  subtitle="O que vem aí."
-                  tone="emerald"
-                />
-                <StatCard
-                  title="Passados"
-                  value={stats.past}
-                  subtitle="Memórias."
-                  tone="cyan"
-                />
-                <StatCard
-                  title="Total investido"
-                  value={stats.totalSpent}
-                  subtitle="Bruto - taxas."
-                  tone="purple"
-                />
-              </div>
-            </section>
-
-            {isOwner ? (
-              <section className="rounded-3xl border border-white/15 bg-white/5 backdrop-blur-2xl p-5 space-y-4 shadow-[0_24px_60px_rgba(0,0,0,0.6)] min-h-[280px] relative overflow-hidden">
-                <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_15%_20%,rgba(255,255,255,0.04),transparent_38%),radial-gradient(circle_at_85%_18%,rgba(255,255,255,0.03),transparent_34%),radial-gradient(circle_at_50%_85%,rgba(255,255,255,0.03),transparent_40%)]" />
-                <div className="flex items-center justify-between gap-3 flex-wrap">
-                  <div>
-                    <h2 className="text-sm font-semibold text-white/95 tracking-[0.08em]">
-                      Carteira ORYA
-                    </h2>
-                    <p className="text-[11px] text-white/68">
-                      Entitlements ativos primeiro; memórias logo atrás. Tudo num só lugar.
-                    </p>
+        <div className="px-5 sm:px-8">
+          <div className="orya-page-width flex flex-col gap-6">
+            {canShowPrivate ? (
+              <>
+                <section className="rounded-3xl border border-white/15 bg-white/5 p-5 shadow-[0_24px_60px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
+                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                    <StatCard
+                      title="Eventos com bilhete"
+                      value={stats.total}
+                      subtitle="Timeline ORYA."
+                      tone="default"
+                    />
+                    <StatCard
+                      title="Próximos"
+                      value={stats.upcoming}
+                      subtitle="O que vem aí."
+                      tone="emerald"
+                    />
+                    <StatCard
+                      title="Passados"
+                      value={stats.past}
+                      subtitle="Memórias."
+                      tone="cyan"
+                    />
+                    <StatCard
+                      title="Total investido"
+                      value={stats.totalSpent}
+                      subtitle="Bruto - taxas."
+                      tone="purple"
+                    />
                   </div>
-                  <Link
-                    href="/me/carteira"
-                    className="inline-flex items-center gap-2 rounded-full border border-white/30 bg-white/10 text-white text-[11px] font-semibold px-4 py-1.5 shadow-[0_10px_26px_rgba(255,255,255,0.15)] hover:border-white/45 hover:bg-white/20 hover:scale-[1.02] active:scale-95 transition-transform backdrop-blur"
-                  >
-                    Ver carteira
-                    <span className="text-[12px]">↗</span>
-                  </Link>
-                </div>
+                </section>
 
-                {recent.length === 0 ? (
-                  <div className="flex h-48 items-center justify-center rounded-2xl border border-white/15 bg-white/5 text-sm text-white/80">
-                    Ainda não tens bilhetes ORYA.
-                  </div>
+                {isOwner ? (
+                  <section className="rounded-3xl border border-white/15 bg-white/5 backdrop-blur-2xl p-5 space-y-4 shadow-[0_24px_60px_rgba(0,0,0,0.6)] min-h-[280px] relative overflow-hidden">
+                    <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_15%_20%,rgba(255,255,255,0.04),transparent_38%),radial-gradient(circle_at_85%_18%,rgba(255,255,255,0.03),transparent_34%),radial-gradient(circle_at_50%_85%,rgba(255,255,255,0.03),transparent_40%)]" />
+                    <div className="flex items-center justify-between gap-3 flex-wrap">
+                      <div>
+                        <h2 className="text-sm font-semibold text-white/95 tracking-[0.08em]">
+                          Carteira ORYA
+                        </h2>
+                        <p className="text-[11px] text-white/68">
+                          Entitlements ativos primeiro; memórias logo atrás. Tudo num só lugar.
+                        </p>
+                      </div>
+                      <Link
+                        href="/me/carteira"
+                        className="inline-flex items-center gap-2 rounded-full border border-white/30 bg-white/10 text-white text-[11px] font-semibold px-4 py-1.5 shadow-[0_10px_26px_rgba(255,255,255,0.15)] hover:border-white/45 hover:bg-white/20 hover:scale-[1.02] active:scale-95 transition-transform backdrop-blur"
+                      >
+                        Ver carteira
+                        <span className="text-[12px]">↗</span>
+                      </Link>
+                    </div>
+
+                    {recent.length === 0 ? (
+                      <div className="flex h-48 items-center justify-center rounded-2xl border border-white/15 bg-white/5 text-sm text-white/80">
+                        Ainda não tens bilhetes ORYA.
+                      </div>
+                    ) : (
+                      <div className="grid gap-3 md:grid-cols-2">
+                        {recent.map((item) => (
+                          <RecentCard key={item.id} item={item} />
+                        ))}
+                      </div>
+                    )}
+                  </section>
                 ) : (
-                  <div className="grid gap-3 md:grid-cols-2">
-                    {recent.map((item) => (
-                      <RecentCard key={item.id} item={item} />
-                    ))}
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <EventListCard
+                      title="Próximos eventos"
+                      items={recent.filter((r) => r.isUpcoming)}
+                      emptyLabel="Sem eventos futuros para mostrar."
+                    />
+                    <EventListCard
+                      title="Eventos passados"
+                      items={recent.filter((r) => !r.isUpcoming)}
+                      emptyLabel="Sem eventos passados para mostrar."
+                    />
                   </div>
                 )}
-              </section>
+              </>
             ) : (
-              <div className="grid gap-4 md:grid-cols-2">
-                <EventListCard
-                  title="Próximos eventos"
-                  items={recent.filter((r) => r.isUpcoming)}
-                  emptyLabel="Sem eventos futuros para mostrar."
-                />
-                <EventListCard
-                  title="Eventos passados"
-                  items={recent.filter((r) => !r.isUpcoming)}
-                  emptyLabel="Sem eventos passados para mostrar."
-                />
-              </div>
+              <section className="rounded-3xl border border-white/15 bg-white/5 p-6 shadow-[0_26px_70px_rgba(0,0,0,0.6)] backdrop-blur-2xl text-center">
+                <h2 className="text-lg font-semibold text-white">Perfil privado</h2>
+                <p className="mt-2 text-sm text-white/70">
+                  {displayName} mantém a timeline privada. Só o próprio consegue ver os eventos e
+                  bilhetes.
+                </p>
+              </section>
             )}
-          </>
-        ) : (
-          <section className="rounded-3xl border border-white/15 bg-white/5 p-6 shadow-[0_26px_70px_rgba(0,0,0,0.6)] backdrop-blur-2xl text-center">
-            <h2 className="text-lg font-semibold text-white">Perfil privado</h2>
-            <p className="mt-2 text-sm text-white/70">
-              {displayName} mantém a timeline privada. Só o próprio consegue ver os eventos e
-              bilhetes.
-            </p>
-          </section>
-        )}
+          </div>
+        </div>
       </section>
     </main>
+  );
+}
+
+function formatFormDateRange(startAt: Date | null, endAt: Date | null) {
+  if (!startAt && !endAt) return "Disponível sempre";
+  if (startAt && endAt) {
+    const startLabel = formatDate(startAt);
+    const endLabel = formatDate(endAt);
+    return startLabel && endLabel ? `${startLabel} – ${endLabel}` : startLabel || endLabel;
+  }
+  return formatDate(startAt ?? endAt);
+}
+
+function buildTicketHref(slug: string) {
+  return `/eventos/${slug}?checkout=1#bilhetes`;
+}
+
+function EventSpotlightCard({
+  event,
+  label,
+  emptyLabel,
+  ctaLabel,
+  ctaHref,
+  variant = "default",
+}: {
+  event: OrganizerEvent | null;
+  label: string;
+  emptyLabel: string;
+  ctaLabel: string;
+  ctaHref: string | null;
+  variant?: "default" | "embedded";
+}) {
+  if (!event) {
+    return (
+      <div className="rounded-3xl border border-white/12 bg-white/5 p-5 text-sm text-white/70 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
+        <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">{label}</p>
+        <h3 className="mt-2 text-xl font-semibold text-white">{emptyLabel}</h3>
+        <p className="mt-1 text-[12px] text-white/60">A equipa atualiza as próximas datas aqui.</p>
+      </div>
+    );
+  }
+
+  const cover = event.coverImageUrl ? optimizeImageUrl(event.coverImageUrl, 1400, 72) : null;
+  const eventHref = `/eventos/${event.slug}`;
+  const wrapperClass =
+    variant === "embedded"
+      ? "relative overflow-hidden rounded-2xl border border-white/10 bg-white/5 p-4"
+      : "relative overflow-hidden rounded-3xl border border-white/12 bg-white/5 p-5 shadow-[0_26px_80px_rgba(0,0,0,0.6)] backdrop-blur-2xl";
+
+  return (
+    <div className={wrapperClass}>
+      {cover && (
+        <div
+          className="absolute inset-0 bg-cover bg-center"
+          style={{ backgroundImage: `url(${cover})` }}
+        />
+      )}
+      <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/35 to-transparent" />
+      <Link
+        href={eventHref}
+        aria-label={`Abrir ${event.title}`}
+        className="absolute inset-0 z-0"
+      />
+      <div className="relative z-10 max-w-xl space-y-2">
+        <p className="text-[11px] uppercase tracking-[0.2em] text-white/70">{label}</p>
+        <h3 className="text-2xl font-semibold text-white">{event.title}</h3>
+        <p className="text-[12px] text-white/75">
+          {formatEventDateRange(event.startsAt, event.endsAt, event.timezone)}
+        </p>
+        <p className="text-[12px] text-white/65">
+          {event.locationName}
+          {event.locationCity ? ` · ${event.locationCity}` : ""}
+        </p>
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          {ctaHref && (
+            <Link
+              href={ctaHref}
+              className="relative z-10 rounded-full bg-white px-4 py-2 text-[12px] font-semibold text-black shadow-[0_10px_30px_rgba(255,255,255,0.35)]"
+            >
+              {ctaLabel}
+            </Link>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 

@@ -19,6 +19,9 @@ export type WaveTicket = {
   // info extra de stock (opcional, vindo da API)
   totalQuantity?: number | null;
   soldQuantity?: number;
+  padelCategoryId?: number | null;
+  padelCategoryLabel?: string | null;
+  padelCategoryLinkId?: number | null;
 };
 
 type WavesSectionClientProps = {
@@ -31,6 +34,7 @@ type WavesSectionClientProps = {
     eventId: number;
     organizerId: number | null;
     categoryId?: number | null;
+    categoryLinkId?: number | null;
   };
   inviteEmail?: string | null;
 };

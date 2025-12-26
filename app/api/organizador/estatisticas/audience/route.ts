@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { TicketStatus } from "@prisma/client";
 import { getActiveOrganizerForUser } from "@/lib/organizerContext";
+import { resolveOrganizerIdFromRequest } from "@/lib/organizerId";
 import { isOrgAdminOrAbove } from "@/lib/organizerPermissions";
 
 function getDateRangeFromSearchParams(searchParams: URLSearchParams) {
@@ -57,7 +58,9 @@ export async function GET(req: NextRequest) {
     const { from, to } = getDateRangeFromSearchParams(searchParams);
 
     // Garantir que o utilizador é organizador com permissões de gestão
+    const organizerId = resolveOrganizerIdFromRequest(req);
     const { organizer, membership } = await getActiveOrganizerForUser(user.id, {
+      organizerId: organizerId ?? undefined,
       roles: ["OWNER", "CO_OWNER", "ADMIN"],
     });
 

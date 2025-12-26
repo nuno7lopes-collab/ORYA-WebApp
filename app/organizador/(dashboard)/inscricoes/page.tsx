@@ -32,9 +32,9 @@ const statusLabel: Record<FormItem["status"], string> = {
 };
 
 const formatDate = (value: string | null) => {
-  if (!value) return "Data a anunciar";
+  if (!value) return "Disponível sempre";
   const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return "Data a anunciar";
+  if (Number.isNaN(parsed.getTime())) return "Disponível sempre";
   return parsed.toLocaleDateString("pt-PT", { day: "2-digit", month: "short", year: "numeric" });
 };
 
@@ -79,7 +79,7 @@ export default function InscricoesPage({ embedded }: InscricoesPageProps) {
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || json?.ok === false) {
-        setError(json?.error || "Não foi possível criar o formulário.");
+        setError(json?.error || "Não foi possível criar a inscrição.");
         setCreating(false);
         return;
       }
@@ -92,7 +92,7 @@ export default function InscricoesPage({ embedded }: InscricoesPageProps) {
       setCreating(false);
     } catch (err) {
       console.error("[inscricoes][create] erro", err);
-      setError("Erro inesperado ao criar formulário.");
+      setError("Erro inesperado ao criar inscrição.");
       setCreating(false);
     }
   };
@@ -113,15 +113,19 @@ export default function InscricoesPage({ embedded }: InscricoesPageProps) {
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <p className="text-[11px] uppercase tracking-[0.3em] text-white/60">Inscrições</p>
-          <h1 className="text-2xl font-semibold">Formulários e vagas</h1>
-          <p className="text-sm text-white/60">Cria inscrições profissionais sem recorrer a Google Forms.</p>
+          <h1 className="text-2xl font-semibold">Inscrições e formulários</h1>
+          <p className="text-sm text-white/60">
+            Cria inscrições ou formulários simples para recolher informação e vagas.
+          </p>
         </div>
       </div>
 
-      <div className="rounded-3xl border border-white/12 bg-white/5 p-5 space-y-4">
+      <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-5 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl space-y-4">
         <div className="space-y-1">
-          <h2 className="text-lg font-semibold">Criar novo formulário</h2>
-          <p className="text-[12px] text-white/60">Começa pelo nome e depois ajusta campos e estado.</p>
+          <h2 className="text-lg font-semibold">Criar nova inscrição</h2>
+          <p className="text-[12px] text-white/60">
+            Começa pelo nome e depois ajusta campos, datas e capacidade.
+          </p>
         </div>
         {moduleDisabled && (
           <div className="rounded-2xl border border-amber-400/40 bg-amber-400/10 p-3 text-sm text-amber-100">
@@ -130,14 +134,14 @@ export default function InscricoesPage({ embedded }: InscricoesPageProps) {
         )}
         <div className="grid gap-3 md:grid-cols-[1.2fr_1.8fr]">
           <input
-            className="w-full rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
-            placeholder="Título do formulário"
+            className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
+            placeholder="Título da inscrição"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
           />
           <input
-            className="w-full rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
-            placeholder="Descrição curta (opcional)"
+            className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
+            placeholder="Descrição curta (opcional) · também pode ser só um formulário"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
           />
@@ -147,30 +151,33 @@ export default function InscricoesPage({ embedded }: InscricoesPageProps) {
           type="button"
           disabled={creating || !title.trim() || moduleDisabled}
           onClick={handleCreate}
-          className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-black transition hover:scale-[1.01] disabled:opacity-60"
+          className="rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-4 py-2 text-sm font-semibold text-black shadow hover:brightness-110 disabled:opacity-60"
         >
-          {creating ? "A criar..." : "Criar formulário"}
+          {creating ? "A criar..." : "Criar inscrição"}
         </button>
       </div>
 
       <section className="space-y-3">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Os teus formulários</h2>
+          <h2 className="text-lg font-semibold">As tuas inscrições</h2>
           <span className="text-[12px] text-white/60">{items.length} total</span>
         </div>
 
-        {loadingForms && <p className="text-sm text-white/60">A carregar formulários...</p>}
+        {loadingForms && <p className="text-sm text-white/60">A carregar inscrições...</p>}
         {loadError && <p className="text-sm text-red-300">{loadError}</p>}
 
         {!loadingForms && !loadError && items.length === 0 && (
           <div className="rounded-2xl border border-dashed border-white/15 bg-white/5 p-4 text-sm text-white/70">
-            Ainda não criaste nenhum formulário. Usa o botão acima para começar.
+            Ainda não criaste nenhuma inscrição ou formulário. Usa o botão acima para começar.
           </div>
         )}
 
         <div className="grid gap-4 lg:grid-cols-2">
           {items.map((form) => (
-            <div key={form.id} className="rounded-3xl border border-white/12 bg-white/5 p-5 space-y-3">
+            <div
+              key={form.id}
+              className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-5 shadow-[0_22px_70px_rgba(0,0,0,0.5)] backdrop-blur-2xl space-y-3"
+            >
               <div className="flex items-start justify-between gap-3">
                 <div className="space-y-1">
                   <h3 className="text-lg font-semibold">{form.title}</h3>

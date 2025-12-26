@@ -5,7 +5,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { stripe } from "@/lib/stripeClient";
-import { OrganizerMemberRole } from "@prisma/client";
+import { getActiveOrganizerForUser } from "@/lib/organizerContext";
+import { resolveOrganizerIdFromRequest } from "@/lib/organizerId";
 import { isOrgOwner } from "@/lib/organizerPermissions";
 
 const DEFAULT_BASE_URL = "http://localhost:3000";
@@ -22,7 +23,7 @@ function getBaseUrl() {
   return DEFAULT_BASE_URL;
 }
 
-export async function POST(_req: NextRequest) {
+export async function POST(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
     const {
@@ -48,20 +49,18 @@ export async function POST(_req: NextRequest) {
       );
     }
 
-    const membership = await prisma.organizerMember.findFirst({
-      where: { userId: profile.id, organizer: { status: "ACTIVE" } },
-      include: { organizer: true },
-      orderBy: [{ lastUsedAt: "desc" }, { createdAt: "asc" }],
+    const organizerId = resolveOrganizerIdFromRequest(req);
+    const { organizer, membership } = await getActiveOrganizerForUser(profile.id, {
+      organizerId: organizerId ?? undefined,
+      roles: ["OWNER"],
     });
 
-    if (!membership || !membership.organizer || !isOrgOwner(membership.role as OrganizerMemberRole)) {
+    if (!organizer || !membership || !isOrgOwner(membership.role)) {
       return NextResponse.json(
         { ok: false, error: "APENAS_OWNER" },
         { status: 403 },
       );
     }
-
-    const organizer = membership.organizer;
 
     if (organizer.status !== "ACTIVE") {
       return NextResponse.json(

@@ -204,7 +204,7 @@ export default function SettingsPage() {
           <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.05),transparent_35%,rgba(0,0,0,0.65))] mix-blend-screen" />
         </div>
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_20%,rgba(255,255,255,0.05),transparent_55%)]" />
-        <div className="relative max-w-4xl mx-auto px-5 py-10">
+        <div className="relative orya-page-width px-5 py-10">
           <div className="h-36 rounded-3xl border border-white/15 bg-white/5 animate-pulse shadow-[0_18px_50px_rgba(0,0,0,0.6)] backdrop-blur-2xl" />
         </div>
       </main>
@@ -221,7 +221,7 @@ export default function SettingsPage() {
           <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.05),transparent_35%,rgba(0,0,0,0.65))] mix-blend-screen" />
         </div>
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_20%,rgba(255,255,255,0.05),transparent_55%)]" />
-        <div className="relative max-w-3xl mx-auto px-5 py-10 space-y-4">
+        <div className="relative orya-page-width px-5 py-10 space-y-4">
           <h1 className="text-xl font-semibold">Definições</h1>
           <p className="text-sm text-white/70">Precisas de iniciar sessão para aceder às definições da conta.</p>
           <Link
@@ -244,7 +244,7 @@ export default function SettingsPage() {
         <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.05),transparent_35%,rgba(0,0,0,0.65))] mix-blend-screen" />
       </div>
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_20%,rgba(255,255,255,0.05),transparent_55%)]" />
-      <section className="relative max-w-5xl mx-auto px-4 pb-14 pt-10 space-y-6">
+      <section className="relative orya-page-width px-4 pb-14 pt-10 space-y-6">
         <header className="flex flex-col gap-3 rounded-3xl border border-white/15 bg-white/5 px-5 py-6 shadow-[0_24px_60px_rgba(0,0,0,0.65)] backdrop-blur-2xl sm:flex-row sm:items-center sm:justify-between sm:px-8 sm:py-7">
           <div className="space-y-1">
             <p className="text-xs uppercase tracking-[0.24em] text-white/55">Área pessoal</p>

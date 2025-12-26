@@ -12,6 +12,7 @@ interface SaveBasicBody {
   username?: string;
   contactPhone?: string | null;
   avatarUrl?: string | null;
+  coverUrl?: string | null;
   bio?: string | null;
   visibility?: "PUBLIC" | "PRIVATE";
   allowEmailNotifications?: boolean;
@@ -52,6 +53,7 @@ export async function POST(req: NextRequest) {
   const rawUsername = body.username ?? "";
   const rawPhone = body.contactPhone;
   const avatarUrl = body.avatarUrl ?? undefined;
+  const coverUrl = body.coverUrl ?? undefined;
   const rawBio = body.bio;
   const visibility = body.visibility === "PRIVATE" ? "PRIVATE" : body.visibility === "PUBLIC" ? "PUBLIC" : undefined;
   const allowEmailNotifications = typeof body.allowEmailNotifications === "boolean" ? body.allowEmailNotifications : undefined;
@@ -118,6 +120,7 @@ export async function POST(req: NextRequest) {
           onboardingDone: true,
           ...(normalizedPhone !== undefined ? { contactPhone: normalizedPhone } : {}),
           ...(avatarUrl !== undefined ? { avatarUrl: avatarUrl || null } : {}),
+          ...(coverUrl !== undefined ? { coverUrl: coverUrl || null } : {}),
           ...(visibility ? { visibility } : {}),
           ...(allowEmailNotifications !== undefined ? { allowEmailNotifications } : {}),
           ...(allowEventReminders !== undefined ? { allowEventReminders } : {}),
@@ -132,6 +135,7 @@ export async function POST(req: NextRequest) {
           roles: ["user"],
           contactPhone: normalizedPhone ?? null,
           avatarUrl: avatarUrl ?? null,
+          coverUrl: coverUrl ?? null,
           visibility: visibility ?? "PUBLIC",
           allowEmailNotifications: allowEmailNotifications ?? true,
           allowEventReminders: allowEventReminders ?? true,
@@ -145,6 +149,7 @@ export async function POST(req: NextRequest) {
       username: profile.username,
       fullName: profile.fullName,
       avatarUrl: profile.avatarUrl,
+      coverUrl: profile.coverUrl,
       bio: profile.bio,
       city: profile.city,
       favouriteCategories: profile.favouriteCategories,

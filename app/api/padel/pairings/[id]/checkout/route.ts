@@ -11,6 +11,7 @@ import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { validateEligibility } from "@/domain/padelEligibility";
 import { env } from "@/lib/env";
+import { checkPadelCategoryLimit } from "@/domain/padelCategoryLimit";
 
 // Apenas valida e delega criação de intent ao endpoint central (/api/payments/intent).
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
@@ -68,10 +69,19 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   const ticketType = await prisma.ticketType.findUnique({
     where: { id: ticketTypeId },
-    select: { price: true, currency: true, eventId: true, event: { select: { slug: true } } },
+    select: {
+      price: true,
+      currency: true,
+      eventId: true,
+      event: { select: { slug: true } },
+      padelEventCategoryLink: { select: { padelCategoryId: true } },
+    },
   });
   if (!ticketType || ticketType.eventId !== pairing.eventId) {
     return NextResponse.json({ ok: false, error: "INVALID_TICKET_TYPE" }, { status: 400 });
+  }
+  if (pairing.categoryId && ticketType.padelEventCategoryLink?.padelCategoryId !== pairing.categoryId) {
+    return NextResponse.json({ ok: false, error: "TICKET_CATEGORY_MISMATCH" }, { status: 409 });
   }
 
   // Elegibilidade: garantir que capitão + parceiro (quando definido) respeitam regras
@@ -102,6 +112,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     where: {
       eventId: pairing.event.id,
       lifecycleStatus: { not: "CANCELLED_INCOMPLETE" },
+      categoryId: pairing.categoryId ?? undefined,
       OR: [{ player1UserId: user.id }, { player2UserId: user.id }],
       NOT: { id: pairing.id },
     },
@@ -109,6 +120,25 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   });
   if (existingActive) {
     return NextResponse.json({ ok: false, error: "PAIRING_ALREADY_ACTIVE" }, { status: 409 });
+  }
+
+  const limitCheck = await prisma.$transaction((tx) =>
+    checkPadelCategoryLimit({
+      tx,
+      eventId: pairing.event.id,
+      userId: user.id,
+      categoryId: pairing.categoryId ?? null,
+      excludePairingId: pairing.id,
+    }),
+  );
+  if (!limitCheck.ok) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: limitCheck.code === "ALREADY_IN_CATEGORY" ? "ALREADY_IN_CATEGORY" : "MAX_CATEGORIES",
+      },
+      { status: 409 },
+    );
   }
 
   const currency = ticketType.currency || "EUR";

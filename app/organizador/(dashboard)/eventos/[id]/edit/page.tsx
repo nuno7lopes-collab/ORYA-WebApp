@@ -26,7 +26,15 @@ export default async function OrganizerEventEditPage({ params }: PageProps) {
   const event = await prisma.event.findUnique({
     where: { id: eventId },
     include: {
-      ticketTypes: true,
+      ticketTypes: {
+        include: {
+          padelEventCategoryLink: {
+            include: {
+              category: { select: { label: true } },
+            },
+          },
+        },
+      },
     },
   });
 
@@ -63,6 +71,8 @@ export default async function OrganizerEventEditPage({ params }: PageProps) {
     status: t.status,
     startsAt: t.startsAt ? t.startsAt.toISOString() : null,
     endsAt: t.endsAt ? t.endsAt.toISOString() : null,
+    padelEventCategoryLinkId: t.padelEventCategoryLinkId ?? null,
+    padelCategoryLabel: t.padelEventCategoryLink?.category?.label ?? null,
   }));
 
   return (
@@ -88,6 +98,7 @@ export default async function OrganizerEventEditPage({ params }: PageProps) {
       <EventEditClient
         event={{
           id: event.id,
+          organizerId: event.organizerId,
           slug: event.slug,
           title: event.title,
           description: event.description,
@@ -100,7 +111,6 @@ export default async function OrganizerEventEditPage({ params }: PageProps) {
           isFree: event.isFree,
           inviteOnly: event.inviteOnly,
           coverImageUrl: event.coverImageUrl,
-          liveHubMode: event.liveHubMode,
           liveHubVisibility: event.liveHubVisibility,
           liveStreamUrl: event.liveStreamUrl,
           publicAccessMode: event.publicAccessMode,
@@ -111,10 +121,6 @@ export default async function OrganizerEventEditPage({ params }: PageProps) {
           platformFeeBpsOverride: event.platformFeeBpsOverride,
           platformFeeFixedCentsOverride: event.platformFeeFixedCentsOverride,
           payoutMode: event.payoutMode,
-        }}
-        organizer={{
-          id: organizer.id,
-          liveHubPremiumEnabled: organizer.liveHubPremiumEnabled,
         }}
         tickets={tickets}
       />

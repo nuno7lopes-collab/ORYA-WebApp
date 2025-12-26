@@ -24,6 +24,7 @@ type ApiAuthMeResponse = {
     username: string | null;
     fullName: string | null;
     avatarUrl: string | null;
+    coverUrl: string | null;
     bio: string | null;
     city: string | null;
     contactPhone: string | null;
@@ -131,6 +132,7 @@ export async function GET() {
       username: profile.username,
       fullName: profile.fullName,
       avatarUrl: profile.avatarUrl,
+      coverUrl: profile.coverUrl,
       bio: profile.bio,
       city: profile.city,
       contactPhone: profile.contactPhone,

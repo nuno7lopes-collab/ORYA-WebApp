@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
 
 type Pairing = {
@@ -39,10 +39,37 @@ function nameFromSlots(pairing?: Pairing | null) {
 export default function PadelTournamentTabs({ eventId, categoriesMeta }: { eventId: number; categoriesMeta?: CategoryMeta[] }) {
   const [tab, setTab] = useState<"duplas" | "grupos" | "eliminatorias" | "rankings">("duplas");
   const [configMessage, setConfigMessage] = useState<string | null>(null);
+  const categoryOptions = useMemo(
+    () =>
+      (categoriesMeta || [])
+        .filter((c) => Number.isFinite(c.categoryId as number))
+        .map((c) => ({
+          id: c.categoryId as number,
+          label: c.name || `Categoria ${c.categoryId}`,
+        })),
+    [categoriesMeta],
+  );
+  const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (categoryOptions.length === 0) {
+      if (selectedCategoryId !== null) setSelectedCategoryId(null);
+      return;
+    }
+    if (selectedCategoryId && categoryOptions.some((c) => c.id === selectedCategoryId)) return;
+    setSelectedCategoryId(categoryOptions[0].id ?? null);
+  }, [categoryOptions, selectedCategoryId]);
 
   const { data: pairingsRes } = useSWR(eventId ? `/api/padel/pairings?eventId=${eventId}` : null, fetcher);
-  const { data: matchesRes, mutate: mutateMatches } = useSWR(eventId ? `/api/padel/matches?eventId=${eventId}` : null, fetcher);
-  const { data: standingsRes } = useSWR(eventId ? `/api/padel/standings?eventId=${eventId}` : null, fetcher);
+  const categoryParam = selectedCategoryId ? `&categoryId=${selectedCategoryId}` : "";
+  const { data: matchesRes, mutate: mutateMatches } = useSWR(
+    eventId ? `/api/padel/matches?eventId=${eventId}${categoryParam}` : null,
+    fetcher,
+  );
+  const { data: standingsRes } = useSWR(
+    eventId ? `/api/padel/standings?eventId=${eventId}${categoryParam}` : null,
+    fetcher,
+  );
   const { data: configRes, mutate: mutateConfig } = useSWR(
     eventId ? `/api/padel/tournaments/config?eventId=${eventId}` : null,
     fetcher,
@@ -76,6 +103,10 @@ export default function PadelTournamentTabs({ eventId, categoriesMeta }: { event
     pairings.forEach((p) => map.set(p.id, nameFromSlots(p)));
     return map;
   }, [pairings]);
+
+  const filteredPairings = selectedCategoryId
+    ? pairings.filter((p) => p.categoryId === selectedCategoryId)
+    : pairings;
 
   const koRounds = useMemo(() => {
     const winnerFromSets = (sets?: Array<{ teamA: number; teamB: number }>): "A" | "B" | null => {
@@ -262,6 +293,23 @@ export default function PadelTournamentTabs({ eventId, categoriesMeta }: { event
 
   return (
     <section className="rounded-2xl border border-white/10 bg-black/40 p-4 space-y-4 mt-6">
+      {categoryOptions.length > 1 && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[12px] text-white/80">
+          <span className="uppercase tracking-[0.18em] text-[11px] text-white/60">Categoria ativa</span>
+          <select
+            value={selectedCategoryId ?? ""}
+            onChange={(e) => setSelectedCategoryId(e.target.value ? Number(e.target.value) : null)}
+            className="rounded-full border border-white/15 bg-black/30 px-3 py-1 text-[12px] text-white/80"
+          >
+            {categoryOptions.map((opt) => (
+              <option key={`padel-cat-${opt.id}`} value={String(opt.id)}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
       <div className="grid gap-3 md:grid-cols-3">
         <div className="rounded-xl border border-white/10 bg-white/5 p-3 space-y-1">
           <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">Inscrições Padel</p>
@@ -374,8 +422,8 @@ export default function PadelTournamentTabs({ eventId, categoriesMeta }: { event
 
       {tab === "duplas" && (
         <div className="space-y-2">
-          {pairings.length === 0 && <p className="text-sm text-white/70">Ainda não há duplas.</p>}
-          {pairings.map((p) => (
+          {filteredPairings.length === 0 && <p className="text-sm text-white/70">Ainda não há duplas.</p>}
+          {filteredPairings.map((p) => (
             <div key={p.id} className="rounded-xl border border-white/15 bg-white/5 p-3 text-sm flex items-center justify-between">
               <div>
                 <p className="font-semibold">{nameFromSlots(p)}</p>

@@ -15,6 +15,7 @@ import { buildPadelEventSnapshot } from "@/lib/padel/eventSnapshot";
 import { validateEligibility } from "@/domain/padelEligibility";
 import { PairingAction, transition } from "@/domain/padelPairingStateMachine";
 import { ensureEntriesForConfirmedPairing } from "@/domain/tournaments/ensureEntriesForConfirmedPairing";
+import { checkPadelCategoryLimit } from "@/domain/padelCategoryLimit";
 
 async function ensurePlayerProfile(params: { organizerId: number; userId: string }) {
   const { organizerId, userId } = params;
@@ -55,6 +56,7 @@ export async function GET(_: NextRequest, { params }: { params: { token: string 
       payment_mode: true,
       eventId: true,
       organizerId: true,
+      categoryId: true,
       player1UserId: true,
       player2UserId: true,
       deadlineAt: true,
@@ -81,7 +83,11 @@ export async function GET(_: NextRequest, { params }: { params: { token: string 
   }
 
   const ticketTypes = await prisma.ticketType.findMany({
-    where: { eventId: pairing.eventId, status: "ON_SALE" },
+    where: {
+      eventId: pairing.eventId,
+      status: "ON_SALE",
+      ...(pairing.categoryId ? { padelEventCategoryLink: { padelCategoryId: pairing.categoryId } } : {}),
+    },
     select: { id: true, name: true, price: true, currency: true },
     orderBy: { price: "asc" },
   });
@@ -156,6 +162,7 @@ export async function POST(_: NextRequest, { params }: { params: { token: string
     where: {
       eventId: pairing.eventId,
       lifecycleStatus: { not: "CANCELLED_INCOMPLETE" },
+      categoryId: pairing.categoryId ?? undefined,
       OR: [{ player1UserId: user.id }, { player2UserId: user.id }],
       NOT: { id: pairing.id },
     },
@@ -163,6 +170,25 @@ export async function POST(_: NextRequest, { params }: { params: { token: string
   });
   if (existingActive) {
     return NextResponse.json({ ok: false, error: "PAIRING_ALREADY_ACTIVE" }, { status: 409 });
+  }
+
+  const limitCheck = await prisma.$transaction((tx) =>
+    checkPadelCategoryLimit({
+      tx,
+      eventId: pairing.eventId,
+      userId: user.id,
+      categoryId: pairing.categoryId ?? null,
+      excludePairingId: pairing.id,
+    }),
+  );
+  if (!limitCheck.ok) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: limitCheck.code === "ALREADY_IN_CATEGORY" ? "ALREADY_IN_CATEGORY" : "MAX_CATEGORIES",
+      },
+      { status: 409 },
+    );
   }
 
   const config = await prisma.padelTournamentConfig.findUnique({

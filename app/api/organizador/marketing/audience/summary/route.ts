@@ -2,12 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizerForUser } from "@/lib/organizerContext";
+import { resolveOrganizerIdFromRequest } from "@/lib/organizerId";
 import { TicketStatus } from "@prisma/client";
 import { isOrgAdminOrAbove } from "@/lib/organizerPermissions";
 
 type SegmentKeys = "frequent" | "newLast60d" | "highSpenders" | "groups" | "dormant90d" | "local";
 
-export async function GET(_req: NextRequest) {
+export async function GET(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
     const {
@@ -19,7 +20,9 @@ export async function GET(_req: NextRequest) {
       return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
 
+    const organizerId = resolveOrganizerIdFromRequest(req);
     const { organizer, membership } = await getActiveOrganizerForUser(user.id, {
+      organizerId: organizerId ?? undefined,
       roles: ["OWNER", "CO_OWNER", "ADMIN"],
     });
 

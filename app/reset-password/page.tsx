@@ -135,8 +135,8 @@ function ResetPasswordInner() {
         <div className="absolute bottom-[-60px] left-[30%] h-72 w-72 rounded-full bg-[#7b7bff]/12 blur-[120px]" />
       </div>
 
-      <div className="relative mx-auto flex min-h-screen max-w-3xl flex-col items-center justify-center px-4 py-12">
-        <div className="w-full rounded-3xl border border-white/10 bg-white/5 px-6 py-8 shadow-[0_30px_110px_rgba(0,0,0,0.55)] backdrop-blur-2xl md:px-10 md:py-12">
+      <div className="relative orya-page-width flex min-h-screen items-center justify-center px-4 py-12">
+        <div className="w-full max-w-3xl rounded-3xl border border-white/10 bg-white/5 px-6 py-8 shadow-[0_30px_110px_rgba(0,0,0,0.55)] backdrop-blur-2xl md:px-10 md:py-12">
           <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] uppercase tracking-[0.22em] text-white/75">
             Recuperar acesso
           </div>

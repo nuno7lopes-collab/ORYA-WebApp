@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { EventStatus, Prisma } from "@prisma/client";
 import { getActiveOrganizerForUser } from "@/lib/organizerContext";
+import { resolveOrganizerIdFromRequest } from "@/lib/organizerId";
 import { isOrgAdminOrAbove } from "@/lib/organizerPermissions";
 
 /**
@@ -50,7 +51,9 @@ export async function GET(req: NextRequest) {
       select: { roles: true },
     });
 
+    const organizerId = resolveOrganizerIdFromRequest(req);
     const { organizer, membership } = await getActiveOrganizerForUser(user.id, {
+      organizerId: organizerId ?? undefined,
       roles: ["OWNER", "CO_OWNER", "ADMIN"],
     });
 

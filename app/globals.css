@@ -41,6 +41,13 @@ body {
     "SF Pro Display", -apple-system, sans-serif;
 }
 
+.orya-page-width {
+  width: 100%;
+  max-width: 88rem;
+  margin-left: auto;
+  margin-right: auto;
+}
+
 /* Remover padding top do main quando a navbar pública está escondida (organizador) */
 body[data-nav-hidden="true"] .main-shell {
   padding-top: 0 !important;
@@ -70,49 +77,6 @@ body:not([data-nav-hidden="true"]) .main-shell {
 }
 .payment-scroll::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.28);
-}
-
-/* ============ ORYA LOGO ============ */
-
-/* Glow subtil à volta do anel */
-.orya-logo-glow {
-  width: 240px;
-  height: 240px;
-  border-radius: 50%;
-  filter: blur(35px);
-  opacity: 0.55;
-  background: conic-gradient(
-    var(--orya-cyan),
-    #45e5ff,
-    var(--orya-purple),
-    var(--orya-pink),
-    var(--orya-cyan)
-  );
-  mask-image: radial-gradient(circle, transparent 58%, black 74%);
-  -webkit-mask-image: radial-gradient(circle, transparent 58%, black 74%);
-}
-
-/* Canvas do anel */
-.orya-logo-canvas {
-  background: transparent !important;
-  pointer-events: none;
-}
-
-/* ===========================================================
-   ANIMAÇÃO DO ANEL ORYA (rotação devagar e cinematográfica)
-   =========================================================== */
-
-@keyframes orya-spin {
-  0% {
-    transform: rotate(0deg);
-  }
-  100% {
-    transform: rotate(360deg);
-  }
-}
-
-.animate-orya-spin-slow {
-  animation: orya-spin 7s linear infinite;
 }
 
 /* ============ ORYA – React DatePicker dark neon theme ============ */

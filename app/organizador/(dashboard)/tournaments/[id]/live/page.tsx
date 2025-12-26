@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useEffect, useMemo, useState } from "react";
+import { use, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import useSWR from "swr";
 import { summarizeMatchStatus, computeStandingsForGroup } from "@/domain/tournaments/structure";
@@ -80,7 +80,7 @@ function Filters({ stages, setFilters }: { stages: any[]; setFilters: (f: any) =
           setCourt(e.target.value);
           setFilters((prev: any) => ({ ...prev, court: e.target.value || null }));
         }}
-        placeholder="Court #"
+        placeholder="Campo #"
         className="w-24 rounded-full border border-white/15 bg-white/5 px-3 py-1 text-white/80"
       />
       <label className="flex items-center gap-1 text-white/75">
@@ -100,7 +100,7 @@ function Filters({ stages, setFilters }: { stages: any[]; setFilters: (f: any) =
           setSearch(e.target.value);
           setFilters((prev: any) => ({ ...prev, search: e.target.value }));
         }}
-        placeholder="Pesquisar dupla #"
+        placeholder="Pesquisar jogador #"
         className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-white/80"
       />
     </div>
@@ -129,6 +129,10 @@ export function TournamentLiveManager({ tournamentId }: TournamentLiveManagerPro
   const [searchResults, setSearchResults] = useState<UserResult[]>([]);
   const [searching, setSearching] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const slotDraftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hasLoadedParticipantsRef = useRef(false);
+  const lastSavedKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (authError === "login") router.replace("/login");
@@ -143,6 +147,25 @@ export function TournamentLiveManager({ tournamentId }: TournamentLiveManagerPro
     isValidTournamentId ? `/api/organizador/tournaments/${tournamentId}/participants` : null,
     fetcher,
   );
+
+  const buildParticipantsPayload = (items: Array<Participant | null>) =>
+    items
+      .map((slot, idx) =>
+        slot
+          ? {
+              id: slot.id,
+              name: slot.name,
+              username: slot.username ?? null,
+              email: slot.email ?? null,
+              avatarUrl: slot.avatarUrl ?? null,
+              seed: idx + 1,
+            }
+          : null,
+      )
+      .filter(Boolean) as Participant[];
+
+  const buildParticipantsKey = (items: Array<Participant | null>, size: number) =>
+    JSON.stringify({ size, participants: buildParticipantsPayload(items) });
 
   const buildSlotsFromParticipants = (list: Participant[], size: number) => {
     const nextSlots: Array<Participant | null> = Array.from({ length: size }, () => null);
@@ -174,12 +197,12 @@ export function TournamentLiveManager({ tournamentId }: TournamentLiveManagerPro
     if (!participantsRes?.ok) return;
     const list = Array.isArray(participantsRes.participants) ? (participantsRes.participants as Participant[]) : [];
     const nextSize = Number.isFinite(participantsRes.bracketSize) ? Number(participantsRes.bracketSize) : bracketSize;
-    if (Number.isFinite(nextSize)) {
-      setBracketSize(nextSize);
-      setSlots(buildSlotsFromParticipants(list, nextSize));
-    } else {
-      setSlots(buildSlotsFromParticipants(list, bracketSize));
-    }
+    const resolvedSize = Number.isFinite(nextSize) ? nextSize : bracketSize;
+    const nextSlots = buildSlotsFromParticipants(list, resolvedSize);
+    if (Number.isFinite(resolvedSize)) setBracketSize(resolvedSize);
+    setSlots(nextSlots);
+    lastSavedKeyRef.current = buildParticipantsKey(nextSlots, resolvedSize);
+    hasLoadedParticipantsRef.current = true;
   }, [participantsRes]);
 
   useEffect(() => {
@@ -253,7 +276,7 @@ export function TournamentLiveManager({ tournamentId }: TournamentLiveManagerPro
     setActiveSlotIndex(index);
     setSlotMode(current?.username ? "user" : "guest");
     setSlotDraft({
-      id: current?.id ?? null,
+      id: current?.id ?? nextNegativeId(),
       name: current?.name ?? "",
       username: current?.username ?? "",
       email: current?.email ?? "",
@@ -302,29 +325,41 @@ export function TournamentLiveManager({ tournamentId }: TournamentLiveManagerPro
     }
   };
 
-  const saveSlot = () => {
+  useEffect(() => {
     if (activeSlotIndex === null) return;
     const name = slotDraft.name.trim();
-    if (!name) {
-      setParticipantsMessage("O nome do jogador é obrigatório.");
-      return;
-    }
-    const next: Participant = {
-      id: slotDraft.id ?? nextNegativeId(),
-      name,
-      username: slotMode === "user" ? slotDraft.username.trim().replace(/^@/, "") || null : null,
-      email: slotMode === "guest" ? slotDraft.email.trim().toLowerCase() || null : null,
-      avatarUrl: slotDraft.avatarUrl?.trim() || null,
-      seed: activeSlotIndex + 1,
+    if (!name) return;
+    if (slotDraftTimerRef.current) clearTimeout(slotDraftTimerRef.current);
+    slotDraftTimerRef.current = setTimeout(() => {
+      const next: Participant = {
+        id: slotDraft.id ?? nextNegativeId(),
+        name,
+        username: slotMode === "user" ? slotDraft.username.trim().replace(/^@/, "") || null : null,
+        email: slotMode === "guest" ? slotDraft.email.trim().toLowerCase() || null : null,
+        avatarUrl: slotDraft.avatarUrl?.trim() || null,
+        seed: activeSlotIndex + 1,
+      };
+      setSlots((prev) => {
+        const current = prev[activeSlotIndex];
+        if (
+          current &&
+          current.id === next.id &&
+          current.name === next.name &&
+          (current.username ?? null) === (next.username ?? null) &&
+          (current.email ?? null) === (next.email ?? null) &&
+          (current.avatarUrl ?? null) === (next.avatarUrl ?? null)
+        ) {
+          return prev;
+        }
+        const copy = [...prev];
+        copy[activeSlotIndex] = next;
+        return copy;
+      });
+    }, 400);
+    return () => {
+      if (slotDraftTimerRef.current) clearTimeout(slotDraftTimerRef.current);
     };
-    setSlots((prev) => {
-      const copy = [...prev];
-      copy[activeSlotIndex] = next;
-      return copy;
-    });
-    setParticipantsMessage(null);
-    closeSlotEditor();
-  };
+  }, [activeSlotIndex, slotDraft, slotMode]);
 
   const clearSlot = () => {
     if (activeSlotIndex === null) return;
@@ -395,7 +430,8 @@ export function TournamentLiveManager({ tournamentId }: TournamentLiveManagerPro
   });
   const filledCount = slots.filter(Boolean).length;
 
-  const saveParticipants = async () => {
+  const saveParticipants = async (options?: { silent?: boolean }) => {
+    if (savingParticipants) return;
     const filled = slots.filter((p): p is Participant => Boolean(p));
     if (filled.length > bracketSize) {
       setParticipantsMessage("Há mais participantes do que o tamanho da bracket.");
@@ -404,9 +440,7 @@ export function TournamentLiveManager({ tournamentId }: TournamentLiveManagerPro
     setSavingParticipants(true);
     setParticipantsMessage(null);
     try {
-      const payload = slots
-        .map((slot, idx) => (slot ? { ...slot, seed: idx + 1 } : null))
-        .filter(Boolean);
+      const payload = buildParticipantsPayload(slots);
       const res = await fetch(`/api/organizador/tournaments/${tournamentId}/participants`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -419,9 +453,13 @@ export function TournamentLiveManager({ tournamentId }: TournamentLiveManagerPro
       }
       const list = Array.isArray(json.participants) ? (json.participants as Participant[]) : [];
       const nextSize = Number.isFinite(json.bracketSize) ? Number(json.bracketSize) : bracketSize;
+      const nextSlots = buildSlotsFromParticipants(list, nextSize);
       setBracketSize(nextSize);
-      setSlots(buildSlotsFromParticipants(list, nextSize));
-      setParticipantsMessage("Participantes guardados.");
+      setSlots(nextSlots);
+      lastSavedKeyRef.current = buildParticipantsKey(nextSlots, nextSize);
+      if (!options?.silent) {
+        setParticipantsMessage("Participantes guardados.");
+      }
       mutateParticipants();
     } catch {
       setParticipantsMessage("Erro inesperado ao guardar participantes.");
@@ -429,6 +467,19 @@ export function TournamentLiveManager({ tournamentId }: TournamentLiveManagerPro
       setSavingParticipants(false);
     }
   };
+
+  useEffect(() => {
+    if (!hasLoadedParticipantsRef.current) return;
+    const nextKey = buildParticipantsKey(slots, bracketSize);
+    if (nextKey === lastSavedKeyRef.current) return;
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    autoSaveTimerRef.current = setTimeout(() => {
+      saveParticipants({ silent: true });
+    }, 700);
+    return () => {
+      if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    };
+  }, [slots, bracketSize]);
 
   const generateBracket = async () => {
     const count = slots.filter(Boolean).length;
@@ -442,7 +493,9 @@ export function TournamentLiveManager({ tournamentId }: TournamentLiveManagerPro
     }
     const shouldRegenerate = flatMatches.length > 0;
     if (shouldRegenerate) {
-      const confirmed = window.confirm("Já existem jogos. Queres gerar novamente a bracket?");
+      const confirmed = window.confirm(
+        "Já existem jogos. Gerar novamente vai apagar resultados e reagendar a bracket. Queres continuar?",
+      );
       if (!confirmed) return;
     }
     setGenerating(true);
@@ -451,7 +504,7 @@ export function TournamentLiveManager({ tournamentId }: TournamentLiveManagerPro
       const res = await fetch(`/api/organizador/tournaments/${tournamentId}/generate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ source: "manual", bracketSize }),
+        body: JSON.stringify({ source: "manual", bracketSize, forceGenerate: shouldRegenerate }),
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
@@ -527,14 +580,9 @@ export function TournamentLiveManager({ tournamentId }: TournamentLiveManagerPro
             <p className="text-sm text-white/60">Define o tamanho e prepara a lista de jogadores.</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={saveParticipants}
-              disabled={savingParticipants}
-              className="rounded-full border border-white/20 px-3 py-1 text-sm text-white hover:border-white/40 disabled:opacity-60"
-            >
-              {savingParticipants ? "A guardar…" : "Guardar participantes"}
-            </button>
+            <span className="rounded-full border border-white/15 px-3 py-1 text-xs text-white/60">
+              {savingParticipants ? "A guardar…" : "Auto-guardar ativo"}
+            </span>
             <button
               type="button"
               onClick={generateBracket}
@@ -579,258 +627,255 @@ export function TournamentLiveManager({ tournamentId }: TournamentLiveManagerPro
 
           <div className="space-y-4">
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {slots.map((slot, idx) => (
-                <div key={`slot-${idx}`} className="rounded-xl border border-white/10 bg-white/5 p-3 space-y-3">
-                  <div className="flex items-center justify-between text-[11px] text-white/60">
-                    <span>Seed {idx + 1}</span>
-                    <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() => moveSlot(idx, idx - 1)}
-                        disabled={!slot || idx === 0}
-                        className="rounded-full border border-white/15 px-2 py-0.5 text-[10px] text-white/70 hover:border-white/40 disabled:opacity-50"
-                      >
-                        Subir
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => moveSlot(idx, idx + 1)}
-                        disabled={!slot || idx === slots.length - 1}
-                        className="rounded-full border border-white/15 px-2 py-0.5 text-[10px] text-white/70 hover:border-white/40 disabled:opacity-50"
-                      >
-                        Descer
-                      </button>
-                    </div>
-                  </div>
-                  {slot ? (
-                    <>
-                      <div className="flex items-center gap-3">
-                        <div className="h-10 w-10 overflow-hidden rounded-full border border-white/10 bg-white/10">
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img
-                            src={slot.avatarUrl || DEFAULT_GUEST_AVATAR}
-                            alt={slot.name}
-                            className="h-full w-full object-cover"
-                          />
-                        </div>
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-medium text-white">{slot.name}</p>
-                          <p className="text-[11px] text-white/50">
-                            {slot.username ? `@${slot.username}` : "Convidado"}
-                            {slot.email ? ` · ${slot.email}` : ""}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
+              {slots.map((slot, idx) => {
+                const isActive = activeSlotIndex === idx;
+                return (
+                  <div key={`slot-${idx}`} className="rounded-xl border border-white/10 bg-white/5 p-3 space-y-3">
+                    <div className="flex items-center justify-between text-[11px] text-white/60">
+                      <span>Seed {idx + 1}</span>
+                      <div className="flex items-center gap-1">
                         <button
                           type="button"
-                          onClick={() => openSlotEditor(idx)}
+                          onClick={() => moveSlot(idx, idx - 1)}
+                          disabled={!slot || idx === 0}
+                          className="rounded-full border border-white/15 px-2 py-0.5 text-[10px] text-white/70 hover:border-white/40 disabled:opacity-50"
+                        >
+                          Subir
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => moveSlot(idx, idx + 1)}
+                          disabled={!slot || idx === slots.length - 1}
+                          className="rounded-full border border-white/15 px-2 py-0.5 text-[10px] text-white/70 hover:border-white/40 disabled:opacity-50"
+                        >
+                          Descer
+                        </button>
+                      </div>
+                    </div>
+                    {slot ? (
+                      <>
+                        <div className="flex items-center gap-3">
+                          <div className="h-10 w-10 overflow-hidden rounded-full border border-white/10 bg-white/10">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={slot.avatarUrl || DEFAULT_GUEST_AVATAR}
+                              alt={slot.name}
+                              className="h-full w-full object-cover"
+                            />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-medium text-white">{slot.name}</p>
+                            <p className="text-[11px] text-white/50">
+                              {slot.username ? `@${slot.username}` : "Convidado"}
+                              {slot.email ? ` · ${slot.email}` : ""}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => (isActive ? closeSlotEditor() : openSlotEditor(idx))}
+                            className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/70 hover:border-white/40"
+                          >
+                            {isActive ? "Fechar" : "Editar"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSlots((prev) => {
+                                const copy = [...prev];
+                                copy[idx] = null;
+                                return copy;
+                              });
+                            }}
+                            className="rounded-full border border-white/10 px-3 py-1 text-[11px] text-white/50 hover:border-white/30"
+                          >
+                            Limpar
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="space-y-2 text-sm text-white/60">
+                        <p>Slot vazio</p>
+                        <button
+                          type="button"
+                          onClick={() => (isActive ? closeSlotEditor() : openSlotEditor(idx))}
                           className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/70 hover:border-white/40"
                         >
-                          Editar
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSlots((prev) => {
-                              const copy = [...prev];
-                              copy[idx] = null;
-                              return copy;
-                            });
-                          }}
-                          className="rounded-full border border-white/10 px-3 py-1 text-[11px] text-white/50 hover:border-white/30"
-                        >
-                          Limpar
+                          {isActive ? "Fechar" : "Adicionar jogador"}
                         </button>
                       </div>
-                    </>
-                  ) : (
-                    <div className="space-y-2 text-sm text-white/60">
-                      <p>Slot vazio</p>
-                      <button
-                        type="button"
-                        onClick={() => openSlotEditor(idx)}
-                        className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/70 hover:border-white/40"
-                      >
-                        Adicionar jogador
-                      </button>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-
-            {activeSlotIndex !== null && (
-              <div className="rounded-2xl border border-white/10 bg-black/40 p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">
-                      Slot {activeSlotIndex + 1}
-                    </p>
-                    <h3 className="text-base font-semibold text-white">Editar jogador</h3>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={closeSlotEditor}
-                    className="rounded-full border border-white/15 px-3 py-1 text-[11px] text-white/70 hover:border-white/40"
-                  >
-                    Fechar
-                  </button>
-                </div>
-
-                <div className="flex flex-wrap gap-2 text-xs">
-                  {(["user", "guest"] as const).map((mode) => (
-                    <button
-                      key={mode}
-                      type="button"
-                      onClick={() => {
-                        if (mode === slotMode) return;
-                        setSlotMode(mode);
-                        if (mode === "guest") {
-                          setSlotDraft((prev) => ({ ...prev, username: "", avatarUrl: null }));
-                        }
-                        if (mode === "user") {
-                          setSlotDraft((prev) => ({ ...prev, email: "", avatarUrl: null }));
-                        }
-                      }}
-                      className={`rounded-full border px-3 py-1 ${
-                        slotMode === mode
-                          ? "border-fuchsia-400/40 bg-fuchsia-500/10 text-fuchsia-100"
-                          : "border-white/15 bg-white/5 text-white/60"
-                      }`}
-                    >
-                      {mode === "user" ? "Utilizador ORYA" : "Convidado"}
-                    </button>
-                  ))}
-                </div>
-
-                <div className="grid gap-3 md:grid-cols-2">
-                  <label className="text-sm text-white/70">
-                    Nome
-                    <input
-                      value={slotDraft.name}
-                      onChange={(e) => setSlotDraft((prev) => ({ ...prev, name: e.target.value }))}
-                      placeholder="Nome publico"
-                      className="mt-1 w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
-                    />
-                  </label>
-                  {slotMode === "guest" && (
-                    <label className="text-sm text-white/70">
-                      Email (para reclamar)
-                      <input
-                        value={slotDraft.email}
-                        onChange={(e) => setSlotDraft((prev) => ({ ...prev, email: e.target.value }))}
-                        placeholder="email@dominio.com"
-                        className="mt-1 w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
-                      />
-                    </label>
-                  )}
-                  {slotMode === "user" && (
-                    <label className="text-sm text-white/70">
-                      Username
-                      <input
-                        value={slotDraft.username}
-                        onChange={(e) => setSlotDraft((prev) => ({ ...prev, username: e.target.value }))}
-                        placeholder="@username"
-                        className="mt-1 w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
-                      />
-                    </label>
-                  )}
-                </div>
-
-                {slotMode === "user" && (
-                  <div className="space-y-2">
-                    <label className="text-sm text-white/70">
-                      Procurar utilizador
-                      <input
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        placeholder="Nome ou @username"
-                        className="mt-1 w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
-                      />
-                    </label>
-                    {searching && <p className="text-[11px] text-white/50">A procurar...</p>}
-                    {!searching && searchTerm && searchResults.length === 0 && (
-                      <p className="text-[11px] text-white/50">Sem resultados.</p>
                     )}
-                    {searchResults.length > 0 && (
-                      <div className="grid gap-2 md:grid-cols-2">
-                        {searchResults.map((user) => (
+
+                    {isActive && (
+                      <div className="rounded-xl border border-white/10 bg-black/40 p-3 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">
+                              Slot {idx + 1}
+                            </p>
+                            <h3 className="text-base font-semibold text-white">Editar jogador</h3>
+                          </div>
                           <button
-                            key={user.id}
                             type="button"
-                            onClick={() => applyUserToDraft(user)}
-                            className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-left text-sm text-white/80 hover:border-white/30"
+                            onClick={closeSlotEditor}
+                            className="rounded-full border border-white/15 px-3 py-1 text-[11px] text-white/70 hover:border-white/40"
                           >
-                            <div className="h-8 w-8 overflow-hidden rounded-full border border-white/10 bg-white/10">
-                              {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img
-                                src={user.avatarUrl || DEFAULT_GUEST_AVATAR}
-                                alt={user.fullName ?? ""}
-                                className="h-full w-full object-cover"
-                              />
-                            </div>
-                            <div className="min-w-0">
-                              <p className="truncate text-sm">{user.fullName || user.username || "Utilizador"}</p>
-                              {user.username && <p className="text-[11px] text-white/50">@{user.username}</p>}
-                            </div>
+                            Fechar
                           </button>
-                        ))}
+                        </div>
+
+                        <div className="flex flex-wrap gap-2 text-xs">
+                          {(["user", "guest"] as const).map((mode) => (
+                            <button
+                              key={mode}
+                              type="button"
+                              onClick={() => {
+                                if (mode === slotMode) return;
+                                setSlotMode(mode);
+                                if (mode === "guest") {
+                                  setSlotDraft((prev) => ({ ...prev, username: "", avatarUrl: null }));
+                                }
+                                if (mode === "user") {
+                                  setSlotDraft((prev) => ({ ...prev, email: "", avatarUrl: null }));
+                                }
+                              }}
+                              className={`rounded-full border px-3 py-1 ${
+                                slotMode === mode
+                                  ? "border-fuchsia-400/40 bg-fuchsia-500/10 text-fuchsia-100"
+                                  : "border-white/15 bg-white/5 text-white/60"
+                              }`}
+                            >
+                              {mode === "user" ? "Utilizador ORYA" : "Convidado"}
+                            </button>
+                          ))}
+                        </div>
+
+                        <div className="grid gap-3 md:grid-cols-2">
+                          <label className="text-sm text-white/70">
+                            Nome
+                            <input
+                              value={slotDraft.name}
+                              onChange={(e) => setSlotDraft((prev) => ({ ...prev, name: e.target.value }))}
+                              placeholder="Nome publico"
+                              className="mt-1 w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
+                            />
+                          </label>
+                          {slotMode === "guest" && (
+                            <label className="text-sm text-white/70">
+                              Email (para reclamar)
+                              <input
+                                value={slotDraft.email}
+                                onChange={(e) => setSlotDraft((prev) => ({ ...prev, email: e.target.value }))}
+                                placeholder="email@dominio.com"
+                                className="mt-1 w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
+                              />
+                            </label>
+                          )}
+                          {slotMode === "user" && (
+                            <label className="text-sm text-white/70">
+                              Username
+                              <input
+                                value={slotDraft.username}
+                                onChange={(e) => setSlotDraft((prev) => ({ ...prev, username: e.target.value }))}
+                                placeholder="@username"
+                                className="mt-1 w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
+                              />
+                            </label>
+                          )}
+                        </div>
+
+                        {slotMode === "user" && (
+                          <div className="space-y-2">
+                            <label className="text-sm text-white/70">
+                              Procurar utilizador
+                              <input
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                placeholder="Nome ou @username"
+                                className="mt-1 w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
+                              />
+                            </label>
+                            {searching && <p className="text-[11px] text-white/50">A procurar...</p>}
+                            {!searching && searchTerm && searchResults.length === 0 && (
+                              <p className="text-[11px] text-white/50">Sem resultados.</p>
+                            )}
+                            {searchResults.length > 0 && (
+                              <div className="grid gap-2 md:grid-cols-2">
+                                {searchResults.map((user) => (
+                                  <button
+                                    key={user.id}
+                                    type="button"
+                                    onClick={() => applyUserToDraft(user)}
+                                    className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-left text-sm text-white/80 hover:border-white/30"
+                                  >
+                                    <div className="h-8 w-8 overflow-hidden rounded-full border border-white/10 bg-white/10">
+                                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                                      <img
+                                        src={user.avatarUrl || DEFAULT_GUEST_AVATAR}
+                                        alt={user.fullName ?? ""}
+                                        className="h-full w-full object-cover"
+                                      />
+                                    </div>
+                                    <div className="min-w-0">
+                                      <p className="truncate text-sm">{user.fullName || user.username || "Utilizador"}</p>
+                                      {user.username && <p className="text-[11px] text-white/50">@{user.username}</p>}
+                                    </div>
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {slotMode === "guest" ? (
+                          <div className="space-y-2">
+                            <p className="text-sm text-white/70">Avatar (upload)</p>
+                            <div className="flex flex-wrap items-center gap-3 text-[11px] text-white/60">
+                              <label className="cursor-pointer rounded-full border border-white/15 px-3 py-1 hover:border-white/40">
+                                {uploadingAvatar ? "A carregar..." : "Upload imagem"}
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  className="hidden"
+                                  disabled={uploadingAvatar}
+                                  onChange={(e) => handleSlotAvatarUpload(e.target.files?.[0] ?? null)}
+                                />
+                              </label>
+                              {slotDraft.avatarUrl && (
+                                <button
+                                  type="button"
+                                  onClick={() => setSlotDraft((prev) => ({ ...prev, avatarUrl: null }))}
+                                  className="rounded-full border border-white/10 px-3 py-1 text-[11px] text-white/50 hover:border-white/30"
+                                >
+                                  Remover imagem
+                                </button>
+                              )}
+                              {!slotDraft.avatarUrl && (
+                                <span className="text-white/50">Se não fizer upload, usa o avatar default.</span>
+                              )}
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="text-[11px] text-white/50">Usa o avatar do utilizador ORYA.</p>
+                        )}
+
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-[11px] text-white/50">Guarda automaticamente.</span>
+                          <button
+                            type="button"
+                            onClick={clearSlot}
+                            className="rounded-full border border-white/10 px-4 py-2 text-sm text-white/60 hover:border-white/30"
+                          >
+                            Limpar slot
+                          </button>
+                        </div>
                       </div>
                     )}
                   </div>
-                )}
-
-                {slotMode === "guest" ? (
-                  <div className="space-y-2">
-                    <p className="text-sm text-white/70">Avatar (upload)</p>
-                    <div className="flex flex-wrap items-center gap-3 text-[11px] text-white/60">
-                      <label className="cursor-pointer rounded-full border border-white/15 px-3 py-1 hover:border-white/40">
-                        {uploadingAvatar ? "A carregar..." : "Upload imagem"}
-                        <input
-                          type="file"
-                          accept="image/*"
-                          className="hidden"
-                          disabled={uploadingAvatar}
-                          onChange={(e) => handleSlotAvatarUpload(e.target.files?.[0] ?? null)}
-                        />
-                      </label>
-                      {slotDraft.avatarUrl && (
-                        <button
-                          type="button"
-                          onClick={() => setSlotDraft((prev) => ({ ...prev, avatarUrl: null }))}
-                          className="rounded-full border border-white/10 px-3 py-1 text-[11px] text-white/50 hover:border-white/30"
-                        >
-                          Remover imagem
-                        </button>
-                      )}
-                      {!slotDraft.avatarUrl && (
-                        <span className="text-white/50">Se não fizer upload, usa o avatar default.</span>
-                      )}
-                    </div>
-                  </div>
-                ) : (
-                  <p className="text-[11px] text-white/50">Usa o avatar do utilizador ORYA.</p>
-                )}
-
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={saveSlot}
-                    className="rounded-full border border-emerald-400/40 bg-emerald-500/10 px-4 py-2 text-sm text-emerald-100 hover:border-emerald-300/70"
-                  >
-                    Guardar slot
-                  </button>
-                  <button
-                    type="button"
-                    onClick={clearSlot}
-                    className="rounded-full border border-white/10 px-4 py-2 text-sm text-white/60 hover:border-white/30"
-                  >
-                    Limpar slot
-                  </button>
-                </div>
-              </div>
-            )}
+                );
+              })}
+            </div>
           </div>
         </div>
 
@@ -861,7 +906,7 @@ export function TournamentLiveManager({ tournamentId }: TournamentLiveManagerPro
               <ul className="list-disc pl-4 space-y-1">
                 {warnings.map((w: any, idx: number) => (
                   <li key={`${w.type}-${w.matchId ?? w.pairingId}-${idx}`}>
-                    {w.type === "REQUIRES_ACTION" && <>Dupla #{w.pairingId} exige ação</>}
+                    {w.type === "REQUIRES_ACTION" && <>Jogador #{w.pairingId} exige ação</>}
                     {w.type === "MISSING_COURT" && <>Jogo #{w.matchId}: sem court</>}
                     {w.type === "MISSING_START" && <>Jogo #{w.matchId}: sem horário definido</>}
                     {w.type === "INVALID_SCORE" && <>Jogo #{w.matchId}: score inválido</>}
@@ -897,7 +942,7 @@ export function TournamentLiveManager({ tournamentId }: TournamentLiveManagerPro
                         {group.standings.map((row: any, idx: number) => (
                           <div key={row.pairingId ?? idx} className="flex items-center justify-between text-[12px] text-white/80">
                             <span>
-                              #{idx + 1} · Dupla {row.pairingId ?? "—"}
+                              #{idx + 1} · Jogador {row.pairingId ?? "—"}
                             </span>
                             <span>{row.points} pts</span>
                           </div>

@@ -16,6 +16,8 @@ export async function fulfillPadelSecondCharge(intent: IntentLike): Promise<bool
   const meta = intent.metadata ?? {};
   const ownerUserId = typeof meta.ownerUserId === "string" ? meta.ownerUserId : null;
   const pairingId = Number(meta.pairingId);
+  const idempotencyKey = typeof meta.idempotencyKey === "string" ? meta.idempotencyKey.trim() : "";
+  const paymentDedupeKey = idempotencyKey || intent.id;
   if (!Number.isFinite(pairingId)) return false;
   const now = new Date();
 
@@ -54,7 +56,7 @@ export async function fulfillPadelSecondCharge(intent: IntentLike): Promise<bool
           purchaseId: (meta as Record<string, unknown>)?.purchaseId as string | undefined ?? intent.id,
           stripeFeeCents: 0,
           source: PaymentEventSource.WEBHOOK,
-          dedupeKey: (meta as Record<string, unknown>)?.purchaseId as string | undefined ?? intent.id,
+          dedupeKey: paymentDedupeKey,
           attempt: { increment: 1 },
         },
         create: {
@@ -65,7 +67,7 @@ export async function fulfillPadelSecondCharge(intent: IntentLike): Promise<bool
           userId: ownerUserId ?? undefined,
           purchaseId: (meta as Record<string, unknown>)?.purchaseId as string | undefined ?? intent.id,
           source: PaymentEventSource.WEBHOOK,
-          dedupeKey: (meta as Record<string, unknown>)?.purchaseId as string | undefined ?? intent.id,
+          dedupeKey: paymentDedupeKey,
           attempt: 1,
           stripeFeeCents: 0,
           mode: intent.livemode ? "LIVE" : "TEST",

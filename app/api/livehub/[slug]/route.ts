@@ -1,16 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
+import { OrganizerMemberRole } from "@prisma/client";
 import { DEFAULT_ORGANIZATION_CATEGORY } from "@/lib/organizationCategories";
-import { normalizeLiveHubMode, resolveLiveHubModules } from "@/lib/liveHubConfig";
+import { resolveLiveHubModules } from "@/lib/liveHubConfig";
 import { summarizeMatchStatus, computeStandingsForGroup } from "@/domain/tournaments/structure";
 import { getTournamentStructure } from "@/domain/tournaments/structureData";
 import { getWinnerSideFromScore, type MatchScorePayload } from "@/domain/tournaments/matchRules";
 import { canScanTickets } from "@/lib/organizerAccess";
 import { normalizeEmail } from "@/lib/utils/email";
 import { sanitizeUsername } from "@/lib/username";
-
-const ONEVONE_ORGANIZER_ID = 23;
+import { getCustomLiveHubModules, isCustomPremiumActive } from "@/lib/organizerPremium";
 
 function slugify(input: string): string {
   return input
@@ -46,7 +46,6 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ slu
         locationCity: true,
         coverImageUrl: true,
         organizerId: true,
-        liveHubMode: true,
         liveHubVisibility: true,
         liveStreamUrl: true,
         timezone: true,
@@ -94,7 +93,6 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ slu
             locationCity: true,
             coverImageUrl: true,
             organizerId: true,
-            liveHubMode: true,
             liveHubVisibility: true,
             liveStreamUrl: true,
             timezone: true,
@@ -143,9 +141,14 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ slu
     : [];
 
   let isOrganizer = false;
+  let organizerRole: OrganizerMemberRole | null = null;
+  let canEditMatches = false;
   if (userId && event.organizerId) {
     const access = await canScanTickets(userId, event.id);
-    isOrganizer = access.allowed;
+    organizerRole = access.membershipRole ?? null;
+    const hasMembership = Boolean(organizerRole);
+    isOrganizer = access.allowed || hasMembership;
+    canEditMatches = organizerRole ? organizerRole !== OrganizerMemberRole.VIEWER : false;
   }
 
   const profile = userId
@@ -214,15 +217,11 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ slu
         : false;
 
   const category = event.organizer?.organizationCategory ?? DEFAULT_ORGANIZATION_CATEGORY;
-  const premiumActive = Boolean(
-    event.organizer?.liveHubPremiumEnabled && event.organizer?.id === ONEVONE_ORGANIZER_ID,
-  );
-  const liveHubMode = normalizeLiveHubMode(event.liveHubMode);
+  const premiumActive = isCustomPremiumActive(event.organizer);
+  const liveHubMode = premiumActive ? "PREMIUM" : "DEFAULT";
   const modules = resolveLiveHubModules({ category, mode: liveHubMode, premiumActive });
-  const liveHubModules =
-    event.organizer?.id === ONEVONE_ORGANIZER_ID
-      ? ["HERO", "VIDEO", "NOW_PLAYING", "NEXT_MATCHES", "RESULTS", "BRACKET", "SPONSORS"]
-      : modules;
+  const customModules = getCustomLiveHubModules(event.organizer);
+  const liveHubModules = premiumActive && customModules?.length ? customModules : modules;
 
   let tournamentPayload: any = null;
   let pairings: Record<
@@ -464,7 +463,6 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ slu
           coverImageUrl: event.coverImageUrl,
           liveStreamUrl: event.liveStreamUrl,
           timezone: event.timezone,
-          liveHubMode,
           liveHubVisibility,
           publicAccessMode,
           participantAccessMode,
@@ -483,6 +481,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ slu
             }
           : null,
         viewerRole,
+        organizerRole,
+        canEditMatches,
         access: {
           publicAccessMode,
           participantAccessMode,

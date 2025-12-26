@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth/requireUser";
 import { getActiveOrganizerForUser } from "@/lib/organizerContext";
+import { resolveOrganizerIdFromRequest } from "@/lib/organizerId";
 
 const CATEGORY_VALUES = ["TODAY", "CHANGES", "RESULTS", "CALL_UPS"] as const;
 const STATUS_VALUES = ["DRAFT", "PUBLISHED", "ARCHIVED"] as const;
@@ -22,7 +23,9 @@ const parseStatus = (value: unknown): Status | null => {
 export async function GET(req: NextRequest) {
   try {
     const user = await requireUser();
+    const organizerId = resolveOrganizerIdFromRequest(req);
     const { organizer } = await getActiveOrganizerForUser(user.id, {
+      organizerId: organizerId ?? undefined,
       roles: ["OWNER", "CO_OWNER", "ADMIN"],
     });
     if (!organizer) {
@@ -79,7 +82,9 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const user = await requireUser();
+    const organizerId = resolveOrganizerIdFromRequest(req);
     const { organizer } = await getActiveOrganizerForUser(user.id, {
+      organizerId: organizerId ?? undefined,
       roles: ["OWNER", "CO_OWNER", "ADMIN"],
     });
     if (!organizer) {

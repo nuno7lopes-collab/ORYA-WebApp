@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { OrganizerMemberRole } from "@prisma/client";
+import { getActiveOrganizerForUser } from "@/lib/organizerContext";
+import { resolveOrganizerIdFromRequest } from "@/lib/organizerId";
 
 export async function GET(req: NextRequest) {
   try {
@@ -16,23 +18,15 @@ export async function GET(req: NextRequest) {
     }
 
     const url = new URL(req.url);
-    const organizerIdParam = url.searchParams.get("organizerId");
-    const parsedId = organizerIdParam ? Number(organizerIdParam) : null;
-
-    const activeMembership = await prisma.organizerMember.findFirst({
-      where: { userId: user.id, organizer: { status: "ACTIVE" } },
-      orderBy: [{ lastUsedAt: "desc" }, { createdAt: "asc" }],
+    const organizerId = resolveOrganizerIdFromRequest(req);
+    const { organizer, membership } = await getActiveOrganizerForUser(user.id, {
+      organizerId: organizerId ?? undefined,
+      roles: ["OWNER", "CO_OWNER", "ADMIN"],
     });
-
-    const organizerId = parsedId && !Number.isNaN(parsedId) ? parsedId : activeMembership?.organizerId ?? null;
-    if (!organizerId) {
+    if (!organizer || !membership) {
       return NextResponse.json({ ok: false, error: "INVALID_ORGANIZER" }, { status: 400 });
     }
-
-    const membership = await prisma.organizerMember.findUnique({
-      where: { organizerId_userId: { organizerId, userId: user.id } },
-    });
-    if (!membership || ![OrganizerMemberRole.OWNER, OrganizerMemberRole.CO_OWNER, OrganizerMemberRole.ADMIN].includes(membership.role)) {
+    if (![OrganizerMemberRole.OWNER, OrganizerMemberRole.CO_OWNER, OrganizerMemberRole.ADMIN].includes(membership.role)) {
       return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
@@ -41,7 +35,7 @@ export async function GET(req: NextRequest) {
 
     const sales = await prisma.saleSummary.findMany({
       where: {
-        event: { organizerId },
+        event: { organizerId: organizer.id },
         ...(from || to
           ? {
               createdAt: {

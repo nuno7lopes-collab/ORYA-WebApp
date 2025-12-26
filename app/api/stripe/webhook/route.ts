@@ -52,6 +52,208 @@ import {
 
 const webhookSecret = env.stripeWebhookSecret;
 const FREE_PLACEHOLDER_INTENT_ID = "FREE_CHECKOUT";
+const PREMIUM_PRICE_IDS = new Set(env.stripePremiumPriceIds);
+const PREMIUM_PRODUCT_IDS = new Set(env.stripePremiumProductIds);
+
+type OrganizerPremiumRecord = {
+  id: number;
+  username: string | null;
+  liveHubPremiumEnabled: boolean;
+  stripeCustomerId: string | null;
+  stripeSubscriptionId: string | null;
+};
+
+type OrganizerMatchSource = "metadata" | "customer_metadata" | "customer_id" | "subscription_id";
+
+const normalizeUsername = (value?: string | null) => (typeof value === "string" ? value.trim().toLowerCase() : "");
+
+function parseOrganizerId(raw?: string | null) {
+  if (typeof raw !== "string") return null;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? Math.trunc(parsed) : null;
+}
+
+function parseMetadataFlag(raw?: string | null) {
+  if (!raw) return false;
+  const normalized = raw.trim().toLowerCase();
+  return ["1", "true", "yes", "on"].includes(normalized);
+}
+
+function extractOrganizerHint(metadata?: Stripe.Metadata | null) {
+  if (!metadata) return { organizerId: null, organizerUsername: "" };
+  return {
+    organizerId: parseOrganizerId(metadata.organizerId ?? metadata.organizer_id ?? null),
+    organizerUsername: normalizeUsername(metadata.organizerUsername ?? metadata.organizer_username ?? null),
+  };
+}
+
+async function findOrganizerByHint(
+  hint: { organizerId: number | null; organizerUsername: string },
+): Promise<OrganizerPremiumRecord | null> {
+  if (hint.organizerId) {
+    return prisma.organizer.findUnique({
+      where: { id: hint.organizerId },
+      select: {
+        id: true,
+        username: true,
+        liveHubPremiumEnabled: true,
+        stripeCustomerId: true,
+        stripeSubscriptionId: true,
+      },
+    });
+  }
+  if (hint.organizerUsername) {
+    return prisma.organizer.findFirst({
+      where: { username: hint.organizerUsername },
+      select: {
+        id: true,
+        username: true,
+        liveHubPremiumEnabled: true,
+        stripeCustomerId: true,
+        stripeSubscriptionId: true,
+      },
+    });
+  }
+  return null;
+}
+
+function isPremiumSubscription(subscription: Stripe.Subscription) {
+  const metadataFlag =
+    parseMetadataFlag(subscription.metadata?.orya_premium) ||
+    parseMetadataFlag(subscription.metadata?.premium) ||
+    parseMetadataFlag(subscription.metadata?.premium_enabled);
+  if (metadataFlag) return true;
+  if (PREMIUM_PRICE_IDS.size === 0 && PREMIUM_PRODUCT_IDS.size === 0) return false;
+  const items = subscription.items?.data ?? [];
+  return items.some((item) => {
+    const price = item.price;
+    const priceId = price?.id;
+    const productId = typeof price?.product === "string" ? price.product : price?.product?.id;
+    return (
+      (priceId && PREMIUM_PRICE_IDS.has(priceId)) ||
+      (productId && PREMIUM_PRODUCT_IDS.has(productId))
+    );
+  });
+}
+
+function isSubscriptionActive(subscription: Stripe.Subscription) {
+  return ["active", "trialing", "past_due"].includes(subscription.status);
+}
+
+async function resolveOrganizerForSubscription(subscription: Stripe.Subscription) {
+  const subscriptionHint = extractOrganizerHint(subscription.metadata);
+  const subscriptionCustomerId =
+    typeof subscription.customer === "string" ? subscription.customer : subscription.customer?.id ?? null;
+
+  const organizerFromSubscription = await findOrganizerByHint(subscriptionHint);
+  if (organizerFromSubscription) {
+    return {
+      organizer: organizerFromSubscription,
+      customerId: subscriptionCustomerId,
+      source: "metadata" as OrganizerMatchSource,
+    };
+  }
+
+  if (subscriptionCustomerId) {
+    try {
+      const customer = await stripe.customers.retrieve(subscriptionCustomerId);
+      if (!("deleted" in customer)) {
+        const customerHint = extractOrganizerHint(customer.metadata ?? null);
+        const organizerFromCustomer = await findOrganizerByHint(customerHint);
+        if (organizerFromCustomer) {
+          return {
+            organizer: organizerFromCustomer,
+            customerId: subscriptionCustomerId,
+            source: "customer_metadata" as OrganizerMatchSource,
+          };
+        }
+      }
+    } catch (err) {
+      console.warn("[Webhook] Falha ao obter metadata do cliente Stripe", err);
+    }
+  }
+
+  if (subscriptionCustomerId) {
+    const organizerByCustomer = await prisma.organizer.findFirst({
+      where: { stripeCustomerId: subscriptionCustomerId },
+      select: {
+        id: true,
+        username: true,
+        liveHubPremiumEnabled: true,
+        stripeCustomerId: true,
+        stripeSubscriptionId: true,
+      },
+    });
+    if (organizerByCustomer) {
+      return {
+        organizer: organizerByCustomer,
+        customerId: subscriptionCustomerId,
+        source: "customer_id" as OrganizerMatchSource,
+      };
+    }
+  }
+
+  const organizerBySubscription = await prisma.organizer.findFirst({
+    where: { stripeSubscriptionId: subscription.id },
+    select: {
+      id: true,
+      username: true,
+      liveHubPremiumEnabled: true,
+      stripeCustomerId: true,
+      stripeSubscriptionId: true,
+    },
+  });
+
+  if (organizerBySubscription) {
+    return {
+      organizer: organizerBySubscription,
+      customerId: subscriptionCustomerId,
+      source: "subscription_id" as OrganizerMatchSource,
+    };
+  }
+
+  return null;
+}
+
+async function syncOrganizerPremiumFromSubscription(subscription: Stripe.Subscription) {
+  if (!isPremiumSubscription(subscription)) {
+    console.log("[Webhook] Subscrição ignorada (não premium)", { id: subscription.id, status: subscription.status });
+    return;
+  }
+
+  const match = await resolveOrganizerForSubscription(subscription);
+  if (!match) {
+    console.warn("[Webhook] Subscrição premium sem organizador associado", {
+      subscriptionId: subscription.id,
+      customerId: typeof subscription.customer === "string" ? subscription.customer : subscription.customer?.id ?? null,
+    });
+    return;
+  }
+
+  const { organizer, customerId, source } = match;
+  const premiumActive = isSubscriptionActive(subscription);
+
+  const updateData: Prisma.OrganizerUpdateInput = {
+    liveHubPremiumEnabled: premiumActive,
+    stripeSubscriptionId: subscription.id,
+  };
+
+  if (customerId && (source === "metadata" || source === "customer_metadata" || !organizer.stripeCustomerId)) {
+    updateData.stripeCustomerId = customerId;
+  }
+
+  await prisma.organizer.update({
+    where: { id: organizer.id },
+    data: updateData,
+  });
+
+  console.log("[Webhook] Premium sync", {
+    organizerId: organizer.id,
+    premiumActive,
+    subscriptionId: subscription.id,
+    source,
+  });
+}
 
 export async function POST(req: NextRequest) {
   const sig = req.headers.get("stripe-signature");
@@ -180,6 +382,22 @@ export async function POST(req: NextRequest) {
                 : charge.payment_intent?.id ?? null,
           },
         });
+        break;
+      }
+
+      case "customer.subscription.created":
+      case "customer.subscription.updated":
+      case "customer.subscription.deleted": {
+        const subscription = event.data.object as Stripe.Subscription;
+        console.log("[Webhook] subscription sync", {
+          id: subscription.id,
+          status: subscription.status,
+          customer:
+            typeof subscription.customer === "string"
+              ? subscription.customer
+              : subscription.customer?.id ?? null,
+        });
+        await syncOrganizerPremiumFromSubscription(subscription);
         break;
       }
 

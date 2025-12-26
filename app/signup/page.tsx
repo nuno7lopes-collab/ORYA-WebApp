@@ -13,7 +13,7 @@ function SignupContent() {
   }, [openModal, redirectTo]);
 
   return (
-    <main className="min-h-screen flex items-center justify-center text-white">
+    <main className="orya-page-width min-h-screen flex items-center justify-center text-white">
       <p>
         Se o modal não abriu,{" "}
         <button

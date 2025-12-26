@@ -15,6 +15,8 @@ export type ProfileHeaderProps = {
   username?: string | null;
   /** URL do avatar (pode ser null) */
   avatarUrl?: string | null;
+  /** URL da capa (opcional) */
+  coverUrl?: string | null;
   /** Pequena descrição ou bio (opcional, para o futuro) */
   bio?: string | null;
   /** Data de criação da conta em ISO (opcional) */
@@ -51,6 +53,7 @@ export default function ProfileHeader({
   name,
   username,
   avatarUrl,
+  coverUrl,
   bio,
   createdAt,
   city,
@@ -59,7 +62,6 @@ export default function ProfileHeader({
   following,
   targetUserId,
   initialIsFollowing,
-  isOrganization,
 }: ProfileHeaderProps) {
   const router = useRouter();
   const displayName = name?.trim() || "Utilizador ORYA";
@@ -71,6 +73,7 @@ export default function ProfileHeader({
   const safeAvatarUrl = avatarUrl && avatarUrl.trim().length > 0
     ? avatarUrl
     : undefined;
+  const safeCoverUrl = coverUrl && coverUrl.trim().length > 0 ? coverUrl : null;
 
   const publicProfileHref = ownerHasPublicProfile ? `/${handle}` : null;
 
@@ -78,21 +81,31 @@ export default function ProfileHeader({
   const [usernameInput, setUsernameInput] = useState(handle ?? "");
   const [bioInput, setBioInput] = useState(bio ?? "");
   const [avatar, setAvatar] = useState<string | null | undefined>(safeAvatarUrl);
+  const [cover, setCover] = useState<string | null>(safeCoverUrl);
   const [editingField, setEditingField] = useState<"name" | "username" | "bio" | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [avatarMenu, setAvatarMenu] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const coverInputRef = useRef<HTMLInputElement | null>(null);
+  const coverStyle = cover ? { backgroundImage: `url(${cover})` } : undefined;
 
   useEffect(() => {
     setNameInput(displayName);
     setUsernameInput(handle ?? "");
     setBioInput(bio ?? "");
     setAvatar(safeAvatarUrl);
-  }, [displayName, handle, bio, safeAvatarUrl]);
+    setCover(safeCoverUrl);
+  }, [displayName, handle, bio, safeAvatarUrl, safeCoverUrl]);
 
-  const runSave = async (opts?: { fullName?: string; username?: string; bio?: string; avatarUrl?: string | null }) => {
+  const runSave = async (opts?: {
+    fullName?: string;
+    username?: string;
+    bio?: string;
+    avatarUrl?: string | null;
+    coverUrl?: string | null;
+  }) => {
     setSaving(true);
     setError(null);
     setSuccess(null);
@@ -110,6 +123,7 @@ export default function ProfileHeader({
       username: validation.normalized,
       bio: opts?.bio ?? bioInput.trim(),
       avatarUrl: opts?.avatarUrl ?? avatar ?? null,
+      coverUrl: opts?.coverUrl ?? cover ?? null,
       visibility: visibility === "PRIVATE" ? "PRIVATE" : "PUBLIC",
     };
     const res = await fetch("/api/profiles/save-basic", {
@@ -127,6 +141,7 @@ export default function ProfileHeader({
     setUsernameInput(validation.normalized);
     setBioInput(payload.bio ?? "");
     setAvatar(payload.avatarUrl ?? null);
+    setCover(payload.coverUrl ?? null);
     setSuccess("Guardado.");
     setSaving(false);
     setEditingField(null);
@@ -151,6 +166,28 @@ export default function ProfileHeader({
   };
 
   const triggerFile = () => fileInputRef.current?.click();
+  const triggerCoverFile = () => coverInputRef.current?.click();
+
+  const handleCoverUpload = async (file: File | null) => {
+    if (!file) return;
+    setError(null);
+    setSuccess(null);
+    const formData = new FormData();
+    formData.append("file", file);
+    const res = await fetch("/api/upload", { method: "POST", body: formData });
+    const json = await res.json().catch(() => null);
+    if (!res.ok || !json?.url) {
+      setError(json?.error || "Falha no upload da capa.");
+      return;
+    }
+    setCover(json.url);
+    await runSave({ coverUrl: json.url });
+  };
+
+  const handleCoverRemove = async () => {
+    setCover(null);
+    await runSave({ coverUrl: null });
+  };
 
   const badgeVisibility =
     visibility === "PRIVATE"
@@ -165,6 +202,9 @@ export default function ProfileHeader({
   const [listItems, setListItems] = useState<
     Array<{ userId: string; username: string | null; fullName: string | null; avatarUrl: string | null }>
   >([]);
+  const handleFollowChange = (next: boolean) => {
+    setFollowersDisplay((prev) => Math.max(0, (prev ?? 0) + (next ? 1 : -1)));
+  };
 
   const loadList = async (mode: "followers" | "following") => {
     if (!targetUserId) return;
@@ -185,13 +225,54 @@ export default function ProfileHeader({
   };
 
   return (
-    <section className="w-full rounded-3xl border border-white/12 bg-gradient-to-br from-white/7 via-[#060914]/92 to-[#05070f]/96 px-5 py-6 sm:px-8 sm:py-7 shadow-[0_26px_80px_rgba(0,0,0,0.85)] backdrop-blur-2xl">
-      <div className="flex flex-col gap-4">
-        <div className="flex flex-col gap-4">
-          <div className="flex items-start gap-4 sm:gap-5 flex-1 min-w-0">
+    <section className="relative">
+      <div className="px-5 pt-5 sm:px-8">
+        <div className="orya-page-width">
+          <div className="relative h-44 w-full overflow-hidden rounded-2xl border border-white/10 sm:h-52">
+            <div className="absolute inset-0 bg-cover bg-center" style={coverStyle} />
+            {!cover && (
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(107,255,255,0.25),transparent_55%),radial-gradient(circle_at_80%_20%,rgba(255,0,200,0.2),transparent_55%),linear-gradient(135deg,rgba(6,10,20,0.8),rgba(9,10,18,0.95))]" />
+            )}
+            <div className="absolute inset-0 bg-gradient-to-b from-black/10 via-black/50 to-[#05070f]/95" />
+            {isOwner && (
+              <div className="absolute right-3 top-3 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={triggerCoverFile}
+                  disabled={saving}
+                  className="rounded-full border border-white/25 bg-white/10 px-3 py-1 text-[11px] font-semibold text-white/85 shadow-[0_10px_26px_rgba(0,0,0,0.35)] hover:bg-white/15 disabled:opacity-60"
+                >
+                  {cover ? "Trocar capa" : "Adicionar capa"}
+                </button>
+                {cover && (
+                  <button
+                    type="button"
+                    onClick={handleCoverRemove}
+                    disabled={saving}
+                    className="rounded-full border border-white/15 bg-black/50 px-3 py-1 text-[11px] text-white/70 hover:bg-black/60 disabled:opacity-60"
+                  >
+                    Remover
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+          <input
+            ref={coverInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => handleCoverUpload(e.target.files?.[0] ?? null)}
+          />
+        </div>
+      </div>
+
+      <div className="relative -mt-10 px-5 pb-6 sm:px-8">
+        <div className="orya-page-width flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+          <div className="flex items-start gap-4">
             <div className="relative shrink-0">
               <div
-                className="relative inline-flex h-20 w-20 sm:h-24 sm:w-24 items-center justify-center rounded-full bg-gradient-to-tr from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] p-[2px] shadow-[0_0_24px_rgba(255,0,200,0.26)] cursor-pointer transition-all hover:shadow-[0_0_26px_rgba(255,0,200,0.32)]"
+                className="relative inline-flex h-24 w-24 items-center justify-center rounded-full bg-gradient-to-tr from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] p-[2px] shadow-[0_0_24px_rgba(255,0,200,0.26)] cursor-pointer transition-all hover:shadow-[0_0_26px_rgba(255,0,200,0.32)] sm:h-28 sm:w-28"
                 onClick={() => setAvatarMenu((v) => !v)}
               >
                 <div className="flex h-full w-full items-center justify-center rounded-full bg-black/90 overflow-hidden">
@@ -310,7 +391,7 @@ export default function ProfileHeader({
                 </button>
               </div>
 
-              <div className="flex flex-wrap items-center gap-3">
+              <div className="flex flex-wrap items-center gap-2">
                 {editingField === "name" ? (
                   <div className="flex items-center gap-2 flex-wrap">
                     <input
@@ -342,11 +423,6 @@ export default function ProfileHeader({
                     <h1 className="text-[22px] sm:text-3xl font-semibold tracking-tight text-white truncate">
                       {nameInput}
                     </h1>
-                    {isOrganization && (
-                      <span className="inline-flex items-center rounded-full border border-white/20 bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-black shadow-[0_0_18px_rgba(107,255,255,0.55)]">
-                        Org
-                      </span>
-                    )}
                     {isOwner && (
                       <button
                         className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[11px] text-white/75 hover:bg-white/12"
@@ -470,17 +546,37 @@ export default function ProfileHeader({
                     Ver perfil público
                   </Link>
                 )}
+                {!isOwner && targetUserId && (
+                  <div className="md:hidden">
+                    <FollowClient
+                      targetUserId={targetUserId}
+                      initialIsFollowing={initialIsFollowing ?? false}
+                      onChange={handleFollowChange}
+                    />
+                  </div>
+                )}
               </div>
             </div>
           </div>
+
+          <div className="hidden flex-wrap items-center gap-2 md:flex">
+            {!isOwner && targetUserId && (
+              <FollowClient
+                targetUserId={targetUserId}
+                initialIsFollowing={initialIsFollowing ?? false}
+                onChange={handleFollowChange}
+              />
+            )}
+          </div>
         </div>
+
+        {(error || success) && (
+          <div className="orya-page-width mt-3 text-[12px]">
+            {error && <p className="text-red-200">{error}</p>}
+            {!error && success && <p className="text-emerald-200">{success}</p>}
+          </div>
+        )}
       </div>
-      {(error || success) && (
-        <div className="mt-3 text-[12px]">
-          {error && <p className="text-red-200">{error}</p>}
-          {!error && success && <p className="text-emerald-200">{success}</p>}
-        </div>
-      )}
 
       {(showFollowersModal || showFollowingModal) && (
         <div

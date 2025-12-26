@@ -168,7 +168,7 @@ export default async function HomePage() {
       </div>
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_20%,rgba(255,255,255,0.05),transparent_60%)]" />
 
-      <section className="relative mx-auto flex max-w-6xl flex-col gap-10 px-4 pt-10 md:px-8 md:pt-12">
+      <section className="relative orya-page-width flex flex-col gap-10 px-4 pt-10 md:px-8 md:pt-12">
         <div className="flex items-center justify-between">
           <div>
             <p className="text-xs uppercase tracking-[0.24em] text-white/55">Bem-vindo à</p>

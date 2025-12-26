@@ -21,7 +21,7 @@ function OnboardingPerfilContent() {
 
   if (isLoading || !user || !profile) {
     return (
-      <div className="min-h-[60vh] flex items-center justify-center">
+      <div className="orya-page-width min-h-[60vh] flex items-center justify-center">
         <p className="text-sm text-gray-500">A carregar o teu perfil...</p>
       </div>
     );
@@ -152,7 +152,7 @@ function ProfileForm({
   }
 
   return (
-    <div className="min-h-[70vh] flex items-center justify-center px-4">
+    <div className="orya-page-width min-h-[70vh] flex items-center justify-center px-4">
       <div className="w-full max-w-md rounded-2xl border border-gray-200 bg-white/80 p-6 shadow-sm">
         <h1 className="text-xl font-semibold mb-1">Completa o teu perfil</h1>
         <p className="text-sm text-gray-500 mb-6">

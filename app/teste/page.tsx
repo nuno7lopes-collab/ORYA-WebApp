@@ -249,7 +249,7 @@ export default function BrandTestPage() {
       }}
     >
       <div className={`min-h-screen ${innerBgClass}`}>
-        <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6 lg:px-10 space-y-8">
+        <div className="orya-page-width px-4 py-12 sm:px-6 lg:px-10 space-y-8">
           <header className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
             <div className="space-y-3">
               <div

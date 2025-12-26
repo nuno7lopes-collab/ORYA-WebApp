@@ -16,6 +16,7 @@ const navItems = [
   { href: "/admin/eventos", label: "Eventos" },
   { href: "/admin/tickets", label: "Bilhetes" },
   { href: "/admin/payments", label: "Pagamentos" },
+  { href: "/admin/refunds", label: "Refunds" },
   { href: "/admin/settings", label: "Configurações" },
 ];
 

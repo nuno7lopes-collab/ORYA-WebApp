@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { getActiveOrganizerForUser } from "@/lib/organizerContext";
+import { resolveOrganizerIdFromRequest } from "@/lib/organizerId";
 import { isOrgAdminOrAbove } from "@/lib/organizerPermissions";
 
 // Tipos esperados no body do pedido
@@ -138,7 +139,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const organizerId = resolveOrganizerIdFromRequest(req);
     const { organizer, membership } = await getActiveOrganizerForUser(profile.id, {
+      organizerId: organizerId ?? undefined,
       roles: ["OWNER", "CO_OWNER", "ADMIN"],
     });
     if (!organizer || !membership || !isOrgAdminOrAbove(membership.role)) {
@@ -159,7 +162,9 @@ export async function POST(req: NextRequest) {
       | "AFTER_SOLD_OUT"
       | "DISABLED"
       | undefined;
-    const payoutMode = body.payoutMode?.toUpperCase() === "PLATFORM" ? "PLATFORM" : "ORGANIZER";
+    const payoutModeRequested = body.payoutMode?.toUpperCase() === "PLATFORM" ? "PLATFORM" : "ORGANIZER";
+    const organizerTrusted = organizer?.status === "ACTIVE";
+    const payoutMode = !isAdmin && !organizerTrusted ? "PLATFORM" : payoutModeRequested;
 
     if (!title) {
       return NextResponse.json(

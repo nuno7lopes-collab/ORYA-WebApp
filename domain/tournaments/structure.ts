@@ -4,6 +4,7 @@ import { computeGroupStandings, TieBreakRule } from "@/domain/tournaments/standi
 export function summarizeMatchStatus(status: TournamentMatchStatus) {
   if (status === "IN_PROGRESS") return "Em jogo";
   if (status === "DONE") return "Terminado";
+  if (status === "DISPUTED") return "Em disputa";
   if (status === "SCHEDULED") return "Agendado";
   if (status === "CANCELLED") return "Cancelado";
   return "Pendente";

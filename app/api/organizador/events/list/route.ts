@@ -5,6 +5,7 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { TicketStatus } from "@prisma/client";
 import { getActiveOrganizerForUser } from "@/lib/organizerContext";
+import { resolveOrganizerIdFromRequest } from "@/lib/organizerId";
 import { isOrgAdminOrAbove } from "@/lib/organizerPermissions";
 
 export async function GET(req: NextRequest) {
@@ -33,7 +34,9 @@ export async function GET(req: NextRequest) {
       );
     }
 
+    const organizerId = resolveOrganizerIdFromRequest(req);
     const { organizer, membership } = await getActiveOrganizerForUser(profile.id, {
+      organizerId: organizerId ?? undefined,
       roles: ["OWNER", "CO_OWNER", "ADMIN"],
     });
 
@@ -145,6 +148,7 @@ export async function GET(req: NextRequest) {
       templateType: event.templateType,
       tournamentId: event.tournament?.id ?? null,
       isFree: event.isFree,
+      coverImageUrl: event.coverImageUrl ?? null,
       ticketsSold: statsMap.get(event.id)?.tickets ?? 0,
       revenueCents: statsMap.get(event.id)?.revenueCents ?? 0,
       totalPaidCents: statsMap.get(event.id)?.totalPaidCents ?? 0,

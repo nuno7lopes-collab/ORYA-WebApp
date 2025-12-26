@@ -43,6 +43,14 @@ type EventWithTickets = {
     startsAt: Date | null;
     endsAt: Date | null;
   }>;
+  padelCategoryLinks?: Array<{
+    id: number;
+    padelCategoryId: number;
+    capacityTeams?: number | null;
+    capacityPlayers?: number | null;
+    isEnabled?: boolean;
+    category?: { label: string | null } | null;
+  }>;
   padelTournamentConfig: {
     numberOfCourts: number;
     club?: { name: string; city: string | null; address: string | null } | null;
@@ -82,6 +90,9 @@ export default async function OrganizerEventDetailPage({ params }: PageProps) {
             orderBy: {
               sortOrder: "asc",
             },
+          },
+          padelCategoryLinks: {
+            include: { category: { select: { label: true } } },
           },
           padelTournamentConfig: {
             include: { club: true },
@@ -193,7 +204,16 @@ export default async function OrganizerEventDetailPage({ params }: PageProps) {
         categoriesMeta?: Array<{ name?: string; categoryId?: number | null; capacity?: number | null; registrationType?: string | null }>;
       }
     | null;
-  const categoriesMeta = advancedSettings?.categoriesMeta ?? [];
+  const padelLinks = Array.isArray(event.padelCategoryLinks) ? event.padelCategoryLinks : [];
+  const categoriesMeta =
+    padelLinks.length > 0
+      ? padelLinks.map((link) => ({
+          name: link.category?.label ?? `Categoria ${link.padelCategoryId}`,
+          categoryId: link.padelCategoryId,
+          capacity: link.capacityTeams ?? link.capacityPlayers ?? null,
+          registrationType: undefined,
+        }))
+      : advancedSettings?.categoriesMeta ?? [];
   const backAnchor = "eventos";
 
   const timeline = [

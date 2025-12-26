@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useCheckout } from "./contextoCheckout";
 
 type Wave = {
@@ -11,6 +11,9 @@ type Wave = {
   quantity?: number | null;
   status?: string;
   remaining?: number | null;
+  padelCategoryId?: number | null;
+  padelCategoryLabel?: string | null;
+  padelCategoryLinkId?: number | null;
 };
 
 type CheckoutData = {
@@ -43,15 +46,6 @@ export default function Step1Bilhete() {
     })
     .sort((a, b) => (a.price ?? 0) - (b.price ?? 0))[0];
   const hasWaves = stableWaves.length > 0;
-  const padelCandidateWave =
-    stableWaves.find((w) => {
-      const st = normalizeStatus(w.status);
-      return st !== "sold_out" && st !== "closed";
-    }) ?? stableWaves[0] ?? null;
-  const padelRemainingSlots =
-    typeof padelCandidateWave?.remaining === "number" ? padelCandidateWave.remaining : null;
-  const padelHasPairSlots =
-    padelRemainingSlots === null ? true : padelRemainingSlots >= 2;
 
   // 🧮 Quantidades iniciais por wave (memoizado para não recriar em cada render)
   const initialQuantidades: Record<string, number> = {};
@@ -71,10 +65,44 @@ export default function Step1Bilhete() {
       ? safeDados.additional.checkoutUiVariant
       : "DEFAULT"
   ).toUpperCase();
+  const isPadelVariant = variant === "PADEL";
+  const padelMeta = (safeDados.additional?.padelMeta as
+    | { eventId: number; organizerId: number | null; categoryId?: number | null; categoryLinkId?: number | null }
+    | undefined) ?? null;
 
   const [quantidades, setQuantidades] = useState<Record<string, number>>(
     initialQuantidades,
   );
+  const padelCategoryOptions = useMemo(() => {
+    if (!isPadelVariant) return [];
+    const map = new Map<
+      string,
+      {
+        key: string;
+        linkId: number | null;
+        categoryId: number | null;
+        label: string;
+      }
+    >();
+    for (const wave of stableWaves) {
+      const linkId = typeof wave.padelCategoryLinkId === "number" ? wave.padelCategoryLinkId : null;
+      const categoryId = typeof wave.padelCategoryId === "number" ? wave.padelCategoryId : null;
+      if (!linkId && !categoryId) continue;
+      const key = linkId ? `link:${linkId}` : `cat:${categoryId}`;
+      if (map.has(key)) continue;
+      const label =
+        wave.padelCategoryLabel?.trim() ||
+        (categoryId ? `Categoria ${categoryId}` : linkId ? `Categoria ${linkId}` : "Categoria");
+      map.set(key, { key, linkId, categoryId, label });
+    }
+    return Array.from(map.values());
+  }, [isPadelVariant, stableWaves]);
+  const [selectedPadelCategoryKey, setSelectedPadelCategoryKey] = useState<string | null>(() => {
+    if (!isPadelVariant) return null;
+    if (padelMeta?.categoryLinkId) return `link:${padelMeta.categoryLinkId}`;
+    if (padelMeta?.categoryId) return `cat:${padelMeta.categoryId}`;
+    return padelCategoryOptions[0]?.key ?? null;
+  });
   const [padelSelection, setPadelSelection] = useState<
     "INDIVIDUAL" | "DUO_SPLIT" | "DUO_FULL"
   >("INDIVIDUAL");
@@ -95,9 +123,6 @@ export default function Step1Bilhete() {
   } | null>(null);
   const partnerSelectedLabel = partnerSelected?.label ?? "";
   const searchAbortRef = useRef<AbortController | null>(null);
-  const padelMeta = (safeDados.additional?.padelMeta as
-    | { eventId: number; organizerId: number | null; categoryId?: number | null }
-    | undefined) ?? null;
   const partnerRequired = padelJoinMode === "INVITE_PARTNER";
   const hasPartnerContact = partnerContact.trim().length > 0;
   const canContinuePadel = !partnerRequired || hasPartnerContact;
@@ -120,6 +145,56 @@ export default function Step1Bilhete() {
   function toggleWave(id: string) {
     setAberto((prev) => (prev === id ? null : id));
   }
+
+  useEffect(() => {
+    if (!isPadelVariant) return;
+    if (padelCategoryOptions.length === 0) {
+      if (selectedPadelCategoryKey !== null) {
+        setSelectedPadelCategoryKey(null);
+      }
+      return;
+    }
+    const desiredKey =
+      padelMeta?.categoryLinkId ? `link:${padelMeta.categoryLinkId}` : padelMeta?.categoryId ? `cat:${padelMeta.categoryId}` : null;
+    const hasCurrent = selectedPadelCategoryKey
+      ? padelCategoryOptions.some((opt) => opt.key === selectedPadelCategoryKey)
+      : false;
+    if (hasCurrent) return;
+    if (desiredKey && padelCategoryOptions.some((opt) => opt.key === desiredKey)) {
+      setSelectedPadelCategoryKey(desiredKey);
+    } else {
+      setSelectedPadelCategoryKey(padelCategoryOptions[0].key);
+    }
+  }, [isPadelVariant, padelCategoryOptions, padelMeta?.categoryId, padelMeta?.categoryLinkId, selectedPadelCategoryKey]);
+
+  const selectedPadelCategory =
+    padelCategoryOptions.find((opt) => opt.key === selectedPadelCategoryKey) ?? null;
+  const resolvedPadelMeta = padelMeta
+    ? {
+        ...padelMeta,
+        categoryId: selectedPadelCategory?.categoryId ?? padelMeta.categoryId ?? null,
+        categoryLinkId: selectedPadelCategory?.linkId ?? padelMeta.categoryLinkId ?? null,
+      }
+    : null;
+  const padelCategoryRequired = isPadelVariant && padelCategoryOptions.length > 1;
+  const padelCategorySelected = !padelCategoryRequired || Boolean(selectedPadelCategory);
+
+  const padelFilteredWaves = isPadelVariant && selectedPadelCategory
+    ? stableWaves.filter((w) => {
+        if (selectedPadelCategory.linkId) return w.padelCategoryLinkId === selectedPadelCategory.linkId;
+        if (selectedPadelCategory.categoryId) return w.padelCategoryId === selectedPadelCategory.categoryId;
+        return true;
+      })
+    : stableWaves;
+  const padelCandidateWave =
+    padelFilteredWaves.find((w) => {
+      const st = normalizeStatus(w.status);
+      return st !== "sold_out" && st !== "closed";
+    }) ?? padelFilteredWaves[0] ?? null;
+  const padelRemainingSlots =
+    typeof padelCandidateWave?.remaining === "number" ? padelCandidateWave.remaining : null;
+  const padelHasPairSlots =
+    padelCandidateWave ? (padelRemainingSlots === null ? true : padelRemainingSlots >= 2) : false;
 
   // Sugestões de parceiro (procura por @username/nome)
   useEffect(() => {
@@ -201,7 +276,11 @@ export default function Step1Bilhete() {
 
   function handleContinuar() {
     if (variant === "PADEL") {
-      const target = stableWaves.find((w) => normalizeStatus(w.status) !== "sold_out" && normalizeStatus(w.status) !== "closed");
+      if (padelCategoryRequired && !selectedPadelCategory) {
+        setPadelStockError("Seleciona primeiro uma categoria.");
+        return;
+      }
+      const target = padelCandidateWave;
       if (!target || !padelHasPairSlots) {
         setPadelStockError("Sem vagas suficientes para criar uma dupla.");
         return;
@@ -225,15 +304,15 @@ export default function Step1Bilhete() {
       const paymentMode = scenario === "GROUP_FULL" ? "FULL" : "SPLIT";
 
       const createPairing = async () => {
-        if (!padelMeta?.eventId) return null;
+        if (!resolvedPadelMeta?.eventId) return null;
         try {
           const res = await fetch("/api/padel/pairings", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              eventId: padelMeta.eventId,
-              organizerId: padelMeta.organizerId ?? undefined,
-              categoryId: padelMeta.categoryId ?? undefined,
+              eventId: resolvedPadelMeta.eventId,
+              organizerId: resolvedPadelMeta.organizerId ?? undefined,
+              categoryId: resolvedPadelMeta.categoryId ?? undefined,
               paymentMode,
               pairingJoinMode: padelJoinMode,
               invitedContact:
@@ -275,6 +354,7 @@ export default function Step1Bilhete() {
             total: totalCalc,
             padelJoinMode,
             checkoutUiVariant: variant,
+            padelMeta: resolvedPadelMeta ?? padelMeta,
             pairingId: pairingResult.pairingId,
             pairingSlotId: pairingResult.slotId ?? undefined,
             ticketTypeId: Number(target.id),
@@ -311,10 +391,10 @@ export default function Step1Bilhete() {
     );
   }
 
-  if (variant === "PADEL") {
-    const baseWave = padelCandidateWave;
-    const basePrice = baseWave?.price ?? 0;
-    const hasPairSlotsAvailable = padelHasPairSlots;
+    if (variant === "PADEL") {
+      const baseWave = padelCandidateWave;
+      const basePrice = baseWave?.price ?? 0;
+      const hasPairSlotsAvailable = padelHasPairSlots;
     return (
       <div className="flex flex-col gap-6 text-white">
         <header className="flex items-start justify-between gap-3">
@@ -339,6 +419,34 @@ export default function Step1Bilhete() {
         <div className="h-1 w-full rounded-full bg-white/10 overflow-hidden shadow-[0_6px_20px_rgba(0,0,0,0.35)]">
           <div className="h-full w-1/3 rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] animate-pulse" />
         </div>
+
+        {padelCategoryOptions.length > 1 && (
+          <div className="rounded-2xl border border-white/12 bg-white/[0.05] p-4 shadow-[0_14px_40px_rgba(0,0,0,0.55)]">
+            <p className="text-[11px] uppercase tracking-[0.18em] text-white/60">Categoria</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {padelCategoryOptions.map((opt) => {
+                const isSelected = opt.key === selectedPadelCategoryKey;
+                return (
+                  <button
+                    key={opt.key}
+                    type="button"
+                    onClick={() => {
+                      setSelectedPadelCategoryKey(opt.key);
+                      if (padelStockError) setPadelStockError(null);
+                    }}
+                    className={`rounded-full border px-3 py-1.5 text-[12px] transition ${
+                      isSelected
+                        ? "border-[#6BFFFF]/70 bg-white/12 text-white shadow-[0_10px_30px_rgba(107,255,255,0.25)]"
+                        : "border-white/15 bg-white/[0.04] text-white/70 hover:border-white/30"
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         <div className="grid gap-3 md:grid-cols-3">
           <button
@@ -512,7 +620,7 @@ export default function Step1Bilhete() {
           <button
             type="button"
             onClick={handleContinuar}
-            disabled={!canContinuePadel || !hasPairSlotsAvailable}
+            disabled={!canContinuePadel || !hasPairSlotsAvailable || !padelCategorySelected}
             className="rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-5 py-2.5 text-xs font-semibold text-black shadow-[0_0_26px_rgba(107,255,255,0.55)] hover:scale-[1.02] active:scale-95 transition-transform disabled:cursor-not-allowed disabled:opacity-50"
           >
             Continuar
@@ -520,6 +628,9 @@ export default function Step1Bilhete() {
         </div>
         {padelStockError && (
           <p className="text-[11px] text-amber-200">{padelStockError}</p>
+        )}
+        {!padelStockError && !padelCategorySelected && padelCategoryRequired && (
+          <p className="text-[11px] text-amber-200">Seleciona uma categoria para continuar.</p>
         )}
         {!padelStockError && !hasPairSlotsAvailable && (
           <p className="text-[11px] text-amber-200">Sem vagas suficientes para criar uma dupla.</p>

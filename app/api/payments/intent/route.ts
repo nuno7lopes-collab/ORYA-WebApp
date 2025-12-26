@@ -32,7 +32,10 @@ import {
 import { resolveOwner } from "@/lib/ownership/resolveOwner";
 import { enqueueOperation } from "@/lib/operations/enqueue";
 import { ensureEntriesForConfirmedPairing } from "@/domain/tournaments/ensureEntriesForConfirmedPairing";
+import { checkPadelCategoryLimit } from "@/domain/padelCategoryLimit";
 import { sanitizeUsername } from "@/lib/username";
+import { checkoutKey, clampIdempotencyKey } from "@/lib/stripe/idempotency";
+import { logFinanceError } from "@/lib/observability/finance";
 
 const FREE_PLACEHOLDER_INTENT_ID = "FREE_CHECKOUT";
 
@@ -503,6 +506,13 @@ export async function POST(req: NextRequest) {
         currency: true,
         totalQuantity: true,
         soldQuantity: true,
+        padelEventCategoryLinkId: true,
+        padelEventCategoryLink: {
+          select: {
+            id: true,
+            padelCategoryId: true,
+          },
+        },
       },
     });
 
@@ -974,6 +984,7 @@ export async function POST(req: NextRequest) {
         select: {
           id: true,
           eventId: true,
+          categoryId: true,
           lifecycleStatus: true,
           payment_mode: true,
           pairingJoinMode: true,
@@ -1067,6 +1078,71 @@ export async function POST(req: NextRequest) {
               retryable: false,
             });
           }
+        }
+      }
+
+      const categoryLinkIds = new Set<number>();
+      let resolvedCategoryId: number | null = pairing.categoryId ?? null;
+      for (const item of normalizedItems) {
+        const ticketType = ticketTypeMap.get(item.ticketTypeId);
+        const linkId = ticketType?.padelEventCategoryLinkId ?? null;
+        const linkCategoryId = ticketType?.padelEventCategoryLink?.padelCategoryId ?? null;
+        if (!linkId || !linkCategoryId) {
+          return intentError("PADEL_CATEGORY_LINK_REQUIRED", "Bilhete Padel sem categoria do evento.", {
+            httpStatus: 400,
+            status: "FAILED",
+            retryable: false,
+          });
+        }
+        categoryLinkIds.add(linkId);
+        if (!resolvedCategoryId) resolvedCategoryId = linkCategoryId;
+        if (resolvedCategoryId && linkCategoryId && resolvedCategoryId !== linkCategoryId) {
+          return intentError("PADEL_CATEGORY_MIXED", "Não podes misturar categorias Padel no mesmo checkout.", {
+            httpStatus: 400,
+            status: "FAILED",
+            retryable: false,
+          });
+        }
+      }
+
+      if (categoryLinkIds.size > 1) {
+        return intentError("PADEL_CATEGORY_MIXED", "Não podes misturar categorias Padel no mesmo checkout.", {
+          httpStatus: 400,
+          status: "FAILED",
+          retryable: false,
+        });
+      }
+
+      if (resolvedCategoryId && pairing.categoryId && pairing.categoryId !== resolvedCategoryId) {
+        return intentError("PADEL_CATEGORY_MISMATCH", "Categoria do bilhete não corresponde à dupla.", {
+          httpStatus: 400,
+          status: "FAILED",
+          retryable: false,
+        });
+      }
+
+      if (userId && resolvedCategoryId) {
+        const limitCheck = await prisma.$transaction((tx) =>
+          checkPadelCategoryLimit({
+            tx,
+            eventId: event.id,
+            userId,
+            categoryId: resolvedCategoryId,
+            excludePairingId: pairing.id,
+          }),
+        );
+        if (!limitCheck.ok) {
+          return intentError(
+            limitCheck.code,
+            limitCheck.code === "ALREADY_IN_CATEGORY"
+              ? "Já tens uma dupla confirmada nesta categoria."
+              : "Limite máximo de 2 categorias por jogador.",
+            {
+              httpStatus: 409,
+              status: "FAILED",
+              retryable: false,
+            },
+          );
         }
       }
 
@@ -1200,12 +1276,13 @@ export async function POST(req: NextRequest) {
     // Dedupe determinístico por carrinho: evita loops 409 quando o FE reutiliza uma idempotencyKey inválida.
     // Mantemos a key enviada pelo FE para diferenciar intents e evitar reaproveitar PI terminal.
     const clientIdempotencyKey = idempotencyKey;
-    const effectiveDedupeKey = purchaseId;
+    const checkoutIdempotencyKey = checkoutKey(purchaseId);
+    const effectiveDedupeKey = checkoutIdempotencyKey;
 
-    // Idempotência API: se houver payment_event com dedupeKey=idempotencyKey e PI não terminal, devolve. Terminal → ignora e cria novo.
-    if (clientIdempotencyKey) {
+    // Idempotência API: se houver payment_event com dedupeKey=checkoutKey e PI não terminal, devolve. Terminal → ignora e cria novo.
+    if (checkoutIdempotencyKey) {
       const existing = await prisma.paymentEvent.findFirst({
-        where: { dedupeKey: clientIdempotencyKey },
+        where: { dedupeKey: checkoutIdempotencyKey },
         select: {
           stripePaymentIntentId: true,
           purchaseId: true,
@@ -2042,8 +2119,8 @@ export async function POST(req: NextRequest) {
     // Stripe idempotency: se o cliente enviar idempotencyKey, usamos-na para diferenciar intents e evitar reaproveitar PI terminal
     const stripeIdempotencyKey =
       clientIdempotencyKey && clientIdempotencyKey.trim().length > 0
-        ? `${purchaseId}:${clientIdempotencyKey}`.slice(0, 200)
-        : purchaseId.slice(0, 200);
+        ? clampIdempotencyKey(`${checkoutIdempotencyKey}:${clientIdempotencyKey}`)
+        : checkoutIdempotencyKey;
 
     const createPi = async (idemKey?: string) =>
       stripe.paymentIntents.create(intentParams, idemKey ? { idempotencyKey: idemKey } : undefined);
@@ -2145,7 +2222,7 @@ export async function POST(req: NextRequest) {
       idempotencyKey: clientIdempotencyKey ?? effectiveDedupeKey,
     });
   } catch (err) {
-    console.error("Erro PaymentIntent:", err);
+    logFinanceError("checkout", err, { route: "/api/payments/intent" });
     return NextResponse.json(
       { ok: false, error: "Erro ao criar PaymentIntent." },
       { status: 500 },

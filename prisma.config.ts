@@ -8,8 +8,10 @@ export default defineConfig({
     path: "prisma/migrations",
   },
   datasource: {
-    // URL principal usada pelo Prisma Client
-    url: env("DATABASE_URL"),
+    // URL usada pelo Prisma CLI (migrations/introspect). Usar ligação direta para evitar pgbouncer.
+    url: env("DIRECT_URL"),
+    // Mantém explicitamente a ligação direta (caso o CLI suporte directUrl).
+    directUrl: env("DIRECT_URL"),
     // Se quiseres no futuro, podes ter um shadow DB:
     // shadowDatabaseUrl: env("SHADOW_DATABASE_URL"),
   },

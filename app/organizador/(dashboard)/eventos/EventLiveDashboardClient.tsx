@@ -13,17 +13,12 @@ type Props = {
     id: number;
     slug: string;
     title: string;
-    liveHubMode: "DEFAULT" | "PREMIUM";
     liveHubVisibility: LiveHubVisibility;
     liveStreamUrl: string | null;
     templateType?: string | null;
   };
-  organizer: {
-    id: number;
-    username: string | null;
-    liveHubPremiumEnabled: boolean;
-  };
   tournamentId: number | null;
+  canManageLiveConfig: boolean;
 };
 
 const TABS = [
@@ -32,34 +27,22 @@ const TABS = [
   { id: "preview", label: "Preview" },
 ] as const;
 
-export default function EventLiveDashboardClient({ event, organizer, tournamentId }: Props) {
+export default function EventLiveDashboardClient({ event, tournamentId, canManageLiveConfig }: Props) {
   const searchParams = useSearchParams();
-  const tab = searchParams?.get("tab") || "setup";
-  const tabs = TABS;
+  const tabs = TABS.filter((item) => (canManageLiveConfig ? true : item.id === "preview"));
+  const requestedTab = searchParams?.get("tab") || (canManageLiveConfig ? "setup" : "preview");
+  const tab = tabs.find((item) => item.id === requestedTab)?.id ?? tabs[0]?.id ?? "preview";
 
   const basePath = `/organizador/eventos/${event.id}/live`;
-  const organizerHandle = organizer.username ? `@${organizer.username}` : null;
 
   return (
     <div className="space-y-6">
       <header className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/10 via-[#0b1226]/70 to-[#050912]/90 p-5 shadow-[0_26px_90px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Dashboard Live</p>
+            <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Gerir · Preparar live</p>
             <h1 className="text-2xl font-semibold text-white">{event.title}</h1>
-            <p className="text-sm text-white/60">
-              Modo automático{organizerHandle ? ` · ${organizerHandle}` : ""}
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2 text-xs text-white/70">
-            <Link
-              href={`/eventos/${event.slug}/live`}
-              target="_blank"
-              rel="noreferrer"
-              className="rounded-full border border-white/20 px-3 py-1 hover:border-white/40"
-            >
-              Ver Live público
-            </Link>
+            <p className="text-sm text-white/60">Configura LiveHub, bracket e preview no mesmo lugar.</p>
           </div>
         </div>
         <div className="mt-4 flex flex-wrap gap-2">
@@ -95,7 +78,6 @@ export default function EventLiveDashboardClient({ event, organizer, tournamentI
             id: event.id,
             slug: event.slug,
             title: event.title,
-            liveHubMode: event.liveHubMode,
             liveHubVisibility: event.liveHubVisibility,
             liveStreamUrl: event.liveStreamUrl,
           }}

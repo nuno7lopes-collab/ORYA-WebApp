@@ -114,7 +114,7 @@ export default function PurchasesClient() {
 
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_10%_20%,rgba(131,58,180,0.18),transparent_30%),radial-gradient(circle_at_80%_10%,rgba(45,156,219,0.18),transparent_25%),radial-gradient(circle_at_50%_80%,rgba(99,102,241,0.14),transparent_35%)] text-white">
-      <div className="mx-auto flex max-w-5xl flex-col gap-6 px-4 pb-14 pt-10 sm:px-6 lg:px-8">
+      <div className="orya-page-width flex flex-col gap-6 px-4 pb-14 pt-10 sm:px-6 lg:px-8">
         <div className="rounded-3xl border border-white/10 bg-black/50 p-6 shadow-[0_24px_70px_rgba(0,0,0,0.65)] backdrop-blur">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="space-y-1">

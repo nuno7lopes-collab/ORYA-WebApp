@@ -74,7 +74,7 @@ export default function MinhasDuplasPage() {
 
   return (
     <div className="min-h-screen orya-body-bg text-white px-4 py-10">
-      <div className="mx-auto max-w-4xl space-y-6">
+      <div className="orya-page-width space-y-6">
         <div>
           <h1 className="text-2xl font-semibold">As minhas duplas (Padel)</h1>
           <p className="text-white/70 text-sm">Acompanha o estado das tuas inscrições e pagamentos.</p>

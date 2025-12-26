@@ -81,13 +81,26 @@ export async function updateMatchResult({
     const shouldUpdateWinner =
       typeof explicitWinnerPairingId !== "undefined" || typeof score !== "undefined";
     const before = {
+      matchId: current.id,
       status: current.status,
       score: current.score,
       pairing1Id: current.pairing1Id,
       pairing2Id: current.pairing2Id,
+      updatedAt: current.updatedAt,
     };
 
     const newStatus: TournamentMatchStatus = status ?? resolvedStatus ?? "DONE";
+    const shouldPropagate = Boolean(
+      winnerPairingId && current.nextMatchId && current.nextSlot && newStatus !== "DISPUTED",
+    );
+    const nextMatchBefore =
+      shouldPropagate && current.nextMatchId
+        ? await tx.tournamentMatch.findUnique({
+            where: { id: current.nextMatchId },
+            select: { pairing1Id: true, pairing2Id: true },
+          })
+        : null;
+
     const updated = await tx.tournamentMatch.update({
       where: { id: matchId },
       data: {
@@ -97,11 +110,38 @@ export async function updateMatchResult({
     });
 
     // Propagar winner para o próximo jogo se houver
-    if (winnerPairingId && updated.nextMatchId && updated.nextSlot) {
+    let propagated = false;
+    let nextSlotBefore: number | null = null;
+    let nextSlotAfter: number | null = null;
+    if (shouldPropagate && current.nextMatchId && current.nextSlot) {
+      nextSlotBefore =
+        current.nextSlot === 1 ? nextMatchBefore?.pairing1Id ?? null : nextMatchBefore?.pairing2Id ?? null;
+      nextSlotAfter = winnerPairingId ?? null;
       await tx.tournamentMatch.update({
-        where: { id: updated.nextMatchId },
-        data: updated.nextSlot === 1 ? { pairing1Id: winnerPairingId } : { pairing2Id: winnerPairingId },
+        where: { id: current.nextMatchId },
+        data: current.nextSlot === 1 ? { pairing1Id: winnerPairingId } : { pairing2Id: winnerPairingId },
       });
+      propagated = Boolean(winnerPairingId);
+    }
+
+    if (newStatus === "DONE") {
+      const tournamentConfig = await tx.tournament.findUnique({
+        where: { id: current.stage.tournamentId },
+        select: { config: true },
+      });
+      const config = (tournamentConfig?.config as Record<string, unknown> | null) ?? {};
+      if (config.featuredMatchId === current.id) {
+        await tx.tournament.update({
+          where: { id: current.stage.tournamentId },
+          data: {
+            config: {
+              ...config,
+              featuredMatchId: null,
+              featuredMatchUpdatedAt: new Date().toISOString(),
+            },
+          },
+        });
+      }
     }
 
     // Audit log
@@ -109,12 +149,17 @@ export async function updateMatchResult({
       data: {
         tournamentId: current.stage.tournamentId,
         userId: userId ?? null,
-        action: "EDIT_MATCH",
+        action: "EDIT_MATCH_RESULT",
         payloadBefore: before,
         payloadAfter: {
+          matchId: current.id,
           status: newStatus,
           score: normalizedScore ?? score ?? current.score,
-          propagated: Boolean(winnerPairingId && updated.nextMatchId),
+          propagated,
+          nextMatchId: current.nextMatchId,
+          nextSlot: current.nextSlot,
+          nextSlotBefore,
+          nextSlotAfter,
         },
       },
     });

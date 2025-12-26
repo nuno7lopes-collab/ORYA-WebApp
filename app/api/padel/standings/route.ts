@@ -9,9 +9,11 @@ export async function GET(req: NextRequest) {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
     const eventId = Number(req.nextUrl.searchParams.get("eventId"));
+    const categoryId = Number(req.nextUrl.searchParams.get("categoryId"));
     if (!Number.isFinite(eventId)) {
       return NextResponse.json({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
     }
+    const matchCategoryFilter = Number.isFinite(categoryId) ? { categoryId } : {};
 
     const event = await prisma.event.findUnique({
       where: { id: eventId, isDeleted: false },
@@ -29,7 +31,7 @@ export async function GET(req: NextRequest) {
 
     // Standings por grupos (roundType=GROUPS) com desempates
     const matches = await prisma.padelMatch.findMany({
-      where: { eventId, roundType: "GROUPS" },
+      where: { eventId, roundType: "GROUPS", ...matchCategoryFilter },
       select: {
         id: true,
         pairingAId: true,

@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { PaymentEventSource } from "@prisma/client";
+import { checkoutKey } from "@/lib/stripe/idempotency";
 
 type IntentLike = {
   id: string;
@@ -19,6 +20,8 @@ export async function fulfillResaleIntent(intent: IntentLike): Promise<boolean> 
   const buyerUserId = typeof meta.buyerUserId === "string" ? meta.buyerUserId : null;
   const purchaseId =
     typeof meta.purchaseId === "string" && meta.purchaseId.trim() !== "" ? meta.purchaseId.trim() : intent.id;
+  const idempotencyKey = typeof meta.idempotencyKey === "string" ? meta.idempotencyKey.trim() : "";
+  const paymentDedupeKey = idempotencyKey || (purchaseId ? checkoutKey(purchaseId) : intent.id);
 
   if (!resaleId || !ticketId || !buyerUserId) return false;
 
@@ -68,7 +71,7 @@ export async function fulfillResaleIntent(intent: IntentLike): Promise<boolean> 
           isTest: !intent.livemode,
           purchaseId: purchaseId ?? intent.id,
           source: PaymentEventSource.WEBHOOK,
-          dedupeKey: purchaseId ?? intent.id,
+          dedupeKey: paymentDedupeKey,
           attempt: { increment: 1 },
         },
         create: {
@@ -81,7 +84,7 @@ export async function fulfillResaleIntent(intent: IntentLike): Promise<boolean> 
           isTest: !intent.livemode,
           purchaseId: purchaseId ?? intent.id,
           source: PaymentEventSource.WEBHOOK,
-          dedupeKey: purchaseId ?? intent.id,
+          dedupeKey: paymentDedupeKey,
           attempt: 1,
         },
       });

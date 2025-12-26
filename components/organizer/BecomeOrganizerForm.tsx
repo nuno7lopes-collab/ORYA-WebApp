@@ -69,6 +69,14 @@ const MODULE_META: Record<OrganizationModule, { label: string; description: stri
     label: "Inscrições",
     description: "Ativa formulários públicos, lugares e pagamentos num só fluxo.",
   },
+  LOJA: {
+    label: "Loja",
+    description: "Mostra produtos e merch no perfil público da organização.",
+  },
+  GALERIA: {
+    label: "Galeria",
+    description: "Destaques visuais e feed premium para o perfil público.",
+  },
 };
 
 const MODULE_OPTIONS = ORGANIZATION_MODULES.map((key) => ({
@@ -596,6 +604,7 @@ export default function BecomeOrganizerForm() {
                     <div className="space-y-4">
                       {MODULE_OPTIONS.map((module) => {
                         const isEnabled = currentModules.includes(module.key);
+                        const moduleLabel = module.label.toLowerCase();
                         const nextModules = isEnabled
                           ? currentModules.filter((item) => item !== module.key)
                           : [...currentModules, module.key];
@@ -622,7 +631,7 @@ export default function BecomeOrganizerForm() {
                                   }`}
                                 />
                                 <span className="sr-only">
-                                  {isEnabled ? "Desativar inscrições" : "Ativar inscrições"}
+                                  {isEnabled ? `Desativar ${moduleLabel}` : `Ativar ${moduleLabel}`}
                                 </span>
                               </button>
                             </div>
@@ -630,8 +639,8 @@ export default function BecomeOrganizerForm() {
                               <span className={`h-2 w-2 rounded-full ${isEnabled ? "bg-emerald-300" : "bg-white/30"}`} />
                               <span>
                                 {isEnabled
-                                  ? "Inscrições ativas no teu painel."
-                                  : "Inscrições desligadas, podes ativar depois."}
+                                  ? `Módulo ${moduleLabel} ativo no teu painel.`
+                                  : `Módulo ${moduleLabel} desligado, podes ativar depois.`}
                               </span>
                             </div>
                           </div>

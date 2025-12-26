@@ -185,7 +185,18 @@ export default async function EventPage({
   }
 
   type EventWithTickets = Prisma.EventGetPayload<{
-    include: { ticketTypes: true };
+    include: {
+      ticketTypes: {
+        include: {
+          padelEventCategoryLink: {
+            include: { category: { select: { label: true } } };
+          };
+        };
+      };
+      padelCategoryLinks: {
+        include: { category: { select: { label: true } } };
+      };
+    };
   }>;
 
   type TicketTypeWithVisibility =
@@ -203,7 +214,16 @@ export default async function EventPage({
   const event = await prisma.event.findUnique({
     where: { slug },
     include: {
-      ticketTypes: true,
+      ticketTypes: {
+        include: {
+          padelEventCategoryLink: {
+            include: { category: { select: { label: true } } },
+          },
+        },
+      },
+      padelCategoryLinks: {
+        include: { category: { select: { label: true } } },
+      },
       padelTournamentConfig: true,
       organizer: {
         select: {
@@ -223,7 +243,16 @@ export default async function EventPage({
       const fallback = await prisma.event.findUnique({
         where: { slug: normalized },
         include: {
-          ticketTypes: true,
+          ticketTypes: {
+            include: {
+              padelEventCategoryLink: {
+                include: { category: { select: { label: true } } },
+              },
+            },
+          },
+          padelCategoryLinks: {
+            include: { category: { select: { label: true } } },
+          },
           padelTournamentConfig: true,
           organizer: {
             select: {
@@ -451,6 +480,9 @@ export default async function EventPage({
             : remaining > 0 && !eventEnded
           : false,
       isVisible: t.isVisible ?? true,
+      padelCategoryId: t.padelEventCategoryLink?.padelCategoryId ?? null,
+      padelCategoryLabel: t.padelEventCategoryLink?.category?.label ?? null,
+      padelCategoryLinkId: t.padelEventCategoryLinkId ?? null,
     };
   });
 
@@ -523,6 +555,15 @@ export default async function EventPage({
   const showPriceFrom = !event.isFree && minTicketPrice !== null;
 
   const padelV2Enabled = Boolean(event.padelTournamentConfig?.padelV2Enabled);
+  const padelCategoryLinks = Array.isArray(event.padelCategoryLinks) ? event.padelCategoryLinks : [];
+  const padelDefaultCategoryId =
+    event.padelTournamentConfig?.defaultCategoryId ??
+    padelCategoryLinks.find((link) => link.isEnabled)?.padelCategoryId ??
+    null;
+  const padelDefaultCategoryLinkId =
+    padelDefaultCategoryId != null
+      ? padelCategoryLinks.find((link) => link.padelCategoryId === padelDefaultCategoryId)?.id ?? null
+      : null;
   const defaultPadelTicketId = (() => {
     const eligible = orderedTickets.filter((t) => {
       const remaining =
@@ -533,8 +574,12 @@ export default async function EventPage({
       const hasStock = remaining === null ? true : remaining > 0;
       return onSale && hasStock;
     });
-    if (!eligible.length) return null;
-    const cheapest = eligible.reduce((min, cur) => (cur.price < min.price ? cur : min), eligible[0]);
+    const filtered =
+      padelV2Enabled && padelDefaultCategoryLinkId
+        ? eligible.filter((t) => t.padelEventCategoryLinkId === padelDefaultCategoryLinkId)
+        : eligible;
+    if (!filtered.length) return null;
+    const cheapest = filtered.reduce((min, cur) => (cur.price < min.price ? cur : min), filtered[0]);
     return cheapest.id ?? null;
   })();
 
@@ -630,7 +675,7 @@ export default async function EventPage({
 
         {/* ========== HERO ============ */}
         <section className="relative z-10 w-full pb-16 pt-20 md:pb-20 md:pt-28">
-          <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-4 md:px-8">
+          <div className="orya-page-width flex items-center justify-between px-4 md:px-8">
             <Link
               href="/explorar"
               className="inline-flex items-center gap-2 text-xs font-medium text-white/75 transition hover:text-white"
@@ -651,7 +696,7 @@ export default async function EventPage({
             </div>
           </div>
 
-          <div className="mx-auto mt-6 grid w-full max-w-6xl grid-cols-1 gap-6 px-4 md:px-8 lg:grid-cols-[1.1fr_0.9fr]">
+          <div className="orya-page-width mt-6 grid grid-cols-1 gap-6 px-4 md:px-8 lg:grid-cols-[1.1fr_0.9fr]">
             <div className="relative">
               <div className="pointer-events-none absolute -inset-[1px] rounded-[32px] bg-[linear-gradient(135deg,rgba(255,0,200,0.35),rgba(107,255,255,0.35),rgba(22,70,245,0.35))] opacity-70 blur-[2px]" />
               <div className="relative rounded-[30px] border border-white/15 bg-[linear-gradient(140deg,rgba(255,255,255,0.16),rgba(2,6,16,0.78))] p-6 shadow-[0_28px_70px_rgba(0,0,0,0.75)] backdrop-blur-2xl md:p-8 animate-fade-slide">
@@ -798,7 +843,7 @@ export default async function EventPage({
             </div>
           </div>
 
-          <div className="mx-auto mt-6 max-w-6xl px-4 md:px-8">
+          <div className="orya-page-width mt-6 px-4 md:px-8">
             <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
               <div className="rounded-2xl border border-white/15 bg-white/5 px-4 py-3 backdrop-blur">
                 <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">
@@ -844,7 +889,7 @@ export default async function EventPage({
         </section>
 
         <div
-          className="pointer-events-none relative z-10 mx-auto max-w-6xl px-6 md:px-10"
+          className="pointer-events-none relative z-10 orya-page-width px-6 md:px-10"
           aria-hidden="true"
         >
           <div className="relative my-8 md:my-10">
@@ -856,7 +901,7 @@ export default async function EventPage({
         </div>
 
         {/* ========== CONTENT AREA ============ */}
-        <section className="relative z-10 mx-auto grid max-w-6xl grid-cols-1 gap-12 px-6 pb-28 pt-10 md:grid-cols-3 md:px-10">
+        <section className="relative z-10 orya-page-width grid grid-cols-1 gap-12 px-6 pb-28 pt-10 md:grid-cols-3 md:px-10">
           {/* LEFT SIDE — Info + Descrição */}
           <div className="space-y-12 md:col-span-2">
             <section
@@ -948,7 +993,7 @@ export default async function EventPage({
                 </div>
               ) : showLiveInline ? (
                 <div className="mt-4">
-                  <EventLiveClient slug={slug} />
+                  <EventLiveClient slug={slug} variant="inline" />
                 </div>
               ) : (
                 <div className="mt-4 rounded-2xl border border-white/12 bg-black/40 px-4 py-3 text-sm text-white/70">
@@ -1077,16 +1122,16 @@ export default async function EventPage({
                             usernameNormalized={usernameNormalized}
                             uiTickets={uiTickets}
                             checkoutUiVariant={checkoutVariant}
-                            padelMeta={
-                              checkoutVariant === "PADEL"
-                                ? {
-                                    eventId: event.id,
-                                    organizerId: event.organizerId ?? null,
-                                    categoryId:
-                                      event.padelTournamentConfig?.defaultCategoryId ?? null,
+                              padelMeta={
+                                checkoutVariant === "PADEL"
+                                  ? {
+                                      eventId: event.id,
+                                      organizerId: event.organizerId ?? null,
+                                      categoryId: padelDefaultCategoryId ?? null,
+                                      categoryLinkId: padelDefaultCategoryLinkId ?? null,
                                   }
-                                : undefined
-                            }
+                                  : undefined
+                              }
                           />
                         ) : (
                           <>
@@ -1152,8 +1197,8 @@ export default async function EventPage({
                                       ? {
                                           eventId: event.id,
                                           organizerId: event.organizerId ?? null,
-                                          categoryId:
-                                            event.padelTournamentConfig?.defaultCategoryId ?? null,
+                                          categoryId: padelDefaultCategoryId ?? null,
+                                          categoryLinkId: padelDefaultCategoryLinkId ?? null,
                                         }
                                       : undefined
                                   }
@@ -1328,7 +1373,8 @@ export default async function EventPage({
               ? {
                   eventId: event.id,
                   organizerId: event.organizerId ?? null,
-                  categoryId: event.padelTournamentConfig?.defaultCategoryId ?? null,
+                  categoryId: padelDefaultCategoryId ?? null,
+                  categoryLinkId: padelDefaultCategoryLinkId ?? null,
                 }
               : undefined
           }

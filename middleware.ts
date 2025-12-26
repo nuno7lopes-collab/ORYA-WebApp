@@ -17,6 +17,15 @@ export async function middleware(req: NextRequest) {
       headers: req.headers,
     },
   });
+  const orgParam = req.nextUrl.searchParams.get("org") ?? req.nextUrl.searchParams.get("organizerId");
+  if (orgParam && /^\d+$/.test(orgParam)) {
+    res.cookies.set("orya_org", orgParam, {
+      httpOnly: false,
+      sameSite: "lax",
+      path: "/",
+      maxAge: 60 * 60 * 24 * 30,
+    });
+  }
 
   const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
     cookies: {

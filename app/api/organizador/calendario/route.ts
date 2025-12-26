@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth/requireUser";
 import { getActiveOrganizerForUser } from "@/lib/organizerContext";
+import { resolveOrganizerIdFromRequest } from "@/lib/organizerId";
+import { getCustomPremiumProfileModules, isCustomPremiumActive } from "@/lib/organizerPremium";
 
 type CalendarItem = {
   id: string;
@@ -66,7 +68,9 @@ const templateLabel = (template: string | null) => {
 export async function GET(req: NextRequest) {
   try {
     const user = await requireUser();
+    const organizerId = resolveOrganizerIdFromRequest(req);
     const { organizer } = await getActiveOrganizerForUser(user.id, {
+      organizerId: organizerId ?? undefined,
       roles: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"],
     });
 
@@ -76,10 +80,15 @@ export async function GET(req: NextRequest) {
 
     const { start, end } = buildRange(req);
 
-    const inscriptionsEnabled = await prisma.organizationModuleEntry.findFirst({
-      where: { organizerId: organizer.id, moduleKey: "INSCRICOES", enabled: true },
-      select: { organizerId: true },
-    });
+    const premiumActive = isCustomPremiumActive(organizer);
+    const premiumModules = premiumActive ? getCustomPremiumProfileModules(organizer) ?? {} : {};
+    const allowInscricoes = Boolean(premiumModules.inscricoes);
+    const inscriptionsEnabled = allowInscricoes
+      ? await prisma.organizationModuleEntry.findFirst({
+          where: { organizerId: organizer.id, moduleKey: "INSCRICOES", enabled: true },
+          select: { organizerId: true },
+        })
+      : null;
 
     const [events, matches, forms, undatedForms] = await Promise.all([
       prisma.event.findMany({

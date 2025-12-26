@@ -1,6 +1,7 @@
 import { OrganizerMemberRole } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { ensureUserIsOrganizer } from "@/lib/organizerRoles";
+import { resolveOrganizerIdFromCookies } from "@/lib/organizerId";
 
 type Options = {
   organizerId?: number | null;
@@ -56,7 +57,12 @@ export async function ensureLegacyOrganizerMemberships(userId: string, organizer
 
 export async function getActiveOrganizerForUser(userId: string, opts: Options = {}) {
   const { roles } = opts;
-  const organizerId = opts.organizerId;
+  const directOrganizerId =
+    typeof opts.organizerId === "number" && Number.isFinite(opts.organizerId)
+      ? opts.organizerId
+      : null;
+  const cookieOrganizerId = directOrganizerId ? null : await resolveOrganizerIdFromCookies();
+  const organizerId = directOrganizerId ?? cookieOrganizerId;
 
   // 1) Se organizerId foi especificado, tenta buscar diretamente essa membership primeiro
   if (organizerId) {
@@ -88,6 +94,8 @@ export async function getActiveOrganizerForUser(userId: string, opts: Options = 
         return { organizer: retry.organizer, membership: retry };
       }
     }
+    // Se o organizerId foi pedido explicitamente e não existe membership, não faz fallback.
+    return { organizer: null, membership: null };
   }
 
   let memberships = await prisma.organizerMember.findMany({
@@ -116,9 +124,10 @@ export async function getActiveOrganizerForUser(userId: string, opts: Options = 
   }
 
   if (memberships && memberships.length > 0) {
-    const selected =
-      (organizerId ? memberships.find((m) => m.organizerId === organizerId) : null) ??
-      memberships[0];
+    if (memberships.length > 1) {
+      return { organizer: null, membership: null };
+    }
+    const selected = memberships[0];
     if (selected?.organizer) {
       return { organizer: selected.organizer, membership: selected };
     }

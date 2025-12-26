@@ -3,13 +3,17 @@ import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { getActiveOrganizerForUser } from "@/lib/organizerContext";
+import { resolveOrganizerIdFromRequest } from "@/lib/organizerId";
 
 export async function GET(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
 
-    const { organizer } = await getActiveOrganizerForUser(user.id);
+    const organizerId = resolveOrganizerIdFromRequest(req);
+    const { organizer } = await getActiveOrganizerForUser(user.id, {
+      organizerId: organizerId ?? undefined,
+    });
     if (!organizer) {
       return NextResponse.json({ ok: false, error: "Organizador não encontrado." }, { status: 403 });
     }
@@ -17,7 +21,7 @@ export async function GET(req: NextRequest) {
     const categories = await prisma.padelCategory.findMany({
       where: { organizerId: organizer.id, isActive: true },
       orderBy: [{ season: "desc" }, { year: "desc" }, { createdAt: "desc" }],
-      select: { id: true, name: true, level: true },
+      select: { id: true, label: true, minLevel: true, maxLevel: true },
     });
 
     return NextResponse.json({ ok: true, items: categories });

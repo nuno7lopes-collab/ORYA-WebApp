@@ -75,7 +75,7 @@ export default function EventosFeedPage() {
     <main className="min-h-screen w-full bg-[radial-gradient(circle_at_top,_#140b2a_0,_#050509_45%,_#02020a_100%)] text-white">
       {/* Top bar */}
       <header className="border-b border-white/10 bg-black/30 backdrop-blur-xl">
-        <div className="max-w-6xl mx-auto px-6 md:px-10 py-4 flex items-center justify-between gap-4">
+        <div className="orya-page-width px-6 md:px-10 py-4 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-tr from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] text-xs font-extrabold tracking-[0.15em]">
               OR
@@ -100,7 +100,7 @@ export default function EventosFeedPage() {
         </div>
       </header>
 
-      <section className="max-w-6xl mx-auto px-6 md:px-10 py-8 md:py-10 space-y-6">
+      <section className="orya-page-width px-6 md:px-10 py-8 md:py-10 space-y-6">
         {/* Search */}
         <div className="space-y-4">
           <form

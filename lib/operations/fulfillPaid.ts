@@ -3,6 +3,7 @@ import { normalizePaymentScenario } from "@/lib/paymentScenario";
 import { Prisma, EntitlementType, EntitlementStatus } from "@prisma/client";
 import { enqueueOperation } from "@/lib/operations/enqueue";
 import { normalizeEmail } from "@/lib/utils/email";
+import { checkoutKey } from "@/lib/stripe/idempotency";
 
 function buildOwnerKey(params: { ownerUserId?: string | null; ownerIdentityId?: string | null; guestEmail?: string | null }) {
   if (params.ownerUserId) return `user:${params.ownerUserId}`;
@@ -68,6 +69,8 @@ export async function fulfillPaidIntent(intent: IntentLike, stripeEventId?: stri
 
   const purchaseId =
     typeof meta.purchaseId === "string" && meta.purchaseId.trim() !== "" ? meta.purchaseId.trim() : intent.id;
+  const idempotencyKey = typeof meta.idempotencyKey === "string" ? meta.idempotencyKey.trim() : "";
+  const paymentDedupeKey = idempotencyKey || (purchaseId ? checkoutKey(purchaseId) : intent.id);
   const ownerUserId = typeof meta.ownerUserId === "string" ? meta.ownerUserId : null;
   const ownerIdentityId = typeof meta.ownerIdentityId === "string" ? meta.ownerIdentityId : null;
   const ownerEmail = typeof meta.emailNormalized === "string" ? meta.emailNormalized : null;
@@ -100,7 +103,7 @@ export async function fulfillPaidIntent(intent: IntentLike, stripeEventId?: stri
         purchaseId,
         stripeEventId: stripeEventId ?? undefined,
         source: "WEBHOOK",
-        dedupeKey: stripeEventId ?? intent.id,
+        dedupeKey: paymentDedupeKey,
         attempt: { increment: 1 },
         updatedAt: new Date(),
         errorMessage: null,
@@ -231,7 +234,7 @@ export async function fulfillPaidIntent(intent: IntentLike, stripeEventId?: stri
         purchaseId,
         stripeEventId: stripeEventId ?? undefined,
         source: "WEBHOOK",
-        dedupeKey: stripeEventId ?? intent.id,
+        dedupeKey: paymentDedupeKey,
         attempt: { increment: 1 },
       },
     });

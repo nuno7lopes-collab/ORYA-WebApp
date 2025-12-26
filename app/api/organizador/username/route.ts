@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizerForUser } from "@/lib/organizerContext";
+import { resolveOrganizerIdFromRequest } from "@/lib/organizerId";
 import { normalizeAndValidateUsername, setUsernameForOwner, UsernameTakenError } from "@/lib/globalUsernames";
 
 export async function PATCH(req: NextRequest) {
@@ -25,7 +26,11 @@ export async function PATCH(req: NextRequest) {
     }
     const username = validated.username;
 
-    const { organizer, membership } = await getActiveOrganizerForUser(user.id, { roles: ["OWNER"] });
+    const organizerId = resolveOrganizerIdFromRequest(req);
+    const { organizer, membership } = await getActiveOrganizerForUser(user.id, {
+      organizerId: organizerId ?? undefined,
+      roles: ["OWNER"],
+    });
     if (!organizer || !membership || membership.role !== "OWNER") {
       return NextResponse.json({ ok: false, error: "Apenas o Owner pode alterar o username." }, { status: 403 });
     }

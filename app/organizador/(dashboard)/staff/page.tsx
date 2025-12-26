@@ -553,19 +553,6 @@ export default function OrganizerStaffPage({ embedded }: OrganizerStaffPageProps
             {viewerRole === "OWNER" && !orgTransferEnabled && (
               <p className="text-[11px] text-white/55">Transferência de Owner desativada enquanto a flag global estiver off.</p>
             )}
-            {auditData?.ok && auditData.items.length > 0 && (
-              <div className="mt-2 rounded-xl border border-white/12 bg-white/5 p-3 text-[12px] text-white/70 shadow-[0_16px_40px_rgba(0,0,0,0.45)] space-y-1">
-                <p className="text-[11px] uppercase tracking-[0.2em] text-white/55">Histórico rápido (sensível)</p>
-                <div className="space-y-1 max-h-36 overflow-y-auto pr-1">
-                  {auditData.items.map((log) => (
-                    <div key={log.id} className="flex items-center justify-between text-[12px] border-b border-white/5 py-1 last:border-b-0">
-                      <span>{log.action}</span>
-                      <span className="text-white/50">{new Date(log.createdAt).toLocaleString("pt-PT")}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
           <div className="flex flex-wrap gap-2 text-[12px]">
             <button

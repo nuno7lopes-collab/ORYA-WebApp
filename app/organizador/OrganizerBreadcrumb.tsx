@@ -38,7 +38,7 @@ function resolveLabel(pathname: string, tab: string, section?: string | null, ma
   if (pathname.startsWith("/organizador/eventos/novo")) return "Criar evento";
   if (pathname.startsWith("/organizador/eventos/novo")) return "Criar evento";
   if (pathname.includes("/eventos/") && pathname.endsWith("/edit")) return "Editar evento";
-  if (pathname.includes("/eventos/") && pathname.endsWith("/live")) return "Preparar live";
+  if (pathname.includes("/eventos/") && pathname.endsWith("/live")) return "Gerir · Preparar live";
   if (pathname.includes("/eventos/")) return "Eventos";
   if (pathname.startsWith("/organizador/inscricoes")) return "Inscrições";
   if (pathname.startsWith("/organizador/updates")) return "Canal oficial";

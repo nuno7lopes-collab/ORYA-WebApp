@@ -17,7 +17,8 @@ import ObjectiveSubnav from "./ObjectiveSubnav";
 import PadelHubSection from "./(dashboard)/padel/PadelHubSection";
 import { CTA_DANGER, CTA_NEUTRAL, CTA_PRIMARY, CTA_SECONDARY, CTA_SUCCESS } from "@/app/organizador/dashboardUi";
 import OrganizerPublicProfilePanel from "./OrganizerPublicProfilePanel";
-import { CheckinScanner } from "@/app/components/checkin/CheckinScanner";
+import InscricoesPage from "./(dashboard)/inscricoes/page";
+import { optimizeImageUrl } from "@/lib/image";
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
@@ -50,6 +51,7 @@ type EventItem = {
   locationCity: string | null;
   status: string;
   isFree: boolean;
+  coverImageUrl?: string | null;
   ticketsSold?: number;
   revenueCents?: number;
   capacity?: number | null;
@@ -185,7 +187,15 @@ type OrganizerLite = {
   modules?: string[] | null;
   publicDescription?: string | null;
   brandingAvatarUrl?: string | null;
+  brandingCoverUrl?: string | null;
   liveHubPremiumEnabled?: boolean | null;
+  publicListingEnabled?: boolean | null;
+  publicWebsite?: string | null;
+  publicInstagram?: string | null;
+  publicYoutube?: string | null;
+  publicHours?: string | null;
+  address?: string | null;
+  showAddressPublicly?: boolean | null;
 };
 
 type ObjectiveTab = "create" | "manage" | "promote" | "analyze";
@@ -261,13 +271,14 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
   const [salesEventId, setSalesEventId] = useState<number | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [timeScope, setTimeScope] = useState<"all" | "upcoming" | "ongoing" | "past">("all");
+  const [eventView, setEventView] = useState<"list" | "grid">("grid");
   const [eventActionLoading, setEventActionLoading] = useState<number | null>(null);
   const [eventDialog, setEventDialog] = useState<{ mode: "archive" | "delete" | "unarchive"; ev: EventItem } | null>(null);
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [marketingSection, setMarketingSection] = useState<
-    "perfil" | "overview" | "promos" | "updates" | "promoters" | "content"
+    "overview" | "promos" | "updates" | "promoters" | "content"
   >("overview");
   const marketingSectionSourceRef = useRef<"url" | "ui">("url");
   const handleMarketingSectionSelect = useCallback(
@@ -317,7 +328,6 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
     if (activeObjective === "manage") {
       if (sectionParamRaw === "events") return "eventos";
       if (sectionParamRaw === "torneios") return "eventos";
-      if (sectionParamRaw === "scan") return "checkin";
       if (sectionParamRaw === "padel") return "padel-hub";
       if (sectionParamRaw === "volunteer") return "acoes";
     }
@@ -326,7 +336,7 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
       if (sectionParamRaw === "finance") return "financas";
     }
     if (activeObjective === "promote") {
-      const marketingSections = ["perfil", "overview", "promos", "updates", "promoters", "content"];
+      const marketingSections = ["overview", "promos", "updates", "promoters", "content"];
       if (marketingSections.includes(sectionParamRaw)) return "marketing";
     }
     return sectionParamRaw;
@@ -335,7 +345,7 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
   const scrollSection = useMemo(() => {
     if (!sectionParamRaw) return undefined;
     if (activeObjective === "promote") {
-      const marketingSections = ["perfil", "overview", "promos", "updates", "promoters", "content"];
+      const marketingSections = ["overview", "promos", "updates", "promoters", "content"];
       if (marketingSections.includes(sectionParamRaw)) return "marketing";
     }
     if (activeObjective === "analyze") {
@@ -420,7 +430,7 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
       finance: "financas",
     };
     if (activeObjective === "promote") {
-      const marketingLegacy = ["perfil", "overview", "promos", "updates", "promoters", "content"];
+      const marketingLegacy = ["overview", "promos", "updates", "promoters", "content"];
       if (marketingLegacy.includes(sectionParamRaw)) {
         const params = new URLSearchParams(searchParams);
         params.set("section", "marketing");
@@ -442,7 +452,7 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
 
     const scrollTargets: Record<ObjectiveTab, string[]> = {
       create: ["overview"],
-      manage: ["eventos", "padel-hub"],
+      manage: ["eventos", "inscricoes", "padel-hub"],
       promote: ["marketing"],
       analyze: ["financas", "invoices"],
     };
@@ -463,9 +473,9 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
     const scopeParam = searchParams?.get("scope");
     const eventIdParam = searchParams?.get("eventId");
     const marketingSectionParam =
-      marketingParamRaw && ["perfil", "overview", "promos", "updates", "promoters", "content"].includes(marketingParamRaw)
+      marketingParamRaw && ["overview", "promos", "updates", "promoters", "content"].includes(marketingParamRaw)
         ? marketingParamRaw
-        : ["perfil", "overview", "promos", "updates", "promoters", "content"].includes(sectionParamRaw ?? "")
+        : ["overview", "promos", "updates", "promoters", "content"].includes(sectionParamRaw ?? "")
           ? sectionParamRaw
           : null;
 
@@ -476,7 +486,7 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
     if (scopeParam) setTimeScope(scopeParam as typeof timeScope);
     if (eventIdParam) setSalesEventId(Number(eventIdParam));
     if (marketingSectionParam) {
-      const allowed = ["perfil", "overview", "promos", "updates", "promoters", "content"] as const;
+      const allowed = ["overview", "promos", "updates", "promoters", "content"] as const;
       if (allowed.includes(marketingSectionParam as (typeof allowed)[number])) {
         marketingSectionSourceRef.current = "url";
         setMarketingSection(marketingSectionParam as typeof marketingSection);
@@ -509,7 +519,6 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
   const orgCategory = normalizeOrganizationCategory(organizationCategory);
   const categoryLabel = CATEGORY_LABELS[orgCategory];
   const showPadelHub = orgCategory === "PADEL";
-  const hasLiveHubAccess = Boolean(organizer?.liveHubPremiumEnabled || orgCategory === "PADEL");
   const categoryNounPlural =
     orgCategory === "PADEL" ? "torneios" : orgCategory === "VOLUNTARIADO" ? "ações" : "eventos";
   const categoryGender = orgCategory === "VOLUNTARIADO" ? "f" : "m";
@@ -913,7 +922,7 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
       const persistedMarketing = parsed.marketing ?? parsed.section;
       if (
         persistedMarketing &&
-        ["perfil", "overview", "promos", "updates", "promoters", "content"].includes(persistedMarketing)
+        ["overview", "promos", "updates", "promoters", "content"].includes(persistedMarketing)
       ) {
         setMarketingSection(persistedMarketing as typeof marketingSection);
       }
@@ -1192,6 +1201,11 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
   const stripeIncomplete = !isPlatformStripe && paymentsStatus === "PENDING";
   const nextEvent = events?.items?.[0] ?? null;
   const publicProfileUrl = organizer?.username ? `/${organizer.username}` : null;
+  const profileCoverUrl = useMemo(() => {
+    const customCover = organizer?.brandingCoverUrl?.trim() || null;
+    const coverCandidate = customCover ?? eventsList.find((ev) => ev.coverImageUrl)?.coverImageUrl ?? null;
+    return coverCandidate ? optimizeImageUrl(coverCandidate, 1400, 70) : null;
+  }, [eventsList, organizer?.brandingCoverUrl]);
   const membersCount = membersData?.ok ? membersData.items?.length ?? 0 : 0;
   const hasInvitedStaff = membersCount > 1;
   const summarySteps = [
@@ -1223,7 +1237,7 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
       id: "public",
       label: "Página pública definida",
       done: Boolean(publicProfileUrl),
-      href: "/organizador/settings",
+      href: "/organizador?tab=overview#perfil-publico",
     },
   ];
   const completedSteps = summarySteps.filter((step) => step.done).length;
@@ -1232,8 +1246,8 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
     : 0;
   const activeSection = useMemo(() => {
     const manageSections = showPadelHub
-      ? ["eventos", "livehub", "checkin", "padel-hub"]
-      : ["eventos", "livehub", "checkin"];
+      ? ["eventos", "inscricoes", "padel-hub"]
+      : ["eventos", "inscricoes"];
     const baseSections: Record<ObjectiveTab, string[]> = {
       create: ["overview"],
       manage: manageSections,
@@ -1260,7 +1274,7 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
     setParam("scope", timeScope, "all");
     if (activeObjective === "promote" && activeSection === "marketing") {
       const validMarketingParam =
-        marketingParamRaw && ["perfil", "overview", "promos", "updates", "promoters", "content"].includes(marketingParamRaw)
+        marketingParamRaw && ["overview", "promos", "updates", "promoters", "content"].includes(marketingParamRaw)
           ? marketingParamRaw
           : null;
       if (
@@ -1485,6 +1499,26 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
               ))}
             </div>
           </div>
+
+          <div
+            id="perfil-publico"
+            className={cn(
+              "rounded-3xl border border-white/12 bg-gradient-to-br from-[#0b1226]/80 via-[#0b1124]/70 to-[#050a12]/92 p-5 shadow-[0_22px_70px_rgba(0,0,0,0.55)]",
+              fadeClass,
+            )}
+          >
+            <div className="space-y-1">
+              <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Perfil público</p>
+              <h3 className="text-lg font-semibold text-white">Pré-visualização</h3>
+              <p className="text-[12px] text-white/65">Confirma como a tua organização aparece ao público.</p>
+            </div>
+            <OrganizerPublicProfilePanel
+              organizer={organizer ?? null}
+              membershipRole={membershipRole}
+              categoryLabel={categoryLabel}
+              coverUrl={profileCoverUrl}
+            />
+          </div>
         </section>
       )}
 
@@ -1497,12 +1531,10 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
                   Dashboard · Gerir
                 </div>
                 <h2 className="text-2xl sm:text-3xl font-semibold text-white drop-shadow-[0_12px_45px_rgba(0,0,0,0.6)]">
-                  {showPadelHub ? "Eventos, LiveHub, Check-in & Hub Padel" : "Eventos, LiveHub & Check-in"}
+                  Eventos
                 </h2>
                 <p className="text-sm text-white/70">
-                  {showPadelHub
-                    ? "Acede rapidamente a eventos, LiveHub, check-in e operação Padel."
-                    : "Acede rapidamente a eventos, LiveHub e check-in."}
+                  Entra em cada evento para editar, preparar live, inscrições, página pública e arquivo.
                 </p>
               </div>
             </div>
@@ -1676,6 +1708,32 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
                       <h3 className="text-lg font-semibold">Eventos</h3>
                       <span className="text-[11px] rounded-full bg-white/10 px-2 py-0.5">{filteredEvents.length}</span>
                     </div>
+                    <div className="inline-flex items-center rounded-2xl border border-white/15 bg-white/5 p-1 text-[12px]">
+                      <button
+                        type="button"
+                        onClick={() => setEventView("list")}
+                        className={cn(
+                          "rounded-xl px-3 py-1.5 font-semibold transition",
+                          eventView === "list"
+                            ? "bg-gradient-to-r from-[#FF7AD1]/60 via-[#7FE0FF]/35 to-[#6A7BFF]/55 text-white shadow-[0_14px_36px_rgba(107,255,255,0.45)]"
+                            : "text-white/70 hover:bg-white/10",
+                        )}
+                      >
+                        Lista
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEventView("grid")}
+                        className={cn(
+                          "rounded-xl px-3 py-1.5 font-semibold transition",
+                          eventView === "grid"
+                            ? "bg-gradient-to-r from-[#FF7AD1]/60 via-[#7FE0FF]/35 to-[#6A7BFF]/55 text-white shadow-[0_14px_36px_rgba(107,255,255,0.45)]"
+                            : "text-white/70 hover:bg-white/10",
+                        )}
+                      >
+                        Galeria
+                      </button>
+                    </div>
                   </div>
 
             {eventsListLoading && (
@@ -1738,20 +1796,145 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
             )}
 
                 {filteredEvents.length > 0 && (
-                  <div className="overflow-hidden rounded-3xl border border-white/16 bg-gradient-to-br from-white/18 via-[#15284c]/75 to-[#070d19]/92 shadow-[0_34px_110px_rgba(0,0,0,0.62)] backdrop-blur-3xl">
-                    <table className="min-w-full text-sm text-white/90">
-                      <thead className="bg-white/10 text-left text-[11px] uppercase tracking-wide text-white/75">
-                        <tr>
-                          <th className="px-4 py-3 font-semibold">Evento</th>
-                          <th className="px-4 py-3 font-semibold">Data</th>
-                          <th className="px-4 py-3 font-semibold">Estado</th>
-                          <th className="px-4 py-3 font-semibold">Tipo</th>
-                          <th className="px-4 py-3 font-semibold">Bilhetes</th>
-                          <th className="px-4 py-3 font-semibold">Receita</th>
-                          <th className="px-4 py-3 text-right font-semibold">Ações</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-white/5">
+                  <>
+                    {eventView === "list" ? (
+                      <div className="overflow-hidden rounded-3xl border border-white/16 bg-gradient-to-br from-white/18 via-[#15284c]/75 to-[#070d19]/92 shadow-[0_34px_110px_rgba(0,0,0,0.62)] backdrop-blur-3xl">
+                        <table className="min-w-full text-sm text-white/90">
+                          <thead className="bg-white/10 text-left text-[11px] uppercase tracking-wide text-white/75">
+                            <tr>
+                              <th className="px-4 py-3 font-semibold">Evento</th>
+                              <th className="px-4 py-3 font-semibold">Data</th>
+                              <th className="px-4 py-3 font-semibold">Estado</th>
+                              <th className="px-4 py-3 font-semibold">Tipo</th>
+                              <th className="px-4 py-3 font-semibold">Bilhetes</th>
+                              <th className="px-4 py-3 font-semibold">Receita</th>
+                              <th className="px-4 py-3 text-right font-semibold">Ações</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-white/5">
+                            {filteredEvents.map((ev) => {
+                              const date = ev.startsAt ? new Date(ev.startsAt) : null;
+                              const endsAt = ev.endsAt ? new Date(ev.endsAt) : null;
+                              const now = new Date();
+                              const isOngoing = date && endsAt ? date.getTime() <= now.getTime() && now.getTime() <= endsAt.getTime() : false;
+                              const isFuture = date ? date.getTime() > now.getTime() : false;
+                              const isFinished = endsAt ? endsAt.getTime() < now.getTime() : false;
+                              const dateLabel = date
+                                ? formatDateTime(date, {
+                                    day: "2-digit",
+                                    month: "short",
+                                    hour: "2-digit",
+                                    minute: "2-digit",
+                                  })
+                                : "Data a confirmar";
+                              const ticketsSold = ev.ticketsSold ?? 0;
+                              const capacity = ev.capacity ?? null;
+                              const revenue = ((ev.revenueCents ?? 0) / 100).toFixed(2);
+                              const normalizedTemplate = ev.templateType ?? "OTHER";
+                              const typeLabel = normalizedTemplate === "PADEL" ? "Padel" : "Evento padrão";
+                              const typeTone =
+                                normalizedTemplate === "PADEL"
+                                  ? "border-sky-400/40 bg-sky-400/10 text-sky-100"
+                                  : "border-white/20 bg-white/5 text-white/80";
+                              const statusBadge =
+                                ev.status === "CANCELLED"
+                                  ? { label: "Cancelado", classes: "border-red-400/60 bg-red-500/10 text-red-100" }
+                                  : ev.status === "ARCHIVED"
+                                    ? { label: "Arquivado", classes: "border-amber-400/60 bg-amber-500/10 text-amber-100" }
+                                    : ev.status === "DRAFT"
+                                      ? { label: "Draft", classes: "border-white/20 bg-white/5 text-white/70" }
+                                      : isOngoing
+                                        ? { label: "A decorrer", classes: "border-emerald-400/60 bg-emerald-500/10 text-emerald-100" }
+                                        : isFuture
+                                          ? { label: "Publicado", classes: "border-sky-400/60 bg-sky-500/10 text-sky-100" }
+                                          : isFinished
+                                            ? { label: "Concluído", classes: "border-purple-400/60 bg-purple-500/10 text-purple-100" }
+                                            : { label: ev.status, classes: "border-white/20 bg-white/5 text-white/70" };
+                              const salesLabel = "Inscrições";
+
+                              return (
+                                <tr key={ev.id} className="hover:bg-white/10 transition duration-150">
+                                  <td className="px-4 py-3">
+                                    <Link
+                                      href={`/organizador/eventos/${ev.id}`}
+                                      className="text-left text-white hover:underline"
+                                    >
+                                      {ev.title}
+                                    </Link>
+                                  </td>
+                                  <td className="px-4 py-3 text-[12px] text-white/80">{dateLabel}</td>
+                                  <td className="px-4 py-3">
+                                    <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] shadow-[0_10px_24px_rgba(0,0,0,0.35)] ${statusBadge.classes}`}>
+                                      {statusBadge.label}
+                                    </span>
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] shadow-[0_8px_20px_rgba(0,0,0,0.3)] ${typeTone}`}>
+                                      {typeLabel}
+                                    </span>
+                                  </td>
+                                  <td className="px-4 py-3 text-[12px]">
+                                    <span className="font-semibold text-white">{ticketsSold}</span>
+                                    <span className="text-white/60"> / {capacity ?? "—"}</span>
+                                  </td>
+                                  <td className="px-4 py-3 text-[12px] font-semibold text-white">{revenue} €</td>
+                                  <td className="px-4 py-3 text-right text-[11px]">
+                                    <div className="flex flex-wrap items-center justify-end gap-2">
+                                      <Link
+                                        href={`/organizador/eventos/${ev.id}/edit`}
+                                        className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px]")}
+                                      >
+                                        Editar
+                                      </Link>
+                                      <Link
+                                        href={`/organizador/eventos/${ev.id}/live`}
+                                        className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px]")}
+                                      >
+                                        Preparar Live
+                                      </Link>
+                                      {ev.status !== "ARCHIVED" && (
+                                        <Link
+                                          href={`/organizador/eventos/${ev.id}`}
+                                          className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px]")}
+                                        >
+                                          {salesLabel}
+                                        </Link>
+                                      )}
+                                      <Link
+                                        href={`/eventos/${ev.slug}`}
+                                        className={cn(CTA_NEUTRAL, "px-3 py-1 text-[11px]")}
+                                      >
+                                        Página pública
+                                      </Link>
+                                      {ev.status === "ARCHIVED" ? (
+                                        <button
+                                          type="button"
+                                          disabled={eventActionLoading === ev.id}
+                                          onClick={() => setEventDialog({ mode: "unarchive", ev })}
+                                          className={cn(CTA_SUCCESS, "px-3 py-1 text-[11px] disabled:opacity-60")}
+                                        >
+                                          Reativar
+                                        </button>
+                                      ) : (
+                                        <button
+                                          type="button"
+                                          disabled={eventActionLoading === ev.id}
+                                          onClick={() => setEventDialog({ mode: ev.status === "DRAFT" ? "delete" : "archive", ev })}
+                                          className={cn(CTA_DANGER, "px-3 py-1 text-[11px] disabled:opacity-60")}
+                                        >
+                                          {ev.status === "DRAFT" ? "Apagar rascunho" : "Arquivar"}
+                                        </button>
+                                      )}
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                         {filteredEvents.map((ev) => {
                           const date = ev.startsAt ? new Date(ev.startsAt) : null;
                           const endsAt = ev.endsAt ? new Date(ev.endsAt) : null;
@@ -1788,39 +1971,67 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
                                     : isFuture
                                       ? { label: "Publicado", classes: "border-sky-400/60 bg-sky-500/10 text-sky-100" }
                                       : isFinished
-                                        ? { label: "Concluído", classes: "border-purple-400/60 bg-purple-500/10 text-purple-100" }
-                                        : { label: ev.status, classes: "border-white/20 bg-white/5 text-white/70" };
-                          const hasTickets = (ev.capacity ?? 0) > 0 || (ev.ticketsSold ?? 0) > 0;
-                          const salesLabel = ev.isFree ? "Inscrições" : "Vendas";
+                                      ? { label: "Concluído", classes: "border-purple-400/60 bg-purple-500/10 text-purple-100" }
+                                      : { label: ev.status, classes: "border-white/20 bg-white/5 text-white/70" };
+                          const coverUrl = ev.coverImageUrl
+                            ? optimizeImageUrl(ev.coverImageUrl, 900, 70)
+                            : null;
 
                           return (
-                            <tr key={ev.id} className="hover:bg-white/10 transition duration-150">
-                              <td className="px-4 py-3">
-                                <Link
-                                  href={`/organizador/eventos/${ev.id}`}
-                                  className="text-left text-white hover:underline"
-                                >
-                                  {ev.title}
-                                </Link>
-                              </td>
-                              <td className="px-4 py-3 text-[12px] text-white/80">{dateLabel}</td>
-                              <td className="px-4 py-3">
-                                <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] shadow-[0_10px_24px_rgba(0,0,0,0.35)] ${statusBadge.classes}`}>
-                                  {statusBadge.label}
-                                </span>
-                              </td>
-                              <td className="px-4 py-3">
-                                <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] shadow-[0_8px_20px_rgba(0,0,0,0.3)] ${typeTone}`}>
-                                  {typeLabel}
-                                </span>
-                              </td>
-                              <td className="px-4 py-3 text-[12px]">
-                                <span className="font-semibold text-white">{ticketsSold}</span>
-                                <span className="text-white/60"> / {capacity ?? "—"}</span>
-                              </td>
-                              <td className="px-4 py-3 text-[12px] font-semibold text-white">{revenue} €</td>
-                              <td className="px-4 py-3 text-right text-[11px]">
-                                <div className="flex flex-wrap items-center justify-end gap-2">
+                            <div
+                              key={ev.id}
+                              className="relative overflow-hidden rounded-3xl border border-white/12 bg-gradient-to-br from-[#0f1a2e]/80 via-[#0b1124]/70 to-[#050a12]/90 p-4 shadow-[0_26px_90px_rgba(0,0,0,0.55)]"
+                            >
+                              <div className="pointer-events-none absolute inset-0">
+                                {coverUrl ? (
+                                  <div
+                                    className="absolute inset-0 scale-110 bg-cover bg-center blur-2xl"
+                                    style={{ backgroundImage: `url(${coverUrl})` }}
+                                  />
+                                ) : (
+                                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(107,255,255,0.12),transparent_55%),radial-gradient(circle_at_80%_30%,rgba(255,122,209,0.12),transparent_55%),linear-gradient(135deg,rgba(11,17,36,0.85),rgba(5,10,18,0.95))]" />
+                                )}
+                                <div className="absolute inset-0 bg-gradient-to-b from-[#050810]/35 via-[#050810]/75 to-[#050810]/95" />
+                              </div>
+
+                              <div className="relative z-10">
+                                <div className="flex items-start justify-between gap-3">
+                                  <div className="min-w-0 space-y-1">
+                                    <Link
+                                      href={`/organizador/eventos/${ev.id}`}
+                                      className="text-lg font-semibold text-white hover:underline"
+                                    >
+                                      {ev.title}
+                                    </Link>
+                                    <p className="text-[12px] text-white/70">{dateLabel}</p>
+                                    <p className="text-[12px] text-white/55">
+                                      {ev.locationCity || ev.locationName || "Local a confirmar"}
+                                    </p>
+                                  </div>
+                                  <div className="flex flex-col items-end gap-2">
+                                    <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] ${statusBadge.classes}`}>
+                                      {statusBadge.label}
+                                    </span>
+                                    <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] ${typeTone}`}>
+                                      {typeLabel}
+                                    </span>
+                                  </div>
+                                </div>
+
+                                <div className="mt-3 grid gap-2 sm:grid-cols-2 text-[12px] text-white/75">
+                                  <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2">
+                                    <p className="text-[11px] text-white/50">Bilhetes</p>
+                                    <p className="text-sm font-semibold text-white">
+                                      {ticketsSold} <span className="text-white/50">/ {capacity ?? "—"}</span>
+                                    </p>
+                                  </div>
+                                  <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2">
+                                    <p className="text-[11px] text-white/50">Receita</p>
+                                    <p className="text-sm font-semibold text-white">{revenue} €</p>
+                                  </div>
+                                </div>
+
+                                <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
                                   <Link
                                     href={`/organizador/eventos/${ev.id}/edit`}
                                     className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px]")}
@@ -1833,28 +2044,12 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
                                   >
                                     Preparar Live
                                   </Link>
-                                  {hasTickets && ev.status !== "ARCHIVED" && (
-                                    <Link
-                                      href={`/organizador?tab=manage&section=checkin&eventId=${ev.id}${orgSuffix}`}
-                                      className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px]")}
-                                    >
-                                      Check-in
-                                    </Link>
-                                  )}
-                                  {ev.tournamentId && (
-                                    <Link
-                                      href={`/organizador/eventos/${ev.id}/live?tab=preview&edit=1`}
-                                      className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px]")}
-                                    >
-                                      Live Ops
-                                    </Link>
-                                  )}
                                   {ev.status !== "ARCHIVED" && (
                                     <Link
                                       href={`/organizador/eventos/${ev.id}`}
                                       className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px]")}
                                     >
-                                      {salesLabel}
+                                      Inscrições
                                     </Link>
                                   )}
                                   <Link
@@ -1883,13 +2078,13 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
                                     </button>
                                   )}
                                 </div>
-                              </td>
-                            </tr>
+                              </div>
+                            </div>
                           );
                         })}
-                      </tbody>
-                    </table>
-                  </div>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             </div>
@@ -1898,113 +2093,9 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
         </section>
       )}
 
-      {!isLegacyStandaloneTab && activeObjective === "manage" && activeSection === "livehub" && (
-        <section className={cn("space-y-4", fadeClass)} id="livehub">
-          <div className="rounded-3xl border border-white/12 bg-gradient-to-r from-[#0b1226]/80 via-[#101b39]/75 to-[#050811]/90 p-5 shadow-[0_30px_110px_rgba(0,0,0,0.6)] backdrop-blur-3xl">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="space-y-1">
-                <p className="text-[11px] uppercase tracking-[0.26em] text-white/70">LiveHub</p>
-                <h2 className="text-2xl font-semibold text-white drop-shadow-[0_14px_40px_rgba(0,0,0,0.45)]">
-                  Preparar live por evento
-                </h2>
-                <p className="text-sm text-white/80">
-                  Escolhe o evento e entra diretamente em LiveHub, Bracket ou Preview.
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {!hasLiveHubAccess ? (
-            <div className="rounded-2xl border border-white/12 bg-white/5 px-4 py-6 text-sm text-white/70">
-              Em breve disponível para ti. Apenas organizações premium ou com Padel ativo têm acesso ao LiveHub por agora.
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {eventsListLoading && (
-                <div className="grid gap-2 md:grid-cols-2">
-                  {[1, 2, 3, 4].map((i) => (
-                    <div key={`livehub-skeleton-${i}`} className="h-24 rounded-2xl border border-white/10 bg-white/5 animate-pulse" />
-                  ))}
-                </div>
-              )}
-              {!eventsListLoading && eventsList.length === 0 && (
-                <div className="rounded-2xl border border-dashed border-white/15 bg-white/5 px-4 py-6 text-center text-sm text-white/70">
-                  Sem eventos ainda. Cria um evento para preparar o LiveHub.
-                </div>
-              )}
-              {!eventsListLoading && eventsList.length > 0 && (
-                <div className="grid gap-3 md:grid-cols-2">
-                  {eventsList.map((ev) => {
-                    const hasTournament = Boolean(ev.tournamentId);
-                    const setupHref = `/organizador/eventos/${ev.id}/live?tab=setup`;
-                    const bracketHref = `/organizador/eventos/${ev.id}/live?tab=bracket`;
-                    const previewHref = `/organizador/eventos/${ev.id}/live?tab=preview&edit=1`;
-                    const dateLabel = ev.startsAt
-                      ? new Date(ev.startsAt).toLocaleDateString("pt-PT", { day: "2-digit", month: "short" })
-                      : "Data a definir";
-                    return (
-                      <div key={`livehub-${ev.id}`} className="rounded-2xl border border-white/12 bg-white/5 p-4">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-semibold text-white">{ev.title}</p>
-                            <p className="text-[11px] text-white/55">
-                              {dateLabel} · {ev.locationCity || ev.locationName || "Local a definir"}
-                            </p>
-                          </div>
-                          <span className="rounded-full border border-white/15 bg-white/5 px-2 py-1 text-[10px] uppercase tracking-[0.16em] text-white/60">
-                            {ev.status === "PUBLISHED" ? "Publicado" : ev.status === "DRAFT" ? "Rascunho" : ev.status}
-                          </span>
-                        </div>
-                        <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-white/70">
-                          <Link
-                            href={setupHref}
-                            className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px]")}
-                          >
-                            Abrir LiveHub
-                          </Link>
-                          {hasTournament ? (
-                            <Link
-                              href={bracketHref}
-                              className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px]")}
-                            >
-                              Bracket
-                            </Link>
-                          ) : (
-                            <span className="rounded-full border border-white/10 px-3 py-1 text-[11px] text-white/40">
-                              Sem torneio
-                            </span>
-                          )}
-                          <Link
-                            href={previewHref}
-                            className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px]")}
-                          >
-                            Preview
-                          </Link>
-                          {!hasTournament && (
-                            <span className="text-white/50">Cria o torneio no LiveHub para ativar a bracket.</span>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
-        </section>
-      )}
-
-      {!isLegacyStandaloneTab && activeObjective === "manage" && activeSection === "checkin" && (
-        <section className={cn("space-y-4", fadeClass)} id="checkin">
-          <CheckinScanner
-            backHref="/organizador?tab=manage&section=eventos"
-            backLabel="Voltar a eventos"
-            title="Modo Receção · Organizador"
-            subtitle="Check-in em 2 passos com confirmação explícita."
-            allowOrganizerEvents
-            embedded
-            showBackLink={false}
-          />
+      {!isLegacyStandaloneTab && activeObjective === "manage" && activeSection === "inscricoes" && (
+        <section className={cn("space-y-4", fadeClass)} id="inscricoes">
+          <InscricoesPage embedded />
         </section>
       )}
 
@@ -2777,7 +2868,6 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
 
         <div className="mt-4 flex flex-wrap gap-2 rounded-2xl border border-white/10 bg-white/5 px-2 py-2 text-sm shadow-[0_16px_50px_rgba(0,0,0,0.4)]">
           {[
-            { key: "perfil", label: "Perfil público" },
             { key: "overview", label: "Visão geral" },
             { key: "promos", label: "Códigos promocionais" },
             { key: "updates", label: "Canal oficial" },
@@ -2798,14 +2888,6 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
             </button>
           ))}
         </div>
-
-        {marketingSection === "perfil" && (
-          <OrganizerPublicProfilePanel
-            organizer={organizer ?? null}
-            membershipRole={membershipRole}
-            categoryLabel={categoryLabel}
-          />
-        )}
 
         {marketingSection === "overview" && (
           <div className={cn("mt-4 space-y-4", fadeClass)}>

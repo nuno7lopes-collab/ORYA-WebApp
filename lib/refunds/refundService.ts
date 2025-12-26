@@ -1,8 +1,10 @@
 import { prisma } from "@/lib/prisma";
 import { stripe } from "@/lib/stripeClient";
 import type { RefundReason } from "@prisma/client";
+import { refundKey } from "@/lib/stripe/idempotency";
+import { logFinanceError } from "@/lib/observability/finance";
 
-// Idempotent refund executor (base-only) anchored by dedupeKey = eventId:purchaseId:reason
+// Idempotent refund executor (base-only) anchored by refundKey(purchaseId).
 export async function refundPurchase(params: {
   purchaseId: string;
   paymentIntentId?: string | null;
@@ -12,7 +14,7 @@ export async function refundPurchase(params: {
   auditPayload?: Record<string, unknown>;
 }) {
   const { purchaseId, paymentIntentId, eventId, reason, refundedBy, auditPayload } = params;
-  const dedupeKey = `${eventId}:${purchaseId}:${reason}`;
+  const dedupeKey = refundKey(purchaseId);
 
   const existing = await prisma.refund.findUnique({ where: { dedupeKey } });
   if (existing) return existing;
@@ -42,12 +44,12 @@ export async function refundPurchase(params: {
         payment_intent: paymentIntentId ?? saleSummary.paymentIntentId ?? undefined,
         amount: baseAmount,
       },
-      { idempotencyKey: dedupeKey.slice(0, 200) },
+      { idempotencyKey: dedupeKey },
     );
     stripeRefundId = refund.id;
   } catch (err) {
-    console.error("[refund] stripe refund failed", err);
-    // still record dedupe to avoid retries? choose to record with null stripe_refund_id
+    logFinanceError("refund", err, { purchaseId, eventId, paymentIntentId });
+    return null;
   }
 
   return await prisma.refund.create({

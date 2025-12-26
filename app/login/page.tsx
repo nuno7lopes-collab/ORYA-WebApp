@@ -73,7 +73,7 @@ function LoginContent() {
   }
 
   return (
-    <main className="min-h-screen flex items-center justify-center text-white">
+    <main className="orya-page-width min-h-screen flex items-center justify-center text-white">
       <div className="w-full max-w-md text-center space-y-4 px-4">
         <PendingDeleteBanner />
         <p>{checked ? "Se o modal não abriu," : "A preparar sessão..."}</p>
@@ -104,7 +104,7 @@ export default function LoginRedirectPage() {
   return (
     <Suspense
       fallback={
-        <main className="min-h-screen flex items-center justify-center text-white">
+        <main className="orya-page-width min-h-screen flex items-center justify-center text-white">
           <p className="text-sm text-white/60">A preparar sessão...</p>
         </main>
       }

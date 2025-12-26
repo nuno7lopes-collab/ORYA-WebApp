@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { getActiveOrganizerForUser } from "@/lib/organizerContext";
+import { resolveOrganizerIdFromRequest } from "@/lib/organizerId";
 import { FeeMode, PadelFormat, RefundFeePayer, ResaleMode } from "@prisma/client";
 import { isOrgAdminOrAbove } from "@/lib/organizerPermissions";
 
@@ -58,13 +59,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "Body inválido." }, { status: 400 });
     }
 
+    const organizerId = resolveOrganizerIdFromRequest(req);
     const { organizer, membership } = await getActiveOrganizerForUser(user.id, {
+      organizerId: organizerId ?? undefined,
       roles: ["OWNER", "CO_OWNER", "ADMIN"],
     });
     const profile = await prisma.profile.findUnique({ where: { id: user.id } });
     if (!organizer || !profile || !membership || !isOrgAdminOrAbove(membership.role)) {
       return NextResponse.json({ ok: false, error: "Organizador não encontrado." }, { status: 403 });
     }
+    const isAdmin = Array.isArray(profile.roles) ? profile.roles.includes("admin") : false;
 
     const title = body.title?.trim();
     if (!title) return NextResponse.json({ ok: false, error: "Título é obrigatório." }, { status: 400 });
@@ -129,6 +133,24 @@ export async function POST(req: NextRequest) {
 
     if (ticketTypes.length === 0) {
       return NextResponse.json({ ok: false, error: "Adiciona pelo menos um tipo de inscrição." }, { status: 400 });
+    }
+
+    const payoutMode = !isAdmin && organizer.status !== "ACTIVE" ? "PLATFORM" : "ORGANIZER";
+    const hasPaidTickets = ticketTypes.some((t) => t.price > 0);
+    const paymentsStatus = organizer.stripeAccountId
+      ? organizer.stripeChargesEnabled && organizer.stripePayoutsEnabled
+        ? "READY"
+        : "PENDING"
+      : "NO_STRIPE";
+    if (payoutMode === "ORGANIZER" && hasPaidTickets && paymentsStatus !== "READY" && !isAdmin) {
+      return NextResponse.json(
+        {
+          ok: false,
+          code: "PAYMENTS_NOT_READY",
+          error: "Para vender inscrições pagas, primeiro liga a tua conta Stripe em Finanças & Payouts.",
+        },
+        { status: 403 },
+      );
     }
 
     const feeModeRaw = (body.feeMode ?? "ADDED").toUpperCase();
@@ -204,7 +226,7 @@ export async function POST(req: NextRequest) {
         resaleMode: ResaleMode.ALWAYS,
         coverImageUrl: body.coverImageUrl?.trim() || null,
         feeMode,
-        payoutMode: "ORGANIZER",
+        payoutMode,
       },
     });
 

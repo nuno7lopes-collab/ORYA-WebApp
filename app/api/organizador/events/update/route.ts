@@ -18,6 +18,7 @@ type NewTicketType = {
   totalQuantity?: number | null;
   startsAt?: string | null;
   endsAt?: string | null;
+  padelEventCategoryLinkId?: number | null;
 };
 
 type UpdateEventBody = {
@@ -35,7 +36,6 @@ type UpdateEventBody = {
   isFree?: boolean;
   inviteOnly?: boolean;
   coverImageUrl?: string | null;
-  liveHubMode?: string | null;
   liveHubVisibility?: string | null;
   liveStreamUrl?: string | null;
   publicAccessMode?: string | null;
@@ -113,10 +113,11 @@ export async function POST(req: NextRequest) {
       isFree: boolean;
       ticketTypes: { id: number; soldQuantity: number; price: number; status: TicketTypeStatus }[];
       organizer: {
+        id: number;
+        username: string | null;
         stripeAccountId: string | null;
         stripeChargesEnabled: boolean;
         stripePayoutsEnabled: boolean;
-        liveHubPremiumEnabled: boolean;
       } | null;
       _count: { tickets: number; reservations: number; saleLines: number };
     } | null = null;
@@ -132,6 +133,7 @@ export async function POST(req: NextRequest) {
               slug: true,
               organizerId: true,
               isFree: true,
+              templateType: true,
               ticketTypes: {
                 select: {
                   id: true,
@@ -142,10 +144,11 @@ export async function POST(req: NextRequest) {
               },
       organizer: {
         select: {
+          id: true,
+          username: true,
           stripeAccountId: true,
           stripeChargesEnabled: true,
           stripePayoutsEnabled: true,
-          liveHubPremiumEnabled: true,
         },
       },
       _count: {
@@ -194,10 +197,11 @@ export async function POST(req: NextRequest) {
               })),
               organizer: organizerRows[0]
                 ? {
+                    id: row.organizer_id as number,
+                    username: null,
                     stripeAccountId: organizerRows[0].stripe_account_id,
                     stripeChargesEnabled: organizerRows[0].stripe_charges_enabled,
                     stripePayoutsEnabled: organizerRows[0].stripe_payouts_enabled,
-                    liveHubPremiumEnabled: false,
                   }
                 : null,
               _count: {
@@ -346,21 +350,6 @@ export async function POST(req: NextRequest) {
       const trimmed = typeof body.liveStreamUrl === "string" ? body.liveStreamUrl.trim() : "";
       dataUpdate.liveStreamUrl = trimmed ? trimmed : null;
     }
-    if (body.liveHubMode !== undefined) {
-      const normalized = typeof body.liveHubMode === "string" ? body.liveHubMode.trim().toUpperCase() : "";
-      if (normalized === "PREMIUM") {
-        const premiumAllowed = isAdmin || Boolean(event.organizer?.liveHubPremiumEnabled);
-        if (!premiumAllowed) {
-          return NextResponse.json(
-            { ok: false, error: "LIVEHUB_PREMIUM_LOCKED" },
-            { status: 403 },
-          );
-        }
-      }
-      if (normalized === "PREMIUM" || normalized === "DEFAULT") {
-        dataUpdate.liveHubMode = normalized as Prisma.LiveHubMode;
-      }
-    }
     if (body.liveHubVisibility !== undefined) {
       const normalized =
         typeof body.liveHubVisibility === "string" ? body.liveHubVisibility.trim().toUpperCase() : "";
@@ -403,6 +392,19 @@ export async function POST(req: NextRequest) {
       ? body.ticketTypeUpdates
       : [];
     const newTicketTypes = Array.isArray(body.newTicketTypes) ? body.newTicketTypes : [];
+    const needsPadelLinkValidation = newTicketTypes.some(
+      (nt) => typeof nt?.padelEventCategoryLinkId === "number",
+    );
+    const validPadelLinkIds = needsPadelLinkValidation
+      ? new Set(
+          (
+            await prisma.padelEventCategoryLink.findMany({
+              where: { eventId },
+              select: { id: true },
+            })
+          ).map((link) => link.id),
+        )
+      : new Set<number>();
 
     const payoutMode = (event.payoutMode ?? "ORGANIZER").toUpperCase();
     const hasExistingPaid = event.ticketTypes.some(
@@ -470,6 +472,13 @@ export async function POST(req: NextRequest) {
             : null;
         const startsAt = nt.startsAt ? new Date(nt.startsAt) : null;
         const endsAt = nt.endsAt ? new Date(nt.endsAt) : null;
+        const padelLinkId =
+          typeof nt.padelEventCategoryLinkId === "number" && Number.isFinite(nt.padelEventCategoryLinkId)
+            ? nt.padelEventCategoryLinkId
+            : null;
+        if (padelLinkId && !validPadelLinkIds.has(padelLinkId)) {
+          throw new Error("INVALID_PADEL_CATEGORY_LINK");
+        }
 
         return {
           eventId,
@@ -480,6 +489,7 @@ export async function POST(req: NextRequest) {
           status: TicketTypeStatus.ON_SALE,
           startsAt: startsAt && !Number.isNaN(startsAt.getTime()) ? startsAt : null,
           endsAt: endsAt && !Number.isNaN(endsAt.getTime()) ? endsAt : null,
+          padelEventCategoryLinkId: padelLinkId ?? undefined,
         };
       });
 
@@ -502,6 +512,9 @@ export async function POST(req: NextRequest) {
     const message = err instanceof Error ? err.message : "";
     if (message === "UNAUTHENTICATED") {
       return NextResponse.json({ ok: false, error: "Não autenticado." }, { status: 401 });
+    }
+    if (message === "INVALID_PADEL_CATEGORY_LINK") {
+      return NextResponse.json({ ok: false, error: "Categoria Padel inválida para este evento." }, { status: 400 });
     }
     if (isUnauthenticatedError(err)) {
       return NextResponse.json({ ok: false, error: "Não autenticado." }, { status: 401 });

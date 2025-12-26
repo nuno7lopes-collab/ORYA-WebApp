@@ -54,14 +54,14 @@ function AuthCallbackInner() {
 
   if (error) {
     return (
-      <main className="min-h-screen flex items-center justify-center text-white">
+      <main className="orya-page-width min-h-screen flex items-center justify-center text-white">
         <p className="text-sm text-white/80">{error}</p>
       </main>
     );
   }
 
   return (
-    <main className="min-h-screen flex items-center justify-center text-white">
+    <main className="orya-page-width min-h-screen flex items-center justify-center text-white">
       <p className="text-sm text-white/60">A concluir login…</p>
     </main>
   );
@@ -71,7 +71,7 @@ export default function AuthCallbackPage() {
   return (
     <Suspense
       fallback={
-        <main className="min-h-screen flex items-center justify-center text-white">
+        <main className="orya-page-width min-h-screen flex items-center justify-center text-white">
           <p className="text-sm text-white/60">A concluir login…</p>
         </main>
       }

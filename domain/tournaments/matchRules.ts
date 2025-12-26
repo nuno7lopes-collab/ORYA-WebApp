@@ -103,5 +103,5 @@ export function getWinnerSideFromScore(score?: MatchScorePayload | null) {
 export function canEditMatch(status: TournamentMatchStatus, force?: boolean) {
   if (force) return true;
   // não permite editar DONE se não for force
-  return status !== "DONE";
+  return status !== "DONE" && status !== "DISPUTED";
 }

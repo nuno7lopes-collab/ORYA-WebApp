@@ -7,7 +7,6 @@ import { useUser } from "@/app/hooks/useUser";
 import Link from "next/link";
 import { NotificationBell } from "./notifications/NotificationBell";
 import { supabaseBrowser } from "@/lib/supabaseBrowser";
-import { OryaPortal } from "./OryaPortal";
 
 type SearchEvent = {
   id: number;
@@ -68,24 +67,21 @@ export function Navbar() {
   const pathname = hydratedPathname ?? "";
   const shouldHide = rawPathname?.startsWith("/organizador");
 
-  const Logo = () => {
-    const [logoState, setLogoState] = useState<"idle" | "hover" | "press">("idle");
-    return (
-      <button
-        type="button"
-        onClick={() => router.push("/")}
-        onMouseEnter={() => setLogoState("hover")}
-        onMouseLeave={() => setLogoState("idle")}
-        onMouseDown={() => setLogoState("press")}
-        onMouseUp={() => setLogoState("hover")}
-        className="flex items-center gap-2"
-        aria-label="Voltar à homepage ORYA"
-      >
-        <OryaPortal size={44} state={logoState} variant="full" />
-        <span className="hidden text-sm font-semibold tracking-wide text-white sm:inline">ORYA</span>
-      </button>
-    );
-  };
+  const Logo = () => (
+    <button
+      type="button"
+      onClick={() => router.push("/")}
+      className="flex items-center gap-2 transition hover:opacity-90"
+      aria-label="Voltar à homepage ORYA"
+    >
+      <img
+        src="/brand/orya-logo.png"
+        alt="Logo ORYA"
+        className="h-14 w-14 rounded-full object-cover shadow-[0_0_24px_rgba(155,114,255,0.55)]"
+      />
+      <span className="text-lg font-semibold tracking-[0.2em] text-white">ORYA</span>
+    </button>
+  );
 
   useEffect(() => {
     // Garantir pathname estável só depois de montar para evitar mismatch

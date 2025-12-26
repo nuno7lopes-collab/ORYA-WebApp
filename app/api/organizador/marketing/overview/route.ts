@@ -17,7 +17,12 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
 
+    const orgParam = req.nextUrl.searchParams.get("org");
+    const cookieOrgId = req.cookies.get("orya_org")?.value;
+    const orgRaw = orgParam ?? cookieOrgId ?? "";
+    const organizerId = Number(orgRaw);
     const { organizer, membership } = await getActiveOrganizerForUser(user.id, {
+      organizerId: Number.isFinite(organizerId) ? organizerId : undefined,
       roles: ["OWNER", "CO_OWNER", "ADMIN"],
     });
 
@@ -74,7 +79,7 @@ export async function GET(req: NextRequest) {
     if (promoRepo) {
       const promoCodes = await promoRepo.findMany({
         where: {
-          OR: [{ eventId: null }, { eventId: { in: eventIds } }],
+          OR: [{ organizerId: organizer.id }, { eventId: { in: eventIds } }],
         },
         include: {
           redemptions: {

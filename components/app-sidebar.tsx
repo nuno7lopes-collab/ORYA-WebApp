@@ -150,7 +150,6 @@ export function AppSidebar({
   }, [pathname, tabParam]);
 
   const currentSubKey = useMemo(() => {
-    if (pathname?.startsWith("/organizador/updates")) return "updates";
     if (pathname?.startsWith("/organizador/staff")) return "staff";
     if (pathname?.startsWith("/organizador/settings")) return "settings";
     return null;

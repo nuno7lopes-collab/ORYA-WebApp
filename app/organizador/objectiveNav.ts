@@ -78,7 +78,7 @@ export function getObjectiveSections(
       if (hasModule(context.modules, "INSCRICOES")) {
         sections.push({
           id: "inscricoes",
-          label: "Formulários",
+          label: "Inscrições",
           href: "/organizador/inscricoes",
         });
       }
@@ -93,32 +93,15 @@ export function getObjectiveSections(
       href: "/organizador?tab=manage&section=eventos",
     });
     sections.push({
-      id: "livehub",
-      label: "LiveHub",
-      href: "/organizador?tab=manage&section=livehub",
+      id: "inscricoes",
+      label: "Inscrições",
+      href: "/organizador?tab=manage&section=inscricoes",
     });
-    sections.push({
-      id: "checkin",
-      label: "Check-in",
-      href: "/organizador?tab=manage&section=checkin",
-    });
-    if (context.category === "PADEL") {
-      sections.push({
-        id: "padel-hub",
-        label: "Hub Padel",
-        href: "/organizador?tab=manage&section=padel-hub",
-      });
-    }
     return sections;
   }
 
   if (objective === "promote") {
     const baseHref = "/organizador?tab=promote&section=marketing&marketing=";
-    sections.push({
-      id: "perfil",
-      label: "Perfil público",
-      href: `${baseHref}perfil`,
-    });
     sections.push({
       id: "overview",
       label: "Visão geral",

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth/requireUser";
 import { getActiveOrganizerForUser } from "@/lib/organizerContext";
+import { resolveOrganizerIdFromRequest } from "@/lib/organizerId";
 
 const CATEGORY_VALUES = ["TODAY", "CHANGES", "RESULTS", "CALL_UPS"] as const;
 const STATUS_VALUES = ["DRAFT", "PUBLISHED", "ARCHIVED"] as const;
@@ -30,7 +31,9 @@ export async function PATCH(req: NextRequest, context: { params: Params | Promis
     }
 
     const user = await requireUser();
+    const organizerId = resolveOrganizerIdFromRequest(req);
     const { organizer } = await getActiveOrganizerForUser(user.id, {
+      organizerId: organizerId ?? undefined,
       roles: ["OWNER", "CO_OWNER", "ADMIN"],
     });
     if (!organizer) {
@@ -131,7 +134,9 @@ export async function DELETE(_: NextRequest, context: { params: Params | Promise
     }
 
     const user = await requireUser();
+    const organizerId = resolveOrganizerIdFromRequest(req);
     const { organizer } = await getActiveOrganizerForUser(user.id, {
+      organizerId: organizerId ?? undefined,
       roles: ["OWNER", "CO_OWNER", "ADMIN"],
     });
     if (!organizer) {

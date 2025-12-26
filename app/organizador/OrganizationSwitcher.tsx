@@ -40,10 +40,13 @@ export function OrganizationSwitcher({ currentId, initialOrgs = [] }: Props) {
     return () => cancelAnimationFrame(id);
   }, [currentId, initialOrgs]);
 
-  const current = useMemo(
-    () => options.find((i) => i.organizerId === activeId) ?? options[0] ?? null,
-    [activeId, options],
-  );
+  const current = useMemo(() => {
+    if (activeId) {
+      return options.find((i) => i.organizerId === activeId) ?? null;
+    }
+    if (options.length === 1) return options[0];
+    return null;
+  }, [activeId, options]);
 
   if (!current) {
     return (

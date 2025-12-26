@@ -7,6 +7,7 @@ export async function ensureEntriesForConfirmedPairing(pairingId: number) {
     select: {
       id: true,
       eventId: true,
+      categoryId: true,
       player1UserId: true,
       player2UserId: true,
     },
@@ -24,7 +25,11 @@ export async function ensureEntriesForConfirmedPairing(pairingId: number) {
   for (const entry of entriesData) {
     const upserted = await prisma.tournamentEntry.upsert({
       where: {
-        eventId_userId: { eventId: pairing.eventId, userId: entry.userId },
+        eventId_categoryId_userId: {
+          eventId: pairing.eventId,
+          categoryId: pairing.categoryId ?? null,
+          userId: entry.userId,
+        },
       },
       update: {
         status: TournamentEntryStatus.CONFIRMED,
@@ -32,9 +37,11 @@ export async function ensureEntriesForConfirmedPairing(pairingId: number) {
         pairingId: pairing.id,
         ownerUserId: entry.userId,
         ownerIdentityId: null,
+        categoryId: pairing.categoryId ?? null,
       },
       create: {
         eventId: pairing.eventId,
+        categoryId: pairing.categoryId ?? null,
         userId: entry.userId,
         pairingId: pairing.id,
         role: entry.role,

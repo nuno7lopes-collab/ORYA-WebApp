@@ -115,7 +115,7 @@ export default function PurchasesPage() {
       </div>
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_20%,rgba(255,255,255,0.05),transparent_55%)]" />
 
-      <div className="relative mx-auto flex max-w-5xl flex-col gap-6 px-4 pb-16 pt-10">
+      <div className="relative orya-page-width flex flex-col gap-6 px-4 pb-16 pt-10">
         <header className="flex flex-col gap-3 rounded-3xl border border-white/15 bg-white/5 px-5 py-6 shadow-[0_24px_60px_rgba(0,0,0,0.65)] backdrop-blur-2xl sm:flex-row sm:items-center sm:justify-between sm:px-8 sm:py-7">
           <div className="space-y-1">
             <p className="text-xs uppercase tracking-[0.24em] text-white/55">Área pessoal</p>

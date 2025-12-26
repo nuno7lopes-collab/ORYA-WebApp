@@ -10,7 +10,6 @@ type EventLivePrepClientProps = {
     id: number;
     slug: string;
     title: string;
-    liveHubMode: "DEFAULT" | "PREMIUM";
     liveHubVisibility: LiveHubVisibility;
     liveStreamUrl: string | null;
   };
@@ -84,33 +83,13 @@ export default function EventLivePrepClient({
 
   return (
     <div className="space-y-6">
-      <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-5 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p className="text-[11px] uppercase tracking-[0.24em] text-white/70">Preparar live</p>
-            <h1 className="text-2xl font-semibold">{event.title}</h1>
-            <p className="text-sm text-white/60">Configura o LiveHub e prepara o dia do evento.</p>
-          </div>
-        </div>
-      </div>
-
       <section className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1226]/75 to-[#050912]/90 p-5 space-y-4 shadow-[0_26px_90px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
         <div className="space-y-1">
           <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">LiveHub</p>
-          <p className="text-sm text-white/70">Define visibilidade, modo e a livestream antes de começares.</p>
+          <p className="text-sm text-white/70">Define visibilidade e a livestream antes de começares.</p>
         </div>
 
         <div className="grid gap-3 md:grid-cols-2">
-          <div className="space-y-1">
-            <label className="text-sm font-medium">Modo</label>
-            <div className="w-full rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-sm text-white/80">
-              Automático (por categoria e acesso ativo)
-            </div>
-            <p className="text-[11px] text-white/55">
-              O modo é aplicado automaticamente. Não precisas de escolher aqui.
-            </p>
-          </div>
-
           <div className="space-y-1">
             <label className="text-sm font-medium">Visibilidade</label>
             <select
@@ -157,7 +136,7 @@ export default function EventLivePrepClient({
       <section className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1226]/75 to-[#050912]/90 p-5 space-y-4 shadow-[0_26px_90px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
         <div className="space-y-1">
           <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Torneio</p>
-          <p className="text-sm text-white/70">Cria a chave do torneio antes do evento começar.</p>
+          <p className="text-sm text-white/70">Cria a bracket quando estiveres pronto para gerir jogos.</p>
         </div>
 
         {!currentTournamentId ? (

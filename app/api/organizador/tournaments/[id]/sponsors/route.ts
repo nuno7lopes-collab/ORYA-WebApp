@@ -64,6 +64,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const hero = normalizeSlot(body?.hero ?? null);
   const sideA = normalizeSlot(body?.sideA ?? null);
   const sideB = normalizeSlot(body?.sideB ?? null);
+  const nowPlaying = normalizeSlot(body?.nowPlaying ?? null);
 
   const config = (tournament.config as Record<string, unknown> | null) ?? {};
   const nextConfig = {
@@ -72,6 +73,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       hero,
       sideA,
       sideB,
+      nowPlaying,
     },
   };
 
@@ -87,6 +89,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         hero,
         sideA,
         sideB,
+        nowPlaying,
       },
     },
     { status: 200 },

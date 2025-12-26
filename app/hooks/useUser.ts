@@ -18,6 +18,7 @@ type ApiMeResponse = {
     username: string | null;
     fullName: string | null;
     avatarUrl: string | null;
+    coverUrl: string | null;
     bio: string | null;
     city: string | null;
     favouriteCategories: string[];

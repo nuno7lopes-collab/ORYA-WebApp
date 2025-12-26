@@ -34,11 +34,42 @@ type TicketTypeUI = {
   status: TicketTypeStatus;
   startsAt: string | null;
   endsAt: string | null;
+  padelEventCategoryLinkId?: number | null;
+  padelCategoryLabel?: string | null;
+};
+
+type PadelCategoryLink = {
+  id: number;
+  padelCategoryId: number;
+  format?: string | null;
+  capacityTeams?: number | null;
+  capacityPlayers?: number | null;
+  liveStreamUrl?: string | null;
+  isEnabled: boolean;
+  isHidden: boolean;
+  category?: {
+    id: number;
+    label: string | null;
+  } | null;
+};
+
+type PadelCategoryOption = {
+  id: number;
+  label: string | null;
+  minLevel?: string | null;
+  maxLevel?: string | null;
+};
+
+type PadelCategoryDraft = {
+  isEnabled: boolean;
+  isHidden: boolean;
+  capacityTeams: string;
 };
 
 type EventEditClientProps = {
   event: {
     id: number;
+    organizerId: number | null;
     slug: string;
     title: string;
     description: string | null;
@@ -51,7 +82,6 @@ type EventEditClientProps = {
     isFree: boolean;
     inviteOnly: boolean;
     coverImageUrl: string | null;
-    liveHubMode: "DEFAULT" | "PREMIUM";
     liveHubVisibility: LiveHubVisibility;
     liveStreamUrl: string | null;
     publicAccessMode: PublicAccessMode;
@@ -62,10 +92,6 @@ type EventEditClientProps = {
     platformFeeBpsOverride?: number | null;
     platformFeeFixedCentsOverride?: number | null;
     payoutMode?: string | null;
-  };
-  organizer: {
-    id: number;
-    liveHubPremiumEnabled: boolean;
   };
   tickets: TicketTypeUI[];
   eventHasTickets?: boolean;
@@ -87,7 +113,7 @@ type EventInvite = {
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
-export function EventEditClient({ event, organizer, tickets }: EventEditClientProps) {
+export function EventEditClient({ event, tickets }: EventEditClientProps) {
   const { user, profile } = useUser();
   const { data: organizerStatus } = useSWR<{ paymentsStatus?: string }>(
     user ? "/api/organizador/me" : null,
@@ -102,6 +128,8 @@ export function EventEditClient({ event, organizer, tickets }: EventEditClientPr
   const [locationCity, setLocationCity] = useState(event.locationCity ?? "");
   const [address, setAddress] = useState(event.address ?? "");
   const [templateType] = useState(event.templateType ?? "OTHER");
+  const isPadel = templateType === "PADEL";
+  const organizerId = event.organizerId ?? null;
   const [isFree] = useState(event.isFree);
   const [coverUrl, setCoverUrl] = useState<string | null>(event.coverImageUrl);
   const [liveHubVisibility, setLiveHubVisibility] = useState<LiveHubVisibility>(
@@ -116,6 +144,21 @@ export function EventEditClient({ event, organizer, tickets }: EventEditClientPr
   const [participantTicketTypeIds, setParticipantTicketTypeIds] = useState<number[]>(
     event.participantTicketTypeIds ?? [],
   );
+  const { data: padelEventCategories, mutate: mutatePadelEventCategories } = useSWR<{ ok?: boolean; items?: PadelCategoryLink[] }>(
+    isPadel ? `/api/padel/event-categories?eventId=${event.id}` : null,
+    fetcher,
+  );
+  const { data: padelCategoriesData } = useSWR<{ ok?: boolean; items?: PadelCategoryOption[] }>(
+    isPadel && organizerId ? `/api/padel/categories/my?organizerId=${organizerId}` : null,
+    fetcher,
+  );
+  const padelCategoryLinks = Array.isArray(padelEventCategories?.items) ? padelEventCategories?.items ?? [] : [];
+  const activePadelCategoryLinks = padelCategoryLinks.filter((link) => link.isEnabled);
+  const padelCategories = Array.isArray(padelCategoriesData?.items) ? padelCategoriesData?.items ?? [] : [];
+  const [padelCategoryDrafts, setPadelCategoryDrafts] = useState<Record<number, PadelCategoryDraft>>({});
+  const [padelCategoryAddId, setPadelCategoryAddId] = useState("");
+  const [padelCategorySaving, setPadelCategorySaving] = useState(false);
+  const [padelCategoryError, setPadelCategoryError] = useState<string | null>(null);
   const [publicTicketScope, setPublicTicketScope] = useState<TicketScope>(
     event.publicTicketTypeIds && event.publicTicketTypeIds.length > 0 ? "SPECIFIC" : "ALL",
   );
@@ -185,6 +228,7 @@ export function EventEditClient({ event, organizer, tickets }: EventEditClientPr
     totalQuantity: "",
     startsAt: "",
     endsAt: "",
+    padelEventCategoryLinkId: "",
   });
 
   const [endingIds, setEndingIds] = useState<number[]>([]);
@@ -225,12 +269,104 @@ export function EventEditClient({ event, organizer, tickets }: EventEditClientPr
   const templateLabel = templateType === "PADEL" ? "Padel" : "Evento padrão";
   const liveHubPreviewUrl = `/eventos/${event.slug}/live`;
 
+  useEffect(() => {
+    if (!isPadel) return;
+    const nextDrafts: Record<number, PadelCategoryDraft> = {};
+    padelCategoryLinks.forEach((link) => {
+      nextDrafts[link.padelCategoryId] = {
+        isEnabled: link.isEnabled,
+        isHidden: link.isHidden ?? false,
+        capacityTeams: typeof link.capacityTeams === "number" ? String(link.capacityTeams) : "",
+      };
+    });
+    setPadelCategoryDrafts(nextDrafts);
+  }, [isPadel, padelCategoryLinks]);
+
+  const availablePadelCategories = useMemo(() => {
+    const linkedIds = new Set(padelCategoryLinks.map((link) => link.padelCategoryId));
+    return padelCategories.filter((cat) => !linkedIds.has(cat.id));
+  }, [padelCategories, padelCategoryLinks]);
+
   const toggleTicketType = (
     id: number,
     list: number[],
     setList: Dispatch<SetStateAction<number[]>>,
   ) => {
     setList((prev) => (prev.includes(id) ? prev.filter((t) => t !== id) : [...prev, id]));
+  };
+
+  const updatePadelCategoryDraft = (categoryId: number, patch: Partial<PadelCategoryDraft>) => {
+    setPadelCategoryDrafts((prev) => {
+      const current = prev[categoryId] ?? { isEnabled: true, isHidden: false, capacityTeams: "" };
+      return { ...prev, [categoryId]: { ...current, ...patch } };
+    });
+  };
+
+  const handleSavePadelCategories = async () => {
+    if (!isPadel || padelCategoryLinks.length === 0) return;
+    setPadelCategorySaving(true);
+    setPadelCategoryError(null);
+    const linksPayload = padelCategoryLinks.map((link) => {
+      const draft = padelCategoryDrafts[link.padelCategoryId];
+      const rawCapacity = draft?.capacityTeams ?? "";
+      const capacityValue = rawCapacity.trim() === "" ? null : Number(rawCapacity);
+      return {
+        padelCategoryId: link.padelCategoryId,
+        isEnabled: draft?.isEnabled ?? link.isEnabled,
+        isHidden: draft?.isHidden ?? link.isHidden,
+        capacityTeams: Number.isFinite(capacityValue) && (capacityValue as number) > 0 ? Math.floor(capacityValue as number) : null,
+      };
+    });
+
+    try {
+      const res = await fetch("/api/padel/event-categories", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ eventId: event.id, links: linksPayload }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.error || "Não foi possível guardar categorias.");
+      }
+      await mutatePadelEventCategories();
+      pushToast("Categorias Padel atualizadas.", "success");
+    } catch (err) {
+      setPadelCategoryError(err instanceof Error ? err.message : "Erro ao guardar categorias.");
+    } finally {
+      setPadelCategorySaving(false);
+    }
+  };
+
+  const handleAddPadelCategory = async () => {
+    if (!isPadel) return;
+    const categoryId = Number(padelCategoryAddId);
+    if (!Number.isFinite(categoryId)) {
+      setPadelCategoryError("Seleciona uma categoria válida.");
+      return;
+    }
+    setPadelCategorySaving(true);
+    setPadelCategoryError(null);
+    try {
+      const res = await fetch("/api/padel/event-categories", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          eventId: event.id,
+          links: [{ padelCategoryId: categoryId, isEnabled: true }],
+        }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.error || "Não foi possível adicionar a categoria.");
+      }
+      setPadelCategoryAddId("");
+      await mutatePadelEventCategories();
+      pushToast("Categoria adicionada ao evento.", "success");
+    } catch (err) {
+      setPadelCategoryError(err instanceof Error ? err.message : "Erro ao adicionar categoria.");
+    } finally {
+      setPadelCategorySaving(false);
+    }
   };
 
   const showInviteSection = publicAccessMode === "INVITE" || participantAccessMode === "INVITE";
@@ -613,6 +749,17 @@ export function EventEditClient({ event, organizer, tickets }: EventEditClientPr
         return;
       }
     }
+    if (
+      isPadel &&
+      newTicket.name.trim() &&
+      newTicket.priceEuro &&
+      activePadelCategoryLinks.length > 0 &&
+      !newTicket.padelEventCategoryLinkId
+    ) {
+      setValidationAlert("Seleciona uma categoria Padel para o novo bilhete.");
+      pushToast("Seleciona a categoria do bilhete.");
+      return;
+    }
 
     setIsSaving(true);
     try {
@@ -633,6 +780,9 @@ export function EventEditClient({ event, organizer, tickets }: EventEditClientPr
                   : null,
                 startsAt: newTicket.startsAt || null,
                 endsAt: newTicket.endsAt || null,
+                padelEventCategoryLinkId: newTicket.padelEventCategoryLinkId
+                  ? Number(newTicket.padelEventCategoryLinkId)
+                  : null,
               },
             ]
           : [];
@@ -685,6 +835,8 @@ export function EventEditClient({ event, organizer, tickets }: EventEditClientPr
       if (newTicketsPayload.length > 0) {
         // Não temos ID do novo ticket aqui, mas podemos forçar refresh manual ou deixar como está.
         // Para feedback imediato, adicionamos placeholder sem ID real.
+        const padelLinkId = newTicketsPayload[0].padelEventCategoryLinkId ?? null;
+        const padelLabel = padelCategoryLinks.find((link) => link.id === padelLinkId)?.category?.label ?? null;
         setTicketList((prev) => [
           ...prev,
           {
@@ -698,6 +850,8 @@ export function EventEditClient({ event, organizer, tickets }: EventEditClientPr
             status: TicketTypeStatus.ON_SALE,
             startsAt: newTicketsPayload[0].startsAt,
             endsAt: newTicketsPayload[0].endsAt,
+            padelEventCategoryLinkId: padelLinkId,
+            padelCategoryLabel: padelLabel,
           },
         ]);
       }
@@ -708,6 +862,7 @@ export function EventEditClient({ event, organizer, tickets }: EventEditClientPr
         totalQuantity: "",
         startsAt: "",
         endsAt: "",
+        padelEventCategoryLinkId: "",
       });
       setErrorSummary([]);
       setFieldErrors({});
@@ -848,16 +1003,6 @@ export function EventEditClient({ event, organizer, tickets }: EventEditClientPr
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2">
-            <div className="space-y-1">
-              <label className="text-sm font-medium">Modo</label>
-              <div className="w-full rounded-md border border-white/15 bg-black/30 px-3 py-2 text-sm text-white/80">
-                Automático (por categoria e acesso ativo)
-              </div>
-              <p className="text-[11px] text-white/55">
-                O modo é aplicado automaticamente. Não precisas de escolher aqui.
-              </p>
-            </div>
-
             <div className="space-y-1">
               <label className="text-sm font-medium">Visibilidade</label>
               <select
@@ -1299,6 +1444,124 @@ export function EventEditClient({ event, organizer, tickets }: EventEditClientPr
           </Link>
         </div>
 
+        {isPadel && (
+          <div className="rounded-xl border border-white/12 bg-black/25 p-3 space-y-3">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-[12px] font-semibold">Categorias Padel</p>
+                <p className="text-[11px] text-white/60">
+                  Ativa as categorias que aceitam inscrições neste evento. Desativar antes do início gera refunds base-only.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleSavePadelCategories}
+                disabled={padelCategorySaving || padelCategoryLinks.length === 0}
+                className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10 disabled:opacity-60"
+              >
+                {padelCategorySaving ? "A guardar…" : "Guardar categorias"}
+              </button>
+            </div>
+            {padelCategoryError && (
+              <p className="text-[11px] text-amber-200">{padelCategoryError}</p>
+            )}
+            {padelCategoryLinks.length === 0 ? (
+              <p className="text-[11px] text-white/60">Sem categorias associadas ao evento.</p>
+            ) : (
+              <div className="space-y-2">
+                {padelCategoryLinks.map((link) => {
+                  const draft =
+                    padelCategoryDrafts[link.padelCategoryId] ?? {
+                      isEnabled: link.isEnabled,
+                      isHidden: link.isHidden ?? false,
+                      capacityTeams: typeof link.capacityTeams === "number" ? String(link.capacityTeams) : "",
+                    };
+                  return (
+                    <div key={link.id} className="rounded-lg border border-white/10 bg-black/30 p-3 space-y-3">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold">
+                            {link.category?.label ?? `Categoria ${link.padelCategoryId}`}
+                          </p>
+                          <p className="text-[11px] text-white/60">
+                            {draft.isEnabled ? "Ativa" : "Desativada"}
+                            {draft.isHidden ? " · Oculta" : ""}
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-3 text-[11px] text-white/70">
+                          <label className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={draft.isEnabled}
+                              onChange={(e) => updatePadelCategoryDraft(link.padelCategoryId, { isEnabled: e.target.checked })}
+                              className="h-4 w-4 rounded border-white/30 bg-black/30"
+                            />
+                            Ativa
+                          </label>
+                          <label className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={draft.isHidden}
+                              onChange={(e) => updatePadelCategoryDraft(link.padelCategoryId, { isHidden: e.target.checked })}
+                              className="h-4 w-4 rounded border-white/30 bg-black/30"
+                            />
+                            Oculta
+                          </label>
+                        </div>
+                      </div>
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        <label className="text-[11px] text-white/70">
+                          Capacidade (equipas)
+                          <input
+                            type="number"
+                            min={0}
+                            value={draft.capacityTeams}
+                            onChange={(e) => updatePadelCategoryDraft(link.padelCategoryId, { capacityTeams: e.target.value })}
+                            className="mt-1 w-full rounded-md border border-white/15 bg-black/30 px-3 py-2 text-sm"
+                          />
+                        </label>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            <div className="flex flex-wrap items-end gap-2">
+              <label className="text-[11px] text-white/70">
+                Adicionar categoria
+                <select
+                  value={padelCategoryAddId}
+                  onChange={(e) => setPadelCategoryAddId(e.target.value)}
+                  className="mt-1 w-full rounded-md border border-white/15 bg-black/30 px-3 py-2 text-sm"
+                >
+                  <option value="">Seleciona uma categoria</option>
+                  {availablePadelCategories.map((cat) => (
+                    <option key={`padel-cat-${cat.id}`} value={String(cat.id)}>
+                      {cat.label ?? `Categoria ${cat.id}`}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button
+                type="button"
+                onClick={handleAddPadelCategory}
+                disabled={padelCategorySaving || availablePadelCategories.length === 0}
+                className="rounded-full border border-white/20 px-3 py-2 text-[11px] text-white/80 hover:bg-white/10 disabled:opacity-60"
+              >
+                Adicionar
+              </button>
+            </div>
+            {availablePadelCategories.length === 0 && padelCategories.length > 0 && (
+              <p className="text-[11px] text-white/60">Todas as categorias do organizador já estão ligadas ao evento.</p>
+            )}
+            {padelCategories.length === 0 && (
+              <p className="text-[11px] text-white/60">
+                Cria categorias no Hub Padel para poderes adicioná-las ao evento.
+              </p>
+            )}
+          </div>
+        )}
+
         <div className="space-y-2">
           {ticketList.map((t) => {
             const price = (t.price / 100).toFixed(2);
@@ -1314,13 +1577,14 @@ export function EventEditClient({ event, organizer, tickets }: EventEditClientPr
                 className="rounded-xl border border-white/12 bg-black/30 p-3 flex flex-col gap-2"
               >
                 <div className="flex items-center justify-between gap-2">
-                  <div className="flex flex-col">
-                    <p className="font-semibold text-sm">{t.name}</p>
-                    <p className="text-[11px] text-white/60">
+                <div className="flex flex-col">
+                  <p className="font-semibold text-sm">{t.name}</p>
+                  <p className="text-[11px] text-white/60">
                       {price} € • Vendidos: {t.soldQuantity}
                       {remaining !== null ? ` • Stock restante: ${remaining}` : ""}
-                    </p>
-                  </div>
+                      {isPadel && t.padelCategoryLabel ? ` • Categoria: ${t.padelCategoryLabel}` : ""}
+                  </p>
+                </div>
                   <span className="text-[10px] rounded-full border border-white/20 px-2 py-0.5 text-white/75">
                     {isEnding ? "Venda terminada" : t.status}
                   </span>
@@ -1346,6 +1610,11 @@ export function EventEditClient({ event, organizer, tickets }: EventEditClientPr
 
         <div className="rounded-xl border border-white/12 bg-black/25 p-3 space-y-2">
           <p className="text-[12px] font-semibold">Adicionar novo bilhete</p>
+          {isPadel && activePadelCategoryLinks.length === 0 && (
+            <p className="text-[11px] text-amber-200">
+              Cria categorias Padel no hub e associa-as ao evento antes de adicionar bilhetes.
+            </p>
+          )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
             <input
               placeholder="Nome"
@@ -1359,6 +1628,23 @@ export function EventEditClient({ event, organizer, tickets }: EventEditClientPr
               onChange={(e) => setNewTicket((p) => ({ ...p, priceEuro: e.target.value }))}
               className="rounded-md border border-white/15 bg-black/30 px-3 py-2 text-sm"
             />
+            {isPadel && activePadelCategoryLinks.length > 0 && (
+              <label className="text-[11px] text-white/70">
+                Categoria Padel
+                <select
+                  value={newTicket.padelEventCategoryLinkId}
+                  onChange={(e) => setNewTicket((p) => ({ ...p, padelEventCategoryLinkId: e.target.value }))}
+                  className="mt-1 w-full rounded-md border border-white/15 bg-black/30 px-3 py-2 text-sm"
+                >
+                  <option value="">Seleciona uma categoria</option>
+                  {activePadelCategoryLinks.map((link) => (
+                    <option key={`padel-category-${link.id}`} value={String(link.id)}>
+                      {link.category?.label ?? `Categoria ${link.padelCategoryId}`}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             <input
               placeholder="Quantidade total"
               value={newTicket.totalQuantity}

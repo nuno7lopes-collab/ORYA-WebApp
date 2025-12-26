@@ -25,6 +25,7 @@ import {
 } from "@/domain/padelDeadlines";
 import { getActiveOrganizerForUser } from "@/lib/organizerContext";
 import { isPadelStaff } from "@/lib/padel/staff";
+import { checkPadelCategoryLimit } from "@/domain/padelCategoryLimit";
 
 const allowedRoles: OrganizerMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
 
@@ -153,6 +154,7 @@ export async function POST(req: NextRequest) {
       organizerId: true,
       eligibilityType: true,
       splitDeadlineHours: true,
+      defaultCategoryId: true,
     },
   });
   if (!config?.padelV2Enabled || config.organizerId !== organizerId) {
@@ -176,11 +178,37 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Invariante: 1 pairing ativo por evento+user
+  const categoryLinks = await prisma.padelEventCategoryLink.findMany({
+    where: { eventId, isEnabled: true },
+    select: { id: true, padelCategoryId: true },
+    orderBy: { id: "asc" },
+  });
+
+  let effectiveCategoryId: number | null = null;
+  if (Number.isFinite(categoryId as number)) {
+    const match = categoryLinks.find((l) => l.padelCategoryId === (categoryId as number));
+    if (!match) {
+      return NextResponse.json({ ok: false, error: "CATEGORY_NOT_AVAILABLE" }, { status: 400 });
+    }
+    effectiveCategoryId = match.padelCategoryId;
+  } else if (categoryLinks.length > 1) {
+    return NextResponse.json({ ok: false, error: "CATEGORY_REQUIRED" }, { status: 400 });
+  } else if (categoryLinks.length > 0) {
+    effectiveCategoryId = categoryLinks[0].padelCategoryId;
+  } else if (config.defaultCategoryId) {
+    effectiveCategoryId = config.defaultCategoryId;
+  }
+
+  if (!effectiveCategoryId) {
+    return NextResponse.json({ ok: false, error: "CATEGORY_REQUIRED" }, { status: 400 });
+  }
+
+  // Invariante: 1 pairing ativo por evento+categoria+user
   const existingActive = await prisma.padelPairing.findFirst({
     where: {
       eventId,
       lifecycleStatus: { not: "CANCELLED_INCOMPLETE" },
+      categoryId: effectiveCategoryId,
       OR: [{ player1UserId: user.id }, { player2UserId: user.id }],
     },
     include: { slots: true },
@@ -265,7 +293,20 @@ export async function POST(req: NextRequest) {
   if (createdByTicketId) {
     const ticket = await prisma.ticket.findUnique({
       where: { id: createdByTicketId },
-      select: { id: true, eventId: true, status: true, userId: true, ownerUserId: true, pairingId: true },
+      select: {
+        id: true,
+        eventId: true,
+        status: true,
+        userId: true,
+        ownerUserId: true,
+        pairingId: true,
+        ticketType: {
+          select: {
+            padelEventCategoryLinkId: true,
+            padelEventCategoryLink: { select: { padelCategoryId: true } },
+          },
+        },
+      },
     });
     if (!ticket || ticket.eventId !== eventId || ticket.status !== "ACTIVE") {
       return NextResponse.json({ ok: false, error: "INVALID_TICKET" }, { status: 400 });
@@ -282,6 +323,10 @@ export async function POST(req: NextRequest) {
     });
     if (slotUsingTicket) {
       return NextResponse.json({ ok: false, error: "TICKET_ALREADY_USED" }, { status: 409 });
+    }
+    const ticketCategoryId = ticket.ticketType?.padelEventCategoryLink?.padelCategoryId ?? null;
+    if (ticketCategoryId && ticketCategoryId !== effectiveCategoryId) {
+      return NextResponse.json({ ok: false, error: "TICKET_CATEGORY_MISMATCH" }, { status: 409 });
     }
     validatedTicketId = ticket.id;
   }
@@ -327,6 +372,25 @@ export async function POST(req: NextRequest) {
 
   const incomingSlots = Array.isArray(body?.slots) ? (body!.slots as unknown[]) : [];
   const captainPaid = Boolean(validatedTicketId);
+  if (captainPaid) {
+    const limitCheck = await prisma.$transaction((tx) =>
+      checkPadelCategoryLimit({
+        tx,
+        eventId,
+        userId: user.id,
+        categoryId: effectiveCategoryId,
+      }),
+    );
+    if (!limitCheck.ok) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: limitCheck.code === "ALREADY_IN_CATEGORY" ? "ALREADY_IN_CATEGORY" : "MAX_CATEGORIES",
+        },
+        { status: 409 },
+      );
+    }
+  }
   const slotsToCreate =
     incomingSlots.length > 0
       ? (incomingSlots
@@ -391,7 +455,7 @@ export async function POST(req: NextRequest) {
         data: {
           eventId,
           organizerId,
-          categoryId: Number.isFinite(categoryId as number) ? (categoryId as number) : null,
+          categoryId: effectiveCategoryId,
           payment_mode: paymentMode,
           createdByUserId: user.id,
           player1UserId: user.id,
@@ -472,7 +536,13 @@ export async function GET(req: NextRequest) {
     }
 
     const ticketTypes = await prisma.ticketType.findMany({
-      where: { eventId: pairing.eventId, status: "ON_SALE" },
+      where: {
+        eventId: pairing.eventId,
+        status: "ON_SALE",
+        ...(pairing.categoryId
+          ? { padelEventCategoryLink: { padelCategoryId: pairing.categoryId } }
+          : {}),
+      },
       select: { id: true, name: true, price: true, currency: true },
       orderBy: { price: "asc" },
     });

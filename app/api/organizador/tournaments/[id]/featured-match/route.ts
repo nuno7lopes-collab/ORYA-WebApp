@@ -1,22 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
+import { OrganizerMemberRole } from "@prisma/client";
 
-async function ensureOrganizerAccess(userId: string, eventId: number) {
+async function getOrganizerRole(userId: string, eventId: number) {
   const evt = await prisma.event.findUnique({
     where: { id: eventId },
     select: { organizerId: true },
   });
-  if (!evt?.organizerId) return false;
+  if (!evt?.organizerId) return null;
   const member = await prisma.organizerMember.findFirst({
     where: {
       organizerId: evt.organizerId,
       userId,
-      role: { in: ["OWNER", "CO_OWNER", "ADMIN"] },
     },
-    select: { id: true },
+    select: { role: true },
   });
-  return Boolean(member);
+  return member?.role ?? null;
 }
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -38,8 +38,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   });
   if (!tournament) return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
 
-  const authorized = await ensureOrganizerAccess(authData.user.id, tournament.eventId);
-  if (!authorized) return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  const organizerRole = await getOrganizerRole(authData.user.id, tournament.eventId);
+  const liveOperatorRoles: OrganizerMemberRole[] = [
+    OrganizerMemberRole.OWNER,
+    OrganizerMemberRole.CO_OWNER,
+    OrganizerMemberRole.ADMIN,
+    OrganizerMemberRole.STAFF,
+  ];
+  if (!organizerRole || !liveOperatorRoles.includes(organizerRole)) {
+    return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  }
 
   const body = await req.json().catch(() => ({}));
   const matchId = Number.isFinite(body?.matchId) ? Number(body.matchId) : null;

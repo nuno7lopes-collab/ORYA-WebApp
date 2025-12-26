@@ -10,12 +10,12 @@ import {
   PadelPairingPaymentStatus,
   PadelPairingSlotStatus,
   PadelPairingLifecycleStatus,
-  TicketStatus,
 } from "@prisma/client";
 import { expireHolds } from "@/domain/padelPairingHold";
 import { computeGraceUntil } from "@/domain/padelDeadlines";
+import { autoChargeKey } from "@/lib/stripe/idempotency";
 
-// Expira pairings SPLIT com locked_until ultrapassado: cancela slots e tenta refund do capitão.
+// Expira pairings SPLIT com locked_until ultrapassado: cancela slots e liberta tickets sem refunds automáticos.
 // Pode ser executado via cron. Não expõe dados sensíveis, mas requer permissão server-side.
 export async function POST() {
   const now = new Date();
@@ -35,6 +35,10 @@ export async function POST() {
   });
 
   for (const pairing of chargeable) {
+    if (pairing.secondChargePaymentIntentId) {
+      continue;
+    }
+
     const paymentMethodId = pairing.paymentMethodId;
     const paidSlot = pairing.slots.find(
       (s) => s.paymentStatus === PadelPairingPaymentStatus.PAID && s.ticket,
@@ -59,18 +63,28 @@ export async function POST() {
     }
 
     try {
-      const intent = await stripe.paymentIntents.create({
-        amount,
-        currency,
-        payment_method: paymentMethodId,
-        off_session: true,
-        confirm: true,
-        metadata: {
-          pairingId: pairing.id,
-          eventId: pairing.eventId,
-          scenario: "GROUP_SPLIT_SECOND_CHARGE",
-        },
+      const priorAttempts = await prisma.paymentEvent.count({
+        where: { dedupeKey: { startsWith: `auto_charge:${pairing.id}:` } },
       });
+      const attempt = Math.max(1, priorAttempts + 1);
+      const idempotencyKey = autoChargeKey(pairing.id, attempt);
+
+      const intent = await stripe.paymentIntents.create(
+        {
+          amount,
+          currency,
+          payment_method: paymentMethodId,
+          off_session: true,
+          confirm: true,
+          metadata: {
+            pairingId: pairing.id,
+            eventId: pairing.eventId,
+            scenario: "GROUP_SPLIT_SECOND_CHARGE",
+            idempotencyKey,
+          },
+        },
+        { idempotencyKey },
+      );
 
       if (intent.status === "succeeded") {
         await prisma.$transaction(async (tx) => {
@@ -184,18 +198,6 @@ export async function POST() {
     const paidSlot = pairing.slots.find((s) => s.paymentStatus === PadelPairingPaymentStatus.PAID && s.ticket?.stripePaymentIntentId);
     const paidTicket = paidSlot?.ticket ?? null;
 
-    // Refund simplificado: devolve o valor total do PaymentIntent do capitão (share)
-    if (paidTicket?.stripePaymentIntentId) {
-      try {
-        await stripe.refunds.create({
-          payment_intent: paidTicket.stripePaymentIntentId,
-        });
-      } catch (err) {
-        console.error("[padel/cron/expire] refund falhou", err);
-        // Continua mesmo assim para não bloquear expirations
-      }
-    }
-
     await prisma.$transaction(async (tx) => {
       // Cancelar slots e limpar tickets
       await tx.padelPairingSlot.updateMany({
@@ -210,7 +212,7 @@ export async function POST() {
       if (paidTicket) {
         await tx.ticket.update({
           where: { id: paidTicket.id },
-          data: { status: TicketStatus.REFUNDED },
+          data: { pairingId: null },
         });
       }
 

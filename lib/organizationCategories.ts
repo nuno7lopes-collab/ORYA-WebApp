@@ -1,7 +1,7 @@
 export const ORGANIZATION_CATEGORIES = ["EVENTOS", "PADEL", "VOLUNTARIADO"] as const;
 export type OrganizationCategory = (typeof ORGANIZATION_CATEGORIES)[number];
 
-export const ORGANIZATION_MODULES = ["INSCRICOES"] as const;
+export const ORGANIZATION_MODULES = ["INSCRICOES", "LOJA", "GALERIA"] as const;
 export type OrganizationModule = (typeof ORGANIZATION_MODULES)[number];
 
 export const DEFAULT_ORGANIZATION_CATEGORY: OrganizationCategory = "EVENTOS";

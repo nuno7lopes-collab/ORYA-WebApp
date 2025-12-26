@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import type { EventStatus } from "@prisma/client";
 import { enqueueOperation } from "@/lib/operations/enqueue";
+import { refundKey } from "@/lib/stripe/idempotency";
 
 /**
  * 6.14 – Update de estado de evento (admin)
@@ -122,11 +123,16 @@ export async function POST(req: NextRequest) {
           status: true,
           type: true,
           organizerId: true,
+          startsAt: true,
           updatedAt: true,
         },
       });
 
-      if (updated.status === "CANCELLED" || updated.status === "DELETED" || updated.status === "DATE_CHANGED") {
+      const now = new Date();
+      const shouldAutoRefund =
+        updated.status === "CANCELLED" && updated.startsAt && updated.startsAt.getTime() > now.getTime();
+
+      if (shouldAutoRefund) {
         // Disparar refunds base-only para todas as compras deste evento (idempotente por dedupeKey)
         const summaries = await prisma.saleSummary.findMany({
           where: { eventId: updated.id, status: "PAID" },
@@ -136,13 +142,13 @@ export async function POST(req: NextRequest) {
           summaries.map((s) =>
             enqueueOperation({
               operationType: "PROCESS_REFUND_SINGLE",
-              dedupeKey: `${updated.id}:${s.purchaseId ?? s.paymentIntentId ?? "unknown"}`,
+              dedupeKey: refundKey(s.purchaseId ?? s.paymentIntentId ?? "unknown"),
               correlations: { eventId: updated.id, purchaseId: s.purchaseId ?? s.paymentIntentId ?? null, paymentIntentId: s.paymentIntentId ?? null },
               payload: {
                 eventId: updated.id,
                 purchaseId: s.purchaseId ?? s.paymentIntentId ?? null,
                 paymentIntentId: s.paymentIntentId ?? null,
-                reason: updated.status,
+                reason: "CANCELLED",
                 refundedBy: user.id,
               },
             }),

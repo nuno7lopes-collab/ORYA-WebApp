@@ -46,6 +46,14 @@ function parseNumber(raw: unknown, fallback: number) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+function parseList(raw: unknown) {
+  if (typeof raw !== "string") return [];
+  return raw
+    .split(/[,\s]+/g)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 export const env = {
   supabaseUrl: getEnv("SUPABASE_URL"),
   supabaseAnonKey: getEnv("SUPABASE_ANON_KEY"),
@@ -68,4 +76,6 @@ export const env = {
   eventCoversBucket: process.env.SUPABASE_STORAGE_BUCKET_EVENT_COVERS ?? "",
   storageSignedUrls: parseBoolean(process.env.SUPABASE_STORAGE_SIGNED_URLS, false),
   storageSignedTtlSeconds: parseNumber(process.env.SUPABASE_STORAGE_SIGNED_TTL_SECONDS, 60 * 60 * 24 * 30), // 30 dias
+  stripePremiumPriceIds: parseList(process.env.STRIPE_PREMIUM_PRICE_IDS),
+  stripePremiumProductIds: parseList(process.env.STRIPE_PREMIUM_PRODUCT_IDS),
 };

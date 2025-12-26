@@ -148,7 +148,7 @@ export async function generateAndPersistTournamentStructure(opts: PersistOptions
     const started = await tx.tournamentMatch.count({
       where: { stage: { tournamentId }, status: { in: ["IN_PROGRESS", "DONE", "SCHEDULED"] as TournamentMatchStatus[] } },
     });
-    if (started > 0) throw new Error("TOURNAMENT_ALREADY_STARTED");
+    if (started > 0 && !forceGenerate) throw new Error("TOURNAMENT_ALREADY_STARTED");
 
     await tx.tournamentMatch.deleteMany({ where: { stage: { tournamentId } } });
     await tx.tournamentGroup.deleteMany({ where: { stage: { tournamentId } } });

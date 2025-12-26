@@ -23,6 +23,9 @@ export function AdminTopActions({ showTicketsExport, showPaymentsExport }: Admin
       <Link href="/admin/payments" className={linkBase}>
         Pagamentos
       </Link>
+      <Link href="/admin/refunds" className={linkBase}>
+        Refunds
+      </Link>
       <Link href="/admin/tickets" className={linkBase}>
         Bilhetes
       </Link>

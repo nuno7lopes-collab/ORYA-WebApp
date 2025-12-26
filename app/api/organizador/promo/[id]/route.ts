@@ -1,10 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
+import { getActiveOrganizerForUser } from "@/lib/organizerContext";
 import { isOrgAdminOrAbove } from "@/lib/organizerPermissions";
-import { OrganizerMemberRole } from "@prisma/client";
 
-async function requireOrganizer() {
+const resolveOrganizerId = (req: NextRequest) => {
+  const orgParam = req.nextUrl.searchParams.get("org");
+  const cookieOrgId = req.cookies.get("orya_org")?.value;
+  const raw = orgParam ?? cookieOrgId ?? "";
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+async function requireOrganizer(req: NextRequest) {
   const supabase = await createSupabaseServer();
   const {
     data: { user },
@@ -18,28 +26,25 @@ async function requireOrganizer() {
   const profile = await prisma.profile.findUnique({ where: { id: user.id } });
   if (!profile) return { error: "PROFILE_NOT_FOUND" as const };
 
-  const membership = await prisma.organizerMember.findFirst({
-    where: {
-      userId: user.id,
-      organizer: { status: "ACTIVE" },
-    },
-    include: { organizer: true },
-    orderBy: [{ lastUsedAt: "desc" }, { createdAt: "asc" }],
+  const organizerId = resolveOrganizerId(req);
+  const { organizer, membership } = await getActiveOrganizerForUser(user.id, {
+    organizerId: organizerId ?? undefined,
+    roles: ["OWNER", "CO_OWNER", "ADMIN"],
   });
 
-  if (!membership || !membership.organizer || !isOrgAdminOrAbove(membership.role as OrganizerMemberRole)) {
+  if (!membership || !organizer || !isOrgAdminOrAbove(membership.role)) {
     return { error: "ORGANIZER_NOT_FOUND" as const };
   }
 
-  return { organizer: membership.organizer, profile, membership };
+  return { organizer, profile, membership };
 }
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const ctx = await requireOrganizer();
+    const ctx = await requireOrganizer(req);
     if ("error" in ctx) {
       const status =
         ctx.error === "UNAUTHENTICATED" ? 401 : ctx.error === "PROFILE_NOT_FOUND" ? 404 : 403;
@@ -72,10 +77,15 @@ export async function GET(
       return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
     }
 
-    if (promo.eventId) {
+    if (promo.organizerId && promo.organizerId !== ctx.organizer.id) {
+      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    }
+    if (!promo.organizerId && promo.eventId) {
       if (!eventIds.includes(promo.eventId)) {
         return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
       }
+    } else if (!promo.organizerId && !promo.eventId) {
+      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
     // Métrica simples de novos vs recorrentes: compara a data do primeiro sale_summary do user

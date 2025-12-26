@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { FormSubmissionClient } from "./FormSubmissionClient";
+import { getCustomPremiumProfileModules, isCustomPremiumActive } from "@/lib/organizerPremium";
 
 type Params = { id: string };
 
@@ -19,13 +20,22 @@ export default async function PublicFormPage({ params }: { params: Promise<Param
           publicName: true,
           businessName: true,
           username: true,
+          liveHubPremiumEnabled: true,
         },
       },
       fields: { orderBy: { order: "asc" } },
     },
   });
 
-  if (!form || form.status !== "PUBLISHED" || form.organizer.status !== "ACTIVE") {
+  if (!form || form.organizer.status !== "ACTIVE") {
+    notFound();
+  }
+
+  const premiumActive = isCustomPremiumActive(form.organizer);
+  const premiumModules = premiumActive ? getCustomPremiumProfileModules(form.organizer) ?? {} : {};
+  const allowInscricoes = Boolean(premiumModules.inscricoes);
+  const isPublic = form.status !== "ARCHIVED";
+  if (!isPublic) {
     notFound();
   }
 
@@ -34,7 +44,7 @@ export default async function PublicFormPage({ params }: { params: Promise<Param
     select: { organizerId: true },
   });
 
-  if (!moduleEnabled) {
+  if (!moduleEnabled || !allowInscricoes) {
     notFound();
   }
 

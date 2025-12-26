@@ -13,6 +13,7 @@ model Profile {
   username                                                         String?                 @unique @db.Citext
   fullName                                                         String?                 @map("full_name")
   avatarUrl                                                        String?                 @map("avatar_url")
+  coverUrl                                                         String?                 @map("cover_url")
   bio                                                              String?
   city                                                             String?
   gender                                                           Gender?
@@ -75,6 +76,8 @@ model Organizer {
   platformFeeFixedCents   Int                             @default(0) @map("platform_fee_fixed_cents")
   stripeChargesEnabled    Boolean                         @default(false) @map("stripe_charges_enabled")
   stripePayoutsEnabled    Boolean                         @default(false) @map("stripe_payouts_enabled")
+  stripeCustomerId        String?                         @map("stripe_customer_id")
+  stripeSubscriptionId    String?                         @map("stripe_subscription_id")
   entityType              String?                         @map("entity_type")
   businessName            String?                         @map("business_name")
   city                    String?                         @map("city")
@@ -86,6 +89,7 @@ model Organizer {
   alertsSalesEnabled      Boolean?                        @default(true) @map("alerts_sales_enabled")
   alertsPayoutEnabled     Boolean?                        @default(false) @map("alerts_payout_enabled")
   brandingAvatarUrl       String?                         @map("branding_avatar_url")
+  brandingCoverUrl        String?                         @map("branding_cover_url")
   brandingPrimaryColor    String?                         @map("branding_primary_color")
   brandingSecondaryColor  String?                         @map("branding_secondary_color")
   refundFeePayer          RefundFeePayer                  @default(CUSTOMER) @map("refund_fee_payer")
@@ -103,6 +107,8 @@ model Organizer {
   address                 String?                         @map("address")
   showAddressPublicly     Boolean                         @default(false) @map("show_address_publicly")
   publicWebsite           String?                         @map("public_website")
+  publicInstagram         String?                         @map("public_instagram")
+  publicYoutube           String?                         @map("public_youtube")
   publicDescription       String?                         @map("public_description")
   publicHours             String?                         @map("public_hours")
   infoRules               String?                         @map("info_rules")
@@ -116,6 +122,7 @@ model Organizer {
   officialEmailVerifiedAt DateTime?                       @map("official_email_verified_at") @db.Timestamptz(6)
   officialEmailRequests   OrganizerOfficialEmailRequest[]
   events                  Event[]
+  promoCodes              PromoCode[]
   notifications           Notification[]                  @relation("NotificationOrganizer")
   memberInvites           OrganizerMemberInvite[]
   members                 OrganizerMember[]
@@ -139,6 +146,8 @@ model Organizer {
   organizer_follows_organizer_follows_organizer_idToorganizers organizer_follows[] @relation("organizer_follows_organizer_idToorganizers")
 
   @@index([userId])
+  @@index([stripeCustomerId], map: "organizers_stripe_customer_idx")
+  @@index([stripeSubscriptionId], map: "organizers_stripe_subscription_idx")
   @@map("organizers")
   @@schema("app_v3")
 }
@@ -488,7 +497,6 @@ model Event {
   type                              EventType               @default(ORGANIZER_EVENT)
   /// Template de apoio (padel, evento padrão)
   templateType                      EventTemplateType?      @map("template_type")
-  liveHubMode                        LiveHubMode              @default(DEFAULT) @map("live_hub_mode")
   liveHubVisibility                 LiveHubVisibility       @default(PUBLIC) @map("live_hub_visibility")
   /// Liga ao Organizer quando é evento de organizador
   organizerId                       Int?                    @map("organizer_id")
@@ -534,6 +542,7 @@ model Event {
   padelRankingEntries               PadelRankingEntry[]
   padelTeams                        PadelTeam[]
   padelTournamentConfig             PadelTournamentConfig?
+  padelCategoryLinks                PadelEventCategoryLink[]
   padelCourtBlocks                  PadelCourtBlock[]
   padelAvailabilities               PadelAvailability[]
   tournamentEntries                 TournamentEntry[]
@@ -595,6 +604,7 @@ model EventCategory {
 model TicketType {
   id            Int                 @id @default(autoincrement())
   eventId       Int                 @map("event_id")
+  padelEventCategoryLinkId Int?     @map("padel_event_category_link_id")
   name          String
   description   String?
   price         Int
@@ -611,8 +621,10 @@ model TicketType {
   reservations  TicketReservation[]
   event         Event               @relation(fields: [eventId], references: [id], onDelete: Cascade)
   tickets       Ticket[]
+  padelEventCategoryLink PadelEventCategoryLink? @relation(fields: [padelEventCategoryLinkId], references: [id], onDelete: SetNull)
 
   @@index([eventId])
+  @@index([padelEventCategoryLinkId], map: "ticket_types_padel_category_link_idx")
   @@map("ticket_types")
   @@schema("app_v3")
 }
@@ -914,6 +926,7 @@ model PromoCode {
   code          String
   type          PromoType
   value         Int
+  organizerId   Int?              @map("organizer_id")
   maxUses       Int?              @map("max_uses")
   perUserLimit  Int?              @map("per_user_limit")
   validFrom     DateTime?         @map("valid_from") @db.Timestamptz(6)
@@ -926,11 +939,13 @@ model PromoCode {
   minQuantity   Int?              @map("min_quantity")
   minTotalCents Int?              @map("min_total_cents")
   event         Event?            @relation(fields: [eventId], references: [id], onUpdate: NoAction, map: "promo_codes_event_fk")
+  organizer     Organizer?        @relation(fields: [organizerId], references: [id], onUpdate: NoAction)
   redemptions   PromoRedemption[]
   saleLines     SaleLine[]
   saleSummaries SaleSummary[]
 
   @@index([eventId])
+  @@index([organizerId])
   @@index([eventId, active], map: "promo_codes_event_active_idx")
   @@index([validFrom, validUntil], map: "promo_codes_valid_idx")
   @@map("promo_codes")
@@ -1164,8 +1179,34 @@ model PadelCategory {
   pairings          PadelPairing[]
   teams             PadelTeam[]
   tournamentConfigs PadelTournamentConfig[]
+  tournamentEntries TournamentEntry[]
+  eventLinks        PadelEventCategoryLink[]
 
   @@map("padel_categories")
+  @@schema("app_v3")
+}
+
+/// Categorias de Padel por evento (multi-categoria)
+model PadelEventCategoryLink {
+  id              Int           @id @default(autoincrement())
+  eventId         Int           @map("event_id")
+  padelCategoryId Int           @map("padel_category_id")
+  format          padel_format?
+  capacityTeams   Int?          @map("capacity_teams")
+  capacityPlayers Int?          @map("capacity_players")
+  liveStreamUrl   String?       @map("live_stream_url")
+  isEnabled       Boolean       @default(true) @map("is_enabled")
+  isHidden        Boolean       @default(false) @map("is_hidden")
+  createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  event           Event         @relation(fields: [eventId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  category        PadelCategory @relation(fields: [padelCategoryId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  ticketTypes     TicketType[]
+
+  @@unique([eventId, padelCategoryId], map: "padel_event_category_links_unique")
+  @@index([eventId], map: "padel_event_category_links_event_idx")
+  @@index([padelCategoryId], map: "padel_event_category_links_category_idx")
+  @@map("padel_event_category_links")
   @@schema("app_v3")
 }
 
@@ -1357,6 +1398,7 @@ model TournamentEntry {
   id              Int                   @id @default(autoincrement())
   eventId         Int                   @map("event_id")
   userId          String                @map("user_id") @db.Uuid
+  categoryId      Int?                  @map("category_id")
   pairingId       Int?                  @map("pairing_id")
   role            TournamentEntryRole   @default(PARTNER)
   status          TournamentEntryStatus @default(PENDING)
@@ -1370,12 +1412,14 @@ model TournamentEntry {
   event           Event                 @relation(fields: [eventId], references: [id], onDelete: Cascade)
   user            Profile               @relation(fields: [userId], references: [id], onDelete: Cascade)
   pairing         PadelPairing?         @relation(fields: [pairingId], references: [id], onDelete: Cascade)
+  category        PadelCategory?        @relation(fields: [categoryId], references: [id], onUpdate: NoAction)
   tickets         Ticket[]              @relation("TicketTournamentEntry")
   saleSummary     SaleSummary?          @relation(fields: [saleSummaryId], references: [id], onDelete: SetNull)
 
-  @@unique([eventId, userId], map: "tournament_entries_event_user_unique")
+  @@unique([eventId, categoryId, userId], map: "tournament_entries_event_category_user_unique")
   @@unique([purchaseId, emissionIndex], map: "tournament_entries_purchase_idx")
   @@index([pairingId])
+  @@index([categoryId], map: "tournament_entries_category_idx")
   @@map("tournament_entries")
   @@schema("app_v3")
 }
@@ -2256,12 +2300,6 @@ enum EventTemplateType {
   @@schema("app_v3")
 }
 
-enum LiveHubMode {
-  DEFAULT
-  PREMIUM
-
-  @@schema("app_v3")
-}
 
 enum OrganizationCategory {
   EVENTOS
@@ -2273,6 +2311,8 @@ enum OrganizationCategory {
 
 enum OrganizationModule {
   INSCRICOES
+  LOJA
+  GALERIA
 
   @@schema("app_v3")
 }
@@ -2495,6 +2535,7 @@ enum TournamentMatchStatus {
   SCHEDULED
   IN_PROGRESS
   DONE
+  DISPUTED
   CANCELLED
 
   @@schema("app_v3")

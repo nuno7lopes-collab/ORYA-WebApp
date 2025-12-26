@@ -39,7 +39,7 @@ export default async function EventLivePage({ params }: { params: Promise<{ slug
         <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.05),transparent_35%,rgba(0,0,0,0.65))] mix-blend-screen" />
       </div>
 
-      <section className="relative mx-auto flex max-w-6xl flex-col gap-4 px-4 py-10">
+      <section className="relative orya-page-width flex flex-col gap-4 px-4 py-10">
         <div className="flex items-center justify-between">
           <Link
             href={`/eventos/${slug}`}

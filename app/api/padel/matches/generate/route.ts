@@ -94,6 +94,7 @@ export async function POST(req: NextRequest) {
   if (!body) return NextResponse.json({ ok: false, error: "INVALID_BODY" }, { status: 400 });
 
   const eventId = typeof body.eventId === "number" ? body.eventId : Number(body.eventId);
+  const categoryId = typeof body.categoryId === "number" ? body.categoryId : Number(body.categoryId);
   const phase = typeof body.phase === "string" ? body.phase.toUpperCase() : "GROUPS";
   const format: PadelFormat =
     typeof body.format === "string" && Object.values(PadelFormat).includes(body.format as PadelFormat)
@@ -108,6 +109,18 @@ export async function POST(req: NextRequest) {
     select: { id: true, organizerId: true },
   });
   if (!event || !event.organizerId) return NextResponse.json({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+
+  const resolvedCategoryId = Number.isFinite(categoryId) ? categoryId : null;
+  if (resolvedCategoryId) {
+    const link = await prisma.padelEventCategoryLink.findFirst({
+      where: { eventId, padelCategoryId: resolvedCategoryId, isEnabled: true },
+      select: { id: true },
+    });
+    if (!link) {
+      return NextResponse.json({ ok: false, error: "CATEGORY_NOT_AVAILABLE" }, { status: 400 });
+    }
+  }
+  const matchCategoryFilter = resolvedCategoryId ? { categoryId: resolvedCategoryId } : {};
 
   const { organizer, membership } = await getActiveOrganizerForUser(user.id, {
     organizerId: event.organizerId,
@@ -138,6 +151,7 @@ export async function POST(req: NextRequest) {
     where: {
       eventId,
       pairingStatus: "COMPLETE",
+      ...matchCategoryFilter,
     },
     select: { id: true, slots: { select: { profileId: true } } },
     orderBy: { createdAt: "asc" },
@@ -159,7 +173,7 @@ export async function POST(req: NextRequest) {
   if (format === "GRUPOS_ELIMINATORIAS" && phase !== "KNOCKOUT") {
     // Evitar duplicação: se já existem jogos de grupos, não gera de novo
     const existingGroupMatch = await prisma.padelMatch.findFirst({
-      where: { eventId, roundType: "GROUPS" },
+      where: { eventId, roundType: "GROUPS", ...matchCategoryFilter },
       select: { id: true },
     });
     if (existingGroupMatch) {
@@ -209,6 +223,7 @@ export async function POST(req: NextRequest) {
           const staffLabel = staff ? staff.email || staff.userId || staff.role || "Staff" : null;
           matchesToCreate.push({
             eventId,
+            categoryId: resolvedCategoryId ?? null,
             pairingAId: pair.a,
             pairingBId: pair.b,
             status: "PENDING",
@@ -249,7 +264,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "OVERRIDE_NOT_ALLOWED" }, { status: 403 });
     }
     const existingKo = await prisma.padelMatch.findFirst({
-      where: { eventId, roundType: "KNOCKOUT" },
+      where: { eventId, roundType: "KNOCKOUT", ...matchCategoryFilter },
       select: { id: true },
     });
     if (existingKo) {
@@ -264,7 +279,7 @@ export async function POST(req: NextRequest) {
 
     // Buscar standings de grupos (necessário todos os jogos concluídos)
     const groupMatches = await prisma.padelMatch.findMany({
-      where: { eventId, roundType: "GROUPS" },
+      where: { eventId, roundType: "GROUPS", ...matchCategoryFilter },
       select: { id: true, groupLabel: true, scoreSets: true, status: true, pairingAId: true, pairingBId: true },
     });
     if (groupMatches.length === 0) {
@@ -440,6 +455,7 @@ export async function POST(req: NextRequest) {
       const court = courtsList[idx % courtsList.length];
       matchCreateData.push({
         eventId,
+        categoryId: resolvedCategoryId ?? null,
         pairingAId: p.a,
         pairingBId: p.b,
         status: "PENDING",
@@ -466,6 +482,7 @@ export async function POST(req: NextRequest) {
       for (let i = 0; i < nextCount; i += 1) {
         matchCreateData.push({
           eventId,
+          categoryId: resolvedCategoryId ?? null,
           pairingAId: null,
           pairingBId: null,
           status: "PENDING",
@@ -530,7 +547,7 @@ export async function POST(req: NextRequest) {
   })();
 
   await prisma.$transaction(async (tx) => {
-    await tx.padelMatch.deleteMany({ where: { eventId } });
+    await tx.padelMatch.deleteMany({ where: { eventId, ...matchCategoryFilter } });
     await tx.padelMatch.createMany({
       data: pairs.map((p, idx) => {
         const court = courtsList[idx % courtsList.length];
@@ -538,6 +555,7 @@ export async function POST(req: NextRequest) {
         const staffLabel = staff ? staff.email || staff.userId || staff.role || "Staff" : null;
         return {
           eventId,
+          categoryId: resolvedCategoryId ?? null,
           pairingAId: p.a,
           pairingBId: p.b,
           status: "PENDING",
@@ -550,7 +568,7 @@ export async function POST(req: NextRequest) {
   });
 
   const matches = await prisma.padelMatch.findMany({
-    where: { eventId },
+    where: { eventId, ...matchCategoryFilter },
     orderBy: [{ startTime: "asc" }, { id: "asc" }],
   });
 

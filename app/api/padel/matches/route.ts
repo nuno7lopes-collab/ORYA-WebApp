@@ -33,7 +33,9 @@ export async function GET(req: NextRequest) {
   if (!user) return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const eventId = Number(req.nextUrl.searchParams.get("eventId"));
+  const categoryId = Number(req.nextUrl.searchParams.get("categoryId"));
   if (!Number.isFinite(eventId)) return NextResponse.json({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
+  const matchCategoryFilter = Number.isFinite(categoryId) ? { categoryId } : {};
 
   const event = await prisma.event.findUnique({
     where: { id: eventId },
@@ -48,7 +50,7 @@ export async function GET(req: NextRequest) {
   if (!organizer && !isStaff) return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
   const matches = await prisma.padelMatch.findMany({
-    where: { eventId },
+    where: { eventId, ...matchCategoryFilter },
     include: {
       pairingA: { include: { slots: { include: { playerProfile: true } } } },
       pairingB: { include: { slots: { include: { playerProfile: true } } } },
@@ -161,7 +163,11 @@ export async function POST(req: NextRequest) {
     // Auto-avanço de vencedores no bracket (baseado em ordem dos jogos por ronda)
     if (updated.roundType === "KNOCKOUT") {
       const koMatches = await prisma.padelMatch.findMany({
-        where: { eventId: updated.eventId, roundType: "KNOCKOUT" },
+        where: {
+          eventId: updated.eventId,
+          roundType: "KNOCKOUT",
+          ...(updated.categoryId ? { categoryId: updated.categoryId } : {}),
+        },
         select: { id: true, roundLabel: true, pairingAId: true, pairingBId: true, winnerPairingId: true },
         orderBy: [{ roundLabel: "asc" }, { id: "asc" }],
       });

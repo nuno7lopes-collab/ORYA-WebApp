@@ -120,47 +120,49 @@ export default function ResaleCheckoutPage() {
 
   return (
     <div className="min-h-screen orya-body-bg text-white px-4 py-10 flex justify-center">
-      <div className="w-full max-w-xl space-y-6">
-        <div>
-          <p className="text-[11px] uppercase tracking-[0.18em] text-white/60">Revenda</p>
-          <h1 className="text-2xl font-semibold">Comprar bilhete de utilizador</h1>
-          <p className="text-sm text-white/70">
-            Pagamento seguro via ORYA. Se o vendedor já cancelou a oferta, o pagamento falha automaticamente.
-          </p>
-        </div>
-
-        {preview && (
-          <div className="rounded-2xl border border-white/15 bg-white/5 p-4 space-y-1">
-            <p className="text-xs text-white/60">Evento</p>
-            <p className="text-sm font-semibold text-white">{preview.title}</p>
-            <p className="text-xs text-white/60">Bilhete</p>
-            <p className="text-sm text-white">{preview.ticketTypeName ?? "Bilhete ORYA"}</p>
-            <p className="text-xs text-white/60">Preço pedido</p>
-            <p className="text-base font-semibold text-white">
-              {new Intl.NumberFormat("pt-PT", {
-                style: "currency",
-                currency: preview.currency || "EUR",
-              }).format(preview.priceCents / 100)}
+      <div className="orya-page-width flex justify-center">
+        <div className="w-full max-w-xl space-y-6">
+          <div>
+            <p className="text-[11px] uppercase tracking-[0.18em] text-white/60">Revenda</p>
+            <h1 className="text-2xl font-semibold">Comprar bilhete de utilizador</h1>
+            <p className="text-sm text-white/70">
+              Pagamento seguro via ORYA. Se o vendedor já cancelou a oferta, o pagamento falha automaticamente.
             </p>
-            {preview.sellerName && (
-              <p className="text-xs text-white/60">Vendedor: {preview.sellerName}</p>
-            )}
           </div>
-        )}
 
-        {error && (
-          <div className="rounded-xl border border-red-400/40 bg-red-500/10 p-3 text-sm text-red-100">
-            {error}
-          </div>
-        )}
+          {preview && (
+            <div className="rounded-2xl border border-white/15 bg-white/5 p-4 space-y-1">
+              <p className="text-xs text-white/60">Evento</p>
+              <p className="text-sm font-semibold text-white">{preview.title}</p>
+              <p className="text-xs text-white/60">Bilhete</p>
+              <p className="text-sm text-white">{preview.ticketTypeName ?? "Bilhete ORYA"}</p>
+              <p className="text-xs text-white/60">Preço pedido</p>
+              <p className="text-base font-semibold text-white">
+                {new Intl.NumberFormat("pt-PT", {
+                  style: "currency",
+                  currency: preview.currency || "EUR",
+                }).format(preview.priceCents / 100)}
+              </p>
+              {preview.sellerName && (
+                <p className="text-xs text-white/60">Vendedor: {preview.sellerName}</p>
+              )}
+            </div>
+          )}
 
-        {loading && <p className="text-sm text-white/65">A preparar checkout…</p>}
+          {error && (
+            <div className="rounded-xl border border-red-400/40 bg-red-500/10 p-3 text-sm text-red-100">
+              {error}
+            </div>
+          )}
 
-        {!loading && clientSecret && stripePromise && (
-          <Elements stripe={stripePromise} options={{ clientSecret, appearance }}>
-            <PaymentForm onSuccess={() => router.push("/me/carteira?checkout=success&mode=resale")} />
-          </Elements>
-        )}
+          {loading && <p className="text-sm text-white/65">A preparar checkout…</p>}
+
+          {!loading && clientSecret && stripePromise && (
+            <Elements stripe={stripePromise} options={{ clientSecret, appearance }}>
+              <PaymentForm onSuccess={() => router.push("/me/carteira?checkout=success&mode=resale")} />
+            </Elements>
+          )}
+        </div>
       </div>
     </div>
   );

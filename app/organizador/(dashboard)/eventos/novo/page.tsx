@@ -2394,7 +2394,7 @@ export default function NewOrganizerEventPage() {
       </div>
 
       {creationSuccess && (
-        <div className="fixed bottom-6 right-6 z-40 w-[320px] max-w-full rounded-2xl border border-emerald-400/50 bg-emerald-500/15 p-4 shadow-[0_18px_45px_rgba(0,0,0,0.55)] text-emerald-50">
+        <div className="fixed bottom-6 right-6 z-[var(--z-popover)] w-[320px] max-w-full rounded-2xl border border-emerald-400/50 bg-emerald-500/15 p-4 shadow-[0_18px_45px_rgba(0,0,0,0.55)] text-emerald-50">
           <div className="flex items-start justify-between gap-2">
             <div>
               <p className="text-sm font-semibold">Evento criado</p>
@@ -2438,7 +2438,7 @@ export default function NewOrganizerEventPage() {
       )}
 
       {toasts.length > 0 && (
-        <div className="pointer-events-none fixed bottom-6 right-6 z-40 flex flex-col gap-2">
+        <div className="pointer-events-none fixed bottom-6 right-6 z-[var(--z-popover)] flex flex-col gap-2">
           {toasts.map((toast) => (
             <div
               key={toast.id}
