@@ -59,7 +59,7 @@ export default function InviteGateClient({
       const res = await fetch(`/api/eventos/${encodeURIComponent(slug)}/invites/check`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ identifier: trimmed }),
+        body: JSON.stringify({ identifier: trimmed, scope: "PUBLIC" }),
       });
       const json = (await res.json().catch(() => null)) as CheckResponse | null;
       if (!res.ok || !json?.ok) {

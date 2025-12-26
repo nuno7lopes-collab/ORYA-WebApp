@@ -73,7 +73,7 @@ export default function OrganizerSettingsPage({ embedded }: OrganizerSettingsPag
   const organizer = data?.organizer ?? null;
   const profile = data?.profile ?? null;
   const contactEmailFromAccount = data?.contactEmail ?? null;
-  const redirectTo = embedded ? "/organizador?tab=manage&section=settings" : "/organizador/settings";
+  const redirectTo = "/organizador/settings";
 
   const [organizationKind, setOrganizationKind] = useState("PESSOA_SINGULAR");
   const [entityName, setEntityName] = useState("");

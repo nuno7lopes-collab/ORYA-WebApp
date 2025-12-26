@@ -573,7 +573,8 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
     setSwitchingTab(true);
     setActiveTab(section);
     const params = new URLSearchParams(searchParams?.toString() || "");
-    params.set("tab", "padel");
+    params.set("tab", "manage");
+    params.set("section", "padel-hub");
     params.set("padel", section);
     router.replace(`/organizador?${params.toString()}`, { scroll: false });
     setLastAction(null);

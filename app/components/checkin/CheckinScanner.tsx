@@ -24,6 +24,8 @@ type Props = {
   title?: string;
   subtitle?: string;
   allowOrganizerEvents?: boolean;
+  embedded?: boolean;
+  showBackLink?: boolean;
 };
 
 const STATUS_META: Record<
@@ -107,6 +109,8 @@ export function CheckinScanner({
   title = "Modo Receção",
   subtitle = "Valida o Pass ORYA em 2 passos: pré-visualizar e confirmar.",
   allowOrganizerEvents = false,
+  embedded = false,
+  showBackLink = true,
 }: Props) {
   const search = useSearchParams();
   const eventIdRaw = search.get("eventId");
@@ -259,20 +263,29 @@ export function CheckinScanner({
     setError(null);
   };
 
-  return (
-    <main className="relative orya-body-bg min-h-screen w-full overflow-hidden text-white">
-      <div className="pointer-events-none fixed inset-0" aria-hidden="true">
-        <div className="absolute -top-36 right-[-140px] h-[420px] w-[420px] rounded-full bg-[radial-gradient(circle_at_35%_35%,rgba(255,0,200,0.28),transparent_60%)] opacity-80 blur-3xl" />
-        <div className="absolute top-[22vh] -left-40 h-[360px] w-[360px] rounded-full bg-[radial-gradient(circle_at_30%_30%,rgba(107,255,255,0.22),transparent_60%)] opacity-80 blur-3xl" />
-        <div className="absolute bottom-[-180px] right-[12%] h-[420px] w-[420px] rounded-full bg-[radial-gradient(circle_at_40%_40%,rgba(22,70,245,0.25),transparent_60%)] opacity-70 blur-3xl" />
-        <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.05),transparent_35%,rgba(0,0,0,0.65))] mix-blend-screen" />
-      </div>
+  const shellClass = embedded
+    ? "relative w-full text-white"
+    : "relative orya-body-bg min-h-screen w-full overflow-hidden text-white";
+  const containerClass = embedded ? "relative mx-auto w-full max-w-5xl space-y-6" : "relative mx-auto flex max-w-4xl flex-col gap-6 px-4 py-10";
 
-      <section className="relative mx-auto flex max-w-4xl flex-col gap-6 px-4 py-10">
+  return (
+    <div className={shellClass}>
+      {!embedded && (
+        <div className="pointer-events-none fixed inset-0" aria-hidden="true">
+          <div className="absolute -top-36 right-[-140px] h-[420px] w-[420px] rounded-full bg-[radial-gradient(circle_at_35%_35%,rgba(255,0,200,0.28),transparent_60%)] opacity-80 blur-3xl" />
+          <div className="absolute top-[22vh] -left-40 h-[360px] w-[360px] rounded-full bg-[radial-gradient(circle_at_30%_30%,rgba(107,255,255,0.22),transparent_60%)] opacity-80 blur-3xl" />
+          <div className="absolute bottom-[-180px] right-[12%] h-[420px] w-[420px] rounded-full bg-[radial-gradient(circle_at_40%_40%,rgba(22,70,245,0.25),transparent_60%)] opacity-70 blur-3xl" />
+          <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.05),transparent_35%,rgba(0,0,0,0.65))] mix-blend-screen" />
+        </div>
+      )}
+
+      <section className={containerClass}>
         <div className="flex flex-col gap-3 rounded-3xl border border-white/15 bg-white/5 p-6 shadow-[0_24px_70px_rgba(0,0,0,0.7)] backdrop-blur-2xl">
-          <a href={backHref} className="text-xs uppercase tracking-[0.2em] text-white/60 hover:text-white">
-            ← {backLabel}
-          </a>
+          {showBackLink && (
+            <a href={backHref} className="text-xs uppercase tracking-[0.2em] text-white/60 hover:text-white">
+              ← {backLabel}
+            </a>
+          )}
           <h1 className="text-3xl font-semibold">{title}</h1>
           <p className="text-sm text-white/70">{subtitle}</p>
         </div>
@@ -390,6 +403,6 @@ export function CheckinScanner({
           </div>
         </div>
       </section>
-    </main>
+    </div>
   );
 }

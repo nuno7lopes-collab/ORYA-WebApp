@@ -478,17 +478,18 @@ model OrganizerOwnerTransfer {
   @@schema("app_v3")
 }
 
-/// Evento/Experiência — único tipo com campo `type` a separar
+/// Evento — todo o conteúdo público é tratado como evento de organização
 model Event {
   id                                Int                     @id @default(autoincrement())
   slug                              String                  @unique
   title                             String
   description                       String
-  /// "EXPERIENCE" (user) ou "ORGANIZER_EVENT" (organizador)
-  type                              EventType               @default(EXPERIENCE)
+  /// Tipo interno (mantido por compatibilidade)
+  type                              EventType               @default(ORGANIZER_EVENT)
   /// Template de apoio (padel, evento padrão)
   templateType                      EventTemplateType?      @map("template_type")
   liveHubMode                        LiveHubMode              @default(DEFAULT) @map("live_hub_mode")
+  liveHubVisibility                 LiveHubVisibility       @default(PUBLIC) @map("live_hub_visibility")
   /// Liga ao Organizer quando é evento de organizador
   organizerId                       Int?                    @map("organizer_id")
   startsAt                          DateTime                @map("starts_at")
@@ -500,6 +501,10 @@ model Event {
   longitude                         Float?                  @map("lng")
   isFree                            Boolean                 @default(false) @map("is_free")
   inviteOnly                        Boolean                 @default(false) @map("invite_only")
+  publicAccessMode                  EventPublicAccessMode   @default(OPEN) @map("public_access_mode")
+  participantAccessMode             EventParticipantAccessMode @default(NONE) @map("participant_access_mode")
+  publicTicketTypeIds               Int[]                   @default([]) @map("public_ticket_type_ids")
+  participantTicketTypeIds          Int[]                   @default([]) @map("participant_ticket_type_ids")
   status                            EventStatus             @default(DRAFT)
   timezone                          String                  @default("Europe/Lisbon")
   coverImageUrl                     String?                 @map("cover_image_url")
@@ -557,14 +562,16 @@ model EventInvite {
   invitedByUserId  String   @map("invited_by_user_id") @db.Uuid
   targetIdentifier String   @map("target_identifier") @db.Citext
   targetUserId     String?  @map("target_user_id") @db.Uuid
+  scope            EventInviteScope @default(PUBLIC) @map("scope")
   createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
   event            Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
   invitedBy        Profile  @relation("EventInviteInviter", fields: [invitedByUserId], references: [id], onDelete: Cascade)
   targetUser       Profile? @relation("EventInviteTarget", fields: [targetUserId], references: [id], onDelete: Cascade)
 
-  @@unique([eventId, targetIdentifier], map: "event_invites_event_identifier_uq")
+  @@unique([eventId, targetIdentifier, scope], map: "event_invites_event_identifier_uq")
   @@index([eventId], map: "event_invites_event_idx")
+  @@index([eventId, scope], map: "event_invites_event_scope_idx")
   @@index([targetUserId], map: "event_invites_target_idx")
   @@map("event_invites")
   @@schema("app_v3")
@@ -2192,7 +2199,6 @@ enum OrganizerStatus {
 }
 
 enum EventType {
-  EXPERIENCE
   ORGANIZER_EVENT
 
   @@schema("app_v3")
@@ -2201,6 +2207,21 @@ enum EventType {
 enum Visibility {
   PUBLIC
   PRIVATE
+
+  @@schema("app_v3")
+}
+
+enum LiveHubVisibility {
+  PUBLIC
+  PRIVATE
+  DISABLED
+
+  @@schema("app_v3")
+}
+
+enum EventInviteScope {
+  PUBLIC
+  PARTICIPANT
 
   @@schema("app_v3")
 }
@@ -2321,6 +2342,23 @@ enum EventStatus {
   CANCELLED
   FINISHED
   DATE_CHANGED
+
+  @@schema("app_v3")
+}
+
+enum EventPublicAccessMode {
+  OPEN
+  TICKET
+  INVITE
+
+  @@schema("app_v3")
+}
+
+enum EventParticipantAccessMode {
+  NONE
+  TICKET
+  INSCRIPTION
+  INVITE
 
   @@schema("app_v3")
 }

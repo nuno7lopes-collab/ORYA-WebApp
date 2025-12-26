@@ -36,40 +36,6 @@ export async function ensureAuthenticated(
   return user;
 }
 
-/**
- * Tipo mínimo de evento necessário para validações de ownership.
- * Não depende de Prisma, apenas da forma dos campos usados nas checks.
- */
-export type BasicEventForSecurity = {
-  id: string;
-  ownerUserId: string;
-  type: string;
-};
-
-/**
- * Garante que o utilizador é o dono de um evento do utilizador (event.type = "EXPERIENCE").
- * - Lança "EVENT_NOT_FOUND" se o evento vier nulo/undefined.
- * - Lança "NOT_USER_EVENT" se não for um evento do utilizador.
- * - Lança "NOT_EVENT_OWNER" se o ownerUserId não coincidir com o userId.
- * Se tudo estiver OK, não devolve nada (return void).
- */
-export function assertUserEventOwner(
-  userId: string,
-  event: BasicEventForSecurity | null | undefined
-): void {
-  if (!event) {
-    throw new Error("EVENT_NOT_FOUND");
-  }
-
-  if (event.type !== "EXPERIENCE") {
-    throw new Error("NOT_USER_EVENT");
-  }
-
-  if (event.ownerUserId !== userId) {
-    throw new Error("NOT_EVENT_OWNER");
-  }
-}
-
 export function isOrganizer(
   profile:
     | { roles?: string[] | null }

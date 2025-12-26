@@ -7,11 +7,9 @@ export async function GET(_req: NextRequest) {
     const events = await prisma.event.findMany({
       where: {
         status: "PUBLISHED",
-        OR: [
-          { organizerId: null },
-          { organizer: { status: "ACTIVE", publicListingEnabled: true } },
-          { organizer: { status: "ACTIVE", publicListingEnabled: null } },
-        ],
+        isDeleted: false,
+        organizerId: { not: null },
+        organizer: { status: "ACTIVE", publicListingEnabled: { not: false } },
       },
       orderBy: { startsAt: "asc" },
     });

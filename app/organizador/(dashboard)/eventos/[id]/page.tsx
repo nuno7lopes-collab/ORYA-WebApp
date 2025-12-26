@@ -17,10 +17,12 @@ type PageProps = {
 
 type EventWithTickets = {
   id: number;
+  organizerId: number | null;
   slug: string;
   title: string;
   description: string;
   templateType: string | null;
+  tournament?: { id: number } | null;
   startsAt: Date;
   endsAt: Date;
   locationName: string | null;
@@ -68,11 +70,14 @@ export default async function OrganizerEventDetailPage({ params }: PageProps) {
   }
 
   // 2) Buscar evento + tipos de bilhete (waves)
-      const event = (await prisma.event.findUnique({
+  const event = (await prisma.event.findUnique({
         where: {
           id: eventId,
         },
         include: {
+          tournament: {
+            select: { id: true },
+          },
           ticketTypes: {
             orderBy: {
               sortOrder: "asc",
@@ -189,7 +194,7 @@ export default async function OrganizerEventDetailPage({ params }: PageProps) {
       }
     | null;
   const categoriesMeta = advancedSettings?.categoriesMeta ?? [];
-  const backAnchor = event.templateType === "PADEL" ? "torneios" : "eventos";
+  const backAnchor = "eventos";
 
   const timeline = [
     { key: "OCULTO", label: "Oculto", active: ["DRAFT"].includes(event.status), done: event.status !== "DRAFT" },
@@ -214,6 +219,20 @@ export default async function OrganizerEventDetailPage({ params }: PageProps) {
             >
               ← Voltar à lista
             </a>
+            <a
+              href={`/organizador/eventos/${event.id}/live`}
+              className={CTA_SECONDARY}
+            >
+              Preparar Live
+            </a>
+            {event.tournament?.id && (
+              <a
+                href={`/organizador/eventos/${event.id}/live?tab=preview&edit=1`}
+                className={CTA_SECONDARY}
+              >
+                Live Ops
+              </a>
+            )}
             <a
               href={`/eventos/${event.slug}`}
               className={CTA_PRIMARY}

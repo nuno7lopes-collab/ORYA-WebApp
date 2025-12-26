@@ -22,8 +22,9 @@ async function ensureOrganizerAccess(userId: string, eventId: number) {
   return Boolean(member);
 }
 
-export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
-  const id = Number(params?.id);
+export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const resolved = await params;
+  const id = Number(resolved?.id);
   if (!Number.isFinite(id)) return NextResponse.json({ ok: false, error: "INVALID_ID" }, { status: 400 });
 
   const supabase = await createSupabaseServer();

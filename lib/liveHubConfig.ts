@@ -3,25 +3,27 @@ import { OrganizationCategory, LiveHubMode } from "@prisma/client";
 export type LiveHubModule =
   | "HERO"
   | "VIDEO"
+  | "NOW_PLAYING"
   | "BRACKET"
   | "RESULTS"
   | "NEXT_MATCHES"
   | "CHAMPION"
   | "SUMMARY"
   | "UPDATES"
-  | "CTA";
+  | "CTA"
+  | "SPONSORS";
 
 export type LiveHubViewerRole = "PUBLIC" | "PARTICIPANT" | "ORGANIZER";
 
 const DEFAULT_MODULES: Record<OrganizationCategory, LiveHubModule[]> = {
   PADEL: ["HERO", "VIDEO", "NEXT_MATCHES", "RESULTS", "BRACKET"],
-  EVENTOS: ["HERO", "SUMMARY", "CTA"],
+  EVENTOS: ["HERO", "VIDEO", "NOW_PLAYING", "NEXT_MATCHES", "RESULTS", "BRACKET", "SPONSORS"],
   VOLUNTARIADO: ["HERO", "SUMMARY", "CTA"],
 };
 
 const PREMIUM_MODULES: Record<OrganizationCategory, LiveHubModule[]> = {
   PADEL: ["HERO", "VIDEO", "NEXT_MATCHES", "RESULTS", "BRACKET"],
-  EVENTOS: ["HERO", "VIDEO", "NEXT_MATCHES", "RESULTS", "BRACKET", "CHAMPION"],
+  EVENTOS: ["HERO", "VIDEO", "NOW_PLAYING", "NEXT_MATCHES", "RESULTS", "BRACKET", "SPONSORS"],
   VOLUNTARIADO: ["HERO", "SUMMARY", "CTA"],
 };
 

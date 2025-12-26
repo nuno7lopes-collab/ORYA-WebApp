@@ -41,9 +41,9 @@ export async function POST(req: NextRequest, { params }: { params: { slug: strin
       return NextResponse.json({ ok: false, error: "SLUG_REQUIRED" }, { status: 400 });
     }
 
-    let body: { identifier?: string } | null = null;
+    let body: { identifier?: string; scope?: string } | null = null;
     try {
-      body = (await req.json()) as { identifier?: string };
+      body = (await req.json()) as { identifier?: string; scope?: string };
     } catch {
       return NextResponse.json({ ok: false, error: "BODY_INVALID" }, { status: 400 });
     }
@@ -53,6 +53,8 @@ export async function POST(req: NextRequest, { params }: { params: { slug: strin
     if (!normalized.ok) {
       return NextResponse.json({ ok: false, error: normalized.error }, { status: 400 });
     }
+    const scopeRaw = typeof body?.scope === "string" ? body.scope.trim().toUpperCase() : "";
+    const scope = scopeRaw === "PARTICIPANT" ? "PARTICIPANT" : "PUBLIC";
 
     const event = await prisma.event.findUnique({
       where: { slug },
@@ -63,7 +65,7 @@ export async function POST(req: NextRequest, { params }: { params: { slug: strin
     }
 
     const invite = await prisma.eventInvite.findFirst({
-      where: { eventId: event.id, targetIdentifier: normalized.normalized },
+      where: { eventId: event.id, targetIdentifier: normalized.normalized, scope },
       select: { id: true },
     });
 

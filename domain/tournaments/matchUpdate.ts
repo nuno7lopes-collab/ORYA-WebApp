@@ -1,10 +1,15 @@
 import { prisma } from "@/lib/prisma";
 import { Prisma, TournamentMatchStatus } from "@prisma/client";
-import { validateScore, ScorePayload, canEditMatch } from "@/domain/tournaments/matchRules";
+import {
+  validateScore,
+  validateGoalScore,
+  MatchScorePayload,
+  canEditMatch,
+} from "@/domain/tournaments/matchRules";
 
 type UpdateResultInput = {
   matchId: number;
-  score?: ScorePayload;
+  score?: MatchScorePayload;
   status?: TournamentMatchStatus;
   explicitWinnerPairingId?: number | null;
   expectedUpdatedAt?: Date | string | null;
@@ -41,23 +46,40 @@ export async function updateMatchResult({
     }
 
     let winnerSide: "A" | "B" | null = null;
-    let normalizedScore: ScorePayload | undefined = undefined;
+    let normalizedScore: MatchScorePayload | undefined = undefined;
+    let resolvedStatus: TournamentMatchStatus | undefined = undefined;
     if (score) {
-      const validation = validateScore(score);
-      if (!validation.ok && !force) {
-        const err = validation;
-        const error = err.code === "NO_WINNER" ? "INVALID_SCORE" : err.code;
-        throw new Error(error);
-      }
-      if (validation.ok) {
-        winnerSide = validation.winner;
-        normalizedScore = validation.normalized;
+      if (score.sets) {
+        const validation = validateScore({ sets: score.sets });
+        if (!validation.ok && !force) {
+          const err = validation;
+          const error = err.code === "NO_WINNER" ? "INVALID_SCORE" : err.code;
+          throw new Error(error);
+        }
+        if (validation.ok) {
+          winnerSide = validation.winner;
+          normalizedScore = validation.normalized;
+        }
+      } else if (score.goals) {
+        const validation = validateGoalScore(score.goals);
+        if (!validation.ok && !force) {
+          throw new Error(validation.code);
+        }
+        if (validation.ok) {
+          winnerSide = validation.winner;
+          normalizedScore = { goals: validation.normalized };
+          resolvedStatus = validation.status;
+        }
+      } else if (!force) {
+        throw new Error("INVALID_SCORE");
       }
     }
 
     const winnerPairingId =
-      explicitWinnerPairingId ||
+      explicitWinnerPairingId ??
       (winnerSide === "A" ? current.pairing1Id ?? null : winnerSide === "B" ? current.pairing2Id ?? null : null);
+    const shouldUpdateWinner =
+      typeof explicitWinnerPairingId !== "undefined" || typeof score !== "undefined";
     const before = {
       status: current.status,
       score: current.score,
@@ -65,13 +87,12 @@ export async function updateMatchResult({
       pairing2Id: current.pairing2Id,
     };
 
-    const newStatus: TournamentMatchStatus = status ?? "DONE";
+    const newStatus: TournamentMatchStatus = status ?? resolvedStatus ?? "DONE";
     const updated = await tx.tournamentMatch.update({
       where: { id: matchId },
       data: {
         status: newStatus,
         score: normalizedScore ?? score ?? current.score,
-        winnerPairingId: winnerPairingId ?? undefined,
       },
     });
 
@@ -92,8 +113,8 @@ export async function updateMatchResult({
         payloadBefore: before,
         payloadAfter: {
           status: newStatus,
-          score: score ?? current.score,
-          propagated: Boolean(winner && updated.nextMatchId),
+          score: normalizedScore ?? score ?? current.score,
+          propagated: Boolean(winnerPairingId && updated.nextMatchId),
         },
       },
     });

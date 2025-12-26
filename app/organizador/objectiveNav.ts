@@ -33,7 +33,7 @@ const CATEGORY_META: Record<
     createLabel: "Criar evento",
     manageLabel: "Eventos",
     createHref: "/organizador/eventos/novo?preset=padel",
-    manageSection: "torneios",
+    manageSection: "eventos",
   },
   VOLUNTARIADO: {
     createLabel: "Criar evento",
@@ -92,21 +92,21 @@ export function getObjectiveSections(
       label: "Eventos",
       href: "/organizador?tab=manage&section=eventos",
     });
-    if (!isDashboard) {
+    sections.push({
+      id: "livehub",
+      label: "LiveHub",
+      href: "/organizador?tab=manage&section=livehub",
+    });
+    sections.push({
+      id: "checkin",
+      label: "Check-in",
+      href: "/organizador?tab=manage&section=checkin",
+    });
+    if (context.category === "PADEL") {
       sections.push({
-        id: "checkin",
-        label: "Check-in",
-        href: "/organizador/scan",
-      });
-      sections.push({
-        id: "staff",
-        label: "Staff",
-        href: "/organizador/staff",
-      });
-      sections.push({
-        id: "settings",
-        label: "Definições",
-        href: "/organizador/settings",
+        id: "padel-hub",
+        label: "Hub Padel",
+        href: "/organizador?tab=manage&section=padel-hub",
       });
     }
     return sections;

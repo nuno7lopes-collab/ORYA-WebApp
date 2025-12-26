@@ -1,7 +1,7 @@
 // app/eventos/[slug]/page.tsx
 import { prisma } from "@/lib/prisma";
 import { CheckoutProvider } from "@/app/components/checkout/contextoCheckout";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { headers } from "next/headers";
 import WavesSectionClient, { type WaveTicket, type WaveStatus } from "./WavesSectionClient";
 import Link from "next/link";
@@ -24,6 +24,15 @@ type EventPageParamsInput = EventPageParams | Promise<EventPageParams>;
 type EventPageSearchParams = Record<string, string | string[] | undefined>;
 type EventPageSearchParamsInput = EventPageSearchParams | Promise<EventPageSearchParams>;
 
+function slugify(input: string): string {
+  return input
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
 export async function generateMetadata(
   { params }: { params: EventPageParamsInput },
 ): Promise<Metadata> {
@@ -37,16 +46,31 @@ export async function generateMetadata(
     };
   }
 
-  const event = await prisma.event.findUnique({
+  let event = await prisma.event.findUnique({
     where: { slug },
     select: {
       title: true,
       description: true,
       locationName: true,
+      organizerId: true,
     },
   });
-
   if (!event) {
+    const normalized = slugify(slug);
+    if (normalized && normalized !== slug) {
+      event = await prisma.event.findUnique({
+        where: { slug: normalized },
+        select: {
+          title: true,
+          description: true,
+          locationName: true,
+          organizerId: true,
+        },
+      });
+    }
+  }
+
+  if (!event || !event.organizerId) {
     return {
       title: "Evento não encontrado | ORYA",
       description: "Este evento já não está disponível.",
@@ -193,13 +217,37 @@ export default async function EventPage({
       },
     },
   });
-  if (!event) {
+  if (!event || !event.organizerId) {
+    const normalized = slugify(slug);
+    if (normalized && normalized !== slug) {
+      const fallback = await prisma.event.findUnique({
+        where: { slug: normalized },
+        include: {
+          ticketTypes: true,
+          padelTournamentConfig: true,
+          organizer: {
+            select: {
+              username: true,
+              publicName: true,
+              businessName: true,
+              brandingAvatarUrl: true,
+              publicListingEnabled: true,
+              status: true,
+            },
+          },
+        },
+      });
+      if (fallback && fallback.organizerId) {
+        redirect(`/eventos/${fallback.slug}`);
+      }
+    }
     notFound();
   }
   if (event.isTest && !isAdmin) {
     notFound();
   }
-  const inviteOnly = event.inviteOnly === true;
+  const publicAccessMode = event.publicAccessMode ?? (event.inviteOnly ? "INVITE" : "OPEN");
+  const inviteOnly = publicAccessMode === "INVITE";
   const userEmailNormalized = user ? normalizeEmail(user.email ?? null) : null;
   const usernameNormalized = profile?.username ? sanitizeUsername(profile.username) : null;
   const hasUsername = Boolean(usernameNormalized);
@@ -210,7 +258,7 @@ export default async function EventPage({
     if (usernameNormalized) identifiers.push(usernameNormalized);
     if (identifiers.length > 0) {
       const invite = await prisma.eventInvite.findFirst({
-        where: { eventId: event.id, targetIdentifier: { in: identifiers } },
+        where: { eventId: event.id, targetIdentifier: { in: identifiers }, scope: "PUBLIC" },
         select: { id: true },
       });
       if (invite) {
@@ -255,6 +303,7 @@ export default async function EventPage({
   const organizerAvatarUrl = event.organizer?.brandingAvatarUrl?.trim() || null;
   const organizerInitials = initialsFromName(safeOrganizer);
   const organizerHandle = organizerUsername ? `@${organizerUsername}` : null;
+  const liveHubVisibility = event.liveHubVisibility ?? "PUBLIC";
 
   const eventUpdates = await prisma.organizationUpdate.findMany({
     where: { eventId: event.id, status: "PUBLISHED" },
@@ -854,20 +903,28 @@ export default async function EventPage({
               </div>
             </section>
 
-            {isPadel && (
-              <section className="rounded-3xl border border-white/15 bg-white/5 p-6 shadow-[0_24px_60px_rgba(0,0,0,0.5)] backdrop-blur-2xl md:p-8" id="live">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.2em] text-white/60">
-                      <span>Live</span>
-                      <span className="h-1 w-1 rounded-full bg-white/30" />
-                      <span>Jogos e resultados</span>
-                    </div>
-                    <h3 className="mt-3 text-xl font-semibold">Acompanhamento ao vivo</h3>
-                    <p className="mt-2 text-xs text-white/60">
-                      Acompanha jogos, brackets e ranking em tempo real.
-                    </p>
+            <section className="rounded-3xl border border-white/15 bg-white/5 p-6 shadow-[0_24px_60px_rgba(0,0,0,0.5)] backdrop-blur-2xl md:p-8" id="live">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.2em] text-white/60">
+                    <span>Live</span>
+                    <span className="h-1 w-1 rounded-full bg-white/30" />
+                    <span>{isPadel ? "Jogos e resultados" : "Atualizações em tempo real"}</span>
+                    {liveHubVisibility !== "PUBLIC" && (
+                      <>
+                        <span className="h-1 w-1 rounded-full bg-white/30" />
+                        <span>{liveHubVisibility === "PRIVATE" ? "Privado" : "Desativado"}</span>
+                      </>
+                    )}
                   </div>
+                  <h3 className="mt-3 text-xl font-semibold">{isPadel ? "Acompanhamento ao vivo" : "Live do evento"}</h3>
+                  <p className="mt-2 text-xs text-white/60">
+                    {isPadel
+                      ? "Acompanha jogos, brackets e ranking em tempo real."
+                      : "Acompanha o evento com destaques, horários e informação atualizada."}
+                  </p>
+                </div>
+                {liveHubVisibility !== "DISABLED" && (
                   <div className="flex flex-wrap gap-2">
                     <Link
                       href={liveHref}
@@ -882,19 +939,25 @@ export default async function EventPage({
                       Ver aqui
                     </Link>
                   </div>
-                </div>
-
-                {showLiveInline ? (
-                  <div className="mt-4">
-                    <EventLiveClient slug={slug} />
-                  </div>
-                ) : (
-                  <div className="mt-4 rounded-2xl border border-white/12 bg-black/40 px-4 py-3 text-sm text-white/70">
-                    Abre o modo live para veres resultados e jogos atualizados.
-                  </div>
                 )}
-              </section>
-            )}
+              </div>
+
+              {liveHubVisibility === "DISABLED" ? (
+                <div className="mt-4 rounded-2xl border border-white/12 bg-black/40 px-4 py-3 text-sm text-white/70">
+                  O LiveHub deste evento está desativado.
+                </div>
+              ) : showLiveInline ? (
+                <div className="mt-4">
+                  <EventLiveClient slug={slug} />
+                </div>
+              ) : (
+                <div className="mt-4 rounded-2xl border border-white/12 bg-black/40 px-4 py-3 text-sm text-white/70">
+                  {isPadel
+                    ? "Abre o modo live para veres resultados e jogos atualizados."
+                    : "Abre o modo live para veres as atualizações do evento."}
+                </div>
+              )}
+            </section>
 
             <section className="rounded-3xl border border-white/15 bg-white/5 p-6 shadow-[0_24px_60px_rgba(0,0,0,0.5)] backdrop-blur-2xl md:p-8">
               <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.2em] text-white/60">

@@ -2,7 +2,7 @@ import seedrandom from "seedrandom";
 import { prisma } from "@/lib/prisma";
 import { Prisma, TournamentFormat, TournamentMatchStatus, TournamentStageType } from "@prisma/client";
 
-type PairingId = number;
+type PairingId = number | null;
 
 export type RoundRobinMatch = { a: PairingId; b: PairingId };
 export type RoundRobinSchedule = RoundRobinMatch[][];
@@ -39,15 +39,42 @@ export function generateRoundRobin(pairings: PairingId[], seed?: string): RoundR
 export type EliminationMatch = { a?: PairingId; b?: PairingId };
 export type EliminationBracket = EliminationMatch[][];
 
-export function generateSingleElimination(pairings: PairingId[], seed?: string): EliminationBracket {
+function nextPowerOfTwo(value: number) {
+  let size = 1;
+  while (size < value) size *= 2;
+  return size;
+}
+
+function resolveBracketSize(total: number, targetSize?: number | null) {
+  if (targetSize === null || typeof targetSize === "undefined") {
+    return nextPowerOfTwo(Math.max(1, total));
+  }
+  const size = Math.trunc(targetSize);
+  if (!Number.isFinite(size) || size <= 0) {
+    throw new Error("INVALID_BRACKET_SIZE");
+  }
+  if ((size & (size - 1)) !== 0) {
+    throw new Error("INVALID_BRACKET_SIZE");
+  }
+  if (total > size) {
+    throw new Error("BRACKET_TOO_SMALL");
+  }
+  return size;
+}
+
+export function generateSingleElimination(
+  pairings: PairingId[],
+  seed?: string,
+  targetSize?: number | null,
+  preserveOrder?: boolean,
+): EliminationBracket {
   const rng = seedrandom(seed || `${Date.now()}`);
-  const shuffled = [...pairings].sort(() => (rng() > 0.5 ? 1 : -1));
-  // next power of two
-  const size = 1 << Math.ceil(Math.log2(shuffled.length || 1));
-  while (shuffled.length < size) shuffled.push(undefined as unknown as PairingId);
+  const ordered = preserveOrder ? [...pairings] : [...pairings].sort(() => (rng() > 0.5 ? 1 : -1));
+  const size = resolveBracketSize(ordered.length || 1, targetSize);
+  while (ordered.length < size) ordered.push(undefined as unknown as PairingId);
 
   const rounds: EliminationBracket = [];
-  let current = shuffled;
+  let current = ordered;
   while (current.length > 1) {
     const matches: EliminationMatch[] = [];
     for (let i = 0; i < current.length; i += 2) {
@@ -66,9 +93,14 @@ export type ABBracket = {
   consolation: EliminationBracket;
 };
 
-export function generateDrawAB(pairings: PairingId[], seed?: string): ABBracket {
+export function generateDrawAB(
+  pairings: PairingId[],
+  seed?: string,
+  targetSize?: number | null,
+  preserveOrder?: boolean,
+): ABBracket {
   // main bracket normal; consolation fed by losers (handled by engine later)
-  const main = generateSingleElimination(pairings, seed);
+  const main = generateSingleElimination(pairings, seed, targetSize, preserveOrder);
   const consolation: EliminationBracket = [];
   return { main, consolation };
 }
@@ -90,17 +122,22 @@ export async function getConfirmedPairings(eventId: number) {
 type PersistOptions = {
   tournamentId: number;
   format: TournamentFormat;
-  pairings: number[];
+  pairings: Array<number | null>;
   seed?: string | null;
   inscriptionDeadlineAt?: Date | null;
   forceGenerate?: boolean;
   userId?: string;
+  targetSize?: number | null;
+  preserveOrder?: boolean;
 };
 
 export async function generateAndPersistTournamentStructure(opts: PersistOptions) {
-  const { tournamentId, format, pairings, seed, inscriptionDeadlineAt, forceGenerate, userId } = opts;
+  const { tournamentId, format, pairings, seed, inscriptionDeadlineAt, forceGenerate, userId, targetSize, preserveOrder } =
+    opts;
   const rngSeed = seed || `${Date.now()}`;
-  const confirmed = pairings.filter((id) => typeof id === "number");
+  const participantCount = pairings.filter((id) => typeof id === "number").length;
+  const hasParticipants = participantCount > 0;
+  const confirmed = preserveOrder ? pairings : pairings.filter((id) => typeof id === "number");
 
   return prisma.$transaction(async (tx) => {
     // Deadline: se ainda não passou e não foi forçado, bloqueia
@@ -117,7 +154,7 @@ export async function generateAndPersistTournamentStructure(opts: PersistOptions
     await tx.tournamentGroup.deleteMany({ where: { stage: { tournamentId } } });
     await tx.tournamentStage.deleteMany({ where: { tournamentId } });
 
-    if (confirmed.length === 0) return { stagesCreated: 0, matchesCreated: 0, seed: rngSeed };
+    if (!hasParticipants) return { stagesCreated: 0, matchesCreated: 0, seed: rngSeed };
 
     let stagesCreated = 0;
     let matchesCreated = 0;
@@ -153,9 +190,11 @@ export async function generateAndPersistTournamentStructure(opts: PersistOptions
         data: { tournamentId, name: stageName, stageType: TournamentStageType.PLAYOFF, order },
       });
       stagesCreated += 1;
+      const roundMatchIds: number[][] = [];
       for (let r = 0; r < bracket.length; r += 1) {
+        const roundIds: number[] = [];
         for (const m of bracket[r]) {
-          await tx.tournamentMatch.create({
+          const created = await tx.tournamentMatch.create({
             data: {
               stageId: stage.id,
               pairing1Id: m.a,
@@ -164,7 +203,21 @@ export async function generateAndPersistTournamentStructure(opts: PersistOptions
               status: TournamentMatchStatus.PENDING,
             },
           });
+          roundIds.push(created.id);
           matchesCreated += 1;
+        }
+        roundMatchIds.push(roundIds);
+      }
+      for (let r = 0; r < roundMatchIds.length - 1; r += 1) {
+        const currentRound = roundMatchIds[r];
+        const nextRound = roundMatchIds[r + 1];
+        for (let i = 0; i < currentRound.length; i += 1) {
+          const nextMatchId = nextRound[Math.floor(i / 2)];
+          const nextSlot = i % 2 === 0 ? 1 : 2;
+          await tx.tournamentMatch.update({
+            where: { id: currentRound[i] },
+            data: { nextMatchId, nextSlot },
+          });
         }
       }
       return stage.id;
@@ -227,20 +280,20 @@ export async function generateAndPersistTournamentStructure(opts: PersistOptions
 
     if (format === "GROUPS_PLUS_PLAYOFF" || format === "CHAMPIONSHIP_ROUND_ROBIN" || format === "NONSTOP_ROUND_ROBIN") {
       await createRoundRobin("Fase de Grupos", "Grupo Único", 1);
-      if (format === "GROUPS_PLUS_PLAYOFF" && confirmed.length > 2) {
-        const bracket = generateSingleElimination(confirmed, rngSeed);
+      if (format === "GROUPS_PLUS_PLAYOFF" && participantCount > 2) {
+        const bracket = generateSingleElimination(confirmed, rngSeed, targetSize, preserveOrder);
         const playoffStageId = await createBracket("Playoff", bracket, 2);
         // Consolação automática dos derrotados da ronda 1
         await createConsolationFromBracket(playoffStageId, 3);
       }
     } else if (format === "DRAW_A_B") {
-      const bracket = generateSingleElimination(confirmed, rngSeed);
+      const bracket = generateSingleElimination(confirmed, rngSeed, targetSize, preserveOrder);
       const mainStageId = await createBracket("Quadro Principal", bracket, 1);
       // Consolação (Quadro B) a partir dos derrotados da ronda 1
       await createConsolationFromBracket(mainStageId, 2);
     } else if (format === "GROUPS_PLUS_FINALS_ALL_PLACES") {
       await createRoundRobin("Fase de Grupos", "Grupo Único", 1);
-      const finalsBracket = generateSingleElimination(confirmed, rngSeed);
+      const finalsBracket = generateSingleElimination(confirmed, rngSeed, targetSize, preserveOrder);
       await createBracket("Finais por posições", finalsBracket, 2);
       await createClassificationFromBracket(finalsBracket, 3);
     } else if (format === "MANUAL") {

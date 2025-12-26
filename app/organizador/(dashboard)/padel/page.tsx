@@ -14,6 +14,6 @@ export default function OrganizerPadelRedirect({ searchParams }: Props) {
     });
   }
   params.set("tab", "manage");
-  params.set("section", "torneios");
+  params.set("section", "padel-hub");
   redirect(`/organizador?${params.toString()}`);
 }

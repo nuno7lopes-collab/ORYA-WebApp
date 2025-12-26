@@ -12,7 +12,7 @@ export async function getTournamentStructure(tournamentId: number) {
           matches: true,
         },
       },
-      event: { select: { id: true, title: true, slug: true, startsAt: true } },
+      event: { select: { id: true, title: true, slug: true, startsAt: true, isFree: true } },
     },
   });
 }

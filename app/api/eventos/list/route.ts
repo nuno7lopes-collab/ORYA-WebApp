@@ -54,13 +54,9 @@ export async function GET(req: NextRequest) {
     const filters: Prisma.EventWhereInput[] = [
       { status: { in: ["PUBLISHED", "DATE_CHANGED"] } },
       { isTest: { not: true } },
-      {
-        OR: [
-          { organizerId: null },
-          { organizer: { status: "ACTIVE", publicListingEnabled: true } },
-          { organizer: { status: "ACTIVE", publicListingEnabled: null } },
-        ],
-      },
+      { isDeleted: false },
+      { organizerId: { not: null } },
+      { organizer: { status: "ACTIVE", publicListingEnabled: { not: false } } },
     ];
 
     if (category && category !== "all") {

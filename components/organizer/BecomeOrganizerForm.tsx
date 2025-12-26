@@ -45,7 +45,7 @@ const CATEGORY_META: Record<
   EVENTOS: {
     label: "Eventos",
     headline: "Bilhetes, check-in e público num só lugar.",
-    description: "Ideal para experiências abertas, lançamentos, workshops e encontros com bilhetes.",
+    description: "Ideal para lançamentos, workshops, encontros e eventos com bilhetes.",
   },
   PADEL: {
     label: "PADEL",
@@ -663,7 +663,7 @@ export default function BecomeOrganizerForm() {
                 <div className="space-y-2">
                   <div className="flex items-center gap-1 text-[12px] text-white/70">
                     <span>Tipo de entidade *</span>
-                    <InfoTooltip text="Escolhe se és promotor de eventos, empresa/marca ou outro tipo de organização que cria experiências." />
+                    <InfoTooltip text="Escolhe se és promotor de eventos, empresa/marca ou outro tipo de organização que cria eventos." />
                   </div>
                   <Controller
                     name="entityType"

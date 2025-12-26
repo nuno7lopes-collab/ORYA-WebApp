@@ -33,6 +33,13 @@ function getWaveStatus(ticket: {
 export async function GET(_req: NextRequest) {
   try {
     const events = await prisma.event.findMany({
+      where: {
+        status: { in: ["PUBLISHED", "DATE_CHANGED"] },
+        isDeleted: false,
+        isTest: { not: true },
+        organizerId: { not: null },
+        organizer: { status: "ACTIVE", publicListingEnabled: { not: false } },
+      },
       orderBy: {
         startsAt: "asc",
       },

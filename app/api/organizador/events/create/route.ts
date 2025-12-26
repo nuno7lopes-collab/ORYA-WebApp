@@ -13,6 +13,8 @@ type TicketTypeInput = {
   name?: string;
   price?: number;
   totalQuantity?: number | null;
+  publicAccess?: boolean;
+  participantAccess?: boolean;
 };
 
 type CreateOrganizerEventBody = {
@@ -29,6 +31,13 @@ type CreateOrganizerEventBody = {
   resaleMode?: string; // ALWAYS | AFTER_SOLD_OUT | DISABLED
   coverImageUrl?: string | null;
   inviteOnly?: boolean;
+  publicAccessMode?: string;
+  participantAccessMode?: string;
+  publicTicketScope?: string;
+  participantTicketScope?: string;
+  publicTicketTypeIds?: number[];
+  participantTicketTypeIds?: number[];
+  liveHubVisibility?: string;
   isTest?: boolean;
   payoutMode?: string; // ORGANIZER | PLATFORM
   feeMode?: string;
@@ -63,8 +72,38 @@ function slugify(input: string): string {
   return input
     .toLowerCase()
     .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+async function generateUniqueSlug(baseSlug: string) {
+  const existing = await prisma.event.findMany({
+    where: { slug: { startsWith: baseSlug } },
+    select: { slug: true },
+  });
+
+  if (existing.length === 0) return baseSlug;
+
+  const slugs = new Set(existing.map((row) => row.slug));
+  if (!slugs.has(baseSlug)) return baseSlug;
+
+  const pattern = new RegExp(`^${escapeRegExp(baseSlug)}-(\\d+)$`);
+  let maxSuffix = 1;
+  slugs.forEach((slug) => {
+    const match = slug.match(pattern);
+    if (!match) return;
+    const value = Number(match[1]);
+    if (Number.isFinite(value)) {
+      maxSuffix = Math.max(maxSuffix, value);
+    }
+  });
+
+  return `${baseSlug}-${maxSuffix + 1}`;
 }
 
 export async function POST(req: NextRequest) {
@@ -201,6 +240,30 @@ export async function POST(req: NextRequest) {
     const ticketTypesInput = body.ticketTypes ?? [];
     const coverImageUrl = body.coverImageUrl?.trim?.() || null;
     const inviteOnly = body.inviteOnly === true;
+    const publicAccessModeRaw = body.publicAccessMode?.toUpperCase();
+    const participantAccessModeRaw = body.participantAccessMode?.toUpperCase();
+    const publicAccessMode =
+      publicAccessModeRaw === "OPEN" || publicAccessModeRaw === "TICKET" || publicAccessModeRaw === "INVITE"
+        ? publicAccessModeRaw
+        : inviteOnly
+          ? "INVITE"
+          : "OPEN";
+    const participantAccessMode =
+      participantAccessModeRaw === "NONE" ||
+      participantAccessModeRaw === "TICKET" ||
+      participantAccessModeRaw === "INSCRIPTION" ||
+      participantAccessModeRaw === "INVITE"
+        ? participantAccessModeRaw
+        : "NONE";
+    const publicTicketScopeRaw = body.publicTicketScope?.toUpperCase();
+    const participantTicketScopeRaw = body.participantTicketScope?.toUpperCase();
+    const publicTicketScope = publicTicketScopeRaw === "SPECIFIC" ? "SPECIFIC" : "ALL";
+    const participantTicketScope = participantTicketScopeRaw === "SPECIFIC" ? "SPECIFIC" : "ALL";
+    const liveHubVisibilityRaw = body.liveHubVisibility?.toUpperCase();
+    const liveHubVisibility =
+      liveHubVisibilityRaw === "PUBLIC" || liveHubVisibilityRaw === "PRIVATE" || liveHubVisibilityRaw === "DISABLED"
+        ? liveHubVisibilityRaw
+        : "PUBLIC";
     // Validar tipos de bilhete
     let ticketPriceError: string | null = null;
     const ticketTypesData = ticketTypesInput
@@ -231,9 +294,11 @@ export async function POST(req: NextRequest) {
           name,
           price: priceRaw,
           totalQuantity,
+          publicAccess: t.publicAccess === true,
+          participantAccess: t.participantAccess === true,
         };
       })
-      .filter((t): t is { name: string; price: number; totalQuantity: number | null } =>
+      .filter((t): t is { name: string; price: number; totalQuantity: number | null; publicAccess: boolean; participantAccess: boolean } =>
         Boolean(t)
       );
 
@@ -267,9 +332,27 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    if (publicAccessMode === "TICKET" && publicTicketScope === "SPECIFIC") {
+      const hasPublicTicket = ticketTypesData.some((t) => t.publicAccess);
+      if (!hasPublicTicket) {
+        return NextResponse.json(
+          { ok: false, error: "Seleciona pelo menos um bilhete para o público." },
+          { status: 400 },
+        );
+      }
+    }
+    if (participantAccessMode === "TICKET" && participantTicketScope === "SPECIFIC") {
+      const hasParticipantTicket = ticketTypesData.some((t) => t.participantAccess);
+      if (!hasParticipantTicket) {
+        return NextResponse.json(
+          { ok: false, error: "Seleciona pelo menos um bilhete para participantes." },
+          { status: 400 },
+        );
+      }
+    }
+
     const baseSlug = slugify(title) || "evento";
-    const randomSuffix = Math.random().toString(36).slice(2, 8);
-    const slug = `${baseSlug}-${randomSuffix}`;
+    const slug = await generateUniqueSlug(baseSlug);
     const resaleMode =
       resaleModeRaw === "AFTER_SOLD_OUT" || resaleModeRaw === "DISABLED"
         ? resaleModeRaw
@@ -324,14 +407,19 @@ export async function POST(req: NextRequest) {
         type: "ORGANIZER_EVENT",
         templateType,
         ownerUserId: profile.id,
-        organizerId: organizer?.id ?? null,
+        organizer: organizer?.id ? { connect: { id: organizer.id } } : undefined,
         startsAt,
         endsAt,
         locationName,
         locationCity,
         address,
         isFree: ticketTypesData.every((t) => t.price === 0),
-        inviteOnly,
+        inviteOnly: publicAccessMode === "INVITE",
+        publicAccessMode,
+        participantAccessMode,
+        publicTicketTypeIds: [],
+        participantTicketTypeIds: [],
+        liveHubVisibility,
         status: "PUBLISHED",
         resaleMode,
         coverImageUrl,
@@ -376,16 +464,47 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Criar os tipos de bilhete associados a este evento
-    await prisma.ticketType.createMany({
-      data: ticketTypesData.map((t) => ({
-        eventId: event.id,
-        name: t.name,
-        price: Math.round(t.price * 100), // guardar em cents
-        // Assumimos que currency tem default "EUR" e restantes campos têm defaults.
-        totalQuantity: t.totalQuantity ?? null,
-      })),
-    });
+    const createdTicketTypes: Array<{
+      id: number;
+      publicAccess: boolean;
+      participantAccess: boolean;
+    }> = [];
+
+    for (const ticket of ticketTypesData) {
+      const created = await prisma.ticketType.create({
+        data: {
+          eventId: event.id,
+          name: ticket.name,
+          price: Math.round(ticket.price * 100),
+          totalQuantity: ticket.totalQuantity ?? null,
+        },
+        select: { id: true },
+      });
+      createdTicketTypes.push({
+        id: created.id,
+        publicAccess: ticket.publicAccess,
+        participantAccess: ticket.participantAccess,
+      });
+    }
+
+    const shouldAssignPublic = publicAccessMode === "TICKET" && publicTicketScope === "SPECIFIC";
+    const shouldAssignParticipant = participantAccessMode === "TICKET" && participantTicketScope === "SPECIFIC";
+    const publicTicketTypeIds = shouldAssignPublic
+      ? createdTicketTypes.filter((t) => t.publicAccess).map((t) => t.id)
+      : [];
+    const participantTicketTypeIds = shouldAssignParticipant
+      ? createdTicketTypes.filter((t) => t.participantAccess).map((t) => t.id)
+      : [];
+
+    if (publicTicketTypeIds.length > 0 || participantTicketTypeIds.length > 0) {
+      await prisma.event.update({
+        where: { id: event.id },
+        data: {
+          publicTicketTypeIds,
+          participantTicketTypeIds,
+        },
+      });
+    }
 
     return NextResponse.json(
       {

@@ -4,12 +4,11 @@ import { validateScore } from "@/domain/tournaments/matchRules";
 type Warning =
   | { type: "REQUIRES_ACTION"; pairingId: number }
   | { type: "INVALID_SCORE"; matchId: number }
-  | { type: "MISSING_WINNER"; matchId: number }
   | { type: "MISSING_COURT"; matchId: number }
   | { type: "MISSING_START"; matchId: number };
 
 export function computeLiveWarnings(opts: {
-  matches: Array<{ id: number; courtId: number | null; startAt: Date | null; score: any; status: string; winnerPairingId?: number | null }>;
+  matches: Array<{ id: number; courtId: number | null; startAt: Date | null; score: any; status: string }>;
   pairings: Array<{ id: number; guaranteeStatus?: string | null }>;
   startThresholdMinutes?: number;
 }): Warning[] {
@@ -30,9 +29,9 @@ export function computeLiveWarnings(opts: {
     if (!m.startAt || m.startAt < threshold) warnings.push({ type: "MISSING_START", matchId: m.id });
     if ((m.status || "").toUpperCase() === "DONE") {
       const sets = Array.isArray(m.score?.sets) ? m.score.sets : [];
+      if (sets.length === 0) return;
       const res = validateScore({ sets } as any);
       if (!res.ok) warnings.push({ type: "INVALID_SCORE", matchId: m.id });
-      if (!m.winnerPairingId) warnings.push({ type: "MISSING_WINNER", matchId: m.id });
     }
   });
 

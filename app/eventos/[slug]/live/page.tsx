@@ -1,9 +1,34 @@
 // app/eventos/[slug]/live/page.tsx
 import Link from "next/link";
+import { notFound, redirect } from "next/navigation";
 import EventLiveClient from "../EventLiveClient";
+import { prisma } from "@/lib/prisma";
 
-export default function EventLivePage({ params }: { params: { slug: string } }) {
-  const slug = params.slug;
+function slugify(input: string): string {
+  return input
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+export default async function EventLivePage({ params }: { params: Promise<{ slug: string }> }) {
+  const resolved = await params;
+  const slug = resolved.slug;
+  if (!slug) {
+    notFound();
+  }
+  const event = await prisma.event.findUnique({ where: { slug }, select: { slug: true } });
+  if (!event) {
+    const normalized = slugify(slug);
+    if (normalized && normalized !== slug) {
+      const fallback = await prisma.event.findUnique({ where: { slug: normalized }, select: { slug: true } });
+      if (fallback) {
+        redirect(`/eventos/${fallback.slug}/live`);
+      }
+    }
+  }
 
   return (
     <main className="relative orya-body-bg min-h-screen w-full overflow-hidden text-white">

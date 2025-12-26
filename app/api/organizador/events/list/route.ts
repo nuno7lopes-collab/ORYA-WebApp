@@ -51,10 +51,7 @@ export async function GET(req: NextRequest) {
     const events = await prisma.event.findMany({
       where: {
         isDeleted: false,
-        OR: [
-          { organizerId: organizer.id },
-          { organizerId: null, ownerUserId: profile.id },
-        ],
+        organizerId: organizer.id,
       },
       orderBy: {
         startsAt: "asc",
@@ -63,6 +60,9 @@ export async function GET(req: NextRequest) {
         categories: true,
         padelTournamentConfig: {
           select: { padelClubId: true, partnerClubIds: true },
+        },
+        tournament: {
+          select: { id: true },
         },
       },
       take: limit,
@@ -143,6 +143,7 @@ export async function GET(req: NextRequest) {
       locationCity: event.locationCity,
       status: event.status,
       templateType: event.templateType,
+      tournamentId: event.tournament?.id ?? null,
       isFree: event.isFree,
       ticketsSold: statsMap.get(event.id)?.tickets ?? 0,
       revenueCents: statsMap.get(event.id)?.revenueCents ?? 0,

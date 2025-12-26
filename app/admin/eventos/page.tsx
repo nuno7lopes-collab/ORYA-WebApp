@@ -212,7 +212,6 @@ export default function AdminEventosPage() {
             >
               <option value="ALL">Todos</option>
               <option value="ORGANIZER_EVENT">Organizador</option>
-              <option value="EXPERIENCE">Evento (utilizador)</option>
             </select>
           </div>
           <div>

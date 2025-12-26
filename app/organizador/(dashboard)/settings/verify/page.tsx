@@ -34,7 +34,7 @@ export default function VerifyOfficialEmailPage() {
         }
         setState("ok");
         setMessage("Email oficial confirmado.");
-        setTimeout(() => router.push("/organizador?tab=manage&section=settings"), 1200);
+        setTimeout(() => router.push("/organizador/settings"), 1200);
       } catch (err) {
         setState("error");
         setMessage("Erro inesperado a confirmar o email.");
@@ -55,10 +55,10 @@ export default function VerifyOfficialEmailPage() {
         {state === "error" && <p className="text-amber-300">{message || "Token inválido ou expirado."}</p>}
         <div className="flex justify-center">
           <button
-            onClick={() => router.push("/organizador?tab=manage&section=settings")}
+            onClick={() => router.push("/organizador/settings")}
             className="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-sm font-semibold text-white hover:border-white/35"
           >
-            Voltar ao dashboard
+            Voltar a definições
           </button>
         </div>
       </div>

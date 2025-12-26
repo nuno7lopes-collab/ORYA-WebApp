@@ -24,6 +24,7 @@ type UpdateEventBody = {
   eventId?: number;
   archive?: boolean;
   title?: string | null;
+  slug?: string | null;
   description?: string | null;
   startsAt?: string | null;
   endsAt?: string | null;
@@ -35,11 +36,57 @@ type UpdateEventBody = {
   inviteOnly?: boolean;
   coverImageUrl?: string | null;
   liveHubMode?: string | null;
+  liveHubVisibility?: string | null;
   liveStreamUrl?: string | null;
+  publicAccessMode?: string | null;
+  participantAccessMode?: string | null;
+  publicTicketTypeIds?: number[];
+  participantTicketTypeIds?: number[];
   ticketTypeUpdates?: TicketTypeUpdate[];
   newTicketTypes?: NewTicketType[];
   payoutMode?: string | null;
 };
+
+function slugify(input: string): string {
+  return input
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+async function generateUniqueSlug(baseSlug: string, eventId?: number) {
+  const existing = await prisma.event.findMany({
+    where: {
+      slug: { startsWith: baseSlug },
+      ...(eventId ? { NOT: { id: eventId } } : {}),
+    },
+    select: { slug: true },
+  });
+
+  if (existing.length === 0) return baseSlug;
+
+  const slugs = new Set(existing.map((row) => row.slug));
+  if (!slugs.has(baseSlug)) return baseSlug;
+
+  const pattern = new RegExp(`^${escapeRegExp(baseSlug)}-(\\d+)$`);
+  let maxSuffix = 1;
+  slugs.forEach((slug) => {
+    const match = slug.match(pattern);
+    if (!match) return;
+    const value = Number(match[1]);
+    if (Number.isFinite(value)) {
+      maxSuffix = Math.max(maxSuffix, value);
+    }
+  });
+
+  return `${baseSlug}-${maxSuffix + 1}`;
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -61,6 +108,7 @@ export async function POST(req: NextRequest) {
     // Autorização: perfil + membership no organizer do evento
     let event: {
       id: number;
+      slug: string;
       organizerId: number | null;
       isFree: boolean;
       ticketTypes: { id: number; soldQuantity: number; price: number; status: TicketTypeStatus }[];
@@ -81,6 +129,7 @@ export async function POST(req: NextRequest) {
             where: { id: eventId },
             select: {
               id: true,
+              slug: true,
               organizerId: true,
               isFree: true,
               ticketTypes: {
@@ -111,8 +160,8 @@ export async function POST(req: NextRequest) {
         } catch (err) {
           if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2022") {
             const rows = await prisma.$queryRaw<
-              { id: number; organizer_id: number | null; is_free: boolean }[]
-            >(Prisma.sql`SELECT id, organizer_id, is_free FROM app_v3.events WHERE id = ${eventId} LIMIT 1`);
+              { id: number; slug: string; organizer_id: number | null; is_free: boolean }[]
+            >(Prisma.sql`SELECT id, slug, organizer_id, is_free FROM app_v3.events WHERE id = ${eventId} LIMIT 1`);
             const row = rows[0];
             if (!row) return null;
             const [ticketTypes, organizerRows, counts] = await Promise.all([
@@ -134,6 +183,7 @@ export async function POST(req: NextRequest) {
 
             return {
               id: row.id,
+              slug: row.slug,
               organizerId: row.organizer_id,
               isFree: row.is_free,
               ticketTypes: ticketTypes.map((t) => ({
@@ -175,10 +225,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "Evento não encontrado." }, { status: 404 });
     }
 
+    const isAdmin = Array.isArray(profile.roles) ? profile.roles.includes("admin") : false;
+
     let membership: { role: string } | null = null;
     if (event.organizerId == null) {
-      // Evento criado fora do fluxo de organizer: permitir o owner original editar
-      if (event.ownerUserId !== user.id) {
+      if (!isAdmin) {
         return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
       }
     } else {
@@ -189,8 +240,6 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
       }
     }
-
-    const isAdmin = Array.isArray(profile.roles) ? profile.roles.includes("admin") : false;
 
     const organizer = event.organizer;
     const paymentsStatus = organizer
@@ -223,6 +272,22 @@ export async function POST(req: NextRequest) {
       dataUpdate.deletedAt = new Date();
     }
     if (body.title !== undefined) dataUpdate.title = body.title?.trim() ?? "";
+    const slugSource =
+      body.slug !== undefined
+        ? body.slug
+        : body.title !== undefined
+          ? body.title
+          : undefined;
+    if (slugSource !== undefined) {
+      const baseSlug = slugify(typeof slugSource === "string" ? slugSource : "");
+      if (!baseSlug) {
+        return NextResponse.json({ ok: false, error: "Slug inválido." }, { status: 400 });
+      }
+      const nextSlug = await generateUniqueSlug(baseSlug, eventId);
+      if (nextSlug !== event.slug) {
+        dataUpdate.slug = nextSlug;
+      }
+    }
     if (body.description !== undefined) dataUpdate.description = body.description ?? "";
     if (body.startsAt) {
       const d = new Date(body.startsAt);
@@ -271,8 +336,10 @@ export async function POST(req: NextRequest) {
       }
       dataUpdate.isFree = body.isFree;
     }
-    if (body.inviteOnly !== undefined) {
-      dataUpdate.inviteOnly = body.inviteOnly === true;
+    if (body.inviteOnly !== undefined && body.publicAccessMode === undefined) {
+      const inviteOnly = body.inviteOnly === true;
+      dataUpdate.inviteOnly = inviteOnly;
+      dataUpdate.publicAccessMode = inviteOnly ? "INVITE" : "OPEN";
     }
     if (body.coverImageUrl !== undefined) dataUpdate.coverImageUrl = body.coverImageUrl ?? null;
     if (body.liveStreamUrl !== undefined) {
@@ -293,6 +360,36 @@ export async function POST(req: NextRequest) {
       if (normalized === "PREMIUM" || normalized === "DEFAULT") {
         dataUpdate.liveHubMode = normalized as Prisma.LiveHubMode;
       }
+    }
+    if (body.liveHubVisibility !== undefined) {
+      const normalized =
+        typeof body.liveHubVisibility === "string" ? body.liveHubVisibility.trim().toUpperCase() : "";
+      if (normalized === "PUBLIC" || normalized === "PRIVATE" || normalized === "DISABLED") {
+        dataUpdate.liveHubVisibility = normalized as Prisma.LiveHubVisibility;
+      }
+    }
+    if (body.publicAccessMode !== undefined) {
+      const normalized = typeof body.publicAccessMode === "string" ? body.publicAccessMode.trim().toUpperCase() : "";
+      if (normalized === "OPEN" || normalized === "TICKET" || normalized === "INVITE") {
+        dataUpdate.publicAccessMode = normalized as Prisma.EventPublicAccessMode;
+        dataUpdate.inviteOnly = normalized === "INVITE";
+      }
+    }
+    if (body.participantAccessMode !== undefined) {
+      const normalized = typeof body.participantAccessMode === "string" ? body.participantAccessMode.trim().toUpperCase() : "";
+      if (normalized === "NONE" || normalized === "TICKET" || normalized === "INSCRIPTION" || normalized === "INVITE") {
+        dataUpdate.participantAccessMode = normalized as Prisma.EventParticipantAccessMode;
+      }
+    }
+    if (Array.isArray(body.publicTicketTypeIds)) {
+      dataUpdate.publicTicketTypeIds = body.publicTicketTypeIds
+        .filter((id) => Number.isFinite(id))
+        .map((id) => Number(id));
+    }
+    if (Array.isArray(body.participantTicketTypeIds)) {
+      dataUpdate.participantTicketTypeIds = body.participantTicketTypeIds
+        .filter((id) => Number.isFinite(id))
+        .map((id) => Number(id));
     }
     if (
       isAdmin &&

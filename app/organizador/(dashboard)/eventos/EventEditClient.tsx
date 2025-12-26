@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import Link from "next/link";
 import useSWR from "swr";
 import { InlineDateTimePicker } from "@/app/components/forms/InlineDateTimePicker";
@@ -14,6 +14,11 @@ const TicketTypeStatus = {
 } as const;
 
 type TicketTypeStatus = (typeof TicketTypeStatus)[keyof typeof TicketTypeStatus];
+
+type PublicAccessMode = "OPEN" | "TICKET" | "INVITE";
+type ParticipantAccessMode = "NONE" | "TICKET" | "INSCRIPTION" | "INVITE";
+type TicketScope = "ALL" | "SPECIFIC";
+type LiveHubVisibility = "PUBLIC" | "PRIVATE" | "DISABLED";
 
 type ToastTone = "success" | "error";
 type Toast = { id: number; message: string; tone: ToastTone };
@@ -47,7 +52,12 @@ type EventEditClientProps = {
     inviteOnly: boolean;
     coverImageUrl: string | null;
     liveHubMode: "DEFAULT" | "PREMIUM";
+    liveHubVisibility: LiveHubVisibility;
     liveStreamUrl: string | null;
+    publicAccessMode: PublicAccessMode;
+    participantAccessMode: ParticipantAccessMode;
+    publicTicketTypeIds: number[];
+    participantTicketTypeIds: number[];
     feeModeOverride?: string | null;
     platformFeeBpsOverride?: number | null;
     platformFeeFixedCentsOverride?: number | null;
@@ -65,6 +75,7 @@ type EventInvite = {
   id: number;
   targetIdentifier: string;
   targetUserId?: string | null;
+  scope?: "PUBLIC" | "PARTICIPANT";
   createdAt?: string;
   targetUser?: {
     id: string;
@@ -92,26 +103,56 @@ export function EventEditClient({ event, organizer, tickets }: EventEditClientPr
   const [address, setAddress] = useState(event.address ?? "");
   const [templateType] = useState(event.templateType ?? "OTHER");
   const [isFree] = useState(event.isFree);
-  const [inviteOnly, setInviteOnly] = useState(event.inviteOnly);
   const [coverUrl, setCoverUrl] = useState<string | null>(event.coverImageUrl);
-  const [liveHubMode, setLiveHubMode] = useState<"DEFAULT" | "PREMIUM">(event.liveHubMode ?? "DEFAULT");
+  const [liveHubVisibility, setLiveHubVisibility] = useState<LiveHubVisibility>(
+    event.liveHubVisibility ?? "PUBLIC",
+  );
   const [liveStreamUrl, setLiveStreamUrl] = useState(event.liveStreamUrl ?? "");
+  const [publicAccessMode, setPublicAccessMode] = useState<PublicAccessMode>(event.publicAccessMode ?? "OPEN");
+  const [participantAccessMode, setParticipantAccessMode] = useState<ParticipantAccessMode>(
+    event.participantAccessMode ?? "NONE",
+  );
+  const [publicTicketTypeIds, setPublicTicketTypeIds] = useState<number[]>(event.publicTicketTypeIds ?? []);
+  const [participantTicketTypeIds, setParticipantTicketTypeIds] = useState<number[]>(
+    event.participantTicketTypeIds ?? [],
+  );
+  const [publicTicketScope, setPublicTicketScope] = useState<TicketScope>(
+    event.publicTicketTypeIds && event.publicTicketTypeIds.length > 0 ? "SPECIFIC" : "ALL",
+  );
+  const [participantTicketScope, setParticipantTicketScope] = useState<TicketScope>(
+    event.participantTicketTypeIds && event.participantTicketTypeIds.length > 0 ? "SPECIFIC" : "ALL",
+  );
   const [uploadingCover, setUploadingCover] = useState(false);
   const [ticketList, setTicketList] = useState<TicketTypeUI[]>(tickets);
   const [currentStep, setCurrentStep] = useState(0);
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<"title" | "startsAt" | "endsAt" | "locationCity" | "locationName", string>>>({});
   const [errorSummary, setErrorSummary] = useState<{ field: string; message: string }[]>([]);
-  const [inviteInput, setInviteInput] = useState("");
-  const [inviteError, setInviteError] = useState<string | null>(null);
-  const [inviteSaving, setInviteSaving] = useState(false);
+  const [publicInviteInput, setPublicInviteInput] = useState("");
+  const [participantInviteInput, setParticipantInviteInput] = useState("");
+  const [publicInviteError, setPublicInviteError] = useState<string | null>(null);
+  const [participantInviteError, setParticipantInviteError] = useState<string | null>(null);
+  const [publicInviteSaving, setPublicInviteSaving] = useState(false);
+  const [participantInviteSaving, setParticipantInviteSaving] = useState(false);
   const [inviteRemovingId, setInviteRemovingId] = useState<number | null>(null);
-  const { data: invitesData, mutate: mutateInvites, isLoading: invitesLoading } = useSWR<{
+  const { data: publicInvitesData, mutate: mutatePublicInvites, isLoading: publicInvitesLoading } = useSWR<{
     ok?: boolean;
     items?: EventInvite[];
-  }>(user ? `/api/organizador/events/${event.id}/invites` : null, fetcher, { revalidateOnFocus: false });
-  const invites = useMemo(
-    () => (Array.isArray(invitesData?.items) ? invitesData.items : []),
-    [invitesData?.items],
+  }>(user ? `/api/organizador/events/${event.id}/invites?scope=PUBLIC` : null, fetcher, {
+    revalidateOnFocus: false,
+  });
+  const { data: participantInvitesData, mutate: mutateParticipantInvites, isLoading: participantInvitesLoading } = useSWR<{
+    ok?: boolean;
+    items?: EventInvite[];
+  }>(user ? `/api/organizador/events/${event.id}/invites?scope=PARTICIPANT` : null, fetcher, {
+    revalidateOnFocus: false,
+  });
+  const publicInvites = useMemo(
+    () => (Array.isArray(publicInvitesData?.items) ? publicInvitesData.items : []),
+    [publicInvitesData?.items],
+  );
+  const participantInvites = useMemo(
+    () => (Array.isArray(participantInvitesData?.items) ? participantInvitesData.items : []),
+    [participantInvitesData?.items],
   );
   const steps = useMemo(
     () =>
@@ -171,7 +212,6 @@ export function EventEditClient({ event, organizer, tickets }: EventEditClientPr
   };
   const roles = Array.isArray(profile?.roles) ? (profile?.roles as string[]) : [];
   const isAdmin = roles.some((r) => r?.toLowerCase() === "admin");
-  const canUsePremium = isAdmin || organizer.liveHubPremiumEnabled;
   const payoutMode = (event.payoutMode ?? "ORGANIZER").toUpperCase();
   const isPlatformPayout = payoutMode === "PLATFORM";
   const paymentsStatusRaw = isAdmin ? "READY" : organizerStatus?.paymentsStatus ?? "NO_STRIPE";
@@ -185,14 +225,112 @@ export function EventEditClient({ event, organizer, tickets }: EventEditClientPr
   const templateLabel = templateType === "PADEL" ? "Padel" : "Evento padrão";
   const liveHubPreviewUrl = `/eventos/${event.slug}/live`;
 
-  const handleLiveHubModeChange = (value: "DEFAULT" | "PREMIUM") => {
-    if (value === "PREMIUM" && !canUsePremium) {
-      pushToast("O modo premium ainda não está disponível para esta organização.");
-      setLiveHubMode("DEFAULT");
-      return;
-    }
-    setLiveHubMode(value);
+  const toggleTicketType = (
+    id: number,
+    list: number[],
+    setList: Dispatch<SetStateAction<number[]>>,
+  ) => {
+    setList((prev) => (prev.includes(id) ? prev.filter((t) => t !== id) : [...prev, id]));
   };
+
+  const showInviteSection = publicAccessMode === "INVITE" || participantAccessMode === "INVITE";
+  const publicAccessSummary =
+    publicAccessMode === "OPEN"
+      ? "Aberto ao público"
+      : publicAccessMode === "TICKET"
+        ? "Acesso por bilhete"
+        : "Apenas por convite";
+  const participantSummary =
+    participantAccessMode === "NONE"
+      ? "Sem participantes"
+      : participantAccessMode === "TICKET"
+        ? "Participantes por bilhete"
+        : participantAccessMode === "INSCRIPTION"
+          ? "Participantes por inscrição"
+          : "Participantes por convite";
+  const publicAccessDescription =
+    publicAccessMode === "OPEN"
+      ? "Qualquer pessoa pode ver o evento e comprar bilhete."
+      : publicAccessMode === "TICKET"
+        ? publicTicketScope === "SPECIFIC"
+          ? "Só quem tem bilhetes selecionados pode aceder ao público."
+          : "Qualquer bilhete do evento dá acesso ao público."
+        : "Apenas convidados conseguem aceder ao checkout e ao LiveHub.";
+  const participantAccessDescription =
+    participantAccessMode === "NONE"
+      ? "Não existe distinção de participantes."
+      : participantAccessMode === "INSCRIPTION"
+        ? "Participantes são definidos por inscrição/torneio."
+        : participantAccessMode === "TICKET"
+          ? participantTicketScope === "SPECIFIC"
+            ? "Participantes apenas com bilhetes selecionados."
+            : "Qualquer bilhete marca o utilizador como participante."
+          : "Participantes são escolhidos por convite.";
+  const accessWarnings = useMemo(() => {
+    const warnings: string[] = [];
+    if (publicAccessMode === "TICKET") {
+      if (ticketList.length === 0) {
+        warnings.push("Sem bilhetes criados: ninguém conseguirá entrar como público.");
+      } else if (publicTicketScope === "SPECIFIC" && publicTicketTypeIds.length === 0) {
+        warnings.push("Seleciona pelo menos um tipo de bilhete para o público.");
+      }
+    }
+    if (participantAccessMode === "TICKET") {
+      if (ticketList.length === 0) {
+        warnings.push("Sem bilhetes criados: ninguém será marcado como participante.");
+      } else if (participantTicketScope === "SPECIFIC" && participantTicketTypeIds.length === 0) {
+        warnings.push("Seleciona pelo menos um tipo de bilhete para os participantes.");
+      }
+    }
+    if (publicAccessMode === "INVITE" && !publicInvitesLoading && publicInvites.length === 0) {
+      warnings.push("Sem convites de público: ninguém convidado consegue entrar.");
+    }
+    if (participantAccessMode === "INVITE" && !participantInvitesLoading && participantInvites.length === 0) {
+      warnings.push("Sem convites de participantes: ninguém será marcado como participante.");
+    }
+    return warnings;
+  }, [
+    publicAccessMode,
+    participantAccessMode,
+    ticketList.length,
+    publicTicketScope,
+    participantTicketScope,
+    publicTicketTypeIds.length,
+    participantTicketTypeIds.length,
+    publicInvites.length,
+    participantInvites.length,
+    publicInvitesLoading,
+    participantInvitesLoading,
+  ]);
+
+  const inviteGroups = [
+    {
+      scope: "PUBLIC" as const,
+      enabled: publicAccessMode === "INVITE",
+      title: "Convites do público",
+      description: "Quem pode ver o checkout e o LiveHub público.",
+      footer: "Convites por email permitem checkout como convidado. Eventos grátis continuam a exigir conta e username.",
+      input: publicInviteInput,
+      setInput: setPublicInviteInput,
+      error: publicInviteError,
+      isSaving: publicInviteSaving,
+      invites: publicInvites,
+      isLoading: publicInvitesLoading,
+    },
+    {
+      scope: "PARTICIPANT" as const,
+      enabled: participantAccessMode === "INVITE",
+      title: "Convites de participantes",
+      description: "Quem fica marcado como participante/atleta.",
+      footer: "Usa convites de participantes quando queres atletas específicos.",
+      input: participantInviteInput,
+      setInput: setParticipantInviteInput,
+      error: participantInviteError,
+      isSaving: participantInviteSaving,
+      invites: participantInvites,
+      isLoading: participantInvitesLoading,
+    },
+  ].filter((group) => group.enabled);
   const FormAlert = ({
     variant,
     title,
@@ -357,38 +495,48 @@ export function EventEditClient({ event, organizer, tickets }: EventEditClientPr
     }
   };
 
-  const handleAddInvite = async () => {
-    if (!inviteInput.trim()) {
-      setInviteError("Indica um email ou @username.");
+  const handleAddInvite = async (scope: "PUBLIC" | "PARTICIPANT") => {
+    const isPublic = scope === "PUBLIC";
+    const value = isPublic ? publicInviteInput.trim() : participantInviteInput.trim();
+    const setError = isPublic ? setPublicInviteError : setParticipantInviteError;
+    const setSaving = isPublic ? setPublicInviteSaving : setParticipantInviteSaving;
+    const resetInput = isPublic ? () => setPublicInviteInput("") : () => setParticipantInviteInput("");
+    const mutate = isPublic ? mutatePublicInvites : mutateParticipantInvites;
+
+    if (!value) {
+      setError("Indica um email ou @username.");
       return;
     }
-    setInviteSaving(true);
-    setInviteError(null);
+    setSaving(true);
+    setError(null);
     try {
       const res = await fetch(`/api/organizador/events/${event.id}/invites`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ identifier: inviteInput.trim() }),
+        body: JSON.stringify({ identifier: value, scope }),
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
         throw new Error(json?.error || "Erro ao criar convite.");
       }
-      setInviteInput("");
-      await mutateInvites();
+      resetInput();
+      await mutate();
       pushToast("Convite adicionado.", "success");
     } catch (err) {
       console.error("Erro ao criar convite", err);
-      setInviteError(err instanceof Error ? err.message : "Erro ao criar convite.");
-      pushToast(err instanceof Error ? err.message : "Erro ao criar convite.");
+      const message = err instanceof Error ? err.message : "Erro ao criar convite.";
+      setError(message);
+      pushToast(message);
     } finally {
-      setInviteSaving(false);
+      setSaving(false);
     }
   };
 
-  const handleRemoveInvite = async (inviteId: number) => {
+  const handleRemoveInvite = async (inviteId: number, scope: "PUBLIC" | "PARTICIPANT") => {
     setInviteRemovingId(inviteId);
-    setInviteError(null);
+    const setError = scope === "PUBLIC" ? setPublicInviteError : setParticipantInviteError;
+    const mutate = scope === "PUBLIC" ? mutatePublicInvites : mutateParticipantInvites;
+    setError(null);
     try {
       const res = await fetch(`/api/organizador/events/${event.id}/invites`, {
         method: "DELETE",
@@ -399,12 +547,13 @@ export function EventEditClient({ event, organizer, tickets }: EventEditClientPr
       if (!res.ok || !json?.ok) {
         throw new Error(json?.error || "Erro ao remover convite.");
       }
-      await mutateInvites();
+      await mutate();
       pushToast("Convite removido.", "success");
     } catch (err) {
       console.error("Erro ao remover convite", err);
-      setInviteError(err instanceof Error ? err.message : "Erro ao remover convite.");
-      pushToast(err instanceof Error ? err.message : "Erro ao remover convite.");
+      const message = err instanceof Error ? err.message : "Erro ao remover convite.";
+      setError(message);
+      pushToast(message);
     } finally {
       setInviteRemovingId(null);
     }
@@ -431,6 +580,38 @@ export function EventEditClient({ event, organizer, tickets }: EventEditClientPr
       setError("Liga o Stripe em Finanças & Payouts para vender bilhetes pagos.");
       ctaRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
       return;
+    }
+
+    const publicTicketTypeIdsToSend =
+      publicAccessMode === "TICKET" && publicTicketScope === "SPECIFIC" ? publicTicketTypeIds : [];
+    const participantTicketTypeIdsToSend =
+      participantAccessMode === "TICKET" && participantTicketScope === "SPECIFIC"
+        ? participantTicketTypeIds
+        : [];
+
+    if (publicAccessMode === "TICKET") {
+      if (ticketList.length === 0) {
+        setValidationAlert("Cria pelo menos um bilhete antes de definir acesso por bilhete.");
+        pushToast("Cria bilhetes para o acesso do público.");
+        return;
+      }
+      if (publicTicketScope === "SPECIFIC" && publicTicketTypeIds.length === 0) {
+        setValidationAlert("Seleciona pelo menos um tipo de bilhete para o acesso do público.");
+        pushToast("Seleciona bilhetes para o acesso do público.");
+        return;
+      }
+    }
+    if (participantAccessMode === "TICKET") {
+      if (ticketList.length === 0) {
+        setValidationAlert("Cria pelo menos um bilhete antes de definir participantes por bilhete.");
+        pushToast("Cria bilhetes para participantes.");
+        return;
+      }
+      if (participantTicketScope === "SPECIFIC" && participantTicketTypeIds.length === 0) {
+        setValidationAlert("Seleciona pelo menos um tipo de bilhete para os participantes.");
+        pushToast("Seleciona bilhetes para participantes.");
+        return;
+      }
     }
 
     setIsSaving(true);
@@ -470,10 +651,14 @@ export function EventEditClient({ event, organizer, tickets }: EventEditClientPr
           address,
           templateType,
           isFree,
-          inviteOnly,
+          inviteOnly: publicAccessMode === "INVITE",
           coverImageUrl: coverUrl,
-          liveHubMode,
+          liveHubVisibility,
           liveStreamUrl: liveStreamUrl.trim() || null,
+          publicAccessMode,
+          participantAccessMode,
+          publicTicketTypeIds: publicTicketTypeIdsToSend,
+          participantTicketTypeIds: participantTicketTypeIdsToSend,
           feeModeOverride: null,
           platformFeeBpsOverride: null,
           platformFeeFixedCentsOverride: null,
@@ -646,11 +831,11 @@ export function EventEditClient({ event, organizer, tickets }: EventEditClientPr
           />
         </div>
 
-        <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4 space-y-3">
+        <div id="livehub" className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4 space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">LiveHub</p>
-              <p className="text-sm text-white/80">Configura o modo e o stream do LiveHub.</p>
+              <p className="text-sm text-white/80">Configura visibilidade e stream do LiveHub.</p>
             </div>
             <a
               href={liveHubPreviewUrl}
@@ -665,21 +850,28 @@ export function EventEditClient({ event, organizer, tickets }: EventEditClientPr
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1">
               <label className="text-sm font-medium">Modo</label>
+              <div className="w-full rounded-md border border-white/15 bg-black/30 px-3 py-2 text-sm text-white/80">
+                Automático (por categoria e acesso ativo)
+              </div>
+              <p className="text-[11px] text-white/55">
+                O modo é aplicado automaticamente. Não precisas de escolher aqui.
+              </p>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-sm font-medium">Visibilidade</label>
               <select
-                value={liveHubMode}
-                onChange={(e) => handleLiveHubModeChange(e.target.value as "DEFAULT" | "PREMIUM")}
+                value={liveHubVisibility}
+                onChange={(e) => setLiveHubVisibility(e.target.value as LiveHubVisibility)}
                 className="w-full rounded-md border border-white/15 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-white/60"
               >
-                <option value="DEFAULT">Default (categoria)</option>
-                <option value="PREMIUM" disabled={!canUsePremium}>
-                  Premium (personalizado)
-                </option>
+                <option value="PUBLIC">Público</option>
+                <option value="PRIVATE">Privado (só participantes)</option>
+                <option value="DISABLED">Desativado</option>
               </select>
-              {!canUsePremium && (
-                <p className="text-[11px] text-white/55">
-                  Premium reservado para organizações com acesso ativo.
-                </p>
-              )}
+              <p className="text-[11px] text-white/55">
+                Público é sempre visível; privado mostra apenas a participantes; desativado oculta o LiveHub.
+              </p>
             </div>
 
             <div className="space-y-1">
@@ -762,95 +954,303 @@ export function EventEditClient({ event, organizer, tickets }: EventEditClientPr
             )}
           </p>
         </div>
-        <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-3 text-sm text-white/75 space-y-3">
+        <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4 text-sm text-white/75 space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <p className="font-semibold text-white">Só por convite</p>
+              <p className="font-semibold text-white">Acesso & participantes</p>
               <p className="text-[12px] text-white/65">
-                Controla quem pode aceder ao checkout e às inscrições.
+                Define quem pode assistir e quem é participante (competir/jogar).
               </p>
             </div>
-            <button
-              type="button"
-              onClick={() => {
-                setInviteOnly((prev) => !prev);
-                setInviteError(null);
-              }}
-              className={`rounded-full border px-3 py-1 text-[11px] font-semibold ${
-                inviteOnly
-                  ? "border-emerald-400/60 bg-emerald-500/15 text-emerald-100"
-                  : "border-white/20 bg-white/10 text-white/70"
-              }`}
-            >
-              {inviteOnly ? "Ativo" : "Desativado"}
-            </button>
+            <span className="rounded-full border border-white/15 bg-black/30 px-3 py-1 text-[11px] text-white/70">
+              {publicAccessSummary} · {participantSummary}
+            </span>
           </div>
 
-          {inviteOnly ? (
-            <div className="space-y-3">
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <input
-                  value={inviteInput}
-                  onChange={(e) => setInviteInput(e.target.value)}
-                  placeholder="Email ou @username (podes separar por vírgulas)"
-                  className="w-full rounded-md border border-white/15 bg-black/20 px-3 py-2 text-sm outline-none focus:border-white/60"
-                />
-                <button
-                  type="button"
-                  onClick={handleAddInvite}
-                  disabled={inviteSaving}
-                  className="rounded-full border border-white/20 px-4 py-2 text-[12px] font-semibold text-white hover:bg-white/10 disabled:opacity-60"
-                >
-                  {inviteSaving ? "A adicionar…" : "Adicionar"}
-                </button>
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">Público</p>
+              <div className="flex flex-wrap gap-2">
+                {([
+                  { value: "OPEN", label: "Aberto" },
+                  { value: "TICKET", label: "Por bilhete" },
+                  { value: "INVITE", label: "Por convite" },
+                ] as const).map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setPublicAccessMode(opt.value)}
+                    className={`rounded-full border px-3 py-1 text-[11px] font-semibold ${
+                      publicAccessMode === opt.value
+                        ? "border-emerald-400/60 bg-emerald-500/15 text-emerald-100"
+                        : "border-white/20 bg-white/10 text-white/70"
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
               </div>
-              {inviteError && (
-                <p className="text-[11px] font-semibold text-amber-100">{inviteError}</p>
-              )}
-              <div className="space-y-2">
-                {invitesLoading && (
-                  <p className="text-[11px] text-white/60">A carregar convites…</p>
-                )}
-                {!invitesLoading && invites.length === 0 && (
-                  <p className="text-[11px] text-white/60">Sem convites adicionados.</p>
-                )}
-                {invites.map((invite) => {
-                  const resolvedUsername = invite.targetUser?.username
-                    ? `@${invite.targetUser.username}`
-                    : null;
-                  return (
-                    <div
-                      key={invite.id}
-                      className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-[12px]"
-                    >
-                      <div className="flex flex-col">
-                        <span className="font-semibold text-white">
-                          {resolvedUsername ?? invite.targetIdentifier}
-                        </span>
-                        {resolvedUsername && (
-                          <span className="text-[11px] text-white/60">{invite.targetIdentifier}</span>
-                        )}
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveInvite(invite.id)}
-                        disabled={inviteRemovingId === invite.id}
-                        className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/70 hover:bg-white/10 disabled:opacity-60"
-                      >
-                        {inviteRemovingId === invite.id ? "A remover…" : "Remover"}
-                      </button>
+
+              {publicAccessMode === "TICKET" && (
+                <div className="space-y-2 rounded-xl border border-white/10 bg-black/30 px-3 py-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-[12px] text-white/70">Acesso do público</p>
+                    <div className="flex flex-wrap gap-2">
+                      {([
+                        { value: "ALL", label: "Todos os bilhetes" },
+                        { value: "SPECIFIC", label: "Tipos específicos" },
+                      ] as const).map((opt) => {
+                        const disabled = opt.value === "SPECIFIC" && ticketList.length === 0;
+                        return (
+                          <button
+                            key={`pub-scope-${opt.value}`}
+                            type="button"
+                            onClick={() => setPublicTicketScope(opt.value)}
+                            disabled={disabled}
+                            className={`rounded-full border px-3 py-1 text-[11px] font-semibold ${
+                              publicTicketScope === opt.value
+                                ? "border-emerald-400/60 bg-emerald-500/15 text-emerald-100"
+                                : "border-white/20 bg-white/10 text-white/70"
+                            } ${disabled ? "opacity-50 cursor-not-allowed" : ""}`}
+                          >
+                            {opt.label}
+                          </button>
+                        );
+                      })}
                     </div>
-                  );
-                })}
+                  </div>
+                  {publicTicketScope === "ALL" && (
+                    <p className="text-[11px] text-white/55">Qualquer bilhete do evento dá acesso ao público.</p>
+                  )}
+                  {publicTicketScope === "SPECIFIC" && (
+                    <>
+                      {ticketList.length === 0 && (
+                        <p className="text-[11px] text-white/50">Ainda não existem bilhetes.</p>
+                      )}
+                      <div className="grid gap-2">
+                        {ticketList.map((ticket) => (
+                          <label key={`pub-${ticket.id}`} className="flex items-center gap-2 text-[12px]">
+                            <input
+                              type="checkbox"
+                              checked={publicTicketTypeIds.includes(ticket.id)}
+                              onChange={() => toggleTicketType(ticket.id, publicTicketTypeIds, setPublicTicketTypeIds)}
+                            />
+                            <span className="text-white/80">{ticket.name}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {publicAccessMode === "INVITE" && (
+                <p className="text-[11px] text-white/55">
+                  Só convidados podem aceder ao checkout e ao LiveHub público.
+                </p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">Participantes</p>
+              <div className="flex flex-wrap gap-2">
+                {([
+                  { value: "NONE", label: "Sem participantes" },
+                  { value: "INSCRIPTION", label: "Por inscrição" },
+                  { value: "TICKET", label: "Por bilhete" },
+                  { value: "INVITE", label: "Por convite" },
+                ] as const).map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setParticipantAccessMode(opt.value)}
+                    className={`rounded-full border px-3 py-1 text-[11px] font-semibold ${
+                      participantAccessMode === opt.value
+                        ? "border-sky-400/60 bg-sky-500/15 text-sky-100"
+                        : "border-white/20 bg-white/10 text-white/70"
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
               </div>
-              <p className="text-[11px] text-white/55">
-                Convites por email permitem checkout como convidado. Eventos grátis continuam a exigir conta e username.
+
+              {participantAccessMode === "TICKET" && (
+                <div className="space-y-2 rounded-xl border border-white/10 bg-black/30 px-3 py-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-[12px] text-white/70">Participantes por bilhete</p>
+                    <div className="flex flex-wrap gap-2">
+                      {([
+                        { value: "ALL", label: "Todos os bilhetes" },
+                        { value: "SPECIFIC", label: "Tipos específicos" },
+                      ] as const).map((opt) => {
+                        const disabled = opt.value === "SPECIFIC" && ticketList.length === 0;
+                        return (
+                          <button
+                            key={`part-scope-${opt.value}`}
+                            type="button"
+                            onClick={() => setParticipantTicketScope(opt.value)}
+                            disabled={disabled}
+                            className={`rounded-full border px-3 py-1 text-[11px] font-semibold ${
+                              participantTicketScope === opt.value
+                                ? "border-sky-400/60 bg-sky-500/15 text-sky-100"
+                                : "border-white/20 bg-white/10 text-white/70"
+                            } ${disabled ? "opacity-50 cursor-not-allowed" : ""}`}
+                          >
+                            {opt.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  {participantTicketScope === "ALL" && (
+                    <p className="text-[11px] text-white/55">Qualquer bilhete identifica o participante.</p>
+                  )}
+                  {participantTicketScope === "SPECIFIC" && (
+                    <>
+                      {ticketList.length === 0 && (
+                        <p className="text-[11px] text-white/50">Ainda não existem bilhetes.</p>
+                      )}
+                      <div className="grid gap-2">
+                        {ticketList.map((ticket) => (
+                          <label key={`part-${ticket.id}`} className="flex items-center gap-2 text-[12px]">
+                            <input
+                              type="checkbox"
+                              checked={participantTicketTypeIds.includes(ticket.id)}
+                              onChange={() =>
+                                toggleTicketType(ticket.id, participantTicketTypeIds, setParticipantTicketTypeIds)
+                              }
+                            />
+                            <span className="text-white/80">{ticket.name}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {participantAccessMode === "INSCRIPTION" && (
+                <p className="text-[11px] text-white/55">
+                  Participantes são definidos pelas inscrições/torneio (sem necessidade de bilhete específico).
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-white/10 bg-black/30 px-3 py-3 space-y-3">
+            <p className="text-[11px] uppercase tracking-[0.22em] text-white/55">Resumo rápido</p>
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-2">
+                <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Público</p>
+                <p className="mt-1 text-sm font-semibold text-white">{publicAccessSummary}</p>
+                <p className="text-[12px] text-white/60">{publicAccessDescription}</p>
+              </div>
+              <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-2">
+                <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Participantes</p>
+                <p className="mt-1 text-sm font-semibold text-white">{participantSummary}</p>
+                <p className="text-[12px] text-white/60">{participantAccessDescription}</p>
+              </div>
+            </div>
+            {accessWarnings.length > 0 && (
+              <div className="rounded-lg border border-amber-400/40 bg-amber-400/10 px-3 py-2 text-[12px] text-amber-50">
+                <p className="font-semibold">Atenções</p>
+                <div className="mt-1 space-y-1 text-amber-50/90">
+                  {accessWarnings.map((warning) => (
+                    <p key={warning}>• {warning}</p>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {showInviteSection && (
+          <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-3 text-sm text-white/75 space-y-4">
+            <div>
+              <p className="font-semibold text-white">Convites</p>
+              <p className="text-[12px] text-white/65">
+                Gerir listas separadas para público e participantes, conforme o modo escolhido.
               </p>
             </div>
-          ) : (
-            <p className="text-[12px] text-white/60">Qualquer pessoa pode comprar ou inscrever-se.</p>
-          )}
-        </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              {inviteGroups.map((group) => (
+                <div
+                  key={group.scope}
+                  className="rounded-xl border border-white/10 bg-black/30 px-3 py-3 space-y-3"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <p className="font-semibold text-white">{group.title}</p>
+                      <p className="text-[11px] text-white/55">{group.description}</p>
+                    </div>
+                    <span className="rounded-full border border-white/20 bg-black/40 px-3 py-1 text-[10px] text-white/65 uppercase tracking-[0.18em]">
+                      {group.scope === "PUBLIC" ? "Público" : "Participantes"}
+                    </span>
+                  </div>
+
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <input
+                      value={group.input}
+                      onChange={(e) => group.setInput(e.target.value)}
+                      placeholder="Email ou @username (podes separar por vírgulas)"
+                      className="w-full rounded-md border border-white/15 bg-black/20 px-3 py-2 text-sm outline-none focus:border-white/60"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleAddInvite(group.scope)}
+                      disabled={group.isSaving}
+                      className="rounded-full border border-white/20 px-4 py-2 text-[12px] font-semibold text-white hover:bg-white/10 disabled:opacity-60"
+                    >
+                      {group.isSaving ? "A adicionar…" : "Adicionar"}
+                    </button>
+                  </div>
+                  {group.error && <p className="text-[11px] font-semibold text-amber-100">{group.error}</p>}
+
+                  <div className="space-y-2">
+                    {group.isLoading && <p className="text-[11px] text-white/60">A carregar convites…</p>}
+                    {!group.isLoading && group.invites.length === 0 && (
+                      <p className="text-[11px] text-white/60">Sem convites adicionados.</p>
+                    )}
+                    {group.invites.map((invite) => {
+                      const resolvedUsername = invite.targetUser?.username
+                        ? `@${invite.targetUser.username}`
+                        : null;
+                      return (
+                        <div
+                          key={invite.id}
+                          className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-[12px]"
+                        >
+                          <div className="flex flex-col">
+                            <span className="font-semibold text-white">
+                              {resolvedUsername ?? invite.targetIdentifier}
+                            </span>
+                            {resolvedUsername && (
+                              <span className="text-[11px] text-white/60">{invite.targetIdentifier}</span>
+                            )}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveInvite(invite.id, group.scope)}
+                            disabled={inviteRemovingId === invite.id}
+                            className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/70 hover:bg-white/10 disabled:opacity-60"
+                          >
+                            {inviteRemovingId === invite.id ? "A remover…" : "Remover"}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <p className="text-[11px] text-white/55">
+                    Convites por email permitem checkout como convidado. Eventos grátis continuam a exigir conta e username.
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     );
 

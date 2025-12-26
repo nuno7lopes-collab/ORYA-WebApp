@@ -113,6 +113,7 @@ export async function GET(req: NextRequest) {
             (organizer as { organizationCategory?: string | null }).organizationCategory ??
             DEFAULT_ORGANIZATION_CATEGORY,
           modules: organizerModules.map((module) => module.moduleKey),
+          liveHubPremiumEnabled: organizer.liveHubPremiumEnabled,
           publicName: organizer.publicName,
           address: (organizer as { address?: string | null }).address ?? null,
           showAddressPublicly: (organizer as { showAddressPublicly?: boolean | null }).showAddressPublicly ?? false,

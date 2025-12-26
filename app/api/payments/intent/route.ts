@@ -269,6 +269,7 @@ export async function POST(req: NextRequest) {
         fee_mode_override: string | null;
         organizer_id: number | null;
         invite_only: boolean | null;
+        public_access_mode: string | null;
         org_type: string | null;
         org_stripe_account_id: string | null;
         org_stripe_charges_enabled: boolean | null;
@@ -295,6 +296,7 @@ export async function POST(req: NextRequest) {
         e.fee_mode_override,
         e.organizer_id,
         e.invite_only,
+        e.public_access_mode,
         o.org_type AS org_type,
         o.stripe_account_id AS org_stripe_account_id,
         o.stripe_charges_enabled AS org_stripe_charges_enabled,
@@ -344,7 +346,8 @@ export async function POST(req: NextRequest) {
       return intentError("EVENT_ENDED", "Vendas encerradas: evento já terminou.", { httpStatus: 400 });
     }
 
-    const inviteOnly = Boolean(event.invite_only);
+    const publicAccessMode = event.public_access_mode ?? (event.invite_only ? "INVITE" : "OPEN");
+    const inviteOnly = publicAccessMode === "INVITE";
     if (inviteOnly && !isAdmin) {
       if (!userId) {
         return intentError("INVITE_REQUIRED", "Este evento é apenas por convite.", {
@@ -374,7 +377,7 @@ export async function POST(req: NextRequest) {
       }
 
       const inviteMatch = await prisma.eventInvite.findFirst({
-        where: { eventId: event.id, targetIdentifier: { in: identifiers } },
+        where: { eventId: event.id, targetIdentifier: { in: identifiers }, scope: "PUBLIC" },
         select: { id: true },
       });
 

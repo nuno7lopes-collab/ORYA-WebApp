@@ -94,14 +94,12 @@ export async function GET(req: NextRequest) {
   const where: Prisma.EventWhereInput = {
     status: { in: ["PUBLISHED", "DATE_CHANGED"] },
     isTest: { not: true },
+    isDeleted: false,
   };
 
   const listingFilter: Prisma.EventWhereInput = {
-    OR: [
-      { organizerId: null },
-      { organizer: { status: "ACTIVE", publicListingEnabled: true } },
-      { organizer: { status: "ACTIVE", publicListingEnabled: null } },
-    ],
+    organizerId: { not: null },
+    organizer: { status: "ACTIVE", publicListingEnabled: { not: false } },
   };
   where.AND = Array.isArray(where.AND) ? [...where.AND, listingFilter] : [listingFilter];
 

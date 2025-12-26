@@ -17,10 +17,17 @@ type TicketTypeRow = {
   name: string;
   price: string;
   totalQuantity: string;
+  publicAccess?: boolean;
+  participantAccess?: boolean;
 };
 
 type ToastTone = "success" | "error";
 type Toast = { id: number; message: string; tone: ToastTone };
+
+type PublicAccessMode = "OPEN" | "TICKET" | "INVITE";
+type ParticipantAccessMode = "NONE" | "TICKET" | "INSCRIPTION" | "INVITE";
+type TicketScope = "ALL" | "SPECIFIC";
+type LiveHubVisibility = "PUBLIC" | "PRIVATE" | "DISABLED";
 
 const DRAFT_KEY = "orya-organizer-new-event-draft";
 
@@ -160,7 +167,12 @@ export default function NewOrganizerEventPage() {
   const [isTest, setIsTest] = useState(false);
   const [selectedPreset, setSelectedPreset] = useState<string | null>(null);
   const [isFreeEvent, setIsFreeEvent] = useState(false);
-  const [inviteOnly, setInviteOnly] = useState(false);
+  const [advancedAccessEnabled, setAdvancedAccessEnabled] = useState(false);
+  const [publicAccessMode, setPublicAccessMode] = useState<PublicAccessMode>("OPEN");
+  const [participantAccessMode, setParticipantAccessMode] = useState<ParticipantAccessMode>("NONE");
+  const [publicTicketScope, setPublicTicketScope] = useState<TicketScope>("ALL");
+  const [participantTicketScope, setParticipantTicketScope] = useState<TicketScope>("ALL");
+  const [liveHubVisibility, setLiveHubVisibility] = useState<LiveHubVisibility>("PUBLIC");
   const [freeTicketName, setFreeTicketName] = useState("Inscrição");
   const [freeCapacity, setFreeCapacity] = useState("");
   const [currentStep, setCurrentStep] = useState(0);
@@ -214,6 +226,30 @@ export default function NewOrganizerEventPage() {
     () => !isFreeEvent && ticketTypes.some((t) => Number(t.price.replace(",", ".")) > 0),
     [isFreeEvent, ticketTypes],
   );
+  const publicAccessLabel =
+    publicAccessMode === "OPEN" ? "Aberto" : publicAccessMode === "TICKET" ? "Por bilhete" : "Por convite";
+  const participantAccessLabel =
+    participantAccessMode === "NONE"
+      ? "Sem participantes"
+      : participantAccessMode === "TICKET"
+        ? "Por bilhete"
+        : participantAccessMode === "INSCRIPTION"
+        ? "Por inscrição"
+        : "Por convite";
+  const publicAccessDescription =
+    publicAccessMode === "OPEN"
+      ? "Qualquer pessoa pode ver o evento e comprar bilhete/inscrever-se."
+      : publicAccessMode === "TICKET"
+        ? "Qualquer bilhete criado dá acesso ao público (podes refinar depois)."
+        : "Apenas convidados conseguem aceder ao checkout e ao LiveHub.";
+  const participantAccessDescription =
+    participantAccessMode === "NONE"
+      ? "Não existe distinção de participantes."
+      : participantAccessMode === "INSCRIPTION"
+        ? "Participantes são definidos por inscrição/torneio."
+        : participantAccessMode === "TICKET"
+          ? "Qualquer bilhete criado marca o utilizador como participante."
+          : "Participantes são escolhidos por convite.";
   const organizerOfficialEmail =
     (organizerStatus?.organizer as { officialEmail?: string | null } | null)?.officialEmail ?? null;
   const organizerOfficialEmailVerified = Boolean(
@@ -236,6 +272,39 @@ export default function NewOrganizerEventPage() {
     const reasonsText = reasons.join(" e ");
     return `Eventos pagos só ficam ativos depois de ${reasonsText}. Até lá podes criar eventos gratuitos (preço = 0 €).`;
   }, [paidTicketsBlocked, stripeNotReady, needsOfficialEmailVerification, organizerOfficialEmail]);
+
+  useEffect(() => {
+    if (advancedAccessEnabled) return;
+    setPublicAccessMode("OPEN");
+    setParticipantAccessMode("NONE");
+    setPublicTicketScope("ALL");
+    setParticipantTicketScope("ALL");
+    setTicketTypes((prev) =>
+      prev.map((row) => ({ ...row, publicAccess: undefined, participantAccess: undefined })),
+    );
+  }, [advancedAccessEnabled]);
+
+  useEffect(() => {
+    if (!advancedAccessEnabled) return;
+    if (publicAccessMode !== "TICKET" || publicTicketScope !== "SPECIFIC") {
+      setTicketTypes((prev) => prev.map((row) => ({ ...row, publicAccess: undefined })));
+      return;
+    }
+    setTicketTypes((prev) =>
+      prev.map((row) => ({ ...row, publicAccess: row.publicAccess ?? true })),
+    );
+  }, [advancedAccessEnabled, publicAccessMode, publicTicketScope]);
+
+  useEffect(() => {
+    if (!advancedAccessEnabled) return;
+    if (participantAccessMode !== "TICKET" || participantTicketScope !== "SPECIFIC") {
+      setTicketTypes((prev) => prev.map((row) => ({ ...row, participantAccess: undefined })));
+      return;
+    }
+    setTicketTypes((prev) =>
+      prev.map((row) => ({ ...row, participantAccess: row.participantAccess ?? true })),
+    );
+  }, [advancedAccessEnabled, participantAccessMode, participantTicketScope]);
 
   const presetMap = useMemo(() => {
     const map = new Map<string, (typeof CATEGORY_OPTIONS)[number]>();
@@ -286,7 +355,12 @@ export default function NewOrganizerEventPage() {
         coverUrl: string | null;
         selectedPreset: string | null;
         isFreeEvent: boolean;
-        inviteOnly: boolean;
+        advancedAccessEnabled: boolean;
+        publicAccessMode: PublicAccessMode;
+        participantAccessMode: ParticipantAccessMode;
+        publicTicketScope: TicketScope;
+        participantTicketScope: TicketScope;
+        liveHubVisibility: LiveHubVisibility;
         freeTicketName: string;
         freeCapacity: string;
         currentStep: number;
@@ -313,7 +387,15 @@ export default function NewOrganizerEventPage() {
       setCoverUrl(draft.coverUrl ?? null);
       setSelectedPreset(draft.selectedPreset ?? null);
       setIsFreeEvent(Boolean(draft.isFreeEvent));
-      setInviteOnly(Boolean(draft.inviteOnly));
+      setAdvancedAccessEnabled(Boolean(draft.advancedAccessEnabled));
+      const legacyInviteOnly = typeof (draft as { inviteOnly?: boolean }).inviteOnly === "boolean"
+        ? Boolean((draft as { inviteOnly?: boolean }).inviteOnly)
+        : null;
+      setPublicAccessMode(draft.publicAccessMode ?? (legacyInviteOnly ? "INVITE" : "OPEN"));
+      setParticipantAccessMode(draft.participantAccessMode ?? "NONE");
+      setPublicTicketScope(draft.publicTicketScope ?? "ALL");
+      setParticipantTicketScope(draft.participantTicketScope ?? "ALL");
+      setLiveHubVisibility(draft.liveHubVisibility ?? "PUBLIC");
       setFreeTicketName(draft.freeTicketName || "Inscrição");
       setFreeCapacity(draft.freeCapacity || "");
       const draftCurrentStep =
@@ -474,7 +556,12 @@ export default function NewOrganizerEventPage() {
       coverUrl,
       selectedPreset,
       isFreeEvent,
-      inviteOnly,
+      advancedAccessEnabled,
+      publicAccessMode,
+      participantAccessMode,
+      publicTicketScope,
+      participantTicketScope,
+      liveHubVisibility,
       freeTicketName,
       freeCapacity,
       currentStep,
@@ -515,7 +602,22 @@ export default function NewOrganizerEventPage() {
   const handleAddTicketType = () => {
     clearErrorsForFields(["tickets"]);
     setStripeAlert(null);
-    setTicketTypes((prev) => [...prev, { name: "", price: "", totalQuantity: "" }]);
+    setTicketTypes((prev) => [
+      ...prev,
+      {
+        name: "",
+        price: "",
+        totalQuantity: "",
+        publicAccess:
+          advancedAccessEnabled && publicAccessMode === "TICKET" && publicTicketScope === "SPECIFIC"
+            ? true
+            : undefined,
+        participantAccess:
+          advancedAccessEnabled && participantAccessMode === "TICKET" && participantTicketScope === "SPECIFIC"
+            ? true
+            : undefined,
+      },
+    ]);
   };
 
   const handleRemoveTicketType = (index: number) => {
@@ -528,6 +630,12 @@ export default function NewOrganizerEventPage() {
     setTicketTypes((prev) => prev.map((row, i) => (i === index ? { ...row, [field]: value } : row)));
     clearErrorsForFields(["tickets"]);
     setStripeAlert(null);
+  };
+
+  const toggleTicketFlag = (index: number, field: "publicAccess" | "participantAccess") => {
+    setTicketTypes((prev) =>
+      prev.map((row, i) => (i === index ? { ...row, [field]: !row[field] } : row)),
+    );
   };
 
   const handleCoverUpload = async (file: File | null) => {
@@ -566,6 +674,18 @@ export default function NewOrganizerEventPage() {
           name: freeTicketName.trim() || "Inscrição",
           price: 0,
           totalQuantity: parsedQuantity,
+          publicAccess:
+            advancedAccessEnabled &&
+            publicAccessMode === "TICKET" &&
+            publicTicketScope === "SPECIFIC"
+              ? true
+              : undefined,
+          participantAccess:
+            advancedAccessEnabled &&
+            participantAccessMode === "TICKET" &&
+            participantTicketScope === "SPECIFIC"
+              ? true
+              : undefined,
         },
       ];
     }
@@ -578,10 +698,54 @@ export default function NewOrganizerEventPage() {
           name: row.name.trim(),
           price,
           totalQuantity: row.totalQuantity ? Number(row.totalQuantity) : null,
+          publicAccess:
+            advancedAccessEnabled &&
+            publicAccessMode === "TICKET" &&
+            publicTicketScope === "SPECIFIC"
+              ? Boolean(row.publicAccess)
+              : undefined,
+          participantAccess:
+            advancedAccessEnabled &&
+            participantAccessMode === "TICKET" &&
+            participantTicketScope === "SPECIFIC"
+              ? Boolean(row.participantAccess)
+              : undefined,
         };
       })
       .filter((t) => t.name);
   };
+
+  const preparedTickets = useMemo(
+    () => buildTicketsPayload(),
+    [
+      isFreeEvent,
+      freeTicketName,
+      freeCapacity,
+      ticketTypes,
+      advancedAccessEnabled,
+      publicAccessMode,
+      participantAccessMode,
+      publicTicketScope,
+      participantTicketScope,
+    ],
+  );
+
+  const accessNotes = useMemo(() => {
+    const notes: string[] = [];
+    if (!advancedAccessEnabled) {
+      return notes;
+    }
+    if (publicAccessMode === "TICKET" && preparedTickets.length === 0) {
+      notes.push("Define pelo menos um bilhete para controlar o acesso do público.");
+    }
+    if (participantAccessMode === "TICKET" && preparedTickets.length === 0) {
+      notes.push("Define bilhetes para marcar participantes.");
+    }
+    if (publicAccessMode === "INVITE" || participantAccessMode === "INVITE") {
+      notes.push("Convites são adicionados depois de criares o evento.");
+    }
+    return notes;
+  }, [advancedAccessEnabled, publicAccessMode, participantAccessMode, preparedTickets.length]);
 
   const fieldsByStep: Record<StepKey, FieldKey[]> = {
     preset: ["preset"],
@@ -616,6 +780,22 @@ export default function NewOrganizerEventPage() {
         const preparedTickets = buildTicketsPayload();
         if (preparedTickets.length === 0) {
           issues.push({ field: "tickets", message: "Adiciona pelo menos um bilhete ou inscrição." });
+        }
+        if (
+          advancedAccessEnabled &&
+          publicAccessMode === "TICKET" &&
+          publicTicketScope === "SPECIFIC" &&
+          !preparedTickets.some((t) => t.publicAccess)
+        ) {
+          issues.push({ field: "tickets", message: "Seleciona pelo menos um bilhete para o público." });
+        }
+        if (
+          advancedAccessEnabled &&
+          participantAccessMode === "TICKET" &&
+          participantTicketScope === "SPECIFIC" &&
+          !preparedTickets.some((t) => t.participantAccess)
+        ) {
+          issues.push({ field: "tickets", message: "Seleciona pelo menos um bilhete para participantes." });
         }
         if (!isFreeEvent) {
           const hasNegativePrice = preparedTickets.some((t) => t.price < 0);
@@ -904,10 +1084,10 @@ export default function NewOrganizerEventPage() {
             ? "VOLUNTEERING"
             : "OTHER";
       const payload = {
-      title: title.trim(),
-      description: description.trim() || null,
-      startsAt,
-      endsAt,
+        title: title.trim(),
+        description: description.trim() || null,
+        startsAt,
+        endsAt,
         locationName: locationName.trim() || null,
         locationCity: locationCity.trim() || null,
         templateType: templateToSend,
@@ -915,7 +1095,12 @@ export default function NewOrganizerEventPage() {
         categories: categoriesToSend,
         ticketTypes: preparedTickets,
         coverImageUrl: coverUrl,
-        inviteOnly,
+        inviteOnly: publicAccessMode === "INVITE",
+        publicAccessMode,
+        participantAccessMode,
+        publicTicketScope,
+        participantTicketScope,
+        liveHubVisibility,
         feeMode,
         isTest: isAdmin ? isTest : undefined,
         padel:
@@ -1325,7 +1510,7 @@ export default function NewOrganizerEventPage() {
             </p>
           </div>
           <Link
-            href="/organizador?tab=manage&section=torneios"
+            href="/organizador?tab=manage&section=padel-hub"
             className="rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-[12px] font-semibold text-white hover:border-white/30 hover:bg-white/15 shadow-[0_12px_30px_rgba(0,0,0,0.35)]"
           >
             Abrir hub de Padel
@@ -1512,7 +1697,7 @@ export default function NewOrganizerEventPage() {
               {needsOfficialEmailVerification && (
                 <button
                   type="button"
-                  onClick={() => router.push("/organizador?tab=manage&section=settings")}
+                  onClick={() => router.push("/organizador/settings")}
                   className="rounded-full border border-white/30 px-3 py-1 text-[11px] font-semibold text-amber-50 hover:bg-white/10"
                 >
                   Definir / verificar email oficial
@@ -1526,28 +1711,197 @@ export default function NewOrganizerEventPage() {
       <div className="space-y-3 rounded-2xl border border-white/12 bg-[rgba(14,14,20,0.7)] p-4 shadow-[0_14px_36px_rgba(0,0,0,0.45)]">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <p className={labelClass}>Acesso</p>
+            <p className={labelClass}>Acesso & participantes</p>
             <p className="text-[12px] text-white/65">
-              Decide se o evento é aberto ou apenas para convidados.
+              Por defeito, o evento é simples: bilhete pago ou entrada gratuita, sem separação de público.
             </p>
           </div>
           <button
             type="button"
-            onClick={() => setInviteOnly((prev) => !prev)}
+            onClick={() => setAdvancedAccessEnabled((prev) => !prev)}
             className={`rounded-full border px-3 py-1 text-[12px] font-semibold transition ${
-              inviteOnly
+              advancedAccessEnabled
                 ? "border-emerald-400/60 bg-emerald-500/15 text-emerald-100"
                 : "border-white/20 bg-black/40 text-white/70"
             }`}
           >
-            {inviteOnly ? "Só por convite" : "Aberto"}
+            {advancedAccessEnabled ? "Modo avançado ativo" : "Ativar modo avançado"}
           </button>
         </div>
-        <p className="text-[12px] text-white/60">
-          {inviteOnly
-            ? "Depois de criares o evento podes adicionar emails e @usernames na edição."
-            : "Qualquer pessoa pode comprar ou inscrever-se."}
-        </p>
+
+        {!advancedAccessEnabled ? (
+          <div className="rounded-xl border border-white/10 bg-black/30 px-3 py-3 text-[12px] text-white/70">
+            Público fica aberto e não há distinção de participantes. Se precisares de inscrições pagas ou convites,
+            ativa o modo avançado.
+          </div>
+        ) : (
+          <>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <span className="rounded-full border border-white/20 bg-black/30 px-3 py-1 text-[12px] text-white/70">
+                {publicAccessLabel} · {participantAccessLabel}
+              </span>
+              <span className="rounded-full border border-white/20 bg-black/30 px-3 py-1 text-[12px] text-white/70">
+                LiveHub {liveHubVisibility === "PUBLIC" ? "Público" : liveHubVisibility === "PRIVATE" ? "Privado" : "Desativado"}
+              </span>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <p className={labelClass}>Público</p>
+                <div className="flex flex-wrap gap-2">
+                  {([
+                    { value: "OPEN", label: "Aberto" },
+                    { value: "TICKET", label: "Por bilhete" },
+                    { value: "INVITE", label: "Por convite" },
+                  ] as const).map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setPublicAccessMode(opt.value)}
+                      className={`rounded-full border px-3 py-1 text-[12px] font-semibold transition ${
+                        publicAccessMode === opt.value
+                          ? "border-emerald-400/60 bg-emerald-500/15 text-emerald-100"
+                          : "border-white/20 bg-black/40 text-white/70"
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+                {publicAccessMode === "TICKET" && (
+                  <div className="flex flex-wrap gap-2">
+                    {([
+                      { value: "ALL", label: "Todos os bilhetes" },
+                      { value: "SPECIFIC", label: "Tipos específicos" },
+                    ] as const).map((opt) => (
+                      <button
+                        key={`pub-scope-${opt.value}`}
+                        type="button"
+                        onClick={() => setPublicTicketScope(opt.value)}
+                        className={`rounded-full border px-3 py-1 text-[11px] font-semibold transition ${
+                          publicTicketScope === opt.value
+                            ? "border-emerald-400/60 bg-emerald-500/15 text-emerald-100"
+                            : "border-white/20 bg-black/40 text-white/70"
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {publicAccessMode === "INVITE" && (
+                  <p className="text-[12px] text-white/60">
+                    A lista de convites do público é adicionada depois de criares o evento.
+                  </p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <p className={labelClass}>Participantes</p>
+                <div className="flex flex-wrap gap-2">
+                  {([
+                    { value: "NONE", label: "Sem participantes" },
+                    { value: "INSCRIPTION", label: "Por inscrição" },
+                    { value: "TICKET", label: "Por bilhete" },
+                    { value: "INVITE", label: "Por convite" },
+                  ] as const).map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setParticipantAccessMode(opt.value)}
+                      className={`rounded-full border px-3 py-1 text-[12px] font-semibold transition ${
+                        participantAccessMode === opt.value
+                          ? "border-sky-400/60 bg-sky-500/15 text-sky-100"
+                          : "border-white/20 bg-black/40 text-white/70"
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+                {participantAccessMode === "TICKET" && (
+                  <div className="flex flex-wrap gap-2">
+                    {([
+                      { value: "ALL", label: "Todos os bilhetes" },
+                      { value: "SPECIFIC", label: "Tipos específicos" },
+                    ] as const).map((opt) => (
+                      <button
+                        key={`part-scope-${opt.value}`}
+                        type="button"
+                        onClick={() => setParticipantTicketScope(opt.value)}
+                        className={`rounded-full border px-3 py-1 text-[11px] font-semibold transition ${
+                          participantTicketScope === opt.value
+                            ? "border-sky-400/60 bg-sky-500/15 text-sky-100"
+                            : "border-white/20 bg-black/40 text-white/70"
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {participantAccessMode === "INVITE" && (
+                  <p className="text-[12px] text-white/60">
+                    A lista de convites de participantes é adicionada depois de criares o evento.
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <p className={labelClass}>LiveHub</p>
+              <div className="flex flex-wrap gap-2">
+                {([
+                  { value: "PUBLIC", label: "Público" },
+                  { value: "PRIVATE", label: "Privado" },
+                  { value: "DISABLED", label: "Desativado" },
+                ] as const).map((opt) => (
+                  <button
+                    key={`livehub-${opt.value}`}
+                    type="button"
+                    onClick={() => setLiveHubVisibility(opt.value)}
+                    className={`rounded-full border px-3 py-1 text-[12px] font-semibold transition ${
+                      liveHubVisibility === opt.value
+                        ? "border-fuchsia-400/60 bg-fuchsia-500/15 text-fuchsia-100"
+                        : "border-white/20 bg-black/40 text-white/70"
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+              <p className="text-[12px] text-white/60">
+                Público fica sempre acessível; privado mostra só a participantes; desativado oculta o LiveHub.
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-white/12 bg-black/40 px-3 py-3 space-y-3">
+              <p className="text-[11px] uppercase tracking-[0.22em] text-white/55">Resumo rápido</p>
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-2">
+                  <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Público</p>
+                  <p className="mt-1 text-sm font-semibold text-white">{publicAccessLabel}</p>
+                  <p className="text-[12px] text-white/60">{publicAccessDescription}</p>
+                </div>
+                <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-2">
+                  <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Participantes</p>
+                  <p className="mt-1 text-sm font-semibold text-white">{participantAccessLabel}</p>
+                  <p className="text-[12px] text-white/60">{participantAccessDescription}</p>
+                </div>
+              </div>
+              {accessNotes.length > 0 && (
+                <div className="rounded-lg border border-amber-400/40 bg-amber-400/10 px-3 py-2 text-[12px] text-amber-50">
+                  <p className="font-semibold">Notas</p>
+                  <div className="mt-1 space-y-1 text-amber-50/90">
+                    {accessNotes.map((note) => (
+                      <p key={note}>• {note}</p>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </>
+        )}
       </div>
 
       {isFreeEvent ? (
@@ -1675,6 +2029,36 @@ export default function NewOrganizerEventPage() {
                       </div>
                     </div>
                   </div>
+
+                  {advancedAccessEnabled &&
+                    ((publicAccessMode === "TICKET" && publicTicketScope === "SPECIFIC") ||
+                      (participantAccessMode === "TICKET" && participantTicketScope === "SPECIFIC")) && (
+                      <div className="flex flex-wrap items-center gap-3 rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-[12px] text-white/75">
+                        <span className="text-[11px] uppercase tracking-[0.18em] text-white/60">
+                          Este bilhete dá acesso a
+                        </span>
+                        {publicAccessMode === "TICKET" && publicTicketScope === "SPECIFIC" && (
+                          <label className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={Boolean(row.publicAccess)}
+                              onChange={() => toggleTicketFlag(idx, "publicAccess")}
+                            />
+                            <span>Público</span>
+                          </label>
+                        )}
+                        {participantAccessMode === "TICKET" && participantTicketScope === "SPECIFIC" && (
+                          <label className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={Boolean(row.participantAccess)}
+                              onChange={() => toggleTicketFlag(idx, "participantAccess")}
+                            />
+                            <span>Participante</span>
+                          </label>
+                        )}
+                      </div>
+                    )}
                 </div>
               );
             })}

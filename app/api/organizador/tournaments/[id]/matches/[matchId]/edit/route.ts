@@ -20,9 +20,10 @@ async function ensureOrganizerAccess(userId: string, eventId: number) {
   return Boolean(member);
 }
 
-export async function POST(req: NextRequest, { params }: { params: { id: string; matchId: string } }) {
-  const tournamentId = Number(params?.id);
-  const matchId = Number(params?.matchId);
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string; matchId: string }> }) {
+  const resolved = await params;
+  const tournamentId = Number(resolved?.id);
+  const matchId = Number(resolved?.matchId);
   if (!Number.isFinite(tournamentId) || !Number.isFinite(matchId)) {
     return NextResponse.json({ ok: false, error: "INVALID_ID" }, { status: 400 });
   }

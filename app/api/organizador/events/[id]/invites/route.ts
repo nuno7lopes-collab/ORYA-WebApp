@@ -9,6 +9,13 @@ import { validateUsername } from "@/lib/username";
 
 const EMAIL_REGEX = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
+const VALID_SCOPES = new Set(["PUBLIC", "PARTICIPANT"]);
+
+function normalizeScope(raw: string | null | undefined) {
+  const normalized = typeof raw === "string" ? raw.trim().toUpperCase() : "";
+  return VALID_SCOPES.has(normalized) ? (normalized as "PUBLIC" | "PARTICIPANT") : null;
+}
+
 function normalizeInviteIdentifier(raw: string) {
   const value = raw.trim();
   if (!value) return { ok: false as const, error: "Identificador vazio." };
@@ -70,7 +77,7 @@ async function ensureInviteAccess(userId: string, eventId: number) {
   return { ok: true as const, isAdmin: false };
 }
 
-export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
@@ -84,13 +91,16 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
       return NextResponse.json({ ok: false, error: access.error }, { status: access.status });
     }
 
+    const scope = normalizeScope(req.nextUrl.searchParams.get("scope"));
+
     const invites = await prisma.eventInvite.findMany({
-      where: { eventId },
+      where: { eventId, ...(scope ? { scope } : {}) },
       orderBy: { createdAt: "desc" },
       select: {
         id: true,
         targetIdentifier: true,
         targetUserId: true,
+        scope: true,
         createdAt: true,
         targetUser: {
           select: { id: true, username: true, fullName: true, avatarUrl: true },
@@ -104,6 +114,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
         id: invite.id,
         targetIdentifier: invite.targetIdentifier,
         targetUserId: invite.targetUserId,
+        scope: invite.scope,
         createdAt: invite.createdAt,
         targetUser: invite.targetUser,
       })),
@@ -131,12 +142,14 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       return NextResponse.json({ ok: false, error: access.error }, { status: access.status });
     }
 
-    let body: { identifier?: string; identifiers?: string[] } | null = null;
+    let body: { identifier?: string; identifiers?: string[]; scope?: string } | null = null;
     try {
-      body = (await req.json()) as { identifier?: string; identifiers?: string[] };
+      body = (await req.json()) as { identifier?: string; identifiers?: string[]; scope?: string };
     } catch {
       return NextResponse.json({ ok: false, error: "BODY_INVALID" }, { status: 400 });
     }
+
+    const scope = normalizeScope(body?.scope) ?? "PUBLIC";
 
     const rawList = Array.isArray(body?.identifiers)
       ? body.identifiers
@@ -192,6 +205,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         invitedByUserId: user.id,
         targetIdentifier: entry.normalized,
         targetUserId: entry.targetUserId ?? undefined,
+        scope,
       })),
       skipDuplicates: true,
     });

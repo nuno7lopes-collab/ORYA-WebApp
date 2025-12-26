@@ -14,9 +14,10 @@ async function ensureOrganizerAccess(userId: string, eventId: number) {
   return Boolean(member);
 }
 
-export async function POST(req: NextRequest, { params }: { params: { id: string; matchId: string } }) {
-  const tournamentId = Number(params?.id);
-  const matchId = Number(params?.matchId);
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string; matchId: string }> }) {
+  const resolved = await params;
+  const tournamentId = Number(resolved?.id);
+  const matchId = Number(resolved?.matchId);
   if (!Number.isFinite(tournamentId) || !Number.isFinite(matchId)) {
     return NextResponse.json({ ok: false, error: "INVALID_ID" }, { status: 400 });
   }
@@ -38,12 +39,14 @@ export async function POST(req: NextRequest, { params }: { params: { id: string;
 
   const body = await req.json().catch(() => ({}));
   const { score, status, winnerPairingId, expectedUpdatedAt, force } = body ?? {};
+  const nextStatus =
+    status && Object.values(TournamentMatchStatus).includes(status) ? (status as TournamentMatchStatus) : undefined;
 
   try {
     const updated = await updateMatchResult({
       matchId,
       score,
-      status: status && Object.values(TournamentMatchStatus).includes(status) ? status : "DONE",
+      status: nextStatus,
       explicitWinnerPairingId: winnerPairingId,
       expectedUpdatedAt: expectedUpdatedAt ? new Date(expectedUpdatedAt) : undefined,
       userId: data.user.id,
@@ -55,8 +58,11 @@ export async function POST(req: NextRequest, { params }: { params: { id: string;
     if (err instanceof Error && err.message === "MATCH_CONFLICT") {
       return NextResponse.json({ ok: false, error: "MATCH_CONFLICT", code: "VERSION_CONFLICT" }, { status: 409 });
     }
-    if (err instanceof Error && err.message === "INVALID_SCORE") {
-      return NextResponse.json({ ok: false, error: "INVALID_SCORE" }, { status: 400 });
+    if (
+      err instanceof Error &&
+      ["INVALID_SCORE", "INVALID_LIMIT", "LIMIT_EXCEEDED", "TIE_NOT_ALLOWED", "NO_WINNER"].includes(err.message)
+    ) {
+      return NextResponse.json({ ok: false, error: err.message }, { status: 400 });
     }
     if (err instanceof Error && err.message === "MATCH_LOCKED") {
       return NextResponse.json({ ok: false, error: "MATCH_LOCKED" }, { status: 409 });

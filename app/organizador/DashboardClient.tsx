@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import useSWR from "swr";
@@ -14,7 +14,10 @@ import OrganizerUpdatesPage from "./(dashboard)/updates/page";
 import { SalesAreaChart } from "@/app/components/charts/SalesAreaChart";
 import InvoicesClient from "./pagamentos/invoices/invoices-client";
 import ObjectiveSubnav from "./ObjectiveSubnav";
+import PadelHubSection from "./(dashboard)/padel/PadelHubSection";
 import { CTA_DANGER, CTA_NEUTRAL, CTA_PRIMARY, CTA_SECONDARY, CTA_SUCCESS } from "@/app/organizador/dashboardUi";
+import OrganizerPublicProfilePanel from "./OrganizerPublicProfilePanel";
+import { CheckinScanner } from "@/app/components/checkin/CheckinScanner";
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
@@ -42,6 +45,7 @@ type EventItem = {
   startsAt: string;
   endsAt?: string | null;
   templateType?: string | null;
+  tournamentId?: number | null;
   locationName: string | null;
   locationCity: string | null;
   status: string;
@@ -167,6 +171,7 @@ type OrganizerLite = {
   status?: string | null;
   entityType?: string | null;
   publicName?: string | null;
+  businessName?: string | null;
   city?: string | null;
   payoutIban?: string | null;
   officialEmail?: string | null;
@@ -178,6 +183,9 @@ type OrganizerLite = {
   organizationKind?: string | null;
   username?: string | null;
   modules?: string[] | null;
+  publicDescription?: string | null;
+  brandingAvatarUrl?: string | null;
+  liveHubPremiumEnabled?: boolean | null;
 };
 
 type ObjectiveTab = "create" | "manage" | "promote" | "analyze";
@@ -261,6 +269,14 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
   const [marketingSection, setMarketingSection] = useState<
     "perfil" | "overview" | "promos" | "updates" | "promoters" | "content"
   >("overview");
+  const marketingSectionSourceRef = useRef<"url" | "ui">("url");
+  const handleMarketingSectionSelect = useCallback(
+    (section: typeof marketingSection) => {
+      marketingSectionSourceRef.current = "ui";
+      setMarketingSection(section);
+    },
+    [setMarketingSection],
+  );
   const [salesRange, setSalesRange] = useState<SalesRange>("30d");
   const salesRangeLabelShort = (range: SalesRange) => {
     switch (range) {
@@ -300,7 +316,9 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
     if (!sectionParamRaw) return undefined;
     if (activeObjective === "manage") {
       if (sectionParamRaw === "events") return "eventos";
-      if (sectionParamRaw === "padel") return "torneios";
+      if (sectionParamRaw === "torneios") return "eventos";
+      if (sectionParamRaw === "scan") return "checkin";
+      if (sectionParamRaw === "padel") return "padel-hub";
       if (sectionParamRaw === "volunteer") return "acoes";
     }
     if (activeObjective === "analyze") {
@@ -326,7 +344,8 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
     }
     if (activeObjective === "manage") {
       if (sectionParamRaw === "events") return "eventos";
-      if (sectionParamRaw === "padel") return "torneios";
+      if (sectionParamRaw === "torneios") return "eventos";
+      if (sectionParamRaw === "padel") return "padel-hub";
       if (sectionParamRaw === "volunteer") return "acoes";
     }
     return sectionParamRaw;
@@ -354,7 +373,7 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
     const orgSuffix = orgParam ? `&org=${orgParam}` : "";
 
     if (tabParam === "settings") {
-      router.replace(`/organizador?tab=manage&section=settings${orgSuffix}`, { scroll: false });
+      router.replace(`/organizador/settings${orgParam ? `?org=${orgParam}` : ""}`, { scroll: false });
       return;
     }
     if (tabParam === "staff") {
@@ -370,7 +389,7 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
       return;
     }
     if (tabParam === "padel") {
-      router.replace(`/organizador?tab=manage&section=torneios${orgSuffix}`, { scroll: false });
+      router.replace(`/organizador?tab=manage&section=padel-hub${orgSuffix}`, { scroll: false });
       return;
     }
     if (tabParam === "volunteer") {
@@ -394,7 +413,8 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
     if (!sectionParamRaw || !searchParams) return;
     const legacyMap: Record<string, string> = {
       events: "eventos",
-      padel: "torneios",
+      padel: "padel-hub",
+      torneios: "eventos",
       volunteer: "acoes",
       sales: "vendas",
       finance: "financas",
@@ -422,7 +442,7 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
 
     const scrollTargets: Record<ObjectiveTab, string[]> = {
       create: ["overview"],
-      manage: ["eventos"],
+      manage: ["eventos", "padel-hub"],
       promote: ["marketing"],
       analyze: ["financas", "invoices"],
     };
@@ -458,14 +478,17 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
     if (marketingSectionParam) {
       const allowed = ["perfil", "overview", "promos", "updates", "promoters", "content"] as const;
       if (allowed.includes(marketingSectionParam as (typeof allowed)[number])) {
+        marketingSectionSourceRef.current = "url";
         setMarketingSection(marketingSectionParam as typeof marketingSection);
       }
     } else if (activeObjective === "promote" && sectionParamRaw === "marketing") {
+      marketingSectionSourceRef.current = "url";
       setMarketingSection("overview");
     }
   }, [searchParams, marketingParamRaw, sectionParamRaw, activeObjective]);
 
   const orgParam = searchParams?.get("org");
+  const orgSuffix = orgParam ? `&org=${orgParam}` : "";
   const orgMeUrl = useMemo(() => {
     if (!user) return null;
     return orgParam ? `/api/organizador/me?org=${orgParam}` : "/api/organizador/me";
@@ -477,6 +500,7 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
       organizer?: OrganizerLite | null;
       ok?: boolean;
       orgTransferEnabled?: boolean | null;
+      membershipRole?: string | null;
     }
   >(orgMeUrl, fetcher);
 
@@ -484,6 +508,8 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
   const organizationCategory = organizer?.organizationCategory ?? null;
   const orgCategory = normalizeOrganizationCategory(organizationCategory);
   const categoryLabel = CATEGORY_LABELS[orgCategory];
+  const showPadelHub = orgCategory === "PADEL";
+  const hasLiveHubAccess = Boolean(organizer?.liveHubPremiumEnabled || orgCategory === "PADEL");
   const categoryNounPlural =
     orgCategory === "PADEL" ? "torneios" : orgCategory === "VOLUNTARIADO" ? "ações" : "eventos";
   const categoryGender = orgCategory === "VOLUNTARIADO" ? "f" : "m";
@@ -496,6 +522,7 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
   const officialEmailVerifiedAtRaw = (organizer as { officialEmailVerifiedAt?: string | null })?.officialEmailVerifiedAt ?? null;
   const officialEmailVerifiedAt = officialEmailVerifiedAtRaw ? new Date(officialEmailVerifiedAtRaw) : null;
   const showOfficialEmailWarning = Boolean(organizer) && !officialEmailVerifiedAt;
+  const membershipRole = organizerData?.membershipRole ?? null;
   const onboardingParam = searchParams?.get("onboarding");
   const [stripeRequirements, setStripeRequirements] = useState<string[]>([]);
   const [stripeSuccessMessage, setStripeSuccessMessage] = useState<string | null>(null);
@@ -678,7 +705,6 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
     { revalidateOnFocus: false }
   );
   const currentQuery = searchParams?.toString() || "";
-
   async function handleStripeConnect() {
     import("@/lib/analytics").then(({ trackEvent }) =>
       trackEvent("connect_stripe_clicked", { status: paymentsStatus }),
@@ -1205,9 +1231,12 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
     ? Math.round((completedSteps / summarySteps.length) * 100)
     : 0;
   const activeSection = useMemo(() => {
+    const manageSections = showPadelHub
+      ? ["eventos", "livehub", "checkin", "padel-hub"]
+      : ["eventos", "livehub", "checkin"];
     const baseSections: Record<ObjectiveTab, string[]> = {
       create: ["overview"],
-      manage: ["eventos"],
+      manage: manageSections,
       promote: ["marketing"],
       analyze: ["financas", "invoices"],
     };
@@ -1216,7 +1245,7 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
       normalizedSection ??
       (activeObjective === "analyze" ? "financas" : activeObjective === "promote" ? "marketing" : "overview");
     return allowed.includes(candidate) ? candidate : allowed[0];
-  }, [activeObjective, normalizedSection]);
+  }, [activeObjective, normalizedSection, showPadelHub]);
 
   useEffect(() => {
     const params = new URLSearchParams(currentQuery);
@@ -1230,6 +1259,17 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
     setParam("search", searchTerm, "");
     setParam("scope", timeScope, "all");
     if (activeObjective === "promote" && activeSection === "marketing") {
+      const validMarketingParam =
+        marketingParamRaw && ["perfil", "overview", "promos", "updates", "promoters", "content"].includes(marketingParamRaw)
+          ? marketingParamRaw
+          : null;
+      if (
+        marketingSectionSourceRef.current !== "ui" &&
+        validMarketingParam &&
+        validMarketingParam !== marketingSection
+      ) {
+        return;
+      }
       setParam("marketing", marketingSection, "overview");
     } else {
       params.delete("marketing");
@@ -1237,6 +1277,9 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
     if (salesEventId) params.set("eventId", String(salesEventId));
     else params.delete("eventId");
     persistFilters(params);
+    if (marketingSectionSourceRef.current === "ui") {
+      marketingSectionSourceRef.current = "url";
+    }
   }, [
     eventCategoryFilter,
     eventPartnerClubFilter,
@@ -1249,6 +1292,7 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
     currentQuery,
     activeObjective,
     activeSection,
+    marketingParamRaw,
   ]);
   const [fadeIn, setFadeIn] = useState(true);
   useEffect(() => {
@@ -1304,10 +1348,7 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
                 Usamos este email para invoices, alertas de vendas/payouts e transferências de Owner.
               </p>
             </div>
-            <Link
-              href="/organizador?tab=manage&section=settings"
-              className={cn(CTA_SECONDARY, "text-[12px]")}
-            >
+            <Link href="/organizador/settings" className={cn(CTA_SECONDARY, "text-[12px]")}>
               Atualizar email oficial
             </Link>
           </div>
@@ -1442,6 +1483,38 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
                   )}
                 </div>
               ))}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {!isLegacyStandaloneTab && activeObjective === "manage" && (
+        <section className={cn("space-y-3", fadeClass)} id="gerir">
+          <div className="rounded-3xl border border-white/12 bg-gradient-to-r from-[#0b1226]/80 via-[#101b39]/75 to-[#050811]/90 px-4 py-4 sm:px-6 sm:py-5 backdrop-blur-2xl shadow-[0_26px_90px_rgba(0,0,0,0.55)]">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="space-y-1">
+                <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] uppercase tracking-[0.28em] text-white/70 shadow-[0_12px_32px_rgba(0,0,0,0.4)]">
+                  Dashboard · Gerir
+                </div>
+                <h2 className="text-2xl sm:text-3xl font-semibold text-white drop-shadow-[0_12px_45px_rgba(0,0,0,0.6)]">
+                  {showPadelHub ? "Eventos, LiveHub, Check-in & Hub Padel" : "Eventos, LiveHub & Check-in"}
+                </h2>
+                <p className="text-sm text-white/70">
+                  {showPadelHub
+                    ? "Acede rapidamente a eventos, LiveHub, check-in e operação Padel."
+                    : "Acede rapidamente a eventos, LiveHub e check-in."}
+                </p>
+              </div>
+            </div>
+            <div className="mt-4">
+              <ObjectiveSubnav
+                objective="manage"
+                activeId={activeSection}
+                category={orgCategory}
+                modules={organizer?.modules ?? []}
+                mode="dashboard"
+                variant="tabs"
+              />
             </div>
           </div>
         </section>
@@ -1754,12 +1827,26 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
                                   >
                                     Editar
                                   </Link>
+                                  <Link
+                                    href={`/organizador/eventos/${ev.id}/live`}
+                                    className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px]")}
+                                  >
+                                    Preparar Live
+                                  </Link>
                                   {hasTickets && ev.status !== "ARCHIVED" && (
                                     <Link
-                                      href={`/organizador/scan?eventId=${ev.id}`}
+                                      href={`/organizador?tab=manage&section=checkin&eventId=${ev.id}${orgSuffix}`}
                                       className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px]")}
                                     >
                                       Check-in
+                                    </Link>
+                                  )}
+                                  {ev.tournamentId && (
+                                    <Link
+                                      href={`/organizador/eventos/${ev.id}/live?tab=preview&edit=1`}
+                                      className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px]")}
+                                    >
+                                      Live Ops
                                     </Link>
                                   )}
                                   {ev.status !== "ARCHIVED" && (
@@ -1808,6 +1895,131 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
             </div>
           </div>
           </div>
+        </section>
+      )}
+
+      {!isLegacyStandaloneTab && activeObjective === "manage" && activeSection === "livehub" && (
+        <section className={cn("space-y-4", fadeClass)} id="livehub">
+          <div className="rounded-3xl border border-white/12 bg-gradient-to-r from-[#0b1226]/80 via-[#101b39]/75 to-[#050811]/90 p-5 shadow-[0_30px_110px_rgba(0,0,0,0.6)] backdrop-blur-3xl">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="space-y-1">
+                <p className="text-[11px] uppercase tracking-[0.26em] text-white/70">LiveHub</p>
+                <h2 className="text-2xl font-semibold text-white drop-shadow-[0_14px_40px_rgba(0,0,0,0.45)]">
+                  Preparar live por evento
+                </h2>
+                <p className="text-sm text-white/80">
+                  Escolhe o evento e entra diretamente em LiveHub, Bracket ou Preview.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {!hasLiveHubAccess ? (
+            <div className="rounded-2xl border border-white/12 bg-white/5 px-4 py-6 text-sm text-white/70">
+              Em breve disponível para ti. Apenas organizações premium ou com Padel ativo têm acesso ao LiveHub por agora.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {eventsListLoading && (
+                <div className="grid gap-2 md:grid-cols-2">
+                  {[1, 2, 3, 4].map((i) => (
+                    <div key={`livehub-skeleton-${i}`} className="h-24 rounded-2xl border border-white/10 bg-white/5 animate-pulse" />
+                  ))}
+                </div>
+              )}
+              {!eventsListLoading && eventsList.length === 0 && (
+                <div className="rounded-2xl border border-dashed border-white/15 bg-white/5 px-4 py-6 text-center text-sm text-white/70">
+                  Sem eventos ainda. Cria um evento para preparar o LiveHub.
+                </div>
+              )}
+              {!eventsListLoading && eventsList.length > 0 && (
+                <div className="grid gap-3 md:grid-cols-2">
+                  {eventsList.map((ev) => {
+                    const hasTournament = Boolean(ev.tournamentId);
+                    const setupHref = `/organizador/eventos/${ev.id}/live?tab=setup`;
+                    const bracketHref = `/organizador/eventos/${ev.id}/live?tab=bracket`;
+                    const previewHref = `/organizador/eventos/${ev.id}/live?tab=preview&edit=1`;
+                    const dateLabel = ev.startsAt
+                      ? new Date(ev.startsAt).toLocaleDateString("pt-PT", { day: "2-digit", month: "short" })
+                      : "Data a definir";
+                    return (
+                      <div key={`livehub-${ev.id}`} className="rounded-2xl border border-white/12 bg-white/5 p-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-semibold text-white">{ev.title}</p>
+                            <p className="text-[11px] text-white/55">
+                              {dateLabel} · {ev.locationCity || ev.locationName || "Local a definir"}
+                            </p>
+                          </div>
+                          <span className="rounded-full border border-white/15 bg-white/5 px-2 py-1 text-[10px] uppercase tracking-[0.16em] text-white/60">
+                            {ev.status === "PUBLISHED" ? "Publicado" : ev.status === "DRAFT" ? "Rascunho" : ev.status}
+                          </span>
+                        </div>
+                        <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-white/70">
+                          <Link
+                            href={setupHref}
+                            className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px]")}
+                          >
+                            Abrir LiveHub
+                          </Link>
+                          {hasTournament ? (
+                            <Link
+                              href={bracketHref}
+                              className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px]")}
+                            >
+                              Bracket
+                            </Link>
+                          ) : (
+                            <span className="rounded-full border border-white/10 px-3 py-1 text-[11px] text-white/40">
+                              Sem torneio
+                            </span>
+                          )}
+                          <Link
+                            href={previewHref}
+                            className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px]")}
+                          >
+                            Preview
+                          </Link>
+                          {!hasTournament && (
+                            <span className="text-white/50">Cria o torneio no LiveHub para ativar a bracket.</span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+      )}
+
+      {!isLegacyStandaloneTab && activeObjective === "manage" && activeSection === "checkin" && (
+        <section className={cn("space-y-4", fadeClass)} id="checkin">
+          <CheckinScanner
+            backHref="/organizador?tab=manage&section=eventos"
+            backLabel="Voltar a eventos"
+            title="Modo Receção · Organizador"
+            subtitle="Check-in em 2 passos com confirmação explícita."
+            allowOrganizerEvents
+            embedded
+            showBackLink={false}
+          />
+        </section>
+      )}
+
+      {!isLegacyStandaloneTab && activeObjective === "manage" && activeSection === "padel-hub" && showPadelHub && (
+        <section className={cn("space-y-4", fadeClass)} id="padel-hub">
+          {organizer?.id ? (
+            <PadelHubSection
+              organizerId={organizer.id}
+              organizationKind={organizer.organizationKind ?? null}
+            />
+          ) : (
+            <div className="rounded-2xl border border-white/12 bg-white/5 px-4 py-6 text-sm text-white/70">
+              Organização indisponível para carregar o hub.
+            </div>
+          )}
         </section>
       )}
 
@@ -2575,7 +2787,7 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
             <button
               key={opt.key}
               type="button"
-              onClick={() => setMarketingSection(opt.key as typeof marketingSection)}
+              onClick={() => handleMarketingSectionSelect(opt.key as typeof marketingSection)}
               className={`rounded-xl px-3 py-2 font-semibold transition ${
                 marketingSection === opt.key
                   ? "bg-gradient-to-r from-[#FF7AD1]/60 via-[#7FE0FF]/35 to-[#6A7BFF]/55 text-white shadow-[0_14px_36px_rgba(107,255,255,0.45)]"
@@ -2588,40 +2800,11 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
         </div>
 
         {marketingSection === "perfil" && (
-          <div
-            className={cn(
-              "mt-4 rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/75 to-[#050912]/90 px-4 py-4 sm:px-6 sm:py-5 shadow-[0_24px_90px_rgba(0,0,0,0.55)]",
-              fadeClass,
-            )}
-          >
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <p className="text-[11px] uppercase tracking-[0.28em] text-white/70">Perfil público</p>
-                <h3 className="text-lg font-semibold text-white">A tua página pública</h3>
-                <p className="text-[12px] text-white/65">
-                  Mostra o perfil do organizador e partilha {categoryPluralArticle} {categoryNounPlural}.
-                </p>
-              </div>
-              {publicProfileUrl ? (
-                <Link
-                  href={publicProfileUrl}
-                  className={CTA_SECONDARY}
-                >
-                  Abrir perfil
-                </Link>
-              ) : (
-                <Link
-                  href="/organizador?tab=manage&section=settings"
-                  className={CTA_SECONDARY}
-                >
-                  Definir username
-                </Link>
-              )}
-            </div>
-            <div className="mt-3 rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-[12px] text-white/70">
-              {publicProfileUrl ? publicProfileUrl : "Define um username para ativar a página pública do organizador."}
-            </div>
-          </div>
+          <OrganizerPublicProfilePanel
+            organizer={organizer ?? null}
+            membershipRole={membershipRole}
+            categoryLabel={categoryLabel}
+          />
         )}
 
         {marketingSection === "overview" && (

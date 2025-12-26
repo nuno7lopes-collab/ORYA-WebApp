@@ -80,7 +80,6 @@ export async function GET(req: NextRequest) {
     const [
       ticketRows,
       reservationRows,
-      participantRows,
       interestRows,
       entryRows,
       staffRows,
@@ -116,29 +115,6 @@ export async function GET(req: NextRequest) {
           userId,
           status: "ACTIVE",
           expiresAt: { gte: new Date() },
-          event: {
-            isDeleted: false,
-            startsAt: { lte: end },
-            endsAt: { gte: start },
-          },
-        },
-        select: {
-          event: {
-            select: {
-              id: true,
-              title: true,
-              slug: true,
-              startsAt: true,
-              endsAt: true,
-              status: true,
-              templateType: true,
-            },
-          },
-        },
-      }),
-      prisma.experienceParticipant.findMany({
-        where: {
-          userId,
           event: {
             isDeleted: false,
             startsAt: { lte: end },
@@ -322,9 +298,6 @@ export async function GET(req: NextRequest) {
 
     ticketRows.forEach((row) => {
       if (row.event) upsertEvent(row.event, "BILHETE");
-    });
-    participantRows.forEach((row) => {
-      if (row.event) upsertEvent(row.event, "PARTICIPANTE");
     });
     entryRows.forEach((row) => {
       if (row.event) upsertEvent(row.event, "INSCRITO");

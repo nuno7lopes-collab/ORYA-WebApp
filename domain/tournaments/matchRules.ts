@@ -2,9 +2,15 @@ import { TournamentMatchStatus } from "@prisma/client";
 
 export type SetScore = { a: number; b: number };
 export type ScorePayload = { sets: SetScore[] };
+export type GoalScorePayload = { a: number; b: number; limit?: number };
+export type MatchScorePayload = { sets?: SetScore[]; goals?: GoalScorePayload };
 
 export type ValidationResult =
   | { ok: true; winner: "A" | "B"; normalized: ScorePayload }
+  | { ok: false; code: string; message: string };
+
+export type GoalValidationResult =
+  | { ok: true; winner: "A" | "B" | null; status: TournamentMatchStatus; normalized: GoalScorePayload }
   | { ok: false; code: string; message: string };
 
 const WIN_BY = 2;
@@ -51,6 +57,47 @@ export function validateScore(score: ScorePayload): ValidationResult {
     return { ok: true, winner: "B", normalized: score };
   }
   return { ok: false, code: "NO_WINNER", message: "Score não determina vencedor." };
+}
+
+export function validateGoalScore(score: GoalScorePayload): GoalValidationResult {
+  const a = Number(score?.a);
+  const b = Number(score?.b);
+  const limit = Number(score?.limit);
+  if (!Number.isFinite(a) || !Number.isFinite(b) || a < 0 || b < 0) {
+    return { ok: false, code: "INVALID_SCORE", message: "Score inválido." };
+  }
+  if (!Number.isFinite(limit) || limit <= 0) {
+    return { ok: false, code: "INVALID_LIMIT", message: "Limite de golos inválido." };
+  }
+  if (a > limit || b > limit) {
+    return { ok: false, code: "LIMIT_EXCEEDED", message: "Score ultrapassa o limite." };
+  }
+  if (a === limit && b === limit) {
+    return { ok: false, code: "TIE_NOT_ALLOWED", message: "Empate não permitido." };
+  }
+  if (a === limit) {
+    return { ok: true, winner: "A", status: TournamentMatchStatus.DONE, normalized: { a, b, limit } };
+  }
+  if (b === limit) {
+    return { ok: true, winner: "B", status: TournamentMatchStatus.DONE, normalized: { a, b, limit } };
+  }
+  if (a > 0 || b > 0) {
+    return { ok: true, winner: null, status: TournamentMatchStatus.IN_PROGRESS, normalized: { a, b, limit } };
+  }
+  return { ok: true, winner: null, status: TournamentMatchStatus.PENDING, normalized: { a, b, limit } };
+}
+
+export function getWinnerSideFromScore(score?: MatchScorePayload | null) {
+  if (!score) return null;
+  if (score.goals) {
+    const res = validateGoalScore(score.goals);
+    return res.ok ? res.winner : null;
+  }
+  if (Array.isArray(score.sets) && score.sets.length > 0) {
+    const res = validateScore({ sets: score.sets });
+    return res.ok ? res.winner : null;
+  }
+  return null;
 }
 
 export function canEditMatch(status: TournamentMatchStatus, force?: boolean) {

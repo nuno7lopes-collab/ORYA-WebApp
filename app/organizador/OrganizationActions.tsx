@@ -19,7 +19,7 @@ export function OrganizationActions({ organizerId }: { organizerId: number }) {
           Abrir Staff
         </Link>
         <Link
-          href="/organizador?tab=manage&section=settings"
+          href="/organizador/settings"
           className="rounded-full border border-white/20 bg-white/5 px-4 py-2 text-sm text-white hover:bg-white/10"
         >
           Ir a Definições

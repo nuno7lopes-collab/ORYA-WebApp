@@ -192,7 +192,7 @@ export async function POST(req: NextRequest) {
         description: body.description?.trim() ?? "",
         type: "ORGANIZER_EVENT",
         templateType: "PADEL",
-        organizerId: organizer.id,
+        organizer: { connect: { id: organizer.id } },
         ownerUserId: profile.id,
         startsAt,
         endsAt,

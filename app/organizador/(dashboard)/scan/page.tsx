@@ -19,6 +19,8 @@ export default function OrganizerScanPage({ embedded }: OrganizerScanPageProps) 
         title="Modo Receção · Organizador"
         subtitle="Check-in em 2 passos com confirmação explícita."
         allowOrganizerEvents
+        embedded
+        showBackLink={false}
       />
     </div>
   );
