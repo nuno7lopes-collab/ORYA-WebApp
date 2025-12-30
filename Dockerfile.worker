@@ -1,0 +1,10 @@
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Copiamos apenas o script do worker; dependências externas não são necessárias.
+COPY scripts/operations-loop.js ./
+
+ENV NODE_ENV=production
+
+CMD ["node", "operations-loop.js"]

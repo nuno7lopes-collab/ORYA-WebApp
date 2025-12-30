@@ -1,0 +1,372 @@
+@import "tailwindcss";
+
+/* ================== CORES BASE ================== */
+:root {
+  --background: #05060a;
+  --foreground: #f9fafb;
+
+  --orya-pink: #ff00c8;
+  --orya-cyan: #6bffff;
+  --orya-blue: #1646f5;
+  --orya-purple: #9c72ff;
+
+  --accent-primary: var(--orya-cyan);
+  --accent-secondary: var(--orya-purple);
+  --accent-glow: 0 0 24px rgba(107, 255, 255, 0.24), 0 0 14px rgba(22, 70, 245, 0.16);
+
+  --glass-bg: rgba(255, 255, 255, 0.06);
+  --glass-border: rgba(255, 255, 255, 0.1);
+  --glass-border-strong: rgba(255, 255, 255, 0.18);
+  --text-strong: rgba(255, 255, 255, 0.92);
+  --text-muted: rgba(255, 255, 255, 0.62);
+  --divider: rgba(255, 255, 255, 0.08);
+
+  /* Z-index tokens */
+  --z-footer: 60;
+  --z-popover: 120;
+  --z-modal: 200;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #05060a;
+    --foreground: #f9fafb;
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text",
+    "SF Pro Display", -apple-system, sans-serif;
+}
+
+.orya-page-width {
+  width: 100%;
+  max-width: 88rem;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* Remover padding top do main quando a navbar pública está escondida (organizador) */
+body[data-nav-hidden="true"] .main-shell {
+  padding-top: 0 !important;
+  padding-bottom: 0;
+}
+
+/* Padding default do main quando a navbar está visível (páginas públicas) */
+body:not([data-nav-hidden="true"]) .main-shell {
+  padding-top: 4rem;
+  padding-bottom: 120px;
+}
+
+/* Scrollbars discretos (checkout stripe) */
+.payment-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+.payment-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+.payment-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.payment-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 9999px;
+}
+.payment-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.28);
+}
+
+/* ============ ORYA – React DatePicker dark neon theme ============ */
+
+.orya-datepicker-popper {
+  z-index: 40;
+}
+
+/* Container principal do calendário */
+.orya-datepicker-calendar.react-datepicker {
+  background: radial-gradient(
+    circle at top,
+    #17152b 0,
+    #05051a 45%,
+    #040315 100%
+  );
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 18px 45px rgba(0, 0, 0, 0.75);
+  color: #f9fafb;
+  overflow: hidden;
+  font-size: 11px;
+}
+
+/* Header (mês, setas, etc.) */
+.orya-datepicker-calendar .react-datepicker__header {
+  background: linear-gradient(
+    135deg,
+    rgba(255, 0, 200, 0.18),
+    rgba(107, 255, 255, 0.12)
+  );
+  border-bottom: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+.orya-datepicker-calendar .react-datepicker__current-month,
+.orya-datepicker-calendar .react-datepicker-time__header,
+.orya-datepicker-calendar .react-datepicker-year-header {
+  color: #f9fafb;
+  font-size: 12px;
+}
+
+/* Dias e labels */
+.orya-datepicker-calendar .react-datepicker__day-name,
+.orya-datepicker-calendar .react-datepicker__day,
+.orya-datepicker-calendar .react-datepicker__time-name {
+  color: rgba(249, 250, 251, 0.85);
+}
+
+/* Hover */
+.orya-datepicker-calendar .react-datepicker__day:hover,
+.orya-datepicker-calendar .react-datepicker__time-list-item:hover {
+  background: rgba(107, 255, 255, 0.16);
+  color: #f9fafb;
+}
+
+/* Dia selecionado */
+.orya-datepicker-calendar .react-datepicker__day--selected,
+.orya-datepicker-calendar .react-datepicker__day--keyboard-selected {
+  background: linear-gradient(135deg, #ff00c8, #6bffff);
+  color: #020617;
+}
+
+/* Hoje */
+.orya-datepicker-calendar .react-datepicker__day--today {
+  border-radius: 9999px;
+  border: 1px solid rgba(107, 255, 255, 0.8);
+}
+
+/* Coluna de horas */
+.orya-datepicker-calendar .react-datepicker__time-container {
+  border-left: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.orya-datepicker-calendar .react-datepicker__time-list {
+  background: rgba(1, 3, 17, 0.95);
+}
+
+.orya-datepicker-calendar .react-datepicker__time-list-item {
+  padding: 4px 6px;
+}
+
+/* Input wrapper */
+.orya-datepicker-input.react-datepicker-wrapper,
+.orya-datepicker-input .react-datepicker__input-container input {
+  width: 100%;
+}
+
+.orya-datepicker-input::placeholder,
+.orya-datepicker-input .react-datepicker__input-container input::placeholder {
+  color: rgba(148, 163, 184, 0.6);
+}
+
+/* ============ FUNDO GLOBAL ORYA – neutro + detalhe ============ */
+
+.orya-body-bg {
+  min-height: 100vh;
+  color: #f9fafb;
+  background-color: #050814;
+  /* Camadas grandes e suaves, pensadas para o hero + scroll (ORYA Default) */
+  background-image:
+    radial-gradient(1200px 800px at 50% -200px, rgba(107, 255, 255, 0.18), transparent 60%),
+    radial-gradient(900px 700px at -220px 45%, rgba(156, 114, 255, 0.22), transparent 65%),
+    radial-gradient(980px 720px at 18% 68%, rgba(255, 198, 140, 0.06), transparent 68%),
+    radial-gradient(1000px 750px at 115% 65%, rgba(22, 70, 245, 0.22), transparent 70%),
+    radial-gradient(1100px 820px at 52% 82%, rgba(122, 255, 214, 0.08), transparent 72%),
+    linear-gradient(180deg, #050814 0%, #05040f 45%, #020308 100%);
+  background-attachment: fixed;
+  background-repeat: no-repeat;
+  background-size: cover;
+  position: relative;
+  overflow-x: hidden;
+}
+
+/* Overlay com “textura” leve (grid + glow suave) */
+.orya-body-bg::before {
+  content: "";
+  position: fixed;
+  inset: -40px;
+  pointer-events: none;
+  z-index: -1;
+  background-image:
+    radial-gradient(circle at 0 0, rgba(255, 255, 255, 0.08) 0, transparent 50%),
+    radial-gradient(circle at 100% 100%, rgba(255, 255, 255, 0.04) 0, transparent 55%),
+    repeating-linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.03) 0,
+      rgba(255, 255, 255, 0.03) 1px,
+      transparent 1px,
+      transparent 14px
+    ),
+    repeating-linear-gradient(
+      0deg,
+      rgba(255, 255, 255, 0.02) 0,
+      rgba(255, 255, 255, 0.02) 1px,
+      transparent 1px,
+      transparent 14px
+    );
+  opacity: 0.42;
+  mix-blend-mode: soft-light;
+}
+
+@keyframes subtle-fade-slide {
+  0% {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-slide {
+  animation: subtle-fade-slide 0.24s ease;
+}
+
+@keyframes step-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-step-pop {
+  animation: step-pop 0.22s ease;
+}
+
+@keyframes wizardInRight {
+  from {
+    opacity: 0;
+    transform: translateX(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes wizardInLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.wizard-step-in-right {
+  animation: wizardInRight 230ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.wizard-step-in-left {
+  animation: wizardInLeft 230ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.btn-orya {
+  position: relative;
+  border-radius: 9999px;
+  padding: 12px 18px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  backdrop-filter: blur(12px);
+  color: rgba(255, 255, 255, 0.92);
+  transition: transform 0.15s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.btn-orya::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: 9999px;
+  padding: 1px;
+  background: linear-gradient(90deg, #7300ff, #1646f5, #6bffff, #ff00c8);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  opacity: 0.55;
+}
+
+.btn-orya:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1), 0 0 32px rgba(107, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+.btn-orya:active {
+  transform: translateY(1px);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 0 18px rgba(107, 255, 255, 0.12);
+}
+
+.btn-orya:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.btn-ghost {
+  border: 1px solid var(--glass-border);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-strong);
+  border-radius: 9999px;
+  padding: 10px 14px;
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.12s ease;
+}
+
+.btn-ghost:hover {
+  border-color: var(--glass-border-strong);
+  background: rgba(255, 255, 255, 0.06);
+  transform: translateY(-1px);
+}
+
+.btn-ghost:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.btn-chip {
+  border: 1px solid var(--glass-border);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-strong);
+  border-radius: 9999px;
+  padding: 6px 10px;
+  font-size: 12px;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.btn-chip:hover {
+  border-color: var(--glass-border-strong);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+@keyframes popover-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-popover {
+  animation: popover-in 0.18s ease-out;
+}

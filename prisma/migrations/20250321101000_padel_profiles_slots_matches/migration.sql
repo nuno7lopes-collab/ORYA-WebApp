@@ -1,0 +1,2 @@
+-- Placeholder migration to align history with the production database.
+-- The original migration was applied outside this repo.

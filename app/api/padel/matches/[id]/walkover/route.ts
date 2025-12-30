@@ -1,0 +1,75 @@
+import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+import { OrganizerMemberRole, PadelMatchStatus } from "@prisma/client";
+import { createSupabaseServer } from "@/lib/supabaseServer";
+import { canMarkWalkover } from "@/domain/padel/pairingPolicy";
+import { getActiveOrganizerForUser } from "@/lib/organizerContext";
+import { isPadelStaff } from "@/lib/padel/staff";
+
+const allowedRoles: OrganizerMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
+
+export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+  const matchId = Number(params?.id);
+  if (!Number.isFinite(matchId)) return NextResponse.json({ ok: false, error: "INVALID_ID" }, { status: 400 });
+
+  const supabase = await createSupabaseServer();
+  const { data: authData, error: authError } = await supabase.auth.getUser();
+  if (authError || !authData?.user) return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+
+  const match = await prisma.padelMatch.findUnique({
+    where: { id: matchId },
+    select: {
+      id: true,
+      pairingAId: true,
+      pairingBId: true,
+      eventId: true,
+      status: true,
+      event: { select: { organizerId: true } },
+    },
+  });
+  if (!match) return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
+  if (!match.event?.organizerId) {
+    return NextResponse.json({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+  }
+  if (match.status === PadelMatchStatus.DONE) {
+    return NextResponse.json({ ok: false, error: "ALREADY_DONE" }, { status: 409 });
+  }
+
+  const body = await req.json().catch(() => ({}));
+  const winner = body?.winner as "A" | "B";
+  if (winner !== "A" && winner !== "B") {
+    return NextResponse.json({ ok: false, error: "INVALID_WINNER" }, { status: 400 });
+  }
+
+  const winnerPairingId = winner === "A" ? match.pairingAId : match.pairingBId;
+  if (!winnerPairingId) {
+    return NextResponse.json({ ok: false, error: "MISSING_PAIRINGS" }, { status: 400 });
+  }
+
+  const { organizer } = await getActiveOrganizerForUser(authData.user.id, {
+    organizerId: match.event.organizerId,
+    roles: allowedRoles,
+  });
+  const staffAllowed = await isPadelStaff(authData.user.id, match.event.organizerId, match.eventId);
+  if (!organizer && !staffAllowed) {
+    return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  }
+
+  const winnerPairing = await prisma.padelPairing.findUnique({
+    where: { id: winnerPairingId },
+    select: { lifecycleStatus: true },
+  });
+  if (!winnerPairing || !canMarkWalkover(winnerPairing.lifecycleStatus)) {
+    return NextResponse.json({ ok: false, error: "PAIRING_NOT_CONFIRMED" }, { status: 409 });
+  }
+
+  const updated = await prisma.$transaction(async (tx) => {
+    const updatedMatch = await tx.padelMatch.update({
+      where: { id: matchId },
+      data: { status: PadelMatchStatus.DONE, winnerPairingId, score: { walkover: true } },
+    });
+    return updatedMatch;
+  });
+
+  return NextResponse.json({ ok: true, match: updated }, { status: 200 });
+}
