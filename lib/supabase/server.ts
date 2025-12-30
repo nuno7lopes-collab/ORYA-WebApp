@@ -1,1 +1,0 @@
-export { createSupabaseServer } from "../supabaseServer";

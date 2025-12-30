@@ -1,0 +1,429 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useCheckout } from "./contextoCheckout";
+import { formatEuro } from "@/lib/money";
+
+const FREE_PLACEHOLDER_INTENT_ID = "FREE_CHECKOUT";
+
+
+function normalizeCheckoutStatus(raw: unknown): "PROCESSING" | "PAID" | "FAILED" {
+  const v = typeof raw === "string" ? raw.trim().toUpperCase() : "";
+  if (["PAID", "OK", "SUCCEEDED", "SUCCESS", "COMPLETED", "CONFIRMED"].includes(v)) return "PAID";
+  if (["FAILED", "ERROR", "CANCELED", "CANCELLED", "REQUIRES_PAYMENT_METHOD"].includes(v)) return "FAILED";
+  return "PROCESSING";
+}
+
+function numberFromUnknown(v: unknown): number | null {
+  return typeof v === "number" && Number.isFinite(v) ? v : null;
+}
+
+function eurosToCents(v: number): number {
+  return Math.max(0, Math.round(v * 100));
+}
+
+function centsFromAdditional(additional: Record<string, unknown>, key: string): number | null {
+  // Convention used in this checkout:
+  // - `*Cents` fields are cents
+  // - `total` (without suffix) has historically been stored as euros
+  const centsKey = `${key}Cents`;
+  const cents = numberFromUnknown(additional[centsKey]);
+  if (cents !== null) return cents;
+
+  if (key === "total") {
+    const totalEuros = numberFromUnknown(additional.total);
+    if (totalEuros !== null) return eurosToCents(totalEuros);
+  }
+
+  return null;
+}
+
+export default function Step3Sucesso() {
+  const { dados, fecharCheckout, breakdown: checkoutBreakdown } = useCheckout();
+  const router = useRouter();
+  const [statusError, setStatusError] = useState<string | null>(null);
+
+  const additional:
+    | Record<string, unknown>
+    | undefined =
+    dados?.additional && typeof dados.additional === "object"
+      ? (dados.additional as Record<string, unknown>)
+      : undefined;
+  const checkoutVariant =
+    additional && typeof additional.checkoutUiVariant === "string" ? additional.checkoutUiVariant : "DEFAULT";
+  const isPadelVariant = checkoutVariant.toUpperCase() === "PADEL";
+  const ticketLabel = isPadelVariant ? "inscrição" : "bilhete";
+  const ticketLabelPlural = isPadelVariant ? "inscrições" : "bilhetes";
+  const ticketLabelTitle = isPadelVariant ? "Inscrição" : "Bilhete";
+  const ticketPossessivePlural = isPadelVariant ? "as tuas" : "os teus";
+  const ticketPluralArticle = isPadelVariant ? "as" : "os";
+  const ticketOfLabel = isPadelVariant ? "da inscrição" : "do bilhete";
+  const eventLabelTitle = isPadelVariant ? "Torneio de Padel" : "Evento";
+  const scenarioCopy: Record<string, string> = {
+    GROUP_SPLIT: "Pagaste apenas a tua parte desta dupla.",
+    GROUP_FULL: "Pagaste 2 lugares (tu + parceiro).",
+    RESALE: `Compra de ${isPadelVariant ? "inscrição" : "bilhete"} em revenda.`,
+    FREE_CHECKOUT: "Inscrição gratuita concluída.",
+  };
+
+  const scenario =
+    (dados?.paymentScenario as string | null | undefined) ??
+    (additional && typeof additional.paymentScenario === "string"
+      ? (additional.paymentScenario as string)
+      : null);
+
+  const isFreeScenario = scenario === "FREE_CHECKOUT";
+
+  const paymentIntentId =
+    additional && typeof additional.paymentIntentId === "string"
+      ? additional.paymentIntentId
+      : null;
+
+  const fallbackPurchaseId =
+    paymentIntentId && paymentIntentId !== FREE_PLACEHOLDER_INTENT_ID ? paymentIntentId : null;
+
+  const purchaseId =
+    additional && typeof additional.purchaseId === "string"
+      ? additional.purchaseId
+      : fallbackPurchaseId;
+
+  useEffect(() => {
+    if (dados && !purchaseId && !isFreeScenario) {
+      router.replace("/explorar");
+    }
+  }, [dados, router, purchaseId, isFreeScenario]);
+
+  // Revalidar bilhetes após sucesso (traz novos bilhetes mais depressa)
+  useEffect(() => {
+    async function revalidateTickets() {
+      try {
+        await fetch("/api/me/wallet", { method: "GET", cache: "no-store" });
+      } catch (err) {
+        console.warn("[Step3Sucesso] Falha ao revalidar /api/me/wallet", err);
+      }
+    }
+    revalidateTickets();
+  }, []);
+
+  const guestEmail =
+    additional && typeof additional.guestEmail === "string" ? additional.guestEmail : null;
+
+  const breakdown = (() => {
+    const add = additional ?? {};
+
+    const subtotalFromContext =
+      typeof checkoutBreakdown?.subtotalCents === "number" ? checkoutBreakdown.subtotalCents : null;
+
+    const subtotalFromLines =
+      checkoutBreakdown?.lines?.reduce((sum, line) => sum + Number(line.lineTotalCents ?? 0), 0) ?? null;
+
+    // If we lost the context breakdown (refresh), we fallback to additional.
+    // NOTE: `additional.total` is stored as euros in Step2, so we convert to cents.
+    const subtotalCentsRaw =
+      subtotalFromContext ??
+      numberFromUnknown(add.subtotalCents) ??
+      numberFromUnknown(add.totalCents) ??
+      centsFromAdditional(add, "total") ??
+      0;
+
+    const subtotalCents =
+      subtotalCentsRaw && subtotalCentsRaw > 0
+        ? subtotalCentsRaw
+        : subtotalFromLines && subtotalFromLines > 0
+          ? subtotalFromLines
+          : 0;
+
+    const feeModeRaw =
+      typeof checkoutBreakdown?.feeMode === "string"
+        ? checkoutBreakdown.feeMode
+        : typeof add.feeMode === "string"
+          ? (add.feeMode as string)
+          : null;
+    const feeMode =
+      typeof feeModeRaw === "string" ? feeModeRaw.toUpperCase() : null;
+
+    const discountCents =
+      typeof checkoutBreakdown?.discountCents === "number"
+        ? checkoutBreakdown.discountCents
+        : numberFromUnknown(add.discountCents) ?? 0;
+
+    const platformFeeOryaCents =
+      typeof (checkoutBreakdown as any)?.platformFeeOryaCents === "number"
+        ? (checkoutBreakdown as any).platformFeeOryaCents
+        : numberFromUnknown((add as any).platformFeeOryaCents) ??
+          numberFromUnknown(add.platformFeeCents) ??
+          0;
+
+    const platformFeeCombinedCents =
+      typeof (checkoutBreakdown as any)?.platformFeeCombinedCents === "number"
+        ? (checkoutBreakdown as any).platformFeeCombinedCents
+        : numberFromUnknown(add.platformFeeCents) ?? platformFeeOryaCents;
+
+    // Só mostrar/contabilizar taxa se o modo for ADDED (pago pelo comprador).
+    const payorPaysFee = feeMode === "ADDED";
+    const platformFeeCents = payorPaysFee ? platformFeeCombinedCents : 0;
+
+    const totalCentsFromContext =
+      typeof checkoutBreakdown?.totalCents === "number" ? checkoutBreakdown.totalCents : null;
+
+    const totalCentsFromAdditional =
+      numberFromUnknown(add.totalCents) ?? centsFromAdditional(add, "total");
+
+    const computedTotalFallback = Math.max(0, subtotalCents - discountCents + platformFeeCents);
+
+    const totalCents = totalCentsFromContext ?? totalCentsFromAdditional ?? computedTotalFallback;
+
+    const code =
+      typeof add.appliedPromoLabel === "string"
+        ? add.appliedPromoLabel
+        : typeof add.promoCodeRaw === "string"
+          ? add.promoCodeRaw
+          : typeof add.promoCode === "string"
+            ? add.promoCode
+            : null;
+
+    const currency =
+      typeof checkoutBreakdown?.currency === "string"
+        ? checkoutBreakdown.currency
+        : typeof add.currency === "string"
+          ? add.currency
+          : "EUR";
+
+    if (
+      Number.isNaN(subtotalCents) &&
+      Number.isNaN(discountCents) &&
+      Number.isNaN(platformFeeCents) &&
+      Number.isNaN(totalCents)
+    ) {
+      return null;
+    }
+
+    return {
+      subtotalCents,
+      discountCents,
+      platformFeeCents,
+      totalCents,
+      code,
+      currency,
+      feeMode,
+    };
+  })();
+  const subtotalEur = breakdown ? breakdown.subtotalCents / 100 : null;
+  const discountEur = breakdown ? breakdown.discountCents / 100 : null;
+  const platformFeeEur = breakdown
+    ? ((breakdown as any).platformFeeCombinedCents ?? breakdown.platformFeeCents) / 100
+    : null;
+  const totalEur = breakdown ? breakdown.totalCents / 100 : null;
+
+  const initialStatus: "PROCESSING" | "PAID" | "FAILED" =
+    isFreeScenario ? "PAID" : purchaseId ? "PROCESSING" : "PROCESSING";
+  const [status, setStatus] = useState<"PROCESSING" | "PAID" | "FAILED">(initialStatus);
+
+  useEffect(() => {
+    if (isFreeScenario) setStatus("PAID");
+  }, [isFreeScenario]);
+
+  useEffect(() => {
+    if (!purchaseId || isFreeScenario) return;
+
+    let cancelled = false;
+    let interval: ReturnType<typeof setInterval> | null = null;
+
+    const poll = async () => {
+      try {
+        const url = new URL("/api/checkout/status", window.location.origin);
+        url.searchParams.set("purchaseId", purchaseId);
+        if (paymentIntentId && paymentIntentId !== purchaseId) {
+          url.searchParams.set("paymentIntentId", paymentIntentId);
+        }
+        const res = await fetch(url.toString(), { cache: "no-store" });
+        const data = await res.json().catch(() => null);
+        const mapped = normalizeCheckoutStatus(data?.status);
+        if (cancelled) return;
+
+        if (mapped === "PAID") {
+          setStatus("PAID");
+          setStatusError(null);
+          if (interval) clearInterval(interval);
+          // revalidate once more after confirmed
+          try {
+            await fetch("/api/me/wallet", { method: "GET", cache: "no-store" });
+          } catch {}
+          return;
+        }
+
+        if (mapped === "FAILED") {
+          setStatus("FAILED");
+          setStatusError(typeof data?.error === "string" ? data.error : null);
+          if (interval) clearInterval(interval);
+          return;
+        }
+
+        setStatus("PROCESSING");
+        setStatusError(null);
+      } catch (err) {
+        console.warn("[Step3Sucesso] Poll status falhou", err);
+        if (!cancelled) setStatusError(null);
+      }
+    };
+
+    poll();
+    interval = setInterval(poll, 3000);
+
+    return () => {
+      cancelled = true;
+      if (interval) clearInterval(interval);
+    };
+  }, [purchaseId, isFreeScenario]);
+
+  if (!dados) {
+    return (
+      <div className="text-center space-y-4">
+        <h2 className="text-xl font-semibold text-black">Algo correu mal 🤔</h2>
+        <p className="text-sm text-black/70">
+          Não encontrámos os dados {ticketOfLabel}. Fecha esta janela e tenta novamente.
+        </p>
+        <button
+          onClick={fecharCheckout}
+          className="mt-4 w-full rounded-xl bg-black text-white py-2 text-sm font-medium hover:bg-black/80"
+        >
+          Fechar
+        </button>
+      </div>
+    );
+  }
+
+  if (!purchaseId && !isFreeScenario) {
+    return null;
+  }
+
+  return (
+    <div className="flex flex-col items-center text-center gap-6 py-6 px-4 text-white">
+      <div className="w-full">
+        <p className="text-[11px] uppercase tracking-[0.18em] text-white/55">
+          Passo 3 de 3
+        </p>
+        <div className="mt-2 h-1 w-full rounded-full bg-white/10 overflow-hidden shadow-[0_6px_20px_rgba(0,0,0,0.35)]">
+          <div className="h-full w-full rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5]" />
+        </div>
+      </div>
+
+      {/* Título */}
+      <div className="space-y-1">
+        <h2 className="text-3xl font-semibold bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] bg-clip-text text-transparent">
+          {status === "PAID"
+            ? isFreeScenario
+              ? "Inscrição confirmada 🎉"
+              : isPadelVariant
+                ? "Inscrição confirmada 🎉"
+                : "Compra Confirmada 🎉"
+            : status === "FAILED"
+              ? "Pagamento não confirmado"
+              : "A confirmar pagamento…"}
+        </h2>
+        <p className="text-sm text-white/70">
+          {status === "FAILED"
+            ? statusError ?? "Não conseguimos confirmar o pagamento. Tenta novamente ou contacta suporte."
+            : status === "PAID"
+              ? guestEmail
+                ? `Obrigado! Enviámos ${ticketPossessivePlural} ${ticketLabelPlural} para ${guestEmail}.`
+                : isFreeScenario
+                  ? "A tua inscrição gratuita está confirmada."
+                  : `${isPadelVariant ? "Inscrição confirmada" : "Compra confirmada"}. Já podes ver ${ticketPossessivePlural} ${ticketLabelPlural}.`
+              : guestEmail
+                ? `Estamos a confirmar o pagamento. Assim que estiver confirmado, vais receber ${ticketLabelPlural} em ${guestEmail}.`
+                : "Estamos a confirmar o pagamento. Mantém esta página aberta."}
+        </p>
+      </div>
+
+      {/* Card principal estilo Apple Wallet */}
+      <div className="w-full rounded-3xl bg-white/[0.05] backdrop-blur-2xl border border-white/12 px-6 py-8 shadow-[0_20px_60px_rgba(0,0,0,0.55)] space-y-6">
+
+        {/* Evento */}
+        <div className="space-y-1">
+          <p className="text-[11px] uppercase tracking-widest text-white/50">{eventLabelTitle}</p>
+          <p className="text-xl font-semibold">
+            {dados.ticketName ?? ticketLabelTitle}
+          </p>
+          {scenario && scenarioCopy[scenario] && (
+            <p className="text-[11px] text-white/70">{scenarioCopy[scenario]}</p>
+          )}
+        </div>
+
+        {/* Breakdown */}
+        {status === "PAID" && breakdown && (
+          <div className="space-y-2 text-sm text-white/80">
+            <div className="flex items-center justify-between border-b border-white/10 pb-2">
+              <span className="text-white/60 text-[11px] uppercase tracking-widest">
+                Total de {ticketLabelPlural}
+              </span>
+              <span className="font-semibold">
+                {formatEuro(subtotalEur)}
+              </span>
+            </div>
+            {breakdown.discountCents > 0 && (
+              <div className="flex items-center justify-between">
+                <span className="text-white/60">Desconto {breakdown.code ? `(${breakdown.code})` : ""}</span>
+                <span className="text-emerald-300">-{formatEuro(discountEur)}</span>
+              </div>
+            )}
+            {(((breakdown as any).platformFeeCombinedCents ?? breakdown.platformFeeCents) ?? 0) > 0 && (
+              <div className="flex items-center justify-between">
+                <span className="text-white/60">Taxa da plataforma</span>
+                <span className="text-orange-200">{formatEuro(platformFeeEur)}</span>
+              </div>
+            )}
+            <div className="flex items-center justify-between border-t border-white/10 pt-2">
+              <span className="text-white text-[12px] font-semibold uppercase tracking-widest">Total Pago</span>
+              <span className="text-xl font-semibold">
+                {formatEuro(totalEur)}
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* Info */}
+        <div className="space-y-1 text-sm text-white/60">
+          <p>
+            {status === "PAID"
+              ? guestEmail
+                ? `Guarda o email com ${ticketPluralArticle} ${ticketLabelPlural}. Podes criar conta e ligar tudo mais tarde.`
+                : isPadelVariant
+                  ? "A tua inscrição foi concluída com sucesso."
+                  : "A tua compra foi concluída com sucesso."
+              : status === "FAILED"
+                ? `O pagamento não ficou confirmado. Se o teu banco debitou, contacta suporte${purchaseId ? ` com o ID de compra: ${purchaseId}` : ""}.`
+                : "Estamos a confirmar o pagamento. Se demorares mais de alguns minutos, fecha e volta a abrir o checkout."}
+          </p>
+        </div>
+
+        {/* Botão ver bilhetes */}
+        {status === "PAID" ? (
+          <button
+            onClick={() => (guestEmail ? router.push("/login") : router.push("/me"))}
+            className="w-full rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] text-black py-3 text-sm font-semibold shadow-[0_0_30px_rgba(107,255,255,0.55)] hover:scale-[1.03] active:scale-95 transition-transform"
+          >
+            {guestEmail ? `Criar conta e ligar ${ticketLabelPlural}` : `Ver ${ticketPossessivePlural} ${ticketLabelPlural}`}
+          </button>
+        ) : status === "FAILED" ? (
+          <div className="w-full rounded-2xl border border-red-500/40 bg-red-500/10 text-sm text-red-100 py-3 text-center">
+            Pagamento não confirmado. Verifica o método de pagamento ou tenta novamente.
+          </div>
+        ) : (
+          <div className="w-full rounded-full border border-white/15 bg-white/10 text-white text-sm font-semibold py-3 text-center">
+            A confirmar…
+          </div>
+        )}
+      </div>
+
+      {/* Fechar */}
+      <button
+        onClick={fecharCheckout}
+        className="w-full rounded-full border border-white/15 bg-white/10 text-white font-semibold py-2.5 text-sm shadow-[0_14px_30px_rgba(0,0,0,0.45)] hover:bg-white/20 hover:scale-[1.02] active:scale-95 transition"
+      >
+        Fechar
+      </button>
+    </div>
+  );
+}
