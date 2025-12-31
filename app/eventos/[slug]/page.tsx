@@ -18,6 +18,8 @@ import EventBackgroundTuner from "./EventBackgroundTuner";
 import { normalizeEmail } from "@/lib/utils/email";
 import { sanitizeUsername } from "@/lib/username";
 import InviteGateClient from "./InviteGateClient";
+import { Avatar } from "@/components/ui/avatar";
+import { CTA_PRIMARY } from "@/app/organizador/dashboardUi";
 
 type EventPageParams = { slug: string };
 type EventPageParamsInput = EventPageParams | Promise<EventPageParams>;
@@ -101,13 +103,6 @@ type EventResale = {
   ticketTypeName?: string | null;
 };
 
-const UPDATE_CATEGORY_LABELS: Record<string, string> = {
-  TODAY: "Hoje",
-  CHANGES: "Alterações",
-  RESULTS: "Resultados",
-  CALL_UPS: "Convocatórias",
-};
-
 const EVENT_BG_MASK = `linear-gradient(
   to bottom,
   rgba(0,0,0,var(--event-bg-mask-alpha-1,1)) var(--event-bg-mask-stop-1,0%),
@@ -132,16 +127,6 @@ const EVENT_BG_FADE = `linear-gradient(
   rgba(0,0,0,var(--event-bg-fade-dark,0.78)) var(--event-bg-fade-mid,90%),
   rgba(0,0,0,1) var(--event-bg-fade-end,99%)
 )`;
-
-function initialsFromName(name: string) {
-  const trimmed = name.trim();
-  if (!trimmed) return "OR";
-  return trimmed
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase())
-    .join("");
-}
 
 function getWaveStatus(ticket: {
   startsAt: Date | null;
@@ -328,32 +313,8 @@ export default async function EventPage({
       : null;
   const safeOrganizer = organizerDisplay || "Organização ORYA";
   const organizerAvatarUrl = event.organizer?.brandingAvatarUrl?.trim() || null;
-  const organizerInitials = initialsFromName(safeOrganizer);
   const organizerHandle = organizerUsername ? `@${organizerUsername}` : null;
   const liveHubVisibility = event.liveHubVisibility ?? "PUBLIC";
-
-  const eventUpdates = await prisma.organizationUpdate.findMany({
-    where: { eventId: event.id, status: "PUBLISHED" },
-    orderBy: [{ isPinned: "desc" }, { publishedAt: "desc" }, { createdAt: "desc" }],
-    take: 5,
-  });
-
-  const updateDateFormatter = new Intl.DateTimeFormat("pt-PT", {
-    day: "2-digit",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone: safeTimezone,
-  });
-
-  const formattedUpdates = eventUpdates.map((update) => {
-    const date = update.publishedAt ?? update.createdAt;
-    return {
-      ...update,
-      dateLabel: date ? updateDateFormatter.format(date) : "A definir",
-      categoryLabel: UPDATE_CATEGORY_LABELS[update.category] ?? update.category,
-    };
-  });
 
   // Nota: no modelo atual, não determinamos o utilizador autenticado neste
   // Server Component para evitar erros de escrita de cookies.
@@ -395,30 +356,6 @@ export default async function EventPage({
 
   const nowDate = new Date();
   const eventEnded = endDateObj < nowDate;
-  const eventStarted = startDateObj <= nowDate && endDateObj >= nowDate;
-  const eventUpcoming = startDateObj > nowDate;
-  const phaseIndex = eventEnded ? 2 : eventStarted ? 1 : 0;
-  const timelineSteps = [
-    {
-      key: "before",
-      label: "Antes",
-      hint: eventUpcoming ? "Inscrições abertas" : "Concluído",
-    },
-    {
-      key: "during",
-      label: "Durante",
-      hint: eventStarted ? "A decorrer agora" : eventEnded ? "Concluído" : "Em breve",
-    },
-    {
-      key: "after",
-      label: "Depois",
-      hint: eventEnded ? "Histórico disponível" : "Em breve",
-    },
-  ].map((step, idx) => ({
-    ...step,
-    state: idx < phaseIndex ? "done" : idx === phaseIndex ? "active" : "pending",
-  }));
-
   const ticketTypesWithVisibility = event.ticketTypes as TicketTypeWithVisibility[];
 
   const orderedTickets = ticketTypesWithVisibility
@@ -736,18 +673,13 @@ export default async function EventPage({
                         href={`/${organizerUsername}`}
                         className="mt-2 inline-flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-3 py-2 transition hover:border-white/20 hover:bg-white/10"
                       >
-                        <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full border border-white/20 bg-black/40 text-[11px] font-semibold uppercase tracking-[0.18em] text-white/70">
-                          {organizerAvatarUrl ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img
-                              src={organizerAvatarUrl}
-                              alt={safeOrganizer}
-                              className="h-full w-full object-cover"
-                            />
-                          ) : (
-                            organizerInitials
-                          )}
-                        </div>
+                        <Avatar
+                          src={organizerAvatarUrl}
+                          name={safeOrganizer}
+                          className="h-10 w-10 border border-white/20"
+                          textClassName="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/80"
+                          fallbackText="OR"
+                        />
                         <div className="flex flex-col">
                           <div className="flex items-center gap-2">
                             <span className="text-sm font-semibold text-white">{safeOrganizer}</span>
@@ -762,18 +694,13 @@ export default async function EventPage({
                       </Link>
                     ) : (
                       <div className="mt-2 inline-flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-3 py-2">
-                        <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full border border-white/20 bg-black/40 text-[11px] font-semibold uppercase tracking-[0.18em] text-white/70">
-                          {organizerAvatarUrl ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img
-                              src={organizerAvatarUrl}
-                              alt={safeOrganizer}
-                              className="h-full w-full object-cover"
-                            />
-                          ) : (
-                            organizerInitials
-                          )}
-                        </div>
+                        <Avatar
+                          src={organizerAvatarUrl}
+                          name={safeOrganizer}
+                          className="h-10 w-10 border border-white/20"
+                          textClassName="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/80"
+                          fallbackText="OR"
+                        />
                         <div className="flex flex-col">
                           <div className="flex items-center gap-2">
                             <span className="text-sm font-semibold text-white">{safeOrganizer}</span>
@@ -909,35 +836,6 @@ export default async function EventPage({
               </p>
             </section>
 
-            <section className="rounded-3xl border border-white/15 bg-white/5 p-6 shadow-[0_24px_60px_rgba(0,0,0,0.5)] backdrop-blur-2xl md:p-8">
-              <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.2em] text-white/60">
-                <span>O que acontece agora</span>
-                <span className="h-1 w-1 rounded-full bg-white/30" />
-                <span>{eventUpcoming ? "Antes" : eventStarted ? "Durante" : "Depois"}</span>
-              </div>
-              <h3 className="mt-3 text-xl font-semibold">Antes · Durante · Depois</h3>
-              <p className="mt-2 text-xs text-white/60">
-                Mantém-te atualizado pela página do evento. Esta linha do tempo mostra o estado atual.
-              </p>
-              <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                {timelineSteps.map((step) => (
-                  <div
-                    key={step.key}
-                    className={`rounded-lg border px-3 py-2 text-sm ${
-                      step.state === "done"
-                        ? "border-emerald-400/40 bg-emerald-500/10 text-emerald-50"
-                        : step.state === "active"
-                          ? "border-[#6BFFFF]/60 bg-[#0b1224] text-white"
-                          : "border-white/15 bg-white/5 text-white/70"
-                    }`}
-                  >
-                    <p className="font-semibold">{step.label}</p>
-                    <p className="text-[12px] opacity-80">{step.hint}</p>
-                  </div>
-                ))}
-              </div>
-            </section>
-
             <section className="rounded-3xl border border-white/15 bg-white/5 p-6 shadow-[0_24px_60px_rgba(0,0,0,0.5)] backdrop-blur-2xl md:p-8" id="live">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
@@ -994,48 +892,6 @@ export default async function EventPage({
               )}
             </section>
 
-            <section className="rounded-3xl border border-white/15 bg-white/5 p-6 shadow-[0_24px_60px_rgba(0,0,0,0.5)] backdrop-blur-2xl md:p-8">
-              <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.2em] text-white/60">
-                <span>Canal oficial</span>
-                <span className="h-1 w-1 rounded-full bg-white/30" />
-                <span>Atualizações da organização</span>
-              </div>
-              <h3 className="mt-3 text-xl font-semibold">Comunicados rápidos</h3>
-              <p className="mt-2 text-xs text-white/60">
-                Alterações e informações importantes aparecem aqui primeiro.
-              </p>
-
-              {formattedUpdates.length === 0 ? (
-                <div className="mt-4 rounded-2xl border border-white/12 bg-black/40 px-4 py-3 text-sm text-white/70">
-                  Sem atualizações oficiais para já.
-                </div>
-              ) : (
-                <div className="mt-4 space-y-3">
-                  {formattedUpdates.map((update) => (
-                    <div
-                      key={update.id}
-                      className="rounded-2xl border border-white/12 bg-black/40 px-4 py-3 text-sm text-white/80"
-                    >
-                      <div className="flex flex-wrap items-start justify-between gap-2">
-                        <div>
-                          <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">
-                            {update.categoryLabel}
-                            {update.isPinned ? " · Fixado" : ""}
-                          </p>
-                          <h4 className="text-base font-semibold text-white">{update.title}</h4>
-                        </div>
-                        <span className="text-[11px] text-white/55">{update.dateLabel}</span>
-                      </div>
-                      {update.body && (
-                        <p className="mt-2 text-[12px] text-white/70 whitespace-pre-line">
-                          {update.body}
-                        </p>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </section>
           </div>
 
           {/* RIGHT SIDE — CARD DE INFORMAÇÕES / TICKETS */}
@@ -1245,7 +1101,7 @@ export default async function EventPage({
 
                                   <Link
                                     href={`/resale/${r.id}`}
-                                    className="inline-flex items-center rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-3 py-1.5 text-xs font-semibold text-black shadow-[0_0_18px_rgba(107,255,255,0.65)] hover:scale-[1.01] active:scale-95 transition-transform"
+                                    className={`${CTA_PRIMARY} px-3 py-1.5 text-xs active:scale-95`}
                                   >
                                     Comprar agora
                                   </Link>

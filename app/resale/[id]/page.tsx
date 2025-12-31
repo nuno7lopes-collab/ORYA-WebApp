@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js";
 import { loadStripe } from "@stripe/stripe-js";
+import { CTA_PRIMARY } from "@/app/organizador/dashboardUi";
 
 type CheckoutResponse = {
   ok?: boolean;
@@ -54,7 +55,7 @@ function PaymentForm({ onSuccess }: { onSuccess?: () => void }) {
       <button
         type="submit"
         disabled={submitting}
-        className="w-full rounded-xl bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] py-3 text-sm font-semibold text-black disabled:opacity-60"
+        className={`${CTA_PRIMARY} w-full justify-center py-3 text-sm disabled:opacity-60`}
       >
         {submitting ? "A processar…" : "Pagar agora"}
       </button>

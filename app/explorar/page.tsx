@@ -9,6 +9,7 @@ import { defaultBlurDataURL, optimizeImageUrl } from "@/lib/image";
 import { PORTUGAL_CITIES } from "@/config/cities";
 import { clampWithGap } from "@/lib/filters";
 import { trackEvent } from "@/lib/analytics";
+import { useUser } from "@/app/hooks/useUser";
 
 type ExploreItem = {
   id: number;
@@ -71,6 +72,62 @@ type ServiceApiResponse = {
   debug?: string;
 };
 
+type PadelTournamentItem = {
+  id: number;
+  slug: string;
+  title: string;
+  startsAt: string | null;
+  endsAt: string | null;
+  coverImageUrl: string | null;
+  locationName: string | null;
+  locationCity: string | null;
+  priceFrom: number | null;
+  organizerName: string | null;
+  format: string | null;
+  eligibility: string | null;
+  levels: Array<{ id: number; label: string }>;
+};
+
+type PadelClubItem = {
+  id: number;
+  name: string;
+  shortName: string;
+  city: string | null;
+  address: string | null;
+  courtsCount: number;
+  slug: string | null;
+  organizerName: string | null;
+  organizerUsername: string | null;
+  courts: Array<{ id: number; name: string; indoor: boolean; surface: string | null }>;
+};
+
+type PadelOpenPairingItem = {
+  id: number;
+  paymentMode: string;
+  deadlineAt: string | null;
+  category: { id: number; label: string } | null;
+  openSlots: number;
+  event: {
+    id: number;
+    slug: string;
+    title: string;
+    startsAt: string | null;
+    locationName: string | null;
+    locationCity: string | null;
+    coverImageUrl: string | null;
+  };
+};
+
+type PadelDiscoverResponse = {
+  ok: boolean;
+  items: PadelTournamentItem[];
+  levels?: Array<{ id: number; label: string }>;
+  error?: string;
+};
+
+type PadelClubResponse = { ok: boolean; items: PadelClubItem[]; error?: string };
+type PadelOpenPairingsResponse = { ok: boolean; items: PadelOpenPairingItem[]; error?: string };
+
 type DateFilter = "all" | "today" | "weekend" | "custom";
 type TypeFilter = "all" | "event";
 type ExploreWorld = "EVENTOS" | "PADEL" | "RESERVAS";
@@ -96,6 +153,24 @@ const CATEGORY_OPTIONS = [
   { value: "PADEL", label: "Padel", accent: "from-[#6BFFFF] to-[#4ADE80]" },
   { value: "GERAL", label: "Eventos gerais", accent: "from-[#FF00C8] via-[#9B8CFF] to-[#1646F5]" },
 ] as const;
+
+const PADEL_FORMAT_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "all", label: "Todos os formatos" },
+  { value: "TODOS_CONTRA_TODOS", label: "Todos contra todos" },
+  { value: "QUADRO_ELIMINATORIO", label: "Quadro eliminatório" },
+  { value: "GRUPOS_ELIMINATORIAS", label: "Grupos + eliminatórias" },
+  { value: "CAMPEONATO_LIGA", label: "Campeonato/Liga" },
+  { value: "QUADRO_AB", label: "Quadro A/B" },
+  { value: "NON_STOP", label: "Non-stop" },
+];
+
+const PADEL_ELIGIBILITY_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "all", label: "Todos" },
+  { value: "OPEN", label: "Aberto" },
+  { value: "MALE_ONLY", label: "Masculino" },
+  { value: "FEMALE_ONLY", label: "Feminino" },
+  { value: "MIXED", label: "Misto" },
+];
 
 const defaultCover = (() => {
   const svg = `
@@ -185,6 +260,52 @@ function formatServiceAvailability(value: string | null) {
   return parsed.toLocaleString("pt-PT", { dateStyle: "medium", timeStyle: "short" });
 }
 
+function formatPadelDate(start: string | null, end: string | null) {
+  if (!start) return "Data a anunciar";
+  const startDate = new Date(start);
+  if (Number.isNaN(startDate.getTime())) return "Data a anunciar";
+  if (end) {
+    const endDate = new Date(end);
+    if (!Number.isNaN(endDate.getTime())) {
+      return formatDateRange(start, end);
+    }
+  }
+  return startDate.toLocaleString("pt-PT", {
+    weekday: "short",
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function formatPadelFormat(value: string | null) {
+  if (!value) return "Formato a definir";
+  return PADEL_FORMAT_OPTIONS.find((opt) => opt.value === value)?.label ?? value;
+}
+
+function formatPadelEligibility(value: string | null) {
+  if (!value) return "Elegibilidade aberta";
+  return PADEL_ELIGIBILITY_OPTIONS.find((opt) => opt.value === value)?.label ?? value;
+}
+
+function formatPadelPaymentMode(value: string) {
+  if (value === "SPLIT") return "Pagamento dividido";
+  if (value === "FULL") return "Pago pelo capitão";
+  return "Pagamento";
+}
+
+function formatPadelDeadline(value: string | null) {
+  if (!value) return "Sem prazo definido";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "Sem prazo definido";
+  return parsed.toLocaleString("pt-PT", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+}
+
+function formatCount(count: number, singular: string, plural: string) {
+  return count === 1 ? `1 ${singular}` : `${count} ${plural}`;
+}
+
 function statusTag(status: ExploreItem["status"]) {
   if (status === "CANCELLED") return { text: "Cancelado", className: "text-red-200" };
   if (status === "PAST") return { text: "Já aconteceu", className: "text-white/55" };
@@ -202,6 +323,8 @@ const exploreFilterClass =
   "relative z-30 flex flex-col gap-4 rounded-3xl border border-white/12 bg-gradient-to-r from-white/6 via-[#0f1424]/45 to-white/6 p-5 shadow-[0_24px_70px_rgba(0,0,0,0.55)] backdrop-blur-3xl";
 
 function ExplorarContent() {
+  const { user } = useUser();
+  const router = useRouter();
   const [items, setItems] = useState<ExploreItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -213,6 +336,17 @@ function ExplorarContent() {
   const [serviceNextCursor, setServiceNextCursor] = useState<number | null>(null);
   const [serviceHasMore, setServiceHasMore] = useState(false);
   const [serviceLoadingMore, setServiceLoadingMore] = useState(false);
+
+  const [padelTournaments, setPadelTournaments] = useState<PadelTournamentItem[]>([]);
+  const [padelClubs, setPadelClubs] = useState<PadelClubItem[]>([]);
+  const [padelOpenPairings, setPadelOpenPairings] = useState<PadelOpenPairingItem[]>([]);
+  const [padelLevels, setPadelLevels] = useState<Array<{ id: number; label: string }>>([]);
+  const [padelFormatFilter, setPadelFormatFilter] = useState("all");
+  const [padelEligibilityFilter, setPadelEligibilityFilter] = useState("all");
+  const [padelLevelFilter, setPadelLevelFilter] = useState("all");
+  const [padelLoading, setPadelLoading] = useState(false);
+  const [padelError, setPadelError] = useState<string | null>(null);
+  const [padelJoinLoadingId, setPadelJoinLoadingId] = useState<number | null>(null);
 
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
@@ -249,6 +383,7 @@ function ExplorarContent() {
   const searchParams = useSearchParams();
   const requestController = useRef<AbortController | null>(null);
   const serviceRequestController = useRef<AbortController | null>(null);
+  const padelRequestController = useRef<AbortController | null>(null);
   const lastEventCategories = useRef<string[]>([]);
   const [hydratedFromParams, setHydratedFromParams] = useState(false);
 
@@ -266,6 +401,9 @@ function ExplorarContent() {
     () => {
       const typeActive = world === "EVENTOS" ? typeFilter !== "all" : false;
       const categoryActive = world === "EVENTOS" ? selectedCategories.length > 0 : false;
+      const padelFormatActive = world === "PADEL" ? padelFormatFilter !== "all" : false;
+      const padelEligibilityActive = world === "PADEL" ? padelEligibilityFilter !== "all" : false;
+      const padelLevelActive = world === "PADEL" ? padelLevelFilter !== "all" : false;
       const hasCustomDate = dateFilter === "custom" && !!customDate;
 
       return (
@@ -274,6 +412,9 @@ function ExplorarContent() {
         hasCustomDate ||
         typeActive ||
         categoryActive ||
+        padelFormatActive ||
+        padelEligibilityActive ||
+        padelLevelActive ||
         city.trim().length > 0 ||
         priceMin > 0 ||
         effectiveMaxParam !== null
@@ -285,6 +426,9 @@ function ExplorarContent() {
       dateFilter,
       effectiveMaxParam,
       priceMin,
+      padelEligibilityFilter,
+      padelFormatFilter,
+      padelLevelFilter,
       search,
       selectedCategories.length,
       typeFilter,
@@ -732,10 +876,182 @@ function ExplorarContent() {
     }
   }
 
+  async function fetchPadel() {
+    if (padelRequestController.current) {
+      padelRequestController.current.abort();
+    }
+    const controller = new AbortController();
+    padelRequestController.current = controller;
+    const timeoutId = setTimeout(() => controller.abort(), 4500);
+    const currentRequest = controller;
+
+    const fetchJson = async <T extends { ok?: boolean; error?: string }>(url: string) => {
+      const res = await fetch(url, { cache: "no-store", signal: controller.signal });
+      const rawText = await res.text().catch(() => "");
+      let data: T | null = null;
+      if (rawText.trim()) {
+        try {
+          data = JSON.parse(rawText) as T;
+        } catch {
+          data = null;
+        }
+      }
+      if (!res.ok || !data || data.ok === false) {
+        const detail =
+          data?.error || (rawText ? rawText.slice(0, 200) : null) || `HTTP ${res.status}`;
+        throw new Error(detail);
+      }
+      return data;
+    };
+
+    try {
+      setPadelLoading(true);
+      setPadelError(null);
+      setPadelTournaments([]);
+      setPadelClubs([]);
+      setPadelOpenPairings([]);
+
+      const baseParams = new URLSearchParams();
+      if (search.trim()) baseParams.set("q", search.trim());
+      if (city.trim()) baseParams.set("city", city.trim());
+
+      const tournamentParams = new URLSearchParams(baseParams);
+      if (dateFilter === "custom" && customDate) {
+        tournamentParams.set("date", "day");
+        tournamentParams.set("day", customDate);
+      } else if (dateFilter !== "all") {
+        tournamentParams.set("date", dateFilter);
+      }
+      if (priceMin > 0) tournamentParams.set("priceMin", String(priceMin));
+      if (effectiveMaxParam !== null) tournamentParams.set("priceMax", String(effectiveMaxParam));
+      if (padelFormatFilter !== "all") tournamentParams.set("format", padelFormatFilter);
+      if (padelEligibilityFilter !== "all") tournamentParams.set("eligibility", padelEligibilityFilter);
+      if (padelLevelFilter !== "all") tournamentParams.set("level", padelLevelFilter);
+
+      const clubsParams = new URLSearchParams(baseParams);
+      clubsParams.set("includeCourts", "1");
+
+      const pairingsParams = new URLSearchParams(baseParams);
+
+      const [tournamentsResult, clubsResult, pairingsResult] = await Promise.allSettled([
+        fetchJson<PadelDiscoverResponse>(
+          `/api/padel/discover${tournamentParams.toString() ? `?${tournamentParams.toString()}` : ""}`,
+        ),
+        fetchJson<PadelClubResponse>(
+          `/api/padel/public/clubs${clubsParams.toString() ? `?${clubsParams.toString()}` : ""}`,
+        ),
+        fetchJson<PadelOpenPairingsResponse>(
+          `/api/padel/public/open-pairings${pairingsParams.toString() ? `?${pairingsParams.toString()}` : ""}`,
+        ),
+      ]);
+
+      if (padelRequestController.current !== currentRequest) return;
+
+      const errors: string[] = [];
+
+      if (tournamentsResult.status === "fulfilled") {
+        setPadelTournaments(tournamentsResult.value.items ?? []);
+        setPadelLevels(tournamentsResult.value.levels ?? []);
+      } else if (tournamentsResult.reason?.name !== "AbortError") {
+        errors.push("torneios");
+      }
+
+      if (clubsResult.status === "fulfilled") {
+        setPadelClubs(clubsResult.value.items ?? []);
+      } else if (clubsResult.reason?.name !== "AbortError") {
+        errors.push("clubes");
+      }
+
+      if (pairingsResult.status === "fulfilled") {
+        setPadelOpenPairings(pairingsResult.value.items ?? []);
+      } else if (pairingsResult.reason?.name !== "AbortError") {
+        errors.push("jogos comunitários");
+      }
+
+      if (errors.length === 0) {
+        setPadelError(null);
+      } else if (errors.length === 3) {
+        setPadelError("Não conseguimos carregar o Padel agora.");
+      } else {
+        setPadelError("Algumas secções do Padel não carregaram.");
+      }
+    } catch (err) {
+      if (padelRequestController.current !== currentRequest) return;
+      const isAbort = (err as Error | undefined)?.name === "AbortError";
+      if (!isAbort && process.env.NODE_ENV !== "production") {
+        console.error(err);
+      }
+      setPadelError(
+        isAbort
+          ? "Demorou demasiado a responder. Tenta novamente."
+          : "Não conseguimos carregar o Padel. Tenta outra vez.",
+      );
+    } finally {
+      clearTimeout(timeoutId);
+      if (padelRequestController.current === currentRequest) {
+        setPadelLoading(false);
+      }
+    }
+  }
+
+  async function handleJoinOpenPairing(item: PadelOpenPairingItem) {
+    if (!user) {
+      router.push(`/login?redirect=${encodeURIComponent(`/eventos/${item.event.slug}`)}`);
+      return;
+    }
+    setPadelError(null);
+    setPadelJoinLoadingId(item.id);
+    try {
+      const res = await fetch("/api/padel/pairings/open", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pairingId: item.id }),
+      });
+      const data = (await res.json().catch(() => null)) as { ok?: boolean; error?: string; action?: string } | null;
+      if (!res.ok || !data?.ok) {
+        const action = data?.action;
+        if (action === "CHECKOUT_PARTNER" || action === "CHECKOUT_CAPTAIN") {
+          router.push(`/eventos/${item.event.slug}`);
+          return;
+        }
+        const errorMap: Record<string, string> = {
+          UNAUTHENTICATED: "Precisas de iniciar sessão.",
+          PAIRING_ALREADY_ACTIVE: "Já tens uma dupla ativa neste torneio.",
+          PAIRING_EXPIRED: "Este convite expirou.",
+          NO_PENDING_SLOT: "Esta dupla já está completa.",
+        };
+        const detail = data?.error ? errorMap[data.error] ?? data.error : null;
+        throw new Error(detail || "Não foi possível entrar na dupla.");
+      }
+      router.push(`/eventos/${item.event.slug}`);
+    } catch (err) {
+      if (process.env.NODE_ENV !== "production") {
+        console.error(err);
+      }
+      const message = (err as Error | undefined)?.message || "Não foi possível entrar na dupla.";
+      setPadelError(message);
+    } finally {
+      setPadelJoinLoadingId(null);
+    }
+  }
+
   useEffect(() => {
     const handle = setTimeout(() => setFiltersTick((v) => v + 1), 250);
     return () => clearTimeout(handle);
-  }, [search, dateFilter, customDate, typeFilter, selectedCategories, city, priceMin, effectiveMaxParam, world]);
+  }, [
+    search,
+    dateFilter,
+    customDate,
+    typeFilter,
+    selectedCategories,
+    city,
+    priceMin,
+    effectiveMaxParam,
+    padelFormatFilter,
+    padelEligibilityFilter,
+    padelLevelFilter,
+    world,
+  ]);
 
   useEffect(() => {
     trackEvent("explore_filter_price_changed", {
@@ -752,6 +1068,14 @@ function ExplorarContent() {
   }, [dateFilter, customDate]);
 
   useEffect(() => {
+    if (padelLevelFilter === "all") return;
+    const exists = padelLevels.some((level) => String(level.id) === padelLevelFilter);
+    if (!exists) {
+      setPadelLevelFilter("all");
+    }
+  }, [padelLevels, padelLevelFilter]);
+
+  useEffect(() => {
     if (!city && !cityInput) return;
     trackEvent("explore_filter_location_changed", { city: city || cityInput });
   }, [city, cityInput]);
@@ -759,6 +1083,8 @@ function ExplorarContent() {
   useEffect(() => {
     if (world === "RESERVAS") {
       fetchServices({ append: false, cursor: null });
+    } else if (world === "PADEL") {
+      fetchPadel();
     } else {
       fetchItems({ append: false, cursor: null });
     }
@@ -809,6 +1135,9 @@ function ExplorarContent() {
     const typeQ = searchParams.get("type") as TypeFilter | null;
     const catsQ = searchParams.get("categories");
     const worldQ = searchParams.get("world") ?? searchParams.get("mundo");
+    const padelFormatQ = searchParams.get("format");
+    const padelEligibilityQ = searchParams.get("eligibility");
+    const padelLevelQ = searchParams.get("level");
 
     if (qp) {
       setSearchInput(qp);
@@ -848,14 +1177,18 @@ function ExplorarContent() {
         .filter(Boolean);
       setSelectedCategories(arr);
     }
-    setHydratedFromParams(true);
-     
-  }, [searchParams, hydratedFromParams]);
 
-  useEffect(() => {
-    const handle = setTimeout(() => setCity(cityInput.trim()), 350);
-    return () => clearTimeout(handle);
-  }, [cityInput]);
+    if (padelFormatQ && PADEL_FORMAT_OPTIONS.some((opt) => opt.value === padelFormatQ)) {
+      setPadelFormatFilter(padelFormatQ);
+    }
+    if (padelEligibilityQ && PADEL_ELIGIBILITY_OPTIONS.some((opt) => opt.value === padelEligibilityQ)) {
+      setPadelEligibilityFilter(padelEligibilityQ);
+    }
+    if (padelLevelQ && Number.isFinite(Number(padelLevelQ))) {
+      setPadelLevelFilter(padelLevelQ);
+    }
+    setHydratedFromParams(true);
+  }, [searchParams, hydratedFromParams]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent | TouchEvent) => {
@@ -884,18 +1217,35 @@ function ExplorarContent() {
     dateFilter === "custom" && customDate
       ? new Date(customDate).toLocaleDateString("pt-PT", { day: "2-digit", month: "short" })
       : DATE_FILTER_OPTIONS.find((d) => d.value === dateFilter)?.label;
-  const activeItemsCount = isReservasWorld ? serviceItems.length : items.length;
-  const resultsLabel = activeItemsCount === 1 ? "1 resultado" : `${activeItemsCount} resultados`;
+  const visibleOpenPairings = padelOpenPairings.filter((pairing) => pairing.openSlots > 0);
+  const padelHasContent =
+    padelTournaments.length > 0 || padelClubs.length > 0 || visibleOpenPairings.length > 0;
+  const activeItemsCount = isReservasWorld
+    ? serviceItems.length
+    : isPadelWorld
+      ? padelTournaments.length
+      : items.length;
+  const resultsLabel = isPadelWorld
+    ? `${formatCount(padelTournaments.length, "torneio", "torneios")} · ${formatCount(
+        padelClubs.length,
+        "clube",
+        "clubes",
+      )} · ${formatCount(visibleOpenPairings.length, "jogo", "jogos")}`
+    : activeItemsCount === 1
+      ? "1 resultado"
+      : `${activeItemsCount} resultados`;
   const showSkeleton = isReservasWorld
     ? serviceLoading || (serviceError && serviceItems.length === 0)
-    : loading || (error && items.length === 0);
+    : isPadelWorld
+      ? padelLoading || (padelError && !padelHasContent)
+      : loading || (error && items.length === 0);
   const worldSummaryLabel = isReservasWorld ? "Serviços" : isPadelWorld ? "Padel" : "Eventos";
-  const activeItems = isReservasWorld ? serviceItems : items;
-  const activeError = isReservasWorld ? serviceError : error;
-  const activeLoading = isReservasWorld ? serviceLoading : loading;
-  const activeHasMore = isReservasWorld ? serviceHasMore : hasMore;
-  const activeIsLoadingMore = isReservasWorld ? serviceLoadingMore : isLoadingMore;
-  const activeNextCursor = isReservasWorld ? serviceNextCursor : nextCursor;
+  const activeItems = isReservasWorld ? serviceItems : isPadelWorld ? padelTournaments : items;
+  const activeError = isReservasWorld ? serviceError : isPadelWorld ? padelError : error;
+  const activeLoading = isReservasWorld ? serviceLoading : isPadelWorld ? padelLoading : loading;
+  const activeHasMore = isReservasWorld ? serviceHasMore : isPadelWorld ? false : hasMore;
+  const activeIsLoadingMore = isReservasWorld ? serviceLoadingMore : isPadelWorld ? false : isLoadingMore;
+  const activeNextCursor = isReservasWorld ? serviceNextCursor : isPadelWorld ? null : nextCursor;
 
   return (
     <main className={exploreMainClass}>
@@ -1094,6 +1444,9 @@ function ExplorarContent() {
                     setPriceMin(0);
                     setPriceMax(100);
                     setCustomDate("");
+                    setPadelFormatFilter("all");
+                    setPadelEligibilityFilter("all");
+                    setPadelLevelFilter("all");
                   }}
                   className="text-[11px] text-white/55 hover:text-white/90"
                 >
@@ -1140,6 +1493,56 @@ function ExplorarContent() {
             </div>
           )}
 
+          {isPadelWorld && (
+            <div className="grid gap-3 sm:grid-cols-3">
+              <label className="flex flex-col gap-1 text-[10px] text-white/55">
+                Formato
+                <select
+                  value={padelFormatFilter}
+                  onChange={(e) => setPadelFormatFilter(e.target.value)}
+                  className="rounded-2xl border border-white/15 bg-black/40 px-3 py-2 text-xs text-white/80 focus:border-white/35 focus:outline-none"
+                >
+                  {PADEL_FORMAT_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value} className="bg-black text-white">
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex flex-col gap-1 text-[10px] text-white/55">
+                Elegibilidade
+                <select
+                  value={padelEligibilityFilter}
+                  onChange={(e) => setPadelEligibilityFilter(e.target.value)}
+                  className="rounded-2xl border border-white/15 bg-black/40 px-3 py-2 text-xs text-white/80 focus:border-white/35 focus:outline-none"
+                >
+                  {PADEL_ELIGIBILITY_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value} className="bg-black text-white">
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex flex-col gap-1 text-[10px] text-white/55">
+                Nível
+                <select
+                  value={padelLevelFilter}
+                  onChange={(e) => setPadelLevelFilter(e.target.value)}
+                  className="rounded-2xl border border-white/15 bg-black/40 px-3 py-2 text-xs text-white/80 focus:border-white/35 focus:outline-none"
+                >
+                  <option value="all" className="bg-black text-white">
+                    Todos os níveis
+                  </option>
+                  {padelLevels.map((level) => (
+                    <option key={level.id} value={String(level.id)} className="bg-black text-white">
+                      {level.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          )}
+
           {/* resumo */}
           <div className="flex items-center justify-between text-[11px] text-white/60">
             <span>
@@ -1161,7 +1564,7 @@ function ExplorarContent() {
             {Array.from({ length: 8 }).map((_, i) => (
               <div
                 key={i}
-                className="rounded-3xl border border-white/10 bg-white/5 p-3 animate-pulse space-y-3"
+                className="rounded-3xl border border-white/10 orya-skeleton-surface p-3 animate-pulse space-y-3"
               >
                 <div className="rounded-2xl bg-white/10 aspect-square" />
                 <div className="h-3 w-3/4 rounded bg-white/10" />
@@ -1182,7 +1585,9 @@ function ExplorarContent() {
                 onClick={() =>
                   isReservasWorld
                     ? fetchServices({ append: false, cursor: null })
-                    : fetchItems({ append: false, cursor: null })
+                    : isPadelWorld
+                      ? fetchPadel()
+                      : fetchItems({ append: false, cursor: null })
                 }
                 className="rounded-full bg-white text-red-700 px-4 py-1.5 text-[11px] font-semibold shadow hover:bg-white/90 transition"
               >
@@ -1201,8 +1606,13 @@ function ExplorarContent() {
                   setPriceMin(0);
                   setPriceMax(100);
                   setCustomDate("");
+                  setPadelFormatFilter("all");
+                  setPadelEligibilityFilter("all");
+                  setPadelLevelFilter("all");
                   if (isReservasWorld) {
                     fetchServices({ append: false, cursor: null });
+                  } else if (isPadelWorld) {
+                    fetchPadel();
                   } else {
                     fetchItems({ append: false, cursor: null });
                   }
@@ -1216,13 +1626,13 @@ function ExplorarContent() {
         )}
 
         {/* SEM RESULTADOS */}
-        {!activeLoading && !activeError && activeItems.length === 0 && (
+        {!activeLoading && !activeError && (isPadelWorld ? !padelHasContent : activeItems.length === 0) && (
           <div className="mt-10 flex flex-col items-center text-center gap-2 text-sm text-white/60">
             <p>
               {isReservasWorld
                 ? "Não encontrámos serviços com estes filtros."
                 : isPadelWorld
-                  ? "Não encontrámos torneios com estes filtros."
+                  ? "Não encontrámos torneios, clubes ou jogos comunitários com estes filtros."
                   : "Não encontrámos eventos com estes filtros."}
             </p>
             <p className="text-xs text-white/40 max-w-sm">
@@ -1241,6 +1651,9 @@ function ExplorarContent() {
                 setPriceMin(0);
                 setPriceMax(100);
                 setCustomDate("");
+                setPadelFormatFilter("all");
+                setPadelEligibilityFilter("all");
+                setPadelLevelFilter("all");
               }}
               className="mt-2 px-4 py-1.5 rounded-full bg-white/5 border border-white/20 text-xs text-white/80 hover:bg-white/10"
             >
@@ -1250,9 +1663,80 @@ function ExplorarContent() {
         )}
 
         {/* LISTA */}
-        {!activeLoading && activeItems.length > 0 && (
+        {!activeLoading && (isPadelWorld ? padelHasContent : activeItems.length > 0) && (
           <>
-            {isReservasWorld ? (
+            {isPadelWorld ? (
+              <div className="mt-4 space-y-8">
+                <div className="space-y-3">
+                  <div>
+                    <p className="text-[11px] uppercase tracking-[0.28em] text-white/60">Torneios</p>
+                    <h3 className="text-lg font-semibold text-white">Torneios de padel em destaque</h3>
+                    <p className="text-xs text-white/55">
+                      Filtra por formato, elegibilidade e nível para encontrares o torneio certo.
+                    </p>
+                  </div>
+                  {padelTournaments.length === 0 ? (
+                    <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-xs text-white/60">
+                      Sem torneios com estes filtros.
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                      {padelTournaments.map((item) => (
+                        <PadelTournamentCard key={item.id} item={item} />
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-3">
+                  <div>
+                    <p className="text-[11px] uppercase tracking-[0.28em] text-white/60">Clubes & Courts</p>
+                    <h3 className="text-lg font-semibold text-white">Clubes ativos em Portugal</h3>
+                    <p className="text-xs text-white/55">
+                      Descobre clubes públicos e os courts disponíveis.
+                    </p>
+                  </div>
+                  {padelClubs.length === 0 ? (
+                    <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-xs text-white/60">
+                      Sem clubes disponíveis neste momento.
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {padelClubs.map((item) => (
+                        <PadelClubCard key={item.id} item={item} />
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-3">
+                  <div>
+                    <p className="text-[11px] uppercase tracking-[0.28em] text-white/60">Jogos comunitários</p>
+                    <h3 className="text-lg font-semibold text-white">Duplas à procura de parceiro</h3>
+                    <p className="text-xs text-white/55">
+                      Junta-te a uma dupla aberta e garante o teu lugar no torneio.
+                    </p>
+                  </div>
+                  {visibleOpenPairings.length === 0 ? (
+                    <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-xs text-white/60">
+                      Sem duplas abertas por agora.
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {visibleOpenPairings.map((item) => (
+                        <PadelOpenPairingCard
+                          key={item.id}
+                          item={item}
+                          onJoin={() => handleJoinOpenPairing(item)}
+                          isLoading={padelJoinLoadingId === item.id}
+                          isAuthenticated={Boolean(user)}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : isReservasWorld ? (
               <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
                 {[...serviceItems.map((item) => ({ item })), ...Array.from({ length: Math.max(0, 3 - serviceItems.length) }).map((_, idx) => ({ item: null, key: `placeholder-${idx}` }))].map(
                   (entry, idx) =>
@@ -1281,7 +1765,7 @@ function ExplorarContent() {
               </div>
             )}
 
-            {activeHasMore && (
+            {!isPadelWorld && activeHasMore && (
               <div className="mt-6 flex justify-center">
                 <button
                   type="button"
@@ -1321,6 +1805,21 @@ type CardProps = {
 
 type ServiceCardProps = {
   item: ServiceItem;
+};
+
+type PadelTournamentCardProps = {
+  item: PadelTournamentItem;
+};
+
+type PadelClubCardProps = {
+  item: PadelClubItem;
+};
+
+type PadelOpenPairingCardProps = {
+  item: PadelOpenPairingItem;
+  onJoin: () => void;
+  isLoading: boolean;
+  isAuthenticated: boolean;
 };
 
 function PriceBadge({ item }: { item: ExploreItem }) {
@@ -1633,6 +2132,202 @@ function ServiceCard({ item }: ServiceCardProps) {
         </div>
       </div>
     </Link>
+  );
+}
+
+function PadelTournamentCard({ item }: PadelTournamentCardProps) {
+  const dateLabel = formatPadelDate(item.startsAt, item.endsAt);
+  const locationLabel = item.locationName || item.locationCity || "Local a anunciar";
+  const priceLabel =
+    item.priceFrom == null ? "Preço a anunciar" : item.priceFrom === 0 ? "Grátis" : `Desde ${item.priceFrom.toFixed(2)} €`;
+  const formatLabel = formatPadelFormat(item.format);
+  const eligibilityLabel = formatPadelEligibility(item.eligibility);
+
+  return (
+    <Link
+      href={`/eventos/${item.slug}`}
+      className="group rounded-3xl border border-white/10 bg-white/[0.02] overflow-hidden flex flex-col transition-all hover:border-white/16 hover:-translate-y-[6px] shadow-[0_14px_32px_rgba(0,0,0,0.45)]"
+    >
+      <div className="relative overflow-hidden">
+        <div className="aspect-square w-full">
+          <Image
+            src={item.coverImageUrl ? optimizeImageUrl(item.coverImageUrl, 900, 72) : defaultCover}
+            alt={item.title}
+            fill
+            sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+            className="object-cover transform transition-transform duration-300 group-hover:scale-[1.04]"
+            placeholder="blur"
+            blurDataURL={defaultBlurDataURL}
+          />
+        </div>
+        <div className="absolute top-2 left-2 flex items-center gap-2 rounded-2xl border border-white/16 px-3 py-1 text-[11px] font-semibold text-white/90 backdrop-blur-lg bg-gradient-to-r from-white/10 via-white/7 to-white/5">
+          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white/10 text-[11px]">
+            🎾
+          </span>
+          <span className="h-1.5 w-6 rounded-full bg-gradient-to-r from-[#6BFFFF] via-[#4ADE80] to-[#1E40AF]" />
+          <span className="tracking-wide leading-none">Torneio</span>
+        </div>
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
+      </div>
+
+      <div className="p-3 flex flex-col gap-1.5 bg-gradient-to-b from-white/2 via-transparent to-white/2">
+        <div className="flex items-center justify-between text-[11px] text-white/75">
+          <span className="truncate">{item.organizerName || "Clube ORYA"}</span>
+          <span className="rounded-full bg-white/5 px-2 py-0.5 border border-white/10">{priceLabel}</span>
+        </div>
+
+        <h2 className="text-[14px] md:text-[15px] font-semibold leading-snug text-white line-clamp-2">
+          {item.title}
+        </h2>
+
+        <p className="text-[11px] text-white/80">{dateLabel}</p>
+        <p className="text-[11px] text-white/70">{locationLabel}</p>
+
+        <div className="flex flex-wrap gap-1.5 mt-2 text-[10px] text-white/75">
+          <span className="rounded-full border border-white/12 bg-white/5 px-2 py-0.5">
+            {formatLabel}
+          </span>
+          <span className="rounded-full border border-white/12 bg-white/5 px-2 py-0.5">
+            {eligibilityLabel}
+          </span>
+          {item.levels.length === 0 && (
+            <span className="rounded-full border border-white/12 bg-white/5 px-2 py-0.5">
+              Nível aberto
+            </span>
+          )}
+          {item.levels.slice(0, 3).map((level) => (
+            <span
+              key={level.id}
+              className="rounded-full border border-white/12 bg-white/5 px-2 py-0.5"
+            >
+              {level.label}
+            </span>
+          ))}
+          {item.levels.length > 3 && (
+            <span className="rounded-full border border-white/12 bg-white/5 px-2 py-0.5">
+              +{item.levels.length - 3}
+            </span>
+          )}
+        </div>
+      </div>
+    </Link>
+  );
+}
+
+function PadelClubCard({ item }: PadelClubCardProps) {
+  const clubHref = item.organizerUsername ? `/${item.organizerUsername}` : null;
+  const header = (
+    <div className="flex items-start justify-between gap-3">
+      <div>
+        <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">Clube</p>
+        <h3 className="text-lg font-semibold text-white">{item.shortName || item.name}</h3>
+        <p className="text-xs text-white/55">
+          {item.city || "Cidade"} · {item.courtsCount} courts
+        </p>
+      </div>
+      <span className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[11px] text-white/75">
+        {item.address || "Endereço a anunciar"}
+      </span>
+    </div>
+  );
+
+  const courts = item.courts ?? [];
+  const content = (
+    <div className="group rounded-3xl border border-white/10 bg-white/[0.02] p-4 shadow-[0_14px_32px_rgba(0,0,0,0.4)] transition-all hover:border-white/16 hover:-translate-y-[4px]">
+      {header}
+      <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-2">
+        {courts.length === 0 ? (
+          <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-[11px] text-white/60">
+            Courts a anunciar.
+          </div>
+        ) : (
+          courts.slice(0, 4).map((court) => (
+            <div
+              key={court.id}
+              className="rounded-2xl border border-white/12 bg-black/35 px-3 py-2 text-[11px] text-white/75"
+            >
+              <p className="font-semibold text-white/90">{court.name}</p>
+              <p className="text-[10px] text-white/55">
+                {court.indoor ? "Indoor" : "Outdoor"}
+                {court.surface ? ` · ${court.surface}` : ""}
+              </p>
+            </div>
+          ))
+        )}
+      </div>
+      {clubHref && (
+        <div className="mt-4 text-[11px] text-white/70 group-hover:text-white/90">
+          Ver perfil do clube →
+        </div>
+      )}
+    </div>
+  );
+
+  if (clubHref) {
+    return (
+      <Link href={clubHref} className="block">
+        {content}
+      </Link>
+    );
+  }
+  return content;
+}
+
+function PadelOpenPairingCard({
+  item,
+  onJoin,
+  isLoading,
+  isAuthenticated,
+}: PadelOpenPairingCardProps) {
+  const dateLabel = formatPadelDate(item.event.startsAt, item.event.startsAt);
+  const locationLabel = item.event.locationName || item.event.locationCity || "Local a anunciar";
+  const deadlineLabel = formatPadelDeadline(item.deadlineAt);
+  const paymentLabel = formatPadelPaymentMode(item.paymentMode);
+  const slotsLabel = item.openSlots === 1 ? "1 vaga" : `${item.openSlots} vagas`;
+  const joinLabel = isAuthenticated ? "Juntar-me" : "Iniciar sessão";
+
+  return (
+    <div className="rounded-3xl border border-white/10 bg-white/[0.02] p-4 shadow-[0_14px_32px_rgba(0,0,0,0.4)]">
+      <div className="flex items-start gap-4">
+        <div className="relative h-20 w-20 overflow-hidden rounded-2xl border border-white/10 bg-white/5">
+          <Image
+            src={item.event.coverImageUrl ? optimizeImageUrl(item.event.coverImageUrl, 240, 72) : defaultCover}
+            alt={item.event.title}
+            fill
+            sizes="80px"
+            className="object-cover"
+            placeholder="blur"
+            blurDataURL={defaultBlurDataURL}
+          />
+        </div>
+        <div className="flex-1 space-y-1">
+          <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Dupla aberta</p>
+          <Link href={`/eventos/${item.event.slug}`} className="text-base font-semibold text-white hover:text-white/90">
+            {item.event.title}
+          </Link>
+          <p className="text-[11px] text-white/65">{dateLabel}</p>
+          <p className="text-[11px] text-white/55">{locationLabel}</p>
+          <div className="mt-2 flex flex-wrap gap-1.5 text-[10px] text-white/75">
+            <span className="rounded-full border border-white/12 bg-white/5 px-2 py-0.5">
+              {item.category?.label || "Nível aberto"}
+            </span>
+            <span className="rounded-full border border-white/12 bg-white/5 px-2 py-0.5">{slotsLabel}</span>
+            <span className="rounded-full border border-white/12 bg-white/5 px-2 py-0.5">{paymentLabel}</span>
+          </div>
+        </div>
+      </div>
+      <div className="mt-4 flex items-center justify-between gap-3">
+        <p className="text-[11px] text-white/55">Prazo: {deadlineLabel}</p>
+        <button
+          type="button"
+          onClick={onJoin}
+          disabled={isLoading}
+          className="rounded-full bg-white text-black px-4 py-1.5 text-[11px] font-semibold hover:bg-white/90 disabled:opacity-60"
+        >
+          {isLoading ? "A entrar..." : joinLabel}
+        </button>
+      </div>
+    </div>
   );
 }
 

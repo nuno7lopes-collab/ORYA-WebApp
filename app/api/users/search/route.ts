@@ -25,6 +25,8 @@ export async function GET(req: NextRequest) {
         AND: [
           { isDeleted: false },
           ...(user ? [{ id: { not: user.id } }] : []),
+          { username: { not: null } },
+          { NOT: { username: "" } },
           {
             OR: [
               { username: { contains: normalized, mode: "insensitive" } },

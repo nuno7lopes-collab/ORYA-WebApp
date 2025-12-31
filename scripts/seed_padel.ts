@@ -1,5 +1,5 @@
 /**
- * Seed de teste para Padel (organizer + jogadores + evento + equipas/jogos).
+ * Seed de teste para Padel (organizer + jogadores + evento).
  *
  * NOTA: não corre automaticamente. Usa:
  *   npx ts-node scripts/seed_padel.ts
@@ -88,23 +88,6 @@ async function main() {
       numberOfCourts: 2,
     },
     update: {},
-  });
-
-  const teamA = await prisma.padelTeam.create({
-    data: { eventId: event.id, player1Id: players[0].id, player2Id: players[1].id },
-  });
-  const teamB = await prisma.padelTeam.create({
-    data: { eventId: event.id, player1Id: players[2].id, player2Id: players[3].id },
-  });
-
-  await prisma.padelMatch.create({
-    data: {
-      eventId: event.id,
-      teamAId: teamA.id,
-      teamBId: teamB.id,
-      status: "DONE",
-      score: { sets: [{ teamA: 6, teamB: 4 }, { teamA: 6, teamB: 3 }] },
-    },
   });
 
   console.log("Seed Padel criada com sucesso:", { organizerId: organizer.id, eventId: event.id });

@@ -26,6 +26,7 @@ type ApiAuthMeResponse = {
     fullName: string | null;
     avatarUrl: string | null;
     coverUrl: string | null;
+    updatedAt: string | Date | null;
     bio: string | null;
     city: string | null;
     isVerified: boolean;
@@ -136,6 +137,7 @@ export async function GET() {
       fullName: resolvedProfile.fullName,
       avatarUrl: resolvedProfile.avatarUrl,
       coverUrl: resolvedProfile.coverUrl,
+      updatedAt: resolvedProfile.updatedAt ?? null,
       bio: resolvedProfile.bio,
       city: resolvedProfile.city,
       contactPhone: resolvedProfile.contactPhone,

@@ -1,30 +1,49 @@
 import { prisma } from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
+import { AuthRequiredError, requireUser } from "@/lib/auth/requireUser";
 
 export async function POST(req: NextRequest) {
-  const body = await req.json().catch(() => ({}));
-  const { notificationId, userId } = body as { notificationId?: string; userId?: string };
-  if (!notificationId || !userId) {
-    return NextResponse.json(
-      { ok: false, code: "INVALID_PAYLOAD", message: "notificationId e userId são obrigatórios" },
-      { status: 400 },
-    );
+  try {
+    const user = await requireUser();
+    const body = await req.json().catch(() => ({}));
+    const { notificationId, markAll } = body as { notificationId?: string; markAll?: boolean };
+
+    if (markAll) {
+      await prisma.notification.updateMany({
+        where: { userId: user.id, isRead: false },
+        data: { isRead: true, readAt: new Date() },
+      });
+      return NextResponse.json({ ok: true, updated: "all" });
+    }
+
+    if (!notificationId) {
+      return NextResponse.json(
+        { ok: false, code: "INVALID_PAYLOAD", message: "notificationId é obrigatório" },
+        { status: 400 },
+      );
+    }
+
+    const notif = await prisma.notification.findFirst({
+      where: { id: notificationId, userId: user.id },
+    });
+    if (!notif) {
+      return NextResponse.json(
+        { ok: false, code: "NOT_FOUND", message: "Notificação não existe" },
+        { status: 404 },
+      );
+    }
+
+    await prisma.notification.update({
+      where: { id: notificationId },
+      data: { isRead: true, readAt: new Date() },
+    });
+
+    return NextResponse.json({ ok: true, updated: "single" });
+  } catch (err) {
+    if (err instanceof AuthRequiredError) {
+      return NextResponse.json({ ok: false, code: "UNAUTHENTICATED" }, { status: err.status ?? 401 });
+    }
+    console.error("[notifications][mark-read] erro inesperado", err);
+    return NextResponse.json({ ok: false, code: "INTERNAL_ERROR" }, { status: 500 });
   }
-
-  const notif = await prisma.notification.findFirst({
-    where: { id: notificationId, userId },
-  });
-  if (!notif) {
-    return NextResponse.json(
-      { ok: false, code: "NOT_FOUND", message: "Notificação não existe" },
-      { status: 404 },
-    );
-  }
-
-  await prisma.notification.update({
-    where: { id: notificationId },
-    data: { isRead: true, readAt: new Date() },
-  });
-
-  return NextResponse.json({ ok: true });
 }

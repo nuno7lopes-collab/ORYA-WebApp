@@ -139,13 +139,6 @@ const CATEGORY_TEMPLATE: Record<OrganizationCategory, "PADEL" | "VOLUNTEERING" |
   CLUBS: null,
 };
 
-const UPDATE_CATEGORY_LABELS: Record<string, string> = {
-  TODAY: "Hoje",
-  CHANGES: "Alterações",
-  RESULTS: "Resultados",
-  CALL_UPS: "Convocatórias",
-};
-
 function formatEventDateRange(start: Date | null, end: Date | null, timezone?: string | null) {
   if (!start) return "Data a definir";
   const safeTimezone = timezone || "Europe/Lisbon";
@@ -231,6 +224,7 @@ export default async function UserProfilePage({ params }: PageProps) {
         visibility: true,
         is_verified: true,
         createdAt: true,
+        updatedAt: true,
       },
     }),
     prisma.organizer.findFirst({
@@ -323,7 +317,7 @@ export default async function UserProfilePage({ params }: PageProps) {
       status: { in: [OrganizationFormStatus.PUBLISHED, OrganizationFormStatus.DRAFT] },
     };
 
-    const [events, updates, followersCount, followRow, forms] = await Promise.all([
+    const [events, followersCount, followRow, forms] = await Promise.all([
       prisma.event.findMany({
         where: {
           organizerId: organizerProfile.id,
@@ -347,14 +341,6 @@ export default async function UserProfilePage({ params }: PageProps) {
           coverImageUrl: true,
           ticketTypes: { select: { price: true } },
         },
-      }),
-      prisma.organizationUpdate.findMany({
-        where: { organizerId: organizerProfile.id, status: "PUBLISHED" },
-        include: {
-          event: { select: { slug: true, title: true } },
-        },
-        orderBy: [{ isPinned: "desc" }, { publishedAt: "desc" }, { createdAt: "desc" }],
-        take: 6,
       }),
       prisma.organizer_follows.count({
         where: { organizer_id: organizerProfile.id },
@@ -382,12 +368,6 @@ export default async function UserProfilePage({ params }: PageProps) {
           })
         : Promise.resolve([] as OrganizationFormPreview[]),
     ]);
-
-    const formattedUpdates = updates.map((update) => ({
-      ...update,
-      dateLabel: formatDate(update.publishedAt ?? update.createdAt),
-      categoryLabel: UPDATE_CATEGORY_LABELS[update.category] ?? update.category,
-    }));
 
     const categoryEvents = categoryTemplate
       ? (events as OrganizerEvent[]).filter(
@@ -564,51 +544,6 @@ export default async function UserProfilePage({ params }: PageProps) {
                 </aside>
               </section>
 
-              <section className="space-y-4">
-                <div>
-                  <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">Canal oficial</p>
-                  <h2 className="text-xl font-semibold text-white">Atualizações da organização</h2>
-                </div>
-                {formattedUpdates.length === 0 ? (
-                  <div className="rounded-3xl border border-white/10 bg-white/5 p-5 text-sm text-white/70 shadow-[0_20px_70px_rgba(0,0,0,0.5)] backdrop-blur-2xl">
-                    Sem atualizações oficiais por agora. As novidades aparecem sempre aqui primeiro.
-                  </div>
-                ) : (
-                  <div className="grid gap-3">
-                    {formattedUpdates.map((update) => (
-                      <div
-                        key={update.id}
-                        className="rounded-2xl border border-white/12 bg-white/5 p-4 text-sm text-white/80 shadow-[0_18px_60px_rgba(0,0,0,0.5)] backdrop-blur-2xl"
-                      >
-                        <div className="flex flex-wrap items-start justify-between gap-3">
-                          <div>
-                            <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">
-                              {update.categoryLabel}
-                              {update.isPinned ? " · Fixado" : ""}
-                            </p>
-                            <h3 className="text-base font-semibold text-white">{update.title}</h3>
-                            {update.event?.slug && (
-                              <Link
-                                href={`/eventos/${update.event.slug}`}
-                                className="text-[12px] text-white/60 hover:text-white"
-                              >
-                                Evento: {update.event.title}
-                              </Link>
-                            )}
-                          </div>
-                          <span className="text-[11px] text-white/55">{update.dateLabel}</span>
-                        </div>
-                        {update.body && (
-                          <p className="mt-2 text-[12px] text-white/70 whitespace-pre-line">
-                            {update.body}
-                          </p>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </section>
-
               {organizationCategory === "PADEL" && (
                 <section className="space-y-4">
                   <div>
@@ -755,7 +690,6 @@ export default async function UserProfilePage({ params }: PageProps) {
     resolvedProfile.avatarUrl ||
     null;
   const headerCoverUrl = coverCandidate ? optimizeImageUrl(coverCandidate, 1400, 72) : null;
-  const isOrganizationProfile = Boolean(organizerProfile);
 
   return (
     <main className="relative min-h-screen w-full overflow-hidden text-white">
@@ -765,6 +699,7 @@ export default async function UserProfilePage({ params }: PageProps) {
           name={displayName}
           username={resolvedProfile.username}
           avatarUrl={resolvedProfile.avatarUrl}
+          avatarUpdatedAt={resolvedProfile.updatedAt ? resolvedProfile.updatedAt.getTime() : null}
           coverUrl={headerCoverUrl}
           bio={resolvedProfile.bio}
           city={resolvedProfile.city}
@@ -773,7 +708,6 @@ export default async function UserProfilePage({ params }: PageProps) {
           following={followingCount}
           targetUserId={resolvedProfile.id}
           initialIsFollowing={initialIsFollowing}
-          isOrganization={isOrganizationProfile}
           isVerified={resolvedProfile.is_verified}
         />
 

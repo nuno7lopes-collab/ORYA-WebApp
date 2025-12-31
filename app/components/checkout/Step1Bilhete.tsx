@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import Image from "next/image";
 import { useCheckout } from "./contextoCheckout";
+import { Avatar } from "@/components/ui/avatar";
 
 type Wave = {
   id: string;
@@ -520,21 +520,13 @@ export default function Step1Bilhete() {
             <div className="mt-3">
               {partnerSelected ? (
                 <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-2 py-1 text-sm text-white">
-                  <div className="h-7 w-7 rounded-full bg-white/10 overflow-hidden border border-white/10">
-                    {partnerSelected.avatarUrl ? (
-                      <Image
-                        src={partnerSelected.avatarUrl}
-                        alt={partnerSelected.username ?? partnerSelected.fullName ?? "user"}
-                        width={28}
-                        height={28}
-                        className="h-full w-full object-cover"
-                      />
-                    ) : (
-                      <div className="h-full w-full flex items-center justify-center text-[11px] text-white/70">
-                        {(partnerSelected.username ?? partnerSelected.fullName ?? "?").slice(0, 2).toUpperCase()}
-                      </div>
-                    )}
-                  </div>
+                  <Avatar
+                    src={partnerSelected.avatarUrl}
+                    name={partnerSelected.username ?? partnerSelected.fullName ?? "Utilizador"}
+                    className="h-7 w-7 border border-white/10"
+                    textClassName="text-[11px] font-semibold uppercase tracking-[0.16em] text-white/80"
+                    fallbackText="OR"
+                  />
                   <span className="font-medium">
                     {partnerSelected.username ? `@${partnerSelected.username}` : partnerSelected.fullName ?? "Utilizador"}
                   </span>
@@ -593,21 +585,13 @@ export default function Step1Bilhete() {
                       }}
                       className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-white/5 transition-colors"
                     >
-                      <div className="h-8 w-8 rounded-full bg-white/10 overflow-hidden border border-white/10">
-                        {user.avatarUrl ? (
-                          <Image
-                            src={user.avatarUrl}
-                            alt={user.username ?? user.fullName ?? "user"}
-                            width={32}
-                            height={32}
-                            className="h-full w-full object-cover"
-                          />
-                        ) : (
-                          <div className="h-full w-full flex items-center justify-center text-[11px] text-white/70">
-                            {(user.username ?? user.fullName ?? "?").slice(0, 2).toUpperCase()}
-                          </div>
-                        )}
-                      </div>
+                      <Avatar
+                        src={user.avatarUrl}
+                        name={user.username ?? user.fullName ?? "Utilizador"}
+                        className="h-8 w-8 border border-white/10"
+                        textClassName="text-[11px] font-semibold uppercase tracking-[0.16em] text-white/80"
+                        fallbackText="OR"
+                      />
                       <div className="flex flex-col">
                         <span className="text-sm text-white">{user.username ? `@${user.username}` : user.fullName ?? "Utilizador"}</span>
                         {user.fullName && (

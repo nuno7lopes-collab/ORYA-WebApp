@@ -160,7 +160,7 @@ export default function ServicosPage() {
         {loading && (
           <div className="grid gap-4 md:grid-cols-2">
             {Array.from({ length: 4 }).map((_, idx) => (
-              <div key={idx} className="h-32 rounded-3xl border border-white/10 bg-white/5 animate-pulse" />
+              <div key={idx} className="h-32 rounded-3xl border border-white/10 orya-skeleton-surface animate-pulse" />
             ))}
           </div>
         )}

@@ -29,7 +29,7 @@
 ## Module mapping (current schema)
 - EVENTOS
   - Event, EventInvite, EventCategory, TicketType, Ticket, GuestTicketLink, TicketReservation, EventInterest,
-    StaffAssignment, TicketTransfer, TicketResale.
+    TicketTransfer, TicketResale.
   - Entitlement, EntitlementCheckin, EntitlementQrToken (keep here if tied to ticket access).
 - PADEL
   - PadelPlayerProfile, PadelClub, PadelClubCourt, PadelClubStaff, PadelCategory, PadelEventCategoryLink,
@@ -45,7 +45,7 @@
 - Core/auth: app/api/auth/*, app/api/users/*, app/api/profiles/*, app/api/username/*,
   app/api/notifications/*, app/api/email/*, app/api/upload/*, app/api/social/*.
 - Organizer core: app/api/organizador/organizations/*, app/api/organizador/become, app/api/organizador/me,
-  app/api/organizador/username, app/api/organizador/updates/*, app/api/organizador/staff/*,
+  app/api/organizador/username, app/api/organizador/updates/*,
   app/api/organizador/payouts/*, app/api/organizador/finance/*, app/api/organizador/pagamentos/*,
   app/api/organizador/marketing/*, app/api/organizador/estatisticas/*.
 - EVENTOS: app/api/eventos/*, app/api/organizador/events/*, app/api/organizador/checkin/*,

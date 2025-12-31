@@ -25,6 +25,8 @@ export async function GET(req: NextRequest) {
       where: {
         status: "ACTIVE",
         AND: [
+          { username: { not: null } },
+          { NOT: { username: "" } },
           {
             OR: [
               { publicName: { contains: normalized, mode: "insensitive" } },

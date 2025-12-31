@@ -11,7 +11,6 @@ import { trackEvent } from "@/lib/analytics";
 import { useUser } from "@/app/hooks/useUser";
 import { AuthModalProvider } from "@/app/components/autenticação/AuthModalContext";
 import PromoCodesPage from "./promo/PromoCodesClient";
-import OrganizerUpdatesPage from "./(dashboard)/updates/page";
 import { SalesAreaChart } from "@/app/components/charts/SalesAreaChart";
 import InvoicesClient from "./pagamentos/invoices/invoices-client";
 import ObjectiveSubnav from "./ObjectiveSubnav";
@@ -20,6 +19,7 @@ import { CTA_DANGER, CTA_NEUTRAL, CTA_PRIMARY, CTA_SECONDARY, CTA_SUCCESS } from
 import OrganizerPublicProfilePanel from "./OrganizerPublicProfilePanel";
 import InscricoesPage from "./(dashboard)/inscricoes/page";
 import { optimizeImageUrl } from "@/lib/image";
+import { getOrganizerRoleFlags } from "@/lib/organizerUiPermissions";
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
@@ -199,6 +199,14 @@ type OrganizerLite = {
 };
 
 type ObjectiveTab = "create" | "manage" | "promote" | "analyze";
+const MARKETING_TABS = [
+  { key: "overview", label: "Visão geral" },
+  { key: "promos", label: "Códigos promocionais" },
+  { key: "promoters", label: "Promotores e parcerias" },
+  { key: "content", label: "Conteúdos e kits" },
+] as const;
+type MarketingSectionKey = (typeof MARKETING_TABS)[number]["key"];
+const MARKETING_TAB_KEYS = MARKETING_TABS.map((tab) => tab.key) as MarketingSectionKey[];
 
 const OBJECTIVE_TABS: ObjectiveTab[] = ["create", "manage", "promote", "analyze"];
 type SalesRange = "7d" | "30d" | "90d" | "365d" | "all";
@@ -250,12 +258,10 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const [marketingSection, setMarketingSection] = useState<
-    "overview" | "promos" | "updates" | "promoters" | "content"
-  >("overview");
+  const [marketingSection, setMarketingSection] = useState<MarketingSectionKey>("overview");
   const marketingSectionSourceRef = useRef<"url" | "ui">("url");
   const handleMarketingSectionSelect = useCallback(
-    (section: typeof marketingSection) => {
+    (section: MarketingSectionKey) => {
       marketingSectionSourceRef.current = "ui";
       setMarketingSection(section);
     },
@@ -325,10 +331,10 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
     const scopeParam = searchParams?.get("scope");
     const eventIdParam = searchParams?.get("eventId");
     const marketingSectionParam =
-      marketingParamRaw && ["overview", "promos", "updates", "promoters", "content"].includes(marketingParamRaw)
-        ? marketingParamRaw
-        : ["overview", "promos", "updates", "promoters", "content"].includes(sectionParamRaw ?? "")
-          ? sectionParamRaw
+      marketingParamRaw && MARKETING_TAB_KEYS.includes(marketingParamRaw as MarketingSectionKey)
+        ? (marketingParamRaw as MarketingSectionKey)
+        : MARKETING_TAB_KEYS.includes((sectionParamRaw ?? "") as MarketingSectionKey)
+          ? (sectionParamRaw as MarketingSectionKey)
           : null;
 
     if (statusParam) setEventStatusFilter(statusParam as typeof eventStatusFilter);
@@ -338,11 +344,8 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
     if (scopeParam) setTimeScope(scopeParam as typeof timeScope);
     if (eventIdParam) setSalesEventId(Number(eventIdParam));
     if (marketingSectionParam) {
-      const allowed = ["overview", "promos", "updates", "promoters", "content"] as const;
-      if (allowed.includes(marketingSectionParam as (typeof allowed)[number])) {
-        marketingSectionSourceRef.current = "url";
-        setMarketingSection(marketingSectionParam as typeof marketingSection);
-      }
+      marketingSectionSourceRef.current = "url";
+      setMarketingSection(marketingSectionParam);
     } else if (activeObjective === "promote" && sectionParamRaw === "marketing") {
       marketingSectionSourceRef.current = "url";
       setMarketingSection("overview");
@@ -379,9 +382,26 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
   const officialEmailVerifiedAt = officialEmailVerifiedAtRaw ? new Date(officialEmailVerifiedAtRaw) : null;
   const showOfficialEmailWarning = Boolean(organizer) && !officialEmailVerifiedAt;
   const membershipRole = organizerData?.membershipRole ?? null;
+  const roleFlags = useMemo(() => getOrganizerRoleFlags(membershipRole), [membershipRole]);
+  const marketingTabs = useMemo(() => {
+    if (!roleFlags.canPromote) return [];
+    if (roleFlags.isPromoterOnly) {
+      return MARKETING_TABS.filter((tab) => tab.key === "promoters");
+    }
+    return MARKETING_TABS;
+  }, [roleFlags]);
   const onboardingParam = searchParams?.get("onboarding");
   const [stripeRequirements, setStripeRequirements] = useState<string[]>([]);
   const [stripeSuccessMessage, setStripeSuccessMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (marketingTabs.length === 0) return;
+    const allowedKeys = marketingTabs.map((tab) => tab.key);
+    if (!allowedKeys.includes(marketingSection)) {
+      marketingSectionSourceRef.current = "ui";
+      setMarketingSection(allowedKeys[0]);
+    }
+  }, [marketingTabs, marketingSection]);
 
   useEffect(() => {
     const refreshStripe = async () => {
@@ -729,11 +749,8 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
       if (parsed.search) setSearchTerm(parsed.search);
       if (parsed.scope) setTimeScope(parsed.scope as typeof timeScope);
       const persistedMarketing = parsed.marketing ?? parsed.section;
-      if (
-        persistedMarketing &&
-        ["overview", "promos", "updates", "promoters", "content"].includes(persistedMarketing)
-      ) {
-        setMarketingSection(persistedMarketing as typeof marketingSection);
+      if (persistedMarketing && MARKETING_TAB_KEYS.includes(persistedMarketing as MarketingSectionKey)) {
+        setMarketingSection(persistedMarketing as MarketingSectionKey);
       }
     } catch {
       // ignore parse errors
@@ -1083,8 +1100,8 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
     setParam("scope", timeScope, "all");
     if (activeObjective === "promote" && activeSection === "marketing") {
       const validMarketingParam =
-        marketingParamRaw && ["overview", "promos", "updates", "promoters", "content"].includes(marketingParamRaw)
-          ? marketingParamRaw
+        marketingParamRaw && MARKETING_TAB_KEYS.includes(marketingParamRaw as MarketingSectionKey)
+          ? (marketingParamRaw as MarketingSectionKey)
           : null;
       if (
         marketingSectionSourceRef.current !== "ui" &&
@@ -2686,28 +2703,24 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
           </div>
         </div>
 
-        <div className="mt-4 flex flex-wrap gap-2 rounded-2xl border border-white/10 bg-white/5 px-2 py-2 text-sm shadow-[0_16px_50px_rgba(0,0,0,0.4)]">
-          {[
-            { key: "overview", label: "Visão geral" },
-            { key: "promos", label: "Códigos promocionais" },
-            { key: "updates", label: "Canal oficial" },
-            { key: "promoters", label: "Promotores e parcerias" },
-            { key: "content", label: "Conteúdos e kits" },
-          ].map((opt) => (
-            <button
-              key={opt.key}
-              type="button"
-              onClick={() => handleMarketingSectionSelect(opt.key as typeof marketingSection)}
-              className={`rounded-xl px-3 py-2 font-semibold transition ${
-                marketingSection === opt.key
-                  ? "bg-gradient-to-r from-[#FF7AD1]/60 via-[#7FE0FF]/35 to-[#6A7BFF]/55 text-white shadow-[0_14px_36px_rgba(107,255,255,0.45)]"
-                  : "text-white/80 hover:bg-white/10"
-              }`}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
+        {marketingTabs.length > 0 && (
+          <div className="mt-4 flex flex-wrap gap-2 rounded-2xl border border-white/10 bg-white/5 px-2 py-2 text-sm shadow-[0_16px_50px_rgba(0,0,0,0.4)]">
+            {marketingTabs.map((opt) => (
+              <button
+                key={opt.key}
+                type="button"
+                onClick={() => handleMarketingSectionSelect(opt.key)}
+                className={`rounded-xl px-3 py-2 font-semibold transition ${
+                  marketingSection === opt.key
+                    ? "bg-gradient-to-r from-[#FF7AD1]/60 via-[#7FE0FF]/35 to-[#6A7BFF]/55 text-white shadow-[0_14px_36px_rgba(107,255,255,0.45)]"
+                    : "text-white/80 hover:bg-white/10"
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        )}
 
         {marketingSection === "overview" && (
           <div className={cn("mt-4 space-y-4", fadeClass)}>
@@ -2881,12 +2894,6 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
         {marketingSection === "promos" && (
           <div className={cn("mt-4", fadeClass)}>
             <PromoCodesPage />
-          </div>
-        )}
-
-        {marketingSection === "updates" && (
-          <div className={cn("mt-4", fadeClass)}>
-            <OrganizerUpdatesPage embedded />
           </div>
         )}
 

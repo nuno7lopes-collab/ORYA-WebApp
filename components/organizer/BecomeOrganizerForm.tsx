@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { sanitizeUsername, validateUsername } from "@/lib/username";
+import { Avatar } from "@/components/ui/avatar";
 import {
   DEFAULT_ORGANIZATION_MODULES,
   ORGANIZATION_CATEGORIES,
@@ -26,15 +27,6 @@ const gradientByEntity: Record<string, string> = {
   EMPRESA_MARCA: "from-[#0EA5E9]/18 via-[#0B122B]/75 to-[#10B981]/15",
   OUTRO: "from-[#FF6BCA]/15 via-[#0B132D]/75 to-[#6BFFFF]/18",
 };
-
-const badgeColors = [
-  "bg-[#6BFFFF]",
-  "bg-[#FF6BCA]",
-  "bg-[#7C3AED]",
-  "bg-[#10B981]",
-  "bg-[#F59E0B]",
-  "bg-[#38BDF8]",
-];
 
 const suggestionSuffixes = ["events", "official", "pt", "live", "club", "hq"];
 
@@ -91,22 +83,6 @@ const InfoTooltip = ({ text }: { text: string }) => (
     </span>
   </span>
 );
-
-function hashToIndex(value: string, length: number) {
-  let hash = 0;
-  for (let i = 0; i < value.length; i += 1) {
-    hash = (hash << 5) - hash + value.charCodeAt(i);
-    hash |= 0;
-  }
-  return Math.abs(hash) % length;
-}
-
-function initialsFromName(name: string) {
-  if (!name.trim()) return "OR";
-  const parts = name.trim().split(/\s+/).slice(0, 2);
-  const initials = parts.map((p) => p[0]?.toUpperCase()).join("");
-  return initials || "OR";
-}
 
 function buildUsernameSuggestions(base: string) {
   if (!base) return [];
@@ -199,9 +175,6 @@ export default function BecomeOrganizerForm() {
     }
   }, [suggestedCategory, categoryTouched, form]);
 
-  const avatarSeed = watchUsername || watchBusinessName || "orya";
-  const avatarColor = badgeColors[hashToIndex(avatarSeed, badgeColors.length)];
-  const avatarInitials = initialsFromName(watchBusinessName || "Organização");
   const usernameClean = sanitizeUsername(watchUsername);
   const modulesEnabled = Array.isArray(watchModules) && watchModules.includes("INSCRICOES");
   const selectedCategoryMeta = ORGANIZATION_CATEGORY_OPTIONS.find(
@@ -926,11 +899,13 @@ export default function BecomeOrganizerForm() {
           <div className="rounded-2xl border border-white/8 bg-white/5 p-5 text-sm text-white/85 shadow-[0_14px_45px_rgba(0,0,0,0.35)]">
             <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Resumo</p>
             <div className="mt-4 flex items-center gap-3">
-              <div
-                className={`flex h-11 w-11 items-center justify-center rounded-full ${avatarColor} font-semibold text-black`}
-              >
-                {avatarInitials}
-              </div>
+              <Avatar
+                src={null}
+                name={watchBusinessName || "Organização"}
+                className="h-11 w-11 border border-white/10"
+                textClassName="text-[11px] font-semibold uppercase tracking-[0.2em] text-white/80"
+                fallbackText="OR"
+              />
               <div className="space-y-0.5">
                 <p className="text-base font-semibold text-white">
                   {watchBusinessName || "Nome da tua organização"}

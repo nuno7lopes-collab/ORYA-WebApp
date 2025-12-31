@@ -116,11 +116,6 @@ export function getObjectiveSections(
       href: `${baseHref}promos`,
     });
     sections.push({
-      id: "updates",
-      label: "Canal oficial",
-      href: `${baseHref}updates`,
-    });
-    sections.push({
       id: "promoters",
       label: "Promotores e parcerias",
       href: `${baseHref}promoters`,

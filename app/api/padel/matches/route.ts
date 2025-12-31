@@ -11,9 +11,8 @@ import {
   queueMatchResult,
   queueNextOpponent,
 } from "@/domain/notifications/tournament";
-import { isPadelStaff } from "@/lib/padel/staff";
 
-const allowedRoles: OrganizerMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
+const allowedRoles: OrganizerMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
 
 function sortRoundsBySize(matches: Array<{ roundLabel: string | null }>) {
   const counts = matches.reduce<Record<string, number>>((acc, m) => {
@@ -46,8 +45,7 @@ export async function GET(req: NextRequest) {
     organizerId: event.organizerId,
     roles: allowedRoles,
   });
-  const isStaff = await isPadelStaff(user.id, event.organizerId, eventId);
-  if (!organizer && !isStaff) return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  if (!organizer) return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
   const matches = await prisma.padelMatch.findMany({
     where: { eventId, ...matchCategoryFilter },
@@ -101,8 +99,7 @@ export async function POST(req: NextRequest) {
     organizerId: match.event.organizerId,
     roles: allowedRoles,
   });
-  const isStaff = await isPadelStaff(user.id, match.event.organizerId, match.eventId);
-  if (!organizer && !isStaff) return NextResponse.json({ ok: false, error: "NO_ORGANIZER" }, { status: 403 });
+  if (!organizer) return NextResponse.json({ ok: false, error: "NO_ORGANIZER" }, { status: 403 });
 
   if (scoreRaw && !isValidScore(scoreRaw)) {
     return NextResponse.json({ ok: false, error: "INVALID_SCORE" }, { status: 400 });

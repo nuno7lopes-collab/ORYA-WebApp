@@ -2,14 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import {
-  EntitlementStatus,
-  CheckinResultCode,
-  OrganizerMemberRole,
-  StaffStatus,
-  StaffScope,
-} from "@prisma/client";
+import { EntitlementStatus, CheckinResultCode } from "@prisma/client";
 import { buildDefaultCheckinWindow, isOutsideWindow } from "@/lib/checkin/policy";
+import { canManageEvents } from "@/lib/organizerPermissions";
 
 type Body = { qrToken?: string; eventId?: number; deviceId?: string };
 
@@ -37,23 +32,7 @@ async function ensureOrganizer(userId: string, eventId: number) {
     where: { organizerId_userId: { organizerId: event.organizerId, userId } },
     select: { id: true, role: true },
   });
-  if (membership && membership.role !== OrganizerMemberRole.VIEWER) {
-    return { ok: true as const, isAdmin };
-  }
-
-  const staffAssignment = await prisma.staffAssignment.findFirst({
-    where: {
-      userId,
-      status: StaffStatus.ACCEPTED,
-      revokedAt: null,
-      OR: [
-        { scope: StaffScope.GLOBAL, organizerId: event.organizerId },
-        { scope: StaffScope.EVENT, eventId },
-      ],
-    },
-    select: { id: true },
-  });
-  if (staffAssignment) {
+  if (membership && canManageEvents(membership.role)) {
     return { ok: true as const, isAdmin };
   }
 

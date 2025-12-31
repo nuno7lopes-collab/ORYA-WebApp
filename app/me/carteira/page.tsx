@@ -324,7 +324,7 @@ function CarteiraContent() {
             {Array.from({ length: 6 }).map((_, i) => (
               <div
                 key={i}
-                className="h-60 rounded-2xl border border-white/15 bg-white/5 animate-pulse shadow-[0_18px_50px_rgba(0,0,0,0.6)] backdrop-blur-2xl"
+                className="h-60 rounded-2xl border border-white/15 orya-skeleton-surface animate-pulse shadow-[0_18px_50px_rgba(0,0,0,0.6)] backdrop-blur-2xl"
               />
             ))}
           </div>

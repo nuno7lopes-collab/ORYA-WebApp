@@ -19,6 +19,7 @@ type ApiMeResponse = {
     fullName: string | null;
     avatarUrl: string | null;
     coverUrl: string | null;
+    updatedAt: string | null;
     bio: string | null;
     city: string | null;
     isVerified: boolean;
@@ -62,6 +63,12 @@ export function useUser() {
     return () => {
       subscription.unsubscribe();
     };
+  }, [mutate]);
+
+  useEffect(() => {
+    const handler = () => mutate();
+    window.addEventListener("orya:profile-updated", handler);
+    return () => window.removeEventListener("orya:profile-updated", handler);
   }, [mutate]);
 
   // Claim guest purchases após email verificado (best-effort)

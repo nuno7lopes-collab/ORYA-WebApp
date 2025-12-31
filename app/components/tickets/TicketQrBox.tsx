@@ -25,7 +25,7 @@ export default function TicketQrBox({ qrToken, purchaseId }: TicketQrBoxProps) {
   if (!qrToken) {
     return (
       <div
-        className="flex h-48 w-48 flex-col items-center justify-center gap-2 rounded-2xl border border-white/20 bg-white/5 animate-pulse"
+        className="flex h-48 w-48 flex-col items-center justify-center gap-2 rounded-2xl border border-white/20 orya-skeleton-surface animate-pulse"
         aria-busy="true"
         aria-label="A carregar o QR do bilhete ORYA"
       >

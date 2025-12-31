@@ -9,6 +9,7 @@ import ProfileHeaderLayout, {
   ProfileStatPill,
   ProfileVerifiedBadge,
 } from "@/app/components/profile/ProfileHeaderLayout";
+import { Avatar } from "@/components/ui/avatar";
 
 export type ProfileHeaderProps = {
   /** Se é o próprio utilizador a ver o seu perfil */
@@ -19,6 +20,8 @@ export type ProfileHeaderProps = {
   username?: string | null;
   /** URL do avatar (pode ser null) */
   avatarUrl?: string | null;
+  /** Versão do avatar (para cache-busting) */
+  avatarUpdatedAt?: string | number | null;
   /** URL da capa (opcional) */
   coverUrl?: string | null;
   /** Pequena descrição ou bio (opcional, para o futuro) */
@@ -35,8 +38,6 @@ export type ProfileHeaderProps = {
   targetUserId?: string | null;
   /** Estado inicial de follow (quando visitante) */
   initialIsFollowing?: boolean;
-  /** Se o perfil representa uma organização (badge visual) */
-  isOrganization?: boolean;
   /** Se o perfil é verificado */
   isVerified?: boolean;
 };
@@ -46,6 +47,7 @@ export default function ProfileHeader({
   name,
   username,
   avatarUrl,
+  avatarUpdatedAt,
   coverUrl,
   bio,
   city,
@@ -79,6 +81,9 @@ export default function ProfileHeader({
   const [avatarMenu, setAvatarMenu] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const coverInputRef = useRef<HTMLInputElement | null>(null);
+  const [avatarVersion, setAvatarVersion] = useState<string | number | null>(
+    avatarUpdatedAt ?? null,
+  );
   const showEditControls = isOwner && isEditing;
 
   useEffect(() => {
@@ -87,7 +92,8 @@ export default function ProfileHeader({
     setBioInput(bio ?? "");
     setAvatar(safeAvatarUrl);
     setCover(safeCoverUrl);
-  }, [displayName, handle, bio, safeAvatarUrl, safeCoverUrl]);
+    setAvatarVersion(avatarUpdatedAt ?? null);
+  }, [displayName, handle, bio, safeAvatarUrl, safeCoverUrl, avatarUpdatedAt]);
 
   useEffect(() => {
     if (!showEditControls) {
@@ -136,15 +142,24 @@ export default function ProfileHeader({
       setSaving(false);
       return false;
     }
+    const savedProfile = json?.profile ?? null;
+    const savedAvatarUrl = savedProfile ? savedProfile.avatarUrl ?? null : payload.avatarUrl ?? null;
+    const savedCoverUrl = savedProfile ? savedProfile.coverUrl ?? null : payload.coverUrl ?? null;
+    const savedUpdatedAt =
+      savedProfile?.updatedAt ?? null;
     setNameInput(fullName);
     setUsernameInput(validation.normalized);
     setBioInput(payload.bio ?? "");
-    setAvatar(payload.avatarUrl ?? null);
-    setCover(payload.coverUrl ?? null);
+    setAvatar(savedAvatarUrl);
+    setCover(savedCoverUrl);
+    if (savedUpdatedAt) setAvatarVersion(savedUpdatedAt);
     setSuccess("Guardado.");
     setSaving(false);
     setEditingField(null);
     router.refresh();
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("orya:profile-updated"));
+    }
     return true;
   };
 
@@ -449,28 +464,14 @@ export default function ProfileHeader({
         }`}
         onClick={showEditControls ? () => setAvatarMenu((v) => !v) : undefined}
       >
-        <div className="flex h-full w-full items-center justify-center rounded-full bg-black/90 overflow-hidden">
-          {avatar ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={avatar}
-              alt={displayName}
-              className="h-full w-full object-cover"
-              loading="lazy"
-              decoding="async"
-              onError={handleAvatarError}
-            />
-          ) : (
-            <span className="text-xs font-semibold uppercase tracking-[0.2em] text-white/60">
-              {displayName
-                .split(" ")
-                .map((part) => part[0])
-                .join("")
-                .slice(0, 3)
-                .toUpperCase()}
-            </span>
-          )}
-        </div>
+        <Avatar
+          src={avatar ?? null}
+          version={avatarVersion}
+          name={displayName}
+          className="h-full w-full"
+          textClassName="text-xs font-semibold uppercase tracking-[0.2em] text-white/80"
+          onError={handleAvatarError}
+        />
       </div>
       {showEditControls && avatarMenu && (
         <div className="absolute left-0 top-[110%] z-30 w-52 rounded-2xl border border-white/15 bg-[rgba(5,8,15,0.9)] p-2 text-sm text-white shadow-[0_24px_80px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
@@ -592,8 +593,8 @@ export default function ProfileHeader({
             </div>
             {listLoading ? (
               <div className="space-y-2">
-                <div className="h-12 rounded-xl bg-white/5 animate-pulse" />
-                <div className="h-12 rounded-xl bg-white/5 animate-pulse" />
+                <div className="h-12 rounded-xl orya-skeleton-surface animate-pulse" />
+                <div className="h-12 rounded-xl orya-skeleton-surface animate-pulse" />
               </div>
             ) : listItems.length === 0 ? (
               <p className="text-[12px] text-white/70">Nada para mostrar.</p>
@@ -611,16 +612,13 @@ export default function ProfileHeader({
                         setShowFollowingModal(false);
                       }}
                     >
-                      <div className="h-10 w-10 overflow-hidden rounded-full border border-white/12 bg-[radial-gradient(circle_at_30%_30%,rgba(255,0,200,0.16),transparent_45%),radial-gradient(circle_at_70%_70%,rgba(107,255,255,0.14),transparent_50%),#0b0f1b]">
-                        {item.avatarUrl ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={item.avatarUrl} alt={handle} className="h-full w-full object-cover" />
-                        ) : (
-                          <div className="flex h-full w-full items-center justify-center text-[11px] font-semibold uppercase text-white/60">
-                            ORYA
-                          </div>
-                        )}
-                      </div>
+                      <Avatar
+                        src={item.avatarUrl}
+                        name={item.fullName || item.username || handle}
+                        className="h-10 w-10 border border-white/12"
+                        textClassName="text-[11px] font-semibold uppercase text-white/80"
+                        fallbackText="OR"
+                      />
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-semibold text-white truncate">
                           {item.fullName || item.username || "Utilizador ORYA"}

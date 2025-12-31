@@ -14,7 +14,6 @@ const SECTION_LABELS: Record<string, string> = {
   staff: "Staff",
   settings: "Definições",
   perfil: "Perfil público",
-  updates: "Canal oficial",
   marketing: "Marketing",
   promos: "Códigos promocionais",
   promoters: "Promotores e parcerias",
@@ -39,7 +38,6 @@ function resolveLabel(pathname: string, tab: string, section?: string | null, ma
   if (pathname.includes("/eventos/") && pathname.endsWith("/live")) return "Gerir · Preparar live";
   if (pathname.includes("/eventos/")) return "Eventos";
   if (pathname.startsWith("/organizador/inscricoes")) return "Inscrições";
-  if (pathname.startsWith("/organizador/updates")) return "Canal oficial";
   if (pathname.startsWith("/organizador/scan")) return "Check-in";
   if (pathname.startsWith("/organizador/faturacao")) return "Finanças";
   if (pathname.startsWith("/organizador/pagamentos/invoices")) return "Faturação";

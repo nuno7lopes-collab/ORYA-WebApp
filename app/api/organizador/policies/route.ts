@@ -5,6 +5,7 @@ import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { getActiveOrganizerForUser } from "@/lib/organizerContext";
 import { resolveOrganizerIdFromRequest } from "@/lib/organizerId";
 import { ensureDefaultPolicies } from "@/lib/organizationPolicies";
+import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { OrganizerMemberRole, OrganizationPolicyType } from "@prisma/client";
 
 const ALLOWED_ROLES: OrganizerMemberRole[] = [
@@ -13,6 +14,12 @@ const ALLOWED_ROLES: OrganizerMemberRole[] = [
   OrganizerMemberRole.ADMIN,
   OrganizerMemberRole.STAFF,
 ];
+
+function getRequestMeta(req: NextRequest) {
+  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
+  const userAgent = req.headers.get("user-agent") ?? null;
+  return { ip, userAgent };
+}
 
 export async function GET(req: NextRequest) {
   try {
@@ -114,6 +121,21 @@ export async function POST(req: NextRequest) {
         policyType: true,
         cancellationWindowMinutes: true,
       },
+    });
+
+    const { ip, userAgent } = getRequestMeta(req);
+    await recordOrganizationAudit(prisma, {
+      organizerId: organizer.id,
+      actorUserId: profile.id,
+      action: "POLICY_CREATED",
+      metadata: {
+        policyId: policy.id,
+        name: policy.name,
+        policyType: policy.policyType,
+        cancellationWindowMinutes: policy.cancellationWindowMinutes,
+      },
+      ip,
+      userAgent,
     });
 
     return NextResponse.json({ ok: true, policy }, { status: 201 });

@@ -24,10 +24,9 @@ import {
   computePartnerLinkExpiresAt,
 } from "@/domain/padelDeadlines";
 import { getActiveOrganizerForUser } from "@/lib/organizerContext";
-import { isPadelStaff } from "@/lib/padel/staff";
 import { checkPadelCategoryLimit } from "@/domain/padelCategoryLimit";
 
-const allowedRoles: OrganizerMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
+const allowedRoles: OrganizerMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
 
 async function syncPlayersFromSlots({
   organizerId,
@@ -533,8 +532,7 @@ export async function GET(req: NextRequest) {
         organizerId: pairing.organizerId,
         roles: allowedRoles,
       });
-      const isStaff = await isPadelStaff(user.id, pairing.organizerId, pairing.eventId);
-      if (!organizer && !isStaff) {
+      if (!organizer) {
         return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
       }
     }
@@ -571,8 +569,7 @@ export async function GET(req: NextRequest) {
     organizerId: event.organizerId,
     roles: allowedRoles,
   });
-  const isStaff = await isPadelStaff(user.id, event.organizerId, eventId);
-  if (!organizer && !isStaff) {
+  if (!organizer) {
     return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
   }
 

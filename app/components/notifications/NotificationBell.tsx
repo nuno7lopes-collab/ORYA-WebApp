@@ -24,7 +24,6 @@ const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
 const TYPE_LABEL: Record<string, string> = {
   ORGANIZER_INVITE: "Convite de organização",
-  STAFF_INVITE: "Convite de staff",
   EVENT_SALE: "Venda",
   STRIPE_STATUS: "Stripe",
   EVENT_REMINDER: "Lembrete",
@@ -43,7 +42,7 @@ export function NotificationBell() {
     filter === "sales"
       ? "EVENT_SALE"
       : filter === "invites"
-        ? "ORGANIZER_INVITE,STAFF_INVITE"
+        ? "ORGANIZER_INVITE"
         : filter === "system"
           ? "STRIPE_STATUS,MARKETING_PROMO_ALERT,SYSTEM_ANNOUNCE"
           : filter === "social"

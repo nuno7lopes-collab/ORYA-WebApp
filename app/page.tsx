@@ -4,6 +4,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { mapEventToCardDTO, type EventCardDTO } from "@/lib/events";
 import { defaultBlurDataURL, optimizeImageUrl } from "@/lib/image";
+import HomePersonalized from "@/app/components/home/HomePersonalized";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -157,6 +158,15 @@ export default async function HomePage() {
       ? optimizeImageUrl(ev.coverImageUrl, 1200, 70, "webp") || ev.coverImageUrl
       : defaultCover
   );
+  const suggestionEvents = events.slice(0, 6).map((ev) => ({
+    id: ev.id,
+    slug: ev.slug,
+    title: ev.title,
+    startsAt: ev.startsAt ? ev.startsAt.toISOString() : null,
+    coverImageUrl: ev.coverImageUrl ?? null,
+    priceFrom: ev.priceFrom ?? null,
+    locationCity: ev.locationCity ?? null,
+  }));
 
   return (
     <main className="relative min-h-screen w-full overflow-hidden text-white pb-24 md:pb-12">
@@ -228,29 +238,27 @@ export default async function HomePage() {
                       </span>
                     </div>
 
-                    <div className="absolute inset-x-3 bottom-3 flex items-end justify-between gap-3">
-                      <div className="space-y-1">
-                        <p className="text-[12px] font-semibold text-white drop-shadow-lg">
-                          {isEmpty ? "Em breve" : card.title}
-                        </p>
-                        <p className="text-[11px] text-white/80">
-                          {isEmpty ? "Novos eventos a caminho" : formatDateLabel(card)}
-                        </p>
-                      </div>
-                      {!isEmpty && (
+                    {!isEmpty && (
+                      <div className="absolute inset-x-3 bottom-3 flex items-end justify-between gap-3">
+                        <div className="space-y-1">
+                          <p className="text-[12px] font-semibold text-white drop-shadow-lg">
+                            {card.title}
+                          </p>
+                          <p className="text-[11px] text-white/80">{formatDateLabel(card)}</p>
+                        </div>
                         <p className="rounded-full bg-black/60 px-3 py-1 text-[11px] font-semibold text-white border border-white/20">
                           {formatPriceLabel(card)}
                         </p>
-                      )}
-                    </div>
+                      </div>
+                    )}
                   </div>
 
                   <div className="space-y-3 px-4 pb-4 pt-3">
-                    <p className="text-xs text-white/75">
-                      {isEmpty
-                        ? "Fica atento — vamos adicionar mais eventos em destaque."
-                        : "Evento em destaque. Abre para veres todos os detalhes e reservar já."}
-                    </p>
+                    {!isEmpty && (
+                      <p className="text-xs text-white/75">
+                        Evento em destaque. Abre para veres todos os detalhes e reservar já.
+                      </p>
+                    )}
                     {!isEmpty ? (
                       <Link
                         href={buildEventLink(card)}
@@ -280,48 +288,9 @@ export default async function HomePage() {
           </div>
         </div>
 
-        <div className="grid gap-4 lg:grid-cols-2">
-          <section className="space-y-3 rounded-3xl border border-white/15 bg-[linear-gradient(140deg,rgba(255,255,255,0.12),rgba(2,6,16,0.88))] p-5 shadow-[0_24px_60px_rgba(0,0,0,0.65)] backdrop-blur-2xl">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-white">Os teus eventos</h2>
-              <Link
-                href="/explorar"
-                className="inline-flex items-center rounded-full border border-white/30 bg-white/10 px-3 py-1 text-[10px] font-semibold text-white/90 backdrop-blur transition hover:border-white/45 hover:bg-white/20"
-              >
-                Ver mais
-              </Link>
-            </div>
-            <div className="rounded-2xl border border-white/15 bg-black/45 px-4 py-4 text-sm text-white/85">
-              Ainda não tens eventos. Explora e junta-te a um evento para aparecer aqui.
-            </div>
-          </section>
-
-          <section className="space-y-3 rounded-3xl border border-white/15 bg-[linear-gradient(140deg,rgba(255,255,255,0.12),rgba(2,6,16,0.88))] p-5 shadow-[0_24px_60px_rgba(0,0,0,0.65)] backdrop-blur-2xl">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-white">Sugestões personalizadas</h2>
-            </div>
-            <div className="rounded-2xl border border-white/15 bg-black/45 px-4 py-4 text-sm text-white/85">
-              Ainda estamos a conhecer-te. À medida que usares a ORYA, as sugestões vão aparecer aqui.
-            </div>
-          </section>
-        </div>
-
-        <section className="space-y-3 rounded-3xl border border-white/15 bg-[linear-gradient(140deg,rgba(255,255,255,0.12),rgba(2,6,16,0.88))] p-5 shadow-[0_24px_60px_rgba(0,0,0,0.65)] backdrop-blur-2xl">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-white">Oportunidades perto de ti agora</h2>
-          </div>
-          <div className="rounded-2xl border border-white/15 bg-black/45 px-4 py-4 text-sm text-white/85">
-            Sem oportunidades perto de ti neste momento. Vais ser o primeiro a saber quando surgir algo porreiro.
-          </div>
-        </section>
-
-        <section className="space-y-2 rounded-3xl border border-white/15 bg-[linear-gradient(140deg,rgba(255,255,255,0.12),rgba(2,6,16,0.88))] p-5 shadow-[0_24px_60px_rgba(0,0,0,0.65)] backdrop-blur-2xl">
-          <h2 className="text-sm font-semibold text-white">Amigos vão a…</h2>
-          <p className="text-sm text-white/80">
-            Quando os teus amigos começarem a ir a eventos, vais ver aqui onde eles vão.
-          </p>
-        </section>
       </section>
+
+      <HomePersonalized suggestions={suggestionEvents} />
     </main>
   );
 }

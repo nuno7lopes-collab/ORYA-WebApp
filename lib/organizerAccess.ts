@@ -1,5 +1,6 @@
-import { OrganizerMemberRole, StaffRole, StaffScope, StaffStatus } from "@prisma/client";
+import { OrganizerMemberRole } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { canManageEvents } from "@/lib/organizerPermissions";
 
 export async function getOrganizerRole(userId: string, organizerId: number) {
   if (!userId || !organizerId) return null;
@@ -31,7 +32,11 @@ export async function canScanTickets(userId: string, eventId: number) {
     select: { organizerId: true },
   });
   if (!event || !event.organizerId) {
-    return { allowed: false, reason: "EVENT_NOT_FOUND", membershipRole: null as OrganizerMemberRole | null };
+    return {
+      allowed: false,
+      reason: "EVENT_NOT_FOUND",
+      membershipRole: null as OrganizerMemberRole | null,
+    };
   }
 
   const membership = await prisma.organizerMember.findUnique({
@@ -39,32 +44,13 @@ export async function canScanTickets(userId: string, eventId: number) {
     select: { role: true },
   });
 
-  const managerRoles: OrganizerMemberRole[] = [
-    OrganizerMemberRole.OWNER,
-    OrganizerMemberRole.CO_OWNER,
-    OrganizerMemberRole.ADMIN,
-  ];
-  if (membership && managerRoles.includes(membership.role)) {
-    return { allowed: true, membershipRole: membership.role, staffAssignmentId: null as number | null };
+  if (membership && canManageEvents(membership.role)) {
+    return { allowed: true, membershipRole: membership.role };
   }
 
-  const staffAssignment = await prisma.staffAssignment.findFirst({
-    where: {
-      userId,
-      status: StaffStatus.ACCEPTED,
-      revokedAt: null,
-      role: { in: [StaffRole.OWNER, StaffRole.ADMIN, StaffRole.CHECKIN] },
-      OR: [
-        { scope: StaffScope.EVENT, eventId },
-        { scope: StaffScope.GLOBAL, organizerId: event.organizerId },
-      ],
-    },
-    select: { id: true, role: true },
-  });
-
-  if (staffAssignment) {
-    return { allowed: true, membershipRole: membership?.role ?? null, staffAssignmentId: staffAssignment.id };
-  }
-
-  return { allowed: false, membershipRole: membership?.role ?? null, staffAssignmentId: null as number | null, reason: "NO_PERMISSION" };
+  return {
+    allowed: false,
+    membershipRole: membership?.role ?? null,
+    reason: "NO_PERMISSION",
+  };
 }

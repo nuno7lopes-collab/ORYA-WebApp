@@ -156,7 +156,7 @@ export default function PurchasesPage() {
             {Array.from({ length: 4 }).map((_, i) => (
               <div
                 key={i}
-                className="h-40 rounded-2xl border border-white/15 bg-white/5 animate-pulse shadow-[0_18px_50px_rgba(0,0,0,0.6)] backdrop-blur-2xl"
+                className="h-40 rounded-2xl border border-white/15 orya-skeleton-surface animate-pulse shadow-[0_18px_50px_rgba(0,0,0,0.6)] backdrop-blur-2xl"
               />
             ))}
           </div>

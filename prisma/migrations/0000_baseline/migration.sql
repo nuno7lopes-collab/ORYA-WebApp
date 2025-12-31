@@ -151,17 +151,6 @@ CREATE TYPE app_v3."OrganizationReviewStatus" AS ENUM (
     'APPROVED',
     'REJECTED'
 );
-CREATE TYPE app_v3."OrganizationUpdateCategory" AS ENUM (
-    'TODAY',
-    'CHANGES',
-    'RESULTS',
-    'CALL_UPS'
-);
-CREATE TYPE app_v3."OrganizationUpdateStatus" AS ENUM (
-    'DRAFT',
-    'PUBLISHED',
-    'ARCHIVED'
-);
 CREATE TYPE app_v3."OrganizerEmailRequestStatus" AS ENUM (
     'PENDING',
     'CONFIRMED',
@@ -884,27 +873,6 @@ CREATE SEQUENCE app_v3.organization_reviews_id_seq
     NO MAXVALUE
     CACHE 1;
 ALTER SEQUENCE app_v3.organization_reviews_id_seq OWNED BY app_v3.organization_reviews.id;
-CREATE TABLE app_v3.organization_updates (
-    id integer NOT NULL,
-    organizer_id integer NOT NULL,
-    event_id integer,
-    title text NOT NULL,
-    body text,
-    category app_v3."OrganizationUpdateCategory" DEFAULT 'TODAY'::app_v3."OrganizationUpdateCategory" NOT NULL,
-    status app_v3."OrganizationUpdateStatus" DEFAULT 'DRAFT'::app_v3."OrganizationUpdateStatus" NOT NULL,
-    is_pinned boolean DEFAULT false NOT NULL,
-    published_at timestamp(6) with time zone,
-    created_at timestamp(6) with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp(6) with time zone DEFAULT now() NOT NULL
-);
-CREATE SEQUENCE app_v3.organization_updates_id_seq
-    AS integer
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-ALTER SEQUENCE app_v3.organization_updates_id_seq OWNED BY app_v3.organization_updates.id;
 CREATE TABLE app_v3.organizer_follows (
     id integer NOT NULL,
     follower_id uuid NOT NULL,
@@ -2015,7 +1983,6 @@ ALTER TABLE ONLY app_v3.organization_form_submissions ALTER COLUMN id SET DEFAUL
 ALTER TABLE ONLY app_v3.organization_forms ALTER COLUMN id SET DEFAULT nextval('app_v3.organization_forms_id_seq'::regclass);
 ALTER TABLE ONLY app_v3.organization_policies ALTER COLUMN id SET DEFAULT nextval('app_v3.organization_policies_id_seq'::regclass);
 ALTER TABLE ONLY app_v3.organization_reviews ALTER COLUMN id SET DEFAULT nextval('app_v3.organization_reviews_id_seq'::regclass);
-ALTER TABLE ONLY app_v3.organization_updates ALTER COLUMN id SET DEFAULT nextval('app_v3.organization_updates_id_seq'::regclass);
 ALTER TABLE ONLY app_v3.organizer_follows ALTER COLUMN id SET DEFAULT nextval('app_v3.organizer_follows_id_seq'::regclass);
 ALTER TABLE ONLY app_v3.organizer_official_email_requests ALTER COLUMN id SET DEFAULT nextval('app_v3.organizer_official_email_requests_id_seq'::regclass);
 ALTER TABLE ONLY app_v3.organizers ALTER COLUMN id SET DEFAULT nextval('app_v3.organizers_id_seq'::regclass);
@@ -2130,8 +2097,6 @@ ALTER TABLE ONLY app_v3.organization_policies
     ADD CONSTRAINT organization_policies_pkey PRIMARY KEY (id);
 ALTER TABLE ONLY app_v3.organization_reviews
     ADD CONSTRAINT organization_reviews_pkey PRIMARY KEY (id);
-ALTER TABLE ONLY app_v3.organization_updates
-    ADD CONSTRAINT organization_updates_pkey PRIMARY KEY (id);
 ALTER TABLE ONLY app_v3.organizer_follows
     ADD CONSTRAINT organizer_follows_pkey PRIMARY KEY (id);
 ALTER TABLE ONLY app_v3.organizer_member_invites
@@ -2321,9 +2286,6 @@ CREATE INDEX organization_policies_organizer_id_idx ON app_v3.organization_polic
 CREATE INDEX organization_policies_policy_type_idx ON app_v3.organization_policies USING btree (policy_type);
 CREATE INDEX organization_reviews_organizer_id_idx ON app_v3.organization_reviews USING btree (organizer_id);
 CREATE INDEX organization_reviews_user_id_idx ON app_v3.organization_reviews USING btree (user_id);
-CREATE INDEX organization_updates_event_id_idx ON app_v3.organization_updates USING btree (event_id);
-CREATE INDEX organization_updates_organizer_id_idx ON app_v3.organization_updates USING btree (organizer_id);
-CREATE INDEX organization_updates_status_idx ON app_v3.organization_updates USING btree (status);
 CREATE UNIQUE INDEX organizer_follows_unique ON app_v3.organizer_follows USING btree (follower_id, organizer_id);
 CREATE INDEX organizer_member_invites_identifier_idx ON app_v3.organizer_member_invites USING btree (target_identifier);
 CREATE INDEX organizer_member_invites_org_idx ON app_v3.organizer_member_invites USING btree (organizer_id);
@@ -2501,10 +2463,6 @@ ALTER TABLE ONLY app_v3.organization_reviews
     ADD CONSTRAINT organization_reviews_organizer_id_fkey FOREIGN KEY (organizer_id) REFERENCES app_v3.organizers(id) ON UPDATE CASCADE ON DELETE CASCADE;
 ALTER TABLE ONLY app_v3.organization_reviews
     ADD CONSTRAINT organization_reviews_user_id_fkey FOREIGN KEY (user_id) REFERENCES app_v3.profiles(id) ON UPDATE CASCADE ON DELETE CASCADE;
-ALTER TABLE ONLY app_v3.organization_updates
-    ADD CONSTRAINT organization_updates_event_fk FOREIGN KEY (event_id) REFERENCES app_v3.events(id) ON DELETE CASCADE;
-ALTER TABLE ONLY app_v3.organization_updates
-    ADD CONSTRAINT organization_updates_organizer_fk FOREIGN KEY (organizer_id) REFERENCES app_v3.organizers(id) ON DELETE CASCADE;
 ALTER TABLE ONLY app_v3.organizer_follows
     ADD CONSTRAINT organizer_follows_follower_fk FOREIGN KEY (follower_id) REFERENCES app_v3.profiles(id) ON DELETE CASCADE;
 ALTER TABLE ONLY app_v3.organizer_follows

@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { CTA_PRIMARY } from "@/app/organizador/dashboardUi";
+import { cn } from "@/lib/utils";
 
 type OrganizerFollowClientProps = {
   organizerId: number;
@@ -44,11 +46,12 @@ export default function OrganizerFollowClient({
       type="button"
       onClick={toggleFollow}
       disabled={isPending}
-      className={`inline-flex items-center rounded-full px-4 py-2 text-[12px] font-semibold transition ${
+      className={cn(
+        "disabled:opacity-60",
         isFollowing
-          ? "border border-white/20 bg-white/8 text-white/65 hover:bg-white/12"
-          : "bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] text-black shadow-[0_0_22px_rgba(107,255,255,0.45)] hover:scale-[1.02]"
-      } disabled:opacity-60`}
+          ? "inline-flex items-center rounded-full border border-white/20 bg-white/8 px-4 py-2 text-[12px] font-semibold text-white/65 transition hover:bg-white/12"
+          : cn(CTA_PRIMARY, "px-4 py-2 text-[12px]"),
+      )}
     >
       {isFollowing ? "A seguir" : "Seguir"}
     </button>

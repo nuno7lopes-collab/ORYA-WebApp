@@ -1,5 +1,6 @@
 "use client";
 import { useCheckout } from "@/app/components/checkout/contextoCheckout";
+import { CTA_PRIMARY } from "@/app/organizador/dashboardUi";
 
 export type WaveStatus = "on_sale" | "upcoming" | "closed" | "sold_out";
 
@@ -121,7 +122,7 @@ export default function WavesSectionClient({
               } catch {}
             }, 10);
           }}
-          className="w-full rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] text-black font-semibold py-3 shadow-[0_0_20px_rgba(107,255,255,0.45)] hover:scale-[1.02] active:scale-95 transition-transform text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+          className={`${CTA_PRIMARY} w-full justify-center py-3 text-sm active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed`}
         >
           {purchasableTickets.length === 0
             ? "Esgotado"

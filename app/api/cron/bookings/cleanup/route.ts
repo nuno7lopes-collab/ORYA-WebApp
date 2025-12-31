@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { recordOrganizationAudit } from "@/lib/organizationAudit";
 
 const HOLD_MINUTES = 20;
 
@@ -17,7 +18,7 @@ export async function GET(req: NextRequest) {
         status: "PENDING",
         createdAt: { lt: cutoff },
       },
-      select: { id: true, availabilityId: true },
+      select: { id: true, availabilityId: true, organizerId: true, serviceId: true, userId: true },
     });
 
     if (stale.length === 0) {
@@ -29,9 +30,26 @@ export async function GET(req: NextRequest) {
       new Set(stale.map((b) => b.availabilityId).filter((id): id is number => Number.isFinite(id))),
     );
 
-    await prisma.booking.updateMany({
-      where: { id: { in: bookingIds } },
-      data: { status: "CANCELLED" },
+    await prisma.$transaction(async (tx) => {
+      await tx.booking.updateMany({
+        where: { id: { in: bookingIds } },
+        data: { status: "CANCELLED" },
+      });
+
+      for (const booking of stale) {
+        await recordOrganizationAudit(tx, {
+          organizerId: booking.organizerId,
+          actorUserId: null,
+          action: "BOOKING_AUTO_CANCELLED",
+          metadata: {
+            bookingId: booking.id,
+            serviceId: booking.serviceId,
+            availabilityId: booking.availabilityId,
+            userId: booking.userId,
+            reason: "PAYMENT_TIMEOUT",
+          },
+        });
+      }
     });
 
     let updatedAvailabilities = 0;

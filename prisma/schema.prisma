@@ -133,7 +133,6 @@ model Organizer {
   members                 OrganizerMember[]
   organizationModules     OrganizationModuleEntry[]
   organizationForms       OrganizationForm[]
-  organizationUpdates     OrganizationUpdate[]
   organizationAuditLogs   OrganizationAuditLog[]
   ownerTransfers          OrganizerOwnerTransfer[]
   padelDefaultRuleSet     PadelRuleSet?                   @relation("OrganizerPadelDefaultRuleSet", fields: [padelDefaultRuleSetId], references: [id], onUpdate: NoAction, map: "organizers_padel_default_rule_set_fk")
@@ -146,7 +145,6 @@ model Organizer {
   padelTournaments        PadelTournamentConfig[]
   padelCourtBlocks        PadelCourtBlock[]
   padelAvailabilities     PadelAvailability[]
-  staffAssignments        StaffAssignment[]
   connectAccount          ConnectAccount?
   organizationPolicies    OrganizationPolicy[]
   organizationReviews     OrganizationReview[]
@@ -218,28 +216,6 @@ model OrganizationFormSubmission {
   @@index([formId])
   @@index([userId])
   @@map("organization_form_submissions")
-  @@schema("app_v3")
-}
-
-model OrganizationUpdate {
-  id          Int                        @id @default(autoincrement())
-  organizerId Int                        @map("organizer_id")
-  eventId     Int?                       @map("event_id")
-  title       String
-  body        String?
-  category    OrganizationUpdateCategory @default(TODAY)
-  status      OrganizationUpdateStatus   @default(DRAFT)
-  isPinned    Boolean                    @default(false) @map("is_pinned")
-  publishedAt DateTime?                  @map("published_at") @db.Timestamptz(6)
-  createdAt   DateTime                   @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt   DateTime                   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  organizer   Organizer                  @relation(fields: [organizerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  event       Event?                     @relation(fields: [eventId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-
-  @@index([organizerId])
-  @@index([eventId])
-  @@index([status])
-  @@map("organization_updates")
   @@schema("app_v3")
 }
 
@@ -558,11 +534,9 @@ model Event {
   promoCodes                        PromoCode[]
   saleLines                         SaleLine[]
   saleSummaries                     SaleSummary[]
-  staffAssignments                  StaffAssignment[]
   reservations                      TicketReservation[]
   ticketTypes                       TicketType[]
   tickets                           Ticket[]
-  organizationUpdates               OrganizationUpdate[]
   invites                           EventInvite[]
 
   @@index([type, status])
@@ -708,28 +682,6 @@ model TicketReservation {
   @@index([userId])
   @@index([status, expiresAt])
   @@map("ticket_reservations")
-  @@schema("app_v3")
-}
-
-/// Staff associado a organizadores / eventos
-model StaffAssignment {
-  id          Int         @id @default(autoincrement())
-  organizerId Int         @map("organizer_id")
-  scope       StaffScope
-  eventId     Int?        @map("event_id")
-  createdAt   DateTime    @default(now()) @map("created_at")
-  revokedAt   DateTime?   @map("revoked_at")
-  userId      String      @map("user_id") @db.Uuid
-  acceptedAt  DateTime?   @map("accepted_at") @db.Timestamp(6)
-  status      StaffStatus @default(PENDING)
-  role        StaffRole   @default(STAFF)
-  event       Event?      @relation(fields: [eventId], references: [id])
-  organizer   Organizer   @relation(fields: [organizerId], references: [id], onDelete: Cascade)
-
-  @@index([organizerId])
-  @@index([userId])
-  @@index([eventId])
-  @@map("staff_assignments")
   @@schema("app_v3")
 }
 
@@ -1950,8 +1902,6 @@ model SplitPaymentParticipant {
 enum NotificationType {
   ORGANIZER_INVITE
   ORGANIZER_TRANSFER
-  STAFF_INVITE
-  STAFF_ROLE_CHANGE
   EVENT_SALE
   EVENT_PAYOUT_STATUS
   STRIPE_STATUS
@@ -2125,23 +2075,6 @@ enum OrganizationModule {
 }
 
 enum OrganizationFormStatus {
-  DRAFT
-  PUBLISHED
-  ARCHIVED
-
-  @@schema("app_v3")
-}
-
-enum OrganizationUpdateCategory {
-  TODAY
-  CHANGES
-  RESULTS
-  CALL_UPS
-
-  @@schema("app_v3")
-}
-
-enum OrganizationUpdateStatus {
   DRAFT
   PUBLISHED
   ARCHIVED
@@ -2415,30 +2348,6 @@ enum ReservationStatus {
   @@schema("app_v3")
 }
 
-
-enum StaffScope {
-  GLOBAL
-  EVENT
-
-  @@schema("app_v3")
-}
-
-enum StaffRole {
-  OWNER
-  ADMIN
-  STAFF
-  CHECKIN
-
-  @@schema("app_v3")
-}
-
-enum StaffStatus {
-  PENDING
-  ACCEPTED
-  REVOKED
-
-  @@schema("app_v3")
-}
 
 enum TransferStatus {
   PENDING

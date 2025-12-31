@@ -12,6 +12,8 @@ import {
 } from "@/lib/organizationCategories";
 import { cn } from "@/lib/utils";
 import { CTA_PRIMARY } from "@/app/organizador/dashboardUi";
+import { Avatar } from "@/components/ui/avatar";
+import { getOrganizerRoleFlags } from "@/lib/organizerUiPermissions";
 
 type OrgOption = {
   organizerId: number;
@@ -44,6 +46,7 @@ type UserInfo = {
   name?: string | null;
   email?: string | null;
   avatarUrl?: string | null;
+  avatarUpdatedAt?: string | number | null;
 };
 
 type ObjectiveTab = "create" | "manage" | "promote" | "analyze";
@@ -206,6 +209,7 @@ export function AppSidebar({
   const categoryLabel = ORGANIZATION_CATEGORY_LABELS[orgCategory];
   const categoryCta = CATEGORY_CTA[orgCategory];
   const manageHref = orgCategory === "RESERVAS" ? "/organizador/reservas" : baseTabHref("manage");
+  const roleFlags = getOrganizerRoleFlags(orgCurrent?.role ?? null);
 
   return (
     <>
@@ -221,18 +225,13 @@ export function AppSidebar({
             className="flex w-full items-center justify-between gap-2 text-left"
           >
             <div className="flex items-center gap-2">
-              {orgButtonAvatar ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={orgButtonAvatar}
-                  alt={orgCurrent?.organizer.publicName || orgDisplay || "Organização"}
-                  className="h-8 w-8 rounded-lg border border-white/10 object-cover"
-                />
-              ) : (
-                <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-[11px] font-semibold">
-                  {(orgCurrent?.organizer.publicName || orgCurrent?.organizer.businessName || "O")[0]}
-                </span>
-              )}
+              <Avatar
+                src={orgButtonAvatar}
+                name={orgCurrent?.organizer.publicName || orgCurrent?.organizer.businessName || orgDisplay}
+                className="h-8 w-8 rounded-lg border border-white/10"
+                textClassName="text-[11px] font-semibold uppercase tracking-[0.16em] text-white/80"
+                fallbackText="OR"
+              />
               <div className="text-left">
                 <p className="text-[11px] uppercase tracking-[0.18em] text-white/50">Organização</p>
                 <p className="text-sm font-semibold text-white">
@@ -293,36 +292,48 @@ export function AppSidebar({
           <p className="text-sm font-semibold text-white">{categoryLabel}</p>
         </div>
 
-        <Link
-          href={categoryCta.href}
-          className={cn(CTA_PRIMARY, "w-full justify-center")}
-          data-tour="criar-evento"
-        >
-          {categoryCta.label}
-        </Link>
+        {roleFlags.canManageEvents && (
+          <Link
+            href={categoryCta.href}
+            className={cn(CTA_PRIMARY, "w-full justify-center")}
+            data-tour="criar-evento"
+          >
+            {categoryCta.label}
+          </Link>
+        )}
 
         <p className="px-2 pt-2 text-[10px] uppercase tracking-[0.24em] text-white/45">Objetivo</p>
         <Link href={baseTabHref("create")} className={linkClass(currentObjective === "create")} data-tour="overview">
           <span>Resumo</span>
         </Link>
-        <Link href={manageHref} className={linkClass(currentObjective === "manage")}>
-          <span>Gerir</span>
-        </Link>
-        <Link href={baseTabHref("promote")} className={linkClass(currentObjective === "promote")} data-tour="marketing">
-          <span>Promover</span>
-        </Link>
-        <Link href={baseTabHref("analyze")} className={linkClass(currentObjective === "analyze")} data-tour="finance">
-          <span>Analisar</span>
-        </Link>
+        {roleFlags.canManageEvents && (
+          <Link href={manageHref} className={linkClass(currentObjective === "manage")}>
+            <span>Gerir</span>
+          </Link>
+        )}
+        {roleFlags.canPromote && (
+          <Link href={baseTabHref("promote")} className={linkClass(currentObjective === "promote")} data-tour="marketing">
+            <span>Promover</span>
+          </Link>
+        )}
+        {roleFlags.canViewFinance && (
+          <Link href={baseTabHref("analyze")} className={linkClass(currentObjective === "analyze")} data-tour="finance">
+            <span>Analisar</span>
+          </Link>
+        )}
 
         <div className="pt-2">
           <p className="px-2 text-[10px] uppercase tracking-[0.24em] text-white/45">Secundário</p>
-          <Link href="/organizador/staff" className={subLinkClass(currentSubKey === "staff")} data-tour="staff">
-            <span>Staff</span>
-          </Link>
-          <Link href="/organizador/settings" className={subLinkClass(currentSubKey === "settings")}>
-            <span>Definições</span>
-          </Link>
+          {roleFlags.canManageMembers && (
+            <Link href="/organizador/staff" className={subLinkClass(currentSubKey === "staff")} data-tour="staff">
+              <span>Staff</span>
+            </Link>
+          )}
+          {roleFlags.canEditOrg && (
+            <Link href="/organizador/settings" className={subLinkClass(currentSubKey === "settings")}>
+              <span>Definições</span>
+            </Link>
+          )}
         </div>
       </nav>
 
@@ -336,14 +347,14 @@ export function AppSidebar({
             className="flex w-full cursor-pointer items-center justify-between gap-2"
           >
             <div className="flex items-center gap-2">
-              {user?.avatarUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={user.avatarUrl} alt={userLabel} className="h-8 w-8 rounded-lg border border-white/10 object-cover" />
-              ) : (
-                <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-[11px] font-semibold">
-                  {userInitial}
-                </span>
-              )}
+              <Avatar
+                src={user?.avatarUrl ?? null}
+                version={user?.avatarUpdatedAt ?? null}
+                name={userLabel}
+                className="h-8 w-8 rounded-lg border border-white/10"
+                textClassName="text-[11px] font-semibold uppercase tracking-[0.16em] text-white/80"
+                fallbackText={userInitial}
+              />
               <div className="text-left">
                 <p className="text-[11px] uppercase tracking-[0.18em] text-white/50">Utilizador</p>
                 <p className="text-sm font-semibold text-white">{userLabel}</p>

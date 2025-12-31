@@ -33,7 +33,7 @@ export default function TicketLiveQr({ qrToken }: TicketLiveQrProps) {
   // Antes de montar no cliente → placeholder estático (SSR-safe)
   if (!mounted) {
     return (
-      <div className="w-64 h-64 rounded-xl bg-white/10 animate-pulse" />
+      <div className="w-64 h-64 rounded-xl orya-skeleton-surface animate-pulse" />
     );
   }
 

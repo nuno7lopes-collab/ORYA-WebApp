@@ -5,10 +5,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import type { LiveHubModule, LiveHubViewerRole } from "@/lib/liveHubConfig";
-import { DEFAULT_GUEST_AVATAR } from "@/lib/avatars";
 import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
 import { useUser } from "@/app/hooks/useUser";
 import { getCustomLiveHubMatchOrder } from "@/lib/organizerPremium";
+import { Avatar } from "@/components/ui/avatar";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 const LOCALE = "pt-PT";
@@ -378,12 +378,14 @@ function renderPairingName(id: number | null | undefined, pairings: Record<numbe
   const meta = pairings[id];
   const label = meta?.label ?? `#${id}`;
   const subLabel = meta?.subLabel;
-  const avatarUrl = meta?.avatarUrl || DEFAULT_GUEST_AVATAR;
   const content = (
     <span className="inline-flex items-center gap-2">
-      <span
-        className="h-5 w-5 rounded-full border border-white/10 bg-white/10 bg-cover bg-center"
-        style={{ backgroundImage: `url(${avatarUrl})` }}
+      <Avatar
+        src={meta?.avatarUrl ?? null}
+        name={label}
+        className="h-5 w-5 border border-white/10"
+        textClassName="text-[8px] font-semibold uppercase tracking-[0.16em] text-white/80"
+        fallbackText="OR"
       />
       <span>{label}</span>
       {subLabel && <span className="text-[11px] text-white/40">{subLabel}</span>}
@@ -1096,15 +1098,17 @@ function BracketRoundsView({
       const fallbackLabel = pairingId ? `#${pairingId}` : "A definir";
       const label = meta?.label ?? fallbackLabel;
       const displayLabel = label.length > 16 ? label.slice(0, 16) : label;
-      const avatarUrl = meta?.avatarUrl || DEFAULT_GUEST_AVATAR;
       const avatarClass = final ? "h-14 w-14" : "h-12 w-12";
       return (
         <div className={`flex items-center justify-between gap-3 ${paddingClass}`}>
           <div className="flex items-center gap-2">
             <div className="flex flex-col items-center gap-1">
-              <span
-                className={`${avatarClass} rounded-full border border-white/10 bg-white/10 bg-cover bg-center`}
-                style={{ backgroundImage: `url(${avatarUrl})` }}
+              <Avatar
+                src={meta?.avatarUrl ?? null}
+                name={label}
+                className={`${avatarClass} border border-white/10`}
+                textClassName={`${final ? "text-[11px]" : "text-[10px]"} font-semibold uppercase tracking-[0.16em] text-white/80`}
+                fallbackText="OR"
               />
               <span className={`max-w-[120px] truncate text-[11px] ${nameTone}`} title={label}>
                 {displayLabel}
@@ -1656,8 +1660,6 @@ function OneVOneLiveLayout({
   const nowLabelB = nowMetaB?.label ?? "";
   const nowDisplayLabelA = nowLabelA.length > 16 ? nowLabelA.slice(0, 16) : nowLabelA;
   const nowDisplayLabelB = nowLabelB.length > 16 ? nowLabelB.slice(0, 16) : nowLabelB;
-  const nowAvatarA = nowMetaA?.avatarUrl || DEFAULT_GUEST_AVATAR;
-  const nowAvatarB = nowMetaB?.avatarUrl || DEFAULT_GUEST_AVATAR;
   const nowScoreA = nowSummary ? nowSummary.a : 0;
   const nowScoreB = nowSummary ? nowSummary.b : 0;
   const overrideActive = Boolean(featuredMatchId && nowMatch?.id === featuredMatchId);
@@ -1832,11 +1834,14 @@ function OneVOneLiveLayout({
         >
           <div className="grid items-center gap-6 md:grid-cols-[1fr_auto_1fr]">
             <div className="flex flex-col items-center gap-2">
-              <div
-                className={`h-20 w-20 rounded-full border border-white/10 bg-white/10 bg-cover bg-center ${
+              <Avatar
+                src={nowMetaA?.avatarUrl ?? null}
+                name={nowLabelA}
+                className={`h-20 w-20 border border-white/10 ${
                   nowWinnerSide === "A" ? "ring-2 ring-emerald-400/60 shadow-[0_0_20px_rgba(16,185,129,0.35)]" : ""
                 }`}
-                style={{ backgroundImage: `url(${nowAvatarA})` }}
+                textClassName="text-[12px] font-semibold uppercase tracking-[0.16em] text-white/80"
+                fallbackText="OR"
               />
               <span className="max-w-[140px] truncate text-sm text-white/85" title={nowLabelA}>
                 {nowDisplayLabelA}
@@ -1856,11 +1861,14 @@ function OneVOneLiveLayout({
               <span className="text-sm font-semibold text-white/80">VS</span>
             </div>
             <div className="flex flex-col items-center gap-2">
-              <div
-                className={`h-20 w-20 rounded-full border border-white/10 bg-white/10 bg-cover bg-center ${
+              <Avatar
+                src={nowMetaB?.avatarUrl ?? null}
+                name={nowLabelB}
+                className={`h-20 w-20 border border-white/10 ${
                   nowWinnerSide === "B" ? "ring-2 ring-emerald-400/60 shadow-[0_0_20px_rgba(16,185,129,0.35)]" : ""
                 }`}
-                style={{ backgroundImage: `url(${nowAvatarB})` }}
+                textClassName="text-[12px] font-semibold uppercase tracking-[0.16em] text-white/80"
+                fallbackText="OR"
               />
               <span className="max-w-[140px] truncate text-sm text-white/85" title={nowLabelB}>
                 {nowDisplayLabelB}
@@ -2717,16 +2725,13 @@ export default function EventLiveClient({
 
             {organizer && (
               <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
-                <div className="h-10 w-10 overflow-hidden rounded-full border border-white/10 bg-white/10">
-                  {organizer.brandingAvatarUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={organizer.brandingAvatarUrl} alt="Organizador" className="h-full w-full object-cover" />
-                  ) : (
-                    <div className="flex h-full w-full items-center justify-center text-xs text-white/60">
-                      {organizer.publicName?.slice(0, 2) ?? "OR"}
-                    </div>
-                  )}
-                </div>
+                <Avatar
+                  src={organizer.brandingAvatarUrl}
+                  name={organizer.publicName || "Organização"}
+                  className="h-10 w-10 border border-white/10"
+                  textClassName="text-xs font-semibold uppercase tracking-[0.16em] text-white/80"
+                  fallbackText="OR"
+                />
                 <div>
                   <p className="text-[11px] uppercase tracking-[0.2em] text-white/50">Organizado por</p>
                   <p className="text-white font-medium">{organizer.publicName}</p>

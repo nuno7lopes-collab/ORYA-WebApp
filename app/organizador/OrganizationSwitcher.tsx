@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { Avatar } from "@/components/ui/avatar";
 
 export type OrganizationSwitcherOption = {
   organizerId: number;
@@ -82,18 +83,13 @@ export function OrganizationSwitcher({ currentId, initialOrgs = [] }: Props) {
         <summary
           className="flex cursor-pointer select-none items-center gap-2 rounded-full border border-white/15 bg-white/5 px-2 py-1 text-[12px] text-white/85 transition hover:border-white/30"
         >
-          {current.organizer.brandingAvatarUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={current.organizer.brandingAvatarUrl}
-              alt={current.organizer.publicName || "Organização"}
-              className="h-8 w-8 rounded-full border border-white/10 object-cover"
-            />
-          ) : (
-            <span className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/5 text-[11px] font-semibold">
-              {(current.organizer.publicName || current.organizer.businessName || "O")[0]}
-            </span>
-          )}
+          <Avatar
+            src={current.organizer.brandingAvatarUrl ?? null}
+            name={current.organizer.publicName || current.organizer.businessName || "Organização"}
+            className="h-8 w-8 border border-white/10"
+            textClassName="text-[11px] font-semibold uppercase tracking-[0.16em] text-white/80"
+            fallbackText="OR"
+          />
           <span className="text-white/70 group-open:rotate-180 transition-transform pr-1">▾</span>
         </summary>
         <div className="absolute right-0 z-40 mt-2 w-56 rounded-2xl border border-white/10 bg-black/85 p-2 shadow-[0_20px_40px_rgba(0,0,0,0.55)] backdrop-blur-xl">

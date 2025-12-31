@@ -4,10 +4,9 @@ import { OrganizerMemberRole, padel_match_status } from "@prisma/client";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { canMarkWalkover } from "@/domain/padel/pairingPolicy";
 import { getActiveOrganizerForUser } from "@/lib/organizerContext";
-import { isPadelStaff } from "@/lib/padel/staff";
 import { readNumericParam } from "@/lib/routeParams";
 
-const allowedRoles: OrganizerMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
+const allowedRoles: OrganizerMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const matchId = readNumericParam(params?.id, req, "matches");
@@ -51,8 +50,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     organizerId: match.event.organizerId,
     roles: allowedRoles,
   });
-  const staffAllowed = await isPadelStaff(authData.user.id, match.event.organizerId, match.eventId);
-  if (!organizer && !staffAllowed) {
+  if (!organizer) {
     return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
   }
 

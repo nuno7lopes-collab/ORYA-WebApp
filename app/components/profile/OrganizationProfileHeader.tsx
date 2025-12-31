@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import OrganizerFollowClient from "@/app/components/profile/OrganizerFollowClient";
 import ProfileHeaderLayout, {
   ProfileStatPill,
   ProfileVerifiedBadge,
 } from "@/app/components/profile/ProfileHeaderLayout";
+import { Avatar } from "@/components/ui/avatar";
 
 type OrganizationProfileHeaderProps = {
   name: string | null;
@@ -49,16 +50,6 @@ export default function OrganizationProfileHeader({
 }: OrganizationProfileHeaderProps) {
   const displayName = name?.trim() || "Organização ORYA";
   const handle = username?.trim() || null;
-  const avatarInitials = useMemo(
-    () =>
-      displayName
-        .split(" ")
-        .map((part) => part[0])
-        .join("")
-        .slice(0, 3)
-        .toUpperCase(),
-    [displayName],
-  );
   const [followersDisplay, setFollowersDisplay] = useState(followersCount ?? 0);
   const [avatar, setAvatar] = useState<string | null>(avatarUrl);
   const mailtoHref = contactEmail ? `mailto:${contactEmail}` : null;
@@ -206,21 +197,13 @@ export default function OrganizationProfileHeader({
 
   const avatarSlot = (
     <div className="relative inline-flex h-24 w-24 items-center justify-center rounded-full bg-gradient-to-tr from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] p-[2px] shadow-[0_0_24px_rgba(255,0,200,0.26)] sm:h-28 sm:w-28">
-      <div className="flex h-full w-full items-center justify-center overflow-hidden rounded-full bg-black/90">
-        {avatar ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={avatar}
-            alt={displayName}
-            className="h-full w-full object-cover"
-            onError={handleAvatarError}
-          />
-        ) : (
-          <span className="text-xs font-semibold uppercase tracking-[0.2em] text-white/60">
-            {avatarInitials}
-          </span>
-        )}
-      </div>
+      <Avatar
+        src={avatar}
+        name={displayName}
+        className="h-full w-full"
+        textClassName="text-xs font-semibold uppercase tracking-[0.2em] text-white/80"
+        onError={handleAvatarError}
+      />
     </div>
   );
 

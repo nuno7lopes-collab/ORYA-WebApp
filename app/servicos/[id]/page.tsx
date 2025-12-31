@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import Link from "next/link";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import { useUser } from "@/app/hooks/useUser";
 import {
@@ -173,6 +174,7 @@ function ServicePaymentForm({
 export default function ServicoDetalhePublicoPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { user } = useUser();
   const idRaw = params?.id;
   const serviceId = useMemo(() => {
@@ -209,6 +211,14 @@ export default function ServicoDetalhePublicoPage() {
   const [checkoutState, setCheckoutState] = useState<CheckoutState | null>(null);
   const [paymentError, setPaymentError] = useState<string | null>(null);
   const pollTimerRef = useRef<number | null>(null);
+  const resumeHandledRef = useRef(false);
+
+  const resumeAvailabilityId = useMemo(() => {
+    const raw = searchParams?.get("availabilityId") ?? searchParams?.get("availability") ?? null;
+    if (!raw) return null;
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) ? parsed : null;
+  }, [searchParams]);
 
   useEffect(() => {
     return () => {
@@ -217,6 +227,10 @@ export default function ServicoDetalhePublicoPage() {
       }
     };
   }, []);
+
+  useEffect(() => {
+    resumeHandledRef.current = false;
+  }, [resumeAvailabilityId, serviceId]);
 
   const reserve = async (availabilityId: number) => {
     if (!serviceId) return;
@@ -269,6 +283,14 @@ export default function ServicoDetalhePublicoPage() {
       setBookingLoading(null);
     }
   };
+
+  useEffect(() => {
+    if (!resumeAvailabilityId || !serviceId || !user) return;
+    if (resumeHandledRef.current) return;
+    if (checkoutState?.availabilityId === resumeAvailabilityId) return;
+    resumeHandledRef.current = true;
+    reserve(resumeAvailabilityId);
+  }, [checkoutState?.availabilityId, resumeAvailabilityId, reserve, serviceId, user]);
 
   const pollBookingStatus = async (paymentIntentId: string, attempt = 0) => {
     if (!paymentIntentId) return;
@@ -416,6 +438,14 @@ export default function ServicoDetalhePublicoPage() {
                     : ""}
                 </p>
               )}
+              <div className="mt-2">
+                <Link
+                  href="/me/reservas"
+                  className="inline-flex items-center rounded-full border border-emerald-200/40 bg-emerald-400/10 px-3 py-1 text-[12px] text-emerald-50 hover:bg-emerald-400/20"
+                >
+                  Ver minhas reservas
+                </Link>
+              </div>
             </div>
           )}
 

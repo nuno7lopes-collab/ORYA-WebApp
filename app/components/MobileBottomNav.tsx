@@ -5,9 +5,7 @@ import { useRouter } from "next/navigation";
 
 type MobileBottomNavProps = {
   pathname: string;
-  isSearchOpen: boolean;
-  onOpenSearch: () => void;
-  onCloseSearch: () => void;
+  socialBadgeCount?: number;
 };
 
 type Item = {
@@ -15,23 +13,30 @@ type Item = {
   icon: string;
   path: string;
   active: (path: string) => boolean;
+  badge?: number;
 };
 
 export default function MobileBottomNav({
   pathname,
-  isSearchOpen,
-  onOpenSearch,
-  onCloseSearch,
+  socialBadgeCount,
 }: MobileBottomNavProps) {
   const router = useRouter();
   const derivedTab = (() => {
-    if (isSearchOpen) return "search";
     if (pathname.startsWith("/explorar")) return "explorar";
-    if (pathname.startsWith("/buscar")) return "search";
-    if (pathname.startsWith("/me/carteira")) return "tickets";
+    if (pathname.startsWith("/social")) return "social";
     if (pathname.startsWith("/me")) return "profile";
     return "home";
   })();
+
+  const itemHome: Item = useMemo(
+    () => ({
+      label: "Inicio",
+      icon: "🏠",
+      path: "/",
+      active: (p) => p === "/",
+    }),
+    [],
+  );
 
   const itemExplorar: Item = useMemo(
     () => ({
@@ -43,24 +48,15 @@ export default function MobileBottomNav({
     [],
   );
 
-  const itemProcurar: Item = useMemo(
+  const itemSocial: Item = useMemo(
     () => ({
-      label: "Procurar",
-      icon: "🔍",
-      path: "/buscar",
-      active: (_p) => isSearchOpen,
+      label: "Social",
+      icon: "🤝",
+      path: "/social",
+      active: (p) => p.startsWith("/social"),
+      badge: socialBadgeCount,
     }),
-    [isSearchOpen],
-  );
-
-  const itemBilhetes: Item = useMemo(
-    () => ({
-      label: "Bilhetes",
-      icon: "🎫",
-      path: "/me/carteira",
-      active: (p) => p.startsWith("/me/carteira"),
-    }),
-    [],
+    [socialBadgeCount],
   );
 
   const itemPerfil: Item = useMemo(
@@ -74,7 +70,6 @@ export default function MobileBottomNav({
   );
 
   const go = (item: Item) => {
-    onCloseSearch();
     router.push(item.path);
   };
 
@@ -93,32 +88,12 @@ export default function MobileBottomNav({
           {/* Content */}
           <div className="relative z-10 h-full px-3 pb-2">
             <div className="grid h-full grid-cols-4 items-center text-center gap-1">
+              <NavItem item={itemHome} isActive={derivedTab === "home"} onClick={go} />
               <NavItem item={itemExplorar} isActive={derivedTab === "explorar"} onClick={go} />
-              <NavItem
-                item={itemProcurar}
-                isActive={derivedTab === "search"}
-                onClick={() => onOpenSearch()}
-              />
-              <div />
-              <NavItem item={itemBilhetes} isActive={derivedTab === "tickets"} onClick={go} />
+              <NavItem item={itemSocial} isActive={derivedTab === "social"} onClick={go} />
               <NavItem item={itemPerfil} isActive={derivedTab === "profile"} onClick={go} />
             </div>
 
-            {/* Botão central ORYA */}
-            <div className="absolute left-1/2 top-[12px] -translate-x-1/2">
-              <button
-                type="button"
-                onClick={() => go({ label: "Início", icon: "", path: "/", active: (p) => p === "/" })}
-                className="relative flex h-11 w-11 items-center justify-center rounded-full outline-none transition transform hover:scale-[1.05] active:scale-95"
-                aria-label="Início ORYA"
-              >
-                <span className="absolute inset-0 rounded-full bg-gradient-to-r from-[#5bf5ff]/32 via-[#8f66ff]/32 to-[#ff3cd6]/32 blur-lg" />
-                <span className="absolute inset-0 rounded-full bg-gradient-to-r from-[#5bf5ff] via-[#8f66ff] to-[#ff3cd6] opacity-95 shadow-[0_0_38px_rgba(107,255,255,0.6)]" />
-                <span className="absolute inset-[5px] rounded-full bg-[#050915] shadow-inner shadow-black/75" />
-                <span className="absolute inset-[2px] rounded-full bg-gradient-to-r from-[#5bf5ff]/35 via-[#8f66ff]/35 to-[#ff3cd6]/35 animate-pulse opacity-55" />
-                {derivedTab === "home" && <span className="absolute inset-0 rounded-full border border-white/30" />}
-              </button>
-            </div>
           </div>
         </div>
       </div>
@@ -143,7 +118,14 @@ function NavItem({ item, isActive, onClick }: NavItemProps) {
           : "text-white/70 hover:bg-white/5"
       }`}
     >
-      <span className="text-[18px] leading-none">{item.icon}</span>
+      <span className="relative text-[18px] leading-none">
+        {item.icon}
+        {item.badge && item.badge > 0 && (
+          <span className="absolute -right-2 -top-1 min-w-[14px] rounded-full bg-emerald-400 px-1 text-[9px] font-semibold text-black">
+            {item.badge > 9 ? "9+" : item.badge}
+          </span>
+        )}
+      </span>
       <span className="leading-none truncate">{item.label}</span>
     </button>
   );

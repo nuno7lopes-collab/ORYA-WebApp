@@ -10,7 +10,7 @@ export default function LoadingEventPage() {
         <div className="orya-page-width mt-6 grid grid-cols-1 gap-6 px-4 md:px-8 lg:grid-cols-[1.1fr_0.9fr]">
           <div className="relative">
             <div className="pointer-events-none absolute -inset-[1px] rounded-[34px] bg-[linear-gradient(135deg,rgba(255,0,200,0.35),rgba(107,255,255,0.3),rgba(22,70,245,0.35))] opacity-50 blur-[2px]" />
-            <div className="relative rounded-[32px] border border-white/15 bg-[linear-gradient(140deg,rgba(255,255,255,0.12),rgba(3,7,18,0.85))] p-6 shadow-[0_28px_70px_rgba(0,0,0,0.65)] backdrop-blur-2xl md:p-8">
+            <div className="relative rounded-[32px] border border-white/15 orya-skeleton-surface-strong p-6 shadow-[0_28px_70px_rgba(0,0,0,0.65)] backdrop-blur-2xl md:p-8">
               <div className="flex flex-wrap items-center gap-2">
                 <div className="h-3 w-28 rounded-full bg-white/10" />
                 <div className="h-3 w-3 rounded-full bg-white/10" />
@@ -42,7 +42,7 @@ export default function LoadingEventPage() {
 
           <div className="relative">
             <div className="pointer-events-none absolute -inset-[1px] rounded-[34px] bg-[conic-gradient(from_120deg,rgba(107,255,255,0.4),rgba(255,0,200,0.3),rgba(22,70,245,0.4),rgba(107,255,255,0.4))] opacity-50 blur-[2px]" />
-            <div className="relative min-h-[320px] h-full overflow-hidden rounded-[32px] border border-white/15 bg-white/5 shadow-[0_28px_70px_rgba(0,0,0,0.75)] flex flex-col">
+            <div className="relative min-h-[320px] h-full overflow-hidden rounded-[32px] border border-white/15 orya-skeleton-surface shadow-[0_28px_70px_rgba(0,0,0,0.75)] flex flex-col">
               <div className="absolute inset-0 animate-pulse bg-[radial-gradient(circle_at_30%_20%,rgba(255,255,255,0.12),transparent_60%)]" />
               <div className="relative mt-auto px-6 pb-6">
                 <div className="h-3 w-24 rounded-full bg-white/10" />
@@ -54,17 +54,17 @@ export default function LoadingEventPage() {
 
         <div className="orya-page-width mt-6 px-4 md:px-8">
           <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-            <div className="rounded-2xl border border-white/15 bg-white/5 px-4 py-3 backdrop-blur">
+            <div className="rounded-2xl border border-white/15 orya-skeleton-surface px-4 py-3 backdrop-blur">
               <div className="h-3 w-16 rounded-full bg-white/10" />
               <div className="mt-3 h-4 w-32 rounded-full bg-white/10" />
               <div className="mt-2 h-3 w-24 rounded-full bg-white/10" />
             </div>
-            <div className="rounded-2xl border border-white/15 bg-white/5 px-4 py-3 backdrop-blur">
+            <div className="rounded-2xl border border-white/15 orya-skeleton-surface px-4 py-3 backdrop-blur">
               <div className="h-3 w-16 rounded-full bg-white/10" />
               <div className="mt-3 h-4 w-32 rounded-full bg-white/10" />
               <div className="mt-2 h-3 w-24 rounded-full bg-white/10" />
             </div>
-            <div className="rounded-2xl border border-white/15 bg-white/5 px-4 py-3 backdrop-blur">
+            <div className="rounded-2xl border border-white/15 orya-skeleton-surface px-4 py-3 backdrop-blur">
               <div className="h-3 w-16 rounded-full bg-white/10" />
               <div className="mt-3 h-4 w-24 rounded-full bg-white/10" />
               <div className="mt-2 h-3 w-28 rounded-full bg-white/10" />
@@ -84,7 +84,7 @@ export default function LoadingEventPage() {
 
       <section className="relative z-10 orya-page-width grid grid-cols-1 gap-12 px-6 pb-28 pt-10 md:grid-cols-3 md:px-10">
         <div className="space-y-12 md:col-span-2">
-          <div className="rounded-3xl border border-white/15 bg-white/5 p-6 shadow-[0_24px_60px_rgba(0,0,0,0.5)] backdrop-blur-2xl md:p-8">
+          <div className="rounded-3xl border border-white/15 orya-skeleton-surface p-6 shadow-[0_24px_60px_rgba(0,0,0,0.5)] backdrop-blur-2xl md:p-8">
             <div className="h-3 w-24 rounded-full bg-white/10" />
             <div className="mt-4 h-6 w-40 rounded-full bg-white/10" />
             <div className="mt-4 space-y-2">
@@ -94,7 +94,7 @@ export default function LoadingEventPage() {
             </div>
           </div>
 
-          <div className="rounded-3xl border border-white/15 bg-white/5 p-6 shadow-[0_24px_60px_rgba(0,0,0,0.5)] backdrop-blur-2xl md:p-8">
+          <div className="rounded-3xl border border-white/15 orya-skeleton-surface p-6 shadow-[0_24px_60px_rgba(0,0,0,0.5)] backdrop-blur-2xl md:p-8">
             <div className="flex items-center justify-between">
               <div>
                 <div className="h-5 w-32 rounded-full bg-white/10" />
@@ -106,7 +106,7 @@ export default function LoadingEventPage() {
               {Array.from({ length: 5 }).map((_, idx) => (
                 <div
                   key={`detail-skel-${idx}`}
-                  className="rounded-2xl border border-white/10 bg-black/40 p-4"
+                  className="rounded-2xl border border-white/10 orya-skeleton-surface-strong p-4"
                 >
                   <div className="h-3 w-20 rounded-full bg-white/10" />
                   <div className="mt-3 h-4 w-32 rounded-full bg-white/10" />
@@ -120,7 +120,7 @@ export default function LoadingEventPage() {
         <aside className="space-y-8 md:sticky md:top-28 md:self-start">
           <div className="relative">
             <div className="pointer-events-none absolute -inset-[1px] rounded-[30px] bg-[linear-gradient(135deg,rgba(255,0,200,0.3),rgba(107,255,255,0.3),rgba(22,70,245,0.3))] opacity-50 blur-[2px]" />
-            <div className="relative rounded-[28px] border border-white/15 bg-[linear-gradient(140deg,rgba(255,255,255,0.12),rgba(2,6,16,0.85))] p-7 shadow-[0_28px_70px_rgba(0,0,0,0.7)] backdrop-blur-2xl">
+            <div className="relative rounded-[28px] border border-white/15 orya-skeleton-surface-strong p-7 shadow-[0_28px_70px_rgba(0,0,0,0.7)] backdrop-blur-2xl">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <div className="h-5 w-24 rounded-full bg-white/10" />
@@ -130,12 +130,12 @@ export default function LoadingEventPage() {
               </div>
 
               <div className="mt-4 grid gap-4 sm:grid-cols-2 md:grid-cols-1">
-                <div className="rounded-xl border border-white/10 bg-black/40 p-4">
+                <div className="rounded-xl border border-white/10 orya-skeleton-surface-strong p-4">
                   <div className="h-3 w-12 rounded-full bg-white/10" />
                   <div className="mt-3 h-4 w-28 rounded-full bg-white/10" />
                   <div className="mt-2 h-3 w-20 rounded-full bg-white/10" />
                 </div>
-                <div className="rounded-xl border border-white/10 bg-black/40 p-4">
+                <div className="rounded-xl border border-white/10 orya-skeleton-surface-strong p-4">
                   <div className="h-3 w-12 rounded-full bg-white/10" />
                   <div className="mt-3 h-4 w-28 rounded-full bg-white/10" />
                   <div className="mt-2 h-3 w-20 rounded-full bg-white/10" />
@@ -152,7 +152,7 @@ export default function LoadingEventPage() {
             </div>
           </div>
 
-          <div className="rounded-3xl border border-white/15 bg-white/5 p-6 shadow-[0_24px_50px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
+          <div className="rounded-3xl border border-white/15 orya-skeleton-surface p-6 shadow-[0_24px_50px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
             <div className="flex items-center justify-between">
               <div>
                 <div className="h-3 w-12 rounded-full bg-white/10" />

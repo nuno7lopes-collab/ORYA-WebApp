@@ -5,9 +5,12 @@ import { usePathname, useRouter } from "next/navigation";
 import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
 import { useUser } from "@/app/hooks/useUser";
 import Link from "next/link";
-import { NotificationBell } from "./notifications/NotificationBell";
 import { supabaseBrowser } from "@/lib/supabaseBrowser";
 import Image from "next/image";
+import { CTA_PRIMARY } from "@/app/organizador/dashboardUi";
+import { Avatar } from "@/components/ui/avatar";
+import MobileBottomNav from "./MobileBottomNav";
+import useSWR from "swr";
 
 type SearchEvent = {
   id: number;
@@ -42,12 +45,20 @@ type SearchUser = {
 
 type SearchTab = "all" | "events" | "organizers" | "users";
 
+const fetcher = (url: string) => fetch(url).then((r) => r.json());
+
 export function Navbar() {
   const router = useRouter();
   const rawPathname = usePathname();
 
   const { openModal: openAuthModal, isOpen: isAuthOpen } = useAuthModal();
   const { user, profile, isLoading } = useUser();
+  const isAuthenticated = !!user;
+  const { data: notificationsData } = useSWR(
+    isAuthenticated ? "/api/notifications?status=unread&limit=1" : null,
+    fetcher,
+  );
+  const unreadCount = notificationsData?.unreadCount ?? 0;
 
   const [isVisible, setIsVisible] = useState(true);
   const [isAtTop, setIsAtTop] = useState(true);
@@ -334,13 +345,10 @@ export function Navbar() {
     }
   }, [user, profile, pathname, openAuthModal, isAuthOpen, inAuthPage]);
 
-  const isAuthenticated = !!user;
   const userLabel =
     profile?.username ||
     profile?.fullName ||
     (typeof user?.email === "string" ? user.email : "");
-  const userInitial =
-    (userLabel || "O").trim().charAt(0).toUpperCase() || "O";
 
   const formatEventDate = (startsAt: string | null) =>
     startsAt
@@ -483,6 +491,24 @@ export function Navbar() {
               </button>
               <button
                 type="button"
+                onClick={() => router.push("/social")}
+                className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
+                  pathname?.startsWith("/social")
+                    ? "bg-[linear-gradient(120deg,rgba(107,255,255,0.2),rgba(34,197,94,0.2))] text-white border border-white/30 shadow-[0_0_18px_rgba(107,255,255,0.35)]"
+                    : "text-white/85 hover:text-white bg-white/5 border border-white/16 hover:border-white/26"
+                }`}
+              >
+                <span className="flex items-center gap-2">
+                  Social
+                  {isAuthenticated && unreadCount > 0 && (
+                    <span className="inline-flex min-w-[18px] items-center justify-center rounded-full bg-emerald-400 px-1 text-[10px] font-semibold text-black">
+                      {unreadCount > 9 ? "9+" : unreadCount}
+                    </span>
+                  )}
+                </span>
+              </button>
+              <button
+                type="button"
                 onClick={() => router.push("/organizador")}
                 className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
                   pathname?.startsWith("/organizador")
@@ -536,13 +562,12 @@ export function Navbar() {
                   const redirect = pathname && pathname !== "/" ? pathname : "/";
                   openAuthModal({ mode: "login", redirectTo: redirect });
                 }}
-                className="inline-flex items-center justify-center rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-3.5 py-1.5 text-[11px] font-semibold text-black shadow-[0_0_26px_rgba(107,255,255,0.65)] hover:brightness-110"
+                className={`${CTA_PRIMARY} px-3.5 py-1.5 text-[11px]`}
               >
                 Entrar / Registar
               </button>
             ) : (
               <div className="relative flex items-center gap-2" ref={profileMenuRef}>
-                <NotificationBell />
                 <button
                   type="button"
                   onClick={() => setIsProfileMenuOpen((open) => !open)}
@@ -553,13 +578,14 @@ export function Navbar() {
                 >
                   <div className="relative h-9 w-9">
                     <div className="absolute inset-[-3px] rounded-full bg-[conic-gradient(from_180deg,#ff00c8_0deg,#ff5afc_120deg,#6b7bff_240deg,#ff00c8_360deg)] opacity-85 blur-[8px]" />
-                    <div className="relative h-full w-full overflow-hidden rounded-full border border-white/20 bg-gradient-to-br from-[#0b0f1b] via-[#0f1222] to-[#0a0d18] text-[11px] font-bold text-white shadow-[0_0_22px_rgba(255,0,200,0.32)]">
-                      <span className="pointer-events-none absolute inset-0 rounded-full border border-white/10" />
-                      <span className="pointer-events-none absolute inset-0 rounded-full bg-gradient-to-tr from-[#FF00C8]/35 via-[#6BFFFF]/22 to-transparent animate-[spin_16s_linear_infinite]" />
-                      <span className="relative z-10 flex h-full w-full items-center justify-center bg-gradient-to-r from-[#FF9CF2] to-[#6BFFFF] bg-clip-text text-transparent">
-                        {userInitial}
-                      </span>
-                    </div>
+                    <Avatar
+                      src={profile?.avatarUrl ?? null}
+                      version={profile?.updatedAt ?? null}
+                      name={userLabel || "Conta ORYA"}
+                      className="relative h-full w-full border border-white/20 shadow-[0_0_22px_rgba(255,0,200,0.32)]"
+                      textClassName="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/85"
+                      fallbackText="OR"
+                    />
                   </div>
                   <span className="hidden max-w-[120px] truncate text-[11px] sm:inline">
                     {userLabel || "Conta ORYA"}
@@ -600,6 +626,13 @@ export function Navbar() {
                     >
                       <span>Definições</span>
                     </Link>
+                    <Link
+                      href="/organizador"
+                      onClick={() => setIsProfileMenuOpen(false)}
+                      className="flex w-full items-center justify-between rounded-xl px-2.5 py-2 text-left hover:bg-white/8"
+                    >
+                      <span>Organizar (modo empresa)</span>
+                    </Link>
                     {lastOrganizerUsername && (
                       <Link
                         href={`/${lastOrganizerUsername}`}
@@ -637,7 +670,11 @@ export function Navbar() {
       {/* Overlay de pesquisa estilo full-screen, com sugestões */}
       {isSearchOpen && (
         <div
-              className="fixed inset-0 z-40 bg-black/25 backdrop-blur-[28px] backdrop-saturate-150"
+          className={`fixed inset-0 z-40 ${
+            isAtTop
+              ? "bg-transparent backdrop-blur-[6px]"
+              : "bg-[linear-gradient(120deg,rgba(8,10,20,0.38),rgba(8,10,20,0.52))] backdrop-blur-[18px]"
+          }`}
           role="dialog"
           aria-modal="true"
           onClick={(e) => {
@@ -648,12 +685,12 @@ export function Navbar() {
         >
           <div ref={searchPanelRef} className="mx-auto mt-24 md:mt-28 max-w-3xl px-4">
             <div
-              className="rounded-3xl border border-white/14 bg-[radial-gradient(circle_at_12%_0%,rgba(255,0,200,0.14),transparent_40%),radial-gradient(circle_at_88%_0%,rgba(107,255,255,0.16),transparent_36%),linear-gradient(120deg,rgba(8,10,20,0.75),rgba(8,10,20,0.58),rgba(8,10,20,0.7))] p-4 shadow-[0_28px_80px_rgba(0,0,0,0.75)] backdrop-blur-2xl"
+              className="rounded-3xl border border-white/14 bg-[radial-gradient(circle_at_12%_0%,rgba(255,0,200,0.12),transparent_40%),radial-gradient(circle_at_88%_0%,rgba(107,255,255,0.12),transparent_36%),linear-gradient(120deg,rgba(8,10,20,0.45),rgba(8,10,20,0.32),rgba(8,10,20,0.42))] p-4 shadow-[0_28px_80px_rgba(0,0,0,0.7)] backdrop-blur-2xl"
               aria-label="Pesquisa de eventos ORYA"
             >
               <form
                 onSubmit={handleSubmitSearch}
-                className="flex items-center gap-3 rounded-2xl border border-white/16 bg-[linear-gradient(120deg,rgba(255,0,200,0.08),rgba(107,255,255,0.08)),rgba(8,10,20,0.22)] px-4 py-2.5 shadow-[0_12px_32px_rgba(0,0,0,0.45)] backdrop-blur-2xl"
+                className="flex items-center gap-3 rounded-2xl border border-white/16 bg-[linear-gradient(120deg,rgba(255,0,200,0.06),rgba(107,255,255,0.06)),rgba(8,10,20,0.14)] px-4 py-2.5 shadow-[0_12px_32px_rgba(0,0,0,0.4)] backdrop-blur-2xl"
               >
                 <span className="flex h-6 w-6 items-center justify-center rounded-full border border-white/30 text-[12px] text-white/80">
                   ⌕
@@ -819,20 +856,13 @@ export function Navbar() {
                                     onClick={() => goTo(buildProfileHref(item.username))}
                                     className="flex flex-1 items-center gap-3 text-left"
                                   >
-                                    <div className="h-12 w-12 overflow-hidden rounded-full border border-white/12 bg-[radial-gradient(circle_at_30%_30%,rgba(255,0,200,0.14),transparent_45%),radial-gradient(circle_at_70%_70%,rgba(107,255,255,0.14),transparent_50%),#0b0f1b]">
-                                      {item.brandingAvatarUrl ? (
-                                        // eslint-disable-next-line @next/next/no-img-element
-                                        <img
-                                          src={item.brandingAvatarUrl}
-                                          alt={displayName}
-                                          className="h-full w-full object-cover"
-                                        />
-                                      ) : (
-                                        <div className="flex h-full w-full items-center justify-center text-[10px] font-semibold uppercase tracking-wide text-white/55">
-                                          ORYA
-                                        </div>
-                                      )}
-                                    </div>
+                                    <Avatar
+                                      src={item.brandingAvatarUrl}
+                                      name={displayName}
+                                      className="h-12 w-12 border border-white/12"
+                                      textClassName="text-[10px] font-semibold uppercase tracking-wide text-white/80"
+                                      fallbackText="OR"
+                                    />
                                     <div className="min-w-0">
                                       <p className="text-[12px] font-semibold text-white line-clamp-1">
                                         {displayName}
@@ -892,20 +922,13 @@ export function Navbar() {
                                     onClick={() => goTo(buildProfileHref(item.username))}
                                     className="flex flex-1 items-center gap-3 text-left"
                                   >
-                                    <div className="h-12 w-12 overflow-hidden rounded-full border border-white/12 bg-[radial-gradient(circle_at_30%_30%,rgba(255,0,200,0.14),transparent_45%),radial-gradient(circle_at_70%_70%,rgba(107,255,255,0.14),transparent_50%),#0b0f1b]">
-                                      {item.avatarUrl ? (
-                                        // eslint-disable-next-line @next/next/no-img-element
-                                        <img
-                                          src={item.avatarUrl}
-                                          alt={displayName}
-                                          className="h-full w-full object-cover"
-                                        />
-                                      ) : (
-                                        <div className="flex h-full w-full items-center justify-center text-[10px] font-semibold uppercase tracking-wide text-white/55">
-                                          ORYA
-                                        </div>
-                                      )}
-                                    </div>
+                                    <Avatar
+                                      src={item.avatarUrl}
+                                      name={displayName}
+                                      className="h-12 w-12 border border-white/12"
+                                      textClassName="text-[10px] font-semibold uppercase tracking-wide text-white/80"
+                                      fallbackText="OR"
+                                    />
                                     <div className="min-w-0">
                                       <p className="text-[12px] font-semibold text-white line-clamp-1">
                                         {displayName}
@@ -1012,20 +1035,13 @@ export function Navbar() {
                                 onClick={() => goTo(buildProfileHref(item.username))}
                                 className="flex flex-1 items-center gap-3 text-left"
                               >
-                                <div className="h-12 w-12 overflow-hidden rounded-full border border-white/12 bg-[radial-gradient(circle_at_30%_30%,rgba(255,0,200,0.14),transparent_45%),radial-gradient(circle_at_70%_70%,rgba(107,255,255,0.14),transparent_50%),#0b0f1b]">
-                                  {item.brandingAvatarUrl ? (
-                                    // eslint-disable-next-line @next/next/no-img-element
-                                    <img
-                                      src={item.brandingAvatarUrl}
-                                      alt={displayName}
-                                      className="h-full w-full object-cover"
-                                    />
-                                  ) : (
-                                    <div className="flex h-full w-full items-center justify-center text-[10px] font-semibold uppercase tracking-wide text-white/55">
-                                      ORYA
-                                    </div>
-                                  )}
-                                </div>
+                                <Avatar
+                                  src={item.brandingAvatarUrl}
+                                  name={displayName}
+                                  className="h-12 w-12 border border-white/12"
+                                  textClassName="text-[10px] font-semibold uppercase tracking-wide text-white/80"
+                                  fallbackText="OR"
+                                />
                                 <div className="min-w-0">
                                   <p className="text-[12px] font-semibold text-white line-clamp-1">
                                     {displayName}
@@ -1073,20 +1089,13 @@ export function Navbar() {
                                 onClick={() => goTo(buildProfileHref(item.username))}
                                 className="flex flex-1 items-center gap-3 text-left"
                               >
-                                <div className="h-12 w-12 overflow-hidden rounded-full border border-white/12 bg-[radial-gradient(circle_at_30%_30%,rgba(255,0,200,0.14),transparent_45%),radial-gradient(circle_at_70%_70%,rgba(107,255,255,0.14),transparent_50%),#0b0f1b]">
-                                  {item.avatarUrl ? (
-                                    // eslint-disable-next-line @next/next/no-img-element
-                                    <img
-                                      src={item.avatarUrl}
-                                      alt={displayName}
-                                      className="h-full w-full object-cover"
-                                    />
-                                  ) : (
-                                    <div className="flex h-full w-full items-center justify-center text-[10px] font-semibold uppercase tracking-wide text-white/55">
-                                      ORYA
-                                    </div>
-                                  )}
-                                </div>
+                                <Avatar
+                                  src={item.avatarUrl}
+                                  name={displayName}
+                                  className="h-12 w-12 border border-white/12"
+                                  textClassName="text-[10px] font-semibold uppercase tracking-wide text-white/80"
+                                  fallbackText="OR"
+                                />
                                 <div className="min-w-0">
                                   <p className="text-[12px] font-semibold text-white line-clamp-1">
                                     {displayName}
@@ -1123,6 +1132,7 @@ export function Navbar() {
           </div>
         </div>
       )}
+      <MobileBottomNav pathname={pathname} socialBadgeCount={unreadCount} />
     </>
   );
 }

@@ -7,12 +7,22 @@ import ProfileHeader from "@/app/components/profile/ProfileHeader";
 import { useUser } from "@/app/hooks/useUser";
 import { useWallet } from "@/app/components/wallet/useWallet";
 import { WalletCard } from "@/app/components/wallet/WalletCard";
+import useSWR from "swr";
 
 function parseDate(value?: string | null): Date | null {
   if (!value) return null;
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return null;
   return d;
+}
+
+const fetcher = (url: string) => fetch(url).then((res) => res.json());
+
+function formatAgendaDate(value?: string | null) {
+  if (!value) return "Data a anunciar";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "Data a anunciar";
+  return parsed.toLocaleDateString("pt-PT", { day: "2-digit", month: "short" });
 }
 
 export default function MePage() {
@@ -25,6 +35,24 @@ export default function MePage() {
     authRequired,
     refetch: refetchWallet,
   } = useWallet();
+  const { startIso, endIso } = useMemo(() => {
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(start);
+    end.setDate(start.getDate() + 30);
+    end.setHours(23, 59, 59, 999);
+    return { startIso: start.toISOString(), endIso: end.toISOString() };
+  }, []);
+
+  const agendaUrl = user ? `/api/me/agenda?start=${encodeURIComponent(startIso)}&end=${encodeURIComponent(endIso)}` : null;
+  const { data: agendaData } = useSWR<{ ok: boolean; items?: Array<{ id: string; type: string; title: string; startAt: string; label?: string | null; ctaHref?: string | null }> }>(
+    agendaUrl,
+    fetcher,
+  );
+  const { data: orgsData } = useSWR<{ ok: boolean; items?: Array<{ organizerId: number; role: string; organizer: { publicName: string | null; businessName: string | null; username: string | null; organizationCategory: string | null } }> }>(
+    user ? "/api/organizador/organizations" : null,
+    fetcher,
+  );
 
   // Redireciona quando já tem username ou força login
   useEffect(() => {
@@ -54,6 +82,13 @@ export default function MePage() {
     "Utilizador ORYA";
 
   const now = new Date();
+  const agendaItems = agendaData?.items ?? [];
+  const upcomingEvents = agendaItems.filter((item) => item.type === "EVENTO").slice(0, 3);
+  const upcomingBookings = agendaItems.filter((item) => item.type === "RESERVA").slice(0, 3);
+  const padelItems = agendaItems
+    .filter((item) => item.type === "JOGO" || item.type === "INSCRICAO")
+    .slice(0, 3);
+  const organizations = orgsData?.items ?? [];
 
   const upcomingTickets = tickets.filter((t) => {
     const d = parseDate(t.snapshot.startAt);
@@ -93,6 +128,7 @@ export default function MePage() {
         name={displayName}
         username={profile?.username || user?.email || "user"}
         avatarUrl={profile?.avatarUrl}
+        avatarUpdatedAt={profile?.updatedAt ?? null}
         city={profile?.city}
         visibility={profile?.visibility === "PUBLIC" ? "PUBLIC" : "PRIVATE"}
         followers={null}
@@ -159,8 +195,8 @@ export default function MePage() {
 
         {ticketsLoading && (
           <div className="space-y-2">
-            <div className="h-24 rounded-xl bg-white/5 border border-white/15 animate-pulse" />
-            <div className="h-24 rounded-xl bg-white/5 border border-white/15 animate-pulse" />
+            <div className="h-24 rounded-xl orya-skeleton-surface border border-white/15 animate-pulse" />
+            <div className="h-24 rounded-xl orya-skeleton-surface border border-white/15 animate-pulse" />
           </div>
         )}
 
@@ -241,6 +277,79 @@ export default function MePage() {
         )}
       </section>
 
+      {/* PROXIMOS */}
+      <section className="rounded-3xl border border-white/15 bg-white/5 p-5 shadow-[0_24px_70px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-semibold text-white/95 tracking-[0.08em]">Proximos</h2>
+            <p className="text-[11px] text-white/68">Tudo o que vem ai nas proximas semanas.</p>
+          </div>
+          <Link
+            href="/me"
+            className="inline-flex items-center gap-2 rounded-full border border-white/30 bg-white/10 text-white text-[11px] font-semibold px-4 py-1.5 shadow-[0_10px_26px_rgba(255,255,255,0.15)] hover:border-white/45 hover:bg-white/20 hover:scale-[1.02] active:scale-95 transition-transform backdrop-blur"
+          >
+            Ver agenda
+            <span className="text-[12px]">↗</span>
+          </Link>
+        </div>
+        <div className="mt-4 grid gap-4 md:grid-cols-3">
+          <div className="rounded-2xl border border-white/12 bg-white/5 p-4">
+            <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">Eventos</p>
+            <div className="mt-3 space-y-2">
+              {upcomingEvents.length === 0 && <p className="text-[12px] text-white/60">Sem eventos marcados.</p>}
+              {upcomingEvents.map((item) => (
+                <Link
+                  key={item.id}
+                  href={item.ctaHref ?? "/me/compras"}
+                  className="block rounded-xl border border-white/10 bg-black/30 px-3 py-2 hover:bg-white/10"
+                >
+                  <p className="text-sm font-semibold text-white">{item.title}</p>
+                  <p className="text-[12px] text-white/60">
+                    {formatAgendaDate(item.startAt)} · {item.label ?? "Evento"}
+                  </p>
+                </Link>
+              ))}
+            </div>
+          </div>
+          <div className="rounded-2xl border border-white/12 bg-white/5 p-4">
+            <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">Reservas</p>
+            <div className="mt-3 space-y-2">
+              {upcomingBookings.length === 0 && <p className="text-[12px] text-white/60">Sem reservas marcadas.</p>}
+              {upcomingBookings.map((item) => (
+                <Link
+                  key={item.id}
+                  href={item.ctaHref ?? "/me/reservas"}
+                  className="block rounded-xl border border-white/10 bg-black/30 px-3 py-2 hover:bg-white/10"
+                >
+                  <p className="text-sm font-semibold text-white">{item.title}</p>
+                  <p className="text-[12px] text-white/60">
+                    {formatAgendaDate(item.startAt)} · {item.label ?? "Reserva"}
+                  </p>
+                </Link>
+              ))}
+            </div>
+          </div>
+          <div className="rounded-2xl border border-white/12 bg-white/5 p-4">
+            <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">Padel</p>
+            <div className="mt-3 space-y-2">
+              {padelItems.length === 0 && <p className="text-[12px] text-white/60">Sem jogos pendentes.</p>}
+              {padelItems.map((item) => (
+                <Link
+                  key={item.id}
+                  href={item.ctaHref ?? "/padel/duplas"}
+                  className="block rounded-xl border border-white/10 bg-black/30 px-3 py-2 hover:bg-white/10"
+                >
+                  <p className="text-sm font-semibold text-white">{item.title}</p>
+                  <p className="text-[12px] text-white/60">
+                    {formatAgendaDate(item.startAt)} · {item.label ?? "Padel"}
+                  </p>
+                </Link>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* RESERVAS */}
       <section className="rounded-3xl border border-white/15 bg-white/5 p-5 shadow-[0_24px_70px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -261,6 +370,54 @@ export default function MePage() {
         <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-4 text-[12px] text-white/70">
           Todas as reservas confirmadas ou pendentes aparecem na tua área pessoal.
         </div>
+      </section>
+
+      {/* ORGANIZACOES */}
+      <section className="rounded-3xl border border-white/15 bg-white/5 p-5 shadow-[0_24px_70px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-semibold text-white/95 tracking-[0.08em]">As minhas organizacoes</h2>
+            <p className="text-[11px] text-white/68">Entra rapido no modo organizador.</p>
+          </div>
+          <Link
+            href="/organizador"
+            className="inline-flex items-center gap-2 rounded-full border border-white/30 bg-white/10 text-white text-[11px] font-semibold px-4 py-1.5 shadow-[0_10px_26px_rgba(255,255,255,0.15)] hover:border-white/45 hover:bg-white/20 hover:scale-[1.02] active:scale-95 transition-transform backdrop-blur"
+          >
+            Ver painel
+            <span className="text-[12px]">↗</span>
+          </Link>
+        </div>
+
+        {organizations.length === 0 && (
+          <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-4 text-[12px] text-white/70">
+            Ainda nao tens organizacoes associadas.
+          </div>
+        )}
+
+        {organizations.length > 0 && (
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            {organizations.map((org) => {
+              const name =
+                org.organizer.publicName ||
+                org.organizer.businessName ||
+                org.organizer.username ||
+                "Organizacao";
+              return (
+                <Link
+                  key={org.organizerId}
+                  href={`/organizador?tab=overview&org=${org.organizerId}`}
+                  className="rounded-2xl border border-white/10 bg-white/5 p-4 transition hover:border-white/25 hover:bg-white/10"
+                >
+                  <p className="text-sm font-semibold text-white">{name}</p>
+                  <p className="text-[12px] text-white/60">
+                    {org.organizer.username ? `@${org.organizer.username}` : ""}
+                  </p>
+                  <p className="text-[11px] text-white/50">Role: {org.role}</p>
+                </Link>
+              );
+            })}
+          </div>
+        )}
       </section>
     </div>
   );

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { CTA_PRIMARY } from "@/app/organizador/dashboardUi";
 
 type EventCard = {
   id: number;
@@ -93,7 +94,7 @@ export default function EventosFeedPage() {
 
           <Link
             href="/organizador/eventos/novo"
-            className="hidden sm:inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-4 py-1.5 text-xs font-semibold text-black shadow-[0_0_22px_rgba(107,255,255,0.45)] hover:scale-105 active:scale-95 transition"
+            className={`${CTA_PRIMARY} hidden sm:inline-flex px-4 py-1.5 text-xs active:scale-95`}
           >
             + Criar evento
           </Link>
@@ -140,7 +141,7 @@ export default function EventosFeedPage() {
             Array.from({ length: 6 }).map((_, i) => (
               <div
                 key={i}
-                className="h-64 rounded-2xl border border-white/10 bg-white/5 animate-pulse"
+                className="h-64 rounded-2xl border border-white/10 orya-skeleton-surface animate-pulse"
               />
             ))
           ) : events.length === 0 ? (

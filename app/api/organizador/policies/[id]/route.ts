@@ -4,6 +4,7 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { getActiveOrganizerForUser } from "@/lib/organizerContext";
 import { resolveOrganizerIdFromRequest } from "@/lib/organizerId";
+import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { OrganizerMemberRole, OrganizationPolicyType } from "@prisma/client";
 
 const ALLOWED_ROLES: OrganizerMemberRole[] = [
@@ -12,6 +13,12 @@ const ALLOWED_ROLES: OrganizerMemberRole[] = [
   OrganizerMemberRole.ADMIN,
   OrganizerMemberRole.STAFF,
 ];
+
+function getRequestMeta(req: NextRequest) {
+  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
+  const userAgent = req.headers.get("user-agent") ?? null;
+  return { ip, userAgent };
+}
 
 function parsePolicyId(raw: string) {
   const parsed = Number(raw);
@@ -80,6 +87,19 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       },
     });
 
+    const { ip, userAgent } = getRequestMeta(req);
+    await recordOrganizationAudit(prisma, {
+      organizerId: organizer.id,
+      actorUserId: profile.id,
+      action: "POLICY_UPDATED",
+      metadata: {
+        policyId: policy.id,
+        updates,
+      },
+      ip,
+      userAgent,
+    });
+
     return NextResponse.json({ ok: true, policy });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
@@ -135,6 +155,19 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
     }
 
     await prisma.organizationPolicy.delete({ where: { id: policy.id } });
+
+    const { ip, userAgent } = getRequestMeta(req);
+    await recordOrganizationAudit(prisma, {
+      organizerId: organizer.id,
+      actorUserId: profile.id,
+      action: "POLICY_DELETED",
+      metadata: {
+        policyId: policy.id,
+        policyType: policy.policyType,
+      },
+      ip,
+      userAgent,
+    });
 
     return NextResponse.json({ ok: true });
   } catch (err) {

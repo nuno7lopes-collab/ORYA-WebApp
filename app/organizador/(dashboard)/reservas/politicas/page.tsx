@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import {
   CTA_DANGER,
   CTA_PRIMARY,
+  CTA_SECONDARY,
   DASHBOARD_CARD,
   DASHBOARD_LABEL,
   DASHBOARD_MUTED,
@@ -29,6 +30,11 @@ export default function PoliticasReservaPage() {
   const [policyType, setPolicyType] = useState("CUSTOM");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editWindowHours, setEditWindowHours] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
 
   const handleCreate = async () => {
     setSaving(true);
@@ -63,6 +69,44 @@ export default function PoliticasReservaPage() {
       mutate();
     } catch {
       // ignore
+    }
+  };
+
+  const startEdit = (policy: Policy) => {
+    setEditingId(policy.id);
+    setEditName(policy.name);
+    setEditWindowHours(
+      policy.cancellationWindowMinutes != null ? String(Math.round(policy.cancellationWindowMinutes / 60)) : "",
+    );
+    setEditError(null);
+  };
+
+  const handleEditSave = async (policyId: number) => {
+    setEditSaving(true);
+    setEditError(null);
+    try {
+      const minutes =
+        editWindowHours.trim() === ""
+          ? null
+          : Math.max(0, Math.round(Number(editWindowHours) * 60));
+      const res = await fetch(`/api/organizador/policies/${policyId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: editName.trim(),
+          cancellationWindowMinutes: minutes,
+        }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.error || "Erro ao atualizar política.");
+      }
+      setEditingId(null);
+      mutate();
+    } catch (err) {
+      setEditError(err instanceof Error ? err.message : "Erro ao atualizar política.");
+    } finally {
+      setEditSaving(false);
     }
   };
 
@@ -140,22 +184,83 @@ export default function PoliticasReservaPage() {
           )}
           {policies.map((policy) => (
             <div key={policy.id} className="rounded-xl border border-white/10 bg-white/5 p-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <p className="text-sm font-semibold text-white">{policy.name}</p>
-                  <p className="text-[12px] text-white/60">
-                    {policy.policyType}
-                    {policy.cancellationWindowMinutes != null
-                      ? ` · ${Math.round(policy.cancellationWindowMinutes / 60)}h`
-                      : ""}
-                  </p>
+              {editingId === policy.id ? (
+                <div className="space-y-3">
+                  <div className="grid gap-2 md:grid-cols-3">
+                    <div>
+                      <label className="text-[12px] text-white/70">Nome</label>
+                      <input
+                        className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+                        value={editName}
+                        onChange={(e) => setEditName(e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[12px] text-white/70">Janela (horas)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+                        value={editWindowHours}
+                        onChange={(e) => setEditWindowHours(e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[12px] text-white/70">Tipo</label>
+                      <div className="mt-1 rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white/70">
+                        {policy.policyType}
+                      </div>
+                    </div>
+                  </div>
+
+                  {editError && (
+                    <div className="rounded-xl border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-100">
+                      {editError}
+                    </div>
+                  )}
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      className={CTA_PRIMARY}
+                      onClick={() => handleEditSave(policy.id)}
+                      disabled={editSaving}
+                    >
+                      {editSaving ? "A guardar..." : "Guardar"}
+                    </button>
+                    <button
+                      type="button"
+                      className={CTA_SECONDARY}
+                      onClick={() => setEditingId(null)}
+                      disabled={editSaving}
+                    >
+                      Cancelar
+                    </button>
+                  </div>
                 </div>
-                {policy.policyType === "CUSTOM" && (
-                  <button type="button" className={CTA_DANGER} onClick={() => handleDelete(policy.id)}>
-                    Remover
-                  </button>
-                )}
-              </div>
+              ) : (
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-semibold text-white">{policy.name}</p>
+                    <p className="text-[12px] text-white/60">
+                      {policy.policyType}
+                      {policy.cancellationWindowMinutes != null
+                        ? ` · ${Math.round(policy.cancellationWindowMinutes / 60)}h`
+                        : ""}
+                    </p>
+                  </div>
+                  {policy.policyType === "CUSTOM" && (
+                    <div className="flex items-center gap-2">
+                      <button type="button" className={CTA_PRIMARY} onClick={() => startEdit(policy)}>
+                        Editar
+                      </button>
+                      <button type="button" className={CTA_DANGER} onClick={() => handleDelete(policy.id)}>
+                        Remover
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           ))}
         </div>

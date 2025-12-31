@@ -11,6 +11,8 @@ const pageClass = "min-h-screen w-full text-white";
 const cardClass =
   "rounded-3xl border border-white/12 bg-white/5 p-4 shadow-[0_20px_60px_rgba(0,0,0,0.55)] backdrop-blur-2xl";
 
+const BOOKING_HOLD_MINUTES = 20;
+
 type BookingItem = {
   id: number;
   startsAt: string;
@@ -59,6 +61,14 @@ function formatDeadline(deadline: string | null) {
   const date = new Date(deadline);
   if (Number.isNaN(date.getTime())) return null;
   return date.toLocaleString("pt-PT", { dateStyle: "medium", timeStyle: "short" });
+}
+
+function formatHoldDeadline(createdAt: string) {
+  const created = new Date(createdAt);
+  if (Number.isNaN(created.getTime())) return null;
+  const expiresAt = new Date(created.getTime() + BOOKING_HOLD_MINUTES * 60 * 1000);
+  if (Number.isNaN(expiresAt.getTime())) return null;
+  return expiresAt.toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" });
 }
 
 export default function MinhasReservasPage() {
@@ -132,7 +142,7 @@ export default function MinhasReservasPage() {
           {isLoading && (
             <div className="mt-4 space-y-2">
               {Array.from({ length: 3 }).map((_, idx) => (
-                <div key={idx} className="h-20 rounded-xl border border-white/10 bg-white/5 animate-pulse" />
+                <div key={idx} className="h-20 rounded-xl border border-white/10 orya-skeleton-surface animate-pulse" />
               ))}
             </div>
           )}
@@ -153,6 +163,11 @@ export default function MinhasReservasPage() {
             {grouped.upcoming.map((booking) => {
               const deadlineLabel = formatDeadline(booking.cancellation.deadline);
               const canCancel = booking.cancellation.allowed && booking.status !== "CANCELLED";
+              const holdDeadline = booking.status === "PENDING" ? formatHoldDeadline(booking.createdAt) : null;
+              const resumeHref =
+                booking.status === "PENDING" && booking.availabilityId && booking.service?.id
+                  ? `/servicos/${booking.service.id}?availabilityId=${booking.availabilityId}`
+                  : null;
               return (
                 <div key={booking.id} className="rounded-xl border border-white/10 bg-white/5 p-3">
                   <div className="flex flex-wrap items-start justify-between gap-3">
@@ -172,6 +187,12 @@ export default function MinhasReservasPage() {
                           {deadlineLabel ? ` · até ${deadlineLabel}` : ""}
                         </p>
                       )}
+                      {booking.status === "PENDING" && (
+                        <p className="mt-1 text-[12px] text-amber-100/80">
+                          Pagamento pendente
+                          {holdDeadline ? ` · expira às ${holdDeadline}` : ""}
+                        </p>
+                      )}
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="rounded-full border border-white/15 bg-white/10 px-2 py-1 text-[11px] text-white/70">
@@ -181,6 +202,14 @@ export default function MinhasReservasPage() {
                             ? "Pendente"
                             : "Cancelada"}
                       </span>
+                      {resumeHref && (
+                        <Link
+                          href={resumeHref}
+                          className="rounded-full border border-amber-300/40 bg-amber-400/10 px-2.5 py-1 text-[11px] text-amber-100 hover:bg-amber-400/20"
+                        >
+                          Continuar pagamento
+                        </Link>
+                      )}
                       {canCancel && (
                         <button
                           type="button"

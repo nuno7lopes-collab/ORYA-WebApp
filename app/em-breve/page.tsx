@@ -1,6 +1,7 @@
 export const runtime = "nodejs";
 
 import Link from "next/link";
+import { CTA_PRIMARY } from "@/app/organizador/dashboardUi";
 
 export default function EmBrevePage() {
   return (
@@ -16,7 +17,7 @@ export default function EmBrevePage() {
           <div className="flex flex-col gap-3 pt-2">
             <Link
               href="/explorar"
-              className="w-full rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-5 py-2.5 text-sm font-semibold text-black shadow-[0_0_30px_rgba(107,255,255,0.22)] transition hover:brightness-110"
+              className={`${CTA_PRIMARY} w-full justify-center px-5 py-2.5 text-sm`}
             >
               Voltar a explorar eventos
             </Link>

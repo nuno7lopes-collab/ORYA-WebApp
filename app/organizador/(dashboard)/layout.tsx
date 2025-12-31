@@ -42,13 +42,15 @@ export default async function OrganizerDashboardLayout({ children }: { children:
 
   let orgOptions: OrganizationSwitcherOption[] = [];
   let activeOrganizer: OrganizationSwitcherOption["organizer"] | null = null;
-  let profile: { fullName: string | null; username: string | null; avatarUrl: string | null } | null = null;
+  let profile:
+    | { fullName: string | null; username: string | null; avatarUrl: string | null; updatedAt: Date | null }
+    | null = null;
 
   if (user) {
     try {
       profile = await prisma.profile.findUnique({
         where: { id: user.id },
-        select: { fullName: true, username: true, avatarUrl: true },
+        select: { fullName: true, username: true, avatarUrl: true, updatedAt: true },
       });
     } catch {
       profile = null;
@@ -127,6 +129,7 @@ export default async function OrganizerDashboardLayout({ children }: { children:
         name: profile?.fullName || profile?.username || user.email || null,
         email: user.email ?? null,
         avatarUrl: profile?.avatarUrl ?? null,
+        avatarUpdatedAt: profile?.updatedAt ? profile.updatedAt.getTime() : null,
       }
     : null;
 

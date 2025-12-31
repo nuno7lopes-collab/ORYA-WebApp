@@ -6,6 +6,7 @@ import { sanitizeUsername, validateUsername } from "@/lib/username";
 import { CTA_PRIMARY, CTA_SECONDARY, CTA_NEUTRAL } from "@/app/organizador/dashboardUi";
 import { useUser } from "@/app/hooks/useUser";
 import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
+import { Avatar } from "@/components/ui/avatar";
 
 const BIO_LIMIT = 280;
 
@@ -307,16 +308,12 @@ export default function OrganizerPublicProfilePanel({
                   className="relative inline-flex h-20 w-20 sm:h-24 sm:w-24 items-center justify-center rounded-full bg-gradient-to-tr from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] p-[2px] shadow-[0_0_24px_rgba(255,0,200,0.26)]"
                   disabled={!canEdit || uploading}
                 >
-                  <div className="flex h-full w-full items-center justify-center overflow-hidden rounded-full bg-black/90">
-                    {avatarPreviewUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={avatarPreviewUrl} alt={displayName} className="h-full w-full object-cover" />
-                    ) : (
-                      <span className="text-xs font-semibold uppercase tracking-[0.2em] text-white/60">
-                        {displayName.slice(0, 2).toUpperCase()}
-                      </span>
-                    )}
-                  </div>
+                  <Avatar
+                    src={avatarPreviewUrl}
+                    name={displayName}
+                    className="h-full w-full"
+                    textClassName="text-xs font-semibold uppercase tracking-[0.2em] text-white/80"
+                  />
                   {canEdit && (
                     <span className="absolute -bottom-1 -right-1 rounded-full border border-white/20 bg-black/70 p-1.5 text-white/80">
                       <PencilIcon />

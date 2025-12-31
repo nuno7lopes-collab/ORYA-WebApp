@@ -1,0 +1,661 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import useSWR from "swr";
+import { useUser } from "@/app/hooks/useUser";
+import { Avatar } from "@/components/ui/avatar";
+
+const fetcher = (url: string) => fetch(url).then((r) => r.json());
+
+type NotificationItem = {
+  id: string;
+  type: string;
+  title: string | null;
+  body: string | null;
+  ctaUrl?: string | null;
+  ctaLabel?: string | null;
+  createdAt: string;
+  isRead?: boolean;
+  readAt?: string | null;
+};
+
+type SuggestionsResponse = {
+  ok: boolean;
+  items?: Array<{
+    id: string;
+    username: string | null;
+    fullName: string | null;
+    avatarUrl: string | null;
+    city: string | null;
+    mutualsCount: number;
+    isFollowing: boolean;
+  }>;
+};
+
+type SearchUser = {
+  id: string;
+  username: string | null;
+  fullName: string | null;
+  avatarUrl: string | null;
+  isFollowing?: boolean;
+};
+
+type SearchOrganizer = {
+  id: number;
+  username: string | null;
+  publicName: string | null;
+  businessName: string | null;
+  brandingAvatarUrl: string | null;
+  city: string | null;
+  isFollowing?: boolean;
+};
+
+type SearchResponse<T> = {
+  ok: boolean;
+  results?: T[];
+};
+
+type HubTab = "social" | "notifications";
+
+type NotificationFilter = "all" | "sales" | "invites" | "system" | "social";
+
+const SOCIAL_TYPES = new Set([
+  "FOLLOWED_YOU",
+  "FRIEND_REQUEST",
+  "FRIEND_ACCEPT",
+  "NEW_EVENT_FROM_FOLLOWED_ORGANIZER",
+]);
+
+const REQUEST_TYPES = new Set(["ORGANIZER_INVITE", "CLUB_INVITE", "FRIEND_REQUEST"]);
+
+const NOTIFICATION_FILTERS: Record<NotificationFilter, string[]> = {
+  all: [],
+  sales: ["EVENT_SALE", "EVENT_PAYOUT_STATUS"],
+  invites: ["ORGANIZER_INVITE", "CLUB_INVITE", "ORGANIZER_TRANSFER"],
+  system: ["STRIPE_STATUS", "MARKETING_PROMO_ALERT", "SYSTEM_ANNOUNCE"],
+  social: ["FOLLOWED_YOU", "FRIEND_REQUEST", "FRIEND_ACCEPT"],
+};
+
+const NOTIFICATION_LABELS: Record<string, string> = {
+  ORGANIZER_INVITE: "Convite",
+  ORGANIZER_TRANSFER: "Transferencia",
+  CLUB_INVITE: "Clube",
+  EVENT_SALE: "Venda",
+  EVENT_PAYOUT_STATUS: "Pagamento",
+  STRIPE_STATUS: "Stripe",
+  FRIEND_REQUEST: "Pedido",
+  FRIEND_ACCEPT: "Aceite",
+  EVENT_REMINDER: "Lembrete",
+  CHECKIN_READY: "Check-in",
+  TICKET_SHARED: "Bilhete",
+  MARKETING_PROMO_ALERT: "Marketing",
+  SYSTEM_ANNOUNCE: "Sistema",
+  FOLLOWED_YOU: "Segue-te",
+  TICKET_TRANSFER_RECEIVED: "Transferencia",
+  TICKET_TRANSFER_ACCEPTED: "Transferencia",
+  TICKET_TRANSFER_DECLINED: "Transferencia",
+  NEW_EVENT_FROM_FOLLOWED_ORGANIZER: "Novo evento",
+};
+
+function formatTimeLabel(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Agora";
+  return date.toLocaleDateString("pt-PT", { day: "2-digit", month: "short" });
+}
+
+function buildUserLabel(item: { fullName: string | null; username: string | null }) {
+  return item.fullName || (item.username ? `@${item.username}` : "Utilizador ORYA");
+}
+
+export default function SocialHubPage() {
+  const { user, isLoggedIn } = useUser();
+  const [activeTab, setActiveTab] = useState<HubTab>("social");
+  const [notificationFilter, setNotificationFilter] = useState<NotificationFilter>("all");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [followPending, setFollowPending] = useState<Record<string, boolean>>({});
+  const [suggestions, setSuggestions] = useState<SuggestionsResponse["items"]>([]);
+  const [userResults, setUserResults] = useState<SearchUser[]>([]);
+  const [organizerResults, setOrganizerResults] = useState<SearchOrganizer[]>([]);
+
+  const { data: notificationsData, mutate: mutateNotifications } = useSWR(
+    isLoggedIn ? "/api/notifications?status=all&limit=100" : null,
+    fetcher,
+  );
+
+  const { data: suggestionsData } = useSWR<SuggestionsResponse>(
+    isLoggedIn ? "/api/social/suggestions?limit=8" : null,
+    fetcher,
+  );
+
+  const searchTerm = searchQuery.trim();
+  const searchUsersUrl = searchTerm ? `/api/users/search?q=${encodeURIComponent(searchTerm)}&limit=8` : null;
+  const searchOrganizersUrl = searchTerm
+    ? `/api/organizers/search?q=${encodeURIComponent(searchTerm)}&limit=6`
+    : null;
+
+  const { data: usersData } = useSWR<SearchResponse<SearchUser>>(searchUsersUrl, fetcher);
+  const { data: orgsData } = useSWR<SearchResponse<SearchOrganizer>>(searchOrganizersUrl, fetcher);
+
+  useEffect(() => {
+    if (suggestionsData?.items) setSuggestions(suggestionsData.items);
+  }, [suggestionsData?.items]);
+
+  useEffect(() => {
+    if (usersData?.results) setUserResults(usersData.results);
+  }, [usersData?.results]);
+
+  useEffect(() => {
+    if (orgsData?.results) setOrganizerResults(orgsData.results);
+  }, [orgsData?.results]);
+
+  const notificationsRaw = notificationsData?.items ?? notificationsData?.notifications ?? [];
+  const notifications: NotificationItem[] = Array.isArray(notificationsRaw) ? notificationsRaw : [];
+  const unreadCount = notificationsData?.unreadCount ?? 0;
+
+  const activityItems = useMemo(
+    () => notifications.filter((item) => SOCIAL_TYPES.has(item.type)).slice(0, 6),
+    [notifications],
+  );
+
+  const requestItems = useMemo(
+    () => notifications.filter((item) => REQUEST_TYPES.has(item.type)).slice(0, 6),
+    [notifications],
+  );
+
+  const filteredNotifications = useMemo(() => {
+    const types = NOTIFICATION_FILTERS[notificationFilter];
+    if (types.length === 0) return notifications;
+    return notifications.filter((item) => types.includes(item.type));
+  }, [notifications, notificationFilter]);
+
+  const setFollowPendingFlag = (key: string, value: boolean) => {
+    setFollowPending((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const toggleUserFollow = async (targetId: string, next: boolean) => {
+    if (!isLoggedIn) return;
+    const key = `user_${targetId}`;
+    setFollowPendingFlag(key, true);
+    setUserResults((prev) => prev.map((item) => (item.id === targetId ? { ...item, isFollowing: next } : item)));
+    try {
+      await fetch(next ? "/api/social/follow" : "/api/social/unfollow", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ targetUserId: targetId }),
+      });
+    } finally {
+      setFollowPendingFlag(key, false);
+    }
+  };
+
+  const toggleOrganizerFollow = async (targetId: number, next: boolean) => {
+    if (!isLoggedIn) return;
+    const key = `org_${targetId}`;
+    setFollowPendingFlag(key, true);
+    setOrganizerResults((prev) => prev.map((item) => (item.id === targetId ? { ...item, isFollowing: next } : item)));
+    try {
+      await fetch(next ? "/api/social/follow-organizer" : "/api/social/unfollow-organizer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ organizerId: targetId }),
+      });
+    } finally {
+      setFollowPendingFlag(key, false);
+    }
+  };
+
+  const handleFollowSuggestion = async (targetId: string, next: boolean) => {
+    if (!isLoggedIn) return;
+    const key = `suggest_${targetId}`;
+    setFollowPendingFlag(key, true);
+    setSuggestions(
+      (prev) =>
+        prev?.map((item) => (item.id === targetId ? { ...item, isFollowing: next } : item)) ?? [],
+    );
+    try {
+      await fetch(next ? "/api/social/follow" : "/api/social/unfollow", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ targetUserId: targetId }),
+      });
+    } finally {
+      setFollowPendingFlag(key, false);
+    }
+  };
+
+  const markAllRead = async () => {
+    await fetch("/api/notifications/mark-read", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ markAll: true }),
+    });
+    mutateNotifications();
+  };
+
+  const markOneRead = async (notificationId: string) => {
+    await fetch("/api/notifications/mark-read", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ notificationId }),
+    });
+    mutateNotifications();
+  };
+
+  const deleteNotification = async (notificationId: string) => {
+    await fetch("/api/notifications", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ notificationId }),
+    });
+    mutateNotifications();
+  };
+
+  return (
+    <div className="orya-page-width px-4 md:px-8 py-10 space-y-6">
+      <div className="flex flex-col gap-2">
+        <p className="text-[11px] uppercase tracking-[0.28em] text-white/60">Social Hub</p>
+        <h1 className="text-3xl font-semibold text-white">Social e notificacoes num so lugar</h1>
+        <p className="text-sm text-white/65">Tudo o que importa sobre pessoas, convites e alertas.</p>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 rounded-full border border-white/12 bg-white/5 p-1 text-[11px] text-white/70">
+        <button
+          type="button"
+          onClick={() => setActiveTab("social")}
+          className={`rounded-full px-4 py-2 font-semibold transition ${
+            activeTab === "social"
+              ? "bg-white/18 text-white shadow-[0_0_20px_rgba(255,255,255,0.15)]"
+              : "text-white/70 hover:text-white hover:bg-white/10"
+          }`}
+        >
+          Social
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab("notifications")}
+          className={`rounded-full px-4 py-2 font-semibold transition ${
+            activeTab === "notifications"
+              ? "bg-white/18 text-white shadow-[0_0_20px_rgba(255,255,255,0.15)]"
+              : "text-white/70 hover:text-white hover:bg-white/10"
+          }`}
+        >
+          <span className="flex items-center gap-2">
+            Notificacoes
+            {unreadCount > 0 && (
+              <span className="inline-flex min-w-[18px] items-center justify-center rounded-full bg-emerald-400 px-1 text-[10px] font-semibold text-black">
+                {unreadCount > 9 ? "9+" : unreadCount}
+              </span>
+            )}
+          </span>
+        </button>
+      </div>
+
+      {!isLoggedIn && (
+        <div className="rounded-3xl border border-white/15 bg-white/5 p-6 text-sm text-white/70 shadow-[0_24px_70px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
+          <p>Entra para veres a tua atividade social e notificacoes.</p>
+          <Link
+            href="/login?redirectTo=/social"
+            className="mt-3 inline-flex items-center rounded-full bg-white px-4 py-2 text-[12px] font-semibold text-black"
+          >
+            Iniciar sessao
+          </Link>
+        </div>
+      )}
+
+      {isLoggedIn && activeTab === "social" && (
+        <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
+          <div className="space-y-4">
+            <SectionCard title="Atividade" subtitle="Movimentos recentes na tua rede.">
+              {activityItems.length === 0 && <EmptyLabel label="Sem atividade por agora." />}
+            {activityItems.map((item) => (
+              <NotificationRow key={item.id} item={item} onDelete={deleteNotification} />
+            ))}
+            </SectionCard>
+
+            <SectionCard title="Pedidos" subtitle="Convites e pedidos pendentes.">
+              {requestItems.length === 0 && <EmptyLabel label="Sem pedidos pendentes." />}
+            {requestItems.map((item) => (
+              <NotificationRow key={item.id} item={item} onDelete={deleteNotification} />
+            ))}
+            </SectionCard>
+          </div>
+
+          <div className="space-y-4">
+            <SectionCard title="Sugestoes" subtitle="Pessoas proximas para seguir.">
+              {(!suggestions || suggestions.length === 0) && (
+                <EmptyLabel label="Sem sugestoes por agora." />
+              )}
+              {suggestions?.map((item) => {
+                const key = `suggest_${item.id}`;
+                const pending = followPending[key];
+                return (
+                  <div
+                    key={item.id}
+                    className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/12 bg-white/5 p-3"
+                  >
+                    <Link
+                      href={item.username ? `/${item.username}` : "/me"}
+                      className="flex items-center gap-3"
+                    >
+                      <Avatar
+                        src={item.avatarUrl}
+                        name={buildUserLabel(item)}
+                        className="h-11 w-11 border border-white/10"
+                        textClassName="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/80"
+                        fallbackText="OR"
+                      />
+                      <div>
+                        <p className="text-sm font-semibold text-white">
+                          {item.fullName || item.username || "Utilizador ORYA"}
+                        </p>
+                        <p className="text-[12px] text-white/60">
+                          {item.username ? `@${item.username}` : ""}
+                          {item.city ? ` · ${item.city}` : ""}
+                        </p>
+                        <p className="text-[11px] text-white/50">
+                          {item.mutualsCount > 0
+                            ? `${item.mutualsCount} amigo${item.mutualsCount === 1 ? "" : "s"} em comum`
+                            : "Novo na tua zona"}
+                        </p>
+                      </div>
+                    </Link>
+                    <button
+                      type="button"
+                      disabled={pending}
+                      onClick={() => handleFollowSuggestion(item.id, !item.isFollowing)}
+                      className={`rounded-full border px-4 py-2 text-[12px] font-semibold transition ${
+                        item.isFollowing
+                          ? "border-emerald-300/40 bg-emerald-400/15 text-emerald-100"
+                          : "border-white/20 bg-white/10 text-white/85 hover:bg-white/20"
+                      } ${pending ? "opacity-60" : ""}`}
+                    >
+                      {pending ? "A seguir..." : item.isFollowing ? "Deixar de seguir" : "Seguir"}
+                    </button>
+                  </div>
+                );
+              })}
+            </SectionCard>
+
+            <SectionCard title="Procurar" subtitle="Encontra utilizadores e organizadores.">
+              <div className="flex items-center gap-3 rounded-2xl border border-white/12 bg-white/10 px-4 py-2">
+                <span className="text-[11px] text-white/60">Procurar</span>
+                <input
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Pesquisar utilizadores ou organizadores"
+                  className="flex-1 bg-transparent text-sm text-white placeholder:text-white/50 focus:outline-none"
+                />
+              </div>
+
+              {searchTerm.length === 0 && <EmptyLabel label="Comeca a escrever para procurar." />}
+
+              {searchTerm.length > 0 && userResults.length === 0 && organizerResults.length === 0 && (
+                <EmptyLabel label="Sem resultados com esse termo." />
+              )}
+
+              {userResults.length > 0 && (
+                <div className="mt-3 space-y-2">
+                  <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Utilizadores</p>
+                  {userResults.map((item) => {
+                    const isFollowing = Boolean(item.isFollowing);
+                    const key = `search_user_${item.id}`;
+                    const pending = followPending[key];
+                    return (
+                      <div
+                        key={item.id}
+                        className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/12 bg-white/5 p-3"
+                      >
+                        <Link href={item.username ? `/${item.username}` : "/me"} className="flex items-center gap-3">
+                          <Avatar
+                            src={item.avatarUrl}
+                            name={buildUserLabel(item)}
+                            className="h-10 w-10 border border-white/10"
+                            textClassName="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/80"
+                            fallbackText="OR"
+                          />
+                          <div>
+                            <p className="text-sm font-semibold text-white">
+                              {item.fullName || item.username || "Utilizador ORYA"}
+                            </p>
+                            <p className="text-[12px] text-white/60">{item.username ? `@${item.username}` : ""}</p>
+                          </div>
+                        </Link>
+                        <button
+                          type="button"
+                          disabled={pending}
+                          onClick={() => toggleUserFollow(item.id, !isFollowing)}
+                          className={`rounded-full px-4 py-2 text-[12px] font-semibold transition ${
+                            isFollowing
+                              ? "border border-emerald-300/40 bg-emerald-400/15 text-emerald-100"
+                              : "border border-white/20 bg-white/10 text-white/85 hover:bg-white/20"
+                          } ${pending ? "opacity-60" : ""}`}
+                        >
+                          {pending ? "..." : isFollowing ? "Deixar de seguir" : "Seguir"}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {organizerResults.length > 0 && (
+                <div className="mt-3 space-y-2">
+                  <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Organizadores</p>
+                  {organizerResults.map((item) => {
+                    const displayName = item.publicName || item.businessName || item.username || "Organizador";
+                    const isFollowing = Boolean(item.isFollowing);
+                    const key = `search_org_${item.id}`;
+                    const pending = followPending[key];
+                    return (
+                      <div
+                        key={item.id}
+                        className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/12 bg-white/5 p-3"
+                      >
+                        <Link href={item.username ? `/${item.username}` : "/organizador"} className="flex items-center gap-3">
+                          <Avatar
+                            src={item.brandingAvatarUrl}
+                            name={displayName}
+                            className="h-10 w-10 border border-white/10"
+                            textClassName="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/80"
+                            fallbackText="OR"
+                          />
+                          <div>
+                            <p className="text-sm font-semibold text-white">{displayName}</p>
+                            <p className="text-[12px] text-white/60">
+                              {item.username ? `@${item.username}` : ""}
+                              {item.city ? ` · ${item.city}` : ""}
+                            </p>
+                          </div>
+                        </Link>
+                        <button
+                          type="button"
+                          disabled={pending}
+                          onClick={() => toggleOrganizerFollow(item.id, !isFollowing)}
+                          className={`rounded-full px-4 py-2 text-[12px] font-semibold transition ${
+                            isFollowing
+                              ? "border border-emerald-300/40 bg-emerald-400/15 text-emerald-100"
+                              : "border border-white/20 bg-white/10 text-white/85 hover:bg-white/20"
+                          } ${pending ? "opacity-60" : ""}`}
+                        >
+                          {pending ? "..." : isFollowing ? "Deixar de seguir" : "Seguir"}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </SectionCard>
+          </div>
+        </div>
+      )}
+
+      {isLoggedIn && activeTab === "notifications" && (
+        <section className="rounded-3xl border border-white/15 bg-white/5 p-5 space-y-4 shadow-[0_24px_70px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold text-white/95 tracking-[0.08em]">Notificacoes</h2>
+              <p className="text-[11px] text-white/68">Tudo o que precisa de atencao.</p>
+            </div>
+            <button
+              type="button"
+              onClick={markAllRead}
+              className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] text-white/70 hover:bg-white/20"
+            >
+              Marcar todas como lidas
+            </button>
+          </div>
+
+          <div className="flex flex-wrap gap-2 text-[11px]">
+            {([
+              { key: "all", label: "Todas" },
+              { key: "sales", label: "Vendas" },
+              { key: "invites", label: "Convites" },
+              { key: "system", label: "Sistema" },
+              { key: "social", label: "Social" },
+            ] as const).map((filter) => (
+              <button
+                key={filter.key}
+                type="button"
+                onClick={() => setNotificationFilter(filter.key)}
+                className={`rounded-full border px-3 py-1 ${
+                  notificationFilter === filter.key
+                    ? "border-emerald-400/50 bg-emerald-500/15 text-emerald-100"
+                    : "border-white/15 bg-white/5 text-white/70 hover:border-white/30"
+                }`}
+              >
+                {filter.label}
+              </button>
+            ))}
+          </div>
+
+          {filteredNotifications.length === 0 && (
+            <EmptyLabel label="Sem notificacoes nesta vista." />
+          )}
+
+          <div className="space-y-2">
+            {filteredNotifications.map((item) => (
+              <div
+                key={item.id}
+                className={`rounded-2xl border px-4 py-3 text-sm ${
+                  item.readAt || item.isRead
+                    ? "border-white/10 bg-white/5"
+                    : "border-emerald-400/30 bg-emerald-400/10"
+                }`}
+              >
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-[11px] uppercase tracking-[0.2em] text-white/55">
+                      {NOTIFICATION_LABELS[item.type] ?? "Atualizacao"}
+                    </p>
+                    <p className="text-sm font-semibold text-white">{item.title || "Atualizacao"}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] text-white/50">{formatTimeLabel(item.createdAt)}</span>
+                    {!item.isRead && !item.readAt && (
+                      <button
+                        type="button"
+                        onClick={() => markOneRead(item.id)}
+                        className="rounded-full border border-white/20 bg-white/10 px-2 py-1 text-[10px] text-white/70"
+                      >
+                        Marcar lida
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => deleteNotification(item.id)}
+                      className="rounded-full border border-white/20 bg-white/5 px-2 py-1 text-[10px] text-white/60 hover:bg-white/10"
+                      aria-label="Apagar notificacao"
+                    >
+                      ×
+                    </button>
+                  </div>
+                </div>
+                {item.body && <p className="mt-1 text-[12px] text-white/70">{item.body}</p>}
+                {item.ctaUrl && item.ctaLabel && (
+                  <Link
+                    href={item.ctaUrl}
+                    className="mt-2 inline-flex text-[12px] text-[#6BFFFF] hover:underline"
+                  >
+                    {item.ctaLabel}
+                  </Link>
+                )}
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+    </div>
+  );
+}
+
+function SectionCard({
+  title,
+  subtitle,
+  children,
+}: {
+  title: string;
+  subtitle: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="rounded-3xl border border-white/15 bg-white/5 p-5 shadow-[0_24px_70px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-semibold text-white/95 tracking-[0.08em]">{title}</h2>
+          <p className="text-[11px] text-white/68">{subtitle}</p>
+        </div>
+      </div>
+      <div className="mt-3 space-y-2">{children}</div>
+    </section>
+  );
+}
+
+function EmptyLabel({ label }: { label: string }) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-[12px] text-white/60">
+      {label}
+    </div>
+  );
+}
+
+function NotificationRow({
+  item,
+  onDelete,
+}: {
+  item: NotificationItem;
+  onDelete?: (notificationId: string) => void;
+}) {
+  return (
+    <div
+      className={`rounded-2xl border px-4 py-3 text-sm ${
+        item.readAt || item.isRead
+          ? "border-white/10 bg-white/5"
+          : "border-emerald-400/30 bg-emerald-400/10"
+      }`}
+    >
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-white/90 font-semibold">{item.title || "Atualizacao"}</p>
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] text-white/50">{formatTimeLabel(item.createdAt)}</span>
+          {onDelete && (
+            <button
+              type="button"
+              onClick={() => onDelete(item.id)}
+              className="rounded-full border border-white/20 bg-white/5 px-2 py-0.5 text-[10px] text-white/60 hover:bg-white/10"
+              aria-label="Apagar notificacao"
+            >
+              ×
+            </button>
+          )}
+        </div>
+      </div>
+      {item.body && <p className="mt-1 text-[12px] text-white/70">{item.body}</p>}
+      {item.ctaUrl && item.ctaLabel && (
+        <Link href={item.ctaUrl} className="mt-2 inline-flex text-[12px] text-[#6BFFFF] hover:underline">
+          {item.ctaLabel}
+        </Link>
+      )}
+    </div>
+  );
+}

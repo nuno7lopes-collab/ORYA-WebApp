@@ -6,7 +6,7 @@ import useSWR from "swr";
 import { summarizeMatchStatus, computeStandingsForGroup } from "@/domain/tournaments/structure";
 import { type TieBreakRule } from "@/domain/tournaments/standings";
 import { computeLiveWarnings } from "@/domain/tournaments/liveWarnings";
-import { DEFAULT_GUEST_AVATAR } from "@/lib/avatars";
+import { Avatar } from "@/components/ui/avatar";
 
 type PageProps = { params: Promise<{ id: string }> };
 type TournamentLiveManagerProps = { tournamentId: number };
@@ -554,14 +554,13 @@ export function TournamentLiveManager({ tournamentId }: TournamentLiveManagerPro
                     {slot ? (
                       <>
                         <div className="flex items-center gap-3">
-                          <div className="h-10 w-10 overflow-hidden rounded-full border border-white/10 bg-white/10">
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img
-                              src={slot.avatarUrl || DEFAULT_GUEST_AVATAR}
-                              alt={slot.name}
-                              className="h-full w-full object-cover"
-                            />
-                          </div>
+                        <Avatar
+                          src={slot.avatarUrl}
+                          name={slot.name}
+                          className="h-10 w-10 border border-white/10"
+                          textClassName="text-[11px] font-semibold uppercase tracking-[0.16em] text-white/80"
+                          fallbackText="OR"
+                        />
                           <div className="min-w-0">
                             <p className="truncate text-sm font-medium text-white">{slot.name}</p>
                             <p className="text-[11px] text-white/50">
@@ -708,14 +707,13 @@ export function TournamentLiveManager({ tournamentId }: TournamentLiveManagerPro
                                     onClick={() => applyUserToDraft(user)}
                                     className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-left text-sm text-white/80 hover:border-white/30"
                                   >
-                                    <div className="h-8 w-8 overflow-hidden rounded-full border border-white/10 bg-white/10">
-                                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                                      <img
-                                        src={user.avatarUrl || DEFAULT_GUEST_AVATAR}
-                                        alt={user.fullName ?? ""}
-                                        className="h-full w-full object-cover"
-                                      />
-                                    </div>
+                                    <Avatar
+                                      src={user.avatarUrl}
+                                      name={user.fullName || user.username || "Utilizador"}
+                                      className="h-8 w-8 border border-white/10"
+                                      textClassName="text-[11px] font-semibold uppercase tracking-[0.16em] text-white/80"
+                                      fallbackText="OR"
+                                    />
                                     <div className="min-w-0">
                                       <p className="truncate text-sm">{user.fullName || user.username || "Utilizador"}</p>
                                       {user.username && <p className="text-[11px] text-white/50">@{user.username}</p>}
@@ -751,12 +749,12 @@ export function TournamentLiveManager({ tournamentId }: TournamentLiveManagerPro
                                 </button>
                               )}
                               {!slotDraft.avatarUrl && (
-                                <span className="text-white/50">Se não fizer upload, usa o avatar default.</span>
+                                <span className="text-white/50">Se não fizer upload, usamos as iniciais.</span>
                               )}
                             </div>
                           </div>
                         ) : (
-                          <p className="text-[11px] text-white/50">Usa o avatar do utilizador ORYA.</p>
+                          <p className="text-[11px] text-white/50">Usa o avatar do utilizador ORYA ou as iniciais.</p>
                         )}
 
                         <div className="flex flex-wrap items-center gap-2">

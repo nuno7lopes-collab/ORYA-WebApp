@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect } from "react";
+import { CTA_PRIMARY } from "@/app/organizador/dashboardUi";
 
 type ErrorProps = {
   error: Error & { digest?: string };
@@ -44,7 +45,7 @@ export default function Error({ error, reset }: ErrorProps) {
           <button
             type="button"
             onClick={reset}
-            className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-4 py-2.5 text-xs font-semibold text-black shadow-[0_0_32px_rgba(107,255,255,0.6)] transition-transform hover:scale-[1.02] active:scale-95"
+            className={`${CTA_PRIMARY} w-full justify-center px-4 py-2.5 text-xs active:scale-95`}
           >
             Tentar novamente
             <span className="text-[14px]">↻</span>

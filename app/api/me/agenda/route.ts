@@ -57,7 +57,6 @@ const participationPriority: Record<string, number> = {
   STAFF: 4,
   PARTICIPANTE: 4,
   INSCRITO: 4,
-  CONVOCADO: 3,
   RESERVA: 3,
 };
 
@@ -80,7 +79,6 @@ export async function GET(req: NextRequest) {
       ticketRows,
       reservationRows,
       entryRows,
-      staffRows,
       matchRows,
       submissionRows,
     ] = await Promise.all([
@@ -156,32 +154,6 @@ export async function GET(req: NextRequest) {
           },
         },
       }),
-      prisma.staffAssignment.findMany({
-        where: {
-          userId,
-          status: { in: ["PENDING", "ACCEPTED"] },
-          eventId: { not: null },
-          event: {
-            isDeleted: false,
-            startsAt: { lte: end },
-            endsAt: { gte: start },
-          },
-        },
-        select: {
-          status: true,
-          event: {
-            select: {
-              id: true,
-              title: true,
-              slug: true,
-              startsAt: true,
-              endsAt: true,
-              status: true,
-              templateType: true,
-            },
-          },
-        },
-      }),
       prisma.padelMatch.findMany({
         where: {
           AND: [
@@ -239,6 +211,32 @@ export async function GET(req: NextRequest) {
       }),
     ]);
 
+    const staffEvents = await prisma.event.findMany({
+      where: {
+        isDeleted: false,
+        startsAt: { lte: end },
+        endsAt: { gte: start },
+        organizer: {
+          status: "ACTIVE",
+          members: {
+            some: {
+              userId,
+              role: { in: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"] },
+            },
+          },
+        },
+      },
+      select: {
+        id: true,
+        title: true,
+        slug: true,
+        startsAt: true,
+        endsAt: true,
+        status: true,
+        templateType: true,
+      },
+    });
+
     const eventMap = new Map<number, { priority: number; item: AgendaItem }>();
 
     const upsertEvent = (
@@ -277,10 +275,8 @@ export async function GET(req: NextRequest) {
     entryRows.forEach((row) => {
       if (row.event) upsertEvent(row.event, "INSCRITO");
     });
-    staffRows.forEach((row) => {
-      if (!row.event) return;
-      const status = row.status === "PENDING" ? "CONVOCADO" : "STAFF";
-      upsertEvent(row.event, status);
+    staffEvents.forEach((event) => {
+      upsertEvent(event, "STAFF");
     });
     reservationRows.forEach((row) => {
       if (row.event) upsertEvent(row.event, "RESERVA");

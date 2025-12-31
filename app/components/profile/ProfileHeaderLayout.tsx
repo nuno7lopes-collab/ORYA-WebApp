@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { useEffect, useState } from "react";
 
 type ProfileHeaderLayoutProps = {
   coverUrl?: string | null;
@@ -77,7 +78,11 @@ export default function ProfileHeaderLayout({
   actionsSlot,
   afterSlot,
 }: ProfileHeaderLayoutProps) {
-  const coverStyle = coverUrl ? { backgroundImage: `url(${coverUrl})` } : undefined;
+  const [coverError, setCoverError] = useState(false);
+
+  useEffect(() => {
+    setCoverError(false);
+  }, [coverUrl]);
 
   return (
     <section className="relative">
@@ -86,9 +91,16 @@ export default function ProfileHeaderLayout({
           <div
             className={`relative w-full overflow-hidden rounded-2xl border border-white/10 ${coverHeightClassName}`}
           >
-            <div className="absolute inset-0 bg-cover bg-center" style={coverStyle} />
-            {!coverUrl && (
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(107,255,255,0.25),transparent_55%),radial-gradient(circle_at_80%_20%,rgba(255,0,200,0.2),transparent_55%),linear-gradient(135deg,rgba(6,10,20,0.8),rgba(9,10,18,0.95))]" />
+            {coverUrl && !coverError ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={coverUrl}
+                alt="Capa de perfil"
+                className="absolute inset-0 h-full w-full object-cover"
+                onError={() => setCoverError(true)}
+              />
+            ) : (
+              <div className="absolute inset-0 orya-profile-cover-fallback" />
             )}
             <div className="absolute inset-0 bg-gradient-to-b from-black/10 via-black/50 to-[#05070f]/95" />
             {coverActionsSlot && (

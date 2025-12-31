@@ -163,6 +163,7 @@ export async function POST(req: NextRequest) {
       fullName: profile.fullName,
       avatarUrl: profile.avatarUrl,
       coverUrl: profile.coverUrl,
+      updatedAt: profile.updatedAt,
       bio: profile.bio,
       city: profile.city,
       favouriteCategories: profile.favouriteCategories,

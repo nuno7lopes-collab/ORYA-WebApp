@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import { useMemo, useState } from "react";
 import useSWR from "swr";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -10,6 +9,7 @@ import { ConfirmDestructiveActionDialog } from "@/app/components/ConfirmDestruct
 import { trackEvent } from "@/lib/analytics";
 import { RoleBadge } from "../../RoleBadge";
 import { CTA_DANGER, CTA_GHOST, CTA_NEUTRAL, CTA_PRIMARY, CTA_SECONDARY, CTA_SUCCESS } from "@/app/organizador/dashboardUi";
+import { Avatar } from "@/components/ui/avatar";
 
 type MemberRole = "OWNER" | "CO_OWNER" | "ADMIN" | "STAFF" | "PROMOTER" | "VIEWER";
 
@@ -121,19 +121,6 @@ const ghostButton = CTA_GHOST;
 const dangerPill = CTA_DANGER;
 const neutralPill = CTA_NEUTRAL;
 const acceptPill = CTA_SUCCESS;
-
-function Avatar({ name, avatarUrl }: { name: string; avatarUrl: string | null }) {
-  const initial = name?.trim()?.[0]?.toUpperCase() || "U";
-  return (
-    <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full border border-white/10 bg-white/5 text-sm font-semibold">
-      {avatarUrl ? (
-        <Image src={avatarUrl} alt={name} width={40} height={40} className="h-full w-full object-cover" />
-      ) : (
-        <span>{initial}</span>
-      )}
-    </div>
-  );
-}
 
 type Toast = { id: number; message: string; type: "error" | "success" };
 
@@ -607,7 +594,13 @@ export default function OrganizerStaffPage({ embedded }: OrganizerStaffPageProps
                     className="flex flex-col gap-2 rounded-xl border border-white/12 bg-gradient-to-r from-white/6 via-[#0c1628]/60 to-[#050912]/85 p-3 shadow-[0_14px_45px_rgba(0,0,0,0.45)] md:flex-row md:items-center md:justify-between"
                   >
                     <div className="flex items-start gap-3">
-                      <Avatar name={displayName} avatarUrl={m.avatarUrl} />
+                      <Avatar
+                        src={m.avatarUrl}
+                        name={displayName}
+                        className="h-10 w-10 border border-white/10"
+                        textClassName="text-sm font-semibold uppercase tracking-[0.16em] text-white/80"
+                        fallbackText="OR"
+                      />
                       <div className="space-y-1">
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="font-semibold text-white">{displayName}</span>

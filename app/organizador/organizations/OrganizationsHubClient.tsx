@@ -7,6 +7,7 @@ import {
   DEFAULT_ORGANIZATION_CATEGORY,
   DEFAULT_ORGANIZATION_MODULES,
 } from "@/lib/organizationCategories";
+import { Avatar } from "@/components/ui/avatar";
 
 type OrgItem = {
   organizerId: number;
@@ -238,20 +239,13 @@ export default function OrganizationsHubClient({ initialOrgs, activeId }: Props)
       >
         <div className="flex items-start justify-between gap-2">
           <div className="flex items-start gap-3">
-            <div className="h-10 w-10 rounded-full border border-white/15 bg-white/10 overflow-hidden">
-              {item.organizer.brandingAvatarUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={item.organizer.brandingAvatarUrl}
-                  alt={item.organizer.publicName || "Organização"}
-                  className="h-full w-full object-cover"
-                />
-              ) : (
-                <div className="flex h-full w-full items-center justify-center text-sm font-semibold">
-                  {(item.organizer.publicName || item.organizer.businessName || "O")[0]}
-                </div>
-              )}
-            </div>
+            <Avatar
+              src={item.organizer.brandingAvatarUrl ?? null}
+              name={item.organizer.publicName || item.organizer.businessName || "Organização"}
+              className="h-10 w-10 border border-white/15"
+              textClassName="text-sm font-semibold uppercase tracking-[0.16em] text-white/80"
+              fallbackText="OR"
+            />
             <div className="space-y-1">
               <h3 className="text-lg font-semibold">
                 {item.organizer.publicName || item.organizer.businessName || "Organização"}
