@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { CTA_PRIMARY } from "@/app/organizador/dashboardUi";
 
 export type TicketCardProps = {
   id: string;
@@ -193,7 +194,7 @@ export function TicketCard(props: TicketCardProps) {
           </button>
           <Link
             href={`/bilhete/${id}`}
-            className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-3 py-1 font-semibold text-black shadow-[0_0_20px_rgba(107,255,255,0.7)] hover:scale-[1.03] active:scale-95 transition-transform"
+            className={`${CTA_PRIMARY} px-3 py-1 text-[11px] active:scale-95`}
           >
             Abrir bilhete
           </Link>
