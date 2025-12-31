@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import useSWR from "swr";
 import { supabaseBrowser } from "@/lib/supabaseBrowser";
 
@@ -21,6 +21,7 @@ type ApiMeResponse = {
     coverUrl: string | null;
     bio: string | null;
     city: string | null;
+    isVerified: boolean;
     favouriteCategories: string[];
     onboardingDone: boolean;
     roles: Role[];
@@ -49,7 +50,6 @@ export function useUser() {
     "/api/auth/me",
     fetcher
   );
-  const [migrated, setMigrated] = useState(false);
   const migratedRef = useRef(false);
 
   // Forçar refresh quando o estado de auth muda (sign in/out) para evitar estado preso

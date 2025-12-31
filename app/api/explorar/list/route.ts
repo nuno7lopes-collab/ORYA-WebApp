@@ -99,7 +99,7 @@ export async function GET(req: NextRequest) {
 
   const listingFilter: Prisma.EventWhereInput = {
     organizerId: { not: null },
-    organizer: { status: "ACTIVE", publicListingEnabled: { not: false } },
+    organizer: { status: "ACTIVE" },
   };
   where.AND = Array.isArray(where.AND) ? [...where.AND, listingFilter] : [listingFilter];
 
@@ -248,7 +248,7 @@ export async function GET(req: NextRequest) {
     where.AND = Array.isArray(where.AND) ? [...where.AND, ...priceFilters] : priceFilters;
   }
 
-  const query: Prisma.EventFindManyArgs = {
+  const query = {
     where,
     orderBy: [{ startsAt: "asc" }, { id: "asc" }],
     take: take + 1,
@@ -265,15 +265,11 @@ export async function GET(req: NextRequest) {
         },
       },
     },
-  };
-
-  if (cursorId) {
-    query.skip = 1;
-    query.cursor = { id: cursorId };
-  }
+    ...(cursorId ? { skip: 1, cursor: { id: cursorId } } : {}),
+  } satisfies Prisma.EventFindManyArgs;
 
   try {
-    const events = await prisma.event.findMany(query);
+    const events: Prisma.EventGetPayload<typeof query>[] = await prisma.event.findMany(query);
 
     let viewerId: string | null = null;
     try {

@@ -48,3 +48,4 @@ public/uploads/
 # supabase dumps/local state
 supabase_schema.sql
 supabase/
+.env*.local

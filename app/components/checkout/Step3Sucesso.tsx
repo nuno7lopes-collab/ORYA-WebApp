@@ -124,35 +124,10 @@ export default function Step3Sucesso() {
           ? subtotalFromLines
           : 0;
 
-    const feeModeRaw =
-      typeof checkoutBreakdown?.feeMode === "string"
-        ? checkoutBreakdown.feeMode
-        : typeof add.feeMode === "string"
-          ? (add.feeMode as string)
-          : null;
-    const feeMode =
-      typeof feeModeRaw === "string" ? feeModeRaw.toUpperCase() : null;
-
     const discountCents =
       typeof checkoutBreakdown?.discountCents === "number"
         ? checkoutBreakdown.discountCents
         : numberFromUnknown(add.discountCents) ?? 0;
-
-    const platformFeeOryaCents =
-      typeof (checkoutBreakdown as any)?.platformFeeOryaCents === "number"
-        ? (checkoutBreakdown as any).platformFeeOryaCents
-        : numberFromUnknown((add as any).platformFeeOryaCents) ??
-          numberFromUnknown(add.platformFeeCents) ??
-          0;
-
-    const platformFeeCombinedCents =
-      typeof (checkoutBreakdown as any)?.platformFeeCombinedCents === "number"
-        ? (checkoutBreakdown as any).platformFeeCombinedCents
-        : numberFromUnknown(add.platformFeeCents) ?? platformFeeOryaCents;
-
-    // Só mostrar/contabilizar taxa se o modo for ADDED (pago pelo comprador).
-    const payorPaysFee = feeMode === "ADDED";
-    const platformFeeCents = payorPaysFee ? platformFeeCombinedCents : 0;
 
     const totalCentsFromContext =
       typeof checkoutBreakdown?.totalCents === "number" ? checkoutBreakdown.totalCents : null;
@@ -160,7 +135,7 @@ export default function Step3Sucesso() {
     const totalCentsFromAdditional =
       numberFromUnknown(add.totalCents) ?? centsFromAdditional(add, "total");
 
-    const computedTotalFallback = Math.max(0, subtotalCents - discountCents + platformFeeCents);
+    const computedTotalFallback = Math.max(0, subtotalCents - discountCents);
 
     const totalCents = totalCentsFromContext ?? totalCentsFromAdditional ?? computedTotalFallback;
 
@@ -183,7 +158,6 @@ export default function Step3Sucesso() {
     if (
       Number.isNaN(subtotalCents) &&
       Number.isNaN(discountCents) &&
-      Number.isNaN(platformFeeCents) &&
       Number.isNaN(totalCents)
     ) {
       return null;
@@ -192,18 +166,13 @@ export default function Step3Sucesso() {
     return {
       subtotalCents,
       discountCents,
-      platformFeeCents,
       totalCents,
       code,
       currency,
-      feeMode,
     };
   })();
-  const subtotalEur = breakdown ? breakdown.subtotalCents / 100 : null;
+  const discountCents = breakdown?.discountCents ?? 0;
   const discountEur = breakdown ? breakdown.discountCents / 100 : null;
-  const platformFeeEur = breakdown
-    ? ((breakdown as any).platformFeeCombinedCents ?? breakdown.platformFeeCents) / 100
-    : null;
   const totalEur = breakdown ? breakdown.totalCents / 100 : null;
 
   const initialStatus: "PROCESSING" | "PAID" | "FAILED" =
@@ -339,38 +308,16 @@ export default function Step3Sucesso() {
           )}
         </div>
 
-        {/* Breakdown */}
-        {status === "PAID" && breakdown && (
-          <div className="space-y-2 text-sm text-white/80">
-            <div className="flex items-center justify-between border-b border-white/10 pb-2">
-              <span className="text-white/60 text-[11px] uppercase tracking-widest">Total dos bilhetes</span>
-              <span className="font-semibold">
-                {formatEuro(subtotalEur)}
-              </span>
-            </div>
-            {breakdown.discountCents > 0 && (
-              <div className="flex items-center justify-between">
-                <span className="text-white/60">Desconto {breakdown.code ? `(${breakdown.code})` : ""}</span>
-                <span className="text-emerald-300">-{formatEuro(discountEur)}</span>
-              </div>
-            )}
-            {(((breakdown as any).platformFeeCombinedCents ?? breakdown.platformFeeCents) ?? 0) > 0 && (
-              <div className="flex items-center justify-between">
-                <span className="text-white/60">Taxa da plataforma</span>
-                <span className="text-orange-200">{formatEuro(platformFeeEur)}</span>
-              </div>
-            )}
-            <div className="flex items-center justify-between border-t border-white/10 pt-2">
-              <span className="text-white text-[12px] font-semibold uppercase tracking-widest">Total Pago</span>
-              <span className="text-xl font-semibold">
-                {formatEuro(totalEur)}
-              </span>
-            </div>
-          </div>
-        )}
-
         {/* Info */}
         <div className="space-y-1 text-sm text-white/60">
+          {status === "PAID" && discountCents > 0 && (
+            <p className="text-emerald-200">
+              Desconto aplicado{breakdown?.code ? ` (${breakdown.code})` : ""}: -{formatEuro(discountEur)}
+            </p>
+          )}
+          {status === "PAID" && totalEur !== null && (
+            <p className="text-white/85">Total pago: {formatEuro(totalEur)}</p>
+          )}
           <p>
             {status === "PAID"
               ? guestEmail

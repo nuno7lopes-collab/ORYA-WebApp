@@ -5,13 +5,13 @@ import {
   Area,
   AreaChart,
   CartesianGrid,
+  Legend,
   ResponsiveContainer,
   Tooltip,
   XAxis,
 } from "recharts";
 import {
   ChartContainer,
-  ChartLegend,
   ChartLegendContent,
   ChartTooltipContent,
   type ChartConfig,
@@ -135,7 +135,7 @@ export function SalesAreaChart({ data, periodLabel, height = 260 }: Props) {
             activeDot={{ r: 5, strokeWidth: 0 }}
             dot={false}
           />
-          <ChartLegend content={<ChartLegendContent />} />
+          <Legend content={<ChartLegendContent />} />
         </AreaChart>
       </ResponsiveContainer>
     </ChartContainer>

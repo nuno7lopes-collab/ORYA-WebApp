@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
-import { TournamentMatchStatus } from "@prisma/client";
+import { Prisma, TournamentMatchStatus } from "@prisma/client";
 
 async function ensureOrganizerAccess(userId: string, eventId: number) {
   const evt = await prisma.event.findUnique({
@@ -13,7 +13,7 @@ async function ensureOrganizerAccess(userId: string, eventId: number) {
     where: {
       organizerId: evt.organizerId,
       userId,
-      role: { in: ["OWNER", "CO_OWNER", "ADMIN"] },
+      role: { in: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"] },
     },
     select: { id: true },
   });
@@ -78,8 +78,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         tournamentId,
         userId: authData.user.id,
         action: "EDIT_MATCH",
-        payloadBefore: before,
-        payloadAfter: updates,
+        payloadBefore: before as Prisma.InputJsonValue,
+        payloadAfter: updates as Prisma.InputJsonValue,
       },
     });
 

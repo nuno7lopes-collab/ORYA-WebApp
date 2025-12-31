@@ -7,6 +7,7 @@ import { getOrgTransferEnabled, getPlatformFees } from "@/lib/platformSettings";
 import { isValidPhone, normalizePhone } from "@/lib/phone";
 import { getActiveOrganizerForUser } from "@/lib/organizerContext";
 import { isValidWebsite } from "@/lib/validation/organization";
+import { normalizeOrganizerAvatarUrl, normalizeOrganizerCoverUrl } from "@/lib/profileMedia";
 import { Resend } from "resend";
 import { cookies } from "next/headers";
 import {
@@ -99,7 +100,6 @@ export async function GET(req: NextRequest) {
           city: organizer.city,
           payoutIban: organizer.payoutIban,
           language: (organizer as { language?: string | null }).language ?? "pt",
-          publicListingEnabled: (organizer as { publicListingEnabled?: boolean | null }).publicListingEnabled ?? true,
           alertsEmail: (organizer as { alertsEmail?: string | null }).alertsEmail ?? null,
           alertsSalesEnabled: (organizer as { alertsSalesEnabled?: boolean | null }).alertsSalesEnabled ?? true,
           alertsPayoutEnabled: (organizer as { alertsPayoutEnabled?: boolean | null }).alertsPayoutEnabled ?? false,
@@ -153,7 +153,7 @@ export async function GET(req: NextRequest) {
     const isPlatformAccount =
       isAdmin ||
       (organizer as { payoutMode?: string | null })?.payoutMode === "PLATFORM" ||
-      organizer?.organizationKind === "EMPRESA_MARCA" ||
+      organizer?.organizationKind === "EMPRESA_EVENTOS" ||
       lowerName === "orya" ||
       lowerName.startsWith("orya ");
     const paymentsStatus = organizer
@@ -220,7 +220,6 @@ export async function PATCH(req: NextRequest) {
       fullName,
       contactPhone,
       language,
-      publicListingEnabled,
       alertsEmail,
       alertsSalesEnabled,
       alertsPayoutEnabled,
@@ -262,7 +261,7 @@ export async function PATCH(req: NextRequest) {
       : null;
     if (organizationCategoryProvided && !organizationCategory) {
       return NextResponse.json(
-        { ok: false, error: "organizationCategory inválido. Usa EVENTOS, PADEL ou VOLUNTARIADO." },
+        { ok: false, error: "organizationCategory inválido. Usa EVENTOS, PADEL, RESERVAS ou CLUBS." },
         { status: 400 },
       );
     }
@@ -292,15 +291,24 @@ export async function PATCH(req: NextRequest) {
       }
     }
 
+    const cookieStore = await cookies();
+    const cookieOrgId = cookieStore.get("orya_org")?.value;
+    const urlOrg = req.nextUrl.searchParams.get("org");
+    const forcedOrgId = urlOrg ? Number(urlOrg) : cookieOrgId ? Number(cookieOrgId) : undefined;
+
     const { organizer, membership } = await getActiveOrganizerForUser(user.id, {
-      roles: ["OWNER", "CO_OWNER", "ADMIN"],
+      organizerId: Number.isFinite(forcedOrgId) ? forcedOrgId : undefined,
+      roles: ["OWNER", "ADMIN"],
     });
 
     if (!organizer) {
       return NextResponse.json({ ok: false, error: "Ainda não és organizador." }, { status: 403 });
     }
-    if (!membership || membership.role !== "OWNER") {
-      return NextResponse.json({ ok: false, error: "Apenas o Owner pode alterar estas definições." }, { status: 403 });
+    if (!membership || !["OWNER", "ADMIN"].includes(membership.role)) {
+      return NextResponse.json(
+        { ok: false, error: "Apenas Owner ou Admin podem alterar estas definições." },
+        { status: 403 },
+      );
     }
 
     const profileUpdates: Record<string, unknown> = {};
@@ -409,14 +417,17 @@ export async function PATCH(req: NextRequest) {
       const lang = language.toLowerCase();
       organizerUpdates.language = lang === "en" ? "en" : "pt";
     }
-    if (typeof publicListingEnabled === "boolean") organizerUpdates.publicListingEnabled = publicListingEnabled;
     if (typeof alertsEmail === "string") organizerUpdates.alertsEmail = alertsEmail.trim() || null;
     if (typeof alertsSalesEnabled === "boolean") organizerUpdates.alertsSalesEnabled = alertsSalesEnabled;
     if (typeof alertsPayoutEnabled === "boolean") organizerUpdates.alertsPayoutEnabled = alertsPayoutEnabled;
     if (brandingAvatarUrl === null) organizerUpdates.brandingAvatarUrl = null;
-    if (typeof brandingAvatarUrl === "string") organizerUpdates.brandingAvatarUrl = brandingAvatarUrl.trim() || null;
+    if (typeof brandingAvatarUrl === "string") {
+      organizerUpdates.brandingAvatarUrl = normalizeOrganizerAvatarUrl(brandingAvatarUrl);
+    }
     if (brandingCoverUrl === null) organizerUpdates.brandingCoverUrl = null;
-    if (typeof brandingCoverUrl === "string") organizerUpdates.brandingCoverUrl = brandingCoverUrl.trim() || null;
+    if (typeof brandingCoverUrl === "string") {
+      organizerUpdates.brandingCoverUrl = normalizeOrganizerCoverUrl(brandingCoverUrl);
+    }
     if (typeof brandingPrimaryColor === "string") organizerUpdates.brandingPrimaryColor = brandingPrimaryColor.trim() || null;
     if (typeof brandingSecondaryColor === "string")
       organizerUpdates.brandingSecondaryColor = brandingSecondaryColor.trim() || null;

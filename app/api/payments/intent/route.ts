@@ -16,17 +16,16 @@ import {
   PadelPairingPaymentStatus,
   PadelPairingSlotStatus,
   PaymentEventSource,
-  type FeeMode,
 } from "@prisma/client";
+import type { FeeMode } from "@prisma/client";
 import { paymentScenarioSchema, type PaymentScenario } from "@/lib/paymentScenario";
-import { parsePhoneNumberFromString } from "libphonenumber-js/min";
+import { parsePhoneNumberFromString, type CountryCode } from "libphonenumber-js/min";
 import { computePromoDiscountCents } from "@/lib/promoMath";
 import { computePricing } from "@/lib/pricing";
 import { computeCombinedFees } from "@/lib/fees";
 import { normalizeEmail } from "@/lib/utils/email";
 import {
   checkoutMetadataSchema,
-  createPurchaseId,
   normalizeItemsForMetadata,
 } from "@/lib/checkoutSchemas";
 import { resolveOwner } from "@/lib/ownership/resolveOwner";
@@ -45,6 +44,21 @@ type CheckoutItem = {
   unitPriceCents?: number | null;
 };
 
+type PublicBreakdown = {
+  lines: {
+    ticketTypeId: number;
+    name: string;
+    quantity: number;
+    unitPriceCents: number;
+    currency: string;
+    lineTotalCents: number;
+  }[];
+  subtotalCents: number;
+  discountCents: number;
+  totalCents: number;
+  currency: string;
+};
+
 type Guest = {
   name?: string;
   email?: string;
@@ -53,6 +67,16 @@ type Guest = {
 
 function isValidEmail(email: string) {
   return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email);
+}
+
+function buildPublicBreakdown({
+  lines,
+  subtotalCents,
+  discountCents,
+  totalCents,
+  currency,
+}: PublicBreakdown): PublicBreakdown {
+  return { lines, subtotalCents, discountCents, totalCents, currency };
 }
 
 type Body = {
@@ -69,6 +93,8 @@ type Body = {
   slotId?: number | null;
   resaleId?: string | null;
   ticketId?: string | number | null;
+  ticketTypeId?: number | null;
+  eventId?: number | null;
   total?: number | null;
 };
 
@@ -106,7 +132,7 @@ function intentError(
   );
 }
 
-function normalizePhone(phone: string | null | undefined, defaultCountry: string = "PT") {
+function normalizePhone(phone: string | null | undefined, defaultCountry: CountryCode = "PT") {
   if (!phone) return null;
   const cleaned = phone.trim();
   if (!cleaned) return null;
@@ -268,6 +294,10 @@ export async function POST(req: NextRequest) {
         is_free: boolean;
         is_test: boolean;
         ends_at: Date | null;
+        cover_image_url: string | null;
+        location_name: string | null;
+        starts_at: Date;
+        timezone: string;
         fee_mode: string | null;
         fee_mode_override: string | null;
         organizer_id: number | null;
@@ -295,6 +325,10 @@ export async function POST(req: NextRequest) {
         e.is_free,
         e.is_test,
         e.ends_at,
+        e.cover_image_url,
+        e.location_name,
+        e.starts_at,
+        e.timezone,
         e.fee_mode,
         e.fee_mode_override,
         e.organizer_id,
@@ -406,7 +440,7 @@ export async function POST(req: NextRequest) {
 
     let resaleContext: {
       resaleId: string;
-      ticketId: number;
+      ticketId: string;
       ticketTypeId: number;
       sellerUserId: string | null;
       priceCents: number;
@@ -639,6 +673,14 @@ export async function POST(req: NextRequest) {
     if (!currency) {
       return intentError("CURRENCY_UNDETERMINED", "Moeda não determinada para o checkout.", { httpStatus: 400 });
     }
+    if (currency.toUpperCase() !== "EUR") {
+      return intentError("CURRENCY_NOT_SUPPORTED", "Moeda não suportada no v1. Apenas EUR.", {
+        httpStatus: 400,
+        status: "FAILED",
+        nextAction: "NONE",
+        retryable: false,
+      });
+    }
 
     const clientExpectedTotalCents =
       body && typeof (body as Record<string, unknown>).total === "number"
@@ -819,10 +861,10 @@ export async function POST(req: NextRequest) {
     const isPlatformOrg = (event.org_type || "").toString().toUpperCase() === "PLATFORM";
 
     const pricing = computePricing(preDiscountAmountCents, discountCents, {
-      eventFeeModeOverride: (event.fee_mode_override as FeeMode | null) ?? undefined,
+      eventFeeModeOverride: "INCLUDED" as FeeMode,
       eventFeeMode: (event.fee_mode as FeeMode | null) ?? undefined,
       organizerFeeMode: (event.org_fee_mode as FeeMode | null) ?? undefined,
-      platformDefaultFeeMode: "ADDED",
+      platformDefaultFeeMode: "INCLUDED" as FeeMode,
       eventPlatformFeeBpsOverride: event.platform_fee_bps_override,
       eventPlatformFeeFixedCentsOverride: event.platform_fee_fixed_cents_override,
       organizerPlatformFeeBps: event.org_platform_fee_bps,
@@ -916,7 +958,6 @@ export async function POST(req: NextRequest) {
     const bodyPairingId = typeof body?.pairingId === "number" ? body.pairingId : null;
     const bodySlotId = typeof body?.slotId === "number" ? body.slotId : null;
     const bodyTicketTypeId = typeof body?.ticketTypeId === "number" ? body.ticketTypeId : null;
-    const bodyEventId = typeof body?.eventId === "number" ? body.eventId : null;
 
     const paymentScenario: PaymentScenario =
       totalAmountInCents === 0
@@ -951,15 +992,6 @@ export async function POST(req: NextRequest) {
             paymentStatus: string;
             invitedContact: string | null;
           }>;
-        }
-      | null = null;
-    let groupSlot:
-      | {
-          id: number;
-          profileId: string | null;
-          ticketId: string | null;
-          paymentStatus: string;
-          invitedContact: string | null;
         }
       | null = null;
 
@@ -1017,7 +1049,6 @@ export async function POST(req: NextRequest) {
         });
       }
       groupPairing = pairing;
-      groupSlot = slot;
       if (scenarioAdjusted === "GROUP_SPLIT" && pairing.payment_mode !== "SPLIT") {
         return intentError("PAIRING_MODE_MISMATCH", "A dupla não está em modo split.", {
           httpStatus: 400,
@@ -1055,9 +1086,7 @@ export async function POST(req: NextRequest) {
                 invitedRaw.startsWith("@") ? invitedRaw.slice(1) : invitedRaw;
               const username = profile?.username?.trim().toLowerCase() ?? "";
               const email =
-                userData?.user?.email?.trim().toLowerCase() ??
-                profile?.email?.trim().toLowerCase() ??
-                "";
+                userData?.user?.email?.trim().toLowerCase() ?? "";
               const normalizedInvitedPhone = normalizePhone(invited) ?? invited.replace(/[^\d]/g, "");
               const normalizedUserPhone =
                 normalizePhone(userData?.user?.phone ?? profile?.contactPhone ?? null) ??
@@ -1313,16 +1342,13 @@ export async function POST(req: NextRequest) {
                 paymentIntentId: existing.stripePaymentIntentId,
                 purchaseId: existing.purchaseId ?? undefined,
                 paymentScenario: scenarioAdjusted,
-                breakdown: {
+                breakdown: buildPublicBreakdown({
                   lines,
                   subtotalCents: pricing.subtotalCents,
-                  feeMode: pricing.feeMode,
-                  platformFeeCents: platformFeeCombinedCents,
-                  platformFeeOryaCents: platformFeeCents,
-                  stripeFeeEstimateCents,
+                  discountCents,
                   totalCents: totalAmountInCents,
                   currency: currency.toUpperCase(),
-                },
+                }),
                 intentFingerprint,
                 idempotencyKey: clientIdempotencyKey ?? effectiveDedupeKey,
               },
@@ -1420,16 +1446,13 @@ export async function POST(req: NextRequest) {
             amount: 0,
             currency: (ticketType.currency || "EUR").toUpperCase(),
             discountCents,
-            breakdown: {
+            breakdown: buildPublicBreakdown({
               lines,
               subtotalCents: pricing.subtotalCents,
-              feeMode: pricing.feeMode,
-              platformFeeCents: 0,
-              platformFeeOryaCents: pricing.platformFeeCents,
-              stripeFeeEstimateCents: 0,
+              discountCents,
               totalCents: 0,
               currency: (ticketType.currency || "EUR").toUpperCase(),
-            },
+            }),
             intentFingerprint,
             idempotencyKey: clientIdempotencyKey ?? effectiveDedupeKey,
           });
@@ -1537,10 +1560,11 @@ export async function POST(req: NextRequest) {
             });
 
             const ownerKey = `user:${userId}`;
+            const entitlementPurchaseId = saleSummary.purchaseId ?? saleSummary.paymentIntentId;
             await tx.entitlement.upsert({
               where: {
                 purchaseId_saleLineId_lineItemIndex_ownerKey_type: {
-                  purchaseId: saleSummary.purchaseId,
+                  purchaseId: entitlementPurchaseId,
                   saleLineId: saleLine.id,
                   lineItemIndex: 0,
                   ownerKey,
@@ -1553,13 +1577,13 @@ export async function POST(req: NextRequest) {
                 ownerIdentityId: null,
                 eventId: event.id,
                 snapshotTitle: event.title,
-                snapshotCoverUrl: event.coverImageUrl,
-                snapshotVenueName: event.locationName,
-                snapshotStartAt: event.startsAt,
+                snapshotCoverUrl: event.cover_image_url,
+                snapshotVenueName: event.location_name,
+                snapshotStartAt: event.starts_at,
                 snapshotTimezone: event.timezone,
               },
               create: {
-                purchaseId: saleSummary.purchaseId,
+                purchaseId: entitlementPurchaseId,
                 saleLineId: saleLine.id,
                 lineItemIndex: 0,
                 ownerKey,
@@ -1569,9 +1593,9 @@ export async function POST(req: NextRequest) {
                 status: EntitlementStatus.ACTIVE,
                 eventId: event.id,
                 snapshotTitle: event.title,
-                snapshotCoverUrl: event.coverImageUrl,
-                snapshotVenueName: event.locationName,
-                snapshotStartAt: event.startsAt,
+                snapshotCoverUrl: event.cover_image_url,
+                snapshotVenueName: event.location_name,
+                snapshotStartAt: event.starts_at,
                 snapshotTimezone: event.timezone,
               },
             });
@@ -1730,8 +1754,9 @@ export async function POST(req: NextRequest) {
             });
 
             const ownerKey = `user:${userId}`;
+            const entitlementPurchaseId = saleSummary.purchaseId ?? saleSummary.paymentIntentId;
             const entitlementBase = {
-              purchaseId: saleSummary.purchaseId,
+              purchaseId: entitlementPurchaseId,
               saleLineId: saleLine.id,
               ownerKey,
               ownerUserId: userId,
@@ -1740,16 +1765,16 @@ export async function POST(req: NextRequest) {
               status: EntitlementStatus.ACTIVE,
               eventId: event.id,
               snapshotTitle: event.title,
-              snapshotCoverUrl: event.coverImageUrl,
-              snapshotVenueName: event.locationName,
-              snapshotStartAt: event.startsAt,
+              snapshotCoverUrl: event.cover_image_url,
+              snapshotVenueName: event.location_name,
+              snapshotStartAt: event.starts_at,
               snapshotTimezone: event.timezone,
             };
 
             await tx.entitlement.upsert({
               where: {
                 purchaseId_saleLineId_lineItemIndex_ownerKey_type: {
-                  purchaseId: saleSummary.purchaseId,
+                  purchaseId: entitlementPurchaseId,
                   saleLineId: saleLine.id,
                   lineItemIndex: 0,
                   ownerKey,
@@ -1762,7 +1787,7 @@ export async function POST(req: NextRequest) {
             await tx.entitlement.upsert({
               where: {
                 purchaseId_saleLineId_lineItemIndex_ownerKey_type: {
-                  purchaseId: saleSummary.purchaseId,
+                  purchaseId: entitlementPurchaseId,
                   saleLineId: saleLine.id,
                   lineItemIndex: 1,
                   ownerKey,
@@ -1849,7 +1874,7 @@ export async function POST(req: NextRequest) {
 
         if (padelConfig) {
           const fullName = userData?.user?.user_metadata?.full_name || profile?.fullName || "Jogador Padel";
-          const emailToSave = userData?.user?.email || profile?.email || null;
+          const emailToSave = userData?.user?.email || null;
           const phoneToSave = userData?.user?.phone || contact || profile?.contactPhone || null;
           await upsertPadelPlayerProfile({
             organizerId: padelConfig.organizerId,
@@ -1873,16 +1898,13 @@ export async function POST(req: NextRequest) {
           amount: 0,
           currency: (ticketType.currency || "EUR").toUpperCase(),
           discountCents,
-          breakdown: {
+          breakdown: buildPublicBreakdown({
             lines,
             subtotalCents: pricing.subtotalCents,
-            feeMode: pricing.feeMode,
-            platformFeeCents: 0,
-            platformFeeOryaCents: pricing.platformFeeCents,
-            stripeFeeEstimateCents: 0,
+            discountCents,
             totalCents: 0,
             currency: (ticketType.currency || "EUR").toUpperCase(),
-          },
+          }),
           intentFingerprint,
           idempotencyKey: clientIdempotencyKey ?? effectiveDedupeKey,
         });
@@ -1978,7 +2000,7 @@ export async function POST(req: NextRequest) {
 
       if (padelConfig) {
         const fullName = userData?.user?.user_metadata?.full_name || profile?.fullName || "Jogador Padel";
-        const emailToSave = userData?.user?.email || profile?.email || null;
+        const emailToSave = userData?.user?.email || null;
         const phoneToSave = userData?.user?.phone || contact || profile?.contactPhone || null;
         await upsertPadelPlayerProfile({
           organizerId: padelConfig.organizerId,
@@ -2032,16 +2054,13 @@ export async function POST(req: NextRequest) {
         amount: 0,
         currency: currency.toUpperCase(),
         discountCents,
-        breakdown: {
+        breakdown: buildPublicBreakdown({
           lines,
           subtotalCents: pricing.subtotalCents,
-          feeMode: pricing.feeMode,
-          platformFeeCents: 0,
-          platformFeeOryaCents: pricing.platformFeeCents,
-          stripeFeeEstimateCents: 0,
+          discountCents,
           totalCents: 0,
           currency: currency.toUpperCase(),
-        },
+        }),
         intentFingerprint,
         idempotencyKey: clientIdempotencyKey ?? effectiveDedupeKey,
       });
@@ -2208,16 +2227,13 @@ export async function POST(req: NextRequest) {
       paymentIntentId: paymentIntent.id,
       purchaseId,
       paymentScenario: scenarioAdjusted,
-      breakdown: {
+      breakdown: buildPublicBreakdown({
         lines,
         subtotalCents: pricing.subtotalCents,
-        feeMode: pricing.feeMode,
-        platformFeeCents: platformFeeCombinedCents,
-        platformFeeOryaCents: platformFeeCents,
-        stripeFeeEstimateCents,
+        discountCents,
         totalCents: totalAmountInCents,
         currency: currency.toUpperCase(),
-      },
+      }),
       intentFingerprint,
       idempotencyKey: clientIdempotencyKey ?? effectiveDedupeKey,
     });

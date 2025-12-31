@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { resolveActions } from "@/lib/entitlements/accessResolver";
 import { buildDefaultCheckinWindow } from "@/lib/checkin/policy";
-import { EntitlementStatus, EntitlementType } from "@prisma/client";
+import { EntitlementStatus, EntitlementType, Prisma } from "@prisma/client";
 import crypto from "crypto";
 
 const MAX_PAGE = 50;
@@ -71,31 +71,32 @@ export async function GET(req: NextRequest) {
     const hasPast = filter.includes("past");
     const now = new Date();
 
-    const where: any = {
-      AND: [],
+    const andFilters: Prisma.EntitlementWhereInput[] = [];
+    const where: Prisma.EntitlementWhereInput = {
+      AND: andFilters,
     };
 
     if (!isAdmin) {
-      where.AND.push({ ownerUserId: userId });
+      andFilters.push({ ownerUserId: userId });
     }
 
     if (statusFilter.length) {
-      where.AND.push({ status: { in: statusFilter } });
+      andFilters.push({ status: { in: statusFilter } });
     }
 
     if (typeFilter.length) {
-      where.AND.push({ type: { in: typeFilter } });
+      andFilters.push({ type: { in: typeFilter } });
     }
 
     if (hasUpcoming && !hasPast) {
-      where.AND.push({ snapshotStartAt: { gte: now } });
+      andFilters.push({ snapshotStartAt: { gte: now } });
     } else if (hasPast && !hasUpcoming) {
-      where.AND.push({ snapshotStartAt: { lt: now } });
+      andFilters.push({ snapshotStartAt: { lt: now } });
     }
 
     if (cursor?.snapshotStartAt) {
       const cursorDate = new Date(cursor.snapshotStartAt);
-      where.AND.push({
+      andFilters.push({
         OR: [
           { snapshotStartAt: { lt: cursorDate } },
           {
@@ -106,12 +107,7 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    if (!(prisma as any).entitlement?.findMany) {
-      console.warn("[api/me/wallet] entitlement model not available in Prisma client");
-      return NextResponse.json({ items: [], nextCursor: null }, { status: 200 });
-    }
-
-    const items = await (prisma as any).entitlement.findMany({
+    const items = await prisma.entitlement.findMany({
       where,
       orderBy: [
         { snapshotStartAt: "desc" },
@@ -133,7 +129,7 @@ export async function GET(req: NextRequest) {
 
     const eventIds = Array.from(
       new Set(pageItems.map((e) => e.eventId).filter((id): id is number => typeof id === "number")),
-    );
+    ) as number[];
     const events =
       eventIds.length > 0
         ? await prisma.event.findMany({

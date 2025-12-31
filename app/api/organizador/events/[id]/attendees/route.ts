@@ -31,6 +31,7 @@ async function ensureOrganizer(userId: string, eventId: number) {
     select: { organizerId: true },
   });
   if (!event) return { ok: false as const, reason: "EVENT_NOT_FOUND" };
+  if (!event.organizerId) return { ok: false as const, reason: "FORBIDDEN_ATTENDEES_ACCESS" };
 
   const profile = await prisma.profile.findUnique({
     where: { id: userId },
@@ -45,7 +46,13 @@ async function ensureOrganizer(userId: string, eventId: number) {
     select: { id: true, role: true },
   });
   if (!membership) return { ok: false as const, reason: "FORBIDDEN_ATTENDEES_ACCESS" };
-  if (!membership.role || (membership.role !== OrganizerMemberRole.OWNER && membership.role !== OrganizerMemberRole.CO_OWNER && membership.role !== OrganizerMemberRole.ADMIN)) {
+  if (
+    !membership.role ||
+    (membership.role !== OrganizerMemberRole.OWNER &&
+      membership.role !== OrganizerMemberRole.CO_OWNER &&
+      membership.role !== OrganizerMemberRole.ADMIN &&
+      membership.role !== OrganizerMemberRole.STAFF)
+  ) {
     return { ok: false as const, reason: "FORBIDDEN_ATTENDEES_ACCESS" };
   }
   return { ok: true as const, isAdmin };
@@ -67,6 +74,10 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   if (!access.ok) {
     return NextResponse.json({ error: access.reason }, { status: access.reason === "EVENT_NOT_FOUND" ? 404 : 403 });
   }
+  const event = await prisma.event.findUnique({
+    where: { id: eventId },
+    select: { startsAt: true, endsAt: true },
+  });
 
   const searchParams = req.nextUrl.searchParams;
   const statusFilterRaw = searchParams.get("status");
@@ -110,11 +121,6 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       { id: "desc" },
     ],
     take: take + 1,
-    include: {
-      event: {
-        select: { startsAt: true, endsAt: true },
-      },
-    },
   });
 
   const pageItems = entitlements.slice(0, take);
@@ -127,7 +133,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     : null;
 
   const items = pageItems.map((e) => {
-    const window = buildDefaultCheckinWindow(e.event?.startsAt ?? null, e.event?.endsAt ?? null);
+    const window = buildDefaultCheckinWindow(event?.startsAt ?? null, event?.endsAt ?? null);
     const actions = resolveActions({
       type: e.type,
       status: e.status,

@@ -8,7 +8,7 @@ type EnqueueParams = {
   userId?: string | null;
   notificationType: string;
   templateVersion?: string | null;
-  payload?: Prisma.JsonValue;
+  payload?: Prisma.InputJsonValue;
   force?: boolean;
 };
 

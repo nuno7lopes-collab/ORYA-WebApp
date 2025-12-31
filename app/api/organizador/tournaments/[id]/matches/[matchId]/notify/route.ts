@@ -3,21 +3,22 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { computeDedupeKey } from "@/domain/notifications/matchChangeDedupe";
 import { canNotify } from "@/domain/tournaments/schedulePolicy";
+import { readNumericParam } from "@/lib/routeParams";
 
 async function ensureOrganizerAccess(userId: string, eventId: number) {
   const evt = await prisma.event.findUnique({ where: { id: eventId }, select: { organizerId: true } });
   if (!evt?.organizerId) return false;
   const member = await prisma.organizerMember.findFirst({
-    where: { organizerId: evt.organizerId, userId, role: { in: ["OWNER", "CO_OWNER", "ADMIN"] } },
+    where: { organizerId: evt.organizerId, userId, role: { in: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"] } },
     select: { id: true },
   });
   return Boolean(member);
 }
 
-export async function POST(_req: NextRequest, { params }: { params: { id: string; matchId: string } }) {
-  const tournamentId = Number(params?.id);
-  const matchId = Number(params?.matchId);
-  if (!Number.isFinite(tournamentId) || !Number.isFinite(matchId)) {
+export async function POST(req: NextRequest, { params }: { params: { id: string; matchId: string } }) {
+  const tournamentId = readNumericParam(params?.id, req, "tournaments");
+  const matchId = readNumericParam(params?.matchId, req, "matches");
+  if (tournamentId === null || matchId === null) {
     return NextResponse.json({ ok: false, error: "INVALID_ID" }, { status: 400 });
   }
 

@@ -4,7 +4,7 @@ import Link from "next/link";
 
 export default function EmBrevePage() {
   return (
-    <div className="min-h-screen bg-[#060711] text-white flex items-center justify-center px-4">
+    <div className="min-h-screen text-white flex items-center justify-center px-4">
       <div className="orya-page-width flex justify-center">
         <div className="max-w-md w-full rounded-3xl border border-white/10 bg-white/[0.04] p-8 shadow-[0_25px_80px_rgba(0,0,0,0.45)] text-center space-y-4">
           <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">ORYA</p>

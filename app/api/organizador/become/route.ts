@@ -3,7 +3,6 @@
 // app/api/organizador/become/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizerForUser } from "@/lib/organizerContext";
 import { normalizeAndValidateUsername, setUsernameForOwner, UsernameTakenError } from "@/lib/globalUsernames";
 import { AuthRequiredError, requireUser } from "@/lib/auth/requireUser";
@@ -81,6 +80,12 @@ export async function GET() {
       { status: 200 },
     );
   } catch (err) {
+    if (err instanceof AuthRequiredError) {
+      return NextResponse.json(
+        { ok: false, error: "Não autenticado." },
+        { status: 401 },
+      );
+    }
     console.error("GET /api/organizador/become error:", err);
     return NextResponse.json(
       { ok: false, error: "Erro interno ao obter organizador." },
@@ -159,7 +164,7 @@ export async function POST(req: NextRequest) {
 
     if (organizationCategoryProvided && !organizationCategory) {
       return NextResponse.json(
-        { ok: false, error: "organizationCategory inválido. Usa EVENTOS, PADEL ou VOLUNTARIADO." },
+        { ok: false, error: "organizationCategory inválido. Usa EVENTOS, PADEL, RESERVAS ou CLUBS." },
         { status: 400 },
       );
     }
@@ -331,6 +336,12 @@ export async function POST(req: NextRequest) {
       { status: 200 },
     );
   } catch (err) {
+    if (err instanceof AuthRequiredError) {
+      return NextResponse.json(
+        { ok: false, error: "Não autenticado." },
+        { status: 401 },
+      );
+    }
     if (err instanceof UsernameTakenError) {
       return NextResponse.json(
         { ok: false, error: "Este @ já está a ser usado — escolhe outro.", code: "USERNAME_TAKEN" },
@@ -347,25 +358,28 @@ export async function POST(req: NextRequest) {
 
 export async function DELETE(_req: NextRequest) {
   try {
-    const supabase = await createSupabaseServer();
-    const {
-      data: { user },
-      error,
-    } = await supabase.auth.getUser();
+    const user = await requireUser();
 
-    if (error || !user) {
+    await prisma.organizer.deleteMany({
+      where: {
+        status: "PENDING",
+        members: {
+          some: {
+            userId: user.id,
+            role: "OWNER",
+          },
+        },
+      },
+    });
+
+    return NextResponse.json({ ok: true }, { status: 200 });
+  } catch (err) {
+    if (err instanceof AuthRequiredError) {
       return NextResponse.json(
         { ok: false, error: "Não autenticado." },
         { status: 401 },
       );
     }
-
-    await prisma.organizer.deleteMany({
-      where: { userId: user.id, status: "PENDING" },
-    });
-
-    return NextResponse.json({ ok: true }, { status: 200 });
-  } catch (err) {
     console.error("DELETE /api/organizador/become error:", err);
     return NextResponse.json(
       { ok: false, error: "Erro interno ao cancelar candidatura." },

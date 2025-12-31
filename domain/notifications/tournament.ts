@@ -6,7 +6,6 @@ import {
   notifyMatchResult,
   notifyNextOpponent,
   notifyTournamentEve,
-  notifyBroadcast,
 } from "@/domain/notifications/producer";
 import { computeDedupeKey as dedupeMatchChange } from "@/domain/notifications/matchChangeDedupe";
 
@@ -55,18 +54,4 @@ export async function queueEliminated(userIds: string[], tournamentId: number) {
 
 export async function queueChampion(userIds: string[], tournamentId: number) {
   await Promise.all(userIds.map((userId) => notifyChampion({ userId, tournamentId })));
-}
-
-export async function queueBroadcast(params: {
-  audienceUserIds: string[];
-  tournamentId: number;
-  broadcastId: string;
-  audienceKey: string;
-}) {
-  const { audienceUserIds, tournamentId, broadcastId, audienceKey } = params;
-  await Promise.all(
-    audienceUserIds.map((userId) =>
-      notifyBroadcast({ userId, tournamentId, broadcastId, audienceKey }),
-    ),
-  );
 }

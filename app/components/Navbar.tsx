@@ -7,6 +7,7 @@ import { useUser } from "@/app/hooks/useUser";
 import Link from "next/link";
 import { NotificationBell } from "./notifications/NotificationBell";
 import { supabaseBrowser } from "@/lib/supabaseBrowser";
+import Image from "next/image";
 
 type SearchEvent = {
   id: number;
@@ -46,7 +47,7 @@ export function Navbar() {
   const rawPathname = usePathname();
 
   const { openModal: openAuthModal, isOpen: isAuthOpen } = useAuthModal();
-  const { user, profile, roles, isLoading } = useUser();
+  const { user, profile, isLoading } = useUser();
 
   const [isVisible, setIsVisible] = useState(true);
   const [isAtTop, setIsAtTop] = useState(true);
@@ -71,15 +72,19 @@ export function Navbar() {
     <button
       type="button"
       onClick={() => router.push("/")}
-      className="flex items-center gap-2 transition hover:opacity-90"
+      className="group flex items-center gap-2 transition hover:opacity-90 sm:gap-3"
       aria-label="Voltar à homepage ORYA"
     >
-      <img
+      <Image
         src="/brand/orya-logo.png"
         alt="Logo ORYA"
-        className="h-14 w-14 rounded-full object-cover shadow-[0_0_24px_rgba(155,114,255,0.55)]"
+        width={56}
+        height={56}
+        className="h-14 w-14 shrink-0 rounded-full object-cover"
       />
-      <span className="text-lg font-semibold tracking-[0.2em] text-white">ORYA</span>
+      <span className="text-base font-semibold leading-none tracking-[0.18em] text-white sm:text-lg sm:tracking-[0.24em]">
+        ORYA
+      </span>
     </button>
   );
 
@@ -206,11 +211,6 @@ export function Navbar() {
 
     setIsSearchOpen(false);
     router.push(`/explorar?query=${encodeURIComponent(query)}`);
-  };
-
-  const handleQuickSearch = (value: string) => {
-    setIsSearchOpen(false);
-    router.push(`/explorar?query=${encodeURIComponent(value)}`);
   };
 
   const handleLogout = async () => {

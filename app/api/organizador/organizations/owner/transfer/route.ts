@@ -72,6 +72,7 @@ export async function POST(req: NextRequest) {
       }),
     ]);
 
+    const ip = req.headers.get("x-forwarded-for") ?? req.headers.get("x-real-ip") ?? null;
     const transfer = await prisma.$transaction(async (tx) => {
       // Cancela pedidos pendentes anteriores
       await ownerTransferModel.updateMany({
@@ -97,7 +98,7 @@ export async function POST(req: NextRequest) {
         fromUserId: user.id,
         toUserId: targetUserId,
         metadata: { transferId: created.id, token },
-        ip: req.ip ?? null,
+        ip,
         userAgent: req.headers.get("user-agent"),
       });
 

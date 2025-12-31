@@ -135,22 +135,30 @@ export async function POST(req: NextRequest) {
         id: true,
         status: true,
         publicName: true,
-        userId: true,
       },
     });
 
     // Se aprovado (ACTIVE), adicionar role organizer ao profile
-    if (normalizedStatus === "ACTIVE" && updated.userId) {
-      const profile = await prisma.profile.findUnique({
-        where: { id: updated.userId },
-        select: { roles: true },
-      });
-      const roles = Array.isArray(profile?.roles) ? profile?.roles : [];
-      if (!roles.includes("organizer")) {
-        await prisma.profile.update({
-          where: { id: updated.userId },
-          data: { roles: [...roles, "organizer"] },
+    const ownerMembers =
+      normalizedStatus === "ACTIVE"
+        ? await prisma.organizerMember.findMany({
+            where: { organizerId: updated.id, role: { in: ["OWNER", "CO_OWNER"] } },
+            select: { userId: true },
+          })
+        : [];
+    if (ownerMembers.length > 0) {
+      for (const owner of ownerMembers) {
+        const profile = await prisma.profile.findUnique({
+          where: { id: owner.userId },
+          select: { roles: true },
         });
+        const roles = Array.isArray(profile?.roles) ? profile?.roles : [];
+        if (!roles.includes("organizer")) {
+          await prisma.profile.update({
+            where: { id: owner.userId },
+            data: { roles: [...roles, "organizer"] },
+          });
+        }
       }
     }
 
@@ -161,8 +169,8 @@ export async function POST(req: NextRequest) {
           id: updated.id,
           status: updated.status,
           publicName: updated.publicName,
-          userId: updated.userId,
           changed: true,
+          ownerUserIds: ownerMembers.map((member) => member.userId),
         },
       },
       { status: 200 },

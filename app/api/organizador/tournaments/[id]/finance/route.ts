@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { computeReleaseAt, computeHold } from "@/domain/finance/payoutPolicy";
+import { readNumericParam } from "@/lib/routeParams";
 
 async function ensureOrganizerAccess(userId: string, eventId: number) {
   const evt = await prisma.event.findUnique({ where: { id: eventId }, select: { organizerId: true, isTest: true } });
@@ -14,8 +15,8 @@ async function ensureOrganizerAccess(userId: string, eventId: number) {
 }
 
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
-  const tournamentId = Number(params?.id);
-  if (!Number.isFinite(tournamentId)) return NextResponse.json({ ok: false, error: "INVALID_ID" }, { status: 400 });
+  const tournamentId = readNumericParam(params?.id, req, "tournaments");
+  if (tournamentId === null) return NextResponse.json({ ok: false, error: "INVALID_ID" }, { status: 400 });
 
   const supabase = await createSupabaseServer();
   const { data, error } = await supabase.auth.getUser();

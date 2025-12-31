@@ -23,7 +23,7 @@ function buildTimeline(params: { status: string; startsAt: Date | null; endsAt: 
   const finished = status === "FINISHED" || (endsAt ? endsAt.getTime() < now.getTime() : false);
   const cancelled = status === "CANCELLED";
 
-  return [
+  const timeline: PadelEventSnapshot["timeline"] = [
     {
       key: "signup",
       label: "Inscrições",
@@ -44,6 +44,7 @@ function buildTimeline(params: { status: string; startsAt: Date | null; endsAt: 
       date: endsAt ? endsAt.toISOString() : null,
     },
   ];
+  return timeline;
 }
 
 export async function buildPadelEventSnapshot(eventId: number): Promise<PadelEventSnapshot | null> {

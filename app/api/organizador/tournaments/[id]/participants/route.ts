@@ -21,7 +21,7 @@ async function ensureOrganizerAccess(userId: string, eventId: number) {
     where: {
       organizerId: evt.organizerId,
       userId,
-      role: { in: ["OWNER", "CO_OWNER", "ADMIN"] },
+      role: { in: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"] },
     },
     select: { id: true },
   });
@@ -41,9 +41,8 @@ function normalizeParticipants(items: ParticipantInput[], bracketSize?: number |
   const maxInt = 2147483647;
 
   const reserveId = (candidate?: number) => {
-    let id = Number.isFinite(candidate) ? Math.trunc(candidate as number) : null;
-    const inRange =
-      typeof id === "number" && Number.isFinite(id) && id >= minInt && id <= maxInt && id < 0;
+    let id = Number.isFinite(candidate) ? Math.trunc(candidate as number) : Number.NaN;
+    const inRange = Number.isFinite(id) && id >= minInt && id <= maxInt && id < 0;
     if (!inRange || id === 0 || seen.has(id)) {
       while (seen.has(nextId)) nextId -= 1;
       id = nextId;
@@ -131,7 +130,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const participants = Array.isArray(body?.participants) ? (body.participants as ParticipantInput[]) : [];
 
   const rawBracketSize = body?.bracketSize;
-  let bracketSize = Number.isFinite(rawBracketSize) ? Number(rawBracketSize) : null;
+  const bracketSize = Number.isFinite(rawBracketSize) ? Number(rawBracketSize) : null;
   if (bracketSize !== null && !isPowerOfTwo(bracketSize)) {
     return NextResponse.json({ ok: false, error: "INVALID_BRACKET_SIZE" }, { status: 400 });
   }

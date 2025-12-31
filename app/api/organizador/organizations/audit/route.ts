@@ -26,7 +26,12 @@ export async function GET(req: NextRequest) {
     const membership = await prisma.organizerMember.findUnique({
       where: { organizerId_userId: { organizerId, userId: user.id } },
     });
-    if (!membership || ![OrganizerMemberRole.OWNER, OrganizerMemberRole.CO_OWNER, OrganizerMemberRole.ADMIN].includes(membership.role)) {
+    const allowedRoles: OrganizerMemberRole[] = [
+      OrganizerMemberRole.OWNER,
+      OrganizerMemberRole.CO_OWNER,
+      OrganizerMemberRole.ADMIN,
+    ];
+    if (!membership || !allowedRoles.includes(membership.role)) {
       return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 

@@ -1,5 +1,5 @@
 import { TournamentMatchStatus } from "@prisma/client";
-import { computeGroupStandings, TieBreakRule } from "@/domain/tournaments/standings";
+import { computeGroupStandings, TieBreakRule, type MatchResult } from "@/domain/tournaments/standings";
 
 export function summarizeMatchStatus(status: TournamentMatchStatus) {
   if (status === "IN_PROGRESS") return "Em jogo";
@@ -31,7 +31,7 @@ export function computeStandingsForGroup(
         pairing1Id: m.pairing1Id as number,
         pairing2Id: m.pairing2Id as number,
         status: m.status,
-        score: m.score as unknown,
+        score: m.score as MatchResult["score"],
       })),
     rules,
     seed,

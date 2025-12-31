@@ -137,7 +137,7 @@ export function SalesLineChart({
   const minTime = derivedStart.getTime();
   const maxTime = endCursor.getTime() === minTime ? endCursor.getTime() + 24 * 3600 * 1000 : endCursor.getTime();
 
-  const toXY = (p: Point, index: number) => {
+  const toXY = (p: Point) => {
     const t = p.date.getTime();
     const ratioX = (t - minTime) / (maxTime - minTime || 1);
     const x = padX + ratioX * innerW;
@@ -149,7 +149,7 @@ export function SalesLineChart({
   const path = filled.length
     ? filled
         .map((p, i) => {
-          const { x, y } = toXY(p, i);
+          const { x, y } = toXY(p);
           return `${i === 0 ? "M" : "L"} ${x.toFixed(2)} ${y.toFixed(2)}`;
         })
         .join(" ")
@@ -158,8 +158,8 @@ export function SalesLineChart({
   const baseXStart = padX;
   const baseXEnd = padX + innerW;
   const baseY = viewH - padY;
-  const firstPoint = filled.length ? toXY(filled[0], 0) : { x: baseXStart, y: baseY };
-  const lastPoint = filled.length ? toXY(filled[filled.length - 1], filled.length - 1) : { x: baseXEnd, y: baseY };
+  const firstPoint = filled.length ? toXY(filled[0]) : { x: baseXStart, y: baseY };
+  const lastPoint = filled.length ? toXY(filled[filled.length - 1]) : { x: baseXEnd, y: baseY };
   const areaPath = filled.length
     ? `${path} L ${lastPoint.x.toFixed(2)} ${baseY.toFixed(2)} L ${firstPoint.x.toFixed(2)} ${baseY.toFixed(2)} Z`
     : "";
@@ -178,8 +178,8 @@ export function SalesLineChart({
     });
 
   const positions = useMemo(() => {
-    return filled.map((p, idx) => {
-      const { x, y } = toXY(p, idx);
+    return filled.map((p) => {
+      const { x, y } = toXY(p);
       return { x, y };
     });
   }, [filled]);
@@ -231,7 +231,7 @@ export function SalesLineChart({
             {filled.length > 0 && (
               (() => {
                 const lastIdx = filled.length - 1;
-                const { x, y } = toXY(filled[lastIdx], lastIdx);
+                const { x, y } = toXY(filled[lastIdx]);
                 return (
                   <g>
                     <circle cx={x} cy={y} r={1} fill={accentColor} opacity={0.2} />
@@ -249,7 +249,7 @@ export function SalesLineChart({
               const total = filled.length;
               const step = total > 14 ? Math.ceil(total / 8) : 1;
               if (total > 14 && idx % step !== 0 && idx !== total - 1 && idx !== 0) return null;
-              const { x } = toXY(p, idx);
+              const { x } = toXY(p);
               return (
                 <g key={`${p.date.toISOString()}-tick`}>
                   <line x1={x} x2={x} y1={viewH - 6} y2={viewH - 3} stroke="rgba(255,255,255,0.3)" strokeWidth="0.3" />

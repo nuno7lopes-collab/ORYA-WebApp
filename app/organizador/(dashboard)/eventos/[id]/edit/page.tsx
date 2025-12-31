@@ -1,6 +1,5 @@
 // app/organizador/(dashboard)/eventos/[id]/edit/page.tsx
 import { notFound, redirect } from "next/navigation";
-import { OrganizerMemberRole } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizerForUser } from "@/lib/organizerContext";
@@ -40,18 +39,9 @@ export default async function OrganizerEventEditPage({ params }: PageProps) {
 
   if (!event || !event.organizerId) notFound();
 
-  let { organizer, membership } = await getActiveOrganizerForUser(data.user.id, {
+  const { organizer, membership } = await getActiveOrganizerForUser(data.user.id, {
     organizerId: event.organizerId,
   });
-  if (!organizer) {
-    const legacyOrganizer = await prisma.organizer.findFirst({
-      where: { id: event.organizerId, userId: data.user.id },
-    });
-    if (legacyOrganizer) {
-      organizer = legacyOrganizer;
-      membership = { role: OrganizerMemberRole.OWNER };
-    }
-  }
 
   if (!organizer || !membership) {
     redirect("/organizador");
@@ -117,9 +107,6 @@ export default async function OrganizerEventEditPage({ params }: PageProps) {
           participantAccessMode: event.participantAccessMode,
           publicTicketTypeIds: event.publicTicketTypeIds ?? [],
           participantTicketTypeIds: event.participantTicketTypeIds ?? [],
-          feeModeOverride: event.feeModeOverride,
-          platformFeeBpsOverride: event.platformFeeBpsOverride,
-          platformFeeFixedCentsOverride: event.platformFeeFixedCentsOverride,
           payoutMode: event.payoutMode,
         }}
         tickets={tickets}

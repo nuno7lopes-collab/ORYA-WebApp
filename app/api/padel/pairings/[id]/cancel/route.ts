@@ -5,12 +5,13 @@ import { PadelPairingStatus, PadelPairingSlotStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { cancelActiveHold } from "@/domain/padelPairingHold";
+import { readNumericParam } from "@/lib/routeParams";
 
 // Cancela pairing Padel v2 (MVP: estados DB; refund efetivo fica para o checkout/refund handler).
 // Regras: capitão (created_by_user_id) ou staff OWNER/ADMIN do organizer.
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
-  const pairingId = Number(params?.id);
-  if (!Number.isFinite(pairingId)) return NextResponse.json({ ok: false, error: "INVALID_ID" }, { status: 400 });
+  const pairingId = readNumericParam(params?.id, req, "pairings");
+  if (pairingId === null) return NextResponse.json({ ok: false, error: "INVALID_ID" }, { status: 400 });
 
   const supabase = await createSupabaseServer();
   const {

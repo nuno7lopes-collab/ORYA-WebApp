@@ -5,6 +5,7 @@ import { getNotificationPrefs } from "@/lib/notifications";
 import { prisma } from "@/lib/prisma";
 import type { User } from "@supabase/supabase-js";
 import { setUsernameForOwner, UsernameTakenError } from "@/lib/globalUsernames";
+import { normalizeProfileAvatarUrl } from "@/lib/profileMedia";
 
 type SupabaseUserMetadata = {
   full_name?: string;
@@ -27,6 +28,7 @@ type ApiAuthMeResponse = {
     coverUrl: string | null;
     bio: string | null;
     city: string | null;
+    isVerified: boolean;
     contactPhone: string | null;
     favouriteCategories: string[];
     onboardingDone: boolean;
@@ -44,7 +46,7 @@ type ApiAuthMeResponse = {
 
 export async function GET() {
   try {
-     const supabase = await createSupabaseServer();
+    const supabase = await createSupabaseServer();
 
     const {
       data: { user },
@@ -83,12 +85,9 @@ export async function GET() {
           id: userId,
           username: null,
           fullName: userMetadata.full_name ?? userMetadata.name ?? null,
-          avatarUrl: userMetadata.avatar_url ?? null,
+          avatarUrl: normalizeProfileAvatarUrl(userMetadata.avatar_url ?? null),
           roles: ["user"],
           visibility: "PUBLIC",
-          allowEmailNotifications: true,
-          allowEventReminders: true,
-          allowFriendRequests: true,
         },
       }));
 
@@ -109,7 +108,10 @@ export async function GET() {
             data: { username: pendingUsername },
           });
         });
-        profile = await prisma.profile.findUnique({ where: { id: userId } });
+        const refreshedProfile = await prisma.profile.findUnique({ where: { id: userId } });
+        if (refreshedProfile) {
+          profile = refreshedProfile;
+        }
       } catch (err) {
         if (err instanceof UsernameTakenError) {
           // outro utilizador já registou o @ entretanto; deixa username nulo
@@ -123,26 +125,28 @@ export async function GET() {
     if (!profile) {
       throw new Error("PROFILE_MISSING");
     }
+    const resolvedProfile = profile;
 
     const profileVisibility: "PUBLIC" | "PRIVATE" =
-      profile.visibility === "PRIVATE" ? "PRIVATE" : "PUBLIC";
+      resolvedProfile.visibility === "PUBLIC" ? "PUBLIC" : "PRIVATE";
 
     const safeProfile: ApiAuthMeResponse["profile"] = {
-      id: profile.id,
-      username: profile.username,
-      fullName: profile.fullName,
-      avatarUrl: profile.avatarUrl,
-      coverUrl: profile.coverUrl,
-      bio: profile.bio,
-      city: profile.city,
-      contactPhone: profile.contactPhone,
-      favouriteCategories: profile.favouriteCategories,
-      onboardingDone: profile.onboardingDone,
-      roles: profile.roles,
-      visibility: profile.visibility,
-      allowEmailNotifications: profile.allowEmailNotifications,
-      allowEventReminders: profile.allowEventReminders,
-      allowFriendRequests: profile.allowFriendRequests,
+      id: resolvedProfile.id,
+      username: resolvedProfile.username,
+      fullName: resolvedProfile.fullName,
+      avatarUrl: resolvedProfile.avatarUrl,
+      coverUrl: resolvedProfile.coverUrl,
+      bio: resolvedProfile.bio,
+      city: resolvedProfile.city,
+      contactPhone: resolvedProfile.contactPhone,
+      isVerified: resolvedProfile.is_verified,
+      favouriteCategories: resolvedProfile.favouriteCategories,
+      onboardingDone: resolvedProfile.onboardingDone,
+      roles: resolvedProfile.roles,
+      visibility: resolvedProfile.visibility,
+      allowEmailNotifications: notificationPrefs?.allowEmailNotifications ?? true,
+      allowEventReminders: notificationPrefs?.allowEventReminders ?? true,
+      allowFriendRequests: notificationPrefs?.allowFriendRequests ?? true,
       allowSalesAlerts: notificationPrefs?.allowSalesAlerts ?? true,
       allowSystemAnnouncements: notificationPrefs?.allowSystemAnnouncements ?? true,
       profileVisibility,

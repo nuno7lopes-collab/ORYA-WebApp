@@ -9,7 +9,7 @@
  *   - Ajusta emails/usernames se necessário.
  */
 
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, EventTemplateType, ResaleMode, FeeMode, PayoutMode, OrganizerStatus, OrganizationCategory } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
@@ -17,19 +17,22 @@ async function main() {
   const userId = process.env.USER_ID_TEST;
   if (!userId) throw new Error("Define USER_ID_TEST com o id do utilizador (auth.users.id).");
 
-  const organizer = await prisma.organizer.upsert({
+  const existingOrganizer = await prisma.organizer.findFirst({
     where: { username: "club-padel-demo" },
-    update: {},
-    create: {
-      userId,
-      username: "club-padel-demo",
-      displayName: "Clube Padel Demo",
-      businessName: "Clube Padel Demo",
-      city: "Lisboa",
-      entityType: "CLUBE",
-      status: "ACTIVE",
-    },
   });
+  const organizer =
+    existingOrganizer ??
+    (await prisma.organizer.create({
+      data: {
+        username: "club-padel-demo",
+        publicName: "Clube Padel Demo",
+        businessName: "Clube Padel Demo",
+        city: "Lisboa",
+        entityType: "CLUBE",
+        status: OrganizerStatus.ACTIVE,
+        organizationCategory: OrganizationCategory.PADEL,
+      },
+    }));
 
   const playersData = [
     { fullName: "João Silva", email: "joao.silva+padel@example.com", level: "M3" },
@@ -39,13 +42,20 @@ async function main() {
   ];
 
   const players = await Promise.all(
-    playersData.map((p) =>
-      prisma.padelPlayerProfile.upsert({
-        where: { organizerId_email: { organizerId: organizer.id, email: p.email! } },
-        update: { fullName: p.fullName, level: p.level },
-        create: { organizerId: organizer.id, fullName: p.fullName, email: p.email, level: p.level },
-      }),
-    ),
+    playersData.map(async (p) => {
+      const existing = await prisma.padelPlayerProfile.findFirst({
+        where: { organizerId: organizer.id, email: p.email },
+      });
+      if (existing) {
+        return prisma.padelPlayerProfile.update({
+          where: { id: existing.id },
+          data: { fullName: p.fullName, level: p.level },
+        });
+      }
+      return prisma.padelPlayerProfile.create({
+        data: { organizerId: organizer.id, fullName: p.fullName, email: p.email, level: p.level },
+      });
+    }),
   );
 
   const event = await prisma.event.create({
@@ -54,7 +64,7 @@ async function main() {
       title: "Torneio Padel Demo",
       description: "Seed de teste Padel",
       type: "ORGANIZER_EVENT",
-      templateType: "PADEL",
+      templateType: EventTemplateType.PADEL,
       ownerUserId: userId,
       organizerId: organizer.id,
       startsAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
@@ -63,9 +73,9 @@ async function main() {
       locationCity: "Lisboa",
       isFree: true,
       status: "PUBLISHED",
-      resaleMode: "ALWAYS",
-      feeMode: "INCLUDED",
-      payoutMode: "ORGANIZER",
+      resaleMode: ResaleMode.ALWAYS,
+      feeMode: FeeMode.INCLUDED,
+      payoutMode: PayoutMode.ORGANIZER,
     },
   });
 

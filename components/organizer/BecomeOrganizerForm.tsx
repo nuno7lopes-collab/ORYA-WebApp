@@ -52,10 +52,15 @@ const CATEGORY_META: Record<
     headline: "Torneios com ranking, pares e categorias.",
     description: "Perfeito para clubes e ligas que precisam de estruturas competitivas e gestão de equipas.",
   },
-  VOLUNTARIADO: {
-    label: "Voluntariado",
-    headline: "Missões, turnos e impacto com clareza.",
-    description: "Para organizações com ações sociais, equipas de apoio e logística em campo.",
+  RESERVAS: {
+    label: "Reservas",
+    headline: "Agenda, disponibilidade e confirmações num só fluxo.",
+    description: "Ideal para espaços e serviços que precisam de marcações e slots.",
+  },
+  CLUBS: {
+    label: "Clubes",
+    headline: "Membros, quotas e comunidade organizada.",
+    description: "Perfeito para clubes e coletividades com acesso por subscrição.",
   },
 };
 
@@ -68,14 +73,6 @@ const MODULE_META: Record<OrganizationModule, { label: string; description: stri
   INSCRICOES: {
     label: "Inscrições",
     description: "Ativa formulários públicos, lugares e pagamentos num só fluxo.",
-  },
-  LOJA: {
-    label: "Loja",
-    description: "Mostra produtos e merch no perfil público da organização.",
-  },
-  GALERIA: {
-    label: "Galeria",
-    description: "Destaques visuais e feed premium para o perfil público.",
   },
 };
 
@@ -137,7 +134,7 @@ export default function BecomeOrganizerForm() {
   const [isLoaded, setIsLoaded] = useState(false);
   const [activeStep, setActiveStep] = useState(0);
   const [rankingAnswer, setRankingAnswer] = useState<"yes" | "no" | null>(null);
-  const [impactAnswer, setImpactAnswer] = useState<"yes" | "no" | null>(null);
+  const [reservationAnswer, setReservationAnswer] = useState<"yes" | "no" | null>(null);
   const [categoryTouched, setCategoryTouched] = useState(false);
 
   const form = useForm<BecomeOrganizerFormValues>({
@@ -191,10 +188,10 @@ export default function BecomeOrganizerForm() {
   const stepLabels = ["Categoria", "Módulos", "Dados"];
   const suggestedCategory = useMemo<OrganizationCategory | null>(() => {
     if (rankingAnswer === "yes") return "PADEL";
-    if (rankingAnswer === "no" && impactAnswer === "yes") return "VOLUNTARIADO";
-    if (rankingAnswer === "no" && impactAnswer === "no") return "EVENTOS";
+    if (rankingAnswer === "no" && reservationAnswer === "yes") return "RESERVAS";
+    if (rankingAnswer === "no" && reservationAnswer === "no") return "EVENTOS";
     return null;
-  }, [rankingAnswer, impactAnswer]);
+  }, [rankingAnswer, reservationAnswer]);
 
   useEffect(() => {
     if (suggestedCategory && !categoryTouched) {
@@ -366,7 +363,7 @@ export default function BecomeOrganizerForm() {
 
   const handleRankingAnswer = (value: "yes" | "no") => {
     setRankingAnswer(value);
-    if (value === "yes") setImpactAnswer(null);
+    if (value === "yes") setReservationAnswer(null);
   };
 
   const handleNextStep = async () => {
@@ -498,16 +495,16 @@ export default function BecomeOrganizerForm() {
 
                 {rankingAnswer === "no" && (
                   <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                    <p className="text-sm font-semibold text-white">Fazes ações com missão/impacto?</p>
+                    <p className="text-sm font-semibold text-white">Geris reservas ou horários?</p>
                     <p className="text-[12px] text-white/60">
-                      Ex.: iniciativas sociais, ambientais ou comunitárias.
+                      Ex.: espaços, aulas ou serviços com marcação.
                     </p>
                     <div className="mt-3 flex flex-wrap gap-2">
                       <button
                         type="button"
-                        onClick={() => setImpactAnswer("yes")}
+                        onClick={() => setReservationAnswer("yes")}
                         className={`rounded-full border px-4 py-1.5 text-xs font-semibold transition ${
-                          impactAnswer === "yes"
+                          reservationAnswer === "yes"
                             ? "border-[#6BFFFF] bg-[#6BFFFF]/15 text-white"
                             : "border-white/15 bg-black/30 text-white/70 hover:border-white/30"
                         }`}
@@ -516,9 +513,9 @@ export default function BecomeOrganizerForm() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => setImpactAnswer("no")}
+                        onClick={() => setReservationAnswer("no")}
                         className={`rounded-full border px-4 py-1.5 text-xs font-semibold transition ${
-                          impactAnswer === "no"
+                          reservationAnswer === "no"
                             ? "border-[#6BFFFF] bg-[#6BFFFF]/15 text-white"
                             : "border-white/15 bg-black/30 text-white/70 hover:border-white/30"
                         }`}

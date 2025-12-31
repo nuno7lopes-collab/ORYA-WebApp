@@ -128,7 +128,7 @@ function ResetPasswordInner() {
   }
 
   return (
-    <main className="relative min-h-screen overflow-hidden bg-gradient-to-br from-[#050915] via-[#090e1e] to-[#02040b] text-white">
+    <main className="relative min-h-screen overflow-hidden text-white">
       <div className="pointer-events-none absolute inset-0">
         <div className="absolute -left-24 top-10 h-72 w-72 rounded-full bg-[#7cf2ff]/20 blur-[120px]" />
         <div className="absolute right-0 top-20 h-80 w-80 rounded-full bg-[#ff7ddb]/15 blur-[140px]" />
@@ -225,7 +225,7 @@ export default function ResetPasswordPage() {
   return (
     <Suspense
       fallback={
-        <main className="min-h-screen flex items-center justify-center bg-black text-white">
+        <main className="min-h-screen flex items-center justify-center text-white">
           <p className="text-sm text-white/70">A carregar…</p>
         </main>
       }

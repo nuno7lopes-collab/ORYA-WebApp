@@ -38,7 +38,7 @@ const CATEGORY_CARDS = [
 
 export default function OrganizerCategoriesPage() {
   const { user, isLoading: userLoading } = useUser();
-  const { data, isLoading } = useSWR<EventsResponse>(
+  const { data } = useSWR<EventsResponse>(
     user ? "/api/organizador/events/list" : null,
     fetcher,
     { revalidateOnFocus: false }

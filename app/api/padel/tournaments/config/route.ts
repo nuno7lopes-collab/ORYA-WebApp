@@ -1,7 +1,7 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
-import { OrganizerMemberRole, PadelFormat } from "@prisma/client";
+import { OrganizerMemberRole, padel_format } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizerForUser } from "@/lib/organizerContext";
@@ -67,7 +67,10 @@ export async function POST(req: NextRequest) {
 
   const eventId = typeof body.eventId === "number" ? body.eventId : Number(body.eventId);
   const organizerIdBody = typeof body.organizerId === "number" ? body.organizerId : Number(body.organizerId);
-  const format = typeof body.format === "string" ? (body.format as PadelFormat) : null;
+  const format =
+    typeof body.format === "string" && Object.values(padel_format).includes(body.format as padel_format)
+      ? (body.format as padel_format)
+      : null;
   const numberOfCourts = typeof body.numberOfCourts === "number" ? body.numberOfCourts : 1;
   const ruleSetId = typeof body.ruleSetId === "number" ? body.ruleSetId : null;
   const defaultCategoryId = typeof body.defaultCategoryId === "number" ? body.defaultCategoryId : null;
@@ -98,10 +101,10 @@ export async function POST(req: NextRequest) {
   }
 
   // Formatos suportados (alinhados com geração de jogos)
-  const allowedFormats = new Set<PadelFormat>([
-    "TODOS_CONTRA_TODOS",
-    "QUADRO_ELIMINATORIO",
-    "GRUPOS_ELIMINATORIAS",
+  const allowedFormats = new Set<padel_format>([
+    padel_format.TODOS_CONTRA_TODOS,
+    padel_format.QUADRO_ELIMINATORIO,
+    padel_format.GRUPOS_ELIMINATORIAS,
   ]);
   if (!allowedFormats.has(format)) {
     return NextResponse.json({ ok: false, error: "FORMAT_NOT_SUPPORTED" }, { status: 400 });
@@ -127,11 +130,10 @@ export async function POST(req: NextRequest) {
       create: {
         eventId,
         organizerId: organizerIdBody,
-        format,
         numberOfCourts: Math.max(1, numberOfCourts || 1),
         ruleSetId: ruleSetId || undefined,
         defaultCategoryId: defaultCategoryId || undefined,
-        enabledFormats: enabledFormats?.filter((f) => allowedFormats.has(f as PadelFormat)) ?? undefined,
+        enabledFormats: enabledFormats?.filter((f) => allowedFormats.has(f as padel_format)) ?? undefined,
         advancedSettings: mergedAdvanced,
         format: formatEffective,
       },
@@ -140,7 +142,7 @@ export async function POST(req: NextRequest) {
         numberOfCourts: Math.max(1, numberOfCourts || 1),
         ruleSetId: ruleSetId || undefined,
         defaultCategoryId: defaultCategoryId || undefined,
-        enabledFormats: enabledFormats?.filter((f) => allowedFormats.has(f as PadelFormat)) ?? undefined,
+        enabledFormats: enabledFormats?.filter((f) => allowedFormats.has(f as padel_format)) ?? undefined,
         advancedSettings: mergedAdvanced,
       },
     });

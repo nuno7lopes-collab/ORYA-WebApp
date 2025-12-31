@@ -1,6 +1,6 @@
 import { TournamentMatchStatus } from "@prisma/client";
 
-export function canReschedule(status: TournamentMatchStatus, startAt: Date | null, newStart: Date | null) {
+export function canReschedule(status: TournamentMatchStatus, newStart: Date | null) {
   if (status === "IN_PROGRESS" || status === "DONE" || status === "DISPUTED") return false;
   if (!newStart) return true;
   const now = Date.now();

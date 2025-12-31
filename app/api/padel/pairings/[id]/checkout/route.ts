@@ -12,11 +12,12 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { validateEligibility } from "@/domain/padelEligibility";
 import { env } from "@/lib/env";
 import { checkPadelCategoryLimit } from "@/domain/padelCategoryLimit";
+import { readNumericParam } from "@/lib/routeParams";
 
 // Apenas valida e delega criação de intent ao endpoint central (/api/payments/intent).
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
-  const pairingId = Number(params?.id);
-  if (!Number.isFinite(pairingId)) return NextResponse.json({ ok: false, error: "INVALID_ID" }, { status: 400 });
+  const pairingId = readNumericParam(params?.id, req, "pairings");
+  if (pairingId === null) return NextResponse.json({ ok: false, error: "INVALID_ID" }, { status: 400 });
 
   const supabase = await createSupabaseServer();
   const {
@@ -56,7 +57,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       return NextResponse.json({ ok: false, error: "SLOT_ALREADY_PAID" }, { status: 400 });
     }
   }
-  if (pairing.deadlineAt && pairing.deadlineAt.getTime() < Date.now()) {
+  if (pairing.payment_mode === PadelPaymentMode.SPLIT && pairing.deadlineAt && pairing.deadlineAt.getTime() < Date.now()) {
     return NextResponse.json({ ok: false, error: "PAIRING_EXPIRED" }, { status: 410 });
   }
 
@@ -142,6 +143,9 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   }
 
   const currency = ticketType.currency || "EUR";
+  if (currency.toUpperCase() !== "EUR") {
+    return NextResponse.json({ ok: false, error: "CURRENCY_NOT_SUPPORTED" }, { status: 400 });
+  }
   const paymentScenario = pairing.payment_mode === PadelPaymentMode.FULL ? "GROUP_FULL" : "GROUP_SPLIT";
   const items = [
     {

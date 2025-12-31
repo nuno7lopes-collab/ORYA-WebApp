@@ -1,6 +1,6 @@
 import seedrandom from "seedrandom";
 import { prisma } from "@/lib/prisma";
-import { Prisma, TournamentFormat, TournamentMatchStatus, TournamentStageType } from "@prisma/client";
+import { Prisma, TournamentFormat, TournamentMatchStatus, TournamentStageType, PadelPairingLifecycleStatus } from "@prisma/client";
 
 type PairingId = number | null;
 
@@ -105,13 +105,16 @@ export function generateDrawAB(
   return { main, consolation };
 }
 
-const CONFIRMED_PAIRING_STATUSES = ["CONFIRMED_BOTH_PAID", "CONFIRMED_CAPTAIN_FULL"] as const;
+const CONFIRMED_PAIRING_STATUSES: PadelPairingLifecycleStatus[] = [
+  PadelPairingLifecycleStatus.CONFIRMED_BOTH_PAID,
+  PadelPairingLifecycleStatus.CONFIRMED_CAPTAIN_FULL,
+];
 
 export async function getConfirmedPairings(eventId: number) {
   const pairings = await prisma.padelPairing.findMany({
     where: {
       eventId,
-      lifecycleStatus: { in: CONFIRMED_PAIRING_STATUSES as unknown as Prisma.PadelPairingWhereInput["lifecycleStatus"] },
+      lifecycleStatus: { in: CONFIRMED_PAIRING_STATUSES },
     },
     select: { id: true },
     orderBy: { id: "asc" },

@@ -3,7 +3,7 @@ export const runtime = "nodejs";
 import { NextRequest, NextResponse } from "next/server";
 import {
   OrganizerMemberRole,
-  PadelFormat,
+  padel_format,
   PadelPairingLifecycleStatus,
   PadelPairingSlotStatus,
   PadelPairingStatus,
@@ -198,7 +198,7 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  const allowedFormats = new Set<string>(Object.values(PadelFormat));
+  const allowedFormats = new Set<string>(Object.values(padel_format));
 
   const updates = linksInput.map((link) => {
     const padelCategoryId = typeof link.padelCategoryId === "number" ? link.padelCategoryId : null;

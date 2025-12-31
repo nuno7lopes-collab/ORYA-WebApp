@@ -49,7 +49,7 @@ export async function DELETE(_req: NextRequest, context: { params: Promise<{ id:
     // Soft delete simples: marcar como SUSPENDED, libertar username e limpar memberships
     await prisma.organizer.update({
       where: { id: organizerId },
-      data: { status: "SUSPENDED", username: null, publicListingEnabled: false },
+      data: { status: "SUSPENDED", username: null },
     });
     await prisma.organizerMember.deleteMany({ where: { organizerId } });
     await clearUsernameForOwner({ ownerType: "organizer", ownerId: organizerId });

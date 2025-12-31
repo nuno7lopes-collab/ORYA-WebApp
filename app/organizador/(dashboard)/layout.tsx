@@ -1,14 +1,12 @@
 export const runtime = "nodejs";
 
-import { ReactNode, CSSProperties } from "react";
+import type { ReactNode, CSSProperties } from "react";
 import { AppSidebar } from "@/components/app-sidebar";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizerForUser } from "@/lib/organizerContext";
 import { prisma } from "@/lib/prisma";
 import { OrganizerLangSetter } from "../OrganizerLangSetter";
-import { RoleBadge } from "../RoleBadge";
-import { DASHBOARD_LABEL, DASHBOARD_SHELL_PADDING } from "../dashboardUi";
 import { OrganizerBreadcrumb } from "../OrganizerBreadcrumb";
 
 type OrganizationSwitcherOption = {
@@ -42,10 +40,8 @@ export default async function OrganizerDashboardLayout({ children }: { children:
     data: { user },
   } = await supabase.auth.getUser();
 
-  let currentId: number | null = null;
   let orgOptions: OrganizationSwitcherOption[] = [];
   let activeOrganizer: OrganizationSwitcherOption["organizer"] | null = null;
-  let activeRole: string | null = null;
   let profile: { fullName: string | null; username: string | null; avatarUrl: string | null } | null = null;
 
   if (user) {
@@ -60,9 +56,7 @@ export default async function OrganizerDashboardLayout({ children }: { children:
 
     try {
       const { organizer, membership } = await getActiveOrganizerForUser(user.id);
-      currentId = organizer?.id ?? null;
       if (organizer && membership) {
-        activeRole = membership.role;
         activeOrganizer = {
           id: organizer.id,
           publicName: organizer.publicName,
@@ -80,7 +74,6 @@ export default async function OrganizerDashboardLayout({ children }: { children:
         };
       }
     } catch {
-      currentId = null;
     }
 
     try {
@@ -151,7 +144,7 @@ export default async function OrganizerDashboardLayout({ children }: { children:
   return (
     <SidebarProvider defaultOpen>
       <div
-        className="orya-body-bg text-white flex min-h-screen items-stretch"
+        className="text-white flex min-h-screen items-stretch"
         style={
           {
             "--brand-primary": brandPrimary,
@@ -184,13 +177,7 @@ export default async function OrganizerDashboardLayout({ children }: { children:
           </div>
           <main className="relative min-h-0 flex-1 overflow-y-auto pb-0 pt-0">
             <div className="px-4 py-4 md:px-6 lg:px-8 lg:py-6">
-              <div className="relative isolate overflow-hidden">
-                <div className="pointer-events-none absolute inset-0 -z-10">
-                  <div className="absolute left-0 top-10 h-80 w-80 rounded-full bg-[radial-gradient(circle_at_center,rgba(255,0,200,0.08),rgba(12,18,36,0))]" />
-                  <div className="absolute right-0 bottom-16 h-96 w-96 rounded-full bg-[radial-gradient(circle_at_center,rgba(107,255,255,0.10),rgba(5,9,21,0))]" />
-                </div>
-                {children}
-              </div>
+              <div className="relative isolate overflow-hidden">{children}</div>
             </div>
           </main>
         </SidebarInset>

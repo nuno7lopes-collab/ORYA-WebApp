@@ -17,7 +17,12 @@ export async function canManageMembersDb(userId: string, organizerId: number) {
 
 export async function canManageEventsDb(userId: string, organizerId: number) {
   const role = await getOrganizerRole(userId, organizerId);
-  return role === OrganizerMemberRole.OWNER || role === OrganizerMemberRole.CO_OWNER || role === OrganizerMemberRole.ADMIN;
+  return (
+    role === OrganizerMemberRole.OWNER ||
+    role === OrganizerMemberRole.CO_OWNER ||
+    role === OrganizerMemberRole.ADMIN ||
+    role === OrganizerMemberRole.STAFF
+  );
 }
 
 export async function canScanTickets(userId: string, eventId: number) {

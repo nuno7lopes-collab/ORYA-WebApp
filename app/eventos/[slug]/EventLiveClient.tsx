@@ -519,7 +519,6 @@ function OrganizerMatchEditor({
     a: match.score?.goals?.a ?? 0,
     b: match.score?.goals?.b ?? 0,
   }));
-  const [expectedUpdatedAt, setExpectedUpdatedAt] = useState<string | null>(match.updatedAt ?? null);
   const [saving, setSaving] = useState(false);
   const [undoing, setUndoing] = useState(false);
   const [disputePending, setDisputePending] = useState(false);
@@ -536,7 +535,6 @@ function OrganizerMatchEditor({
 
   useEffect(() => {
     const next = match.updatedAt ?? null;
-    setExpectedUpdatedAt(next);
     expectedUpdatedAtRef.current = next;
     pendingScoreRef.current = null;
     if (debounceRef.current) {
@@ -596,7 +594,6 @@ function OrganizerMatchEditor({
       return;
     }
     if (json?.match?.updatedAt) {
-      setExpectedUpdatedAt(json.match.updatedAt as string);
       expectedUpdatedAtRef.current = json.match.updatedAt as string;
     }
     if (!pendingScoreRef.current) {
@@ -672,7 +669,6 @@ function OrganizerMatchEditor({
       return;
     }
     if (json?.match?.updatedAt) {
-      setExpectedUpdatedAt(json.match.updatedAt as string);
       expectedUpdatedAtRef.current = json.match.updatedAt as string;
     }
     setScore({ a: nextA, b: nextB });
@@ -711,7 +707,6 @@ function OrganizerMatchEditor({
         return;
       }
       if (json?.match?.updatedAt) {
-        setExpectedUpdatedAt(json.match.updatedAt as string);
         expectedUpdatedAtRef.current = json.match.updatedAt as string;
       }
       setInfo("Jogo marcado como disputado.");
@@ -754,7 +749,6 @@ function OrganizerMatchEditor({
         return;
       }
       if (json?.match?.updatedAt) {
-        setExpectedUpdatedAt(json.match.updatedAt as string);
         expectedUpdatedAtRef.current = json.match.updatedAt as string;
       }
       setInfo("Disputa resolvida.");
@@ -779,7 +773,6 @@ function OrganizerMatchEditor({
         return;
       }
       if (json?.match?.updatedAt) {
-        setExpectedUpdatedAt(json.match.updatedAt as string);
         expectedUpdatedAtRef.current = json.match.updatedAt as string;
       }
       setScore({
@@ -1056,7 +1049,6 @@ function BracketRoundsView({
   }, {} as Record<number, string>);
   const treeRowHeight = 32;
   const liveMatches = matches.filter((match) => match.status === "IN_PROGRESS" || match.status === "LIVE");
-  const liveRounds = new Set<number>(liveMatches.map((match) => match.round ?? 0).filter((round) => round > 0));
   const liveRound = liveMatches[0]?.round ?? null;
   const roundIsComplete = (round: number) => {
     const list = matchesByRound[round] ?? [];
@@ -1266,7 +1258,6 @@ function BracketRoundsView({
     const leftCount = leftRounds.length;
     const columns = leftCount * 2 + 1;
     const rowHeight = options?.rowHeight ?? treeRowHeight;
-    const minColWidth = options?.minColWidth ?? 160;
     const treeRows = leftCount > 0 ? 2 ** leftCount : 1;
     const leftIndexMap = leftRounds.reduce((acc, round, idx) => {
       acc[round] = idx;
@@ -1555,7 +1546,6 @@ function OneVOneLiveLayout({
   organizer,
   tournament,
   pairings,
-  timeZone,
   eventStatus,
   countdownLabel,
   nowMatch,
@@ -1575,7 +1565,6 @@ function OneVOneLiveLayout({
   organizer: { id: number; publicName: string; username: string | null; brandingAvatarUrl: string | null } | null;
   tournament: any;
   pairings: Record<number, PairingMeta>;
-  timeZone: string;
   eventStatus: string;
   countdownLabel: string | null;
   nowMatch: MatchPayload | null;
@@ -1643,7 +1632,15 @@ function OneVOneLiveLayout({
   const goalDefaultLimit = goalLimits?.defaultLimit ?? 3;
   const goalRoundOverrides = goalLimits?.roundLimits ?? null;
   const roundNumbers = bracketStage?.matches
-    ? Array.from(new Set(bracketStage.matches.map((m: MatchPayload) => m.round ?? 0))).filter((r) => r > 0).sort((a, b) => a - b)
+    ? Array.from(
+        new Set(
+          (bracketStage.matches as MatchPayload[]).map((m) =>
+            Number.isFinite(m.round) ? Number(m.round) : 0,
+          ),
+        ),
+      )
+        .filter((r): r is number => Number.isFinite(r) && r > 0)
+        .sort((a, b) => a - b)
     : [];
   const roundLabels = buildRoundLabels(roundNumbers.length);
   const roundLabelMap = roundNumbers.reduce((acc, round, idx) => {
@@ -2301,6 +2298,9 @@ export default function EventLiveClient({
 
   const url = useMemo(() => `/api/livehub/${slug}`, [slug]);
   const { data, error, mutate } = useSWR(url, fetcher, { refreshInterval: 10000 });
+  const onRefresh = () => {
+    void mutate();
+  };
 
   const organizer = (data?.organizer as
     | {
@@ -2469,8 +2469,8 @@ export default function EventLiveClient({
     )
     .slice(0, 6);
 
-  const modules = liveHub?.modules ?? [];
-  const resolvedModules =
+  const modules: LiveHubModule[] = Array.isArray(liveHub?.modules) ? (liveHub.modules as LiveHubModule[]) : [];
+  const resolvedModules: LiveHubModule[] =
     event.liveStreamUrl && !modules.includes("VIDEO") ? ["VIDEO", ...modules] : modules;
   const eventStatus = getEventStatusLabel(event.startsAt, event.endsAt);
   const calendarLinks = event.startsAt ? buildCalendarLinks(event, timeZone) : null;
@@ -2648,7 +2648,6 @@ export default function EventLiveClient({
           organizer={organizer}
           tournament={tournamentView}
           pairings={pairings}
-          timeZone={timeZone}
           eventStatus={eventStatus}
           countdownLabel={countdownLabel}
           nowMatch={nowMatch}
@@ -2812,7 +2811,13 @@ export default function EventLiveClient({
         );
       }
       case "NOW_PLAYING": {
-        if (!tournamentView) return <EmptyCard key="now" title="Agora a jogar" children="Sem torneio associado." />;
+        if (!tournamentView) {
+          return (
+            <EmptyCard key="now" title="Agora a jogar">
+              Sem torneio associado.
+            </EmptyCard>
+          );
+        }
         return (
           <section key="now" className="rounded-3xl border border-white/10 bg-white/5 p-4 space-y-4">
             <div className="flex items-center justify-between">
@@ -2829,7 +2834,13 @@ export default function EventLiveClient({
         );
       }
       case "NEXT_MATCHES": {
-        if (!tournamentView) return <EmptyCard key="next" title="Próximos jogos" children="Sem torneio associado." />;
+        if (!tournamentView) {
+          return (
+            <EmptyCard key="next" title="Próximos jogos">
+              Sem torneio associado.
+            </EmptyCard>
+          );
+        }
         return (
           <section key="next" className="rounded-3xl border border-white/10 bg-white/5 p-4 space-y-4">
             <div className="flex items-center justify-between">
@@ -2860,7 +2871,13 @@ export default function EventLiveClient({
         );
       }
       case "RESULTS": {
-        if (!tournamentView) return <EmptyCard key="results" title="Resultados" children="Sem torneio associado." />;
+        if (!tournamentView) {
+          return (
+            <EmptyCard key="results" title="Resultados">
+              Sem torneio associado.
+            </EmptyCard>
+          );
+        }
         return (
           <section key="results" className="rounded-3xl border border-white/10 bg-white/5 p-4 space-y-4">
             <div className="flex items-center justify-between">
@@ -2877,7 +2894,13 @@ export default function EventLiveClient({
         );
       }
       case "BRACKET": {
-        if (!tournamentView) return <EmptyCard key="bracket" title="Bracket" children="Sem torneio associado." />;
+        if (!tournamentView) {
+          return (
+            <EmptyCard key="bracket" title="Bracket">
+              Sem torneio associado.
+            </EmptyCard>
+          );
+        }
         const stages = tournamentView.stages ?? [];
         const playoffStages = stages.filter((stage: any) => stage.stageType === "PLAYOFF" && stage.matches?.length);
         const bracketStages = playoffStages.length > 0 ? playoffStages : stages.filter((stage: any) => stage.matches?.length);
@@ -2980,14 +3003,28 @@ export default function EventLiveClient({
           );
         }
 
-        return <EmptyCard key="bracket" title="Bracket" children="Sem chave definida." />;
+        return (
+          <EmptyCard key="bracket" title="Bracket">
+            Sem chave definida.
+          </EmptyCard>
+        );
       }
       case "CHAMPION": {
-        if (!tournamentView) return <EmptyCard key="champ" title="Campeão" children="Sem torneio associado." />;
+        if (!tournamentView) {
+          return (
+            <EmptyCard key="champ" title="Campeão">
+              Sem torneio associado.
+            </EmptyCard>
+          );
+        }
         const championId = (tournamentView.championPairingId as number | null) ?? derivedChampionPairingId;
         const meta = pairingMeta(championId, pairings);
         if (!championId || !meta) {
-          return <EmptyCard key="champ" title="Campeão" children="Ainda não existe campeão definido." />;
+          return (
+            <EmptyCard key="champ" title="Campeão">
+              Ainda não existe campeão definido.
+            </EmptyCard>
+          );
         }
         return (
           <section key="champ" className="rounded-3xl border border-amber-300/30 bg-[linear-gradient(135deg,rgba(255,215,120,0.12),rgba(20,20,20,0.8))] p-5">

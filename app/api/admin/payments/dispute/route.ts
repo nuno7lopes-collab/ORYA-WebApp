@@ -5,7 +5,6 @@ import { enqueueOperation } from "@/lib/operations/enqueue";
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
   const saleSummaryId = Number(body?.saleSummaryId);
-  const paymentIntentId = typeof body?.paymentIntentId === "string" ? body.paymentIntentId : null;
   const reason = typeof body?.reason === "string" ? body.reason : null;
 
   if (!Number.isFinite(saleSummaryId)) {

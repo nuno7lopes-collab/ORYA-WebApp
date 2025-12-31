@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
-import { OrganizerMemberRole } from "@prisma/client";
+import { OrganizerMemberRole, Prisma } from "@prisma/client";
 
 const UNDO_WINDOW_MS = 60 * 1000;
 
@@ -105,12 +105,12 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
         tournamentId,
         userId: data.user.id,
         action: "UNDO_MATCH_RESULT",
-        payloadBefore: after ?? {},
+        payloadBefore: (after ?? {}) as Prisma.InputJsonValue,
         payloadAfter: {
           matchId,
           restored: true,
           sourceLogId: target.id,
-        },
+        } as Prisma.InputJsonValue,
       },
     });
 

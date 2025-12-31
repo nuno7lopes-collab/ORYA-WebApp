@@ -16,10 +16,21 @@ export type LiveHubModule =
 export type LiveHubViewerRole = "PUBLIC" | "PARTICIPANT" | "ORGANIZER";
 export type LiveHubMode = "DEFAULT" | "PREMIUM";
 
+const EVENT_MODULES: LiveHubModule[] = [
+  "HERO",
+  "VIDEO",
+  "NOW_PLAYING",
+  "NEXT_MATCHES",
+  "RESULTS",
+  "BRACKET",
+  "SPONSORS",
+];
+
 const DEFAULT_MODULES: Record<OrganizationCategory, LiveHubModule[]> = {
   PADEL: ["HERO", "VIDEO", "NEXT_MATCHES", "RESULTS", "BRACKET"],
-  EVENTOS: ["HERO", "VIDEO", "NOW_PLAYING", "NEXT_MATCHES", "RESULTS", "BRACKET", "SPONSORS"],
-  VOLUNTARIADO: ["HERO", "SUMMARY", "CTA"],
+  EVENTOS: EVENT_MODULES,
+  RESERVAS: EVENT_MODULES,
+  CLUBS: EVENT_MODULES,
 };
 
 const PREMIUM_MODULES: Partial<Record<OrganizationCategory, LiveHubModule[]>> = {};

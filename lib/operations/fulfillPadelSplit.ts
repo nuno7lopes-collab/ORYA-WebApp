@@ -19,7 +19,17 @@ type IntentLike = {
   livemode: boolean;
   currency: string;
   metadata: Record<string, any>;
+  payment_method?: string | { id?: string } | null;
 };
+
+function extractPaymentMethodId(intent: IntentLike) {
+  if (!intent.payment_method) return null;
+  if (typeof intent.payment_method === "string") return intent.payment_method;
+  if (typeof intent.payment_method === "object" && typeof intent.payment_method.id === "string") {
+    return intent.payment_method.id;
+  }
+  return null;
+}
 
 export async function fulfillPadelSplitIntent(intent: IntentLike, stripeFeeForIntentValue: number | null): Promise<boolean> {
   const meta = intent.metadata ?? {};
@@ -98,6 +108,8 @@ export async function fulfillPadelSplitIntent(intent: IntentLike, stripeFeeForIn
   });
   if (!event) return false;
 
+  const paymentMethodId = extractPaymentMethodId(intent);
+
   await prisma.$transaction(async (tx) => {
     const pairing = await tx.padelPairing.findUnique({
       where: { id: pairingId },
@@ -130,7 +142,7 @@ export async function fulfillPadelSplitIntent(intent: IntentLike, stripeFeeForIn
           eventId,
           ticketTypeId,
           pricePaid: ticketType.price,
-          totalPaidCents: intent.amount,
+          totalPaidCents: intent.amount ?? ticketType.price,
           currency: ticketType.currency || intent.currency.toUpperCase(),
           stripePaymentIntentId: intent.id,
           status: "ACTIVE",
@@ -139,7 +151,7 @@ export async function fulfillPadelSplitIntent(intent: IntentLike, stripeFeeForIn
           userId: userId ?? undefined,
           ownerUserId: ownerUserId ?? null,
           ownerIdentityId: ownerIdentityId ?? null,
-          pairingId,
+          pairingId: pairingId ?? undefined,
           padelSplitShareCents: ticketType.price,
         },
       });
@@ -217,10 +229,11 @@ export async function fulfillPadelSplitIntent(intent: IntentLike, stripeFeeForIn
         : ownerEmailNormalized
           ? `email:${ownerEmailNormalized}`
           : "unknown";
+    const entitlementPurchaseId = sale.purchaseId ?? sale.paymentIntentId ?? intent.id;
     await tx.entitlement.upsert({
       where: {
         purchaseId_saleLineId_lineItemIndex_ownerKey_type: {
-          purchaseId: sale.purchaseId,
+          purchaseId: entitlementPurchaseId,
           saleLineId: saleLine.id,
           lineItemIndex: 0,
           ownerKey,
@@ -239,7 +252,7 @@ export async function fulfillPadelSplitIntent(intent: IntentLike, stripeFeeForIn
         snapshotTimezone: event.timezone,
       },
       create: {
-        purchaseId: sale.purchaseId,
+        purchaseId: entitlementPurchaseId,
         saleLineId: saleLine.id,
         lineItemIndex: 0,
         ownerKey,
@@ -270,6 +283,9 @@ export async function fulfillPadelSplitIntent(intent: IntentLike, stripeFeeForIn
             },
           },
         },
+        ...(slot.slot_role === "CAPTAIN" && paymentMethodId
+          ? { paymentMethodId }
+          : {}),
       },
       include: { slots: true },
     });

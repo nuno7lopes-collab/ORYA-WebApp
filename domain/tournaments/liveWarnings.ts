@@ -1,4 +1,3 @@
-import { Prisma } from "@prisma/client";
 import { validateScore } from "@/domain/tournaments/matchRules";
 
 type Warning =

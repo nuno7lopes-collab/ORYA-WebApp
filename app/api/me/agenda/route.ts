@@ -4,7 +4,7 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 
 type AgendaItem = {
   id: string;
-  type: "EVENTO" | "JOGO" | "INSCRICAO";
+  type: "EVENTO" | "JOGO" | "INSCRICAO" | "RESERVA";
   title: string;
   startAt: string;
   endAt: string | null;
@@ -59,7 +59,6 @@ const participationPriority: Record<string, number> = {
   INSCRITO: 4,
   CONVOCADO: 3,
   RESERVA: 3,
-  SEGUINDO: 2,
 };
 
 export async function GET(req: NextRequest) {
@@ -80,7 +79,6 @@ export async function GET(req: NextRequest) {
     const [
       ticketRows,
       reservationRows,
-      interestRows,
       entryRows,
       staffRows,
       matchRows,
@@ -115,29 +113,6 @@ export async function GET(req: NextRequest) {
           userId,
           status: "ACTIVE",
           expiresAt: { gte: new Date() },
-          event: {
-            isDeleted: false,
-            startsAt: { lte: end },
-            endsAt: { gte: start },
-          },
-        },
-        select: {
-          event: {
-            select: {
-              id: true,
-              title: true,
-              slug: true,
-              startsAt: true,
-              endsAt: true,
-              status: true,
-              templateType: true,
-            },
-          },
-        },
-      }),
-      prisma.eventInterest.findMany({
-        where: {
-          userId,
           event: {
             isDeleted: false,
             startsAt: { lte: end },
@@ -309,9 +284,6 @@ export async function GET(req: NextRequest) {
     });
     reservationRows.forEach((row) => {
       if (row.event) upsertEvent(row.event, "RESERVA");
-    });
-    interestRows.forEach((row) => {
-      if (row.event) upsertEvent(row.event, "SEGUINDO");
     });
 
     const items: AgendaItem[] = Array.from(eventMap.values()).map((entry) => entry.item);

@@ -28,16 +28,9 @@ export type CheckoutBreakdown = {
     lineTotalCents: number;
   }[];
   subtotalCents: number;
-  feeMode: string | null;
-  platformFeeCents: number;
-  platformFeeCombinedCents?: number;
-  platformFeeOryaCents?: number;
-  stripeFeeEstimateCents?: number;
   totalCents: number;
   currency: string;
   discountCents?: number;
-  feeBpsApplied?: number;
-  feeFixedApplied?: number;
 } | null;
 
 type CheckoutContextType = {

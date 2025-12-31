@@ -6,7 +6,7 @@ import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { TicketStatus } from "@prisma/client";
 import { getActiveOrganizerForUser } from "@/lib/organizerContext";
 import { resolveOrganizerIdFromRequest } from "@/lib/organizerId";
-import { isOrgAdminOrAbove } from "@/lib/organizerPermissions";
+import { canManageEvents } from "@/lib/organizerPermissions";
 
 export async function GET(req: NextRequest) {
   try {
@@ -37,10 +37,10 @@ export async function GET(req: NextRequest) {
     const organizerId = resolveOrganizerIdFromRequest(req);
     const { organizer, membership } = await getActiveOrganizerForUser(profile.id, {
       organizerId: organizerId ?? undefined,
-      roles: ["OWNER", "CO_OWNER", "ADMIN"],
+      roles: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"],
     });
 
-    if (!organizer || !membership || !isOrgAdminOrAbove(membership.role)) {
+    if (!organizer || !membership || !canManageEvents(membership.role)) {
       return NextResponse.json(
         {
           ok: false,
@@ -60,7 +60,6 @@ export async function GET(req: NextRequest) {
         startsAt: "asc",
       },
       include: {
-        categories: true,
         padelTournamentConfig: {
           select: { padelClubId: true, partnerClubIds: true },
         },
@@ -154,7 +153,6 @@ export async function GET(req: NextRequest) {
       totalPaidCents: statsMap.get(event.id)?.totalPaidCents ?? 0,
       platformFeeCents: statsMap.get(event.id)?.platformFeeCents ?? 0,
       capacity: capacityMap.get(event.id) ?? null,
-      categories: event.categories.map((c) => c.category),
       padelClubId: event.padelTournamentConfig?.padelClubId ?? null,
       padelPartnerClubIds: event.padelTournamentConfig?.partnerClubIds ?? [],
       padelClubName: event.padelTournamentConfig?.padelClubId ? padelClubMap.get(event.padelTournamentConfig.padelClubId) ?? null : null,

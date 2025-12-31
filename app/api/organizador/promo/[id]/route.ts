@@ -186,8 +186,6 @@ export async function GET(
         promo: {
           id: promo.id,
           code: promo.code,
-          name: promo.name,
-          description: promo.description,
           type: promo.type,
           value: promo.value,
           active: promo.active,
@@ -196,7 +194,6 @@ export async function GET(
           validUntil: promo.validUntil,
           minQuantity: promo.minQuantity,
           minTotalCents: promo.minTotalCents,
-          minCartValueCents: promo.minCartValueCents,
           maxUses: promo.maxUses,
           perUserLimit: promo.perUserLimit,
           eventId: promo.eventId,

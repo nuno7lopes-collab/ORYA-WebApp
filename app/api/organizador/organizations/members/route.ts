@@ -66,22 +66,16 @@ export async function GET(req: NextRequest) {
     });
 
     const items = members.map((m) => {
-      const visibility = (m.user as { visibility?: string | null })?.visibility ?? "PUBLIC";
-      const isSelf = m.userId === user.id;
-      const isPrivate = visibility === "PRIVATE" && !isSelf;
-
       return {
         userId: m.userId,
         role: m.role,
         invitedByUserId: m.invitedByUserId,
         createdAt: m.createdAt,
-        fullName: isPrivate
-          ? null
-          : (m.user && "fullName" in m.user ? (m.user as { fullName?: string | null }).fullName ?? null : null),
+        fullName: m.user && "fullName" in m.user ? (m.user as { fullName?: string | null }).fullName ?? null : null,
         username: m.user && "username" in m.user ? (m.user as { username?: string | null }).username ?? null : null,
         avatarUrl: m.user && "avatarUrl" in m.user ? (m.user as { avatarUrl?: string | null }).avatarUrl ?? null : null,
-        email: isPrivate ? null : null,
-        visibility,
+        email: null,
+        visibility: (m.user as { visibility?: string | null })?.visibility ?? "PUBLIC",
       };
     });
 

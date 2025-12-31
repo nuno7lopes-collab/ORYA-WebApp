@@ -50,6 +50,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "REQUEST_EXPIRED" }, { status: 400 });
     }
 
+    const ip = req.headers.get("x-forwarded-for") ?? req.headers.get("x-real-ip") ?? null;
     await prisma.$transaction(async (tx) => {
       await tx.organizerOfficialEmailRequest.update({
         where: { id: request.id },
@@ -71,7 +72,7 @@ export async function POST(req: NextRequest) {
         actorUserId: user.id,
         action: "OFFICIAL_EMAIL_CONFIRMED",
         metadata: { requestId: request.id, email: request.newEmail },
-        ip: req.ip ?? null,
+        ip,
         userAgent: req.headers.get("user-agent"),
       });
     });

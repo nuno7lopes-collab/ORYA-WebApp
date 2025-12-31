@@ -88,9 +88,6 @@ type EventEditClientProps = {
     participantAccessMode: ParticipantAccessMode;
     publicTicketTypeIds: number[];
     participantTicketTypeIds: number[];
-    feeModeOverride?: string | null;
-    platformFeeBpsOverride?: number | null;
-    platformFeeFixedCentsOverride?: number | null;
     payoutMode?: string | null;
   };
   tickets: TicketTypeUI[];
@@ -289,7 +286,6 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
 
   const toggleTicketType = (
     id: number,
-    list: number[],
     setList: Dispatch<SetStateAction<number[]>>,
   ) => {
     setList((prev) => (prev.includes(id) ? prev.filter((t) => t !== id) : [...prev, id]));
@@ -617,7 +613,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
     try {
       const formData = new FormData();
       formData.append("file", file);
-      const res = await fetch("/api/upload", { method: "POST", body: formData });
+      const res = await fetch("/api/upload?scope=event-cover", { method: "POST", body: formData });
       const json = await res.json();
       if (!res.ok || !json?.url) {
         throw new Error(json?.error || "Falha no upload da imagem.");
@@ -809,9 +805,6 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
           participantAccessMode,
           publicTicketTypeIds: publicTicketTypeIdsToSend,
           participantTicketTypeIds: participantTicketTypeIdsToSend,
-          feeModeOverride: null,
-          platformFeeBpsOverride: null,
-          platformFeeFixedCentsOverride: null,
           ticketTypeUpdates,
           newTicketTypes: newTicketsPayload,
         }),
@@ -1084,8 +1077,8 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
         <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-3 text-sm text-white/75">
           <p className="font-semibold text-white">Taxas</p>
           <p className="text-[12px] text-white/65">
-            As taxas são definidas pela ORYA. O organizador não altera fee mode nem valores (para orgs de plataforma, taxa
-            ORYA é zero; apenas taxa Stripe aplica).
+            As taxas são definidas pela ORYA e estão sempre incluídas no preço público. Não há repasse explícito ao cliente;
+            os detalhes aparecem nas transações e relatórios.
           </p>
         </div>
         <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-3 text-sm text-white/75">
@@ -1178,7 +1171,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
                             <input
                               type="checkbox"
                               checked={publicTicketTypeIds.includes(ticket.id)}
-                              onChange={() => toggleTicketType(ticket.id, publicTicketTypeIds, setPublicTicketTypeIds)}
+                              onChange={() => toggleTicketType(ticket.id, setPublicTicketTypeIds)}
                             />
                             <span className="text-white/80">{ticket.name}</span>
                           </label>
@@ -1263,7 +1256,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
                               type="checkbox"
                               checked={participantTicketTypeIds.includes(ticket.id)}
                               onChange={() =>
-                                toggleTicketType(ticket.id, participantTicketTypeIds, setParticipantTicketTypeIds)
+                                toggleTicketType(ticket.id, setParticipantTicketTypeIds)
                               }
                             />
                             <span className="text-white/80">{ticket.name}</span>

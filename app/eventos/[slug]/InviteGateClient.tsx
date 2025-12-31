@@ -18,6 +18,7 @@ type InviteGateClientProps = {
     eventId: number;
     organizerId: number | null;
     categoryId?: number | null;
+    categoryLinkId?: number | null;
   };
 };
 

@@ -2,6 +2,7 @@ import { OrganizerMemberRole } from "@prisma/client";
 
 const ROLE_WEIGHT: Record<OrganizerMemberRole, number> = {
   [OrganizerMemberRole.VIEWER]: 0,
+  [OrganizerMemberRole.PROMOTER]: 0,
   [OrganizerMemberRole.STAFF]: 1,
   [OrganizerMemberRole.ADMIN]: 2,
   [OrganizerMemberRole.CO_OWNER]: 3,
@@ -10,12 +11,14 @@ const ROLE_WEIGHT: Record<OrganizerMemberRole, number> = {
 
 const ADMIN_MANAGEABLE = new Set<OrganizerMemberRole>([
   OrganizerMemberRole.STAFF,
+  OrganizerMemberRole.PROMOTER,
   OrganizerMemberRole.VIEWER,
 ]);
 
 const CO_OWNER_MANAGEABLE = new Set<OrganizerMemberRole>([
   OrganizerMemberRole.ADMIN,
   OrganizerMemberRole.STAFF,
+  OrganizerMemberRole.PROMOTER,
   OrganizerMemberRole.VIEWER,
 ]);
 
@@ -32,7 +35,7 @@ export function isOrgAdminOrAbove(role: OrganizerMemberRole | null | undefined) 
 }
 
 export function canManageEvents(role: OrganizerMemberRole | null | undefined) {
-  return isOrgAdminOrAbove(role);
+  return role === OrganizerMemberRole.STAFF || isOrgAdminOrAbove(role);
 }
 
 export function canManageBilling(role: OrganizerMemberRole | null | undefined) {

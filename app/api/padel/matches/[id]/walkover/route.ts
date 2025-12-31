@@ -1,16 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { OrganizerMemberRole, PadelMatchStatus } from "@prisma/client";
+import { OrganizerMemberRole, padel_match_status } from "@prisma/client";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { canMarkWalkover } from "@/domain/padel/pairingPolicy";
 import { getActiveOrganizerForUser } from "@/lib/organizerContext";
 import { isPadelStaff } from "@/lib/padel/staff";
+import { readNumericParam } from "@/lib/routeParams";
 
 const allowedRoles: OrganizerMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
-  const matchId = Number(params?.id);
-  if (!Number.isFinite(matchId)) return NextResponse.json({ ok: false, error: "INVALID_ID" }, { status: 400 });
+  const matchId = readNumericParam(params?.id, req, "matches");
+  if (matchId === null) return NextResponse.json({ ok: false, error: "INVALID_ID" }, { status: 400 });
 
   const supabase = await createSupabaseServer();
   const { data: authData, error: authError } = await supabase.auth.getUser();
@@ -31,7 +32,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   if (!match.event?.organizerId) {
     return NextResponse.json({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
   }
-  if (match.status === PadelMatchStatus.DONE) {
+  if (match.status === padel_match_status.DONE) {
     return NextResponse.json({ ok: false, error: "ALREADY_DONE" }, { status: 409 });
   }
 
@@ -66,7 +67,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const updated = await prisma.$transaction(async (tx) => {
     const updatedMatch = await tx.padelMatch.update({
       where: { id: matchId },
-      data: { status: PadelMatchStatus.DONE, winnerPairingId, score: { walkover: true } },
+      data: { status: padel_match_status.DONE, winnerPairingId, score: { walkover: true } },
     });
     return updatedMatch;
   });

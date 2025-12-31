@@ -69,9 +69,8 @@ export async function POST(req: NextRequest) {
 
           await clearUsernameForOwner({ ownerType: "user", ownerId: profile.id, tx });
 
-          await tx.organizer.updateMany({
+          await tx.organizerMember.deleteMany({
             where: { userId: profile.id },
-            data: { userId: null },
           });
         });
 

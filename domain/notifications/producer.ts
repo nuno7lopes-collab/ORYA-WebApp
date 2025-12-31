@@ -1,10 +1,11 @@
 import { enqueueNotification } from "@/domain/notifications/outbox";
 import type { NotificationTemplate } from "@/domain/notifications/types";
+import type { Prisma } from "@prisma/client";
 
 type CommonArgs = {
   userId: string;
   templateVersion?: string;
-  payload?: Record<string, unknown>;
+  payload?: Prisma.InputJsonValue;
 };
 
 function buildDedupe(prefix: string, parts: Array<string | number | null | undefined>) {
@@ -176,18 +177,5 @@ export async function notifyChampion(params: { userId: string; tournamentId: num
   return queue("CHAMPION", dedupeKey, {
     userId: params.userId,
     payload: { tournamentId: params.tournamentId },
-  });
-}
-
-export async function notifyBroadcast(params: {
-  tournamentId: number;
-  userId: string;
-  broadcastId: string;
-  audienceKey: string;
-}) {
-  const dedupeKey = buildDedupe("BROADCAST", [params.tournamentId, params.audienceKey, params.userId]);
-  return queue("BROADCAST", dedupeKey, {
-    userId: params.userId,
-    payload: { tournamentId: params.tournamentId, broadcastId: params.broadcastId },
   });
 }

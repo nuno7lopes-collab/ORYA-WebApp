@@ -7,7 +7,15 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { getActiveOrganizerForUser } from "@/lib/organizerContext";
 import { resolveOrganizerIdFromRequest } from "@/lib/organizerId";
-import { isOrgAdminOrAbove } from "@/lib/organizerPermissions";
+import { canManageEvents } from "@/lib/organizerPermissions";
+import {
+  EventParticipantAccessMode,
+  EventPublicAccessMode,
+  EventTemplateType,
+  LiveHubVisibility,
+  PayoutMode,
+  ResaleMode,
+} from "@prisma/client";
 
 // Tipos esperados no body do pedido
 type TicketTypeInput = {
@@ -28,7 +36,6 @@ type CreateOrganizerEventBody = {
   templateType?: string; // PADEL | OTHER
   ticketTypes?: TicketTypeInput[];
   address?: string | null;
-  categories?: string[];
   resaleMode?: string; // ALWAYS | AFTER_SOLD_OUT | DISABLED
   coverImageUrl?: string | null;
   inviteOnly?: boolean;
@@ -142,9 +149,9 @@ export async function POST(req: NextRequest) {
     const organizerId = resolveOrganizerIdFromRequest(req);
     const { organizer, membership } = await getActiveOrganizerForUser(profile.id, {
       organizerId: organizerId ?? undefined,
-      roles: ["OWNER", "CO_OWNER", "ADMIN"],
+      roles: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"],
     });
-    if (!organizer || !membership || !isOrgAdminOrAbove(membership.role)) {
+    if (!organizer || !membership || !canManageEvents(membership.role)) {
       return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
     const isAdmin = Array.isArray(profile.roles) ? profile.roles.includes("admin") : false;
@@ -162,9 +169,10 @@ export async function POST(req: NextRequest) {
       | "AFTER_SOLD_OUT"
       | "DISABLED"
       | undefined;
-    const payoutModeRequested = body.payoutMode?.toUpperCase() === "PLATFORM" ? "PLATFORM" : "ORGANIZER";
+    const payoutModeRequested =
+      body.payoutMode?.toUpperCase() === "PLATFORM" ? PayoutMode.PLATFORM : PayoutMode.ORGANIZER;
     const organizerTrusted = organizer?.status === "ACTIVE";
-    const payoutMode = !isAdmin && !organizerTrusted ? "PLATFORM" : payoutModeRequested;
+    const payoutMode: PayoutMode = !isAdmin && !organizerTrusted ? PayoutMode.PLATFORM : payoutModeRequested;
 
     if (!title) {
       return NextResponse.json(
@@ -187,13 +195,6 @@ export async function POST(req: NextRequest) {
       );
     }
     // Permitimos cidades fora da whitelist para não bloquear dados existentes
-
-    const categoriesInput = Array.isArray(body.categories) ? body.categories : [];
-    const normalizeCategory = (c: string) => c.trim().toUpperCase();
-    const allowedCategories = ["PADEL", "OUTRO", "VOLUNTARIADO"];
-    let categories = categoriesInput
-      .map((c) => normalizeCategory(c))
-      .filter((c) => allowedCategories.includes(c));
 
     const parseDate = (raw?: string | null) => {
       if (!raw) return null;
@@ -221,25 +222,14 @@ export async function POST(req: NextRequest) {
     const padelRequested = Boolean(body.padel);
     const templateTypeFromBody =
       templateTypeRaw === "PADEL"
-        ? "PADEL"
+        ? EventTemplateType.PADEL
         : templateTypeRaw === "VOLUNTEERING"
-          ? "VOLUNTEERING"
-          : "OTHER";
+          ? EventTemplateType.VOLUNTEERING
+          : EventTemplateType.OTHER;
 
-    let templateType = templateTypeFromBody;
-    if (padelRequested || categories.includes("PADEL")) {
-      templateType = "PADEL";
-      categories = ["PADEL"];
-    }
-    if (categories.includes("VOLUNTARIADO")) {
-      templateType = "VOLUNTEERING";
-      categories = ["VOLUNTARIADO"];
-    }
-    if (categories.length === 0) {
-      categories = ["OUTRO"];
-      if (!templateType) {
-        templateType = "OTHER";
-      }
+    let templateType: EventTemplateType = templateTypeFromBody;
+    if (padelRequested) {
+      templateType = EventTemplateType.PADEL;
     }
 
     const ticketTypesInput = body.ticketTypes ?? [];
@@ -247,28 +237,28 @@ export async function POST(req: NextRequest) {
     const inviteOnly = body.inviteOnly === true;
     const publicAccessModeRaw = body.publicAccessMode?.toUpperCase();
     const participantAccessModeRaw = body.participantAccessMode?.toUpperCase();
-    const publicAccessMode =
+    const publicAccessMode: EventPublicAccessMode =
       publicAccessModeRaw === "OPEN" || publicAccessModeRaw === "TICKET" || publicAccessModeRaw === "INVITE"
-        ? publicAccessModeRaw
+        ? (publicAccessModeRaw as EventPublicAccessMode)
         : inviteOnly
-          ? "INVITE"
-          : "OPEN";
-    const participantAccessMode =
+          ? EventPublicAccessMode.INVITE
+          : EventPublicAccessMode.OPEN;
+    const participantAccessMode: EventParticipantAccessMode =
       participantAccessModeRaw === "NONE" ||
       participantAccessModeRaw === "TICKET" ||
       participantAccessModeRaw === "INSCRIPTION" ||
       participantAccessModeRaw === "INVITE"
-        ? participantAccessModeRaw
-        : "NONE";
+        ? (participantAccessModeRaw as EventParticipantAccessMode)
+        : EventParticipantAccessMode.NONE;
     const publicTicketScopeRaw = body.publicTicketScope?.toUpperCase();
     const participantTicketScopeRaw = body.participantTicketScope?.toUpperCase();
     const publicTicketScope = publicTicketScopeRaw === "SPECIFIC" ? "SPECIFIC" : "ALL";
     const participantTicketScope = participantTicketScopeRaw === "SPECIFIC" ? "SPECIFIC" : "ALL";
     const liveHubVisibilityRaw = body.liveHubVisibility?.toUpperCase();
-    const liveHubVisibility =
+    const liveHubVisibility: LiveHubVisibility =
       liveHubVisibilityRaw === "PUBLIC" || liveHubVisibilityRaw === "PRIVATE" || liveHubVisibilityRaw === "DISABLED"
-        ? liveHubVisibilityRaw
-        : "PUBLIC";
+        ? (liveHubVisibilityRaw as LiveHubVisibility)
+        : LiveHubVisibility.PUBLIC;
     // Validar tipos de bilhete
     let ticketPriceError: string | null = null;
     const ticketTypesData = ticketTypesInput
@@ -319,7 +309,7 @@ export async function POST(req: NextRequest) {
         : "NO_STRIPE"
       : "NO_STRIPE";
     const hasPaidTickets = ticketTypesData.some((t) => t.price > 0);
-    if (payoutMode === "ORGANIZER" && hasPaidTickets && paymentsStatus !== "READY" && !isAdmin) {
+    if (payoutMode === PayoutMode.ORGANIZER && hasPaidTickets && paymentsStatus !== "READY" && !isAdmin) {
       return NextResponse.json(
         {
           ok: false,
@@ -358,10 +348,10 @@ export async function POST(req: NextRequest) {
 
     const baseSlug = slugify(title) || "evento";
     const slug = await generateUniqueSlug(baseSlug);
-    const resaleMode =
+    const resaleMode: ResaleMode =
       resaleModeRaw === "AFTER_SOLD_OUT" || resaleModeRaw === "DISABLED"
-        ? resaleModeRaw
-        : "ALWAYS";
+        ? (resaleModeRaw as ResaleMode)
+        : ResaleMode.ALWAYS;
 
     // Validar configuração de padel antes de criar o evento
     let padelConfigInput: PadelConfigInput = null;
@@ -482,6 +472,7 @@ export async function POST(req: NextRequest) {
           name: ticket.name,
           price: Math.round(ticket.price * 100),
           totalQuantity: ticket.totalQuantity ?? null,
+          currency: "EUR",
         },
         select: { id: true },
       });

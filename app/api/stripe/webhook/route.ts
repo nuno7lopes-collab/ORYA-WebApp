@@ -26,7 +26,7 @@ import { stripe } from "@/lib/stripeClient";
 import crypto from "crypto";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { sendPurchaseConfirmationEmail } from "@/lib/emailSender";
-import { parsePhoneNumberFromString } from "libphonenumber-js/min";
+import { parsePhoneNumberFromString, type CountryCode } from "libphonenumber-js/min";
 import { computeCombinedFees } from "@/lib/fees";
 import { getStripeBaseFees } from "@/lib/platformSettings";
 import { normalizePaymentScenario } from "@/lib/paymentScenario";
@@ -40,15 +40,6 @@ import {
   queueDeadlineExpired,
   queueOffsessionActionRequired,
 } from "@/domain/notifications/splitPayments";
-import {
-  queueMatchChanged,
-  queueMatchResult,
-  queueNextOpponent,
-  queueBracketPublished,
-  queueTournamentEve,
-  queueEliminated,
-  queueChampion,
-} from "@/domain/notifications/tournament";
 
 const webhookSecret = env.stripeWebhookSecret;
 const FREE_PLACEHOLDER_INTENT_ID = "FREE_CHECKOUT";
@@ -457,7 +448,7 @@ type BreakdownPayload = {
 
 export async function fulfillPayment(intent: Stripe.PaymentIntent, stripeEventId?: string) {
   // [ORYA PATCH v1] Webhook reforçado e preparado para múltiplos bilhetes com total segurança.
-  const meta = intent.metadata ?? {};
+  const meta = (intent.metadata ?? {}) as Record<string, string>;
   let parsedBreakdown: BreakdownPayload | null = null;
   if (typeof meta.breakdown === "string") {
     try {
@@ -575,9 +566,7 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent, stripeEventId
   }
 
   const rawUserId = typeof meta.userId === "string" ? meta.userId.trim() : "";
-  const rawOwnerUserId = typeof (meta as Record<string, unknown>)?.ownerUserId === "string"
-    ? (meta as Record<string, unknown>)?.ownerUserId?.trim()
-    : "";
+  const rawOwnerUserId = typeof meta.ownerUserId === "string" ? meta.ownerUserId.trim() : "";
   const userId = rawUserId !== "" ? rawUserId : rawOwnerUserId !== "" ? rawOwnerUserId : null;
   const guestEmail =
     typeof meta.guestEmail === "string"
@@ -605,7 +594,7 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent, stripeEventId
     return;
   }
 
-  const normalizePhone = (phone: string | null | undefined, defaultCountry = "PT") => {
+  const normalizePhone = (phone: string | null | undefined, defaultCountry: CountryCode = "PT") => {
     if (!phone) return null;
     const cleaned = phone.trim();
     if (!cleaned) return null;
@@ -779,10 +768,10 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent, stripeEventId
   const purchaseAnchor = metadataValidation.data.purchaseId;
   const ownerMeta = metadataValidation.data.owner;
   const ownerResolved = await resolveOwner({
-    sessionUserId: ownerMeta?.ownerUserId ?? ownerMeta?.userId ?? userId ?? undefined,
-    guestEmail: ownerMeta?.emailNormalized ?? ownerMeta?.guestEmail ?? guestEmail ?? undefined,
+    sessionUserId: ownerMeta?.ownerUserId ?? userId ?? undefined,
+    guestEmail: ownerMeta?.emailNormalized ?? guestEmail ?? undefined,
   });
-  const ownerUserId = ownerResolved.ownerUserId ?? ownerMeta?.ownerUserId ?? ownerMeta?.userId ?? userId ?? null;
+  const ownerUserId = ownerResolved.ownerUserId ?? ownerMeta?.ownerUserId ?? userId ?? null;
   const ownerIdentityId = ownerResolved.ownerIdentityId ?? ownerMeta?.ownerIdentityId ?? null;
 
   const platformFeeTotal = Number(meta.platformFeeCents ?? 0);
@@ -965,10 +954,6 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent, stripeEventId
   } catch (err) {
     console.warn("[fulfillPayment] Não foi possível obter balance_transaction; a usar estimativa", err);
   }
-
-  const stripeFeeForIntentValue =
-    stripeFeeCents ??
-    estimateStripeFee(parsedBreakdown?.totalCents ?? intent.amount_received ?? intent.amount ?? 0);
 
   await prisma.$transaction(async (tx) => {
     // Persistir breakdown se existir
@@ -1356,7 +1341,7 @@ async function fetchUserEmail(userId: string) {
 }
 
 async function handlePadelSplitPayment(intent: Stripe.PaymentIntent) {
-  const meta = intent.metadata ?? {};
+  const meta = (intent.metadata ?? {}) as Record<string, string>;
   const pairingId = Number(meta.pairingId);
   const slotId = Number(meta.slotId);
   const ticketTypeId = Number(meta.ticketTypeId);
@@ -1569,10 +1554,11 @@ async function handlePadelSplitPayment(intent: Stripe.PaymentIntent) {
     });
 
     const ownerKey = userId ? `user:${userId}` : "unknown";
+    const entitlementPurchaseId = sale.purchaseId ?? sale.paymentIntentId ?? intent.id;
     await tx.entitlement.upsert({
       where: {
         purchaseId_saleLineId_lineItemIndex_ownerKey_type: {
-          purchaseId: sale.purchaseId,
+          purchaseId: entitlementPurchaseId,
           saleLineId: saleLine.id,
           lineItemIndex: 0,
           ownerKey,
@@ -1591,7 +1577,7 @@ async function handlePadelSplitPayment(intent: Stripe.PaymentIntent) {
         snapshotTimezone: event.timezone,
       },
       create: {
-        purchaseId: sale.purchaseId,
+        purchaseId: entitlementPurchaseId,
         saleLineId: saleLine.id,
         lineItemIndex: 0,
         ownerKey,
@@ -1689,7 +1675,7 @@ async function handlePadelSplitPayment(intent: Stripe.PaymentIntent) {
 }
 
 async function handleSecondCharge(intent: Stripe.PaymentIntent) {
-  const meta = intent.metadata ?? {};
+  const meta = (intent.metadata ?? {}) as Record<string, string>;
   const pairingId = Number(meta.pairingId);
   if (!Number.isFinite(pairingId)) {
     console.warn("[handleSecondCharge] pairingId ausente no metadata", meta);
@@ -2024,8 +2010,9 @@ async function handlePadelFullPayment(intent: Stripe.PaymentIntent) {
     });
 
     const ownerKey = userId ? `user:${userId}` : "unknown";
+    const entitlementPurchaseId = sale.purchaseId ?? sale.paymentIntentId ?? intent.id;
     const entitlementBase = {
-      purchaseId: sale.purchaseId,
+      purchaseId: entitlementPurchaseId,
       saleLineId: saleLine.id,
       ownerKey,
       ownerUserId: userId ?? null,
@@ -2043,7 +2030,7 @@ async function handlePadelFullPayment(intent: Stripe.PaymentIntent) {
     await tx.entitlement.upsert({
       where: {
         purchaseId_saleLineId_lineItemIndex_ownerKey_type: {
-          purchaseId: sale.purchaseId,
+          purchaseId: entitlementPurchaseId,
           saleLineId: saleLine.id,
           lineItemIndex: 0,
           ownerKey,
@@ -2057,7 +2044,7 @@ async function handlePadelFullPayment(intent: Stripe.PaymentIntent) {
     await tx.entitlement.upsert({
       where: {
         purchaseId_saleLineId_lineItemIndex_ownerKey_type: {
-          purchaseId: sale.purchaseId,
+          purchaseId: entitlementPurchaseId,
           saleLineId: saleLine.id,
           lineItemIndex: 1,
           ownerKey,
@@ -2186,7 +2173,7 @@ export async function handleRefund(charge: Stripe.Charge) {
   const ticketTypeIds = Object.keys(byType).map((id) => Number(id));
   const saleSummary = await prisma.saleSummary.findUnique({
     where: { paymentIntentId },
-    select: { id: true, promoCodeId: true },
+    select: { id: true, promoCodeId: true, purchaseId: true },
   });
   const ticketTypes = await prisma.ticketType.findMany({
     where: { id: { in: ticketTypeIds } },
@@ -2222,10 +2209,13 @@ export async function handleRefund(charge: Stripe.Charge) {
     }),
     ...(saleSummary?.id
       ? [
-          prisma.promoRedemption.updateMany({
-            where: { saleSummaryId: saleSummary.id },
-            data: { cancelledAt: new Date() },
-          }),
+          ...(saleSummary.purchaseId
+            ? [
+                prisma.promoRedemption.deleteMany({
+                  where: { purchaseId: saleSummary.purchaseId },
+                }),
+              ]
+            : []),
           prisma.saleSummary.update({
             where: { id: saleSummary.id },
             data: { status: SaleSummaryStatus.REFUNDED, updatedAt: new Date() },

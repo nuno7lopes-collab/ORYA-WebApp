@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
-import { cookies } from "next/headers";
 
 const COOKIE_NAME = "orya_org";
 const COOKIE_MAX_AGE = 60 * 60 * 24 * 30; // 30 dias

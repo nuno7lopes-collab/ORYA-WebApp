@@ -11,7 +11,7 @@ import { isOrgOwner } from "@/lib/organizerPermissions";
 
 function isValidFeeMode(value: string | null | undefined): value is FeeMode {
   if (!value) return false;
-  return value === "ADDED" || value === "INCLUDED";
+  return value === "INCLUDED";
 }
 
 export async function POST(req: NextRequest) {
@@ -53,7 +53,7 @@ export async function POST(req: NextRequest) {
 
     if (body.feeMode !== undefined) {
       if (!isValidFeeMode(body.feeMode)) {
-        return NextResponse.json({ ok: false, error: "INVALID_FEE_MODE" }, { status: 400 });
+        return NextResponse.json({ ok: false, error: "FEE_MODE_LOCKED" }, { status: 400 });
       }
       updates.feeMode = body.feeMode;
     }

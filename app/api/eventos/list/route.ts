@@ -56,7 +56,7 @@ export async function GET(req: NextRequest) {
       { isTest: { not: true } },
       { isDeleted: false },
       { organizerId: { not: null } },
-      { organizer: { status: "ACTIVE", publicListingEnabled: { not: false } } },
+      { organizer: { status: "ACTIVE" } },
     ];
 
     if (category && category !== "all") {

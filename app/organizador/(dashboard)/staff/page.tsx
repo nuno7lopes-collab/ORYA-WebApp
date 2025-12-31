@@ -11,7 +11,7 @@ import { trackEvent } from "@/lib/analytics";
 import { RoleBadge } from "../../RoleBadge";
 import { CTA_DANGER, CTA_GHOST, CTA_NEUTRAL, CTA_PRIMARY, CTA_SECONDARY, CTA_SUCCESS } from "@/app/organizador/dashboardUi";
 
-type MemberRole = "OWNER" | "CO_OWNER" | "ADMIN" | "STAFF" | "VIEWER";
+type MemberRole = "OWNER" | "CO_OWNER" | "ADMIN" | "STAFF" | "PROMOTER" | "VIEWER";
 
 type Member = {
   userId: string;
@@ -31,21 +31,6 @@ type MembersResponse = {
   organizerId?: number | null;
   error?: string;
 };
-type AuditResponse =
-  | {
-      ok: true;
-      items: {
-        id: string;
-        action: string;
-        actorUserId: string | null;
-        fromUserId: string | null;
-        toUserId: string | null;
-        metadata: unknown;
-        createdAt: string;
-      }[];
-    }
-  | { ok: false; error?: string };
-
 type InviteStatus = "PENDING" | "EXPIRED" | "ACCEPTED" | "DECLINED" | "CANCELLED";
 type Invite = {
   id: string;
@@ -76,6 +61,7 @@ const roleLabels: Record<MemberRole, string> = {
   CO_OWNER: "Co-owner",
   ADMIN: "Admin",
   STAFF: "Staff",
+  PROMOTER: "Promoter",
   VIEWER: "Viewer",
 };
 
@@ -84,7 +70,8 @@ const roleOrder: Record<MemberRole, number> = {
   CO_OWNER: 1,
   ADMIN: 2,
   STAFF: 3,
-  VIEWER: 4,
+  PROMOTER: 4,
+  VIEWER: 5,
 };
 
 const statusTone: Record<InviteStatus, string> = {
@@ -102,7 +89,7 @@ function canManageMember(actorRole: MemberRole | null, targetRole: MemberRole) {
   if (!actorRole) return false;
   if (actorRole === "OWNER") return true;
   if (actorRole === "CO_OWNER") return targetRole !== "OWNER" && targetRole !== "CO_OWNER";
-  if (actorRole === "ADMIN") return targetRole === "STAFF" || targetRole === "VIEWER";
+  if (actorRole === "ADMIN") return targetRole === "STAFF" || targetRole === "PROMOTER" || targetRole === "VIEWER";
   return false;
 }
 
@@ -114,7 +101,7 @@ function canAssignRole(actorRole: MemberRole | null, targetRole: MemberRole, des
     return targetRole !== "OWNER" && targetRole !== "CO_OWNER";
   }
   if (actorRole === "ADMIN") {
-    const allowed = desiredRole === "STAFF" || desiredRole === "VIEWER";
+    const allowed = desiredRole === "STAFF" || desiredRole === "PROMOTER" || desiredRole === "VIEWER";
     return allowed && targetRole !== "OWNER" && targetRole !== "CO_OWNER" && targetRole !== "ADMIN";
   }
   return false;
@@ -241,17 +228,6 @@ export default function OrganizerStaffPage({ embedded }: OrganizerStaffPageProps
   const isOrganizerProfile = profile?.roles?.includes("organizer") ?? false;
   const hasMembership = !!viewerRole;
 
-  const auditKey = useMemo(() => {
-    if (!user || !organizerId) return null;
-    const canAudit = viewerRole === "OWNER" || viewerRole === "CO_OWNER" || viewerRole === "ADMIN";
-    if (!canAudit) return null;
-    return `/api/organizador/organizations/audit?organizerId=${organizerId}&limit=50`;
-  }, [user, organizerId, viewerRole]);
-
-  const { data: auditData, isLoading: auditLoading } = useSWR<AuditResponse>(auditKey, fetcher, {
-    revalidateOnFocus: false,
-  });
-
   const pushToast = (message: string, type: "error" | "success" = "error") => {
     const id = Date.now() + Math.random();
     setToasts((prev) => [...prev, { id, message, type }]);
@@ -349,15 +325,6 @@ export default function OrganizerStaffPage({ embedded }: OrganizerStaffPageProps
       return;
     }
     applyRoleChange(member.userId, newRole);
-  };
-
-  const handleRemove = async (member: Member) => {
-    if (!resolvedOrganizerId) return;
-    if (!canManageMember(viewerRole, member.role)) {
-      pushToast("Sem permissão para remover este membro.");
-      return;
-    }
-    setRemoveTarget(member);
   };
 
   const confirmRemove = async (member: Member) => {
@@ -675,6 +642,9 @@ export default function OrganizerStaffPage({ embedded }: OrganizerStaffPageProps
                         <option value="STAFF" disabled={!canAssignRole(viewerRole, m.role, "STAFF")}>
                           Staff
                         </option>
+                        <option value="PROMOTER" disabled={!canAssignRole(viewerRole, m.role, "PROMOTER")}>
+                          Promoter
+                        </option>
                         <option value="VIEWER" disabled={!canAssignRole(viewerRole, m.role, "VIEWER")}>
                           Viewer
                         </option>
@@ -911,6 +881,9 @@ export default function OrganizerStaffPage({ embedded }: OrganizerStaffPageProps
                   </option>
                   <option value="STAFF" disabled={!canAssignRole(viewerRole, inviteRole, "STAFF")}>
                     Staff
+                  </option>
+                  <option value="PROMOTER" disabled={!canAssignRole(viewerRole, inviteRole, "PROMOTER")}>
+                    Promoter
                   </option>
                   <option value="VIEWER" disabled={!canAssignRole(viewerRole, inviteRole, "VIEWER")}>
                     Viewer

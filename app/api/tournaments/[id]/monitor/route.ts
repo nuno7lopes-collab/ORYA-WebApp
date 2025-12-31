@@ -1,17 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getTournamentStructure } from "@/domain/tournaments/structureData";
 import { summarizeMatchStatus, computeStandingsForGroup } from "@/domain/tournaments/structure";
+import { type TieBreakRule } from "@/domain/tournaments/standings";
+import { readNumericParam } from "@/lib/routeParams";
 
-export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
-  const id = Number(params?.id);
-  if (!Number.isFinite(id)) return NextResponse.json({ ok: false, error: "INVALID_ID" }, { status: 400 });
+export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+  const id = readNumericParam(params?.id, req, "tournaments");
+  if (id === null) return NextResponse.json({ ok: false, error: "INVALID_ID" }, { status: 400 });
 
   const data = await getTournamentStructure(id);
   if (!data) return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
 
-  const tieBreakRules = Array.isArray(data.tieBreakRules)
-    ? (data.tieBreakRules as string[])
-    : ["WINS", "SET_DIFF", "GAME_DIFF", "HEAD_TO_HEAD", "RANDOM"];
+  const tieBreakRules: TieBreakRule[] = Array.isArray(data.tieBreakRules)
+    ? (data.tieBreakRules as TieBreakRule[])
+    : (["WINS", "SET_DIFF", "GAME_DIFF", "HEAD_TO_HEAD", "RANDOM"] as TieBreakRule[]);
 
   const stages = data.stages.map((s) => ({
     id: s.id,

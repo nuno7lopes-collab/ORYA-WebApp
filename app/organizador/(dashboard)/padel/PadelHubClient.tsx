@@ -63,6 +63,64 @@ type OrganizerStaffResponse = {
   items: OrganizerStaffMember[];
 };
 
+type CalendarBlock = {
+  id: number;
+  startAt: string | Date;
+  endAt: string | Date;
+  label?: string | null;
+  note?: string | null;
+  kind?: string | null;
+  padelClubId?: number | null;
+  courtId?: number | null;
+  courtName?: string | null;
+  updatedAt?: string | Date | null;
+};
+
+type CalendarAvailability = {
+  id: number;
+  startAt: string | Date;
+  endAt: string | Date;
+  playerProfileId?: number | null;
+  playerName?: string | null;
+  playerEmail?: string | null;
+  note?: string | null;
+  updatedAt?: string | Date | null;
+};
+
+type CalendarMatch = {
+  id: number;
+  startTime?: string | Date | null;
+  plannedStartAt?: string | Date | null;
+  plannedEndAt?: string | Date | null;
+  plannedDurationMinutes?: number | null;
+  courtId?: number | null;
+  courtName?: string | null;
+  courtNumber?: string | number | null;
+  status?: string | null;
+  roundLabel?: string | null;
+  groupLabel?: string | null;
+  pairingAId?: number | null;
+  pairingBId?: number | null;
+  updatedAt?: string | Date | null;
+};
+
+type CalendarConflict = {
+  type: "block_block" | "block_match" | "availability_match" | "player_match" | "outside_event_window";
+  aId: number;
+  bId: number;
+  summary: string;
+};
+
+type CalendarResponse = {
+  ok: boolean;
+  blocks: CalendarBlock[];
+  availabilities: CalendarAvailability[];
+  matches: CalendarMatch[];
+  conflicts: CalendarConflict[];
+  eventTimezone?: string | null;
+  bufferMinutes?: number | null;
+};
+
 const PADEL_TABS = ["calendar", "clubs", "players", "rankings"] as const;
 
 type Props = {
@@ -191,9 +249,12 @@ type TimelineItem = {
   laneKey: string;
   laneLabel: string;
   courtId?: number | null;
-  version?: string;
+  version?: string | Date | null;
   color: string;
 };
+
+const overlaps = (a: { start: Date; end: Date }, b: { start: Date; end: Date }) =>
+  a.start < b.end && b.start < a.end;
 
 const TimelineView = ({
   blocks,
@@ -206,9 +267,9 @@ const TimelineView = ({
   conflictMap,
   slotMinutes,
 }: {
-  blocks: any[];
-  availabilities: any[];
-  matches: any[];
+  blocks: CalendarBlock[];
+  availabilities: CalendarAvailability[];
+  matches: CalendarMatch[];
   timezone: string;
   dayStart: Date | null;
   laneHints?: Array<{ key: string; label: string; courtId?: number | null }>;
@@ -225,7 +286,8 @@ const TimelineView = ({
   startDay.setHours(0, 0, 0, 0);
   const endDay = new Date(startDay.getTime() + dayLength);
 
-  const toDate = (value: string | Date) => {
+  const toDate = (value?: string | Date | null) => {
+    if (!value) return null;
     const d = new Date(value);
     return Number.isNaN(d.getTime()) ? null : d;
   };
@@ -490,11 +552,11 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
   const [lastAction, setLastAction] = useState<{
     type: "block" | "availability" | "match";
     id: number;
-    prevStart: string;
-    prevEnd: string;
+    prevStart: string | Date;
+    prevEnd: string | Date;
     prevCourtId?: number | null;
     prevDuration?: number | null;
-    version?: string | null;
+    version?: string | Date | null;
   } | null>(null);
   const [blockForm, setBlockForm] = useState({
     start: "",
@@ -503,7 +565,7 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
     note: "",
   });
   const [editingBlockId, setEditingBlockId] = useState<number | null>(null);
-  const [editingBlockVersion, setEditingBlockVersion] = useState<string | null>(null);
+  const [editingBlockVersion, setEditingBlockVersion] = useState<string | Date | null>(null);
   const [availabilityForm, setAvailabilityForm] = useState({
     start: "",
     end: "",
@@ -512,7 +574,7 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
     note: "",
   });
   const [editingAvailabilityId, setEditingAvailabilityId] = useState<number | null>(null);
-  const [editingAvailabilityVersion, setEditingAvailabilityVersion] = useState<string | null>(null);
+  const [editingAvailabilityVersion, setEditingAvailabilityVersion] = useState<string | Date | null>(null);
   const [savingCalendar, setSavingCalendar] = useState(false);
 
   const [clubForm, setClubForm] = useState(DEFAULT_FORM);
@@ -549,7 +611,7 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
     fetcher,
     { revalidateOnFocus: false },
   );
-  const { data: calendarData, isLoading: isCalendarLoading, mutate: mutateCalendar } = useSWR(
+  const { data: calendarData, isLoading: isCalendarLoading, mutate: mutateCalendar } = useSWR<CalendarResponse>(
     eventId ? `/api/padel/calendar?eventId=${eventId}` : null,
     fetcher,
     { revalidateOnFocus: false },
@@ -1212,13 +1274,12 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
   };
 
   const totalActiveCourts = useMemo(() => clubs.reduce((acc, c) => acc + (c.courtsCount || 0), 0), [clubs]);
-  const calendarBlocksRaw = calendarData?.blocks ?? [];
-  const calendarAvailabilitiesRaw = calendarData?.availabilities ?? [];
-  const calendarMatchesRaw = calendarData?.matches ?? [];
-  const calendarConflicts = calendarData?.conflicts ?? [];
+  const calendarBlocksRaw: CalendarBlock[] = calendarData?.blocks ?? [];
+  const calendarAvailabilitiesRaw: CalendarAvailability[] = calendarData?.availabilities ?? [];
+  const calendarMatchesRaw: CalendarMatch[] = calendarData?.matches ?? [];
+  const calendarConflicts: CalendarConflict[] = calendarData?.conflicts ?? [];
   const calendarTimezone = calendarData?.eventTimezone ?? "Europe/Lisbon";
   const calendarBuffer = calendarData?.bufferMinutes ?? 5;
-  const calendarDayLengthMinutes = 24 * 60;
   const [selectedDay, setSelectedDay] = useState(() => {
     const d = new Date();
     d.setHours(0, 0, 0, 0);
@@ -1251,18 +1312,22 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
     calendarScope === "day"
       ? calendarAvailabilitiesRaw.filter((b) => isWithinDay(b.startAt))
       : calendarAvailabilitiesRaw;
-  const matchStartsWithinDay = (m: any) => isWithinDay(m.startTime || m.plannedStartAt);
+  const matchStartsWithinDay = (m: CalendarMatch) => {
+    const start = m.startTime || m.plannedStartAt;
+    if (!start) return false;
+    return isWithinDay(start);
+  };
   const calendarMatches =
     calendarScope === "day" ? calendarMatchesRaw.filter((m) => matchStartsWithinDay(m)) : calendarMatchesRaw;
   const matchesById = useMemo(() => {
-    const map = new Map<number, any>();
+    const map = new Map<number, CalendarMatch>();
     calendarMatchesRaw.forEach((m) => map.set(m.id, m));
     return map;
   }, [calendarMatchesRaw]);
   const getItemVersion = (kind: "block" | "availability" | "match", id: number) => {
-    if (kind === "block") return calendarBlocks.find((b: any) => b.id === id)?.updatedAt;
-    if (kind === "availability") return calendarAvailabilities.find((a: any) => a.id === id)?.updatedAt;
-    return calendarMatchesRaw.find((m: any) => m.id === id)?.updatedAt;
+    if (kind === "block") return calendarBlocks.find((block) => block.id === id)?.updatedAt;
+    if (kind === "availability") return calendarAvailabilities.find((availability) => availability.id === id)?.updatedAt;
+    return calendarMatchesRaw.find((match) => match.id === id)?.updatedAt;
   };
 
   const resetCalendarForms = () => {
@@ -1328,15 +1393,15 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
       } else {
         const prev =
           type === "block"
-            ? calendarBlocks.find((b: any) => b.id === editingId)
-            : calendarAvailabilities.find((a: any) => a.id === editingId);
+            ? calendarBlocks.find((block) => block.id === editingId)
+            : calendarAvailabilities.find((availability) => availability.id === editingId);
         if (prev && editingId) {
           setLastAction({
             type,
             id: editingId,
             prevStart: prev.startAt,
             prevEnd: prev.endAt,
-            prevCourtId: prev.courtId ?? null,
+            prevCourtId: "courtId" in prev ? prev.courtId ?? null : null,
             version: prev.updatedAt ?? null,
           });
         } else {
@@ -1355,7 +1420,7 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
     }
   };
 
-  const handleEditBlock = (block: any) => {
+  const handleEditBlock = (block: CalendarBlock) => {
     setEditingAvailabilityId(null);
     setEditingBlockId(block.id);
     setEditingBlockVersion(block.updatedAt || null);
@@ -1367,7 +1432,7 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
     });
   };
 
-  const handleEditAvailability = (av: any) => {
+  const handleEditAvailability = (av: CalendarAvailability) => {
     setEditingBlockId(null);
     setEditingAvailabilityId(av.id);
     setEditingAvailabilityVersion(av.updatedAt || null);
@@ -1454,7 +1519,7 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
             className={`rounded-full border px-3 py-1 text-[12px] ${
               activeTab === tab.key ? "border-white/80 bg-white text-black" : "border-white/10 bg-white/5 text-white/75 hover:border-white/25"
             }`}
-            onClick={() => setPadelSection(tab.key as typeof padelTabs[number])}
+            onClick={() => setPadelSection(tab.key as (typeof PADEL_TABS)[number])}
           >
             {tab.label}
           </button>
@@ -1625,7 +1690,7 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
                               setCalendarMessage("Atualizado via drag & drop.");
                               toast("Atualizado via drag & drop", "ok");
                               if (kind === "block") {
-                                const prev = calendarBlocks.find((b: any) => b.id === parsedId);
+                                const prev = calendarBlocks.find((block) => block.id === parsedId);
                                 if (prev) {
                                   setLastAction({
                                     type: "block",
@@ -1637,7 +1702,7 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
                                   });
                                 }
                               } else if (kind === "availability") {
-                                const prev = calendarAvailabilities.find((a: any) => a.id === parsedId);
+                                const prev = calendarAvailabilities.find((availability) => availability.id === parsedId);
                                 if (prev) {
                                   setLastAction({
                                     type: "availability",
@@ -1649,20 +1714,22 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
                                 }
                               } else if (kind === "match" && prevMatch) {
                                 const start = prevMatch.startTime || prevMatch.plannedStartAt;
-                                const end =
-                                  prevMatch.plannedEndAt ||
-                                  (start && prevMatch.plannedDurationMinutes
-                                    ? new Date(new Date(start).getTime() + prevMatch.plannedDurationMinutes * 60 * 1000).toISOString()
-                                    : prevMatch.startTime);
-                                setLastAction({
-                                  type: "match",
-                                  id: parsedId,
-                                  prevStart: start,
-                                  prevEnd: end,
-                                  prevCourtId: prevMatch.courtId ?? null,
-                                  prevDuration: prevMatch.plannedDurationMinutes ?? null,
-                                  version: prevMatch.updatedAt ?? null,
-                                });
+                                if (start) {
+                                  const end =
+                                    prevMatch.plannedEndAt ||
+                                    (prevMatch.plannedDurationMinutes
+                                      ? new Date(new Date(start).getTime() + prevMatch.plannedDurationMinutes * 60 * 1000).toISOString()
+                                      : start);
+                                  setLastAction({
+                                    type: "match",
+                                    id: parsedId,
+                                    prevStart: start,
+                                    prevEnd: end,
+                                    prevCourtId: prevMatch.courtId ?? null,
+                                    prevDuration: prevMatch.plannedDurationMinutes ?? null,
+                                    version: prevMatch.updatedAt ?? null,
+                                  });
+                                }
                               }
                               mutateCalendar();
                             }
@@ -1763,8 +1830,11 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
                       new Date(b.startTime || b.plannedStartAt || 0).getTime(),
                   )
                   .slice(0, 6)
-                  .map((m) => (
-                    <div
+                  .map((m) => {
+                    const matchStart = m.startTime || m.plannedStartAt;
+                    const matchStartLabel = matchStart ? formatZoned(matchStart, calendarTimezone) : "—";
+                    return (
+                      <div
                       key={`match-${m.id}`}
                       className={`flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2 text-[12px] text-white shadow-[0_12px_35px_rgba(0,0,0,0.35)] ${
                         calendarConflicts.some((c) => c.aId === m.id && c.type !== "outside_event_window")
@@ -1777,7 +1847,7 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
                       <div className="space-y-1">
                         <p className="font-semibold">Jogo #{m.id}</p>
                         <p className="text-white/70">
-                          {formatZoned(m.startTime || m.plannedStartAt, calendarTimezone)} · Court {m.courtName || m.courtNumber || m.courtId || "—"}
+                          {matchStartLabel} · Court {m.courtName || m.courtNumber || m.courtId || "—"}
                         </p>
                         <p className="text-white/60">{m.roundLabel || m.groupLabel || "Fase"}</p>
                         <div className="flex flex-wrap gap-1">
@@ -1885,7 +1955,8 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
                         {m.status}
                       </span>
                     </div>
-                          ))}
+                    );
+                  })}
                       </div>
                     <div className="space-y-2 lg:col-span-2">
                       <p className="text-[12px] uppercase tracking-[0.16em] text-white/55">Conflitos</p>
@@ -2775,10 +2846,10 @@ export default function PadelHubClient({ organizerId, organizationKind, initialC
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
                 <input
-                  value={(clubForm as any).slug ?? ""}
+                  value={clubForm.slug}
                   onChange={(e) => {
                     setSlugError(null);
-                    setClubForm((p: any) => ({ ...p, slug: e.target.value }));
+                    setClubForm((prev) => ({ ...prev, slug: e.target.value }));
                   }}
                   placeholder="Slug / código curto (opcional)"
                   className="rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"

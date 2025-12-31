@@ -13,7 +13,7 @@ async function ensureOrganizerAccess(userId: string, eventId: number) {
     where: {
       organizerId: evt.organizerId,
       userId,
-      role: { in: ["OWNER", "CO_OWNER", "ADMIN"] },
+      role: { in: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"] },
     },
     select: { id: true },
   });

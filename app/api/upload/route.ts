@@ -100,6 +100,7 @@ export async function POST(req: NextRequest) {
     }
 
     const scope = req.nextUrl.searchParams.get("scope");
+    const isPublicScope = scope === "avatar" || scope === "event-cover";
 
     const bucketResolution = (() => {
       if (scope === "avatar") {
@@ -139,7 +140,7 @@ export async function POST(req: NextRequest) {
     let url: string | null = null;
     let signedUrl: string | null = null;
 
-    if (env.storageSignedUrls) {
+    if (!isPublicScope && env.storageSignedUrls) {
       const signed = await supabaseAdmin.storage
         .from(bucketResolution.bucket)
         .createSignedUrl(objectPath, env.storageSignedTtlSeconds);

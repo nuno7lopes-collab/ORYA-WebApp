@@ -3,9 +3,11 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { getTournamentStructure } from "@/domain/tournaments/structureData";
 import { summarizeMatchStatus, computeStandingsForGroup } from "@/domain/tournaments/structure";
+import { type TieBreakRule } from "@/domain/tournaments/standings";
+import { readPathParam } from "@/lib/routeParams";
 
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
-  const slug = params?.id;
+  const slug = readPathParam(params?.id, req, "tournaments");
   if (!slug) return NextResponse.json({ ok: false, error: "INVALID_SLUG" }, { status: 400 });
 
   const supabase = await createSupabaseServer();
@@ -30,9 +32,9 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     userPairingId = pairing?.id ?? null;
   }
 
-  const tieBreakRules = Array.isArray(structure.tieBreakRules)
-    ? (structure.tieBreakRules as string[])
-    : ["WINS", "SET_DIFF", "GAME_DIFF", "HEAD_TO_HEAD", "RANDOM"];
+  const tieBreakRules: TieBreakRule[] = Array.isArray(structure.tieBreakRules)
+    ? (structure.tieBreakRules as TieBreakRule[])
+    : (["WINS", "SET_DIFF", "GAME_DIFF", "HEAD_TO_HEAD", "RANDOM"] as TieBreakRule[]);
 
   const stages = structure.stages.map((s) => ({
     id: s.id,

@@ -1,5 +1,7 @@
+import { normalizeOrganizationCategory, type OrganizationCategory } from "@/lib/organizationCategories";
+
 export type ObjectiveTab = "create" | "manage" | "promote" | "analyze";
-export type OrgCategory = "EVENTOS" | "PADEL" | "VOLUNTARIADO";
+export type OrgCategory = OrganizationCategory;
 
 export type ObjectiveNavContext = {
   category: OrgCategory;
@@ -18,36 +20,29 @@ const CATEGORY_META: Record<
   OrgCategory,
   {
     createLabel: string;
-    manageLabel: string;
     createHref: string;
-    manageSection: string;
   }
 > = {
   EVENTOS: {
     createLabel: "Criar evento",
-    manageLabel: "Eventos",
     createHref: "/organizador/eventos/novo",
-    manageSection: "eventos",
   },
   PADEL: {
     createLabel: "Criar evento",
-    manageLabel: "Eventos",
     createHref: "/organizador/eventos/novo?preset=padel",
-    manageSection: "eventos",
   },
-  VOLUNTARIADO: {
-    createLabel: "Criar evento",
-    manageLabel: "Eventos",
-    createHref: "/organizador/eventos/novo?preset=voluntariado",
-    manageSection: "acoes",
+  RESERVAS: {
+    createLabel: "Criar serviço",
+    createHref: "/organizador/reservas/novo",
+  },
+  CLUBS: {
+    createLabel: "Criar clube",
+    createHref: "/em-breve",
   },
 };
 
 export function normalizeOrgCategory(value?: string | null): OrgCategory {
-  const normalized = value?.toUpperCase() ?? "";
-  if (normalized === "PADEL") return "PADEL";
-  if (normalized === "VOLUNTARIADO") return "VOLUNTARIADO";
-  return "EVENTOS";
+  return normalizeOrganizationCategory(value);
 }
 
 function hasModule(modules: string[], key: string) {
@@ -87,6 +82,14 @@ export function getObjectiveSections(
   }
 
   if (objective === "manage") {
+    if (context.category === "RESERVAS") {
+      sections.push({
+        id: "reservas",
+        label: "Reservas",
+        href: "/organizador/reservas",
+      });
+      return sections;
+    }
     sections.push({
       id: "eventos",
       label: "Eventos",

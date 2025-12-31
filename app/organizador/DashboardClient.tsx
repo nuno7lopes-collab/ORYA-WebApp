@@ -5,10 +5,11 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import { ConfirmDestructiveActionDialog } from "@/app/components/ConfirmDestructiveActionDialog";
+import { ORGANIZATION_CATEGORY_LABELS, normalizeOrganizationCategory } from "@/lib/organizationCategories";
 import { cn } from "@/lib/utils";
 import { trackEvent } from "@/lib/analytics";
 import { useUser } from "@/app/hooks/useUser";
-import { AuthModalProvider, useAuthModal } from "@/app/components/autenticação/AuthModalContext";
+import { AuthModalProvider } from "@/app/components/autenticação/AuthModalContext";
 import PromoCodesPage from "./promo/PromoCodesClient";
 import OrganizerUpdatesPage from "./(dashboard)/updates/page";
 import { SalesAreaChart } from "@/app/components/charts/SalesAreaChart";
@@ -189,7 +190,6 @@ type OrganizerLite = {
   brandingAvatarUrl?: string | null;
   brandingCoverUrl?: string | null;
   liveHubPremiumEnabled?: boolean | null;
-  publicListingEnabled?: boolean | null;
   publicWebsite?: string | null;
   publicInstagram?: string | null;
   publicYoutube?: string | null;
@@ -199,7 +199,6 @@ type OrganizerLite = {
 };
 
 type ObjectiveTab = "create" | "manage" | "promote" | "analyze";
-type OrgCategory = "EVENTOS" | "PADEL" | "VOLUNTARIADO";
 
 const OBJECTIVE_TABS: ObjectiveTab[] = ["create", "manage", "promote", "analyze"];
 type SalesRange = "7d" | "30d" | "90d" | "365d" | "all";
@@ -222,45 +221,19 @@ const mapTabToObjective = (tab?: string | null): ObjectiveTab => {
   switch (tab) {
     case "overview":
       return "create";
-    case "events":
-    case "padel":
-    case "staff":
-    case "volunteer":
-      return "manage";
-    case "marketing":
-      return "promote";
-    case "sales":
-    case "finance":
-    case "invoices":
-      return "analyze";
     default:
       return "create";
   }
 };
 
-const normalizeOrganizationCategory = (category?: string | null): OrgCategory => {
-  const normalized = category?.toUpperCase() ?? "";
-  if (normalized === "PADEL") return "PADEL";
-  if (normalized === "VOLUNTARIADO") return "VOLUNTARIADO";
-  return "EVENTOS";
-};
-
-const CATEGORY_LABELS: Record<OrgCategory, string> = {
-  EVENTOS: "Eventos",
-  PADEL: "Padel",
-  VOLUNTARIADO: "Voluntariado",
-};
 
 
 function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
-  const { user, profile, isLoading: userLoading, mutate: mutateUser } = useUser();
-  const { openModal } = useAuthModal();
+  const { user, profile, isLoading: userLoading } = useUser();
   const [stripeCtaLoading, setStripeCtaLoading] = useState(false);
   const [stripeCtaError, setStripeCtaError] = useState<string | null>(null);
-  const [billingSaving, setBillingSaving] = useState(false);
-  const [billingMessage, setBillingMessage] = useState<string | null>(null);
-  const [refundPolicy, setRefundPolicy] = useState<string>("");
-  const [vatRate, setVatRate] = useState<string>("");
+  const [ctaError, setCtaError] = useState<string | null>(null);
+  const [ctaSuccess, setCtaSuccess] = useState<string | null>(null);
   const [entityType, setEntityType] = useState<string>("");
   const [businessName, setBusinessName] = useState<string>("");
   const [city, setCity] = useState<string>("");
@@ -322,129 +295,8 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
   const sectionParamRaw = searchParams?.get("section");
   const marketingParamRaw = searchParams?.get("marketing");
   const activeObjective = mapTabToObjective(tabParamRaw);
-  const isLegacyStandaloneTab = false;
-  const normalizedSection = useMemo(() => {
-    if (!sectionParamRaw) return undefined;
-    if (activeObjective === "manage") {
-      if (sectionParamRaw === "events") return "eventos";
-      if (sectionParamRaw === "torneios") return "eventos";
-      if (sectionParamRaw === "padel") return "padel-hub";
-      if (sectionParamRaw === "volunteer") return "acoes";
-    }
-    if (activeObjective === "analyze") {
-      if (sectionParamRaw === "sales") return "vendas";
-      if (sectionParamRaw === "finance") return "financas";
-    }
-    if (activeObjective === "promote") {
-      const marketingSections = ["overview", "promos", "updates", "promoters", "content"];
-      if (marketingSections.includes(sectionParamRaw)) return "marketing";
-    }
-    return sectionParamRaw;
-  }, [activeObjective, sectionParamRaw]);
-
-  const scrollSection = useMemo(() => {
-    if (!sectionParamRaw) return undefined;
-    if (activeObjective === "promote") {
-      const marketingSections = ["overview", "promos", "updates", "promoters", "content"];
-      if (marketingSections.includes(sectionParamRaw)) return "marketing";
-    }
-    if (activeObjective === "analyze") {
-      if (sectionParamRaw === "sales") return "vendas";
-      if (sectionParamRaw === "finance") return "financas";
-    }
-    if (activeObjective === "manage") {
-      if (sectionParamRaw === "events") return "eventos";
-      if (sectionParamRaw === "torneios") return "eventos";
-      if (sectionParamRaw === "padel") return "padel-hub";
-      if (sectionParamRaw === "volunteer") return "acoes";
-    }
-    return sectionParamRaw;
-  }, [activeObjective, sectionParamRaw]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const stored = window.localStorage.getItem("organizadorFinanceLocal");
-    if (stored) {
-      try {
-        const parsed = JSON.parse(stored) as { refundPolicy?: string; vatRate?: string };
-        if (parsed.refundPolicy) setRefundPolicy(parsed.refundPolicy);
-        if (parsed.vatRate) setVatRate(parsed.vatRate);
-      } catch {
-        // ignore invalid
-      }
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!searchParams) return;
-    const tabParam = searchParams.get("tab");
-    if (!tabParam) return;
-    const orgParam = searchParams.get("org");
-    const orgSuffix = orgParam ? `&org=${orgParam}` : "";
-
-    if (tabParam === "settings") {
-      router.replace(`/organizador/settings${orgParam ? `?org=${orgParam}` : ""}`, { scroll: false });
-      return;
-    }
-    if (tabParam === "staff") {
-      router.replace(`/organizador?tab=manage&section=staff${orgSuffix}`, { scroll: false });
-      return;
-    }
-    if (tabParam === "invoices") {
-      router.replace(`/organizador?tab=analyze&section=invoices${orgSuffix}`, { scroll: false });
-      return;
-    }
-    if (tabParam === "events") {
-      router.replace(`/organizador?tab=manage&section=eventos${orgSuffix}`, { scroll: false });
-      return;
-    }
-    if (tabParam === "padel") {
-      router.replace(`/organizador?tab=manage&section=padel-hub${orgSuffix}`, { scroll: false });
-      return;
-    }
-    if (tabParam === "volunteer") {
-      router.replace(`/organizador?tab=manage&section=acoes${orgSuffix}`, { scroll: false });
-      return;
-    }
-    if (tabParam === "marketing") {
-      router.replace(`/organizador?tab=promote&section=marketing${orgSuffix}`, { scroll: false });
-      return;
-    }
-    if (tabParam === "sales") {
-      router.replace(`/organizador?tab=analyze&section=vendas${orgSuffix}`, { scroll: false });
-      return;
-    }
-    if (tabParam === "finance") {
-      router.replace(`/organizador?tab=analyze&section=financas${orgSuffix}`, { scroll: false });
-    }
-  }, [router, searchParams, sectionParamRaw]);
-
-  useEffect(() => {
-    if (!sectionParamRaw || !searchParams) return;
-    const legacyMap: Record<string, string> = {
-      events: "eventos",
-      padel: "padel-hub",
-      torneios: "eventos",
-      volunteer: "acoes",
-      sales: "vendas",
-      finance: "financas",
-    };
-    if (activeObjective === "promote") {
-      const marketingLegacy = ["overview", "promos", "updates", "promoters", "content"];
-      if (marketingLegacy.includes(sectionParamRaw)) {
-        const params = new URLSearchParams(searchParams);
-        params.set("section", "marketing");
-        params.set("marketing", sectionParamRaw);
-        router.replace(`${pathname}?${params.toString()}`, { scroll: false });
-        return;
-      }
-    }
-    const normalized = legacyMap[sectionParamRaw];
-    if (!normalized || normalized === sectionParamRaw) return;
-    const params = new URLSearchParams(searchParams);
-    params.set("section", normalized);
-    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
-  }, [sectionParamRaw, searchParams, router, pathname, activeObjective]);
+  const normalizedSection = sectionParamRaw ?? undefined;
+  const scrollSection = sectionParamRaw ?? undefined;
 
   useEffect(() => {
     if (!scrollSection) return;
@@ -498,7 +350,6 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
   }, [searchParams, marketingParamRaw, sectionParamRaw, activeObjective]);
 
   const orgParam = searchParams?.get("org");
-  const orgSuffix = orgParam ? `&org=${orgParam}` : "";
   const orgMeUrl = useMemo(() => {
     if (!user) return null;
     return orgParam ? `/api/organizador/me?org=${orgParam}` : "/api/organizador/me";
@@ -517,12 +368,8 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
   const organizer = organizerData?.organizer ?? null;
   const organizationCategory = organizer?.organizationCategory ?? null;
   const orgCategory = normalizeOrganizationCategory(organizationCategory);
-  const categoryLabel = CATEGORY_LABELS[orgCategory];
+  const categoryLabel = ORGANIZATION_CATEGORY_LABELS[orgCategory];
   const showPadelHub = orgCategory === "PADEL";
-  const categoryNounPlural =
-    orgCategory === "PADEL" ? "torneios" : orgCategory === "VOLUNTARIADO" ? "ações" : "eventos";
-  const categoryGender = orgCategory === "VOLUNTARIADO" ? "f" : "m";
-  const categoryPluralArticle = categoryGender === "f" ? "as tuas" : "os teus";
   const loading = userLoading || organizerLoading;
   const paymentsStatus = organizerData?.paymentsStatus ?? "NO_STRIPE";
   const paymentsMode = organizerData?.paymentsMode ?? "CONNECT";
@@ -553,10 +400,10 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
         console.error("[stripe][refresh-status] err", err);
       }
     };
-    if (activeObjective === "analyze" && !isLegacyStandaloneTab) {
+    if (activeObjective === "analyze") {
       refreshStripe();
     }
-  }, [onboardingParam, activeObjective, isLegacyStandaloneTab, mutateOrganizer]);
+  }, [onboardingParam, activeObjective, mutateOrganizer]);
 
   // Prefill onboarding fields quando já existirem dados
   useEffect(() => {
@@ -579,8 +426,7 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
   const shouldLoadOverviewSeries =
     organizer?.status === "ACTIVE" &&
     activeObjective === "analyze" &&
-    normalizedSection === "overview" &&
-    !isLegacyStandaloneTab;
+    normalizedSection === "overview";
 
   type TimeSeriesResponse = { ok: boolean; points: TimeSeriesPoint[]; range: { from: string | null; to: string | null } };
   const { data: timeSeries } = useSWR<TimeSeriesResponse>(
@@ -609,8 +455,7 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
   const shouldLoadSales =
     organizer?.status === "ACTIVE" &&
     activeObjective === "analyze" &&
-    normalizedSection === "vendas" &&
-    !isLegacyStandaloneTab;
+    normalizedSection === "vendas";
 
   useEffect(() => {
     if (!shouldLoadSales) return;
@@ -625,7 +470,7 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
     { revalidateOnFocus: false }
   );
   const { data: financeOverview } = useSWR<FinanceOverviewResponse>(
-    organizer?.status === "ACTIVE" && activeObjective === "analyze" && !isLegacyStandaloneTab
+    organizer?.status === "ACTIVE" && activeObjective === "analyze"
       ? "/api/organizador/finance/overview"
       : null,
     fetcher,
@@ -666,6 +511,7 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
     async (target: EventItem, mode: "archive" | "delete" | "unarchive") => {
       setEventActionLoading(target.id);
       setCtaError(null);
+      setCtaSuccess(null);
       const archive = mode === "archive" || mode === "delete";
       try {
         const res = await fetch("/api/organizador/events/update", {
@@ -701,7 +547,7 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
     [mutateEvents],
   );
   const { data: marketingOverview } = useSWR<MarketingOverviewResponse>(
-    organizer?.status === "ACTIVE" && activeObjective === "promote" && !isLegacyStandaloneTab
+    organizer?.status === "ACTIVE" && activeObjective === "promote"
       ? "/api/organizador/marketing/overview"
       : null,
     fetcher,
@@ -735,42 +581,6 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
       setStripeCtaLoading(false);
     }
   }
-
-  async function handleSaveBilling() {
-    setBillingMessage(null);
-    setBillingSaving(true);
-    try {
-      const res = await fetch("/api/organizador/me", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          businessName,
-          entityType,
-          city,
-          payoutIban,
-        }),
-      });
-      const json = await res.json().catch(() => null);
-      if (!res.ok || json?.ok === false) {
-        setBillingMessage(json?.error || "Não foi possível guardar os dados de faturação.");
-      } else {
-        setBillingMessage("Dados de faturação guardados.");
-        await mutateOrganizer();
-      }
-    } catch (err) {
-      console.error("[finance] guardar faturação", err);
-      setBillingMessage("Erro inesperado ao guardar os dados.");
-    } finally {
-      setBillingSaving(false);
-    }
-  }
-
-  const handleSavePolicy = useCallback(() => {
-    if (typeof window === "undefined") return;
-    const payload = { refundPolicy, vatRate };
-    window.localStorage.setItem("organizadorFinanceLocal", JSON.stringify(payload));
-    setBillingMessage("Política e IVA guardados localmente.");
-  }, [refundPolicy, vatRate]);
 
   const statsCards = useMemo(() => {
     const grossEuros = (overview?.grossCents ?? overview?.totalRevenueCents ?? 0) / 100;
@@ -851,7 +661,6 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
   const eventsListLoading =
     organizer?.status === "ACTIVE" &&
     activeObjective === "manage" &&
-    !isLegacyStandaloneTab &&
     !events;
   const overviewLoading = organizer?.status === "ACTIVE" && !overview;
   const partnerClubOptions = useMemo(() => {
@@ -1335,12 +1144,12 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
             Precisas de criar ou escolher uma organização para aceder ao dashboard.
           </p>
           <div className="flex flex-wrap gap-2">
-            <a href="/organizador/become" className={cn(CTA_PRIMARY, "justify-center")}>
+            <Link href="/organizador/become" className={cn(CTA_PRIMARY, "justify-center")}>
               Criar organização
-            </a>
-            <a href="/organizador/organizations" className={cn(CTA_SECONDARY, "justify-center")}>
+            </Link>
+            <Link href="/organizador/organizations" className={cn(CTA_SECONDARY, "justify-center")}>
               Escolher organização
-            </a>
+            </Link>
           </div>
         </div>
       </div>
@@ -1368,7 +1177,7 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
           </div>
         </div>
       )}
-      {!isLegacyStandaloneTab && activeObjective === "create" && (
+      {activeObjective === "create" && (
         <section className="space-y-4">
           <div
             id="overview"
@@ -1522,7 +1331,7 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
         </section>
       )}
 
-      {!isLegacyStandaloneTab && activeObjective === "manage" && (
+      {activeObjective === "manage" && (
         <section className={cn("space-y-3", fadeClass)} id="gerir">
           <div className="rounded-3xl border border-white/12 bg-gradient-to-r from-[#0b1226]/80 via-[#101b39]/75 to-[#050811]/90 px-4 py-4 sm:px-6 sm:py-5 backdrop-blur-2xl shadow-[0_26px_90px_rgba(0,0,0,0.55)]">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1552,7 +1361,7 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
         </section>
       )}
 
-      {!isLegacyStandaloneTab && activeObjective === "manage" && activeSection === "eventos" && (
+      {activeObjective === "manage" && activeSection === "eventos" && (
         <section className={cn("space-y-4", fadeClass)} id="eventos">
           <div className="relative overflow-hidden rounded-3xl border border-white/12 bg-gradient-to-r from-[#0b1226]/80 via-[#101b39]/75 to-[#050811]/90 p-5 shadow-[0_30px_110px_rgba(0,0,0,0.6)] backdrop-blur-3xl">
             <div className="pointer-events-none absolute inset-0">
@@ -1735,6 +1544,17 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
                       </button>
                     </div>
                   </div>
+
+                  {ctaError && (
+                    <div className="rounded-2xl border border-red-400/40 bg-red-500/10 px-4 py-3 text-sm text-red-100">
+                      {ctaError}
+                    </div>
+                  )}
+                  {ctaSuccess && (
+                    <div className="rounded-2xl border border-emerald-300/40 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">
+                      {ctaSuccess}
+                    </div>
+                  )}
 
             {eventsListLoading && (
               <div className="grid gap-2 md:grid-cols-2">
@@ -2093,13 +1913,13 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
         </section>
       )}
 
-      {!isLegacyStandaloneTab && activeObjective === "manage" && activeSection === "inscricoes" && (
+      {activeObjective === "manage" && activeSection === "inscricoes" && (
         <section className={cn("space-y-4", fadeClass)} id="inscricoes">
           <InscricoesPage embedded />
         </section>
       )}
 
-      {!isLegacyStandaloneTab && activeObjective === "manage" && activeSection === "padel-hub" && showPadelHub && (
+      {activeObjective === "manage" && activeSection === "padel-hub" && showPadelHub && (
         <section className={cn("space-y-4", fadeClass)} id="padel-hub">
           {organizer?.id ? (
             <PadelHubSection
@@ -2114,7 +1934,7 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
         </section>
       )}
 
-      {!isLegacyStandaloneTab && activeObjective === "analyze" && (
+      {activeObjective === "analyze" && (
         <section className={cn("space-y-3", fadeClass)} id="analisar">
           <div className="rounded-3xl border border-white/12 bg-gradient-to-r from-[#0b1226]/80 via-[#101b39]/75 to-[#050811]/90 px-4 py-4 sm:px-6 sm:py-5 backdrop-blur-2xl shadow-[0_26px_90px_rgba(0,0,0,0.55)]">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -2142,7 +1962,7 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
         </section>
       )}
 
-      {!isLegacyStandaloneTab && activeObjective === "analyze" && activeSection === "overview" && (
+      {activeObjective === "analyze" && activeSection === "overview" && (
         <section className={cn("space-y-4", fadeClass)} id="overview">
 
           <div className="grid gap-4 xl:grid-cols-4 md:grid-cols-2">
@@ -2242,7 +2062,7 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
         </section>
       )}
 
-      {!isLegacyStandaloneTab && activeObjective === "analyze" && activeSection === "vendas" && (
+      {activeObjective === "analyze" && activeSection === "vendas" && (
         <section className={cn("space-y-4", fadeClass)} id="vendas">
           <div className="relative overflow-hidden rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/75 to-[#050810]/92 p-5 shadow-[0_26px_90px_rgba(0,0,0,0.6)] backdrop-blur-3xl space-y-4">
             <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.12),transparent_35%),linear-gradient(225deg,rgba(255,255,255,0.08),transparent_40%)]" />
@@ -2560,7 +2380,7 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
         </section>
       )}
 
-      {!isLegacyStandaloneTab && activeObjective === "analyze" && activeSection === "financas" && (
+      {activeObjective === "analyze" && activeSection === "financas" && (
         <section className={cn("space-y-5", fadeClass)} id="financas">
           <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/10 via-[#0d1530]/75 to-[#050912]/90 px-5 py-4 shadow-[0_30px_110px_rgba(0,0,0,0.6)] backdrop-blur-3xl">
             <div className="flex flex-col gap-2">
@@ -2839,13 +2659,13 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
         </section>
       )}
 
-      {!isLegacyStandaloneTab && activeObjective === "analyze" && activeSection === "invoices" && (
+      {activeObjective === "analyze" && activeSection === "invoices" && (
         <section className={cn("space-y-4", fadeClass)} id="invoices">
           <InvoicesClient basePath="/organizador?tab=analyze&section=invoices" fullWidth organizerId={organizer?.id ?? null} />
         </section>
       )}
 
-  {!isLegacyStandaloneTab && activeObjective === "promote" && (
+  {activeObjective === "promote" && (
     <section className="space-y-5">
       <div
         className={cn(

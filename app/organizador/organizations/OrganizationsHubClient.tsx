@@ -205,7 +205,6 @@ export default function OrganizationsHubClient({ initialOrgs, activeId }: Props)
     const isActive = currentActive === item.organizerId;
     const normalizedRole = item.role.toUpperCase();
     const isOwnerOrAdmin = ["OWNER", "CO_OWNER", "ADMIN"].includes(normalizedRole);
-    const cityLine = item.organizer.city || "Cidade não definida";
     const typeLine = item.organizer.entityType || "Tipo não definido";
     const handle = item.organizer.username ? `@${item.organizer.username}` : "Sem username";
       const roleLabel = normalizedRole;

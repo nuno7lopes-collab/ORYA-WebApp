@@ -108,14 +108,7 @@ export function FormSubmissionClient({ form }: { form: FormPayload }) {
   };
 
   return (
-    <main className="relative orya-body-bg min-h-screen w-full overflow-hidden text-white">
-      <div className="pointer-events-none fixed inset-0" aria-hidden="true">
-        <div className="absolute -top-36 right-[-140px] h-[420px] w-[420px] rounded-full bg-[radial-gradient(circle_at_35%_35%,rgba(255,0,200,0.28),transparent_60%)] opacity-80 blur-3xl" />
-        <div className="absolute top-[22vh] -left-40 h-[360px] w-[360px] rounded-full bg-[radial-gradient(circle_at_30%_30%,rgba(107,255,255,0.22),transparent_60%)] opacity-80 blur-3xl" />
-        <div className="absolute bottom-[-180px] right-[12%] h-[420px] w-[420px] rounded-full bg-[radial-gradient(circle_at_40%_40%,rgba(22,70,245,0.25),transparent_60%)] opacity-70 blur-3xl" />
-        <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.05),transparent_35%,rgba(0,0,0,0.65))] mix-blend-screen" />
-      </div>
-
+    <main className="relative min-h-screen w-full overflow-hidden text-white">
       <section className="relative orya-page-width px-4 pb-16 pt-10 space-y-6">
         <header className="space-y-4 rounded-3xl border border-white/12 bg-gradient-to-br from-white/10 via-[#0b1124]/80 to-[#050912]/90 p-6 shadow-[0_30px_120px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
           <div className="flex flex-wrap items-start justify-between gap-3">

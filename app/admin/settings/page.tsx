@@ -14,10 +14,6 @@ type FeesResponse =
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
-function formatPercentFromBps(bps: number) {
-  return (bps / 100).toFixed(2) + " %";
-}
-
 function formatEur(cents: number) {
   return (cents / 100).toFixed(2) + " €";
 }
@@ -103,7 +99,7 @@ export default function AdminSettingsPage() {
   };
 
   return (
-    <main className="orya-body-bg min-h-screen text-white pb-16">
+    <main className="min-h-screen text-white pb-16">
       <header className="border-b border-white/10 bg-black/50 backdrop-blur-xl">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-4">
           <div className="flex items-center gap-3">
@@ -130,9 +126,9 @@ export default function AdminSettingsPage() {
         <div className="flex flex-col gap-2">
           <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">Taxas configuradas</h1>
           <p className="max-w-3xl text-sm text-white/70">
-            Valores globais definidos pela ORYA. O organizador só decide quem suporta a taxa (cliente paga ou
-            organizador absorve). A taxa da Stripe pode variar por método/pais; aqui controlas o valor base usado nos
-            cálculos e previews.
+            Valores globais definidos pela ORYA. No v1 o preço público já inclui todas as taxas; não existe repasse
+            explícito ao cliente. A taxa da Stripe pode variar por método/país; aqui controlas o valor base usado nos
+            cálculos internos e previews.
           </p>
         </div>
 

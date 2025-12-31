@@ -24,10 +24,6 @@ export async function GET(req: NextRequest) {
     const results = await prisma.organizer.findMany({
       where: {
         status: "ACTIVE",
-        OR: [
-          { publicListingEnabled: true },
-          { publicListingEnabled: null },
-        ],
         AND: [
           {
             OR: [

@@ -13,12 +13,22 @@ const required = [
 
 type EnvKey = (typeof required)[number];
 
-function getEnv(key: EnvKey): string {
+function getEnv(key: EnvKey, fallbackKeys: string[] = []): string {
   const value = process.env[key];
-  if (!value) {
-    throw new Error(`Missing env var: ${key}`);
+  if (value) return value;
+
+  for (const fallbackKey of fallbackKeys) {
+    const fallbackValue = process.env[fallbackKey];
+    if (fallbackValue) return fallbackValue;
   }
-  return value;
+
+  if (fallbackKeys.length > 0) {
+    throw new Error(
+      `Missing env var: ${key} (or ${fallbackKeys.join(", ")})`
+    );
+  }
+
+  throw new Error(`Missing env var: ${key}`);
 }
 
 function getOptionalUrlEnv(...keys: string[]) {
@@ -55,8 +65,8 @@ function parseList(raw: unknown) {
 }
 
 export const env = {
-  supabaseUrl: getEnv("SUPABASE_URL"),
-  supabaseAnonKey: getEnv("SUPABASE_ANON_KEY"),
+  supabaseUrl: getEnv("SUPABASE_URL", ["NEXT_PUBLIC_SUPABASE_URL"]),
+  supabaseAnonKey: getEnv("SUPABASE_ANON_KEY", ["NEXT_PUBLIC_SUPABASE_ANON_KEY"]),
   serviceRoleKey: getEnv("SUPABASE_SERVICE_ROLE"),
   dbUrl: getEnv("DATABASE_URL"),
   stripeSecretKey: getEnv("STRIPE_SECRET_KEY"),

@@ -31,7 +31,7 @@ export default async function MonitorPage({ params }: PageProps) {
   const live = matches.filter((m: any) => m.status === "IN_PROGRESS").slice(0, 6);
 
   return (
-    <div className="min-h-screen bg-black text-white p-4">
+    <div className="min-h-screen text-white p-4">
       <div className="orya-page-width space-y-4">
         <div className="flex items-center justify-between">
           <div>

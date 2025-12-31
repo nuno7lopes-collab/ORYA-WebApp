@@ -37,76 +37,6 @@ type UserResult = {
   avatarUrl: string | null;
 };
 
-function Filters({ stages, setFilters }: { stages: any[]; setFilters: (f: any) => void }) {
-  const [status, setStatus] = useState<string>("");
-  const [stageId, setStageId] = useState<string>("");
-  const [court, setCourt] = useState<string>("");
-  const [todayOnly, setTodayOnly] = useState(false);
-  const [search, setSearch] = useState("");
-
-  return (
-    <div className="flex flex-wrap items-center gap-2 text-sm">
-      <select
-        value={status}
-        onChange={(e) => {
-          setStatus(e.target.value);
-          setFilters((prev: any) => ({ ...prev, status: e.target.value || null }));
-        }}
-        className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-white/80"
-      >
-        <option value="">Todos os estados</option>
-        <option value="PENDING">Pendente</option>
-        <option value="IN_PROGRESS">Em jogo</option>
-        <option value="DONE">Terminado</option>
-      </select>
-      <select
-        value={stageId}
-        onChange={(e) => {
-          setStageId(e.target.value);
-          setFilters((prev: any) => ({ ...prev, stageId: e.target.value ? Number(e.target.value) : null }));
-        }}
-        className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-white/80"
-      >
-        <option value="">Todas as fases</option>
-        {stages.map((s) => (
-          <option key={s.id} value={s.id}>
-            {s.name || s.stageType}
-          </option>
-        ))}
-      </select>
-      <input
-        value={court}
-        onChange={(e) => {
-          setCourt(e.target.value);
-          setFilters((prev: any) => ({ ...prev, court: e.target.value || null }));
-        }}
-        placeholder="Campo #"
-        className="w-24 rounded-full border border-white/15 bg-white/5 px-3 py-1 text-white/80"
-      />
-      <label className="flex items-center gap-1 text-white/75">
-        <input
-          type="checkbox"
-          checked={todayOnly}
-          onChange={(e) => {
-            setTodayOnly(e.target.checked);
-            setFilters((prev: any) => ({ ...prev, todayOnly: e.target.checked }));
-          }}
-        />
-        Só hoje
-      </label>
-      <input
-        value={search}
-        onChange={(e) => {
-          setSearch(e.target.value);
-          setFilters((prev: any) => ({ ...prev, search: e.target.value }));
-        }}
-        placeholder="Pesquisar jogador #"
-        className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-white/80"
-      />
-    </div>
-  );
-}
-
 export function TournamentLiveManager({ tournamentId }: TournamentLiveManagerProps) {
   const router = useRouter();
   const isValidTournamentId = Number.isFinite(tournamentId);
@@ -311,7 +241,7 @@ export function TournamentLiveManager({ tournamentId }: TournamentLiveManagerPro
     try {
       const formData = new FormData();
       formData.append("file", file);
-      const res = await fetch("/api/upload", { method: "POST", body: formData });
+      const res = await fetch("/api/upload?scope=avatar", { method: "POST", body: formData });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.url) {
         setParticipantsMessage(json?.error || "Falha no upload da imagem.");
@@ -421,13 +351,6 @@ export function TournamentLiveManager({ tournamentId }: TournamentLiveManagerPro
     [tournament, flatMatches, data?.pairings],
   );
 
-  const [filters, setFilters] = useState<any>({
-    status: null,
-    stageId: null,
-    court: null,
-    todayOnly: false,
-    search: "",
-  });
   const filledCount = slots.filter(Boolean).length;
 
   const saveParticipants = async (options?: { silent?: boolean }) => {
@@ -518,30 +441,6 @@ export function TournamentLiveManager({ tournamentId }: TournamentLiveManagerPro
       setGenerating(false);
     }
   };
-
-  const filteredMatches = useMemo(() => {
-    const now = new Date();
-    return flatMatches.filter((m: any) => {
-      if (filters.status && m.status !== filters.status) return false;
-      if (filters.stageId && m.stageId !== filters.stageId) return false;
-      if (filters.court && `${m.courtId ?? ""}` !== filters.court) return false;
-      if (filters.todayOnly && m.startAt) {
-        const d = new Date(m.startAt);
-        if (
-          d.getFullYear() !== now.getFullYear() ||
-          d.getMonth() !== now.getMonth() ||
-          d.getDate() !== now.getDate()
-        )
-          return false;
-      }
-      if (filters.search) {
-        const term = filters.search.trim();
-        if (!term) return true;
-        return `${m.pairing1Id ?? ""}`.includes(term) || `${m.pairing2Id ?? ""}`.includes(term);
-      }
-      return true;
-    });
-  }, [flatMatches, filters]);
 
   if (!isValidTournamentId) {
     return (
@@ -915,8 +814,6 @@ export function TournamentLiveManager({ tournamentId }: TournamentLiveManagerPro
               </ul>
             </div>
           )}
-
-          <Filters stages={stages} setFilters={setFilters} />
 
           <div className="grid gap-4 md:grid-cols-2">
             {stages.map((stage: any) => (

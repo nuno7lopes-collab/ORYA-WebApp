@@ -11,6 +11,8 @@ import {
   getCustomPremiumProfileModules,
   isCustomPremiumActive,
 } from "@/lib/organizerPremium";
+import type { OrganizationCategory } from "@/lib/organizationCategories";
+import { OrganizationFormStatus } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -58,8 +60,6 @@ function formatTimeLabel(date: Date | null, timezone: string) {
     timeZone: timezone,
   }).format(date);
 }
-
-type OrganizationCategory = "EVENTOS" | "PADEL" | "VOLUNTARIADO";
 
 type OrganizerEvent = {
   id: number;
@@ -118,18 +118,25 @@ const CATEGORY_META: Record<
     noun: "torneio",
     nounPlural: "torneios",
   },
-  VOLUNTARIADO: {
-    label: "Voluntariado",
-    cta: "Participar",
-    noun: "ação",
-    nounPlural: "ações",
+  RESERVAS: {
+    label: "Reservas",
+    cta: "Ver reservas",
+    noun: "evento",
+    nounPlural: "eventos",
+  },
+  CLUBS: {
+    label: "Clubes",
+    cta: "Ver clubes",
+    noun: "evento",
+    nounPlural: "eventos",
   },
 };
 
 const CATEGORY_TEMPLATE: Record<OrganizationCategory, "PADEL" | "VOLUNTEERING" | null> = {
   EVENTOS: null,
   PADEL: "PADEL",
-  VOLUNTARIADO: "VOLUNTEERING",
+  RESERVAS: null,
+  CLUBS: null,
 };
 
 const UPDATE_CATEGORY_LABELS: Record<string, string> = {
@@ -222,6 +229,7 @@ export default async function UserProfilePage({ params }: PageProps) {
         bio: true,
         city: true,
         visibility: true,
+        is_verified: true,
         createdAt: true,
       },
     }),
@@ -229,7 +237,6 @@ export default async function UserProfilePage({ params }: PageProps) {
       where: { username: usernameParam, status: "ACTIVE" },
       select: {
         id: true,
-        userId: true,
         username: true,
         publicName: true,
         businessName: true,
@@ -239,7 +246,6 @@ export default async function UserProfilePage({ params }: PageProps) {
         brandingCoverUrl: true,
         officialEmail: true,
         officialEmailVerifiedAt: true,
-        publicListingEnabled: true,
         status: true,
         publicWebsite: true,
         publicInstagram: true,
@@ -262,14 +268,13 @@ export default async function UserProfilePage({ params }: PageProps) {
     }),
   ]);
 
-  const organizerProfile =
-    organizerProfileRaw && organizerProfileRaw.publicListingEnabled !== false ? organizerProfileRaw : null;
+  const organizerProfile = organizerProfileRaw;
 
-  if (!profile?.username && !organizerProfile) {
+  if (!profile && !organizerProfile) {
     notFound();
   }
 
-  if (!profile?.username && organizerProfile) {
+  if (!profile && organizerProfile) {
     const now = new Date();
     const organizationCategory =
       (organizerProfile.organizationCategory as OrganizationCategory | null) ?? "EVENTOS";
@@ -281,13 +286,13 @@ export default async function UserProfilePage({ params }: PageProps) {
       "Organização ORYA";
     const modules =
       (organizerProfile.organizationModules?.map((module) => module.moduleKey) ?? []) as string[];
-    const ownerMembership = viewerId
+    const editorMembership = viewerId
       ? await prisma.organizerMember.findFirst({
-          where: { organizerId: organizerProfile.id, userId: viewerId, role: "OWNER" },
-          select: { userId: true },
+          where: { organizerId: organizerProfile.id, userId: viewerId, role: { in: ["OWNER", "ADMIN"] } },
+          select: { userId: true, role: true },
         })
       : null;
-    const isOrgOwner = Boolean(ownerMembership);
+    const canEditOrgProfile = Boolean(editorMembership);
     const contactEmail = organizerProfile.officialEmail?.trim() || null;
     const publicWebsite = organizerProfile.publicWebsite?.trim() || null;
     const publicInstagram = organizerProfile.publicInstagram?.trim() || null;
@@ -311,13 +316,11 @@ export default async function UserProfilePage({ params }: PageProps) {
     const premiumModules = premiumActive ? getCustomPremiumProfileModules(organizerProfile) ?? {} : {};
     const isOneVOnePremium = premiumActive && premiumKey === "ONEVONE";
     const hasInscricoes = modules.includes("INSCRICOES") && Boolean(premiumModules.inscricoes);
-    const hasLoja = modules.includes("LOJA") && Boolean(premiumModules.loja);
-    const hasGaleria = modules.includes("GALERIA") && Boolean(premiumModules.galeria);
-    const shouldLoadForms = hasInscricoes || isOrgOwner;
+    const shouldLoadForms = hasInscricoes || canEditOrgProfile;
 
     const formsWhere = {
       organizerId: organizerProfile.id,
-      status: { in: ["PUBLISHED", "DRAFT"] },
+      status: { in: [OrganizationFormStatus.PUBLISHED, OrganizationFormStatus.DRAFT] },
     };
 
     const [events, updates, followersCount, followRow, forms] = await Promise.all([
@@ -408,7 +411,6 @@ export default async function UserProfilePage({ params }: PageProps) {
       pastEvents.find((event) => event.coverImageUrl)?.coverImageUrl ||
       null;
     const headerCoverUrl = coverCandidate ? optimizeImageUrl(coverCandidate, 1400, 72) : null;
-    const galleryItems = categoryEvents.filter((event) => event.coverImageUrl).slice(0, 6);
     const initialIsFollowing = Boolean(followRow);
     const isVerified = Boolean(organizerProfile.officialEmailVerifiedAt);
     const followersTotal = followersCount ?? 0;
@@ -434,41 +436,7 @@ export default async function UserProfilePage({ params }: PageProps) {
     const featuredFormCapacityLabel = featuredForm?.capacity
       ? `${featuredForm.capacity} vagas`
       : null;
-    const merchItems = hasLoja
-      ? isOneVOnePremium
-        ? [
-            {
-              title: "Camisola OneVOne",
-              description: "Edição limitada oficial dos torneios.",
-              price: "Em breve",
-              href: publicWebsiteHref,
-            },
-            {
-              title: "Pulseira OneVOne",
-              description: "Identidade premium para atletas e staff.",
-              price: "Em breve",
-              href: publicWebsiteHref,
-            },
-          ]
-        : [
-            {
-              title: "Camisola oficial",
-              description: "Edição limitada com assinatura da organização.",
-              price: "Em breve",
-              href: publicWebsiteHref,
-            },
-            {
-              title: "Pulseira de evento",
-              description: "Identidade premium para a equipa e atletas.",
-              price: "Em breve",
-              href: publicWebsiteHref,
-            },
-          ]
-      : [];
     const agendaTotal = upcomingEvents.length + pastEvents.length;
-    const galleryPreview = galleryItems.slice(0, 4);
-    const galleryHref = publicInstagram || null;
-    const galleryLinkLabel = publicInstagram ? "Instagram" : null;
 
     const padelPlayersCount =
       organizationCategory === "PADEL"
@@ -492,8 +460,8 @@ export default async function UserProfilePage({ params }: PageProps) {
         : [];
 
     return (
-      <main className="relative orya-body-bg min-h-screen w-full overflow-hidden text-white">
-        <section className="relative orya-page-width flex flex-col gap-8 py-10">
+      <main className="relative min-h-screen w-full overflow-hidden text-white">
+        <section className="relative flex flex-col gap-8 py-10">
           <OrganizationProfileHeader
             name={orgDisplayName}
             username={organizerProfile.username ?? usernameParam}
@@ -505,8 +473,8 @@ export default async function UserProfilePage({ params }: PageProps) {
             followingCount={0}
             organizerId={organizerProfile.id}
             initialIsFollowing={initialIsFollowing}
-            isOwner={isOrgOwner}
-            isPublic={organizerProfile.publicListingEnabled !== false}
+            canEdit={canEditOrgProfile}
+            isPublic
             isVerified={isVerified}
             instagramHref={publicInstagram}
             youtubeHref={publicYoutube}
@@ -514,336 +482,185 @@ export default async function UserProfilePage({ params }: PageProps) {
             contactEmail={contactEmail}
           />
 
-          <section className="grid gap-6 px-5 sm:px-8 md:grid-cols-3 md:grid-rows-[auto_1fr] md:items-start">
-            <OrganizerAgendaTabs
-              title="Agenda pública"
-              anchorId="agenda"
-              layout="grid"
-              upcomingGroups={upcomingGroups}
-              pastGroups={pastGroups}
-              allGroups={allGroups}
-              upcomingCount={upcomingEvents.length}
-              pastCount={pastEvents.length}
-              totalCount={agendaTotal}
-              prelude={
-                <EventSpotlightCard
-                  event={spotlightEvent}
-                  label={`Próximo ${categoryMeta.noun}`}
-                  emptyLabel={`Sem ${categoryMeta.noun} anunciado`}
-                  ctaLabel={spotlightCtaLabel}
-                  ctaHref={spotlightCtaHref}
-                  variant="embedded"
+          <div className="px-5 sm:px-8">
+            <div className="orya-page-width flex flex-col gap-8">
+              <section className="grid gap-6 md:grid-cols-3 md:grid-rows-[auto_1fr] md:items-start">
+                <OrganizerAgendaTabs
+                  title="Agenda pública"
+                  anchorId="agenda"
+                  layout="grid"
+                  upcomingGroups={upcomingGroups}
+                  pastGroups={pastGroups}
+                  allGroups={allGroups}
+                  upcomingCount={upcomingEvents.length}
+                  pastCount={pastEvents.length}
+                  totalCount={agendaTotal}
+                  prelude={
+                    <EventSpotlightCard
+                      event={spotlightEvent}
+                      label={`Próximo ${categoryMeta.noun}`}
+                      emptyLabel={`Sem ${categoryMeta.noun} anunciado`}
+                      ctaLabel={spotlightCtaLabel}
+                      ctaHref={spotlightCtaHref}
+                      variant="embedded"
+                    />
+                  }
                 />
-              }
-            />
 
-            <aside className="space-y-4 md:col-span-1 md:row-start-2 min-w-0">
-              {showInscricoes && (
-                <section className="relative overflow-hidden rounded-3xl border border-white/12 bg-[#05070f]/80 p-4 shadow-[0_20px_70px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
-                  <div className="absolute inset-0" aria-hidden="true">
-                    <div className="absolute inset-0 bg-gradient-to-r from-[#05070f]/95 via-[#0b1124]/85 to-transparent" />
-                    <div className="absolute inset-y-0 right-0 w-2/3">
-                      <div
-                        className="absolute inset-0 bg-cover bg-center opacity-80"
-                        style={{ backgroundImage: `url(${inscriptionsCoverUrl})` }}
-                      />
-                      <div className="absolute inset-0 bg-gradient-to-l from-transparent via-black/40 to-[#05070f]/95" />
-                    </div>
+                <aside className="space-y-4 md:col-span-1 md:row-start-2 min-w-0">
+                  {showInscricoes && (
+                    <section className="relative overflow-hidden rounded-3xl border border-white/12 bg-[#05070f]/80 p-4 shadow-[0_20px_70px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
+                      <div className="absolute inset-0" aria-hidden="true">
+                        <div className="absolute inset-0 bg-gradient-to-r from-[#05070f]/95 via-[#0b1124]/85 to-transparent" />
+                        <div className="absolute inset-y-0 right-0 w-2/3">
+                          <div
+                            className="absolute inset-0 bg-cover bg-center opacity-80"
+                            style={{ backgroundImage: `url(${inscriptionsCoverUrl})` }}
+                          />
+                          <div className="absolute inset-0 bg-gradient-to-l from-transparent via-black/40 to-[#05070f]/95" />
+                        </div>
+                      </div>
+
+                      <div className="relative z-10 space-y-2">
+                        <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">
+                          Inscrições
+                        </p>
+                        <h3 className="text-lg font-semibold text-white">
+                          {featuredForm?.title ||
+                            (isOneVOnePremium ? "Ficha Guarda-Redes OneVOne" : "Inscrições em preparação")}
+                        </h3>
+                        {featuredFormDateLabel || featuredFormCapacityLabel ? (
+                          <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-white/70">
+                            {featuredFormDateLabel && (
+                              <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1">
+                                {featuredFormDateLabel}
+                              </span>
+                            )}
+                            {featuredFormCapacityLabel && (
+                              <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1">
+                                {featuredFormCapacityLabel}
+                              </span>
+                            )}
+                          </div>
+                        ) : null}
+                        <div className="mt-4 flex flex-wrap items-center gap-2">
+                          {featuredForm ? (
+                            <Link
+                              href={`/inscricoes/${featuredForm.id}`}
+                              className="rounded-full bg-white px-4 py-2 text-[12px] font-semibold text-black shadow-[0_10px_30px_rgba(255,255,255,0.25)]"
+                            >
+                              Inscrever-me
+                            </Link>
+                          ) : (
+                            <span className="rounded-full border border-white/15 bg-white/10 px-4 py-2 text-[12px] font-semibold text-white/70">
+                              Em breve
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </section>
+                  )}
+
+                </aside>
+              </section>
+
+              <section className="space-y-4">
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">Canal oficial</p>
+                  <h2 className="text-xl font-semibold text-white">Atualizações da organização</h2>
+                </div>
+                {formattedUpdates.length === 0 ? (
+                  <div className="rounded-3xl border border-white/10 bg-white/5 p-5 text-sm text-white/70 shadow-[0_20px_70px_rgba(0,0,0,0.5)] backdrop-blur-2xl">
+                    Sem atualizações oficiais por agora. As novidades aparecem sempre aqui primeiro.
                   </div>
-
-                  <div className="relative z-10 space-y-2">
-                    <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">
-                      Inscrições
-                    </p>
-                    <h3 className="text-lg font-semibold text-white">
-                      {featuredForm?.title ||
-                        (isOneVOnePremium ? "Ficha Guarda-Redes OneVOne" : "Inscrições em preparação")}
-                    </h3>
-                    {featuredFormDateLabel || featuredFormCapacityLabel ? (
-                      <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-white/70">
-                        {featuredFormDateLabel && (
-                          <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1">
-                            {featuredFormDateLabel}
-                          </span>
-                        )}
-                        {featuredFormCapacityLabel && (
-                          <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1">
-                            {featuredFormCapacityLabel}
-                          </span>
+                ) : (
+                  <div className="grid gap-3">
+                    {formattedUpdates.map((update) => (
+                      <div
+                        key={update.id}
+                        className="rounded-2xl border border-white/12 bg-white/5 p-4 text-sm text-white/80 shadow-[0_18px_60px_rgba(0,0,0,0.5)] backdrop-blur-2xl"
+                      >
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">
+                              {update.categoryLabel}
+                              {update.isPinned ? " · Fixado" : ""}
+                            </p>
+                            <h3 className="text-base font-semibold text-white">{update.title}</h3>
+                            {update.event?.slug && (
+                              <Link
+                                href={`/eventos/${update.event.slug}`}
+                                className="text-[12px] text-white/60 hover:text-white"
+                              >
+                                Evento: {update.event.title}
+                              </Link>
+                            )}
+                          </div>
+                          <span className="text-[11px] text-white/55">{update.dateLabel}</span>
+                        </div>
+                        {update.body && (
+                          <p className="mt-2 text-[12px] text-white/70 whitespace-pre-line">
+                            {update.body}
+                          </p>
                         )}
                       </div>
-                    ) : null}
-                    <div className="mt-4 flex flex-wrap items-center gap-2">
-                      {featuredForm ? (
-                        <Link
-                          href={`/inscricoes/${featuredForm.id}`}
-                          className="rounded-full bg-white px-4 py-2 text-[12px] font-semibold text-black shadow-[0_10px_30px_rgba(255,255,255,0.25)]"
-                        >
-                          Inscrever-me
-                        </Link>
+                    ))}
+                  </div>
+                )}
+              </section>
+
+              {organizationCategory === "PADEL" && (
+                <section className="space-y-4">
+                  <div>
+                    <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">Centro de competição</p>
+                    <h2 className="text-xl font-semibold text-white">PADEL oficial</h2>
+                  </div>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="rounded-3xl border border-white/12 bg-white/5 p-5 text-sm text-white/75 shadow-[0_24px_70px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
+                      <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Jogadores</p>
+                      <p className="mt-2 text-2xl font-semibold text-white">{padelPlayersCount}</p>
+                      <p className="text-[12px] text-white/60">Perfis ativos na competição.</p>
+                      {padelTopPlayers.length > 0 ? (
+                        <div className="mt-3 flex flex-wrap gap-2 text-[12px] text-white/70">
+                          {padelTopPlayers.map((player) => (
+                            <span
+                              key={player.id}
+                              className="rounded-full border border-white/15 bg-white/10 px-3 py-1"
+                            >
+                              {player.displayName || player.fullName || "Jogador"}{player.level ? ` · ${player.level}` : ""}
+                            </span>
+                          ))}
+                        </div>
                       ) : (
-                        <span className="rounded-full border border-white/15 bg-white/10 px-4 py-2 text-[12px] font-semibold text-white/70">
-                          Em breve
-                        </span>
+                        <p className="mt-3 text-[12px] text-white/50">Top players a definir.</p>
                       )}
                     </div>
-                  </div>
-                </section>
-              )}
-
-              {hasLoja && (
-                <section className="rounded-3xl border border-white/12 bg-white/5 p-4 shadow-[0_18px_60px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">Loja</p>
-                      <h3 className="text-base font-semibold text-white">Merch premium</h3>
-                    </div>
-                    {publicWebsiteHref && (
-                      <a
-                        href={publicWebsiteHref}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[11px] text-white/80 hover:border-white/30 hover:bg-white/10"
-                      >
-                        Ver loja
-                      </a>
-                    )}
-                  </div>
-                  {merchItems.length === 0 ? (
-                    <div className="mt-3 rounded-2xl border border-white/10 bg-white/5 p-3 text-[12px] text-white/70">
-                      Produtos em preparação. Vamos lançar novidades em breve.
-                    </div>
-                  ) : (
-                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                      {merchItems.slice(0, 2).map((item) => {
-                        const titleLower = item.title.toLowerCase();
-                        const isCamisola = titleLower.includes("camisola");
-                        const isPulseira = titleLower.includes("pulseira");
-                        const imageStyle = isCamisola
-                          ? { backgroundImage: "url(/ov1.png)" }
-                          : isPulseira
-                            ? { backgroundImage: "url(/onevone-pulseira.png)" }
-                            : undefined;
-                        return (
-                          <div
-                            key={item.title}
-                            className="overflow-hidden rounded-2xl border border-white/12 bg-[#05070f]/85 text-[12px] text-white/80 shadow-[0_16px_50px_rgba(0,0,0,0.5)]"
-                          >
-                            <div className="relative aspect-square w-full overflow-hidden border-b border-white/10">
-                              <div
-                                className={`absolute inset-0 bg-cover bg-center ${
-                                  isCamisola
-                                    ? ""
-                                    : "bg-[radial-gradient(circle_at_30%_20%,rgba(255,255,255,0.25),transparent_55%),linear-gradient(135deg,#0b1124,#05070f)]"
-                                }`}
-                                style={imageStyle}
-                              />
-                              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent" />
-                              <div className="relative z-10 flex h-full flex-col justify-end p-3">
-                                <p className="text-sm font-semibold text-white drop-shadow">
-                                  {item.title}
-                                </p>
-                                <div className="mt-2 flex flex-wrap items-center gap-2">
-                                  {item.href ? (
-                                    <a
-                                      href={item.href}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      className="inline-flex rounded-full border border-white/30 bg-white/15 px-3 py-1 text-[10px] text-white"
-                                    >
-                                      Comprar
-                                    </a>
-                                  ) : (
-                                    <span className="inline-flex rounded-full border border-white/25 bg-white/10 px-3 py-1 text-[10px] text-white/80">
-                                      Comprar
-                                    </span>
-                                  )}
-                                  <span className="text-[10px] text-white/70">{item.price}</span>
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </section>
-              )}
-
-              {hasGaleria && (
-                <section className="rounded-3xl border border-white/12 bg-white/5 p-4 shadow-[0_18px_60px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">Galeria</p>
-                      <h3 className="text-base font-semibold text-white">Highlights</h3>
-                    </div>
-                    {galleryHref && galleryLinkLabel && (
-                      <a
-                        href={galleryHref}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[11px] text-white/80 hover:border-white/30 hover:bg-white/10"
-                      >
-                        Ver {galleryLinkLabel}
-                      </a>
-                    )}
-                  </div>
-                  {galleryPreview.length === 0 ? (
-                    <div className="mt-3 rounded-2xl border border-white/10 bg-white/5 p-3 text-[12px] text-white/70">
-                      Ainda não existem imagens publicadas.
-                    </div>
-                  ) : (
-                    <div className="mt-3 grid grid-cols-3 gap-2">
-                      {galleryPreview.map((event) => {
-                        const coverUrl = optimizeImageUrl(event.coverImageUrl, 600, 70);
-                        const content = (
-                          <div className="group relative h-20 overflow-hidden rounded-xl border border-white/10">
-                            <div
-                              className="absolute inset-0 bg-cover bg-center transition-transform duration-500 group-hover:scale-[1.04]"
-                              style={{ backgroundImage: `url(${coverUrl})` }}
-                            />
-                            <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
-                          </div>
-                        );
-
-                        return galleryHref ? (
-                          <a
-                            key={event.id}
-                            href={galleryHref}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="block"
-                          >
-                            {content}
-                          </a>
-                        ) : (
-                          <div key={event.id}>{content}</div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </section>
-              )}
-            </aside>
-          </section>
-
-          <section className="space-y-4">
-            <div>
-              <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">Canal oficial</p>
-              <h2 className="text-xl font-semibold text-white">Atualizações da organização</h2>
-            </div>
-            {formattedUpdates.length === 0 ? (
-              <div className="rounded-3xl border border-white/10 bg-white/5 p-5 text-sm text-white/70 shadow-[0_20px_70px_rgba(0,0,0,0.5)] backdrop-blur-2xl">
-                Sem atualizações oficiais por agora. As novidades aparecem sempre aqui primeiro.
-              </div>
-            ) : (
-              <div className="grid gap-3">
-                {formattedUpdates.map((update) => (
-                  <div
-                    key={update.id}
-                    className="rounded-2xl border border-white/12 bg-white/5 p-4 text-sm text-white/80 shadow-[0_18px_60px_rgba(0,0,0,0.5)] backdrop-blur-2xl"
-                  >
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div>
-                        <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">
-                          {update.categoryLabel}
-                          {update.isPinned ? " · Fixado" : ""}
-                        </p>
-                        <h3 className="text-base font-semibold text-white">{update.title}</h3>
-                        {update.event?.slug && (
-                          <Link
-                            href={`/eventos/${update.event.slug}`}
-                            className="text-[12px] text-white/60 hover:text-white"
-                          >
-                            Evento: {update.event.title}
-                          </Link>
-                        )}
-                      </div>
-                      <span className="text-[11px] text-white/55">{update.dateLabel}</span>
-                    </div>
-                    {update.body && (
-                      <p className="mt-2 text-[12px] text-white/70 whitespace-pre-line">
-                        {update.body}
+                    <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050912]/90 p-5 text-sm text-white/75 shadow-[0_24px_70px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
+                      <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Ranking & histórico</p>
+                      <p className="mt-2 text-[12px] text-white/70">
+                        Aqui vês rankings, campeões e resultados oficiais assim que forem publicados.
                       </p>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
-
-          {organizationCategory === "PADEL" && (
-            <section className="space-y-4">
-              <div>
-                <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">Centro de competição</p>
-                <h2 className="text-xl font-semibold text-white">PADEL oficial</h2>
-              </div>
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="rounded-3xl border border-white/12 bg-white/5 p-5 text-sm text-white/75 shadow-[0_24px_70px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
-                  <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Jogadores</p>
-                  <p className="mt-2 text-2xl font-semibold text-white">{padelPlayersCount}</p>
-                  <p className="text-[12px] text-white/60">Perfis ativos na competição.</p>
-                  {padelTopPlayers.length > 0 ? (
-                    <div className="mt-3 flex flex-wrap gap-2 text-[12px] text-white/70">
-                      {padelTopPlayers.map((player) => (
-                        <span
-                          key={player.id}
-                          className="rounded-full border border-white/15 bg-white/10 px-3 py-1"
-                        >
-                          {player.displayName || player.fullName || "Jogador"}{player.level ? ` · ${player.level}` : ""}
-                        </span>
-                      ))}
+                      <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-[12px] text-white/70">
+                        Temporada atual em preparação.
+                      </div>
                     </div>
-                  ) : (
-                    <p className="mt-3 text-[12px] text-white/50">Top players a definir.</p>
-                  )}
-                </div>
-                <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050912]/90 p-5 text-sm text-white/75 shadow-[0_24px_70px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
-                  <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Ranking & histórico</p>
-                  <p className="mt-2 text-[12px] text-white/70">
-                    Aqui vês rankings, campeões e resultados oficiais assim que forem publicados.
-                  </p>
-                  <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-[12px] text-white/70">
-                    Temporada atual em preparação.
                   </div>
-                </div>
-              </div>
-            </section>
-          )}
-
-          {organizationCategory === "VOLUNTARIADO" && (
-            <section className="space-y-4">
-              <div>
-                <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">Missão</p>
-                <h2 className="text-xl font-semibold text-white">Impacto e participação</h2>
-              </div>
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="rounded-3xl border border-white/12 bg-white/5 p-5 text-sm text-white/75 shadow-[0_24px_70px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
-                  <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Missão</p>
-                  <p className="mt-2 text-[12px] text-white/70">
-                    {publicDescription ||
-                      "Esta organização cria ações com impacto real. A missão e os objetivos serão atualizados em breve."}
-                  </p>
-                </div>
-                <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050912]/90 p-5 text-sm text-white/75 shadow-[0_24px_70px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
-                  <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Como participar</p>
-                  <p className="mt-2 text-[12px] text-white/70">
-                    {organizerProfile.infoRequirements ||
-                      organizerProfile.infoRules ||
-                      "Segue a organização, inscreve-te nas próximas ações e confirma a tua disponibilidade."}
-                  </p>
-                </div>
-              </div>
-            </section>
-          )}
-
+                </section>
+              )}
+            </div>
+          </div>
         </section>
       </main>
     );
   }
 
-  const isOwner = viewerId === profile.id;
-  const isPrivate = profile.visibility === "PRIVATE";
+  if (!profile) {
+    notFound();
+  }
+
+  const resolvedProfile = profile;
+  const isOwner = viewerId === resolvedProfile.id;
+  const isPrivate = resolvedProfile.visibility === "PRIVATE";
   const canShowPrivate = isOwner || !isPrivate;
   let initialIsFollowing = false;
 
@@ -867,15 +684,15 @@ export default async function UserProfilePage({ params }: PageProps) {
 
   if (prisma.follows) {
     const [followers, following] = await Promise.all([
-      prisma.follows.count({ where: { following_id: profile.id } }),
-      prisma.follows.count({ where: { follower_id: profile.id } }),
+      prisma.follows.count({ where: { following_id: resolvedProfile.id } }),
+      prisma.follows.count({ where: { follower_id: resolvedProfile.id } }),
     ]);
     followersCount = followers;
     followingCount = following;
 
     if (!isOwner && viewerId) {
       const followRow = await prisma.follows.findFirst({
-        where: { follower_id: viewerId, following_id: profile.id },
+        where: { follower_id: viewerId, following_id: resolvedProfile.id },
         select: { id: true },
       });
       initialIsFollowing = Boolean(followRow);
@@ -886,15 +703,15 @@ export default async function UserProfilePage({ params }: PageProps) {
     const now = new Date();
     try {
       const [total, upcoming, past, recentEntitlements] = await Promise.all([
-        (prisma as any).entitlement.count({ where: { ownerUserId: profile.id } }),
+        (prisma as any).entitlement.count({ where: { ownerUserId: resolvedProfile.id } }),
         (prisma as any).entitlement.count({
-          where: { ownerUserId: profile.id, snapshotStartAt: { gte: now } },
+          where: { ownerUserId: resolvedProfile.id, snapshotStartAt: { gte: now } },
         }),
         (prisma as any).entitlement.count({
-          where: { ownerUserId: profile.id, snapshotStartAt: { lt: now } },
+          where: { ownerUserId: resolvedProfile.id, snapshotStartAt: { lt: now } },
         }),
         (prisma as any).entitlement.findMany({
-          where: { ownerUserId: profile.id },
+          where: { ownerUserId: resolvedProfile.id },
           orderBy: [{ snapshotStartAt: "desc" }],
           take: 4,
           select: {
@@ -929,42 +746,35 @@ export default async function UserProfilePage({ params }: PageProps) {
 
   const displayName =
     organizerProfile?.publicName?.trim() ||
-    profile.fullName?.trim() ||
-    profile.username ||
+    resolvedProfile.fullName?.trim() ||
+    resolvedProfile.username ||
     "Utilizador ORYA";
   const coverCandidate =
-    profile.coverUrl?.trim() ||
+    resolvedProfile.coverUrl?.trim() ||
     recent.find((item) => item.coverUrl)?.coverUrl ||
-    profile.avatarUrl ||
+    resolvedProfile.avatarUrl ||
     null;
   const headerCoverUrl = coverCandidate ? optimizeImageUrl(coverCandidate, 1400, 72) : null;
   const isOrganizationProfile = Boolean(organizerProfile);
 
   return (
-    <main className="relative orya-body-bg min-h-screen w-full overflow-hidden text-white">
-      <div className="pointer-events-none fixed inset-0" aria-hidden="true">
-        <div className="absolute -top-36 right-[-140px] h-[420px] w-[420px] rounded-full bg-[radial-gradient(circle_at_35%_35%,rgba(255,0,200,0.28),transparent_60%)] opacity-80 blur-3xl" />
-        <div className="absolute top-[22vh] -left-40 h-[360px] w-[360px] rounded-full bg-[radial-gradient(circle_at_30%_30%,rgba(107,255,255,0.22),transparent_60%)] opacity-80 blur-3xl" />
-        <div className="absolute bottom-[-180px] right-[12%] h-[420px] w-[420px] rounded-full bg-[radial-gradient(circle_at_40%_40%,rgba(22,70,245,0.25),transparent_60%)] opacity-70 blur-3xl" />
-        <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.05),transparent_35%,rgba(0,0,0,0.65))] mix-blend-screen" />
-      </div>
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_20%,rgba(255,255,255,0.05),transparent_60%)]" />
+    <main className="relative min-h-screen w-full overflow-hidden text-white">
       <section className="relative flex flex-col gap-6 py-10">
         <ProfileHeader
           isOwner={isOwner}
           name={displayName}
-          username={profile.username}
-          avatarUrl={profile.avatarUrl}
+          username={resolvedProfile.username}
+          avatarUrl={resolvedProfile.avatarUrl}
           coverUrl={headerCoverUrl}
-          bio={profile.bio}
-          city={profile.city}
-          visibility={profile.visibility as "PUBLIC" | "PRIVATE" | null}
-          createdAt={profile.createdAt?.toISOString?.() ?? null}
+          bio={resolvedProfile.bio}
+          city={resolvedProfile.city}
+          visibility={resolvedProfile.visibility as "PUBLIC" | "PRIVATE" | null}
           followers={followersCount}
           following={followingCount}
-          targetUserId={profile.id}
+          targetUserId={resolvedProfile.id}
           initialIsFollowing={initialIsFollowing}
           isOrganization={isOrganizationProfile}
+          isVerified={resolvedProfile.is_verified}
         />
 
         <div className="px-5 sm:px-8">
@@ -994,7 +804,7 @@ export default async function UserProfilePage({ params }: PageProps) {
                     <StatCard
                       title="Total investido"
                       value={stats.totalSpent}
-                      subtitle="Bruto - taxas."
+                      subtitle="Total pago."
                       tone="purple"
                     />
                   </div>

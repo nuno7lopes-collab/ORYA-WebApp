@@ -16,7 +16,6 @@ import { type CheckoutBreakdown, useCheckout } from "./contextoCheckout";
 import { supabaseBrowser } from "@/lib/supabaseBrowser";
 import { isValidPhone, sanitizePhone } from "@/lib/phone";
 import { sanitizeUsername, validateUsername } from "@/lib/username";
-import { createPurchaseId } from "@/lib/checkoutSchemas";
 
 function isValidEmail(email: string) {
   return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email);
@@ -40,6 +39,31 @@ function buildClientFingerprint(input: unknown) {
   }
 }
 
+async function checkUsernameAvailabilityRemote(
+  value: string,
+  onError: (message: string) => void
+) {
+  const cleaned = sanitizeUsername(value);
+  const validation = validateUsername(cleaned);
+  if (!validation.valid) {
+    onError(validation.error);
+    return { ok: false, username: cleaned };
+  }
+  try {
+    const res = await fetch(`/api/username/check?username=${encodeURIComponent(cleaned)}`);
+    const json = await res.json().catch(() => null);
+    if (!res.ok || json?.available === false) {
+      onError("Esse @ já está a ser usado.");
+      return { ok: false, username: cleaned };
+    }
+    return { ok: true, username: validation.normalized };
+  } catch (err) {
+    console.error("[Step2Pagamento] erro a verificar username", err);
+    onError("Não foi possível verificar o username. Tenta novamente.");
+    return { ok: false, username: cleaned };
+  }
+}
+
 type CheckoutItem = {
   ticketId: number;
   quantity: number;
@@ -58,6 +82,7 @@ type CheckoutWave = {
 
 type CheckoutData = {
   slug?: string;
+  eventId?: number | string;
   waves?: CheckoutWave[];
   additional?: {
     quantidades?: Record<string, number>;
@@ -68,6 +93,15 @@ type CheckoutData = {
     idempotencyKey?: string;
     purchaseId?: string | null;
     requiresAuth?: boolean;
+    pairingId?: number;
+    pairingSlotId?: number;
+    ticketTypeId?: number;
+    inviteToken?: string;
+    paymentIntentId?: string;
+    appliedPromoLabel?: string;
+    freeCheckout?: boolean;
+    clientFingerprint?: string;
+    intentFingerprint?: string;
   };
   paymentScenario?: string | null;
 };
@@ -405,28 +439,6 @@ export default function Step2Pagamento() {
     });
   }, [safeDados, atualizarDados]);
 
-  const checkUsernameAvailability = async (value: string) => {
-    const cleaned = sanitizeUsername(value);
-    const validation = validateUsername(cleaned);
-    if (!validation.valid) {
-      setError(validation.error);
-      return { ok: false, username: cleaned };
-    }
-    try {
-      const res = await fetch(`/api/username/check?username=${encodeURIComponent(cleaned)}`);
-      const json = await res.json().catch(() => null);
-      if (!res.ok || json?.available === false) {
-        setError("Esse @ já está a ser usado.");
-        return { ok: false, username: cleaned };
-      }
-      return { ok: true, username: validation.normalized };
-    } catch (err) {
-      console.error("[Step2Pagamento] erro a verificar username", err);
-      setError("Não foi possível verificar o username. Tenta novamente.");
-      return { ok: false, username: cleaned };
-    }
-  };
-
   useEffect(() => {
     // Se não houver dados de checkout, mandamos de volta
     if (!payload) {
@@ -635,7 +647,6 @@ export default function Step2Pagamento() {
         let currentIntentFingerprint = undefined;
         let res: Response | null = null;
         let data: any = null;
-        let handled409 = false;
 
         while (attempt < 2) {
           res = await fetch("/api/payments/intent", {
@@ -656,7 +667,6 @@ export default function Step2Pagamento() {
           data = await res.json().catch(() => null);
 
           if (res.status === 409) {
-            handled409 = true;
             attempt += 1;
             // Reset total: limpar caches e fazer um retry sem anchors próprias.
             currentPayload = { ...payload };
@@ -690,6 +700,15 @@ export default function Step2Pagamento() {
 
           // status != 409 ➜ sair do loop
           break;
+        }
+
+        if (!res) {
+          if (!cancelled) {
+            setBreakdown(null);
+            setError("Falha ao contactar o servidor. Tenta novamente.");
+            setLoading(false);
+          }
+          return;
         }
 
         if (!data || typeof data !== "object") {
@@ -826,7 +845,6 @@ export default function Step2Pagamento() {
                     ? data.error
                     : "O checkout mudou noutro separador. Volta ao passo anterior ou recarrega a página e tenta de novo.",
                 );
-                setSubmitting(false);
                 setLoading(false);
                 return;
               }
@@ -987,22 +1005,6 @@ export default function Step2Pagamento() {
             typeof breakdownFromResponse?.subtotalCents === "number"
               ? breakdownFromResponse.subtotalCents
               : null;
-          const platformFeeCentsNumber =
-            typeof breakdownFromResponse?.platformFeeCents === "number"
-              ? breakdownFromResponse.platformFeeCents
-              : null;
-          const platformFeeCombinedCentsNumber =
-            typeof (breakdownFromResponse as any)?.platformFeeCombinedCents === "number"
-              ? (breakdownFromResponse as any).platformFeeCombinedCents
-              : platformFeeCentsNumber;
-          const platformFeeOryaCentsNumber =
-            typeof (breakdownFromResponse as any)?.platformFeeOryaCents === "number"
-              ? (breakdownFromResponse as any).platformFeeOryaCents
-              : platformFeeCentsNumber;
-          const stripeFeeEstimateCentsNumber =
-            typeof (breakdownFromResponse as any)?.stripeFeeEstimateCents === "number"
-              ? (breakdownFromResponse as any).stripeFeeEstimateCents
-              : null;
           const totalCentsNumber =
             typeof breakdownFromResponse?.totalCents === "number"
               ? breakdownFromResponse.totalCents
@@ -1010,12 +1012,14 @@ export default function Step2Pagamento() {
                 ? data.amount
                 : null;
           const currencyFromResponse =
-            typeof breakdownFromResponse?.currency === "string" ? breakdownFromResponse.currency : undefined;
+            typeof data?.currency === "string"
+              ? data.currency
+              : typeof breakdownFromResponse?.currency === "string"
+                ? breakdownFromResponse.currency
+                : undefined;
 
           const statusFromResponse =
             typeof data?.status === "string" ? data.status.toUpperCase() : null;
-          const nextActionFromResponse =
-            typeof data?.nextAction === "string" ? data.nextAction : null;
           const paymentIntentIdFromResponse =
             typeof data?.paymentIntentId === "string" ? data.paymentIntentId : null;
 
@@ -1041,9 +1045,6 @@ export default function Step2Pagamento() {
                 purchaseId: purchaseIdFromServer,
                 subtotalCents: subtotalCentsNumber ?? undefined,
                 discountCents: discountCentsNumber ?? undefined,
-                platformFeeCents: platformFeeCombinedCentsNumber ?? undefined,
-                platformFeeOryaCents: platformFeeOryaCentsNumber ?? undefined,
-                stripeFeeEstimateCents: stripeFeeEstimateCentsNumber ?? undefined,
                 totalCents: totalCents,
                 currency: currencyFromResponse ?? undefined,
                 total: totalCents / 100,
@@ -1083,9 +1084,6 @@ export default function Step2Pagamento() {
                 safeDados?.additional?.paymentIntentId,
               subtotalCents: subtotalCentsNumber ?? undefined,
               discountCents: discountCentsNumber ?? undefined,
-              platformFeeCents: platformFeeCombinedCentsNumber ?? undefined,
-              platformFeeOryaCents: platformFeeOryaCentsNumber ?? undefined,
-              stripeFeeEstimateCents: stripeFeeEstimateCentsNumber ?? undefined,
               totalCents: totalCentsNumber ?? undefined,
               currency: currencyFromResponse ?? undefined,
               promoCode: payload?.promoCode,
@@ -1610,18 +1608,6 @@ function PaymentForm({ total, discount = 0, breakdown, clientSecret, onLoadError
   const [elementReady, setElementReady] = useState(false);
   const currency = breakdown?.currency ?? "EUR";
   const discountCents = Math.max(0, Math.round(discount * 100));
-  const hasInvoice = Boolean(breakdown?.lines?.length);
-  const feeMode =
-    typeof breakdown?.feeMode === "string"
-      ? breakdown.feeMode.toUpperCase()
-      : null;
-  const payorPaysFee = feeMode === "ADDED";
-  const platformFeeCents = payorPaysFee
-    ? Math.max(0, (breakdown as any)?.platformFeeCombinedCents ?? breakdown?.platformFeeCents ?? 0)
-    : 0;
-  const subtotalCents = breakdown?.subtotalCents ?? 0;
-  const baseSubtotalCents =
-    hasInvoice && discountCents > 0 ? subtotalCents + discountCents : subtotalCents;
   const promoApplied = discountCents > 0;
 
   useEffect(() => {
@@ -1825,7 +1811,7 @@ function PaymentForm({ total, discount = 0, breakdown, clientSecret, onLoadError
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-5">
-      {(hasInvoice || total !== null) && (
+      {total !== null && (
         <div className="rounded-2xl border border-white/12 bg-white/[0.05] px-5 py-4 shadow-inner shadow-black/40 backdrop-blur-xl space-y-3">
           <div className="flex items-center justify-between text-xs text-white/70">
             <span className="uppercase tracking-[0.14em]">Resumo</span>
@@ -1834,70 +1820,10 @@ function PaymentForm({ total, discount = 0, breakdown, clientSecret, onLoadError
             </span>
           </div>
 
-          {hasInvoice && (
-            <div className="space-y-2">
-              {breakdown?.lines?.map((line) => (
-                <div
-                  key={`${line.ticketTypeId}-${line.name}-${line.quantity}`}
-                  className="flex items-center justify-between text-sm text-white/80"
-                >
-                  <div className="flex flex-col">
-                    <span className="font-medium">{line.name}</span>
-                    <span className="text-[11px] text-white/55">x{line.quantity}</span>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-[13px] font-semibold">
-                      {formatMoney(line.lineTotalCents, line.currency || currency)}
-                    </p>
-                    <p className="text-[11px] text-white/45">
-                      {formatMoney(line.unitPriceCents, line.currency || currency)} / bilhete
-                    </p>
-                  </div>
-                </div>
-              ))}
-
-              <div className="h-px w-full bg-white/10" />
-
-              {discountCents > 0 && (
-                <>
-                  <div className="flex items-center justify-between text-sm text-white/70">
-                    <span>Subtotal (antes de desconto)</span>
-                    <span className="font-semibold">
-                      {formatMoney(baseSubtotalCents, currency)}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between text-sm text-emerald-300">
-                    <span>Desconto aplicado</span>
-                    <span>-{formatMoney(discountCents, currency)}</span>
-                  </div>
-                </>
-              )}
-
-              <div className="flex items-center justify-between text-sm text-white/80">
-                <span>Subtotal</span>
-                <span className="font-semibold">
-                  {formatMoney(subtotalCents, currency)}
-                </span>
-              </div>
-
-              {platformFeeCents > 0 && (
-                <div className="flex items-center justify-between text-sm text-white/70">
-                  <span>Taxa da plataforma (inclui processamento)</span>
-                  <span>{formatMoney(platformFeeCents, currency)}</span>
-                </div>
-              )}
-            </div>
-          )}
-
           {total !== null && (
           <div className="flex items-center justify-between rounded-xl bg-white/10 px-4 py-3 border border-white/12">
               <div className="flex flex-col text-white/80">
                 <span className="text-[12px]">Total a pagar</span>
-                {feeMode === "INCLUDED" && (
-                  <span className="text-[11px] text-white/55">
-                    Taxas já incluídas
-                  </span>
-                )}
               </div>
               <span className="text-xl font-semibold text-white">
                 {formatMoney(Math.round(total * 100), currency)}
@@ -1926,7 +1852,7 @@ function PaymentForm({ total, discount = 0, breakdown, clientSecret, onLoadError
             onLoadError={(err) => {
               console.error("[PaymentElement] loaderror", err);
               setElementReady(false);
-              setError(err?.message ?? "Não foi possível carregar o formulário de pagamento. Tenta novamente.");
+              setError(err?.error?.message ?? "Não foi possível carregar o formulário de pagamento. Tenta novamente.");
               if (onLoadError) onLoadError();
               // Debug extra: tentar perceber o estado do PI associado
               if (stripe && clientSecret) {
@@ -2132,7 +2058,7 @@ function AuthWall({ onAuthenticated }: AuthWallProps) {
           setError("Nome é obrigatório para criar conta.");
           return;
         }
-        const usernameCheck = await checkUsernameAvailability(username);
+        const usernameCheck = await checkUsernameAvailabilityRemote(username, setError);
         if (!usernameCheck.ok) {
           setSubmitting(false);
           return;

@@ -48,13 +48,13 @@ export async function GET(req: NextRequest) {
   const { organizer } = check;
 
   const eventIdParam = req.nextUrl.searchParams.get("eventId");
-  const eventId = eventIdParam ? Number(eventIdParam) : null;
+  const eventId = eventIdParam ? Number(eventIdParam) : Number.NaN;
   if (!Number.isFinite(eventId)) {
     return NextResponse.json({ ok: false, error: "EVENT_ID_REQUIRED" }, { status: 400 });
   }
 
   const event = await prisma.event.findFirst({
-    where: { id: eventId as number, organizerId: organizer.id },
+    where: { id: eventId, organizerId: organizer.id },
     select: { id: true, timezone: true, startsAt: true, endsAt: true },
   });
   if (!event) {
@@ -211,7 +211,7 @@ export async function GET(req: NextRequest) {
   if (eventStart && eventEnd) {
     for (const m of matches) {
       const { start, end } = matchWindow(m);
-      if (start && (start < eventStart || start > eventEnd || end > eventEnd)) {
+      if (start && end && (start < eventStart || start > eventEnd || end > eventEnd)) {
         conflicts.push({
           type: "outside_event_window",
           aId: m.id,

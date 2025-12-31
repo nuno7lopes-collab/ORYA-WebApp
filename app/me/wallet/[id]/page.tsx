@@ -16,7 +16,7 @@ export default function WalletDetailPage() {
   }, [params?.id, router]);
 
   return (
-    <main className="relative orya-body-bg min-h-screen w-full overflow-hidden text-white">
+    <main className="relative min-h-screen w-full overflow-hidden text-white">
       <div className="relative orya-page-width px-4 py-10">
         <p className="text-sm text-white/70">A redirecionar...</p>
       </div>

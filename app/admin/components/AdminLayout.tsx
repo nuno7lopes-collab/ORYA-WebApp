@@ -26,7 +26,7 @@ export function AdminLayout({ children, title, subtitle }: AdminLayoutProps) {
     pathname === href || pathname.startsWith(`${href}/`);
 
   return (
-    <div className="orya-body-bg min-h-screen text-white pb-16">
+    <div className="min-h-screen text-white pb-16">
       <header className="border-b border-white/10 bg-gradient-to-r from-black/70 via-[#0c1224]/70 to-black/60 backdrop-blur-xl">
         <div className="mx-auto flex max-w-6xl flex-col gap-3 px-5 py-5 md:flex-row md:items-center md:justify-between">
           <div className="flex items-center gap-3">

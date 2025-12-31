@@ -71,20 +71,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "TRANSFER_NO_LONGER_VALID" }, { status: 400 });
     }
 
-    const [organizer, fromProfile, toProfile] = await Promise.all([
+    const [organizer, toProfile] = await Promise.all([
       prisma.organizer.findUnique({
         where: { id: transfer.organizerId },
         select: { publicName: true, username: true },
-      }),
-      prisma.profile.findUnique({
-        where: { id: transfer.fromUserId },
-        select: { fullName: true, username: true },
       }),
       prisma.profile.findUnique({
         where: { id: transfer.toUserId },
         select: { fullName: true, username: true },
       }),
     ]);
+    const ip = req.headers.get("x-forwarded-for") ?? req.headers.get("x-real-ip") ?? null;
 
     await prisma.$transaction(async (tx) => {
       await ownerTransferModel.update({
@@ -101,7 +98,7 @@ export async function POST(req: NextRequest) {
         fromUserId: transfer.fromUserId,
         toUserId: transfer.toUserId,
         metadata: { transferId: transfer.id, token: transfer.token },
-        ip: req.ip ?? null,
+        ip,
         userAgent: req.headers.get("user-agent"),
       });
     });

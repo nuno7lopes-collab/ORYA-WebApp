@@ -17,7 +17,7 @@ export default function StaffScanPage() {
 
   if (isLoading) {
     return (
-      <main className="min-h-screen bg-black text-white flex items-center justify-center px-6">
+      <main className="min-h-screen text-white flex items-center justify-center px-6">
         <p>A carregar a tua sessão…</p>
       </main>
     );
@@ -25,7 +25,7 @@ export default function StaffScanPage() {
 
   if (!user) {
     return (
-      <main className="min-h-screen bg-black text-white flex items-center justify-center px-6">
+      <main className="min-h-screen text-white flex items-center justify-center px-6">
         <p>A redirecionar…</p>
       </main>
     );

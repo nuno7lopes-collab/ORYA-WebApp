@@ -3,11 +3,12 @@ export const runtime = "nodejs";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
+import { readNumericParam } from "@/lib/routeParams";
 
 // Toggle public/open slot (MVP): capitão ou staff OWNER/ADMIN
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
-  const pairingId = Number(params?.id);
-  if (!Number.isFinite(pairingId)) return NextResponse.json({ ok: false, error: "INVALID_ID" }, { status: 400 });
+  const pairingId = readNumericParam(params?.id, req, "pairings");
+  if (pairingId === null) return NextResponse.json({ ok: false, error: "INVALID_ID" }, { status: 400 });
 
   const supabase = await createSupabaseServer();
   const {

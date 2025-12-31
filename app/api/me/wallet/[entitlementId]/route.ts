@@ -56,7 +56,6 @@ export async function GET(_: Request, context: { params: Params | Promise<Params
               select: {
                 username: true,
                 publicName: true,
-                publicName: true,
                 businessName: true,
               },
             },
@@ -93,7 +92,6 @@ export async function GET(_: Request, context: { params: Params | Promise<Params
   }
 
   const organizerName =
-    event?.organizer?.publicName ||
     event?.organizer?.publicName ||
     event?.organizer?.businessName ||
     null;

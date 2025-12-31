@@ -142,7 +142,7 @@ export async function GET(req: NextRequest) {
         status: events.find((e) => e.id === s.eventId)?.status,
         startsAt: events.find((e) => e.id === s.eventId)?.startsAt ?? null,
       };
-      addTo(current, gross, fees, net, qty);
+      addTo(current, gross, totalFees, net, qty);
       eventStats.set(s.eventId, current);
     }
 

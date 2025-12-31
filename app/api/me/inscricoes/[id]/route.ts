@@ -1,16 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
+import { readNumericParam } from "@/lib/routeParams";
 
-export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   const supabase = await createSupabaseServer();
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
-  const entryId = Number(params?.id);
-  if (!Number.isFinite(entryId)) return NextResponse.json({ ok: false, error: "INVALID_ID" }, { status: 400 });
+  const entryId = readNumericParam(params?.id, req, "inscricoes");
+  if (entryId === null) return NextResponse.json({ ok: false, error: "INVALID_ID" }, { status: 400 });
 
   const entry = await prisma.tournamentEntry.findFirst({
     where: { id: entryId, OR: [{ userId: user.id }, { ownerUserId: user.id }] },

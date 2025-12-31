@@ -1,11 +1,9 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
-import { clearUsernameForOwner } from "@/lib/globalUsernames";
 import { logAccountEvent } from "@/lib/accountEvents";
 
-export async function POST(req: NextRequest) {
+export async function POST() {
   try {
     const supabase = await createSupabaseServer();
     const {

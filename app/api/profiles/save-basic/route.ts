@@ -1,11 +1,11 @@
-
-
 // app/api/profiles/save-basic/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { parsePhoneNumberFromString } from "libphonenumber-js";
 import { setUsernameForOwner, UsernameTakenError, normalizeAndValidateUsername } from "@/lib/globalUsernames";
+import { getNotificationPrefs } from "@/lib/notifications";
+import { normalizeProfileAvatarUrl, normalizeProfileCoverUrl } from "@/lib/profileMedia";
 
 interface SaveBasicBody {
   fullName?: string;
@@ -49,30 +49,32 @@ export async function POST(req: NextRequest) {
       );
     }
 
-  const rawFullName = body.fullName ?? "";
-  const rawUsername = body.username ?? "";
-  const rawPhone = body.contactPhone;
-  const avatarUrl = body.avatarUrl ?? undefined;
-  const coverUrl = body.coverUrl ?? undefined;
-  const rawBio = body.bio;
-  const visibility = body.visibility === "PRIVATE" ? "PRIVATE" : body.visibility === "PUBLIC" ? "PUBLIC" : undefined;
-  const allowEmailNotifications = typeof body.allowEmailNotifications === "boolean" ? body.allowEmailNotifications : undefined;
-  const allowEventReminders = typeof body.allowEventReminders === "boolean" ? body.allowEventReminders : undefined;
-  const allowFriendRequests = typeof body.allowFriendRequests === "boolean" ? body.allowFriendRequests : undefined;
+    const rawFullName = body.fullName ?? "";
+    const rawUsername = body.username ?? "";
+    const rawPhone = body.contactPhone;
+    const rawAvatarUrl = body.avatarUrl;
+    const rawCoverUrl = body.coverUrl;
+    const avatarUrl = rawAvatarUrl === undefined ? undefined : normalizeProfileAvatarUrl(rawAvatarUrl);
+    const coverUrl = rawCoverUrl === undefined ? undefined : normalizeProfileCoverUrl(rawCoverUrl);
+    const rawBio = body.bio;
+    const visibility = body.visibility === "PRIVATE" ? "PRIVATE" : body.visibility === "PUBLIC" ? "PUBLIC" : undefined;
+    const allowEmailNotifications = typeof body.allowEmailNotifications === "boolean" ? body.allowEmailNotifications : undefined;
+    const allowEventReminders = typeof body.allowEventReminders === "boolean" ? body.allowEventReminders : undefined;
+    const allowFriendRequests = typeof body.allowFriendRequests === "boolean" ? body.allowFriendRequests : undefined;
 
-  const fullName = rawFullName.trim();
-  const username = rawUsername.trim();
-  const bio =
-    typeof rawBio === "string"
-      ? rawBio.trim().slice(0, 280)
-      : rawBio === null
-        ? null
-        : undefined;
+    const fullName = rawFullName.trim();
+    const username = rawUsername.trim();
+    const bio =
+      typeof rawBio === "string"
+        ? rawBio.trim().slice(0, 280)
+        : rawBio === null
+          ? null
+          : undefined;
 
-  let normalizedPhone: string | null | undefined = undefined;
-  if (rawPhone !== undefined) {
-    if (rawPhone === null || rawPhone === "") {
-      normalizedPhone = null;
+    let normalizedPhone: string | null | undefined = undefined;
+    if (rawPhone !== undefined) {
+      if (rawPhone === null || rawPhone === "") {
+        normalizedPhone = null;
       } else if (typeof rawPhone === "string") {
         const parsed = parsePhoneNumberFromString(rawPhone.trim(), "PT");
         if (parsed && parsed.isPossible()) {
@@ -103,6 +105,11 @@ export async function POST(req: NextRequest) {
 
     const usernameNormalized = validatedUsername.username;
 
+    const notificationUpdates: Record<string, boolean> = {};
+    if (allowEmailNotifications !== undefined) notificationUpdates.allowEmailNotifications = allowEmailNotifications;
+    if (allowEventReminders !== undefined) notificationUpdates.allowEventReminders = allowEventReminders;
+    if (allowFriendRequests !== undefined) notificationUpdates.allowFriendRequests = allowFriendRequests;
+
     const profile = await prisma.$transaction(async (tx) => {
       await setUsernameForOwner({
         username: usernameNormalized,
@@ -111,7 +118,7 @@ export async function POST(req: NextRequest) {
         tx,
       });
 
-      return tx.profile.upsert({
+      const profile = await tx.profile.upsert({
         where: { id: userId },
         update: {
           fullName,
@@ -122,9 +129,6 @@ export async function POST(req: NextRequest) {
           ...(avatarUrl !== undefined ? { avatarUrl: avatarUrl || null } : {}),
           ...(coverUrl !== undefined ? { coverUrl: coverUrl || null } : {}),
           ...(visibility ? { visibility } : {}),
-          ...(allowEmailNotifications !== undefined ? { allowEmailNotifications } : {}),
-          ...(allowEventReminders !== undefined ? { allowEventReminders } : {}),
-          ...(allowFriendRequests !== undefined ? { allowFriendRequests } : {}),
         },
         create: {
           id: userId,
@@ -137,12 +141,21 @@ export async function POST(req: NextRequest) {
           avatarUrl: avatarUrl ?? null,
           coverUrl: coverUrl ?? null,
           visibility: visibility ?? "PUBLIC",
-          allowEmailNotifications: allowEmailNotifications ?? true,
-          allowEventReminders: allowEventReminders ?? true,
-          allowFriendRequests: allowFriendRequests ?? true,
         },
       });
+
+      if (Object.keys(notificationUpdates).length > 0) {
+        await tx.notificationPreference.upsert({
+          where: { userId },
+          update: notificationUpdates,
+          create: { userId, ...notificationUpdates },
+        });
+      }
+
+      return profile;
     });
+
+    const notificationPrefs = await getNotificationPrefs(userId).catch(() => null);
 
     const safeProfile = {
       id: profile.id,
@@ -156,9 +169,9 @@ export async function POST(req: NextRequest) {
       onboardingDone: profile.onboardingDone,
       roles: profile.roles,
       visibility: profile.visibility,
-      allowEmailNotifications: profile.allowEmailNotifications,
-      allowEventReminders: profile.allowEventReminders,
-      allowFriendRequests: profile.allowFriendRequests,
+      allowEmailNotifications: notificationPrefs?.allowEmailNotifications ?? true,
+      allowEventReminders: notificationPrefs?.allowEventReminders ?? true,
+      allowFriendRequests: notificationPrefs?.allowFriendRequests ?? true,
     };
 
     return NextResponse.json(

@@ -24,7 +24,6 @@ export default function MobileBottomNav({
   onCloseSearch,
 }: MobileBottomNavProps) {
   const router = useRouter();
-  const homeActive = pathname === "/" || pathname === "";
   const derivedTab = (() => {
     if (isSearchOpen) return "search";
     if (pathname.startsWith("/explorar")) return "explorar";

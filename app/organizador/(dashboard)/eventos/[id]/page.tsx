@@ -1,6 +1,4 @@
 // app/organizador/eventos/[id]/page.tsx
-/* eslint-disable @next/next/no-html-link-for-pages */
-import { OrganizerMemberRole } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizerForUser } from "@/lib/organizerContext";
@@ -107,18 +105,9 @@ export default async function OrganizerEventDetailPage({ params }: PageProps) {
     notFound();
   }
 
-  let { organizer, membership } = await getActiveOrganizerForUser(userId, {
+  const { organizer, membership } = await getActiveOrganizerForUser(userId, {
     organizerId: event.organizerId,
   });
-  if (!organizer) {
-    const legacyOrganizer = await prisma.organizer.findFirst({
-      where: { id: event.organizerId, userId },
-    });
-    if (legacyOrganizer) {
-      organizer = legacyOrganizer;
-      membership = { role: OrganizerMemberRole.OWNER };
-    }
-  }
 
   if (!organizer || !membership) {
     redirect("/organizador");

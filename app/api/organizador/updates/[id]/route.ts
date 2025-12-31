@@ -125,7 +125,7 @@ export async function PATCH(req: NextRequest, context: { params: Params | Promis
   }
 }
 
-export async function DELETE(_: NextRequest, context: { params: Params | Promise<Params> }) {
+export async function DELETE(req: NextRequest, context: { params: Params | Promise<Params> }) {
   try {
     const { id } = await context.params;
     const updateId = Number(id);

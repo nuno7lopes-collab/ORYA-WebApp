@@ -75,7 +75,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const baseActionLink = data?.action_link || (data as { properties?: { action_link?: string } })?.properties?.action_link;
+    const baseActionLink = data?.properties?.action_link;
     if (!baseActionLink) {
       console.error("[password/reset-request] missing action_link", data);
       return NextResponse.json(

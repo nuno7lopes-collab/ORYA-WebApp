@@ -78,8 +78,6 @@ export async function updateMatchResult({
     const winnerPairingId =
       explicitWinnerPairingId ??
       (winnerSide === "A" ? current.pairing1Id ?? null : winnerSide === "B" ? current.pairing2Id ?? null : null);
-    const shouldUpdateWinner =
-      typeof explicitWinnerPairingId !== "undefined" || typeof score !== "undefined";
     const before = {
       matchId: current.id,
       status: current.status,
@@ -101,11 +99,12 @@ export async function updateMatchResult({
           })
         : null;
 
+    const scoreValue = (normalizedScore ?? score ?? current.score) as Prisma.InputJsonValue;
     const updated = await tx.tournamentMatch.update({
       where: { id: matchId },
       data: {
         status: newStatus,
-        score: normalizedScore ?? score ?? current.score,
+        score: scoreValue,
       },
     });
 

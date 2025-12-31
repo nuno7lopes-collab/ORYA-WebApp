@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import Image from "next/image";
 import { useCheckout } from "./contextoCheckout";
 
 type Wave = {
@@ -521,9 +522,11 @@ export default function Step1Bilhete() {
                 <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-2 py-1 text-sm text-white">
                   <div className="h-7 w-7 rounded-full bg-white/10 overflow-hidden border border-white/10">
                     {partnerSelected.avatarUrl ? (
-                      <img
+                      <Image
                         src={partnerSelected.avatarUrl}
                         alt={partnerSelected.username ?? partnerSelected.fullName ?? "user"}
+                        width={28}
+                        height={28}
                         className="h-full w-full object-cover"
                       />
                     ) : (
@@ -592,7 +595,13 @@ export default function Step1Bilhete() {
                     >
                       <div className="h-8 w-8 rounded-full bg-white/10 overflow-hidden border border-white/10">
                         {user.avatarUrl ? (
-                          <img src={user.avatarUrl} alt={user.username ?? user.fullName ?? "user"} className="h-full w-full object-cover" />
+                          <Image
+                            src={user.avatarUrl}
+                            alt={user.username ?? user.fullName ?? "user"}
+                            width={32}
+                            height={32}
+                            className="h-full w-full object-cover"
+                          />
                         ) : (
                           <div className="h-full w-full flex items-center justify-center text-[11px] text-white/70">
                             {(user.username ?? user.fullName ?? "?").slice(0, 2).toUpperCase()}
@@ -676,17 +685,6 @@ export default function Step1Bilhete() {
           const status = normalizeStatus(wave.status);
           const isSoldOut = status === "sold_out" || status === "closed";
           const maxForWave = getMaxForWave(wave.id);
-          const badge =
-            status === "upcoming"
-              ? "Em breve"
-              : isSoldOut
-                ? "Venda terminada"
-                : "Disponível";
-          const badgeClass = isSoldOut
-            ? "border-red-400/50 bg-red-500/20 text-red-50"
-            : status === "upcoming"
-              ? "border-amber-300/50 bg-amber-400/20 text-amber-50"
-              : "border-emerald-300/50 bg-emerald-500/18 text-emerald-50";
 
           return (
             <div

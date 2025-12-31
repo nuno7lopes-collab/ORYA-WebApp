@@ -62,10 +62,10 @@ export default function FollowClient({ targetUserId, initialIsFollowing, onChang
       type="button"
       disabled={fetching || isPending}
       onClick={toggleFollow}
-      className={`inline-flex items-center rounded-full px-3 py-1 text-[12px] font-semibold transition ${
+      className={`inline-flex items-center rounded-full px-4 py-2 text-[12px] font-semibold transition ${
         isFollowing
-          ? "border border-white/25 bg-white/10 text-white/80 hover:bg-white/15"
-          : "bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] text-black shadow-[0_0_18px_rgba(107,255,255,0.35)] hover:scale-[1.02]"
+          ? "border border-white/20 bg-white/8 text-white/65 hover:bg-white/12"
+          : "bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] text-black shadow-[0_0_22px_rgba(107,255,255,0.45)] hover:scale-[1.02]"
       } disabled:opacity-60`}
     >
       {isFollowing ? "A seguir" : "Seguir"}

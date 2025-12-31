@@ -23,6 +23,7 @@ async function ensureOrganizer(userId: string, eventId: number) {
     select: { organizerId: true },
   });
   if (!event) return { ok: false as const, reason: "EVENT_NOT_FOUND" };
+  if (!event.organizerId) return { ok: false as const, reason: "FORBIDDEN_CHECKIN_ACCESS" };
 
   const profile = await prisma.profile.findUnique({
     where: { id: userId },

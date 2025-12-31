@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { clearUsernameForOwner } from "@/lib/globalUsernames";
+import { getNotificationPrefs } from "@/lib/notifications";
 
 type Body = {
   visibility?: "PUBLIC" | "PRIVATE";
@@ -40,15 +41,6 @@ export async function PATCH(req: NextRequest) {
 
     const dataToUpdate: Record<string, unknown> = {};
     if (visibility) dataToUpdate.visibility = visibility;
-    if (typeof body.allowEmailNotifications === "boolean") {
-      dataToUpdate.allowEmailNotifications = body.allowEmailNotifications;
-    }
-    if (typeof body.allowEventReminders === "boolean") {
-      dataToUpdate.allowEventReminders = body.allowEventReminders;
-    }
-    if (typeof body.allowFriendRequests === "boolean") {
-      dataToUpdate.allowFriendRequests = body.allowFriendRequests;
-    }
 
     if (wantsHardDelete) {
       // Libera username e marca soft-delete
@@ -96,9 +88,6 @@ export async function PATCH(req: NextRequest) {
         favouriteCategories: [],
         onboardingDone: false,
         visibility: dataToUpdate.visibility === "PRIVATE" ? "PRIVATE" : "PUBLIC",
-        allowEmailNotifications: Boolean(dataToUpdate.allowEmailNotifications ?? true),
-        allowEventReminders: Boolean(dataToUpdate.allowEventReminders ?? true),
-        allowFriendRequests: Boolean(dataToUpdate.allowFriendRequests ?? true),
       },
     });
 
@@ -120,21 +109,17 @@ export async function PATCH(req: NextRequest) {
       });
     }
 
+    const notificationPrefs = await getNotificationPrefs(user.id).catch(() => null);
+
     return NextResponse.json({
       ok: true,
       profile: {
         visibility: profile.visibility,
-        allowEmailNotifications: profile.allowEmailNotifications,
-        allowEventReminders: profile.allowEventReminders,
-        allowFriendRequests: profile.allowFriendRequests,
-        allowSalesAlerts:
-          typeof body.allowSalesAlerts === "boolean"
-            ? body.allowSalesAlerts
-            : undefined,
-        allowSystemAnnouncements:
-          typeof body.allowSystemAnnouncements === "boolean"
-            ? body.allowSystemAnnouncements
-            : undefined,
+        allowEmailNotifications: notificationPrefs?.allowEmailNotifications ?? true,
+        allowEventReminders: notificationPrefs?.allowEventReminders ?? true,
+        allowFriendRequests: notificationPrefs?.allowFriendRequests ?? true,
+        allowSalesAlerts: notificationPrefs?.allowSalesAlerts ?? true,
+        allowSystemAnnouncements: notificationPrefs?.allowSystemAnnouncements ?? true,
       },
     });
   } catch (err) {

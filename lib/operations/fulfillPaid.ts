@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { normalizePaymentScenario } from "@/lib/paymentScenario";
-import { Prisma, EntitlementType, EntitlementStatus } from "@prisma/client";
+import { EntitlementType, EntitlementStatus } from "@prisma/client";
 import { enqueueOperation } from "@/lib/operations/enqueue";
 import { normalizeEmail } from "@/lib/utils/email";
 import { checkoutKey } from "@/lib/stripe/idempotency";

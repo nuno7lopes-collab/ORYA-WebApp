@@ -4,6 +4,7 @@ import { Navbar } from "./components/Navbar";
 import { AuthModalProvider } from "./components/autenticação/AuthModalContext";
 import AuthModal from "./components/autenticação/AuthModal";
 import { RecoveryRedirector } from "./components/RecoveryRedirector";
+import { BackgroundShell } from "./components/BackgroundShell";
 
 export const metadata: Metadata = {
   title: "ORYA",
@@ -17,17 +18,17 @@ export default function RootLayout({
 }) {
   return (
     <html lang="pt-PT" className="h-full" suppressHydrationWarning>
-      <body
-        className="orya-body-bg antialiased min-h-screen flex flex-col font-sans"
-      >
-        <AuthModalProvider>
-          <Navbar />
-          <RecoveryRedirector />
-          <main className="main-shell flex-1 pt-[92px] md:pt-[104px] transition-[padding] duration-200">
-            {children}
-          </main>
-          <AuthModal />
-        </AuthModalProvider>
+      <body className="antialiased min-h-screen flex flex-col font-sans">
+        <BackgroundShell>
+          <AuthModalProvider>
+            <Navbar />
+            <RecoveryRedirector />
+            <main className="main-shell flex-1 pt-[92px] md:pt-[104px] transition-[padding] duration-200">
+              {children}
+            </main>
+            <AuthModal />
+          </AuthModalProvider>
+        </BackgroundShell>
       </body>
     </html>
   );

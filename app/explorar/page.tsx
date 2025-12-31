@@ -34,6 +34,24 @@ type ExploreItem = {
   isHighlighted: boolean;
 };
 
+type ServiceItem = {
+  id: number;
+  name: string;
+  description: string | null;
+  durationMinutes: number;
+  price: number;
+  currency: string;
+  organizer: {
+    id: number;
+    publicName: string | null;
+    businessName: string | null;
+    city: string | null;
+    username: string | null;
+    brandingAvatarUrl: string | null;
+  };
+  nextAvailability: string | null;
+};
+
 type ApiResponse = {
   items: ExploreItem[];
   pagination: {
@@ -42,8 +60,20 @@ type ApiResponse = {
   };
 };
 
+type ServiceApiResponse = {
+  ok: boolean;
+  items: ServiceItem[];
+  pagination: {
+    nextCursor: number | null;
+    hasMore: boolean;
+  };
+  error?: string;
+  debug?: string;
+};
+
 type DateFilter = "all" | "today" | "weekend" | "custom";
 type TypeFilter = "all" | "event";
+type ExploreWorld = "EVENTOS" | "PADEL" | "RESERVAS";
 
 const DATE_FILTER_OPTIONS = [
   { value: "all", label: "Todas as datas" },
@@ -54,6 +84,12 @@ const DATE_FILTER_OPTIONS = [
 const TYPE_OPTIONS: { value: TypeFilter; label: string }[] = [
   { value: "all", label: "Tudo" },
   { value: "event", label: "Eventos" },
+];
+
+const WORLD_OPTIONS: { value: ExploreWorld; label: string; accent: string }[] = [
+  { value: "EVENTOS", label: "Eventos", accent: "from-[#FF00C8] via-[#9B8CFF] to-[#1646F5]" },
+  { value: "PADEL", label: "Padel", accent: "from-[#6BFFFF] via-[#4ADE80] to-[#1E40AF]" },
+  { value: "RESERVAS", label: "Reservas", accent: "from-[#FCD34D] via-[#FB923C] to-[#F97316]" },
 ];
 
 const CATEGORY_OPTIONS = [
@@ -142,6 +178,13 @@ function formatDateRange(start: string, end: string) {
   return `${startStr} → ${endStr}`;
 }
 
+function formatServiceAvailability(value: string | null) {
+  if (!value) return "Sem horários";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "Sem horários";
+  return parsed.toLocaleString("pt-PT", { dateStyle: "medium", timeStyle: "short" });
+}
+
 function statusTag(status: ExploreItem["status"]) {
   if (status === "CANCELLED") return { text: "Cancelado", className: "text-red-200" };
   if (status === "PAST") return { text: "Já aconteceu", className: "text-white/55" };
@@ -153,8 +196,7 @@ function buildSlug(_type: ExploreItem["type"], slug: string) {
   return `/eventos/${slug}`;
 }
 
-const exploreMainClass =
-  "min-h-screen w-full text-white bg-[radial-gradient(circle_at_12%_18%,rgba(255,0,200,0.06),transparent_38%),radial-gradient(circle_at_88%_12%,rgba(107,255,255,0.06),transparent_32%),radial-gradient(circle_at_42%_78%,rgba(22,70,245,0.06),transparent_38%),linear-gradient(135deg,#050611_0%,#040812_60%,#05060f_100%)]";
+const exploreMainClass = "min-h-screen w-full text-white";
 
 const exploreFilterClass =
   "relative z-30 flex flex-col gap-4 rounded-3xl border border-white/12 bg-gradient-to-r from-white/6 via-[#0f1424]/45 to-white/6 p-5 shadow-[0_24px_70px_rgba(0,0,0,0.55)] backdrop-blur-3xl";
@@ -163,6 +205,14 @@ function ExplorarContent() {
   const [items, setItems] = useState<ExploreItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [world, setWorld] = useState<ExploreWorld>("EVENTOS");
+
+  const [serviceItems, setServiceItems] = useState<ServiceItem[]>([]);
+  const [serviceLoading, setServiceLoading] = useState(false);
+  const [serviceError, setServiceError] = useState<string | null>(null);
+  const [serviceNextCursor, setServiceNextCursor] = useState<number | null>(null);
+  const [serviceHasMore, setServiceHasMore] = useState(false);
+  const [serviceLoadingMore, setServiceLoadingMore] = useState(false);
 
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
@@ -198,6 +248,8 @@ function ExplorarContent() {
   const [likedItems, setLikedItems] = useState<number[]>([]);
   const searchParams = useSearchParams();
   const requestController = useRef<AbortController | null>(null);
+  const serviceRequestController = useRef<AbortController | null>(null);
+  const lastEventCategories = useRef<string[]>([]);
   const [hydratedFromParams, setHydratedFromParams] = useState(false);
 
   // City via geolocation + Mapbox (opcional)
@@ -211,21 +263,71 @@ function ExplorarContent() {
   }, [citySearch]);
 
   const hasActiveFilters = useMemo(
-    () =>
-      search.trim().length > 0 ||
-      dateFilter !== "all" ||
-      (dateFilter === "custom" && !!customDate) ||
-      typeFilter !== "all" ||
-      selectedCategories.length > 0 ||
-      city.trim().length > 0 ||
-      priceMin > 0 ||
-      effectiveMaxParam !== null,
-    [city, customDate, dateFilter, effectiveMaxParam, priceMin, search, selectedCategories.length, typeFilter],
+    () => {
+      const typeActive = world === "EVENTOS" ? typeFilter !== "all" : false;
+      const categoryActive = world === "EVENTOS" ? selectedCategories.length > 0 : false;
+      const hasCustomDate = dateFilter === "custom" && !!customDate;
+
+      return (
+        search.trim().length > 0 ||
+        dateFilter !== "all" ||
+        hasCustomDate ||
+        typeActive ||
+        categoryActive ||
+        city.trim().length > 0 ||
+        priceMin > 0 ||
+        effectiveMaxParam !== null
+      );
+    },
+    [
+      city,
+      customDate,
+      dateFilter,
+      effectiveMaxParam,
+      priceMin,
+      search,
+      selectedCategories.length,
+      typeFilter,
+      world,
+    ],
   );
+
+  const isReservasWorld = world === "RESERVAS";
+  const isPadelWorld = world === "PADEL";
+  const isEventosWorld = world === "EVENTOS";
 
   function toggleLike(id: number) {
     setLikedItems((prev) => (prev.includes(id) ? prev.filter((v) => v !== id) : [...prev, id]));
   }
+
+  useEffect(() => {
+    if (world === "PADEL") {
+      if (selectedCategories.length !== 1 || selectedCategories[0] !== "PADEL") {
+        lastEventCategories.current = selectedCategories.filter((c) => c !== "PADEL");
+        setSelectedCategories(["PADEL"]);
+      }
+      if (typeFilter !== "all") {
+        setTypeFilter("all");
+      }
+      return;
+    }
+
+    if (world === "RESERVAS") {
+      if (selectedCategories.length > 0) {
+        setSelectedCategories([]);
+      }
+      if (typeFilter !== "all") {
+        setTypeFilter("all");
+      }
+      return;
+    }
+
+    if (world === "EVENTOS") {
+      if (selectedCategories.length === 1 && selectedCategories[0] === "PADEL") {
+        setSelectedCategories(lastEventCategories.current);
+      }
+    }
+  }, [selectedCategories, typeFilter, world]);
 
   const CityPanel = () => (
     <>
@@ -543,10 +645,97 @@ function ExplorarContent() {
     }
   }
 
+  async function fetchServices(opts?: { append?: boolean; cursor?: number | null }) {
+    const append = opts?.append ?? false;
+    const cursorToUse = opts?.cursor ?? null;
+
+    if (serviceRequestController.current) {
+      serviceRequestController.current.abort();
+    }
+    const controller = new AbortController();
+    serviceRequestController.current = controller;
+    const timeoutId = setTimeout(() => controller.abort(), 4500);
+    const currentRequest = controller;
+
+    try {
+      if (!append) {
+        setServiceLoading(true);
+        setServiceError(null);
+      } else {
+        setServiceLoadingMore(true);
+      }
+
+      const params = new URLSearchParams();
+      if (search.trim()) params.set("q", search.trim());
+      if (dateFilter === "custom" && customDate) {
+        params.set("date", "day");
+        params.set("day", customDate);
+      } else if (dateFilter !== "all") {
+        params.set("date", dateFilter);
+      }
+      if (city.trim()) params.set("city", city.trim());
+      if (priceMin > 0) params.set("priceMin", String(priceMin));
+      if (effectiveMaxParam !== null) params.set("priceMax", String(effectiveMaxParam));
+      if (cursorToUse !== null) params.set("cursor", String(cursorToUse));
+
+      const res = await fetch(`/api/servicos/list?${params.toString()}`, {
+        cache: "no-store",
+        signal: controller.signal,
+      });
+      const rawText = await res.text().catch(() => "");
+      let data: ServiceApiResponse | null = null;
+      if (rawText.trim()) {
+        try {
+          data = JSON.parse(rawText) as ServiceApiResponse;
+        } catch {
+          data = null;
+        }
+      }
+
+      if (!res.ok || !data || !data.ok) {
+        const errorPayload = data as { error?: string; debug?: string } | null;
+        const detail =
+          errorPayload?.debug ||
+          errorPayload?.error ||
+          (rawText ? rawText.slice(0, 200) : null) ||
+          `HTTP ${res.status}`;
+        throw new Error(`Erro ao carregar serviços: ${detail}`);
+      }
+
+      if (serviceRequestController.current === currentRequest) {
+        if (append) {
+          setServiceItems((prev) => [...(Array.isArray(prev) ? prev : []), ...data.items]);
+        } else {
+          setServiceItems(data.items ?? []);
+        }
+
+        setServiceNextCursor(data.pagination.nextCursor);
+        setServiceHasMore(data.pagination.hasMore);
+      }
+    } catch (err) {
+      if (serviceRequestController.current !== currentRequest) return;
+      const isAbort = (err as Error | undefined)?.name === "AbortError";
+      if (!isAbort && process.env.NODE_ENV !== "production") {
+        console.error(err);
+      }
+      setServiceError(
+        isAbort
+          ? "Demorou demasiado a responder. Tenta novamente."
+          : "Não conseguimos carregar. Tenta outra vez.",
+      );
+    } finally {
+      clearTimeout(timeoutId);
+      if (serviceRequestController.current === currentRequest) {
+        setServiceLoading(false);
+        setServiceLoadingMore(false);
+      }
+    }
+  }
+
   useEffect(() => {
     const handle = setTimeout(() => setFiltersTick((v) => v + 1), 250);
     return () => clearTimeout(handle);
-  }, [search, dateFilter, customDate, typeFilter, selectedCategories, city, priceMin, effectiveMaxParam]);
+  }, [search, dateFilter, customDate, typeFilter, selectedCategories, city, priceMin, effectiveMaxParam, world]);
 
   useEffect(() => {
     trackEvent("explore_filter_price_changed", {
@@ -568,8 +757,12 @@ function ExplorarContent() {
   }, [city, cityInput]);
 
   useEffect(() => {
-    fetchItems({ append: false, cursor: null });
-  }, [filtersTick]);
+    if (world === "RESERVAS") {
+      fetchServices({ append: false, cursor: null });
+    } else {
+      fetchItems({ append: false, cursor: null });
+    }
+  }, [filtersTick, world]);
 
   useEffect(() => {
     const handle = setTimeout(() => setSearch(searchInput.trim()), 350);
@@ -615,6 +808,7 @@ function ExplorarContent() {
     const dayQ = searchParams.get("day");
     const typeQ = searchParams.get("type") as TypeFilter | null;
     const catsQ = searchParams.get("categories");
+    const worldQ = searchParams.get("world") ?? searchParams.get("mundo");
 
     if (qp) {
       setSearchInput(qp);
@@ -629,14 +823,23 @@ function ExplorarContent() {
       const maxVal = Math.max(0, Number(priceMaxQ));
       setPriceMax(Number.isFinite(maxVal) ? maxVal : 100);
     }
-    if (dateQ === "today" || dateQ === "upcoming" || dateQ === "weekend") {
+    if (dateQ === "today" || dateQ === "weekend") {
       setDateFilter(dateQ);
+    } else if (dateQ === "upcoming") {
+      setDateFilter("all");
     } else if (dateQ === "day" && dayQ) {
       setDateFilter("custom");
       setCustomDate(dayQ);
     }
     if (typeQ === "event") {
       setTypeFilter(typeQ);
+    }
+    if (worldQ === "padel") {
+      setWorld("PADEL");
+    } else if (worldQ === "reservas") {
+      setWorld("RESERVAS");
+    } else if (worldQ === "eventos") {
+      setWorld("EVENTOS");
     }
     if (catsQ) {
       const arr = catsQ
@@ -681,14 +884,67 @@ function ExplorarContent() {
     dateFilter === "custom" && customDate
       ? new Date(customDate).toLocaleDateString("pt-PT", { day: "2-digit", month: "short" })
       : DATE_FILTER_OPTIONS.find((d) => d.value === dateFilter)?.label;
-  const resultsLabel = items.length === 1 ? "1 resultado" : `${items.length} resultados`;
-  const showSkeleton = loading || (error && items.length === 0);
+  const activeItemsCount = isReservasWorld ? serviceItems.length : items.length;
+  const resultsLabel = activeItemsCount === 1 ? "1 resultado" : `${activeItemsCount} resultados`;
+  const showSkeleton = isReservasWorld
+    ? serviceLoading || (serviceError && serviceItems.length === 0)
+    : loading || (error && items.length === 0);
+  const worldSummaryLabel = isReservasWorld ? "Serviços" : isPadelWorld ? "Padel" : "Eventos";
+  const activeItems = isReservasWorld ? serviceItems : items;
+  const activeError = isReservasWorld ? serviceError : error;
+  const activeLoading = isReservasWorld ? serviceLoading : loading;
+  const activeHasMore = isReservasWorld ? serviceHasMore : hasMore;
+  const activeIsLoadingMore = isReservasWorld ? serviceLoadingMore : isLoadingMore;
+  const activeNextCursor = isReservasWorld ? serviceNextCursor : nextCursor;
 
   return (
     <main className={exploreMainClass}>
       <section className="orya-page-width px-6 md:px-10 py-6 md:py-8 space-y-6">
         {/* TOPO – FILTROS PRINCIPAIS */}
         <div className={exploreFilterClass}>
+          <div className="flex w-full items-center gap-2 overflow-x-auto pb-1">
+            <span className="text-[10px] text-white/50 shrink-0">Mundos:</span>
+            <div className="flex gap-1.5">
+              {WORLD_OPTIONS.map((opt) => {
+                const isActive = world === opt.value;
+                return (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setWorld(opt.value)}
+                    className={`inline-flex items-center gap-2 rounded-2xl border px-3 py-1.5 text-[11px] whitespace-nowrap transition ${
+                      isActive
+                        ? "bg-white text-black border-white shadow-[0_0_18px_rgba(255,255,255,0.35)]"
+                        : "bg-white/5 border-white/18 text-white/80 hover:bg-white/10"
+                    }`}
+                    aria-pressed={isActive}
+                  >
+                    <span
+                      className={`h-2 w-2 rounded-full bg-gradient-to-r ${opt.accent} shadow-[0_0_12px_rgba(255,255,255,0.45)]`}
+                    />
+                    <span>{opt.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="w-full">
+            <label className="text-[11px] text-white/60">Pesquisar</label>
+            <input
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              placeholder={
+                isReservasWorld
+                  ? "Ex: manicure, fisioterapia, cowork"
+                  : isPadelWorld
+                    ? "Ex: torneios, clubes, rankings"
+                    : "Ex: festas, talks, concertos"
+              }
+              className="mt-2 w-full rounded-2xl border border-white/15 bg-black/40 px-4 py-2.5 text-sm text-white placeholder:text-white/40 focus:border-white/35 focus:outline-none"
+            />
+          </div>
+
           <div className="flex flex-wrap items-center gap-3">
             {/* Localização */}
             <div className="relative" ref={cityRef}>
@@ -802,25 +1058,27 @@ function ExplorarContent() {
 
             {/* Tipo */}
             <div className="flex flex-wrap items-center gap-2 ml-auto text-[11px]">
-              <div className="flex items-center gap-1 rounded-full bg-white/5 border border-white/15 px-1 py-1">
-                {TYPE_OPTIONS.map((opt) => {
-                  const isActive = typeFilter === opt.value;
-                  return (
-                    <button
-                      key={opt.value}
-                      type="button"
-                      onClick={() => setTypeFilter(opt.value)}
-                      className={`px-3 py-1 rounded-full transition ${
-                        isActive
-                          ? "bg-white text-black shadow-[0_0_15px_rgba(255,255,255,0.35)]"
-                          : "text-white/75 hover:bg-white/10"
-                      }`}
-                    >
-                      {opt.label}
-                    </button>
-                  );
-                })}
-              </div>
+              {isEventosWorld && (
+                <div className="flex items-center gap-1 rounded-full bg-white/5 border border-white/15 px-1 py-1">
+                  {TYPE_OPTIONS.map((opt) => {
+                    const isActive = typeFilter === opt.value;
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => setTypeFilter(opt.value)}
+                        className={`px-3 py-1 rounded-full transition ${
+                          isActive
+                            ? "bg-white text-black shadow-[0_0_15px_rgba(255,255,255,0.35)]"
+                            : "text-white/75 hover:bg-white/10"
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
 
               {hasActiveFilters && (
                 <button
@@ -830,11 +1088,12 @@ function ExplorarContent() {
                     setSearchInput("");
                     setDateFilter("all");
                     setTypeFilter("all");
-                    setSelectedCategories([]);
+                    setSelectedCategories(world === "PADEL" ? ["PADEL"] : []);
                     setCity("");
                     setCityInput("");
                     setPriceMin(0);
                     setPriceMax(100);
+                    setCustomDate("");
                   }}
                   className="text-[11px] text-white/55 hover:text-white/90"
                 >
@@ -845,39 +1104,41 @@ function ExplorarContent() {
           </div>
 
           {/* categorias */}
-          <div className="flex w-full items-center gap-2 overflow-x-auto pb-1">
-            <span className="text-[10px] text-white/50 shrink-0">Categorias:</span>
-            <div className="flex gap-1.5">
-              {CATEGORY_OPTIONS.map((cat) => {
-                const isActive = selectedCategories.includes(cat.value);
-                return (
-                  <button
-                    key={cat.value}
-                    type="button"
-                    onClick={() => {
-                      setSelectedCategories((prev) =>
-                        prev.includes(cat.value)
-                          ? prev.filter((c) => c !== cat.value)
-                          : [...prev, cat.value],
-                      );
-                    }}
-                    className={`inline-flex items-center gap-1.5 rounded-2xl border px-3 py-1.5 text-[11px] whitespace-nowrap transition ${
-                      isActive
-                        ? "bg-white text-black border-white shadow-[0_0_18px_rgba(255,255,255,0.35)]"
-                        : "bg-white/5 border-white/18 text-white/80 hover:bg-white/10"
-                    }`}
-                    aria-pressed={isActive}
-                    aria-label={`${cat.label} – categoria`}
-                  >
-                    <span
-                      className={`h-2 w-2 rounded-full bg-gradient-to-r ${cat.accent} shadow-[0_0_12px_rgba(255,255,255,0.45)]`}
-                    />
-                    <span>{cat.label}</span>
-                  </button>
-                );
-              })}
+          {isEventosWorld && (
+            <div className="flex w-full items-center gap-2 overflow-x-auto pb-1">
+              <span className="text-[10px] text-white/50 shrink-0">Categorias:</span>
+              <div className="flex gap-1.5">
+                {CATEGORY_OPTIONS.map((cat) => {
+                  const isActive = selectedCategories.includes(cat.value);
+                  return (
+                    <button
+                      key={cat.value}
+                      type="button"
+                      onClick={() => {
+                        setSelectedCategories((prev) =>
+                          prev.includes(cat.value)
+                            ? prev.filter((c) => c !== cat.value)
+                            : [...prev, cat.value],
+                        );
+                      }}
+                      className={`inline-flex items-center gap-1.5 rounded-2xl border px-3 py-1.5 text-[11px] whitespace-nowrap transition ${
+                        isActive
+                          ? "bg-white text-black border-white shadow-[0_0_18px_rgba(255,255,255,0.35)]"
+                          : "bg-white/5 border-white/18 text-white/80 hover:bg-white/10"
+                      }`}
+                      aria-pressed={isActive}
+                      aria-label={`${cat.label} – categoria`}
+                    >
+                      <span
+                        className={`h-2 w-2 rounded-full bg-gradient-to-r ${cat.accent} shadow-[0_0_12px_rgba(255,255,255,0.45)]`}
+                      />
+                      <span>{cat.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* resumo */}
           <div className="flex items-center justify-between text-[11px] text-white/60">
@@ -888,7 +1149,7 @@ function ExplorarContent() {
               </span>
             </span>
             <span className="text-white/45">
-              Eventos em{" "}
+              {worldSummaryLabel} em{" "}
               <span className="text-white/85">{headingCity}</span>
             </span>
           </div>
@@ -911,14 +1172,18 @@ function ExplorarContent() {
         )}
 
         {/* ERRO */}
-        {error && (
+        {activeError && (
           <div className="mt-4 max-w-xl mx-auto rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-100 shadow-[0_12px_30px_rgba(0,0,0,0.55)]">
             <p className="font-semibold mb-1">Não foi possível carregar.</p>
-            <p className="text-[12px] text-red-50/85 leading-relaxed">{error}</p>
+            <p className="text-[12px] text-red-50/85 leading-relaxed">{activeError}</p>
             <div className="mt-3 flex gap-2">
               <button
                 type="button"
-                onClick={() => fetchItems({ append: false, cursor: null })}
+                onClick={() =>
+                  isReservasWorld
+                    ? fetchServices({ append: false, cursor: null })
+                    : fetchItems({ append: false, cursor: null })
+                }
                 className="rounded-full bg-white text-red-700 px-4 py-1.5 text-[11px] font-semibold shadow hover:bg-white/90 transition"
               >
                 Tentar novamente
@@ -930,12 +1195,17 @@ function ExplorarContent() {
                   setSearchInput("");
                   setDateFilter("all");
                   setTypeFilter("all");
-                  setSelectedCategories([]);
+                  setSelectedCategories(world === "PADEL" ? ["PADEL"] : []);
                   setCity("");
                   setCityInput("");
                   setPriceMin(0);
                   setPriceMax(100);
-                  fetchItems({ append: false, cursor: null });
+                  setCustomDate("");
+                  if (isReservasWorld) {
+                    fetchServices({ append: false, cursor: null });
+                  } else {
+                    fetchItems({ append: false, cursor: null });
+                  }
                 }}
                 className="rounded-full border border-white/25 text-white/85 px-4 py-1.5 text-[11px] hover:bg-white/5 transition"
               >
@@ -946,12 +1216,17 @@ function ExplorarContent() {
         )}
 
         {/* SEM RESULTADOS */}
-        {!loading && !error && items.length === 0 && (
+        {!activeLoading && !activeError && activeItems.length === 0 && (
           <div className="mt-10 flex flex-col items-center text-center gap-2 text-sm text-white/60">
-            <p>Não encontrámos eventos com estes filtros.</p>
+            <p>
+              {isReservasWorld
+                ? "Não encontrámos serviços com estes filtros."
+                : isPadelWorld
+                  ? "Não encontrámos torneios com estes filtros."
+                  : "Não encontrámos eventos com estes filtros."}
+            </p>
             <p className="text-xs text-white/40 max-w-sm">
-              Ajusta a cidade, categorias ou preço — ou volta mais tarde. A cidade está sempre a
-              mexer.
+              Ajusta a cidade, data ou preço — ou volta mais tarde. A cidade está sempre a mexer.
             </p>
             <button
               type="button"
@@ -960,11 +1235,12 @@ function ExplorarContent() {
                 setSearchInput("");
                 setDateFilter("all");
                 setTypeFilter("all");
-                setSelectedCategories([]);
+                setSelectedCategories(world === "PADEL" ? ["PADEL"] : []);
                 setCity("");
                 setCityInput("");
                 setPriceMin(0);
                 setPriceMax(100);
+                setCustomDate("");
               }}
               className="mt-2 px-4 py-1.5 rounded-full bg-white/5 border border-white/20 text-xs text-white/80 hover:bg-white/10"
             >
@@ -974,32 +1250,50 @@ function ExplorarContent() {
         )}
 
         {/* LISTA */}
-        {!loading && items.length > 0 && (
+        {!activeLoading && activeItems.length > 0 && (
           <>
-            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-              {[...items.map((item) => ({ item })), ...Array.from({ length: Math.max(0, 3 - items.length) }).map((_, idx) => ({ item: null, key: `placeholder-${idx}` }))].map((entry, idx) =>
-                entry.item ? (
-                  <EventCard
-                    key={`${entry.item.type}-${entry.item.id}`}
-                    item={entry.item}
-                    onLike={toggleLike}
-                    liked={likedItems.includes(entry.item.id)}
-                  />
-                ) : (
-                  <PlaceholderCard key={entry.key ?? `placeholder-${idx}`} />
-                ),
-              )}
-            </div>
+            {isReservasWorld ? (
+              <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                {[...serviceItems.map((item) => ({ item })), ...Array.from({ length: Math.max(0, 3 - serviceItems.length) }).map((_, idx) => ({ item: null, key: `placeholder-${idx}` }))].map(
+                  (entry, idx) =>
+                    entry.item ? (
+                      <ServiceCard key={`service-${entry.item.id}`} item={entry.item} />
+                    ) : (
+                      <PlaceholderCard key={entry.key ?? `placeholder-${idx}`} />
+                    ),
+                )}
+              </div>
+            ) : (
+              <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                {[...items.map((item) => ({ item })), ...Array.from({ length: Math.max(0, 3 - items.length) }).map((_, idx) => ({ item: null, key: `placeholder-${idx}` }))].map(
+                  (entry, idx) =>
+                    entry.item ? (
+                      <EventCard
+                        key={`${entry.item.type}-${entry.item.id}`}
+                        item={entry.item}
+                        onLike={toggleLike}
+                        liked={likedItems.includes(entry.item.id)}
+                      />
+                    ) : (
+                      <PlaceholderCard key={entry.key ?? `placeholder-${idx}`} />
+                    ),
+                )}
+              </div>
+            )}
 
-            {hasMore && (
+            {activeHasMore && (
               <div className="mt-6 flex justify-center">
                 <button
                   type="button"
-                  onClick={() => fetchItems({ append: true, cursor: nextCursor })}
-                  disabled={isLoadingMore}
+                  onClick={() =>
+                    isReservasWorld
+                      ? fetchServices({ append: true, cursor: activeNextCursor })
+                      : fetchItems({ append: true, cursor: activeNextCursor })
+                  }
+                  disabled={activeIsLoadingMore}
                   className="px-5 py-2 rounded-full bg-white/5 border border-white/20 text-xs text-white/80 hover:bg-white/10 disabled:opacity-60"
                 >
-                  {isLoadingMore ? "A carregar mais..." : "Ver mais"}
+                  {activeIsLoadingMore ? "A carregar mais..." : "Ver mais"}
                 </button>
               </div>
             )}
@@ -1023,6 +1317,10 @@ type CardProps = {
   liked: boolean;
   onLike: (id: number) => void;
   neonClass?: string;
+};
+
+type ServiceCardProps = {
+  item: ServiceItem;
 };
 
 function PriceBadge({ item }: { item: ExploreItem }) {
@@ -1141,10 +1439,9 @@ function BaseCard({
   item,
   liked,
   onLike,
-  accentClass,
   badge,
   neonClass,
-}: CardProps & { accentClass: string; badge: string }) {
+}: CardProps & { badge: string }) {
   const router = useRouter();
   const status = statusTag(item.status);
   const dateLabel = formatDateRange(item.startsAt, item.endsAt);
@@ -1272,10 +1569,70 @@ function EventCard(props: CardProps) {
   return (
     <BaseCard
       {...props}
-      accentClass="from-[#FF00C8]/45 via-[#6BFFFF]/25 to-[#1646F5]/45"
       badge="Evento"
       neonClass="shadow-[0_14px_32px_rgba(0,0,0,0.45)]"
     />
+  );
+}
+
+function ServiceCard({ item }: ServiceCardProps) {
+  const organizerName = item.organizer.publicName || item.organizer.businessName || "Organização";
+  const availabilityLabel = formatServiceAvailability(item.nextAvailability);
+  const priceLabel = `${(item.price / 100).toFixed(2)} ${item.currency}`;
+
+  return (
+    <Link
+      href={`/servicos/${item.id}`}
+      className="group rounded-3xl border border-white/10 bg-white/[0.02] overflow-hidden flex flex-col transition-all hover:border-white/16 hover:-translate-y-[6px] shadow-[0_14px_32px_rgba(0,0,0,0.45)]"
+    >
+      <div className="relative overflow-hidden">
+        <div className="aspect-square w-full">
+          <Image
+            src={defaultCover}
+            alt={item.name}
+            fill
+            sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+            className="object-cover transform transition-transform duration-300 group-hover:scale-[1.04]"
+            placeholder="blur"
+            blurDataURL={defaultBlurDataURL}
+          />
+        </div>
+
+        <div className="absolute top-2 left-2 flex items-center gap-2 rounded-2xl border border-white/16 px-3 py-1 text-[11px] font-semibold text-white/90 backdrop-blur-lg bg-gradient-to-r from-white/10 via-white/7 to-white/5">
+          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white/10 text-[11px]">
+            🧩
+          </span>
+          <span className="h-1.5 w-6 rounded-full bg-gradient-to-r from-[#FCD34D] via-[#FB923C] to-[#F97316]" />
+          <span className="tracking-wide leading-none">Serviço</span>
+        </div>
+
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
+      </div>
+
+      <div className="p-3 flex flex-col gap-1.5 bg-gradient-to-b from-white/2 via-transparent to-white/2">
+        <div className="flex items-center justify-between text-[11px] text-white/75">
+          <span className="truncate">{organizerName}</span>
+          <span className="rounded-full bg-white/5 px-2 py-0.5 border border-white/10">
+            {item.organizer.city || "Cidade"}
+          </span>
+        </div>
+
+        <h2 className="text-[14px] md:text-[15px] font-semibold leading-snug text-white line-clamp-2">
+          {item.name}
+        </h2>
+
+        <p className="text-[11px] text-white/80 line-clamp-2">
+          {item.description || "Serviço pronto a reservar na ORYA."}
+        </p>
+
+        <div className="mt-2 flex items-center justify-between text-[11px]">
+          <span className="px-2 py-0.5 rounded-full bg-black/75 border border-white/22 text-white font-medium">
+            {item.durationMinutes} min · {priceLabel}
+          </span>
+          <span className="text-white/70">{availabilityLabel}</span>
+        </div>
+      </div>
+    </Link>
   );
 }
 

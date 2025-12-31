@@ -4,13 +4,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { randomUUID } from "crypto";
-import { computePartnerLinkExpiresAt } from "@/domain/padelDeadlines";
+import { clampDeadlineHours, computePartnerLinkExpiresAt, computeSplitDeadlineAt } from "@/domain/padelDeadlines";
 import { queuePairingInvite } from "@/domain/notifications/splitPayments";
+import { readNumericParam } from "@/lib/routeParams";
 
 // Regenera token de convite para um pairing (v2). Apenas capitão ou staff OWNER/ADMIN.
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
-  const pairingId = Number(params?.id);
-  if (!Number.isFinite(pairingId)) return NextResponse.json({ ok: false, error: "INVALID_ID" }, { status: 400 });
+  const pairingId = readNumericParam(params?.id, req, "pairings");
+  if (pairingId === null) return NextResponse.json({ ok: false, error: "INVALID_ID" }, { status: 400 });
 
   const supabase = await createSupabaseServer();
   const {
@@ -24,7 +25,15 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   const pairing = await prisma.padelPairing.findUnique({
     where: { id: pairingId },
-    include: { event: { select: { organizerId: true } } },
+    include: {
+      event: {
+        select: {
+          organizerId: true,
+          startsAt: true,
+          padelTournamentConfig: { select: { splitDeadlineHours: true } },
+        },
+      },
+    },
   });
   if (!pairing) return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
   if (pairing.player2UserId) {
@@ -51,8 +60,18 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
   }
 
+  const now = new Date();
   const token = randomUUID();
-  const expiresAt = computePartnerLinkExpiresAt(new Date(), expiresMinutesRaw);
+  const expiresAt = computePartnerLinkExpiresAt(now, expiresMinutesRaw);
+
+  const deadlineAt = computeSplitDeadlineAt(
+    now,
+    pairing.event?.startsAt ?? null,
+    clampDeadlineHours(pairing.event?.padelTournamentConfig?.splitDeadlineHours ?? undefined),
+  );
+  if (pairing.payment_mode === "SPLIT" && deadlineAt.getTime() <= now.getTime()) {
+    return NextResponse.json({ ok: false, error: "SPLIT_DEADLINE_PASSED" }, { status: 409 });
+  }
 
   const updated = await prisma.padelPairing.update({
     where: { id: pairingId },
@@ -60,7 +79,9 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       partnerInviteToken: token,
       partnerLinkToken: token,
       partnerLinkExpiresAt: expiresAt,
-      partnerInvitedAt: new Date(),
+      partnerInvitedAt: now,
+      deadlineAt,
+      partnerSwapAllowedUntilAt: deadlineAt,
     },
     select: { id: true, partnerInviteToken: true, partnerLinkExpiresAt: true },
   });

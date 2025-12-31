@@ -37,26 +37,18 @@ export default async function OrganizerEventLivePrepPage({ params }: PageProps) 
   });
   if (!event || !event.organizerId) notFound();
 
-  let { organizer, membership } = await getActiveOrganizerForUser(data.user.id, {
+  const { organizer, membership } = await getActiveOrganizerForUser(data.user.id, {
     organizerId: event.organizerId,
   });
-  if (!organizer) {
-    const legacyOrganizer = await prisma.organizer.findFirst({
-      where: { id: event.organizerId, userId: data.user.id },
-    });
-    if (legacyOrganizer) {
-      organizer = legacyOrganizer;
-      membership = { role: OrganizerMemberRole.OWNER };
-    }
-  }
 
   if (!organizer || !membership) redirect("/organizador");
-  const canOperateLive = [
+  const allowedRoles: OrganizerMemberRole[] = [
     OrganizerMemberRole.OWNER,
     OrganizerMemberRole.CO_OWNER,
     OrganizerMemberRole.ADMIN,
     OrganizerMemberRole.STAFF,
-  ].includes(membership.role);
+  ];
+  const canOperateLive = allowedRoles.includes(membership.role);
   const canManageLiveConfig = canManageEvents(membership.role);
   if (!canOperateLive) redirect("/organizador?tab=manage");
 

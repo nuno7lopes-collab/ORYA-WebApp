@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { OrganizerMemberRole } from "@prisma/client";
+import { OrganizerMemberRole, Prisma } from "@prisma/client";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { resolveUserIdentifier } from "@/lib/userResolver";
@@ -26,7 +26,7 @@ const serializeInvite = (
     acceptedAt: Date | null;
     declinedAt: Date | null;
     cancelledAt: Date | null;
-    createdAt: Date;
+    createdAt: Date | null;
     invitedBy?: {
       id: string;
       username: string | null;
@@ -73,12 +73,12 @@ const serializeInvite = (
     targetUserId: invite.targetUserId,
     status,
     expiresAt: invite.expiresAt?.toISOString() ?? null,
-    createdAt: invite.createdAt.toISOString(),
+    createdAt: invite.createdAt?.toISOString() ?? null,
     acceptedAt: invite.acceptedAt?.toISOString() ?? null,
     declinedAt: invite.declinedAt?.toISOString() ?? null,
     cancelledAt: invite.cancelledAt?.toISOString() ?? null,
-    invitedBy: sanitizeProfileVisibility(invite.invitedBy ?? null, viewer?.id),
-    targetUser: sanitizeProfileVisibility(invite.targetUser ?? null, viewer?.id),
+    invitedBy: sanitizeProfileVisibility(invite.invitedBy ?? null),
+    targetUser: sanitizeProfileVisibility(invite.targetUser ?? null),
     canRespond,
   };
 };
@@ -166,9 +166,11 @@ export async function GET(req: NextRequest) {
           acceptedAt: null,
           OR: [
             { targetUserId: user.id },
-            ...(viewerEmail ? [{ targetIdentifier: { equals: viewerEmail, mode: "insensitive" } }] : []),
+            ...(viewerEmail
+              ? [{ targetIdentifier: { equals: viewerEmail, mode: Prisma.QueryMode.insensitive } }]
+              : []),
             ...(viewerUsername
-              ? [{ targetIdentifier: { equals: viewerUsername, mode: "insensitive" as const } }]
+              ? [{ targetIdentifier: { equals: viewerUsername, mode: Prisma.QueryMode.insensitive } }]
               : []),
           ],
         },
@@ -186,9 +188,11 @@ export async function GET(req: NextRequest) {
           : {
               OR: [
                 { targetUserId: user.id },
-                ...(viewerEmail ? [{ targetIdentifier: { equals: viewerEmail, mode: "insensitive" } }] : []),
+                ...(viewerEmail
+                  ? [{ targetIdentifier: { equals: viewerEmail, mode: Prisma.QueryMode.insensitive } }]
+                  : []),
                 ...(viewerUsername
-                  ? [{ targetIdentifier: { equals: viewerUsername, mode: "insensitive" as const } }]
+                  ? [{ targetIdentifier: { equals: viewerUsername, mode: Prisma.QueryMode.insensitive } }]
                   : []),
               ],
             }),
@@ -289,7 +293,7 @@ export async function POST(req: NextRequest) {
         cancelledAt: null,
         declinedAt: null,
         OR: [
-          { targetIdentifier: { equals: normalizedIdentifier, mode: "insensitive" } },
+          { targetIdentifier: { equals: normalizedIdentifier, mode: Prisma.QueryMode.insensitive } },
           ...(targetUserId ? [{ targetUserId }] : []),
         ],
       },

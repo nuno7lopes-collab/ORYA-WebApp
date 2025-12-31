@@ -5,7 +5,7 @@ import { OrganizerMemberRole } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizerForUser } from "@/lib/organizerContext";
-import { PadelPointsTable, isValidScore } from "@/lib/padel/validation";
+import { PadelPointsTable } from "@/lib/padel/validation";
 
 const allowedRoles: OrganizerMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
 
@@ -107,36 +107,71 @@ export async function POST(req: NextRequest) {
   const matches = await prisma.padelMatch.findMany({
     where: { eventId, status: "DONE" },
     include: {
-      teamA: { include: { player1: true, player2: true } },
-      teamB: { include: { player1: true, player2: true } },
+      pairingA: { select: { slots: { select: { playerProfileId: true, profileId: true } } } },
+      pairingB: { select: { slots: { select: { playerProfileId: true, profileId: true } } } },
     },
+  });
+
+  const profileIds = new Set<string>();
+  matches.forEach((m) => {
+    [m.pairingA, m.pairingB].forEach((pairing) => {
+      pairing?.slots.forEach((slot) => {
+        if (!slot.playerProfileId && slot.profileId) profileIds.add(slot.profileId);
+      });
+    });
+  });
+
+  const playerProfiles = profileIds.size
+    ? await prisma.padelPlayerProfile.findMany({
+        where: { organizerId: event.organizerId!, userId: { in: Array.from(profileIds) } },
+        select: { id: true, userId: true },
+      })
+    : [];
+  const profileToPlayerProfile = new Map<string, number>();
+  playerProfiles.forEach((row) => {
+    if (row.userId) profileToPlayerProfile.set(row.userId, row.id);
   });
 
   const playerPoints: Record<number, number> = {};
   const winPts = pointsTable.WIN ?? 3;
   const lossPts = pointsTable.LOSS ?? 0;
 
+  const resolvePlayerId = (slot: { playerProfileId: number | null; profileId: string | null }) => {
+    if (slot.playerProfileId) return slot.playerProfileId;
+    if (slot.profileId) return profileToPlayerProfile.get(slot.profileId) ?? null;
+    return null;
+  };
+
   matches.forEach((m) => {
-    if (!isValidScore(m.score) || !m.teamA || !m.teamB) return;
-    const sets = m.score.sets || [];
+    const rawSets = Array.isArray(m.scoreSets)
+      ? m.scoreSets
+      : Array.isArray((m.score as { sets?: unknown } | null)?.sets)
+        ? ((m.score as { sets?: unknown }).sets as any[])
+        : [];
+    if (!rawSets.length) return;
     let aSets = 0;
     let bSets = 0;
-    sets.forEach((s) => {
-      if ((s as any).teamA > (s as any).teamB) aSets += 1;
-      else if ((s as any).teamB > (s as any).teamA) bSets += 1;
+    rawSets.forEach((s) => {
+      const set = s as { teamA?: number; teamB?: number };
+      if (!Number.isFinite(set.teamA) || !Number.isFinite(set.teamB)) return;
+      if (Number(set.teamA) > Number(set.teamB)) aSets += 1;
+      else if (Number(set.teamB) > Number(set.teamA)) bSets += 1;
     });
     if (aSets === bSets) return;
     const winner = aSets > bSets ? "A" : "B";
-    const losers = winner === "A" ? "B" : "A";
-    const winnerTeam = winner === "A" ? m.teamA : m.teamB;
-    const loserTeam = losers === "A" ? m.teamA : m.teamB;
+    const winnerPairing = winner === "A" ? m.pairingA : m.pairingB;
+    const loserPairing = winner === "A" ? m.pairingB : m.pairingA;
 
-    const award = (team: typeof m.teamA, pts: number) => {
-      if (team?.player1) playerPoints[team.player1.id] = (playerPoints[team.player1.id] ?? 0) + pts;
-      if (team?.player2) playerPoints[team.player2.id] = (playerPoints[team.player2.id] ?? 0) + pts;
+    const award = (pairing: typeof m.pairingA, pts: number) => {
+      pairing?.slots.forEach((slot) => {
+        const playerId = resolvePlayerId(slot);
+        if (!playerId) return;
+        playerPoints[playerId] = (playerPoints[playerId] ?? 0) + pts;
+      });
     };
-    award(winnerTeam, winPts);
-    award(loserTeam, lossPts);
+
+    award(winnerPairing, winPts);
+    award(loserPairing, lossPts);
   });
 
   await prisma.$transaction(async (tx) => {

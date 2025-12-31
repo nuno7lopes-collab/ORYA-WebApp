@@ -24,7 +24,6 @@ export async function POST(req: NextRequest) {
     where: {
       id: organizerId,
       status: "ACTIVE",
-      OR: [{ publicListingEnabled: true }, { publicListingEnabled: null }],
     },
     select: { id: true },
   });

@@ -3,8 +3,17 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
-import { TicketTypeStatus, Prisma, EventTemplateType } from "@prisma/client";
-import { isOrgAdminOrAbove } from "@/lib/organizerPermissions";
+import {
+  TicketTypeStatus,
+  Prisma,
+  EventTemplateType,
+  LiveHubVisibility,
+  EventPublicAccessMode,
+  EventParticipantAccessMode,
+  PayoutMode,
+  OrganizerMemberRole,
+} from "@prisma/client";
+import { canManageEvents } from "@/lib/organizerPermissions";
 
 type TicketTypeUpdate = {
   id: number;
@@ -111,7 +120,8 @@ export async function POST(req: NextRequest) {
       slug: string;
       organizerId: number | null;
       isFree: boolean;
-      ticketTypes: { id: number; soldQuantity: number; price: number; status: TicketTypeStatus }[];
+      payoutMode: PayoutMode | null;
+      ticketTypes: { id: number; soldQuantity: number; price: number; status: TicketTypeStatus; currency: string | null }[];
       organizer: {
         id: number;
         username: string | null;
@@ -134,12 +144,14 @@ export async function POST(req: NextRequest) {
               organizerId: true,
               isFree: true,
               templateType: true,
+              payoutMode: true,
               ticketTypes: {
                 select: {
                   id: true,
                   soldQuantity: true,
                   price: true,
                   status: true,
+                  currency: true,
                 },
               },
       organizer: {
@@ -163,14 +175,14 @@ export async function POST(req: NextRequest) {
         } catch (err) {
           if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2022") {
             const rows = await prisma.$queryRaw<
-              { id: number; slug: string; organizer_id: number | null; is_free: boolean }[]
-            >(Prisma.sql`SELECT id, slug, organizer_id, is_free FROM app_v3.events WHERE id = ${eventId} LIMIT 1`);
+              { id: number; slug: string; organizer_id: number | null; is_free: boolean; payout_mode: PayoutMode | null }[]
+            >(Prisma.sql`SELECT id, slug, organizer_id, is_free, payout_mode FROM app_v3.events WHERE id = ${eventId} LIMIT 1`);
             const row = rows[0];
             if (!row) return null;
             const [ticketTypes, organizerRows, counts] = await Promise.all([
               prisma.$queryRaw<
-                { id: number; sold_quantity: number; price: number; status: TicketTypeStatus }[]
-              >(Prisma.sql`SELECT id, sold_quantity, price, status FROM app_v3.ticket_types WHERE event_id = ${eventId}`),
+                { id: number; sold_quantity: number; price: number; status: TicketTypeStatus; currency: string | null }[]
+              >(Prisma.sql`SELECT id, sold_quantity, price, status, currency FROM app_v3.ticket_types WHERE event_id = ${eventId}`),
               row.organizer_id
                 ? prisma.$queryRaw<
                     { stripe_account_id: string | null; stripe_charges_enabled: boolean; stripe_payouts_enabled: boolean }[]
@@ -189,11 +201,13 @@ export async function POST(req: NextRequest) {
               slug: row.slug,
               organizerId: row.organizer_id,
               isFree: row.is_free,
+              payoutMode: row.payout_mode,
               ticketTypes: ticketTypes.map((t) => ({
                 id: t.id,
                 soldQuantity: Number(t.sold_quantity ?? 0),
                 price: Number(t.price ?? 0),
                 status: t.status,
+                currency: t.currency ?? null,
               })),
               organizer: organizerRows[0]
                 ? {
@@ -231,7 +245,7 @@ export async function POST(req: NextRequest) {
 
     const isAdmin = Array.isArray(profile.roles) ? profile.roles.includes("admin") : false;
 
-    let membership: { role: string } | null = null;
+    let membership: { role: OrganizerMemberRole } | null = null;
     if (event.organizerId == null) {
       if (!isAdmin) {
         return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
@@ -239,10 +253,22 @@ export async function POST(req: NextRequest) {
     } else {
       membership = await prisma.organizerMember.findUnique({
         where: { organizerId_userId: { organizerId: event.organizerId, userId: user.id } },
+        select: { role: true },
       });
-      if (!membership || !isOrgAdminOrAbove(membership.role)) {
+      if (!membership || !canManageEvents(membership.role)) {
         return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
       }
+    }
+
+    const hasNonEurTickets = event.ticketTypes.some(
+      (t) => t.currency && t.currency.toUpperCase() !== "EUR",
+    );
+    const hasNewTickets = Array.isArray(body.newTicketTypes) && body.newTicketTypes.length > 0;
+    if (hasNonEurTickets && hasNewTickets) {
+      return NextResponse.json(
+        { ok: false, error: "CURRENCY_NOT_SUPPORTED" },
+        { status: 400 },
+      );
     }
 
     const organizer = event.organizer;
@@ -343,7 +369,7 @@ export async function POST(req: NextRequest) {
     if (body.inviteOnly !== undefined && body.publicAccessMode === undefined) {
       const inviteOnly = body.inviteOnly === true;
       dataUpdate.inviteOnly = inviteOnly;
-      dataUpdate.publicAccessMode = inviteOnly ? "INVITE" : "OPEN";
+      dataUpdate.publicAccessMode = inviteOnly ? EventPublicAccessMode.INVITE : EventPublicAccessMode.OPEN;
     }
     if (body.coverImageUrl !== undefined) dataUpdate.coverImageUrl = body.coverImageUrl ?? null;
     if (body.liveStreamUrl !== undefined) {
@@ -354,20 +380,20 @@ export async function POST(req: NextRequest) {
       const normalized =
         typeof body.liveHubVisibility === "string" ? body.liveHubVisibility.trim().toUpperCase() : "";
       if (normalized === "PUBLIC" || normalized === "PRIVATE" || normalized === "DISABLED") {
-        dataUpdate.liveHubVisibility = normalized as Prisma.LiveHubVisibility;
+        dataUpdate.liveHubVisibility = normalized as LiveHubVisibility;
       }
     }
     if (body.publicAccessMode !== undefined) {
       const normalized = typeof body.publicAccessMode === "string" ? body.publicAccessMode.trim().toUpperCase() : "";
       if (normalized === "OPEN" || normalized === "TICKET" || normalized === "INVITE") {
-        dataUpdate.publicAccessMode = normalized as Prisma.EventPublicAccessMode;
+        dataUpdate.publicAccessMode = normalized as EventPublicAccessMode;
         dataUpdate.inviteOnly = normalized === "INVITE";
       }
     }
     if (body.participantAccessMode !== undefined) {
       const normalized = typeof body.participantAccessMode === "string" ? body.participantAccessMode.trim().toUpperCase() : "";
       if (normalized === "NONE" || normalized === "TICKET" || normalized === "INSCRIPTION" || normalized === "INVITE") {
-        dataUpdate.participantAccessMode = normalized as Prisma.EventParticipantAccessMode;
+        dataUpdate.participantAccessMode = normalized as EventParticipantAccessMode;
       }
     }
     if (Array.isArray(body.publicTicketTypeIds)) {
@@ -385,7 +411,7 @@ export async function POST(req: NextRequest) {
       body.payoutMode &&
       (body.payoutMode.toUpperCase() === "PLATFORM" || body.payoutMode.toUpperCase() === "ORGANIZER")
     ) {
-      dataUpdate.payoutMode = body.payoutMode.toUpperCase() as Prisma.PayoutMode;
+      dataUpdate.payoutMode = body.payoutMode.toUpperCase() as PayoutMode;
     }
 
     const ticketTypeUpdates = Array.isArray(body.ticketTypeUpdates)
@@ -406,14 +432,12 @@ export async function POST(req: NextRequest) {
         )
       : new Set<number>();
 
-    const payoutMode = (event.payoutMode ?? "ORGANIZER").toUpperCase();
-    const hasExistingPaid = event.ticketTypes.some(
-      (t) => (t.price ?? 0) > 0 && t.status !== TicketTypeStatus.CANCELLED
-    );
+    const payoutMode = event.payoutMode ?? PayoutMode.ORGANIZER;
+    const hasExistingPaid = event.ticketTypes.some((t) => (t.price ?? 0) > 0);
     const hasNewPaid = newTicketTypes.some((nt) => Number(nt.price ?? 0) > 0);
     if (
       event.organizerId &&
-      payoutMode === "ORGANIZER" &&
+      payoutMode === PayoutMode.ORGANIZER &&
       (hasExistingPaid || hasNewPaid) &&
       paymentsStatus !== "READY" &&
       !isAdmin
@@ -490,6 +514,7 @@ export async function POST(req: NextRequest) {
           startsAt: startsAt && !Number.isNaN(startsAt.getTime()) ? startsAt : null,
           endsAt: endsAt && !Number.isNaN(endsAt.getTime()) ? endsAt : null,
           padelEventCategoryLinkId: padelLinkId ?? undefined,
+          currency: "EUR",
         };
       });
 

@@ -7,10 +7,9 @@ import { Breadcrumb, BreadcrumbItem, BreadcrumbList, BreadcrumbSeparator, Breadc
 const SECTION_LABELS: Record<string, string> = {
   overview: "Visão geral",
   eventos: "Eventos",
-  torneios: "Torneios",
   "padel-hub": "Hub Padel",
-  acoes: "Ações",
   inscricoes: "Inscrições",
+  reservas: "Reservas",
   checkin: "Check-in",
   staff: "Staff",
   settings: "Definições",
@@ -20,9 +19,7 @@ const SECTION_LABELS: Record<string, string> = {
   promos: "Códigos promocionais",
   promoters: "Promotores e parcerias",
   content: "Conteúdos e kits",
-  sales: "Vendas",
   vendas: "Vendas",
-  finance: "Finanças",
   financas: "Finanças",
   invoices: "Faturação",
 };
@@ -36,7 +33,8 @@ const OBJECTIVE_LABELS: Record<string, string> = {
 
 function resolveLabel(pathname: string, tab: string, section?: string | null, marketing?: string | null) {
   if (pathname.startsWith("/organizador/eventos/novo")) return "Criar evento";
-  if (pathname.startsWith("/organizador/eventos/novo")) return "Criar evento";
+  if (pathname.startsWith("/organizador/reservas/novo")) return "Criar serviço";
+  if (pathname.startsWith("/organizador/reservas")) return "Reservas";
   if (pathname.includes("/eventos/") && pathname.endsWith("/edit")) return "Editar evento";
   if (pathname.includes("/eventos/") && pathname.endsWith("/live")) return "Gerir · Preparar live";
   if (pathname.includes("/eventos/")) return "Eventos";
@@ -60,19 +58,8 @@ function resolveLabel(pathname: string, tab: string, section?: string | null, ma
   }
   if (objectiveLabel) return objectiveLabel;
 
-  const map: Record<string, string> = {
-    overview: "Resumo",
-    events: "Eventos",
-    sales: "Vendas",
-    finance: "Finanças",
-    invoices: "Faturação",
-    marketing: "Marketing",
-    padel: "Padel",
-    staff: "Staff",
-    settings: "Definições",
-    create: "Resumo",
-  };
-  return map[tab] ?? "Dashboard";
+  if (tab === "overview") return "Resumo";
+  return "Dashboard";
 }
 
 export function OrganizerBreadcrumb() {

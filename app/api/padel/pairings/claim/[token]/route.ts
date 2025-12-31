@@ -24,9 +24,12 @@ async function ensurePlayerProfile(params: { organizerId: number; userId: string
     select: { id: true },
   });
   if (existing) return existing.id;
-  const profile = await prisma.profile.findUnique({ where: { id: userId }, select: { fullName: true, email: true } });
+  const [profile, authUser] = await Promise.all([
+    prisma.profile.findUnique({ where: { id: userId }, select: { fullName: true } }),
+    prisma.users.findUnique({ where: { id: userId }, select: { email: true } }),
+  ]);
   const name = profile?.fullName?.trim() || "Jogador Padel";
-  const email = profile?.email || null;
+  const email = authUser?.email ?? null;
   const created = await prisma.padelPlayerProfile.create({
     data: {
       organizerId,
@@ -153,7 +156,7 @@ export async function POST(_: NextRequest, { params }: { params: { token: string
       return NextResponse.json({ ok: false, error: "PAYMENT_REQUIRED", action: "CHECKOUT_CAPTAIN" }, { status: 402 });
     }
   }
-  if (pairing.deadlineAt && pairing.deadlineAt.getTime() < Date.now()) {
+  if (pairing.payment_mode === PadelPaymentMode.SPLIT && pairing.deadlineAt && pairing.deadlineAt.getTime() < Date.now()) {
     return NextResponse.json({ ok: false, error: "PAIRING_EXPIRED" }, { status: 410 });
   }
 

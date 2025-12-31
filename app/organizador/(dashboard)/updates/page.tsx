@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useMemo, useState } from "react";
 import useSWR from "swr";
 import ObjectiveSubnav from "@/app/organizador/ObjectiveSubnav";

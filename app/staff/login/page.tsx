@@ -69,14 +69,14 @@ function StaffLoginContent() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-black text-white flex items-center justify-center px-6">
+      <div className="min-h-screen text-white flex items-center justify-center px-6">
         <p>A carregar a tua sessão…</p>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-black text-white flex items-center justify-center px-6">
+    <div className="min-h-screen text-white flex items-center justify-center px-6">
       <div className="w-full max-w-sm bg-white/5 backdrop-blur-xl p-8 rounded-2xl border border-white/10 shadow-2xl space-y-4">
         <div className="space-y-2 text-center">
           <h1 className="text-2xl font-semibold">Modo Staff ORYA</h1>

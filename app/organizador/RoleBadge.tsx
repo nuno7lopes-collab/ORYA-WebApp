@@ -1,6 +1,6 @@
 "use client";
 
-type Role = "OWNER" | "CO_OWNER" | "ADMIN" | "STAFF" | "VIEWER";
+type Role = "OWNER" | "CO_OWNER" | "ADMIN" | "STAFF" | "PROMOTER" | "VIEWER";
 
 type Props = {
   role: Role;
@@ -12,6 +12,7 @@ const ROLE_STYLES: Record<Role, string> = {
   CO_OWNER: "border-emerald-300/50 bg-emerald-400/10 text-emerald-50",
   ADMIN: "border-sky-300/50 bg-sky-400/10 text-sky-50",
   STAFF: "border-white/20 bg-white/10 text-white/80",
+  PROMOTER: "border-lime-300/40 bg-lime-400/10 text-lime-50",
   VIEWER: "border-white/15 bg-white/5 text-white/60",
 };
 
@@ -20,6 +21,7 @@ const ROLE_LABEL: Record<Role, string> = {
   CO_OWNER: "Co-owner",
   ADMIN: "Admin",
   STAFF: "Staff",
+  PROMOTER: "Promoter",
   VIEWER: "Viewer",
 };
 

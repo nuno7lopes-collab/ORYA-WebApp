@@ -15,8 +15,10 @@ type Pairing = {
   id: number;
   paymentMode: string;
   pairingStatus: string;
+  guaranteeStatus?: string | null;
   inviteToken: string | null;
   lockedUntil: string | null;
+  deadlineAt?: string | null;
   slots: Slot[];
   event: { id: number; title: string; slug: string; templateType: string | null };
   category?: { label: string } | null;
@@ -47,12 +49,16 @@ export default function MinhasDuplasPage() {
     refresh();
   }, []);
 
-  const doAction = async (pairingId: number, action: "cancel" | "assume") => {
+  const doAction = async (pairingId: number, action: "cancel" | "assume" | "regularize") => {
     setActionLoading(`${action}-${pairingId}`);
     try {
-      const res = await fetch(`/api/padel/pairings/${pairingId}/${action === "cancel" ? "cancel" : "assume"}`, {
-        method: "POST",
-      });
+      const endpoint =
+        action === "cancel"
+          ? "cancel"
+          : action === "assume"
+            ? "assume"
+            : "regularize";
+      const res = await fetch(`/api/padel/pairings/${pairingId}/${endpoint}`, { method: "POST" });
       const json = await res.json();
       if (!res.ok || !json?.ok) throw new Error(json?.error || "Ação falhou");
       await refresh();
@@ -73,7 +79,7 @@ export default function MinhasDuplasPage() {
   if (error) return <div className="p-6 text-red-200">{error}</div>;
 
   return (
-    <div className="min-h-screen orya-body-bg text-white px-4 py-10">
+    <div className="min-h-screen text-white px-4 py-10">
       <div className="orya-page-width space-y-6">
         <div>
           <h1 className="text-2xl font-semibold">As minhas duplas (Padel)</h1>
@@ -114,7 +120,7 @@ export default function MinhasDuplasPage() {
             <div className="mt-4 flex gap-3 flex-wrap">
               {canPayPending && (
                 <Link
-                  href={`/eventos/${p.eventSlug ?? ""}?pairingId=${p.id}`}
+                  href={`/eventos/${p.event?.slug ?? ""}?pairingId=${p.id}`}
                   className="rounded-full bg-white text-black px-4 py-2 text-sm font-semibold"
                 >
                   Pagar o meu lugar
@@ -138,6 +144,16 @@ export default function MinhasDuplasPage() {
                   className="rounded-full border border-white/20 px-4 py-2 text-sm text-white hover:bg-white/10 disabled:opacity-60"
                 >
                   {actionLoading === `assume-${p.id}` ? "A assumir..." : "Assumir resto"}
+                </button>
+              )}
+              {p.pairingStatus === "CANCELLED" && p.paymentMode === "SPLIT" && (
+                <button
+                  type="button"
+                  onClick={() => doAction(p.id, "regularize")}
+                  disabled={actionLoading === `regularize-${p.id}`}
+                  className="rounded-full border border-emerald-300/40 px-4 py-2 text-sm text-emerald-100 hover:bg-emerald-400/10 disabled:opacity-60"
+                >
+                  {actionLoading === `regularize-${p.id}` ? "A regularizar..." : "Regularizar"}
                 </button>
               )}
               {inviteLink && (

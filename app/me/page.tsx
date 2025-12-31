@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, type ReactElement } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import ProfileHeader from "@/app/components/profile/ProfileHeader";
@@ -25,8 +25,6 @@ export default function MePage() {
     authRequired,
     refetch: refetchWallet,
   } = useWallet();
-
-  const isAdmin = Array.isArray(profile?.roles) && profile.roles.includes("admin");
 
   // Redireciona quando já tem username ou força login
   useEffect(() => {
@@ -55,12 +53,6 @@ export default function MePage() {
     user?.email?.split("@")[0] ||
     "Utilizador ORYA";
 
-  const displayInitial =
-    (profile?.fullName || profile?.username || user?.email || "O")
-      .trim()
-      .charAt(0)
-      .toUpperCase() || "O";
-
   const now = new Date();
 
   const upcomingTickets = tickets.filter((t) => {
@@ -79,24 +71,6 @@ export default function MePage() {
 
   const totalSpentEuros = "—";
 
-  let levelLabel = "Explorador ORYA";
-  let levelDescription =
-    "Começo perfeito. Em breve vais desbloquear novas badges com mais eventos.";
-
-  if (totalEvents >= 10) {
-    levelLabel = "Lenda dos eventos";
-    levelDescription =
-      "Já estás em modo ORYA total. Continuar assim e vamos ter de inventar um nível novo só para ti.";
-  } else if (totalEvents >= 5) {
-    levelLabel = "Insider da noite";
-    levelDescription =
-      "Já és cliente recorrente. Os melhores spots da tua cidade começam a ser a tua segunda casa.";
-  } else if (totalEvents >= 1) {
-    levelLabel = "Primeiros passos";
-    levelDescription =
-      "Já tens os teus primeiros bilhetes ORYA. Bora continuar a construir a tua timeline.";
-  }
-
   const sortedTickets = useMemo(
     () =>
       [...tickets].sort((a, b) => {
@@ -113,26 +87,17 @@ export default function MePage() {
   const needsUsername = !meLoading && user && !profile?.username;
   const isLoggedOut = !meLoading && !user;
 
-  let content: JSX.Element = (
+  let content: ReactElement = (
     <div className="orya-page-width flex flex-col gap-6 px-4 py-8">
       <ProfileHeader
-        displayName={displayName}
-        handle={profile?.username || user?.email || "user"}
+        name={displayName}
+        username={profile?.username || user?.email || "user"}
         avatarUrl={profile?.avatarUrl}
-        stats={{
-          totalEvents,
-          totalUpcoming,
-          totalPast,
-          totalSpentEuros,
-        }}
-        levelLabel={levelLabel}
-        levelDescription={levelDescription}
-        isLoading={meLoading}
-        isAdmin={isAdmin}
         city={profile?.city}
-        visibility={profile?.visibility === "PRIVATE" ? "PRIVATE" : "PUBLIC"}
+        visibility={profile?.visibility === "PUBLIC" ? "PUBLIC" : "PRIVATE"}
         followers={null}
         following={null}
+        isVerified={profile?.isVerified ?? false}
         isOwner
       />
 
@@ -168,7 +133,7 @@ export default function MePage() {
             <div className="pointer-events-none absolute inset-y-0 right-0 w-1/3 bg-purple-100/10 blur-2xl" />
             <p className="text-[11px] uppercase tracking-[0.16em] text-purple-50/80">Total investido</p>
             <p className="mt-1 text-3xl font-semibold text-purple-50">{totalSpentEuros} €</p>
-            <p className="text-[12px] text-purple-50/80">Bruto - taxas.</p>
+            <p className="text-[12px] text-purple-50/80">Total pago.</p>
           </div>
         </div>
       </section>
@@ -275,6 +240,28 @@ export default function MePage() {
           </div>
         )}
       </section>
+
+      {/* RESERVAS */}
+      <section className="rounded-3xl border border-white/15 bg-white/5 p-5 shadow-[0_24px_70px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-semibold text-white/95 tracking-[0.08em]">Reservas</h2>
+            <p className="text-[11px] text-white/68">
+              Consulta horários marcados e gere cancelamentos.
+            </p>
+          </div>
+          <Link
+            href="/me/reservas"
+            className="inline-flex items-center gap-2 rounded-full border border-white/30 bg-white/10 text-white text-[11px] font-semibold px-4 py-1.5 shadow-[0_10px_26px_rgba(255,255,255,0.15)] hover:border-white/45 hover:bg-white/20 hover:scale-[1.02] active:scale-95 transition-transform backdrop-blur"
+          >
+            Ver reservas
+            <span className="text-[12px]">↗</span>
+          </Link>
+        </div>
+        <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-4 text-[12px] text-white/70">
+          Todas as reservas confirmadas ou pendentes aparecem na tua área pessoal.
+        </div>
+      </section>
     </div>
   );
 
@@ -334,14 +321,7 @@ export default function MePage() {
   }
 
   return (
-    <main className="relative orya-body-bg min-h-screen w-full overflow-hidden text-white">
-      <div className="pointer-events-none fixed inset-0" aria-hidden="true">
-        <div className="absolute -top-36 right-[-140px] h-[420px] w-[420px] rounded-full bg-[radial-gradient(circle_at_35%_35%,rgba(255,0,200,0.28),transparent_60%)] opacity-80 blur-3xl" />
-        <div className="absolute top-[22vh] -left-40 h-[360px] w-[360px] rounded-full bg-[radial-gradient(circle_at_30%_30%,rgba(107,255,255,0.22),transparent_60%)] opacity-80 blur-3xl" />
-        <div className="absolute bottom-[-180px] right-[12%] h-[420px] w-[420px] rounded-full bg-[radial-gradient(circle_at_40%_40%,rgba(22,70,245,0.25),transparent_60%)] opacity-70 blur-3xl" />
-        <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.05),transparent_35%,rgba(0,0,0,0.65))] mix-blend-screen" />
-      </div>
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_20%,rgba(255,255,255,0.05),transparent_60%)]" />
+    <main className="relative min-h-screen w-full overflow-hidden text-white">
       {content}
     </main>
   );

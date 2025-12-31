@@ -353,11 +353,6 @@ export function OrganizerTour({ organizerId }: OrganizerTourProps) {
         }
       : null;
 
-  const rightWidth =
-    highlightRect && viewport.width ? Math.max(0, viewport.width - (highlightRect.left + highlightRect.width)) : 0;
-  const bottomHeight =
-    highlightRect && viewport.height ? Math.max(0, viewport.height - (highlightRect.top + highlightRect.height)) : 0;
-
   return (
     <div className="fixed inset-0 z-[9999] pointer-events-auto">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(107,255,255,0.09),rgba(0,0,0,0)),rgba(5,9,21,0.7)] backdrop-blur-[9px] backdrop-saturate-[1.4]" />

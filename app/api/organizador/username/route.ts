@@ -29,10 +29,13 @@ export async function PATCH(req: NextRequest) {
     const organizerId = resolveOrganizerIdFromRequest(req);
     const { organizer, membership } = await getActiveOrganizerForUser(user.id, {
       organizerId: organizerId ?? undefined,
-      roles: ["OWNER"],
+      roles: ["OWNER", "ADMIN"],
     });
-    if (!organizer || !membership || membership.role !== "OWNER") {
-      return NextResponse.json({ ok: false, error: "Apenas o Owner pode alterar o username." }, { status: 403 });
+    if (!organizer || !membership || !["OWNER", "ADMIN"].includes(membership.role)) {
+      return NextResponse.json(
+        { ok: false, error: "Apenas Owner ou Admin podem alterar o username." },
+        { status: 403 },
+      );
     }
 
     const existingOrganizer = await prisma.organizer.findFirst({

@@ -8,9 +8,10 @@ export type BasicProfile = {
 };
 
 /**
- * Normaliza visibilidade de perfis, ocultando dados de contas apagadas ou privadas.
+ * Normaliza visibilidade de perfis, ocultando dados apenas de contas apagadas.
+ * Nome/username/avatar ficam sempre públicos.
  */
-export function sanitizeProfileVisibility(profile: BasicProfile | null | undefined, viewerId?: string | null) {
+export function sanitizeProfileVisibility(profile: BasicProfile | null | undefined) {
   if (!profile) return null;
   if (profile.isDeleted) {
     return {
@@ -23,16 +24,12 @@ export function sanitizeProfileVisibility(profile: BasicProfile | null | undefin
     };
   }
 
-  const isSelf = viewerId && profile.id === viewerId;
-  const isPrivate = profile.visibility === "PRIVATE";
-
   return {
     id: profile.id,
     username: profile.username,
-    fullName: isPrivate && !isSelf ? null : profile.fullName,
-    avatarUrl: isPrivate && !isSelf ? null : profile.avatarUrl,
+    fullName: profile.fullName,
+    avatarUrl: profile.avatarUrl,
     visibility: profile.visibility ?? null,
     isDeleted: !!profile.isDeleted,
   };
 }
-

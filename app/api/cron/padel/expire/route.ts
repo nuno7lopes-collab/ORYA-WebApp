@@ -39,6 +39,22 @@ export async function POST() {
       continue;
     }
 
+    const priorAttempts = await prisma.paymentEvent.count({
+      where: { dedupeKey: { startsWith: `auto_charge:${pairing.id}:` } },
+    });
+    if (priorAttempts >= 1) {
+      await prisma.padelPairing.update({
+        where: { id: pairing.id },
+        data: {
+          guaranteeStatus: "FAILED",
+          lifecycleStatus: "CANCELLED_INCOMPLETE",
+          pairingStatus: PadelPairingStatus.CANCELLED,
+          graceUntilAt: null,
+        },
+      });
+      continue;
+    }
+
     const paymentMethodId = pairing.paymentMethodId;
     const paidSlot = pairing.slots.find(
       (s) => s.paymentStatus === PadelPairingPaymentStatus.PAID && s.ticket,
@@ -63,10 +79,7 @@ export async function POST() {
     }
 
     try {
-      const priorAttempts = await prisma.paymentEvent.count({
-        where: { dedupeKey: { startsWith: `auto_charge:${pairing.id}:` } },
-      });
-      const attempt = Math.max(1, priorAttempts + 1);
+      const attempt = 1;
       const idempotencyKey = autoChargeKey(pairing.id, attempt);
 
       const intent = await stripe.paymentIntents.create(
@@ -134,8 +147,10 @@ export async function POST() {
       await prisma.padelPairing.update({
         where: { id: pairing.id },
         data: {
-          guaranteeStatus: "REQUIRES_ACTION",
-          graceUntilAt: computeGraceUntil(now),
+          guaranteeStatus: "FAILED",
+          lifecycleStatus: "CANCELLED_INCOMPLETE",
+          pairingStatus: PadelPairingStatus.CANCELLED,
+          graceUntilAt: null,
         },
       });
     }

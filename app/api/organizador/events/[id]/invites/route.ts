@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
-import { isOrgAdminOrAbove } from "@/lib/organizerPermissions";
+import { canManageEvents } from "@/lib/organizerPermissions";
 import { normalizeEmail } from "@/lib/utils/email";
 import { resolveUserIdentifier } from "@/lib/userResolver";
 import { validateUsername } from "@/lib/username";
@@ -70,7 +70,7 @@ async function ensureInviteAccess(userId: string, eventId: number) {
     where: { organizerId_userId: { organizerId: event.organizerId, userId } },
     select: { role: true },
   });
-  if (!membership || !isOrgAdminOrAbove(membership.role)) {
+  if (!membership || !canManageEvents(membership.role)) {
     return { ok: false as const, status: 403, error: "FORBIDDEN" };
   }
 

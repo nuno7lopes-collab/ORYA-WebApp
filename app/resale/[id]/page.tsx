@@ -119,7 +119,7 @@ export default function ResaleCheckoutPage() {
   } as const;
 
   return (
-    <div className="min-h-screen orya-body-bg text-white px-4 py-10 flex justify-center">
+    <div className="min-h-screen text-white px-4 py-10 flex justify-center">
       <div className="orya-page-width flex justify-center">
         <div className="w-full max-w-xl space-y-6">
           <div>

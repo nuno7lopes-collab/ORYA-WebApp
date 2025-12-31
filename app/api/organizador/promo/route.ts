@@ -79,13 +79,6 @@ export async function GET(req: NextRequest) {
     const promoIds = promoCodes.map((p) => p.id);
     const promoCodesList = promoCodes.map((p) => p.code);
 
-    const validRedemptionSummaryIds = new Set<number>();
-    promoCodes.forEach((p) => {
-      p.redemptions.forEach((r) => {
-        if (r.saleSummaryId) validRedemptionSummaryIds.add(r.saleSummaryId);
-      });
-    });
-
     const lines = await prisma.saleLine.findMany({
       where: {
         eventId: { in: eventIds },
@@ -93,9 +86,6 @@ export async function GET(req: NextRequest) {
           { promoCodeId: { in: promoIds } },
           { promoCodeSnapshot: { in: promoCodesList } },
         ],
-        ...(validRedemptionSummaryIds.size > 0
-          ? { saleSummaryId: { in: Array.from(validRedemptionSummaryIds) } }
-          : {}),
       },
       select: {
         promoCodeId: true,
@@ -241,9 +231,6 @@ export async function POST(req: NextRequest) {
       autoApply,
       minQuantity,
       minTotalCents,
-      name,
-      description,
-      minCartValueCents,
     } = body as {
       code?: string;
       type?: "PERCENTAGE" | "FIXED";
@@ -257,9 +244,6 @@ export async function POST(req: NextRequest) {
       autoApply?: boolean;
       minQuantity?: number | null;
       minTotalCents?: number | null;
-      name?: string | null;
-      description?: string | null;
-      minCartValueCents?: number | null;
     };
 
     const cleanCode = (code || "").trim();

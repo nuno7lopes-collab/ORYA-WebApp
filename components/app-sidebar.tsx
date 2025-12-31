@@ -5,6 +5,11 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 import { SidebarRail } from "@/components/ui/sidebar";
 import { supabaseBrowser } from "@/lib/supabaseBrowser";
+import {
+  ORGANIZATION_CATEGORY_LABELS,
+  normalizeOrganizationCategory,
+  type OrganizationCategory,
+} from "@/lib/organizationCategories";
 import { cn } from "@/lib/utils";
 import { CTA_PRIMARY } from "@/app/organizador/dashboardUi";
 
@@ -42,7 +47,6 @@ type UserInfo = {
 };
 
 type ObjectiveTab = "create" | "manage" | "promote" | "analyze";
-type OrgCategory = "EVENTOS" | "PADEL" | "VOLUNTARIADO";
 
 const OBJECTIVE_TABS = ["create", "manage", "promote", "analyze"] as const;
 
@@ -56,38 +60,17 @@ const mapTabToObjective = (tab?: string | null): ObjectiveTab => {
   switch (tab) {
     case "overview":
       return "create";
-    case "events":
-    case "padel":
-    case "staff":
-      return "manage";
-    case "marketing":
-      return "promote";
-    case "sales":
-    case "finance":
-    case "invoices":
-      return "analyze";
     default:
       return "create";
   }
 };
 
-const normalizeOrganizationCategory = (category?: string | null): OrgCategory => {
-  const normalized = category?.toUpperCase() ?? "";
-  if (normalized === "PADEL") return "PADEL";
-  if (normalized === "VOLUNTARIADO") return "VOLUNTARIADO";
-  return "EVENTOS";
-};
-
-const CATEGORY_LABELS: Record<OrgCategory, string> = {
-  EVENTOS: "Eventos",
-  PADEL: "Padel",
-  VOLUNTARIADO: "Voluntariado",
-};
-
-const CATEGORY_CTA: Record<OrgCategory, { label: string; href: string }> = {
+const CATEGORY_CTA: Record<OrganizationCategory, { label: string; href: string }> = {
   EVENTOS: { label: "Criar evento", href: "/organizador/eventos/novo" },
   PADEL: { label: "Criar evento", href: "/organizador/eventos/novo?preset=padel" },
-  VOLUNTARIADO: { label: "Criar evento", href: "/organizador/eventos/novo?preset=voluntariado" },
+  // "Reserva" é o ato; aqui o CTA cria serviços.
+  RESERVAS: { label: "Criar serviço", href: "/organizador/reservas/novo" },
+  CLUBS: { label: "Criar clube", href: "/em-breve" },
 };
 
 function buildNav() {
@@ -142,6 +125,8 @@ export function AppSidebar({
     if (pathname?.startsWith("/organizador/pagamentos/invoices")) return "analyze";
     if (pathname?.startsWith("/organizador/tournaments/") && pathname?.endsWith("/finance")) return "analyze";
     if (pathname?.startsWith("/organizador/tournaments/")) return "manage";
+    if (pathname?.startsWith("/organizador/reservas/novo")) return "create";
+    if (pathname?.startsWith("/organizador/reservas")) return "manage";
     if (pathname?.startsWith("/organizador/eventos/novo") || pathname?.startsWith("/organizador/padel/torneios/novo")) return "create";
     if (pathname?.startsWith("/organizador/eventos/")) return "manage";
     if (pathname?.startsWith("/organizador/padel")) return "manage";
@@ -218,8 +203,9 @@ export function AppSidebar({
   const orgCategoryValue =
     orgCurrent?.organizer.organizationCategory ?? activeOrg?.organizationCategory ?? null;
   const orgCategory = normalizeOrganizationCategory(orgCategoryValue);
-  const categoryLabel = CATEGORY_LABELS[orgCategory];
+  const categoryLabel = ORGANIZATION_CATEGORY_LABELS[orgCategory];
   const categoryCta = CATEGORY_CTA[orgCategory];
+  const manageHref = orgCategory === "RESERVAS" ? "/organizador/reservas" : baseTabHref("manage");
 
   return (
     <>
@@ -319,7 +305,7 @@ export function AppSidebar({
         <Link href={baseTabHref("create")} className={linkClass(currentObjective === "create")} data-tour="overview">
           <span>Resumo</span>
         </Link>
-        <Link href={baseTabHref("manage")} className={linkClass(currentObjective === "manage")}>
+        <Link href={manageHref} className={linkClass(currentObjective === "manage")}>
           <span>Gerir</span>
         </Link>
         <Link href={baseTabHref("promote")} className={linkClass(currentObjective === "promote")} data-tour="marketing">

@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
-import { canReschedule, canNotify } from "@/domain/tournaments/schedulePolicy";
+import { canReschedule } from "@/domain/tournaments/schedulePolicy";
+import { readNumericParam } from "@/lib/routeParams";
 
 async function ensureOrganizerAccess(userId: string, eventId: number) {
   const evt = await prisma.event.findUnique({ where: { id: eventId }, select: { organizerId: true } });
   if (!evt?.organizerId) return false;
   const member = await prisma.organizerMember.findFirst({
-    where: { organizerId: evt.organizerId, userId, role: { in: ["OWNER", "CO_OWNER", "ADMIN"] } },
+    where: { organizerId: evt.organizerId, userId, role: { in: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"] } },
     select: { id: true },
   });
   return Boolean(member);
@@ -16,8 +17,8 @@ async function ensureOrganizerAccess(userId: string, eventId: number) {
 type ScheduleItem = { matchId: number; courtId?: number | null; startAt?: string | null };
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
-  const tournamentId = Number(params?.id);
-  if (!Number.isFinite(tournamentId)) return NextResponse.json({ ok: false, error: "INVALID_ID" }, { status: 400 });
+  const tournamentId = readNumericParam(params?.id, req, "tournaments");
+  if (tournamentId === null) return NextResponse.json({ ok: false, error: "INVALID_ID" }, { status: 400 });
 
   const supabase = await createSupabaseServer();
   const { data, error } = await supabase.auth.getUser();
@@ -55,7 +56,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         const newStart = entry.startAt ? new Date(entry.startAt) : null;
         const newCourt = entry.courtId ?? null;
 
-        const canEdit = canReschedule(m.status, m.startAt, newStart);
+        const canEdit = canReschedule(m.status, newStart);
         if (!canEdit) {
           throw new Error("START_AT_IN_PAST_OR_LOCKED");
         }

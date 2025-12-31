@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 export type TabKey =
@@ -26,10 +25,6 @@ const TABS: Tab[] = [
   { id: "padel", label: "Padel" },
   { id: "settings", label: "Definições" },
 ];
-
-function tabHref(id: TabKey) {
-  return `/organizador?tab=${id}`;
-}
 
 export function DashboardTabs() {
   const router = useRouter();

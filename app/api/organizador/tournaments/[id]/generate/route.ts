@@ -9,7 +9,7 @@ async function isOrganizerUser(userId: string, organizerId: number) {
     where: {
       organizerId,
       userId,
-      role: { in: ["OWNER", "CO_OWNER", "ADMIN"] },
+      role: { in: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"] },
     },
     select: { id: true },
   });

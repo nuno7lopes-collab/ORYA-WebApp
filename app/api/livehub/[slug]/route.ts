@@ -5,6 +5,7 @@ import { OrganizerMemberRole } from "@prisma/client";
 import { DEFAULT_ORGANIZATION_CATEGORY } from "@/lib/organizationCategories";
 import { resolveLiveHubModules } from "@/lib/liveHubConfig";
 import { summarizeMatchStatus, computeStandingsForGroup } from "@/domain/tournaments/structure";
+import { type TieBreakRule } from "@/domain/tournaments/standings";
 import { getTournamentStructure } from "@/domain/tournaments/structureData";
 import { getWinnerSideFromScore, type MatchScorePayload } from "@/domain/tournaments/matchRules";
 import { canScanTickets } from "@/lib/organizerAccess";
@@ -167,19 +168,13 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ slu
       inviteIdentifiers.length > 0 ? { targetIdentifier: { in: inviteIdentifiers } } : undefined,
     ].filter(Boolean) as Array<Record<string, unknown>>,
   };
-  const [publicInviteMatch, participantInviteMatch] =
+  const participantInviteMatch =
     userId || inviteIdentifiers.length > 0
-      ? await Promise.all([
-          prisma.eventInvite.findFirst({
-            where: { ...inviteWhere, scope: "PUBLIC" },
-            select: { id: true },
-          }),
-          prisma.eventInvite.findFirst({
-            where: { ...inviteWhere, scope: "PARTICIPANT" },
-            select: { id: true },
-          }),
-        ])
-      : [null, null];
+      ? await prisma.eventInvite.findFirst({
+          where: { ...inviteWhere, scope: "PARTICIPANT" },
+          select: { id: true },
+        })
+      : null;
   const isParticipantInvited = Boolean(participantInviteMatch);
 
   const publicAccessMode = event.publicAccessMode ?? (event.inviteOnly ? "INVITE" : "OPEN");
@@ -224,7 +219,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ slu
   const liveHubModules = premiumActive && customModules?.length ? customModules : modules;
 
   let tournamentPayload: any = null;
-  let pairings: Record<
+  const pairings: Record<
     number,
     {
       id: number;
@@ -252,9 +247,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ slu
         ? (config as Record<string, unknown>).featuredMatchId
         : null;
     if (structure) {
-      const tieBreakRules = Array.isArray(structure.tieBreakRules)
-        ? (structure.tieBreakRules as string[])
-        : ["WINS", "SET_DIFF", "GAME_DIFF", "HEAD_TO_HEAD", "RANDOM"];
+      const tieBreakRules: TieBreakRule[] = Array.isArray(structure.tieBreakRules)
+        ? (structure.tieBreakRules as TieBreakRule[])
+        : (["WINS", "SET_DIFF", "GAME_DIFF", "HEAD_TO_HEAD", "RANDOM"] as TieBreakRule[]);
 
       const buildMatch = (m: any) => ({
         id: m.id,

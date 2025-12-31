@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { ensureLegacyOrganizerMemberships, getActiveOrganizerForUser } from "@/lib/organizerContext";
+import { getActiveOrganizerForUser } from "@/lib/organizerContext";
 import OrganizationsHubClient from "../../organizations/OrganizationsHubClient";
 import { cookies } from "next/headers";
 
@@ -35,47 +35,28 @@ export default async function OrganizationsHubPage() {
 
   let orgs: OrgPayload[] = [];
 
-  try {
-    let memberships = await prisma.organizerMember.findMany({
-      where: { userId: user.id },
-      include: { organizer: true },
-      orderBy: [{ lastUsedAt: "desc" }, { createdAt: "asc" }],
-    });
-    if (memberships.length === 0) {
-      const legacyCount = await ensureLegacyOrganizerMemberships(user.id);
-      if (legacyCount > 0) {
-        memberships = await prisma.organizerMember.findMany({
-          where: { userId: user.id },
-          include: { organizer: true },
-          orderBy: [{ lastUsedAt: "desc" }, { createdAt: "asc" }],
-        });
-      }
-    }
+  const memberships = await prisma.organizerMember.findMany({
+    where: { userId: user.id },
+    include: { organizer: true },
+    orderBy: [{ lastUsedAt: "desc" }, { createdAt: "asc" }],
+  });
 
-    orgs = memberships
-      .filter((m) => m.organizer)
-      .map((m) => ({
-        organizerId: m.organizerId,
-        role: m.role,
-        lastUsedAt: m.lastUsedAt ? m.lastUsedAt.toISOString() : null,
-        organizer: {
-          id: m.organizer!.id,
-          username: m.organizer!.username,
-          publicName: m.organizer!.publicName,
-          businessName: m.organizer!.businessName,
-          city: m.organizer!.city,
-          entityType: m.organizer!.entityType,
-          status: m.organizer!.status,
-        },
-      }));
-  } catch (err) {
-    const msg =
-      typeof err === "object" && err && "message" in err ? String((err as { message?: unknown }).message) : "";
-    // Se a tabela ainda não existir em dev, deixa orgs = []
-    if (!(msg.includes("does not exist") || msg.includes("organizer_members"))) {
-      throw err;
-    }
-  }
+  orgs = memberships
+    .filter((m) => m.organizer)
+    .map((m) => ({
+      organizerId: m.organizerId,
+      role: m.role,
+      lastUsedAt: m.lastUsedAt ? m.lastUsedAt.toISOString() : null,
+      organizer: {
+        id: m.organizer!.id,
+        username: m.organizer!.username,
+        publicName: m.organizer!.publicName,
+        businessName: m.organizer!.businessName,
+        city: m.organizer!.city,
+        entityType: m.organizer!.entityType,
+        status: m.organizer!.status,
+      },
+    }));
 
   // Se não houver nenhuma organização, envia para o onboarding
   if (orgs.length === 0) {

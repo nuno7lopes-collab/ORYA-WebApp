@@ -9,8 +9,6 @@ type OrganizerRef = {
 
 type OrganizerPremiumModules = {
   inscricoes?: boolean;
-  loja?: boolean;
-  galeria?: boolean;
 };
 
 type LiveHubMatchOrder = "ONEVONE";
@@ -30,7 +28,7 @@ const CUSTOM_PREMIUM_CONFIGS: OrganizerPremiumConfig[] = [
     organizerId: 23,
     username: "onevone",
     liveHubModules: ["HERO", "VIDEO", "NOW_PLAYING", "NEXT_MATCHES", "RESULTS", "BRACKET", "SPONSORS"],
-    profileModules: { inscricoes: true, loja: true, galeria: true },
+    profileModules: { inscricoes: true },
     liveHubMatchOrder: "ONEVONE",
   },
 ];

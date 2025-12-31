@@ -23,9 +23,12 @@ async function ensurePlayerProfile(params: { organizerId: number; userId: string
     select: { id: true },
   });
   if (existing) return existing.id;
-  const profile = await prisma.profile.findUnique({ where: { id: userId }, select: { fullName: true, email: true } });
+  const [profile, authUser] = await Promise.all([
+    prisma.profile.findUnique({ where: { id: userId }, select: { fullName: true } }),
+    prisma.users.findUnique({ where: { id: userId }, select: { email: true } }),
+  ]);
   const name = profile?.fullName?.trim() || "Jogador Padel";
-  const email = profile?.email || null;
+  const email = authUser?.email ?? null;
   const created = await prisma.padelPlayerProfile.create({
     data: {
       organizerId,
@@ -58,10 +61,14 @@ export async function POST(req: NextRequest) {
     include: { slots: true, event: { select: { organizerId: true } } },
   });
   if (!pairing) return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
+  const organizerId = pairing.event?.organizerId ?? null;
+  if (!organizerId) {
+    return NextResponse.json({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+  }
   if (pairing.player2UserId) {
     return NextResponse.json({ ok: false, error: "INVITE_ALREADY_USED" }, { status: 409 });
   }
-  if (pairing.deadlineAt && pairing.deadlineAt.getTime() < Date.now()) {
+  if (pairing.payment_mode === PadelPaymentMode.SPLIT && pairing.deadlineAt && pairing.deadlineAt.getTime() < Date.now()) {
     return NextResponse.json({ ok: false, error: "PAIRING_EXPIRED" }, { status: 410 });
   }
   if (
@@ -155,7 +162,7 @@ export async function POST(req: NextRequest) {
     const partnerAcceptedAt = new Date();
     const partnerPaidAt =
       pendingSlot.paymentStatus === PadelPairingPaymentStatus.PAID ? new Date() : null;
-    const playerProfileId = await ensurePlayerProfile({ organizerId: pairing.event.organizerId, userId: user.id });
+    const playerProfileId = await ensurePlayerProfile({ organizerId, userId: user.id });
 
     const { pairing: updated, shouldEnsureEntries } = await prisma.$transaction(async (tx) => {
       const updatedPairing = await tx.padelPairing.update({

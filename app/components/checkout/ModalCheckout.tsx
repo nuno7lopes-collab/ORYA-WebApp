@@ -1,15 +1,11 @@
 "use client";
 
 import { motion, AnimatePresence } from "framer-motion";
-import { ReactNode, useEffect } from "react";
+import { useEffect } from "react";
 import { useCheckout } from "./contextoCheckout";
 import Step1Bilhete from "./Step1Bilhete";
 import Step2Pagamento from "./Step2Pagamento";
 import Step3Sucesso from "./Step3Sucesso";
-
-type ModalCheckoutProps = {
-  children: ReactNode;
-};
 
 export default function ModalCheckout() {
   const { isOpen, passo, fecharCheckout, irParaPasso } = useCheckout();

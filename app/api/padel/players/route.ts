@@ -1,7 +1,7 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
-import { OrganizerMemberRole } from "@prisma/client";
+import { OrganizerMemberRole, PadelPreferredSide } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizerForUser } from "@/lib/organizerContext";
@@ -57,7 +57,11 @@ export async function POST(req: NextRequest) {
   const phone = typeof body.phone === "string" ? body.phone.trim() : null;
   const gender = typeof body.gender === "string" ? body.gender.trim() : null;
   const level = typeof body.level === "string" ? body.level.trim() : null;
-  const preferredSide = typeof body.preferredSide === "string" ? body.preferredSide.trim().toUpperCase() : null;
+  const preferredSideRaw = typeof body.preferredSide === "string" ? body.preferredSide.trim().toUpperCase() : null;
+  const preferredSide =
+    preferredSideRaw && Object.values(PadelPreferredSide).includes(preferredSideRaw as PadelPreferredSide)
+      ? (preferredSideRaw as PadelPreferredSide)
+      : null;
   const clubName = typeof body.clubName === "string" ? body.clubName.trim() : null;
   const birthDate = typeof body.birthDate === "string" && body.birthDate.trim() ? new Date(body.birthDate) : null;
   const isActive = typeof body.isActive === "boolean" ? body.isActive : true;

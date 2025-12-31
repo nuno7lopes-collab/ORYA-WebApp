@@ -66,6 +66,7 @@ export async function POST(req: NextRequest) {
     const expiresAt = new Date(now + DEFAULT_EXPIRATION_MS);
     const token = randomUUID();
 
+    const ip = req.headers.get("x-forwarded-for") ?? req.headers.get("x-real-ip") ?? null;
     const request = await prisma.$transaction(async (tx) => {
       await tx.organizerOfficialEmailRequest.updateMany({
         where: { organizerId, status: STATUS_PENDING },
@@ -93,7 +94,7 @@ export async function POST(req: NextRequest) {
         actorUserId: user.id,
         action: "OFFICIAL_EMAIL_CHANGE_REQUESTED",
         metadata: { email: emailRaw, requestId: created.id },
-        ip: req.ip ?? null,
+        ip,
         userAgent: req.headers.get("user-agent"),
       });
 

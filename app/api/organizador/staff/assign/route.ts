@@ -81,6 +81,9 @@ export async function POST(req: NextRequest) {
       if (!event) {
         return NextResponse.json({ ok: false, error: "Evento não encontrado." }, { status: 404 });
       }
+      if (!event.organizerId) {
+        return NextResponse.json({ ok: false, error: "Evento sem organizador." }, { status: 400 });
+      }
       organizerId = event.organizerId;
       if (event.status !== "PUBLISHED" || (event.endsAt && event.endsAt < new Date())) {
         return NextResponse.json({ ok: false, error: "Evento inativo para atribuir staff." }, { status: 400 });

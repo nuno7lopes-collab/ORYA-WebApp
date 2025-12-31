@@ -23,33 +23,35 @@ export async function ensureEntriesForConfirmedPairing(pairingId: number) {
   const entryIdsByUser: Record<string, number> = {};
 
   for (const entry of entriesData) {
-    const upserted = await prisma.tournamentEntry.upsert({
-      where: {
-        eventId_categoryId_userId: {
-          eventId: pairing.eventId,
-          categoryId: pairing.categoryId ?? null,
-          userId: entry.userId,
-        },
-      },
-      update: {
-        status: TournamentEntryStatus.CONFIRMED,
-        role: entry.role,
-        pairingId: pairing.id,
-        ownerUserId: entry.userId,
-        ownerIdentityId: null,
-        categoryId: pairing.categoryId ?? null,
-      },
-      create: {
-        eventId: pairing.eventId,
-        categoryId: pairing.categoryId ?? null,
-        userId: entry.userId,
-        pairingId: pairing.id,
-        role: entry.role,
-        status: TournamentEntryStatus.CONFIRMED,
-        ownerUserId: entry.userId,
-        ownerIdentityId: null,
-      },
+    const categoryId = pairing.categoryId ?? null;
+    const existing = await prisma.tournamentEntry.findFirst({
+      where: { eventId: pairing.eventId, userId: entry.userId, categoryId },
+      select: { id: true },
     });
+    const upserted = existing
+      ? await prisma.tournamentEntry.update({
+          where: { id: existing.id },
+          data: {
+            status: TournamentEntryStatus.CONFIRMED,
+            role: entry.role,
+            pairingId: pairing.id,
+            ownerUserId: entry.userId,
+            ownerIdentityId: null,
+            categoryId,
+          },
+        })
+      : await prisma.tournamentEntry.create({
+          data: {
+            eventId: pairing.eventId,
+            categoryId,
+            userId: entry.userId,
+            pairingId: pairing.id,
+            role: entry.role,
+            status: TournamentEntryStatus.CONFIRMED,
+            ownerUserId: entry.userId,
+            ownerIdentityId: null,
+          },
+        });
     entryIdsByUser[entry.userId] = upserted.id;
   }
 

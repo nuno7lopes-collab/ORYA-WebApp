@@ -14,8 +14,7 @@ export type NotificationTemplate =
   | "NEXT_OPPONENT"
   | "MATCH_CHANGED"
   | "ELIMINATED"
-  | "CHAMPION"
-  | "BROADCAST";
+  | "CHAMPION";
 
 export type NotificationPayload = Record<string, unknown>;
 

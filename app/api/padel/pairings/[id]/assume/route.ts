@@ -4,11 +4,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { PadelPaymentMode } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
+import { readNumericParam } from "@/lib/routeParams";
 
 // Capitão assume o resto (SPLIT): apenas validação; checkout deve ser iniciado no cliente.
-export async function POST(_: NextRequest, { params }: { params: { id: string } }) {
-  const pairingId = Number(params?.id);
-  if (!Number.isFinite(pairingId)) return NextResponse.json({ ok: false, error: "INVALID_ID" }, { status: 400 });
+export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+  const pairingId = readNumericParam(params?.id, req, "pairings");
+  if (pairingId === null) return NextResponse.json({ ok: false, error: "INVALID_ID" }, { status: 400 });
 
   const supabase = await createSupabaseServer();
   const {

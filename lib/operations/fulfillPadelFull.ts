@@ -192,8 +192,9 @@ export async function fulfillPadelFullIntent(intent: IntentLike): Promise<boolea
         : ownerEmailNormalized
           ? `email:${ownerEmailNormalized}`
           : "unknown";
+    const entitlementPurchaseId = sale.purchaseId ?? sale.paymentIntentId ?? intent.id;
     const entitlementBase = {
-      purchaseId: sale.purchaseId,
+      purchaseId: entitlementPurchaseId,
       saleLineId: saleLine.id,
       ownerKey,
       ownerUserId: ownerUserId ?? null,
@@ -211,7 +212,7 @@ export async function fulfillPadelFullIntent(intent: IntentLike): Promise<boolea
     await tx.entitlement.upsert({
       where: {
         purchaseId_saleLineId_lineItemIndex_ownerKey_type: {
-          purchaseId: sale.purchaseId,
+          purchaseId: entitlementPurchaseId,
           saleLineId: saleLine.id,
           lineItemIndex: 0,
           ownerKey,
@@ -225,7 +226,7 @@ export async function fulfillPadelFullIntent(intent: IntentLike): Promise<boolea
     await tx.entitlement.upsert({
       where: {
         purchaseId_saleLineId_lineItemIndex_ownerKey_type: {
-          purchaseId: sale.purchaseId,
+          purchaseId: entitlementPurchaseId,
           saleLineId: saleLine.id,
           lineItemIndex: 1,
           ownerKey,

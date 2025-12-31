@@ -2,7 +2,7 @@ import Link from "next/link";
 
 export default function NotFound() {
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top,_#1a1030_0,_#050509_45%,_#02020a_100%)] text-white flex items-center justify-center px-4">
+    <main className="min-h-screen text-white flex items-center justify-center px-4">
       <div className="max-w-lg w-full rounded-3xl border border-white/10 bg-black/50 backdrop-blur-2xl px-6 py-8 md:px-8 md:py-10 shadow-[0_24px_80px_rgba(0,0,0,0.75)] space-y-6">
         <div className="flex items-center gap-3">
           <span className="inline-flex h-9 w-9 items-center justify-center rounded-2xl bg-gradient-to-tr from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] text-[11px] font-extrabold tracking-[0.18em]">

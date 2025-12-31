@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { stripe } from "@/lib/stripeClient";
-import type { RefundReason } from "@prisma/client";
+import type { RefundReason, Prisma } from "@prisma/client";
 import { refundKey } from "@/lib/stripe/idempotency";
 import { logFinanceError } from "@/lib/observability/finance";
 
@@ -11,7 +11,7 @@ export async function refundPurchase(params: {
   eventId: number;
   reason: RefundReason;
   refundedBy?: string | null;
-  auditPayload?: Record<string, unknown>;
+  auditPayload?: Prisma.InputJsonValue;
 }) {
   const { purchaseId, paymentIntentId, eventId, reason, refundedBy, auditPayload } = params;
   const dedupeKey = refundKey(purchaseId);

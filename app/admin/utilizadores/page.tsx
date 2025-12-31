@@ -84,7 +84,7 @@ export default async function AdminUsersPage({ searchParams }: AdminUsersPagePro
   ]);
 
   return (
-    <main className="orya-body-bg min-h-screen text-white pb-16">
+    <main className="min-h-screen text-white pb-16">
       {/* Top bar */}
       <header className="border-b border-white/10 bg-black/50 backdrop-blur-xl">
         <div className="max-w-6xl mx-auto px-5 py-4 flex items-center justify-between gap-3">

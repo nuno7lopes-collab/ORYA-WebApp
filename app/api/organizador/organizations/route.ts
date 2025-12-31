@@ -3,7 +3,6 @@ import { prisma } from "@/lib/prisma";
 import { OrganizerStatus, OrganizerMemberRole } from "@prisma/client";
 import { normalizeAndValidateUsername, setUsernameForOwner, UsernameTakenError } from "@/lib/globalUsernames";
 import { requireUser } from "@/lib/auth/requireUser";
-import { ensureLegacyOrganizerMemberships } from "@/lib/organizerContext";
 import {
   DEFAULT_ORGANIZATION_CATEGORY,
   DEFAULT_ORGANIZATION_MODULES,
@@ -16,21 +15,11 @@ export async function GET() {
   try {
     const user = await requireUser();
 
-    let memberships = await prisma.organizerMember.findMany({
+    const memberships = await prisma.organizerMember.findMany({
       where: { userId: user.id },
       include: { organizer: true },
       orderBy: [{ lastUsedAt: "desc" }, { createdAt: "asc" }],
     });
-    if (memberships.length === 0) {
-      const legacyCount = await ensureLegacyOrganizerMemberships(user.id);
-      if (legacyCount > 0) {
-        memberships = await prisma.organizerMember.findMany({
-          where: { userId: user.id },
-          include: { organizer: true },
-          orderBy: [{ lastUsedAt: "desc" }, { createdAt: "asc" }],
-        });
-      }
-    }
 
     const organizerIds = (memberships || [])
       .map((m) => m.organizerId)
@@ -125,7 +114,13 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const validatedUsername = typeof username === "string" ? normalizeAndValidateUsername(username) : { ok: false, error: "Escolhe um username para a organização." };
+    if (typeof username !== "string") {
+      return NextResponse.json(
+        { ok: false, error: "Escolhe um username para a organização." },
+        { status: 400 },
+      );
+    }
+    const validatedUsername = normalizeAndValidateUsername(username);
 
     const organizationCategoryProvided = Object.prototype.hasOwnProperty.call(body, "organizationCategory");
     const modulesProvided = Object.prototype.hasOwnProperty.call(body, "modules");
@@ -136,7 +131,7 @@ export async function POST(req: NextRequest) {
 
     if (organizationCategoryProvided && !organizationCategory) {
       return NextResponse.json(
-        { ok: false, error: "organizationCategory inválido. Usa EVENTOS, PADEL ou VOLUNTARIADO." },
+        { ok: false, error: "organizationCategory inválido. Usa EVENTOS, PADEL, RESERVAS ou CLUBS." },
         { status: 400 },
       );
     }

@@ -18,7 +18,7 @@ export default async function BecomeOrganizerPage() {
   }
 
   return (
-    <div className="orya-body-bg min-h-screen px-4 py-12 text-white">
+    <div className="min-h-screen px-4 py-12 text-white">
       <div className="mx-auto max-w-[1160px] space-y-10">
         <div className="flex items-center justify-start">
           <BackLink hrefFallback="/explorar" label="Voltar" />

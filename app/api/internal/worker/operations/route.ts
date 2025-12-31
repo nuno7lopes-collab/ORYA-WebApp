@@ -6,13 +6,12 @@ import Stripe from "stripe";
 import { prisma } from "@/lib/prisma";
 import { stripe } from "@/lib/stripeClient";
 import { handleRefund } from "@/app/api/stripe/webhook/route";
-import { OperationRecord, OperationType } from "./types";
+import { OperationType } from "../types";
 import { refundPurchase } from "@/lib/refunds/refundService";
 import { PaymentEventSource, RefundReason, EntitlementType, EntitlementStatus, Prisma } from "@prisma/client";
 import { FulfillPayload } from "@/lib/operations/types";
 import { fulfillPaidIntent } from "@/lib/operations/fulfillPaid";
 import { markSaleDisputed } from "@/domain/finance/disputes";
-import { enqueueOperation } from "@/lib/operations/enqueue";
 import {
   sendPurchaseConfirmationEmail,
   sendEntitlementDeliveredEmail,
@@ -24,6 +23,7 @@ import { fulfillResaleIntent } from "@/lib/operations/fulfillResale";
 import { fulfillPadelSplitIntent } from "@/lib/operations/fulfillPadelSplit";
 import { fulfillPadelSecondCharge } from "@/lib/operations/fulfillPadelSecondCharge";
 import { fulfillPadelFullIntent } from "@/lib/operations/fulfillPadelFull";
+import { fulfillServiceBookingIntent } from "@/lib/operations/fulfillServiceBooking";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { createNotification } from "@/lib/notifications";
 import { NotificationType } from "@prisma/client";
@@ -190,7 +190,7 @@ async function processSendEmailOutbox(op: OperationRecord) {
     throw new Error("SEND_EMAIL_OUTBOX missing fields");
   }
 
-  const outbox = await prisma.emailOutbox.upsert({
+  await prisma.emailOutbox.upsert({
     where: { dedupeKey },
     update: {},
     create: {
@@ -377,16 +377,17 @@ async function processOperation(op: OperationRecord) {
 }
 
 async function performPaymentFulfillment(intent: Stripe.PaymentIntent, stripeEventId?: string) {
+  const handledService = await fulfillServiceBookingIntent(intent as Stripe.PaymentIntent);
   const handledResale = await fulfillResaleIntent(intent as Stripe.PaymentIntent);
   const handledPadelSplit = await fulfillPadelSplitIntent(intent as Stripe.PaymentIntent, null);
   const handledPadelFull = await fulfillPadelFullIntent(intent as Stripe.PaymentIntent);
   const handledSecondCharge = await fulfillPadelSecondCharge(intent as Stripe.PaymentIntent);
   const handledPaid =
-    handledResale || handledPadelSplit || handledPadelFull || handledSecondCharge
+    handledService || handledResale || handledPadelSplit || handledPadelFull || handledSecondCharge
       ? true
       : await fulfillPaidIntent(intent as Stripe.PaymentIntent, stripeEventId);
 
-  return handledResale || handledPadelSplit || handledPadelFull || handledSecondCharge || handledPaid;
+  return handledService || handledResale || handledPadelSplit || handledPadelFull || handledSecondCharge || handledPaid;
 }
 
 async function processStripeEvent(op: OperationRecord) {

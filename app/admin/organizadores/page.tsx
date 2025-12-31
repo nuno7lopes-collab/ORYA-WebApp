@@ -242,7 +242,7 @@ export default function AdminOrganizadoresPage() {
   const hasOrganizers = filteredOrganizers.length > 0;
 
   return (
-    <main className="orya-body-bg min-h-screen w-full text-white pb-16">
+    <main className="min-h-screen w-full text-white pb-16">
       <header className="border-b border-white/10 bg-black/60 backdrop-blur-xl">
         <div className="max-w-6xl mx-auto px-5 py-4 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">

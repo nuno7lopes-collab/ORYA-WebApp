@@ -5,13 +5,13 @@ import { OrganizerMemberRole } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizerForUser } from "@/lib/organizerContext";
+import { readNumericParam } from "@/lib/routeParams";
 
 const allowedRoles: OrganizerMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
 
-export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
-  const clubId = Number(id);
-  if (!Number.isFinite(clubId)) return NextResponse.json({ ok: false, error: "INVALID_CLUB" }, { status: 400 });
+export async function GET(req: NextRequest) {
+  const clubId = readNumericParam(undefined, req, "clubs");
+  if (clubId === null) return NextResponse.json({ ok: false, error: "INVALID_CLUB" }, { status: 400 });
 
   const supabase = await createSupabaseServer();
   const { data: { user } } = await supabase.auth.getUser();
@@ -31,10 +31,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   return NextResponse.json({ ok: true, items: courts }, { status: 200 });
 }
 
-export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
-  const clubId = Number(id);
-  if (!Number.isFinite(clubId)) return NextResponse.json({ ok: false, error: "INVALID_CLUB" }, { status: 400 });
+export async function POST(req: NextRequest) {
+  const clubId = readNumericParam(undefined, req, "clubs");
+  if (clubId === null) return NextResponse.json({ ok: false, error: "INVALID_CLUB" }, { status: 400 });
 
   const supabase = await createSupabaseServer();
   const { data: { user } } = await supabase.auth.getUser();
@@ -98,10 +97,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 }
 
 // Hard delete court
-export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
-  const clubId = Number(id);
-  if (!Number.isFinite(clubId)) return NextResponse.json({ ok: false, error: "INVALID_CLUB" }, { status: 400 });
+export async function DELETE(req: NextRequest) {
+  const clubId = readNumericParam(undefined, req, "clubs");
+  if (clubId === null) return NextResponse.json({ ok: false, error: "INVALID_CLUB" }, { status: 400 });
 
   const supabase = await createSupabaseServer();
   const { data: { user } } = await supabase.auth.getUser();

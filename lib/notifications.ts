@@ -45,14 +45,9 @@ function sanitizeActor(
 ) {
   if (!actor || typeof actor !== "object") return actor;
   const isSelf = options.viewerId && actor.id === options.viewerId;
-  if (!options.isPrivate || isSelf) return actor;
-  return {
-    id: actor.id ?? null,
-    username: actor.username ?? null,
-    avatarUrl: actor.avatarUrl ?? null,
-    fullName: null,
-    email: null,
-  };
+  if (isSelf) return actor;
+  if (!("email" in actor)) return actor;
+  return { ...actor, email: null };
 }
 
 function sanitizePayload(payload: any, opts: { senderVisibility?: "PUBLIC" | "PRIVATE"; viewerId?: string | null }) {
@@ -105,27 +100,18 @@ export async function getNotificationPrefs(userId: string) {
   const existing = await prisma.notificationPreference.findUnique({ where: { userId } });
   if (existing) return existing;
 
-  const profile = await prisma.profile.findUnique({
-    where: { id: userId },
-    select: {
-      allowEmailNotifications: true,
-      allowEventReminders: true,
-      allowFriendRequests: true,
-    },
-  });
-
   const defaults = {
     userId,
-    allowEmailNotifications: profile?.allowEmailNotifications ?? true,
-    allowEventReminders: profile?.allowEventReminders ?? true,
-    allowFriendRequests: profile?.allowFriendRequests ?? true,
+    allowEmailNotifications: true,
+    allowEventReminders: true,
+    allowFriendRequests: true,
     allowSalesAlerts: true,
     allowSystemAnnouncements: true,
   };
 
   return prisma.notificationPreference.upsert({
     where: { userId },
-    update: defaults,
+    update: {},
     create: defaults,
   });
 }

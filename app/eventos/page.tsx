@@ -72,7 +72,7 @@ export default function EventosFeedPage() {
   }
 
   return (
-    <main className="min-h-screen w-full bg-[radial-gradient(circle_at_top,_#140b2a_0,_#050509_45%,_#02020a_100%)] text-white">
+    <main className="min-h-screen w-full text-white">
       {/* Top bar */}
       <header className="border-b border-white/10 bg-black/30 backdrop-blur-xl">
         <div className="orya-page-width px-6 md:px-10 py-4 flex items-center justify-between gap-4">

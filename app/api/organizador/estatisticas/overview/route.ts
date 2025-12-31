@@ -45,12 +45,6 @@ export async function GET(req: NextRequest) {
     const url = new URL(req.url);
     const range = url.searchParams.get("range") || "30d"; // 7d | 30d | all
 
-    // Confirmar que o utilizador é organizador (roles no profile)
-    const profile = await prisma.profile.findUnique({
-      where: { id: user.id },
-      select: { roles: true },
-    });
-
     const organizerId = resolveOrganizerIdFromRequest(req);
     const { organizer, membership } = await getActiveOrganizerForUser(user.id, {
       organizerId: organizerId ?? undefined,
@@ -104,19 +98,19 @@ export async function GET(req: NextRequest) {
       },
     });
 
-    let totalTickets = summaries.reduce(
+    const totalTickets = summaries.reduce(
       (acc, s) => acc + s.lines.reduce((q, l) => q + (l.quantity ?? 0), 0),
       0,
     );
-    let grossCents = summaries.reduce((acc, s) => acc + (s.subtotalCents ?? 0), 0);
-    let discountCents = summaries.reduce((acc, s) => acc + (s.discountCents ?? 0), 0);
-    let platformFeeCents = summaries.reduce(
+    const grossCents = summaries.reduce((acc, s) => acc + (s.subtotalCents ?? 0), 0);
+    const discountCents = summaries.reduce((acc, s) => acc + (s.discountCents ?? 0), 0);
+    const platformFeeCents = summaries.reduce(
       (acc, s) => acc + (s.platformFeeCents ?? 0),
       0,
     );
-    let netRevenueCents = summaries.reduce((acc, s) => acc + (s.netCents ?? 0), 0);
+    const netRevenueCents = summaries.reduce((acc, s) => acc + (s.netCents ?? 0), 0);
 
-    let eventsWithSalesCount = new Set(summaries.map((s) => s.eventId)).size;
+    const eventsWithSalesCount = new Set(summaries.map((s) => s.eventId)).size;
 
     // Contar eventos publicados do organizador (no geral, não só no período)
     const activeEventsCount = await prisma.event.count({

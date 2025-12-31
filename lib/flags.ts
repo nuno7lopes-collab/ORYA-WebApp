@@ -1,4 +1,4 @@
-export function isFlagEnabled(name: string): boolean {
+export function isFlagEnabled(_name: string): boolean {
   // Flags estão todos ativos por padrão; ficheiro mantém API para evitar refactors grandes.
   return true;
 }

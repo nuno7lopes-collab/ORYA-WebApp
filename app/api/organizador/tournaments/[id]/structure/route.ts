@@ -3,6 +3,8 @@ import { getTournamentStructure } from "@/domain/tournaments/structureData";
 import { summarizeMatchStatus, computeStandingsForGroup } from "@/domain/tournaments/structure";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
+import { type TieBreakRule } from "@/domain/tournaments/standings";
+import { readNumericParam } from "@/lib/routeParams";
 
 async function ensureOrganizerAccess(userId: string, eventId: number) {
   const evt = await prisma.event.findUnique({
@@ -14,7 +16,7 @@ async function ensureOrganizerAccess(userId: string, eventId: number) {
     where: {
       organizerId: evt.organizerId,
       userId,
-      role: { in: ["OWNER", "CO_OWNER", "ADMIN"] },
+      role: { in: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"] },
     },
     select: { id: true },
   });
@@ -22,9 +24,9 @@ async function ensureOrganizerAccess(userId: string, eventId: number) {
 }
 
 // TODO: adicionar auth de organizador/owner; neste momento retorna sempre que existe.
-export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
-  const id = Number(params?.id);
-  if (!Number.isFinite(id)) return NextResponse.json({ ok: false, error: "INVALID_ID" }, { status: 400 });
+export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+  const id = readNumericParam(params?.id, req, "tournaments");
+  if (id === null) return NextResponse.json({ ok: false, error: "INVALID_ID" }, { status: 400 });
 
   const supabase = await createSupabaseServer();
   const { data, error } = await supabase.auth.getUser();
@@ -36,9 +38,9 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
   const authorized = await ensureOrganizerAccess(data.user.id, tournament.event.id);
   if (!authorized) return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
-  const tieBreakRules = Array.isArray(tournament.tieBreakRules)
-    ? (tournament.tieBreakRules as string[])
-    : ["WINS", "SET_DIFF", "GAME_DIFF", "HEAD_TO_HEAD", "RANDOM"];
+  const tieBreakRules: TieBreakRule[] = Array.isArray(tournament.tieBreakRules)
+    ? (tournament.tieBreakRules as TieBreakRule[])
+    : (["WINS", "SET_DIFF", "GAME_DIFF", "HEAD_TO_HEAD", "RANDOM"] as TieBreakRule[]);
 
   const payload = {
     id: tournament.id,

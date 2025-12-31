@@ -26,7 +26,12 @@ export async function GET(req: NextRequest) {
     if (!organizer || !membership) {
       return NextResponse.json({ ok: false, error: "INVALID_ORGANIZER" }, { status: 400 });
     }
-    if (![OrganizerMemberRole.OWNER, OrganizerMemberRole.CO_OWNER, OrganizerMemberRole.ADMIN].includes(membership.role)) {
+    const allowedRoles: OrganizerMemberRole[] = [
+      OrganizerMemberRole.OWNER,
+      OrganizerMemberRole.CO_OWNER,
+      OrganizerMemberRole.ADMIN,
+    ];
+    if (!allowedRoles.includes(membership.role)) {
       return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 

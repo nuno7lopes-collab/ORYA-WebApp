@@ -129,6 +129,7 @@ export async function GET(req: NextRequest) {
         netCents: true,
         subtotalCents: true,
         discountCents: true,
+        platformFeeCents: true,
         currency: true,
         lines: {
           select: {

@@ -1,7 +1,7 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
-import { OrganizerMemberRole, PadelFormat } from "@prisma/client";
+import { OrganizerMemberRole, padel_format, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizerForUser } from "@/lib/organizerContext";
@@ -96,10 +96,10 @@ export async function POST(req: NextRequest) {
   const eventId = typeof body.eventId === "number" ? body.eventId : Number(body.eventId);
   const categoryId = typeof body.categoryId === "number" ? body.categoryId : Number(body.categoryId);
   const phase = typeof body.phase === "string" ? body.phase.toUpperCase() : "GROUPS";
-  const format: PadelFormat =
-    typeof body.format === "string" && Object.values(PadelFormat).includes(body.format as PadelFormat)
-      ? (body.format as PadelFormat)
-      : "TODOS_CONTRA_TODOS";
+  const format: padel_format =
+    typeof body.format === "string" && Object.values(padel_format).includes(body.format as padel_format)
+      ? (body.format as padel_format)
+      : padel_format.TODOS_CONTRA_TODOS;
   const allowIncomplete = body.allowIncomplete === true;
 
   if (!Number.isFinite(eventId)) return NextResponse.json({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
@@ -180,7 +180,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "GROUPS_ALREADY_GENERATED" }, { status: 400 });
     }
 
-    const cfg = advanced.groupsConfig ?? {};
+    const cfg = (advanced.groupsConfig ?? {}) as GroupsConfig;
     const seeding: "SNAKE" | "NONE" = cfg.seeding === "NONE" ? "NONE" : "SNAKE";
     const n = pairingIds.length;
     let groupCount =
@@ -210,7 +210,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "QUALIFY_EXCEEDS_GROUP_SIZE" }, { status: 400 });
     }
 
-    const matchesToCreate: Array<Parameters<typeof prisma.padelMatch.create>[0]["data"]> = [];
+    const matchesToCreate: Prisma.PadelMatchCreateManyInput[] = [];
 
     groups.forEach((groupIds, groupIdx) => {
       const label = String.fromCharCode("A".charCodeAt(0) + groupIdx);
@@ -219,8 +219,6 @@ export async function POST(req: NextRequest) {
         round.forEach((pair, matchIdx) => {
           if (pair.a === null || pair.b === null) return;
           const court = courtsList[(matchIdx + groupIdx) % courtsList.length];
-          const staff = staffList.length > 0 ? staffList[(matchIdx + groupIdx) % staffList.length] : null;
-          const staffLabel = staff ? staff.email || staff.userId || staff.role || "Staff" : null;
           matchesToCreate.push({
             eventId,
             categoryId: resolvedCategoryId ?? null,
@@ -271,7 +269,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "KNOCKOUT_ALREADY_GENERATED" }, { status: 400 });
     }
 
-    const cfg = advanced.groupsConfig ?? {};
+    const cfg = (advanced.groupsConfig ?? {}) as GroupsConfig;
     const qualifyPerGroup =
       Number.isFinite(cfg.qualifyPerGroup) && (cfg.qualifyPerGroup as number) > 0
         ? Number(cfg.qualifyPerGroup)
@@ -418,7 +416,7 @@ export async function POST(req: NextRequest) {
     const pairs: Array<{ a: typeof seeds[number] | null; b: typeof seeds[number] | null }> = [];
     // Standard bracket seeding: 1 vs last, 2 vs last-1, etc.
     for (let i = 0; i < bracketSize / 2; i += 1) {
-      let a = entrants[i] ?? null;
+      const a = entrants[i] ?? null;
       let b = entrants[bracketSize - 1 - i] ?? null;
       if (a && b && a.groupLabel === b.groupLabel) {
         const swapIndex = entrants.findIndex(
@@ -448,7 +446,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Criar primeira ronda e rounds seguintes com placeholders (para auto avanço)
-    const matchCreateData: Array<Parameters<typeof prisma.padelMatch.create>[0]["data"]> = [];
+    const matchCreateData: Prisma.PadelMatchCreateManyInput[] = [];
     const firstRoundLabel =
       koPairs.length === 1 ? "FINAL" : koPairs.length === 2 ? "SEMIFINAL" : koPairs.length === 4 ? "QUARTERFINAL" : `R${koPairs.length * 2}`;
     koPairs.forEach((p, idx) => {

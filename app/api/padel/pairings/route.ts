@@ -20,7 +20,7 @@ import { validateEligibility } from "@/domain/padelEligibility";
 import { upsertActiveHold } from "@/domain/padelPairingHold";
 import {
   clampDeadlineHours,
-  computeDeadlineAt,
+  computeSplitDeadlineAt,
   computePartnerLinkExpiresAt,
 } from "@/domain/padelDeadlines";
 import { getActiveOrganizerForUser } from "@/lib/organizerContext";
@@ -135,6 +135,7 @@ export async function POST(req: NextRequest) {
     where: { id: eventId },
     select: {
       organizerId: true,
+      startsAt: true,
       padelTournamentConfig: { select: { padelV2Enabled: true } },
     },
   });
@@ -434,7 +435,10 @@ export async function POST(req: NextRequest) {
   try {
     const now = new Date();
     const clampedDeadlineHours = clampDeadlineHours(config.splitDeadlineHours ?? undefined);
-    const deadlineAt = computeDeadlineAt(now, clampedDeadlineHours);
+    const deadlineAt = computeSplitDeadlineAt(now, event.startsAt ?? null, clampedDeadlineHours);
+    if (paymentMode === "SPLIT" && deadlineAt.getTime() <= now.getTime()) {
+      return NextResponse.json({ ok: false, error: "SPLIT_DEADLINE_PASSED" }, { status: 409 });
+    }
     const partnerLinkExpiresAtNormalized =
       inviteExpiresAt && !Number.isNaN(inviteExpiresAt.getTime())
         ? inviteExpiresAt

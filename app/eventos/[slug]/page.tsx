@@ -231,7 +231,6 @@ export default async function EventPage({
           publicName: true,
           businessName: true,
           brandingAvatarUrl: true,
-          publicListingEnabled: true,
           status: true,
         },
       },
@@ -260,7 +259,6 @@ export default async function EventPage({
               publicName: true,
               businessName: true,
               brandingAvatarUrl: true,
-              publicListingEnabled: true,
               status: true,
             },
           },
@@ -325,7 +323,7 @@ export default async function EventPage({
     event.organizer?.businessName ||
     null;
   const organizerUsername =
-    event.organizer?.publicListingEnabled !== false && event.organizer?.status === "ACTIVE"
+    event.organizer?.status === "ACTIVE"
       ? event.organizer?.username ?? null
       : null;
   const safeOrganizer = organizerDisplay || "Organização ORYA";
@@ -360,7 +358,6 @@ export default async function EventPage({
   // Nota: no modelo atual, não determinamos o utilizador autenticado neste
   // Server Component para evitar erros de escrita de cookies.
   // A verificação de "já tens bilhete" pode ser feita no cliente.
-  const userId: string | null = null;
   const currentUserHasTicket = false;
 
   const startDateObj = event.startsAt;
@@ -628,7 +625,7 @@ export default async function EventPage({
   return (
     <main
       id="event-page"
-      className="relative orya-body-bg min-h-screen w-full overflow-hidden text-white"
+      className="relative min-h-screen w-full overflow-hidden text-white"
       style={backgroundVars}
     >
       <CheckoutProvider>
@@ -664,13 +661,6 @@ export default async function EventPage({
               background: EVENT_BG_FADE,
             }}
           />
-        </div>
-
-        {/* camada de cor extra para vidro premium */}
-        <div className="pointer-events-none absolute inset-0" aria-hidden="true">
-          <div className="absolute -top-36 right-[-140px] h-[420px] w-[420px] rounded-full bg-[radial-gradient(circle_at_35%_35%,rgba(255,0,200,0.35),transparent_60%)] opacity-80 blur-3xl" />
-          <div className="absolute top-[26vh] -left-40 h-[360px] w-[360px] rounded-full bg-[radial-gradient(circle_at_30%_30%,rgba(107,255,255,0.3),transparent_60%)] opacity-80 blur-3xl" />
-          <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.06),transparent_35%,rgba(0,0,0,0.6))] mix-blend-screen" />
         </div>
 
         {/* ========== HERO ============ */}
@@ -881,7 +871,7 @@ export default async function EventPage({
                 <p className="text-xs text-white/60">
                   {event.isFree
                     ? "Reserva o teu lugar agora."
-                    : "Taxas incluídas no checkout."}
+                    : "Preço final confirmado no checkout."}
                 </p>
               </div>
             </div>

@@ -1,7 +1,7 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
-import { OrganizerMemberRole, PadelMatchStatus } from "@prisma/client";
+import { OrganizerMemberRole, padel_match_status, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizerForUser } from "@/lib/organizerContext";
@@ -78,7 +78,10 @@ export async function POST(req: NextRequest) {
   if (!body) return NextResponse.json({ ok: false, error: "INVALID_BODY" }, { status: 400 });
 
   const matchId = typeof body.id === "number" ? body.id : Number(body.id);
-  const statusRaw = typeof body.status === "string" ? (body.status as PadelMatchStatus) : undefined;
+  const statusRaw =
+    typeof body.status === "string" && Object.values(padel_match_status).includes(body.status as padel_match_status)
+      ? (body.status as padel_match_status)
+      : undefined;
   const scoreRaw = body.score;
   const startAtRaw = body.startAt ? new Date(String(body.startAt)) : undefined;
   const courtIdRaw = typeof body.courtId === "number" ? body.courtId : undefined;
@@ -94,7 +97,7 @@ export async function POST(req: NextRequest) {
   });
   if (!match || !match.event?.organizerId) return NextResponse.json({ ok: false, error: "MATCH_NOT_FOUND" }, { status: 404 });
 
-  const { organizer, membership } = await getActiveOrganizerForUser(user.id, {
+  const { organizer } = await getActiveOrganizerForUser(user.id, {
     organizerId: match.event.organizerId,
     roles: allowedRoles,
   });
@@ -124,14 +127,18 @@ export async function POST(req: NextRequest) {
     if (winsB > winsA && match.pairingBId) winnerPairingId = match.pairingBId;
   }
 
+  const scoreValue = (scoreRaw ?? match.score) as Prisma.InputJsonValue;
+  const scoreSetsValue =
+    typeof scoreRaw === "object" && scoreRaw && "sets" in (scoreRaw as { sets?: unknown })
+      ? ((scoreRaw as { sets?: unknown }).sets as Prisma.InputJsonValue)
+      : (match.scoreSets as Prisma.InputJsonValue | Prisma.NullableJsonNullValueInput | undefined);
+
   const updated = await prisma.padelMatch.update({
     where: { id: matchId },
     data: {
       status: statusRaw ?? match.status,
-      score: scoreRaw ?? match.score,
-      scoreSets: typeof scoreRaw === "object" && scoreRaw && "sets" in (scoreRaw as { sets?: unknown })
-        ? (scoreRaw as { sets?: unknown }).sets
-        : match.scoreSets,
+      score: scoreValue,
+      scoreSets: scoreSetsValue,
       winnerPairingId: winnerPairingId ?? match.winnerPairingId,
       startTime: startAtRaw ?? match.startTime,
       courtNumber: courtIdRaw ?? match.courtNumber,
@@ -184,6 +191,7 @@ export async function POST(req: NextRequest) {
         const fromMatch = koMatches.find((m) => m.id === fromMatchId);
         if (!fromMatch) return;
         const currentRound = fromMatch.roundLabel || roundOrder[0] || null;
+        if (!currentRound) return;
         const currentIdx = roundOrder.findIndex((l) => l === currentRound);
         if (currentIdx === -1 || currentIdx >= roundOrder.length - 1) return;
         const currentMatches = roundsMap.get(currentRound) || [];

@@ -5,7 +5,6 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import useSWR from "swr";
-import Link from "next/link";
 import { useUser } from "@/app/hooks/useUser";
 
 const fetcher = async (url: string) => {

@@ -11,7 +11,6 @@ import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
 import { CTA_PRIMARY, CTA_SECONDARY } from "@/app/organizador/dashboardUi";
 import { StepperDots, type WizardStep } from "@/components/organizador/eventos/wizard/StepperDots";
 import { PT_CITIES, type PTCity } from "@/lib/constants/ptCities";
-import { computeCombinedFees } from "@/lib/fees";
 
 type TicketTypeRow = {
   name: string;
@@ -38,15 +37,7 @@ const CATEGORY_OPTIONS = [
     label: "Padel / Torneio",
     accent: "from-[#6BFFFF] to-[#22c55e]",
     copy: "Setup rápido com courts, rankings e lógica de torneio.",
-    categories: ["PADEL"],
-  },
-  {
-    key: "voluntariado",
-    value: "VOLUNTEERING",
-    label: "Voluntariado",
-    accent: "from-[#FCD34D] to-[#34D399]",
-    copy: "Ações, impacto e participação com um fluxo simples.",
-    categories: ["VOLUNTARIADO"],
+    tags: ["PADEL"] as string[],
   },
   {
     key: "default",
@@ -54,22 +45,9 @@ const CATEGORY_OPTIONS = [
     label: "Evento",
     accent: "from-[#FF00C8] via-[#6BFFFF] to-[#1646F5]",
     copy: "Fluxo base com tudo o que precisas para publicar.",
-    categories: ["OUTRO"],
+    tags: ["EVENTO"] as string[],
   },
 ] as const;
-
-const DEFAULT_PLATFORM_FEE_BPS = 800; // 8%
-const DEFAULT_PLATFORM_FEE_FIXED_CENTS = 30; // €0.30
-const DEFAULT_STRIPE_FEE_BPS = 140; // 1.4%
-const DEFAULT_STRIPE_FEE_FIXED_CENTS = 25; // €0.25
-
-type PlatformFeeResponse =
-  | {
-      ok: true;
-      orya: { feeBps: number; feeFixedCents: number };
-      stripe: { feeBps: number; feeFixedCents: number; region: string };
-    }
-  | { ok: false; error?: string };
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
@@ -101,41 +79,12 @@ type PadelClubSummary = {
 type PadelCourtSummary = { id: number; name: string; isActive: boolean; displayOrder: number };
 type PadelStaffSummary = { id: number; fullName?: string | null; email?: string | null; inheritToEvents?: boolean | null };
 
-function computeFeePreview(
-  priceEuro: number,
-  mode: "ADDED" | "INCLUDED" | "ON_TOP",
-  platformFees: { feeBps: number; feeFixedCents: number },
-  stripeFees: { feeBps: number; feeFixedCents: number },
-) {
-  const baseCents = Math.round(Math.max(0, priceEuro) * 100);
-  const combined = computeCombinedFees({
-    amountCents: baseCents,
-    discountCents: 0,
-    feeMode: mode,
-    platformFeeBps: platformFees.feeBps,
-    platformFeeFixedCents: platformFees.feeFixedCents,
-    stripeFeeBps: stripeFees.feeBps,
-    stripeFeeFixedCents: stripeFees.feeFixedCents,
-  });
-  const recebeOrganizador = Math.max(0, combined.totalCents - combined.oryaFeeCents - combined.stripeFeeCentsEstimate);
-  return {
-    baseCents,
-    feeCents: combined.oryaFeeCents,
-    totalCliente: combined.totalCents,
-    recebeOrganizador,
-    stripeFeeCents: combined.stripeFeeCentsEstimate,
-    combinedFeeCents: combined.combinedFeeCents,
-  };
-}
 
 export default function NewOrganizerEventPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user, profile, isLoading: isUserLoading } = useUser();
   const { openModal } = useAuthModal();
-  const { data: platformFeeData } = useSWR<PlatformFeeResponse>("/api/platform/fees", fetcher, {
-    revalidateOnFocus: false,
-  });
   const { data: organizerStatus } = useSWR<{
     ok?: boolean;
     organizer?: {
@@ -161,7 +110,6 @@ export default function NewOrganizerEventPage() {
   const [locationManuallySet, setLocationManuallySet] = useState(false);
   const [address, setAddress] = useState("");
   const [ticketTypes, setTicketTypes] = useState<TicketTypeRow[]>([{ name: "Geral", price: "", totalQuantity: "" }]);
-  const [feeMode, setFeeMode] = useState<"ADDED" | "INCLUDED">("ADDED");
   const [coverUrl, setCoverUrl] = useState<string | null>(null);
   const [uploadingCover, setUploadingCover] = useState(false);
   const [isTest, setIsTest] = useState(false);
@@ -203,7 +151,7 @@ export default function NewOrganizerEventPage() {
   const startsRef = useRef<HTMLDivElement | null>(null);
   const endsRef = useRef<HTMLDivElement | null>(null);
   const locationNameRef = useRef<HTMLInputElement | null>(null);
-  const cityRef = useRef<HTMLInputElement | null>(null);
+  const cityRef = useRef<HTMLSelectElement | null>(null);
   const ticketsRef = useRef<HTMLDivElement | null>(null);
   const suggestionBlurTimeout = useRef<NodeJS.Timeout | null>(null);
 
@@ -214,14 +162,6 @@ export default function NewOrganizerEventPage() {
     Boolean(organizerStatus?.membershipRole);
   const isAdmin = roles.some((r) => r?.toLowerCase() === "admin");
   const paymentsStatus = isAdmin ? "READY" : organizerStatus?.paymentsStatus ?? "NO_STRIPE";
-  const platformFees =
-    platformFeeData && platformFeeData.ok
-      ? platformFeeData.orya
-      : { feeBps: DEFAULT_PLATFORM_FEE_BPS, feeFixedCents: DEFAULT_PLATFORM_FEE_FIXED_CENTS };
-  const stripeFees =
-    platformFeeData && platformFeeData.ok
-      ? platformFeeData.stripe
-      : { feeBps: DEFAULT_STRIPE_FEE_BPS, feeFixedCents: DEFAULT_STRIPE_FEE_FIXED_CENTS, region: "UE" };
   const hasPaidTicket = useMemo(
     () => !isFreeEvent && ticketTypes.some((t) => Number(t.price.replace(",", ".")) > 0),
     [isFreeEvent, ticketTypes],
@@ -351,7 +291,6 @@ export default function NewOrganizerEventPage() {
         locationCity: string;
         address: string;
         ticketTypes: TicketTypeRow[];
-        feeMode: "ADDED" | "INCLUDED";
         coverUrl: string | null;
         selectedPreset: string | null;
         isFreeEvent: boolean;
@@ -383,15 +322,11 @@ export default function NewOrganizerEventPage() {
           ? draft.ticketTypes
           : [{ name: "Geral", price: "", totalQuantity: "" }],
       );
-      setFeeMode(draft.feeMode ?? "ADDED");
       setCoverUrl(draft.coverUrl ?? null);
       setSelectedPreset(draft.selectedPreset ?? null);
       setIsFreeEvent(Boolean(draft.isFreeEvent));
       setAdvancedAccessEnabled(Boolean(draft.advancedAccessEnabled));
-      const legacyInviteOnly = typeof (draft as { inviteOnly?: boolean }).inviteOnly === "boolean"
-        ? Boolean((draft as { inviteOnly?: boolean }).inviteOnly)
-        : null;
-      setPublicAccessMode(draft.publicAccessMode ?? (legacyInviteOnly ? "INVITE" : "OPEN"));
+      setPublicAccessMode(draft.publicAccessMode ?? "OPEN");
       setParticipantAccessMode(draft.participantAccessMode ?? "NONE");
       setPublicTicketScope(draft.publicTicketScope ?? "ALL");
       setParticipantTicketScope(draft.participantTicketScope ?? "ALL");
@@ -531,9 +466,7 @@ export default function NewOrganizerEventPage() {
     "text-[11px] font-semibold uppercase tracking-[0.18em] text-white/70 flex items-center gap-1";
   const helperClass = "text-[12px] text-white/60 min-h-[18px]";
   const errorTextClass = "flex items-center gap-2 text-[12px] font-semibold text-pink-200 min-h-[18px]";
-  const breadcrumbs = wizardSteps.map((s) => s.title).join(" · ");
   const dateOrderWarning = startsAt && endsAt && new Date(endsAt).getTime() <= new Date(startsAt).getTime();
-  const currentStepLabel = wizardSteps[currentStep]?.title ?? "";
 
   const pushToast = (message: string, tone: ToastTone = "success") => {
     const id = Date.now() + Math.random();
@@ -552,7 +485,6 @@ export default function NewOrganizerEventPage() {
       locationCity,
       address,
       ticketTypes,
-      feeMode,
       coverUrl,
       selectedPreset,
       isFreeEvent,
@@ -645,7 +577,7 @@ export default function NewOrganizerEventPage() {
     setUploadingCover(true);
     setErrorMessage(null);
     try {
-      const res = await fetch("/api/upload", {
+      const res = await fetch("/api/upload?scope=event-cover", {
         method: "POST",
         body: formData,
       });
@@ -1075,14 +1007,7 @@ export default function NewOrganizerEventPage() {
     setIsSubmitting(true);
 
     try {
-      const preset = selectedPreset ? presetMap.get(selectedPreset) : null;
-      const categoriesToSend = preset?.categories ?? ["OUTRO"];
-      const templateToSend =
-        selectedPreset === "padel"
-          ? "PADEL"
-          : selectedPreset === "voluntariado"
-            ? "VOLUNTEERING"
-            : "OTHER";
+      const templateToSend = selectedPreset === "padel" ? "PADEL" : "OTHER";
       const payload = {
         title: title.trim(),
         description: description.trim() || null,
@@ -1092,7 +1017,6 @@ export default function NewOrganizerEventPage() {
         locationCity: locationCity.trim() || null,
         templateType: templateToSend,
         address: address.trim() || null,
-        categories: categoriesToSend,
         ticketTypes: preparedTickets,
         coverImageUrl: coverUrl,
         inviteOnly: publicAccessMode === "INVITE",
@@ -1101,7 +1025,6 @@ export default function NewOrganizerEventPage() {
         publicTicketScope,
         participantTicketScope,
         liveHubVisibility,
-        feeMode,
         isTest: isAdmin ? isTest : undefined,
         padel:
           selectedPreset === "padel"
@@ -1254,12 +1177,12 @@ export default function NewOrganizerEventPage() {
               </span>
               <p className="text-sm text-white/80">{opt.copy}</p>
               <div className="flex flex-wrap gap-2 text-[11px] text-white/60">
-                {opt.categories.length === 0 ? (
+                {opt.tags.length === 0 ? (
                   <span className="rounded-full border border-white/10 px-2 py-0.5">Personalizado</span>
                 ) : (
-                  opt.categories.map((cat) => (
-                    <span key={cat} className="rounded-full border border-white/15 px-2 py-0.5">
-                      {cat}
+                  opt.tags.map((tag) => (
+                    <span key={tag} className="rounded-full border border-white/15 px-2 py-0.5">
+                      {tag}
                     </span>
                   ))
                 )}
@@ -1472,7 +1395,10 @@ export default function NewOrganizerEventPage() {
             value={locationCity}
             onChange={(e) => {
               setLocationManuallySet(true);
-              setLocationCity(e.target.value);
+              const nextCity = e.target.value as PTCity;
+              if (PT_CITIES.includes(nextCity)) {
+                setLocationCity(nextCity);
+              }
               setShowLocationSuggestions(true);
             }}
             ref={cityRef}
@@ -1909,7 +1835,7 @@ export default function NewOrganizerEventPage() {
           <div className="flex items-center justify-between">
             <p className={labelClass}>Inscrições gratuitas</p>
             <span className="rounded-full border border-emerald-300/40 bg-emerald-400/10 px-3 py-1 text-[12px] text-emerald-50">
-              Sem taxas
+              Grátis
             </span>
           </div>
           <div className="grid gap-3 md:grid-cols-2">
@@ -1954,10 +1880,6 @@ export default function NewOrganizerEventPage() {
 
           <div className="grid gap-3">
             {ticketTypes.map((row, idx) => {
-              const parsed = Number((row.price ?? "0").toString().replace(",", "."));
-              const priceEuro = Number.isFinite(parsed) ? parsed : 0;
-              const preview = computeFeePreview(priceEuro, feeMode, platformFees, stripeFees);
-              const combinedFeeCents = preview.combinedFeeCents ?? preview.feeCents + preview.stripeFeeCents;
               return (
                 <div
                   key={idx}
@@ -2007,7 +1929,9 @@ export default function NewOrganizerEventPage() {
                         className={inputClass(false)}
                         placeholder="Ex.: 12.50"
                       />
-                      <p className="text-[12px] text-white/55">Em eventos pagos, o preço mínimo é 1,00 €.</p>
+                      <p className="text-[12px] text-white/55">
+                        Preço público final (taxas incluídas). Em eventos pagos, o mínimo é 1,00 €.
+                      </p>
                     </div>
                     <div className="space-y-1">
                       <label className={labelClass}>Capacidade (opcional)</label>
@@ -2019,14 +1943,6 @@ export default function NewOrganizerEventPage() {
                         className={inputClass(false)}
                         placeholder="Ex.: 100"
                       />
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-[12px] font-semibold text-white/75">Pré-visualização</p>
-                      <div className="text-[12px] rounded-lg border border-white/10 bg-black/25 px-3 py-2 text-white/85">
-                        <p>Cliente: {(preview.totalCliente / 100).toFixed(2)} €</p>
-                        <p>Recebes (estimado): {(preview.recebeOrganizador / 100).toFixed(2)} €</p>
-                        <p className="text-white/50">Taxa da plataforma: {(combinedFeeCents / 100).toFixed(2)} €</p>
-                      </div>
                     </div>
                   </div>
 
@@ -2063,33 +1979,6 @@ export default function NewOrganizerEventPage() {
               );
             })}
           </div>
-
-          <div className="space-y-2">
-            <p className={labelClass}>Modo de taxas</p>
-            <div className="inline-flex rounded-full border border-white/15 bg-black/40 p-1 text-[13px]">
-              <button
-                type="button"
-                onClick={() => setFeeMode("ADDED")}
-                className={`rounded-full px-3 py-1 font-semibold transition ${
-                  feeMode === "ADDED" ? "bg-white text-black shadow" : "text-white/70"
-                }`}
-              >
-                Cliente paga taxa
-              </button>
-              <button
-                type="button"
-                onClick={() => setFeeMode("INCLUDED")}
-                className={`rounded-full px-3 py-1 font-semibold transition ${
-                  feeMode === "INCLUDED" ? "bg-white text-black shadow" : "text-white/70"
-                }`}
-              >
-                Preço inclui taxas
-              </button>
-            </div>
-            <p className="text-[12px] text-white/55">
-              Podes ajustar depois no resumo. Para eventos de plataforma, a taxa ORYA é zero.
-            </p>
-          </div>
         </div>
       )}
     </div>
@@ -2098,17 +1987,11 @@ export default function NewOrganizerEventPage() {
   const renderReviewStep = () => {
     const previewTickets = buildTicketsPayload();
     const presetLabel =
-      selectedPreset === "padel"
-        ? "Padel / Torneio"
-        : selectedPreset === "voluntariado"
-          ? "Voluntariado"
-          : "Evento";
+      selectedPreset === "padel" ? "Padel / Torneio" : "Evento";
     const presetDesc =
       selectedPreset === "padel"
         ? "Wizard Padel ativo"
-        : selectedPreset === "voluntariado"
-          ? "Fluxo focado em participacao e impacto"
-          : "Fluxo base com tudo o que precisas";
+        : "Fluxo base com tudo o que precisas";
     const pendingIssues = collectStepErrors("all");
     const pendingLabel = pendingIssues.length === 0 ? "Campos ok" : `Falta corrigir ${pendingIssues.length}`;
     return (
@@ -2374,11 +2257,11 @@ export default function NewOrganizerEventPage() {
           helper={
             activeStepKey === "tickets"
               ? isFreeEvent
-                ? "Inscrições sem taxas; capacidade é opcional."
+                ? "Inscrições gratuitas; capacidade é opcional."
                 : paidTicketsBlocked
                   ? paidTicketsBlockedMessage ??
                     "Eventos pagos precisam de Stripe ligado e email oficial verificado."
-                  : "Define preços, taxas e capacidade dos bilhetes."
+                  : "Define preços e capacidade dos bilhetes."
               : activeStepKey === "review"
                 ? "Confirma blocos, edita no passo certo e cria com confiança."
                 : "Navega sem perder contexto; feedback sempre visível."

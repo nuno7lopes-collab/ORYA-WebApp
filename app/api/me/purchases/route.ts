@@ -48,30 +48,52 @@ export async function GET(req: NextRequest) {
       updatedAt: true,
       promoCodeSnapshot: true,
       promoLabelSnapshot: true,
-      feeMode: true,
-      saleLines: {
+      lines: {
         select: {
           id: true,
           event: { select: { title: true, slug: true } },
           ticketType: { select: { name: true } },
         },
       },
-      paymentEvents: {
-        orderBy: { createdAt: "asc" },
-        select: {
-          id: true,
-          status: true,
-          createdAt: true,
-          errorMessage: true,
-          source: true,
-        },
-      },
     },
   });
 
+  const paymentIntentIds = summaries.map((s) => s.paymentIntentId).filter(Boolean);
+  const purchaseIds = summaries.map((s) => s.purchaseId).filter((p): p is string => !!p);
+  const paymentEvents =
+    paymentIntentIds.length || purchaseIds.length
+      ? await prisma.paymentEvent.findMany({
+          where: {
+            OR: [
+              paymentIntentIds.length ? { stripePaymentIntentId: { in: paymentIntentIds } } : undefined,
+              purchaseIds.length ? { purchaseId: { in: purchaseIds } } : undefined,
+            ].filter(Boolean) as object[],
+          },
+          orderBy: { createdAt: "asc" },
+          select: {
+            id: true,
+            stripePaymentIntentId: true,
+            purchaseId: true,
+            status: true,
+            createdAt: true,
+            errorMessage: true,
+            source: true,
+          },
+        })
+      : [];
+  const paymentEventMap = new Map<string, typeof paymentEvents>();
+  paymentEvents.forEach((event) => {
+    const key = event.purchaseId || event.stripePaymentIntentId;
+    if (!key) return;
+    const list = paymentEventMap.get(key);
+    if (list) list.push(event);
+    else paymentEventMap.set(key, [event]);
+  });
+
   const items = summaries.slice(0, limit).map((s) => {
+    const timelineSourceKey = s.purchaseId || s.paymentIntentId;
     const timeline =
-      s.paymentEvents?.map((e) => ({
+      (timelineSourceKey ? paymentEventMap.get(timelineSourceKey) : null)?.map((e) => ({
         id: e.id,
         status: e.status,
         createdAt: e.createdAt,
@@ -98,11 +120,10 @@ export async function GET(req: NextRequest) {
       createdAt: s.createdAt,
       promoCode: s.promoCodeSnapshot,
       promoLabel: s.promoLabelSnapshot,
-      feeMode: s.feeMode,
       badge,
       status,
       timeline,
-      lines: s.saleLines.map((l) => ({
+      lines: s.lines.map((l) => ({
         id: l.id,
         eventTitle: l.event?.title ?? "",
         eventSlug: l.event?.slug ?? "",

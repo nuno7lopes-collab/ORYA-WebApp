@@ -38,8 +38,8 @@ export async function POST(req: NextRequest) {
     const dedupeKey = `CLAIM_GUEST_PURCHASE:${purchaseIdFromBody}:${user.id}`;
     await enqueueOperation({
       operationType: "CLAIM_GUEST_PURCHASE",
-      purchaseId: purchaseIdFromBody,
       dedupeKey,
+      correlations: { purchaseId: purchaseIdFromBody },
       payload: {
         purchaseId: purchaseIdFromBody,
         userId: user.id,
@@ -73,8 +73,8 @@ export async function POST(req: NextRequest) {
       .map((pid) =>
         enqueueOperation({
           operationType: "CLAIM_GUEST_PURCHASE",
-          purchaseId: pid,
           dedupeKey: `CLAIM_GUEST_PURCHASE:${pid}:${user.id}`,
+          correlations: { purchaseId: pid },
           payload: {
             purchaseId: pid,
             userId: user.id,

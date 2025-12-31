@@ -23,7 +23,6 @@ type OrganizerMeResponse = {
     showAddressPublicly?: boolean | null;
     payoutIban: string | null;
     language?: string | null;
-    publicListingEnabled?: boolean | null;
     alertsEmail?: string | null;
     alertsSalesEnabled?: boolean | null;
     alertsPayoutEnabled?: boolean | null;
@@ -471,7 +470,7 @@ export default function OrganizerSettingsPage({ embedded }: OrganizerSettingsPag
       <section className="relative overflow-hidden rounded-3xl border border-white/12 bg-gradient-to-br from-white/6 via-[#0b0f1f]/75 to-[#04070f]/90 p-4 space-y-2 shadow-[0_22px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
         <h2 className="text-lg font-semibold">Preferências (em breve)</h2>
         <p className="text-[12px] text-white/65">
-          Aqui vais conseguir gerir idioma, notificações e visibilidade pública. Ainda não está disponível nesta versão.
+          Aqui vais conseguir gerir idioma e notificações. Ainda não está disponível nesta versão; a visibilidade pública é sempre ativa para organizações.
         </p>
       </section>
 

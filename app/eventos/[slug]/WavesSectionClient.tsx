@@ -1,6 +1,4 @@
 "use client";
-
-import { useState } from "react";
 import { useCheckout } from "@/app/components/checkout/contextoCheckout";
 
 export type WaveStatus = "on_sale" | "upcoming" | "closed" | "sold_out";
@@ -39,67 +37,6 @@ type WavesSectionClientProps = {
   inviteEmail?: string | null;
 };
 
-type FeedbackType = "success" | "error";
-
-type FeedbackState = {
-  [ticketId: string]: {
-    type: FeedbackType;
-    message: string;
-  };
-};
-
-function formatDateTime(value: string | null) {
-  if (!value) return null;
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return null;
-
-  return d.toLocaleString("pt-PT", {
-    day: "2-digit",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-function computeRemainingAndStatus(
-  prev: WaveTicket,
-  updated: { totalQuantity?: number | null; soldQuantity?: number },
-): { remaining: number | null; status: WaveStatus } {
-  const total =
-    updated.totalQuantity !== undefined
-      ? updated.totalQuantity
-      : prev.totalQuantity ?? null;
-
-  const sold =
-    updated.soldQuantity !== undefined
-      ? updated.soldQuantity
-      : prev.soldQuantity ?? 0;
-
-  let remaining: number | null = null;
-
-  if (total === null || total === undefined) {
-    remaining = null; // ilimitado
-  } else {
-    const diff = total - sold;
-    remaining = diff < 0 ? 0 : diff;
-  }
-
-  let status: WaveStatus = prev.status;
-
-  if (total !== null && total !== undefined && sold >= total) {
-    status = "sold_out";
-  } else if (status === "sold_out") {
-    status = "sold_out";
-  }
-
-  // Se estiver marcada como indisponível/oculta, tratamos como encerrada visualmente
-  if (!prev.available || !prev.isVisible) {
-    status = "closed";
-  }
-
-  return { remaining, status };
-}
-
 export default function WavesSectionClient({
   slug,
   tickets: initialTickets,
@@ -109,55 +46,11 @@ export default function WavesSectionClient({
   inviteEmail,
 }: WavesSectionClientProps) {
   const { abrirCheckout, atualizarDados } = useCheckout();
-  const [tickets, setTickets] = useState<WaveTicket[]>(initialTickets);
-  const [loadingId, setLoadingId] = useState<string | null>(null);
-  const [feedback, setFeedback] = useState<FeedbackState>({});
+  const tickets = initialTickets;
   const inviteAdditional =
     inviteEmail && inviteEmail.trim()
       ? { guestEmail: inviteEmail.trim(), guestEmailConfirm: inviteEmail.trim() }
       : {};
-
-  async function handlePurchase(ticketId: string) {
-    const selectedTicket = tickets.find((t) => t.id === ticketId);
-    if (!selectedTicket) return;
-
-    // limpar feedback antigo
-    setFeedback((prev) => {
-      const clone = { ...prev };
-      delete clone[ticketId];
-      return clone;
-    });
-
-    setLoadingId(ticketId);
-
-    try {
-      // Todo o checkout (pago ou grátis) passa pelo modal/core único.
-      abrirCheckout({
-        slug,
-        ticketId,
-        price: selectedTicket.price,
-        ticketName: selectedTicket.name,
-        eventId: padelMeta?.eventId ? String(padelMeta.eventId) : undefined,
-        additional: {
-          checkoutUiVariant,
-          padelMeta,
-          ...inviteAdditional,
-        },
-        waves: tickets,
-      });
-    } catch (err) {
-      console.error(err);
-      setFeedback((prev) => ({
-        ...prev,
-        [ticketId]: {
-          type: "error",
-          message: "Erro inesperado ao processar a ação. Tenta outra vez.",
-        },
-      }));
-    } finally {
-      setLoadingId(null);
-    }
-  }
 
   const visibleTickets = tickets.filter((t) => t.isVisible);
   const purchasableTickets = visibleTickets.filter(

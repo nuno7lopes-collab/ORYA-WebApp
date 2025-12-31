@@ -59,7 +59,6 @@ export async function GET(req: NextRequest) {
       revokedAt: a.revokedAt,
       status: a.revokedAt ? "REVOKED" : a.status,
       userName: staffMap[a.userId]?.fullName ?? staffMap[a.userId]?.username ?? null,
-      userEmail: staffMap[a.userId]?.email ?? null,
       eventTitle: a.event?.title ?? null,
       role: a.role,
     }));

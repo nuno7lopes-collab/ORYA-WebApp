@@ -17,7 +17,6 @@ type OrganizerProfileInfo = {
   publicDescription?: string | null;
   brandingAvatarUrl?: string | null;
   brandingCoverUrl?: string | null;
-  publicListingEnabled?: boolean | null;
   publicWebsite?: string | null;
   publicInstagram?: string | null;
   publicYoutube?: string | null;
@@ -46,7 +45,7 @@ export default function OrganizerPublicProfilePanel({
   const { user } = useUser();
   const { openModal } = useAuthModal();
   const router = useRouter();
-  const canEdit = membershipRole === "OWNER";
+  const canEdit = membershipRole === "OWNER" || membershipRole === "ADMIN";
 
   const [name, setName] = useState("");
   const [username, setUsername] = useState("");

@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getTournamentStructure } from "@/domain/tournaments/structureData";
 import { summarizeMatchStatus, computeStandingsForGroup } from "@/domain/tournaments/structure";
 import { computeLiveWarnings } from "@/domain/tournaments/liveWarnings";
+import { type TieBreakRule } from "@/domain/tournaments/standings";
 
 async function ensureOrganizerAccess(userId: string, eventId: number) {
   const evt = await prisma.event.findUnique({
@@ -15,7 +16,7 @@ async function ensureOrganizerAccess(userId: string, eventId: number) {
     where: {
       organizerId: evt.organizerId,
       userId,
-      role: { in: ["OWNER", "CO_OWNER", "ADMIN"] },
+      role: { in: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"] },
     },
     select: { id: true },
   });
@@ -37,9 +38,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const authorized = await ensureOrganizerAccess(authData.user.id, tournament.event.id);
   if (!authorized) return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
-  const tieBreakRules = Array.isArray(tournament.tieBreakRules)
-    ? (tournament.tieBreakRules as string[])
-    : ["WINS", "SET_DIFF", "GAME_DIFF", "HEAD_TO_HEAD", "RANDOM"];
+  const tieBreakRules: TieBreakRule[] = Array.isArray(tournament.tieBreakRules)
+    ? (tournament.tieBreakRules as TieBreakRule[])
+    : (["WINS", "SET_DIFF", "GAME_DIFF", "HEAD_TO_HEAD", "RANDOM"] as TieBreakRule[]);
 
   // pairings para warnings REQUIRES_ACTION
   const pairings = await prisma.padelPairing.findMany({
