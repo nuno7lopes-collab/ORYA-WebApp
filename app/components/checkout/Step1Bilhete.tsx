@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useCheckout } from "./contextoCheckout";
 import { Avatar } from "@/components/ui/avatar";
+import { CTA_PRIMARY } from "@/app/organizador/dashboardUi";
 
 type Wave = {
   id: string;
@@ -614,7 +615,7 @@ export default function Step1Bilhete() {
             type="button"
             onClick={handleContinuar}
             disabled={!canContinuePadel || !hasPairSlotsAvailable || !padelCategorySelected}
-            className="rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-5 py-2.5 text-xs font-semibold text-black shadow-[0_0_26px_rgba(107,255,255,0.55)] hover:scale-[1.02] active:scale-95 transition-transform disabled:cursor-not-allowed disabled:opacity-50"
+            className={`${CTA_PRIMARY} px-5 py-2.5 text-xs active:scale-95 disabled:cursor-not-allowed disabled:opacity-50`}
           >
             Continuar
           </button>
@@ -770,7 +771,7 @@ export default function Step1Bilhete() {
           type="button"
           disabled={total === 0}
           onClick={handleContinuar}
-          className="mt-3 sm:mt-0 rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-5 py-2.5 text-xs font-semibold text-black shadow-[0_0_26px_rgba(107,255,255,0.55)] disabled:opacity-50 hover:scale-[1.02] active:scale-95 transition-transform"
+          className={`${CTA_PRIMARY} mt-3 px-5 py-2.5 text-xs active:scale-95 disabled:opacity-50 sm:mt-0`}
         >
           Continuar para pagamento
         </button>

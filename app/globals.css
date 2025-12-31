@@ -201,11 +201,17 @@ body.orya-bg-org {
 }
 
 .orya-skeleton-surface {
-  background: linear-gradient(160deg, rgba(12, 18, 32, 0.72), rgba(6, 10, 18, 0.92));
+  background: var(
+    --orya-skeleton-surface,
+    linear-gradient(160deg, rgba(12, 18, 32, 0.72), rgba(6, 10, 18, 0.92))
+  );
 }
 
 .orya-skeleton-surface-strong {
-  background: linear-gradient(160deg, rgba(9, 13, 26, 0.82), rgba(4, 7, 14, 0.96));
+  background: var(
+    --orya-skeleton-surface-strong,
+    linear-gradient(160deg, rgba(9, 13, 26, 0.82), rgba(4, 7, 14, 0.96))
+  );
 }
 
 @keyframes subtle-fade-slide {

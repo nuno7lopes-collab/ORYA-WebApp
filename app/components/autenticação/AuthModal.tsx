@@ -6,6 +6,7 @@ import { useAuthModal } from "./AuthModalContext";
 import { supabaseBrowser } from "@/lib/supabaseBrowser";
 import { mutate as swrMutate } from "swr";
 import type { User } from "@supabase/supabase-js";
+import { CTA_PRIMARY } from "@/app/organizador/dashboardUi";
 
 export default function AuthModal() {
   const modal = useAuthModal();
@@ -603,7 +604,7 @@ function AuthModalContent({
                 onClick={() => setMode("login")}
                 className={`rounded-full px-3 py-2 transition ${
                   isLogin
-                    ? "bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] text-black shadow-[0_0_16px_rgba(107,255,255,0.35)]"
+                    ? `${CTA_PRIMARY} px-3 py-2`
                     : "hover:bg-white/10"
                 }`}
               >
@@ -614,7 +615,7 @@ function AuthModalContent({
                 onClick={() => setMode("signup")}
                 className={`rounded-full px-3 py-2 transition ${
                   isSignup
-                    ? "bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] text-black shadow-[0_0_16px_rgba(107,255,255,0.35)]"
+                    ? `${CTA_PRIMARY} px-3 py-2`
                     : "hover:bg-white/10"
                 }`}
               >
@@ -910,7 +911,7 @@ function AuthModalContent({
               type="button"
               disabled={isPrimaryDisabled}
               onClick={mode === "login" ? handleLogin : handleSignup}
-              className="inline-flex w-full items-center justify-center rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-4 py-2.5 text-[13px] font-semibold text-black shadow-[0_0_26px_rgba(107,255,255,0.55)] disabled:opacity-50"
+              className={`${CTA_PRIMARY} w-full justify-center px-4 py-2.5 text-[13px] disabled:opacity-50`}
             >
               {loading
                 ? "A processar…"
@@ -925,7 +926,7 @@ function AuthModalContent({
               type="button"
               disabled={isPrimaryDisabled}
               onClick={handleVerify}
-              className="inline-flex w-full items-center justify-center rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-4 py-2.5 text-[13px] font-semibold text-black shadow-[0_0_26px_rgba(107,255,255,0.55)] disabled:opacity-50"
+              className={`${CTA_PRIMARY} w-full justify-center px-4 py-2.5 text-[13px] disabled:opacity-50`}
             >
               {loading ? "A validar…" : "Confirmar código"}
             </button>
@@ -936,7 +937,7 @@ function AuthModalContent({
               type="button"
               disabled={isPrimaryDisabled}
               onClick={handleOnboardingSave}
-              className="inline-flex w-full items-center justify-center rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-4 py-2.5 text-[13px] font-semibold text-black shadow-[0_0_26px_rgba(107,255,255,0.55)] disabled:opacity-50"
+              className={`${CTA_PRIMARY} w-full justify-center px-4 py-2.5 text-[13px] disabled:opacity-50`}
             >
               {loading ? "A guardar…" : "Guardar e continuar"}
             </button>
