@@ -10,6 +10,7 @@ import { PORTUGAL_CITIES } from "@/config/cities";
 import { clampWithGap } from "@/lib/filters";
 import { trackEvent } from "@/lib/analytics";
 import { useUser } from "@/app/hooks/useUser";
+import { CTA_PRIMARY } from "@/app/organizador/dashboardUi";
 
 type ExploreItem = {
   id: number;
@@ -625,7 +626,7 @@ function ExplorarContent() {
                 }}
                 className={`h-9 w-9 rounded-full transition ${
                   isSelected
-                    ? "bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] text-black font-semibold shadow-[0_0_16px_rgba(107,255,255,0.55)]"
+                    ? `${CTA_PRIMARY} justify-center p-0 text-[12px]`
                     : "text-white/80 hover:bg-white/10"
                 }`}
               >

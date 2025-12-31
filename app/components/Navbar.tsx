@@ -685,12 +685,12 @@ export function Navbar() {
         >
           <div ref={searchPanelRef} className="mx-auto mt-24 md:mt-28 max-w-3xl px-4">
             <div
-              className="rounded-3xl border border-white/14 bg-[radial-gradient(circle_at_12%_0%,rgba(255,0,200,0.12),transparent_40%),radial-gradient(circle_at_88%_0%,rgba(107,255,255,0.12),transparent_36%),linear-gradient(120deg,rgba(8,10,20,0.45),rgba(8,10,20,0.32),rgba(8,10,20,0.42))] p-4 shadow-[0_28px_80px_rgba(0,0,0,0.7)] backdrop-blur-2xl"
+              className="rounded-3xl border border-white/18 bg-[radial-gradient(circle_at_12%_0%,rgba(255,0,200,0.14),transparent_40%),radial-gradient(circle_at_88%_0%,rgba(107,255,255,0.14),transparent_36%),linear-gradient(120deg,rgba(8,10,20,0.62),rgba(8,10,20,0.52),rgba(8,10,20,0.6))] p-4 shadow-[0_28px_80px_rgba(0,0,0,0.75)] backdrop-blur-2xl"
               aria-label="Pesquisa de eventos ORYA"
             >
               <form
                 onSubmit={handleSubmitSearch}
-                className="flex items-center gap-3 rounded-2xl border border-white/16 bg-[linear-gradient(120deg,rgba(255,0,200,0.06),rgba(107,255,255,0.06)),rgba(8,10,20,0.14)] px-4 py-2.5 shadow-[0_12px_32px_rgba(0,0,0,0.4)] backdrop-blur-2xl"
+                className="flex items-center gap-3 rounded-2xl border border-white/20 bg-[linear-gradient(120deg,rgba(255,0,200,0.08),rgba(107,255,255,0.08)),rgba(8,10,20,0.3)] px-4 py-2.5 shadow-[0_12px_32px_rgba(0,0,0,0.45)] backdrop-blur-2xl"
               >
                 <span className="flex h-6 w-6 items-center justify-center rounded-full border border-white/30 text-[12px] text-white/80">
                   ⌕
@@ -735,7 +735,7 @@ export function Navbar() {
                   ))}
                 </div>
 
-                <div className="mt-4 rounded-2xl border border-white/12 bg-[linear-gradient(140deg,rgba(255,255,255,0.05),rgba(255,255,255,0.02))] p-3 shadow-[0_18px_60px_rgba(0,0,0,0.45)]">
+                <div className="mt-4 rounded-2xl border border-white/16 bg-[linear-gradient(140deg,rgba(255,255,255,0.08),rgba(255,255,255,0.04))] p-3 shadow-[0_18px_60px_rgba(0,0,0,0.5)]">
                   <div className="flex items-center justify-between text-[11px] text-white/75">
                     <span>Resultados</span>
                     {isSuggestLoading && (
