@@ -16,6 +16,7 @@ import { type CheckoutBreakdown, useCheckout } from "./contextoCheckout";
 import { supabaseBrowser } from "@/lib/supabaseBrowser";
 import { isValidPhone, sanitizePhone } from "@/lib/phone";
 import { sanitizeUsername, validateUsername } from "@/lib/username";
+import { CTA_PRIMARY } from "@/app/organizador/dashboardUi";
 
 function isValidEmail(email: string) {
   return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email);
@@ -1875,7 +1876,7 @@ function PaymentForm({ total, discount = 0, breakdown, clientSecret, onLoadError
       <button
         type="submit"
         disabled={submitting || !stripe || !elements || !elementReady}
-        className="mt-3 inline-flex w-full items-center justify-center rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-6 py-3 text-xs font-semibold text-black shadow-[0_0_32px_rgba(107,255,255,0.55)] disabled:opacity-40 disabled:cursor-not-allowed hover:scale-[1.03] active:scale-95 transition-transform"
+        className={`${CTA_PRIMARY} mt-3 w-full justify-center px-6 py-3 text-xs active:scale-95 disabled:cursor-not-allowed disabled:opacity-40`}
       >
         {submitting ? "A processar…" : "Pagar agora"}
       </button>
