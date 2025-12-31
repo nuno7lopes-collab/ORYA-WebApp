@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
+import { CTA_PRIMARY } from "@/app/organizador/dashboardUi";
 
 type Props = {
   label: string;
@@ -199,7 +200,7 @@ export function InlineDateTimePicker({
                       d.disabled
                         ? "text-white/25 cursor-not-allowed"
                         : isSelected
-                          ? "bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] text-black font-semibold shadow-[0_0_14px_rgba(107,255,255,0.6)]"
+                          ? `${CTA_PRIMARY} justify-center p-0 text-[12px]`
                           : "text-white/80 hover:bg-white/10"
                     }`}
                   >
@@ -222,7 +223,7 @@ export function InlineDateTimePicker({
                       opt.disabled
                         ? "text-white/30 cursor-not-allowed"
                         : selectedTime === opt.value
-                          ? "bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] text-black font-semibold shadow-[0_0_12px_rgba(107,255,255,0.5)]"
+                          ? `${CTA_PRIMARY} px-2 py-1 text-xs`
                           : "bg-white/5 text-white/80 hover:bg-white/10"
                     }`}
                   >
