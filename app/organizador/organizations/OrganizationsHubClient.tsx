@@ -8,6 +8,7 @@ import {
   DEFAULT_ORGANIZATION_MODULES,
 } from "@/lib/organizationCategories";
 import { Avatar } from "@/components/ui/avatar";
+import { CTA_PRIMARY } from "@/app/organizador/dashboardUi";
 
 type OrgItem = {
   organizerId: number;
@@ -368,7 +369,7 @@ export default function OrganizationsHubClient({ initialOrgs, activeId }: Props)
             <button
               type="button"
               onClick={() => router.push("/organizador/become")}
-              className="rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-5 py-2 text-sm font-semibold text-black shadow hover:brightness-110"
+              className={`${CTA_PRIMARY} px-5 py-2 text-sm`}
             >
               Criar primeira organização
             </button>
@@ -472,7 +473,7 @@ export default function OrganizationsHubClient({ initialOrgs, activeId }: Props)
                   !city.trim() ||
                   !validateUsername(sanitizeUsername(orgUsername)).valid
                 }
-                className="self-start rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-5 py-2 text-sm font-semibold text-black shadow hover:brightness-110 disabled:opacity-60"
+                className={`${CTA_PRIMARY} self-start px-5 py-2 text-sm disabled:opacity-60`}
               >
                 {saving ? "A criar…" : "Criar organização"}
               </button>

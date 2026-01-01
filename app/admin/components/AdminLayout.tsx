@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ReactNode } from "react";
+import { CTA_PRIMARY } from "@/app/organizador/dashboardUi";
 
 type AdminLayoutProps = {
   children: ReactNode;
@@ -52,10 +53,10 @@ export function AdminLayout({ children, title, subtitle }: AdminLayoutProps) {
                 <Link
                   key={item.href}
                   href={item.href}
-                  className={`whitespace-nowrap rounded-full px-3 py-1.5 transition ${
+                  className={`whitespace-nowrap rounded-full transition ${
                     active
-                      ? "bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] text-black font-semibold"
-                      : "border border-white/15 bg-white/5 text-white/80 hover:bg-white/10"
+                      ? `${CTA_PRIMARY} px-3 py-1.5 text-[12px]`
+                      : "border border-white/15 bg-white/5 px-3 py-1.5 text-white/80 hover:bg-white/10"
                   }`}
                 >
                   {item.label}
@@ -77,10 +78,10 @@ export function AdminLayout({ children, title, subtitle }: AdminLayoutProps) {
               <Link
                 key={item.href}
                 href={item.href}
-                className={`rounded-xl px-3 py-2 text-[13px] transition ${
+                className={`rounded-xl text-[13px] transition ${
                   active
-                    ? "bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] text-black font-semibold shadow-[0_10px_30px_rgba(0,0,0,0.35)]"
-                    : "border border-transparent hover:border-white/10 hover:bg-white/5"
+                    ? `${CTA_PRIMARY} px-3 py-2 text-[13px]`
+                    : "border border-transparent px-3 py-2 hover:border-white/10 hover:bg-white/5"
                 }`}
               >
                 {item.label}

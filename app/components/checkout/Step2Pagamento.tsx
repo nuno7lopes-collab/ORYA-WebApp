@@ -2260,7 +2260,7 @@ function AuthWall({ onAuthenticated }: AuthWallProps) {
         <button
           type="submit"
           disabled={submitting}
-          className="mt-2 inline-flex w-full items-center justify-center rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-6 py-2.5 text-xs font-semibold text-black shadow-[0_0_24px_rgba(107,255,255,0.55)] disabled:opacity-40 disabled:cursor-not-allowed hover:scale-[1.02] active:scale-95 transition-transform"
+          className={`${CTA_PRIMARY} mt-2 w-full justify-center px-6 py-2.5 text-xs active:scale-95 disabled:cursor-not-allowed disabled:opacity-40`}
         >
           {mode === "verify"
             ? submitting
@@ -2392,7 +2392,7 @@ function GuestCheckoutCard({
       <button
         type="button"
         onClick={onContinue}
-        className="mt-1 inline-flex w-full items-center justify-center rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-6 py-2.5 text-xs font-semibold text-black shadow-[0_0_24px_rgba(107,255,255,0.55)] hover:scale-[1.02] active:scale-95 transition-transform"
+        className={`${CTA_PRIMARY} mt-1 w-full justify-center px-6 py-2.5 text-xs active:scale-95`}
       >
         Continuar como convidado
       </button>

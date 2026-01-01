@@ -2097,11 +2097,12 @@ function OrganizadorPageInner({ hasOrganizer }: { hasOrganizer: boolean }) {
                       key={range}
                       type="button"
                       onClick={() => setSalesRange(range)}
-                      className={`rounded-full px-3 py-1 transition ${
+                      className={cn(
+                        "rounded-full px-3 py-1 transition",
                         salesRange === range
-                          ? "bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] text-black font-semibold shadow-[0_0_12px_rgba(107,255,255,0.6)]"
-                          : "text-white/75 hover:bg-white/5"
-                      }`}
+                          ? cn(CTA_PRIMARY, "px-3 py-1 text-[11px]")
+                          : "text-white/75 hover:bg-white/5",
+                      )}
                     >
                       {range === "7d"
                         ? "7 dias"

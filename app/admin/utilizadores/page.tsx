@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import type { Prisma } from "@prisma/client";
 import { UsersTableClient } from "./UsersTableClient";
+import { CTA_PRIMARY } from "@/app/organizador/dashboardUi";
 
 type AdminUsersPageProps = {
   searchParams?: {
@@ -135,7 +136,7 @@ export default async function AdminUsersPage({ searchParams }: AdminUsersPagePro
               />
               <button
                 type="submit"
-                className="px-3 py-2 rounded-xl bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] text-[11px] font-semibold text-black shadow-[0_0_14px_rgba(107,255,255,0.6)] hover:scale-[1.02] active:scale-95 transition-transform"
+                className={`${CTA_PRIMARY} px-3 py-2 text-[11px] active:scale-95`}
               >
                 Buscar
               </button>

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useCheckout } from "./contextoCheckout";
 import { formatEuro } from "@/lib/money";
+import { CTA_PRIMARY } from "@/app/organizador/dashboardUi";
 
 const FREE_PLACEHOLDER_INTENT_ID = "FREE_CHECKOUT";
 
@@ -333,7 +334,7 @@ export default function Step3Sucesso() {
         {status === "PAID" ? (
           <button
             onClick={() => (guestEmail ? router.push("/login") : router.push("/me"))}
-            className="w-full rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] text-black py-3 text-sm font-semibold shadow-[0_0_30px_rgba(107,255,255,0.55)] hover:scale-[1.03] active:scale-95 transition-transform"
+            className={`${CTA_PRIMARY} w-full justify-center py-3 text-sm active:scale-95`}
           >
             {guestEmail ? "Criar conta e ligar bilhetes" : "Ver os teus bilhetes"}
           </button>

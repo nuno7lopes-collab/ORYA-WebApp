@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { CTA_PRIMARY } from "@/app/organizador/dashboardUi";
 
 type Status = "idle" | "loading" | "success" | "error";
 
@@ -49,7 +50,7 @@ export default function PaymentTools() {
         <button
           type="submit"
           disabled={status === "loading"}
-          className="inline-flex items-center justify-center rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-4 py-2 text-sm font-semibold text-black shadow disabled:opacity-60"
+          className={`${CTA_PRIMARY} px-4 py-2 text-sm disabled:opacity-60`}
         >
           {status === "loading" ? "A reprocessar..." : "Reprocessar"}
         </button>

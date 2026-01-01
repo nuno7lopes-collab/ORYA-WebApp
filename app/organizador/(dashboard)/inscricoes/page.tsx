@@ -7,6 +7,7 @@ import useSWR from "swr";
 import { useUser } from "@/app/hooks/useUser";
 import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
 import ObjectiveSubnav from "@/app/organizador/ObjectiveSubnav";
+import { CTA_PRIMARY } from "@/app/organizador/dashboardUi";
 
 type FormItem = {
   id: number;
@@ -151,7 +152,7 @@ export default function InscricoesPage({ embedded }: InscricoesPageProps) {
           type="button"
           disabled={creating || !title.trim() || moduleDisabled}
           onClick={handleCreate}
-          className="rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-4 py-2 text-sm font-semibold text-black shadow hover:brightness-110 disabled:opacity-60"
+          className={`${CTA_PRIMARY} px-4 py-2 text-sm disabled:opacity-60`}
         >
           {creating ? "A criar..." : "Criar inscrição"}
         </button>

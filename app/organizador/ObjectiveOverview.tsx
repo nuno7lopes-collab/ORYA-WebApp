@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { CTA_PRIMARY } from "@/app/organizador/dashboardUi";
 
 type ObjectiveOverviewProps = {
   objectiveLabel: string;
@@ -44,7 +45,7 @@ export default function ObjectiveOverview({
           </span>
           <Link
             href={cta.href}
-            className="inline-flex items-center justify-center rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-4 py-2 text-sm font-semibold text-black shadow-[0_0_20px_rgba(107,255,255,0.4)] hover:scale-[1.01]"
+            className={`${CTA_PRIMARY} px-4 py-2 text-sm`}
           >
             {cta.label}
           </Link>

@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import useSWR from "swr";
 import { AdminLayout } from "@/app/admin/components/AdminLayout";
 import { AdminTopActions } from "@/app/admin/components/AdminTopActions";
+import { CTA_PRIMARY } from "@/app/organizador/dashboardUi";
 
 type PaymentEvent = {
   id: number;
@@ -229,7 +230,7 @@ export default function AdminPaymentsPage() {
                       setCursor(null);
                       void mutate();
                     }}
-                    className="rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-4 py-2 text-sm font-semibold text-black shadow"
+                    className={`${CTA_PRIMARY} px-4 py-2 text-sm`}
                   >
                     Atualizar
                   </button>
@@ -432,7 +433,7 @@ export default function AdminPaymentsPage() {
                           <button
                             type="button"
                             onClick={() => handleReprocess(p.stripePaymentIntentId || "")}
-                            className="rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-2.5 py-1 text-black font-semibold shadow hover:opacity-90"
+                            className={`${CTA_PRIMARY} px-2.5 py-1 text-[11px]`}
                           >
                             Reprocessar
                           </button>

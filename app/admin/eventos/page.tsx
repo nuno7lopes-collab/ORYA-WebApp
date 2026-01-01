@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { AdminLayout } from "@/app/admin/components/AdminLayout";
 import { AdminTopActions } from "@/app/admin/components/AdminTopActions";
+import { CTA_PRIMARY } from "@/app/organizador/dashboardUi";
 
 type AdminEventItem = {
   id: number;
@@ -230,7 +231,7 @@ export default function AdminEventosPage() {
             type="button"
             onClick={() => loadEvents({ search, organizerId: organizerFilter, reset: true })}
             disabled={loading}
-            className="rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-4 py-1.5 text-xs font-semibold text-black shadow-[0_0_18px_rgba(107,255,255,0.6)] hover:scale-[1.02] active:scale-95 transition-transform disabled:opacity-60 disabled:hover:scale-100"
+            className={`${CTA_PRIMARY} px-4 py-1.5 text-xs active:scale-95 disabled:opacity-60`}
           >
             {loading ? "A carregar..." : "Aplicar filtros"}
           </button>

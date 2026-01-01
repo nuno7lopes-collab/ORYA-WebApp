@@ -5,6 +5,7 @@ import Link from "next/link";
 import useSWR from "swr";
 import { InlineDateTimePicker } from "@/app/components/forms/InlineDateTimePicker";
 import { useUser } from "@/app/hooks/useUser";
+import { CTA_PRIMARY } from "@/app/organizador/dashboardUi";
 
 const TicketTypeStatus = {
   ON_SALE: "ON_SALE",
@@ -1755,7 +1756,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
                 <button
                   type="button"
                   onClick={confirmEnd}
-                  className="rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-3 py-1 font-semibold text-black shadow"
+                  className={`${CTA_PRIMARY} px-3 py-1 text-[12px]`}
                 >
                   Confirmar
                 </button>
@@ -1894,7 +1895,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
                 type="button"
                 onClick={goNext}
                 disabled={isSaving}
-                className="rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-5 py-2 text-sm font-semibold text-black shadow disabled:opacity-60"
+                className={`${CTA_PRIMARY} px-5 py-2 text-sm disabled:opacity-60`}
               >
                 {currentStep === steps.length - 1 ? (isSaving ? "A gravar…" : "Guardar alterações") : "Continuar"}
               </button>

@@ -3,6 +3,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { CTA_PRIMARY } from "@/app/organizador/dashboardUi";
 
 type OrganizerStatus = "PENDING" | "ACTIVE" | "SUSPENDED" | string;
 
@@ -381,7 +382,7 @@ export default function AdminOrganizadoresPage() {
                       type="button"
                       disabled={updatingId === org.id}
                       onClick={() => updateStatus(org.id, "ACTIVE")}
-                      className="px-3 py-1 rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] text-black font-semibold shadow-[0_0_14px_rgba(107,255,255,0.6)] disabled:opacity-60"
+                      className={`${CTA_PRIMARY} px-3 py-1 text-[11px] disabled:opacity-60`}
                     >
                       {updatingId === org.id ? "A aprovar…" : "Aprovar"}
                     </button>
@@ -474,7 +475,7 @@ export default function AdminOrganizadoresPage() {
                           type="button"
                           disabled={updatingId === org.id}
                           onClick={() => updateStatus(org.id, "ACTIVE")}
-                          className="px-3 py-1.5 rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] font-semibold text-black shadow-[0_0_18px_rgba(107,255,255,0.7)] hover:scale-[1.02] active:scale-95 transition-transform disabled:opacity-60 disabled:hover:scale-100"
+                          className={`${CTA_PRIMARY} px-3 py-1.5 text-[11px] active:scale-95 disabled:opacity-60`}
                         >
                           {updatingId === org.id ? "A aprovar…" : "Aprovar"}
                         </button>

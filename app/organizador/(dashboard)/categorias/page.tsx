@@ -4,6 +4,7 @@ import useSWR from "swr";
 import Link from "next/link";
 import { useMemo } from "react";
 import { useUser } from "@/app/hooks/useUser";
+import { CTA_PRIMARY } from "@/app/organizador/dashboardUi";
 
 type EventsResponse = {
   ok: boolean;
@@ -115,7 +116,7 @@ export default function OrganizerCategoriesPage() {
               </Link>
               <Link
                 href={`/organizador/eventos/novo?preset=${cat.preset}`}
-                className="flex-1 rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-3 py-1.5 text-[12px] font-semibold text-black shadow text-center"
+                className={`${CTA_PRIMARY} flex-1 justify-center px-3 py-1.5 text-[12px]`}
               >
                 Criar {cat.preset === "restaurante" ? "jantar" : cat.preset === "padel" ? "torneio" : "evento"}
               </Link>
