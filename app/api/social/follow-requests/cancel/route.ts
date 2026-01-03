@@ -1,0 +1,28 @@
+export const runtime = "nodejs";
+
+import { NextRequest, NextResponse } from "next/server";
+import { createSupabaseServer } from "@/lib/supabaseServer";
+import { prisma } from "@/lib/prisma";
+
+export async function POST(req: NextRequest) {
+  const supabase = await createSupabaseServer();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+
+  const body = (await req.json().catch(() => null)) as { targetUserId?: string } | null;
+  const targetUserId = body?.targetUserId?.trim();
+  if (!targetUserId) {
+    return NextResponse.json({ ok: false, error: "INVALID_TARGET" }, { status: 400 });
+  }
+
+  await prisma.follow_requests.deleteMany({
+    where: { requester_id: user.id, target_id: targetUserId },
+  });
+  await prisma.notification.deleteMany({
+    where: { userId: targetUserId, type: "FRIEND_REQUEST", fromUserId: user.id },
+  });
+
+  return NextResponse.json({ ok: true }, { status: 200 });
+}

@@ -16,7 +16,7 @@ type InviteGateClientProps = {
   checkoutUiVariant: "DEFAULT" | "PADEL";
   padelMeta?: {
     eventId: number;
-    organizerId: number | null;
+    organizationId: number | null;
     categoryId?: number | null;
     categoryLinkId?: number | null;
   };

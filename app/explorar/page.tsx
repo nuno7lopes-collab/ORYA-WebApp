@@ -5,12 +5,13 @@ import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import { defaultBlurDataURL, optimizeImageUrl } from "@/lib/image";
+import { defaultBlurDataURL } from "@/lib/image";
+import { getEventCoverUrl } from "@/lib/eventCover";
 import { PORTUGAL_CITIES } from "@/config/cities";
 import { clampWithGap } from "@/lib/filters";
 import { trackEvent } from "@/lib/analytics";
 import { useUser } from "@/app/hooks/useUser";
-import { CTA_PRIMARY } from "@/app/organizador/dashboardUi";
+import { CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
 
 type ExploreItem = {
   id: number;
@@ -43,7 +44,7 @@ type ServiceItem = {
   durationMinutes: number;
   price: number;
   currency: string;
-  organizer: {
+  organization: {
     id: number;
     publicName: string | null;
     businessName: string | null;
@@ -83,7 +84,7 @@ type PadelTournamentItem = {
   locationName: string | null;
   locationCity: string | null;
   priceFrom: number | null;
-  organizerName: string | null;
+  organizationName: string | null;
   format: string | null;
   eligibility: string | null;
   levels: Array<{ id: number; label: string }>;
@@ -97,8 +98,8 @@ type PadelClubItem = {
   address: string | null;
   courtsCount: number;
   slug: string | null;
-  organizerName: string | null;
-  organizerUsername: string | null;
+  organizationName: string | null;
+  organizationUsername: string | null;
   courts: Array<{ id: number; name: string; indoor: boolean; surface: string | null }>;
 };
 
@@ -173,59 +174,12 @@ const PADEL_ELIGIBILITY_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "MIXED", label: "Misto" },
 ];
 
-const defaultCover = (() => {
-  const svg = `
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1200" viewBox="0 0 1200 1200">
-  <defs>
-    <linearGradient id="bg" x1="15%" y1="0%" x2="85%" y2="100%">
-      <stop offset="0%" stop-color="#0b0c12"/>
-      <stop offset="50%" stop-color="#080910"/>
-      <stop offset="100%" stop-color="#05060b"/>
-    </linearGradient>
-    <radialGradient id="glow1" cx="20%" cy="24%" r="34%">
-      <stop offset="0%" stop-color="#9aa6c7" stop-opacity="0.35"/>
-      <stop offset="70%" stop-color="#9aa6c7" stop-opacity="0"/>
-    </radialGradient>
-    <radialGradient id="glow2" cx="78%" cy="20%" r="30%">
-      <stop offset="0%" stop-color="#7d8fb5" stop-opacity="0.32"/>
-      <stop offset="70%" stop-color="#7d8fb5" stop-opacity="0"/>
-    </radialGradient>
-    <radialGradient id="glow3" cx="52%" cy="80%" r="42%">
-      <stop offset="0%" stop-color="#4f5b73" stop-opacity="0.28"/>
-      <stop offset="70%" stop-color="#4f5b73" stop-opacity="0"/>
-    </radialGradient>
-    <linearGradient id="glass" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="rgba(255,255,255,0.08)"/>
-      <stop offset="42%" stop-color="rgba(255,255,255,0.02)"/>
-      <stop offset="100%" stop-color="rgba(255,255,255,0.08)"/>
-    </linearGradient>
-    <linearGradient id="sheen" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="rgba(255,255,255,0.12)"/>
-      <stop offset="20%" stop-color="rgba(255,255,255,0.03)"/>
-      <stop offset="50%" stop-color="rgba(255,255,255,0.1)"/>
-      <stop offset="78%" stop-color="rgba(255,255,255,0.03)"/>
-      <stop offset="100%" stop-color="rgba(255,255,255,0.14)"/>
-    </linearGradient>
-  </defs>
-  <rect width="1200" height="1200" fill="url(#bg)"/>
-  <rect width="1200" height="1200" fill="url(#glow1)"/>
-  <rect width="1200" height="1200" fill="url(#glow2)"/>
-  <rect width="1200" height="1200" fill="url(#glow3)"/>
-  <rect x="120" y="150" width="960" height="840" rx="36" fill="url(#glass)" stroke="rgba(255,255,255,0.12)" stroke-width="2"/>
-  <rect x="100" y="130" width="1000" height="880" fill="url(#sheen)" opacity="0.45"/>
-  <g opacity="0.12" stroke="rgba(255,255,255,0.24)" stroke-width="1">
-    <path d="M110 260 Q520 180 890 280 T1090 260"/>
-    <path d="M90 520 Q520 460 900 560 T1110 520"/>
-    <path d="M80 760 Q520 720 900 820 T1120 800"/>
-  </g>
-  <g opacity="0.32" stroke="rgba(255,255,255,0.18)" stroke-width="1.3" fill="none">
-    <circle cx="320" cy="300" r="42"/>
-    <circle cx="880" cy="300" r="36"/>
-    <circle cx="820" cy="760" r="40"/>
-  </g>
-</svg>`;
-  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
-})();
+const resolveCover = (
+  coverImageUrl: string | null | undefined,
+  seed: string | number,
+  width = 900,
+) => getEventCoverUrl(coverImageUrl, { seed, width, quality: 72 });
+
 function formatDateRange(start: string, end: string) {
   const startDate = new Date(start);
   const endDate = new Date(end);
@@ -1561,11 +1515,11 @@ function ExplorarContent() {
 
         {/* LOADING */}
         {showSkeleton && (
-          <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4" aria-hidden>
+          <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-4" aria-hidden>
             {Array.from({ length: 8 }).map((_, i) => (
               <div
                 key={i}
-                className="rounded-3xl border border-white/10 orya-skeleton-surface p-3 animate-pulse space-y-3"
+                className="w-full rounded-3xl border border-white/10 orya-skeleton-surface p-3 animate-pulse space-y-3"
               >
                 <div className="rounded-2xl bg-white/10 aspect-square" />
                 <div className="h-3 w-3/4 rounded bg-white/10" />
@@ -1681,7 +1635,7 @@ function ExplorarContent() {
                       Sem torneios com estes filtros.
                     </div>
                   ) : (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                    <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-4">
                       {padelTournaments.map((item) => (
                         <PadelTournamentCard key={item.id} item={item} />
                       ))}
@@ -1738,7 +1692,7 @@ function ExplorarContent() {
                 </div>
               </div>
             ) : isReservasWorld ? (
-              <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+              <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-4">
                 {[...serviceItems.map((item) => ({ item })), ...Array.from({ length: Math.max(0, 3 - serviceItems.length) }).map((_, idx) => ({ item: null, key: `placeholder-${idx}` }))].map(
                   (entry, idx) =>
                     entry.item ? (
@@ -1749,7 +1703,7 @@ function ExplorarContent() {
                 )}
               </div>
             ) : (
-              <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+              <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-4">
                 {[...items.map((item) => ({ item })), ...Array.from({ length: Math.max(0, 3 - items.length) }).map((_, idx) => ({ item: null, key: `placeholder-${idx}` }))].map(
                   (entry, idx) =>
                     entry.item ? (
@@ -1958,16 +1912,12 @@ function BaseCard({
   return (
     <Link
       href={buildSlug(item.type, item.slug)}
-      className={`group rounded-3xl border border-white/10 bg-white/[0.02] overflow-hidden flex flex-col transition-all hover:border-white/16 hover:-translate-y-[6px] ${neonClass ?? ""}`}
+      className={`group w-full rounded-3xl border border-white/10 bg-white/[0.02] overflow-hidden flex flex-col transition-all hover:border-white/16 hover:-translate-y-[6px] ${neonClass ?? ""}`}
     >
       <div className="relative overflow-hidden">
         <div className="aspect-square w-full">
           <Image
-            src={
-              item.coverImageUrl
-                ? optimizeImageUrl(item.coverImageUrl, 900, 72)
-                : defaultCover
-            }
+            src={resolveCover(item.coverImageUrl, item.slug ?? item.id, 900)}
             alt={item.title}
             fill
             sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
@@ -2026,7 +1976,7 @@ function BaseCard({
               {item.hostName || `@${item.hostUsername}`}
             </button>
           ) : (
-            <span className="truncate">{item.hostName || "Organizador ORYA"}</span>
+            <span className="truncate">{item.hostName || "Organização ORYA"}</span>
           )}
           <span className="rounded-full bg-white/5 px-2 py-0.5 border border-white/10">
             <PriceBadge item={item} />
@@ -2076,19 +2026,19 @@ function EventCard(props: CardProps) {
 }
 
 function ServiceCard({ item }: ServiceCardProps) {
-  const organizerName = item.organizer.publicName || item.organizer.businessName || "Organização";
+  const organizationName = item.organization.publicName || item.organization.businessName || "Organização";
   const availabilityLabel = formatServiceAvailability(item.nextAvailability);
   const priceLabel = `${(item.price / 100).toFixed(2)} ${item.currency}`;
 
   return (
     <Link
       href={`/servicos/${item.id}`}
-      className="group rounded-3xl border border-white/10 bg-white/[0.02] overflow-hidden flex flex-col transition-all hover:border-white/16 hover:-translate-y-[6px] shadow-[0_14px_32px_rgba(0,0,0,0.45)]"
+      className="group w-full rounded-3xl border border-white/10 bg-white/[0.02] overflow-hidden flex flex-col transition-all hover:border-white/16 hover:-translate-y-[6px] shadow-[0_14px_32px_rgba(0,0,0,0.45)]"
     >
       <div className="relative overflow-hidden">
         <div className="aspect-square w-full">
           <Image
-            src={defaultCover}
+            src={resolveCover(null, `service-${item.id}`, 900)}
             alt={item.name}
             fill
             sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
@@ -2111,9 +2061,9 @@ function ServiceCard({ item }: ServiceCardProps) {
 
       <div className="p-3 flex flex-col gap-1.5 bg-gradient-to-b from-white/2 via-transparent to-white/2">
         <div className="flex items-center justify-between text-[11px] text-white/75">
-          <span className="truncate">{organizerName}</span>
+          <span className="truncate">{organizationName}</span>
           <span className="rounded-full bg-white/5 px-2 py-0.5 border border-white/10">
-            {item.organizer.city || "Cidade"}
+            {item.organization.city || "Cidade"}
           </span>
         </div>
 
@@ -2147,12 +2097,12 @@ function PadelTournamentCard({ item }: PadelTournamentCardProps) {
   return (
     <Link
       href={`/eventos/${item.slug}`}
-      className="group rounded-3xl border border-white/10 bg-white/[0.02] overflow-hidden flex flex-col transition-all hover:border-white/16 hover:-translate-y-[6px] shadow-[0_14px_32px_rgba(0,0,0,0.45)]"
+      className="group w-full rounded-3xl border border-white/10 bg-white/[0.02] overflow-hidden flex flex-col transition-all hover:border-white/16 hover:-translate-y-[6px] shadow-[0_14px_32px_rgba(0,0,0,0.45)]"
     >
       <div className="relative overflow-hidden">
         <div className="aspect-square w-full">
           <Image
-            src={item.coverImageUrl ? optimizeImageUrl(item.coverImageUrl, 900, 72) : defaultCover}
+            src={resolveCover(item.coverImageUrl, item.slug ?? item.id, 900)}
             alt={item.title}
             fill
             sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
@@ -2173,7 +2123,7 @@ function PadelTournamentCard({ item }: PadelTournamentCardProps) {
 
       <div className="p-3 flex flex-col gap-1.5 bg-gradient-to-b from-white/2 via-transparent to-white/2">
         <div className="flex items-center justify-between text-[11px] text-white/75">
-          <span className="truncate">{item.organizerName || "Clube ORYA"}</span>
+          <span className="truncate">{item.organizationName || "Clube ORYA"}</span>
           <span className="rounded-full bg-white/5 px-2 py-0.5 border border-white/10">{priceLabel}</span>
         </div>
 
@@ -2216,7 +2166,7 @@ function PadelTournamentCard({ item }: PadelTournamentCardProps) {
 }
 
 function PadelClubCard({ item }: PadelClubCardProps) {
-  const clubHref = item.organizerUsername ? `/${item.organizerUsername}` : null;
+  const clubHref = item.organizationUsername ? `/${item.organizationUsername}` : null;
   const header = (
     <div className="flex items-start justify-between gap-3">
       <div>
@@ -2292,7 +2242,7 @@ function PadelOpenPairingCard({
       <div className="flex items-start gap-4">
         <div className="relative h-20 w-20 overflow-hidden rounded-2xl border border-white/10 bg-white/5">
           <Image
-            src={item.event.coverImageUrl ? optimizeImageUrl(item.event.coverImageUrl, 240, 72) : defaultCover}
+            src={resolveCover(item.event.coverImageUrl, item.event.slug ?? item.event.id, 240)}
             alt={item.event.title}
             fill
             sizes="80px"
@@ -2334,10 +2284,10 @@ function PadelOpenPairingCard({
 
 function PlaceholderCard() {
   return (
-    <div className="group rounded-3xl border border-white/10 bg-white/[0.02] overflow-hidden flex flex-col shadow-[0_14px_32px_rgba(0,0,0,0.4)]">
+    <div className="group w-full rounded-3xl border border-white/10 bg-white/[0.02] overflow-hidden flex flex-col shadow-[0_14px_32px_rgba(0,0,0,0.4)]">
       <div className="relative aspect-square w-full overflow-hidden">
         <Image
-          src={defaultCover}
+          src={resolveCover(null, "explorar-placeholder", 900)}
           alt="Em breve na ORYA"
           fill
           sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"

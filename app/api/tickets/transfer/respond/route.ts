@@ -62,7 +62,7 @@ export async function POST(req: NextRequest) {
     const transfer = await prisma.ticketTransfer.findUnique({
       where: { id: transferId },
       include: {
-        ticket: { include: { event: { select: { id: true, title: true, organizerId: true } } } },
+        ticket: { include: { event: { select: { id: true, title: true, organizationId: true } } } },
       },
     });
 
@@ -102,7 +102,7 @@ export async function POST(req: NextRequest) {
         await createNotification({
           userId: transfer.fromUserId,
           fromUserId: userId,
-          organizerId: transfer.ticket.event?.organizerId ?? null,
+          organizationId: transfer.ticket.event?.organizationId ?? null,
           eventId: transfer.ticket.event?.id ?? null,
           ticketId: transfer.ticketId,
           type: NotificationType.TICKET_TRANSFER_DECLINED,
@@ -172,7 +172,7 @@ export async function POST(req: NextRequest) {
       await createNotification({
         userId: transfer.fromUserId,
         fromUserId: userId,
-        organizerId: transfer.ticket.event?.organizerId ?? null,
+        organizationId: transfer.ticket.event?.organizationId ?? null,
         eventId: transfer.ticket.event?.id ?? null,
         ticketId: transfer.ticketId,
         type: NotificationType.TICKET_TRANSFER_ACCEPTED,

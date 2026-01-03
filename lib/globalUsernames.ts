@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { validateUsername } from "@/lib/username";
 
 type Tx = Prisma.TransactionClient | PrismaClient;
-export type UsernameOwnerType = "user" | "organizer";
+export type UsernameOwnerType = "user" | "organization";
 
 export class UsernameTakenError extends Error {
   code = "USERNAME_TAKEN";
@@ -27,40 +27,28 @@ export async function checkUsernameAvailability(username: string, tx: Tx = prism
   const normalized = normalizedResult.username;
 
   const checkLocalAvailability = async (client: Tx) => {
-    const [profile, organizer] = await Promise.all([
+    const [profile, organization] = await Promise.all([
       client.profile.findFirst({
         where: { username: { equals: normalized, mode: "insensitive" } },
         select: { id: true },
       }),
-      client.organizer.findFirst({
+      client.organization.findFirst({
         where: { username: { equals: normalized, mode: "insensitive" } },
         select: { id: true },
       }),
     ]);
-    return !profile && !organizer;
+    return !profile && !organization;
   };
 
-  try {
-    const existing = await tx.globalUsername.findUnique({
-      where: { username: normalized },
-      select: { ownerType: true, ownerId: true },
-    });
-    if (existing) {
-      return { ok: true as const, available: false, username: normalized };
-    }
-    const available = await checkLocalAvailability(tx);
-    return { ok: true as const, available, username: normalized };
-  } catch (err) {
-    const code = (err as { code?: string })?.code;
-    const msg = err instanceof Error ? err.message : "";
-    const missingTable = code === "P2021" || code === "P2022" || msg.toLowerCase().includes("does not exist");
-    if (missingTable) {
-      console.warn("[globalUsernames] table/column missing while checking availability");
-      const available = await checkLocalAvailability(tx);
-      return { ok: true as const, available, username: normalized };
-    }
-    throw err;
+  const existing = await tx.globalUsername.findUnique({
+    where: { username: normalized },
+    select: { ownerType: true, ownerId: true },
+  });
+  if (existing) {
+    return { ok: true as const, available: false, username: normalized };
   }
+  const available = await checkLocalAvailability(tx);
+  return { ok: true as const, available, username: normalized };
 }
 
 export async function setUsernameForOwner(options: {
@@ -79,10 +67,10 @@ export async function setUsernameForOwner(options: {
 
   const username = validated.username;
   const ownerIdStr = String(ownerId);
-  const ownerIdNumber = ownerType === "organizer" ? Number(ownerId) : null;
+  const ownerIdNumber = ownerType === "organization" ? Number(ownerId) : null;
 
   const run = async (trx: Tx) => {
-    const [profile, organizer] = await Promise.all([
+    const [profile, organization] = await Promise.all([
       trx.profile.findFirst({
         where: {
           username: { equals: username, mode: "insensitive" },
@@ -90,17 +78,17 @@ export async function setUsernameForOwner(options: {
         },
         select: { id: true },
       }),
-      trx.organizer.findFirst({
+      trx.organization.findFirst({
         where: {
           username: { equals: username, mode: "insensitive" },
-          ...(ownerType === "organizer" && ownerIdNumber && Number.isFinite(ownerIdNumber)
+          ...(ownerType === "organization" && ownerIdNumber && Number.isFinite(ownerIdNumber)
             ? { NOT: { id: ownerIdNumber } }
             : {}),
         },
         select: { id: true },
       }),
     ]);
-    if (profile || organizer) {
+    if (profile || organization) {
       throw new UsernameTakenError(username);
     }
 
@@ -135,36 +123,14 @@ export async function setUsernameForOwner(options: {
   };
 
   if (providedTx) {
-    try {
-      return await run(providedTx);
-    } catch (err) {
-      const code = (err as { code?: string })?.code;
-      const msg = err instanceof Error ? err.message : "";
-      const missingTable = code === "P2021" || code === "P2022" || msg.toLowerCase().includes("relation") || msg.toLowerCase().includes("does not exist");
-      if (missingTable) {
-        console.warn("[globalUsernames] table/column missing, skipping username reservation");
-        return { ok: false as const, error: "USERNAME_TABLE_MISSING" as const };
-      }
-      throw err;
-    }
+    return run(providedTx);
   }
 
-  try {
-    return await prisma.$transaction(run);
-  } catch (err) {
-    const code = (err as { code?: string })?.code;
-    const msg = err instanceof Error ? err.message : "";
-    const missingTable = code === "P2021" || code === "P2022" || msg.toLowerCase().includes("relation") || msg.toLowerCase().includes("does not exist");
-    if (missingTable) {
-      console.warn("[globalUsernames] table/column missing, skipping username reservation");
-      return { ok: false as const, error: "USERNAME_TABLE_MISSING" as const };
-    }
-    throw err;
-  }
+  return prisma.$transaction(run);
 }
 
 /**
- * Remove usernames associados a um owner específico (user ou organizer).
+ * Remove usernames associados a um owner específico (user ou organization).
  * Útil em deletes/cleanup de conta/org.
  */
 export async function clearUsernameForOwner(options: {

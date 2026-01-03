@@ -6,7 +6,7 @@ import { useAuthModal } from "./AuthModalContext";
 import { supabaseBrowser } from "@/lib/supabaseBrowser";
 import { mutate as swrMutate } from "swr";
 import type { User } from "@supabase/supabase-js";
-import { CTA_PRIMARY } from "@/app/organizador/dashboardUi";
+import { CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
 
 export default function AuthModal() {
   const modal = useAuthModal();

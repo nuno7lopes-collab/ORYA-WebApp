@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useCheckout } from "./contextoCheckout";
 import { Avatar } from "@/components/ui/avatar";
-import { CTA_PRIMARY } from "@/app/organizador/dashboardUi";
+import { CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
 
 type Wave = {
   id: string;
@@ -69,7 +69,7 @@ export default function Step1Bilhete() {
   ).toUpperCase();
   const isPadelVariant = variant === "PADEL";
   const padelMeta = (safeDados.additional?.padelMeta as
-    | { eventId: number; organizerId: number | null; categoryId?: number | null; categoryLinkId?: number | null }
+    | { eventId: number; organizationId: number | null; categoryId?: number | null; categoryLinkId?: number | null }
     | undefined) ?? null;
 
   const [quantidades, setQuantidades] = useState<Record<string, number>>(
@@ -313,7 +313,7 @@ export default function Step1Bilhete() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               eventId: resolvedPadelMeta.eventId,
-              organizerId: resolvedPadelMeta.organizerId ?? undefined,
+              organizationId: resolvedPadelMeta.organizationId ?? undefined,
               categoryId: resolvedPadelMeta.categoryId ?? undefined,
               paymentMode,
               pairingJoinMode: padelJoinMode,

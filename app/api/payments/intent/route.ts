@@ -153,14 +153,14 @@ function normalizePhone(phone: string | null | undefined, defaultCountry: Countr
 }
 
 async function upsertPadelPlayerProfile(params: {
-  organizerId: number;
+  organizationId: number;
   fullName: string;
   email?: string | null;
   phone?: string | null;
   gender?: string | null;
   level?: string | null;
 }) {
-  const { organizerId, fullName, email, phone, gender, level } = params;
+  const { organizationId, fullName, email, phone, gender, level } = params;
   if (!fullName.trim()) return;
   const emailClean = email?.trim().toLowerCase() || null;
   const phoneClean = phone?.trim() || null;
@@ -168,7 +168,7 @@ async function upsertPadelPlayerProfile(params: {
   try {
     const existing = emailClean
       ? await prisma.padelPlayerProfile.findFirst({
-          where: { organizerId, email: emailClean },
+          where: { organizationId, email: emailClean },
           select: { id: true },
         })
       : null;
@@ -188,7 +188,7 @@ async function upsertPadelPlayerProfile(params: {
 
     await prisma.padelPlayerProfile.create({
       data: {
-        organizerId,
+        organizationId,
         fullName,
         email: emailClean || undefined,
         phone: phoneClean ?? undefined,
@@ -292,7 +292,6 @@ export async function POST(req: NextRequest) {
         type: string;
         is_deleted: boolean;
         is_free: boolean;
-        is_test: boolean;
         ends_at: Date | null;
         cover_image_url: string | null;
         location_name: string | null;
@@ -300,7 +299,7 @@ export async function POST(req: NextRequest) {
         timezone: string;
         fee_mode: string | null;
         fee_mode_override: string | null;
-        organizer_id: number | null;
+        organization_id: number | null;
         invite_only: boolean | null;
         public_access_mode: string | null;
         org_type: string | null;
@@ -323,7 +322,6 @@ export async function POST(req: NextRequest) {
         e.type,
         e.is_deleted,
         e.is_free,
-        e.is_test,
         e.ends_at,
         e.cover_image_url,
         e.location_name,
@@ -331,7 +329,7 @@ export async function POST(req: NextRequest) {
         e.timezone,
         e.fee_mode,
         e.fee_mode_override,
-        e.organizer_id,
+        e.organization_id,
         e.invite_only,
         e.public_access_mode,
         o.org_type AS org_type,
@@ -345,13 +343,13 @@ export async function POST(req: NextRequest) {
         e.platform_fee_fixed_cents_override,
         e.payout_mode
       FROM app_v3.events e
-      LEFT JOIN app_v3.organizers o ON o.id = e.organizer_id
+      LEFT JOIN app_v3.organizations o ON o.id = e.organization_id
       WHERE e.slug = ${slug}
       LIMIT 1;
     `;
 
     const event = eventRows[0];
-    const eventOrganizerId = event?.organizer_id ?? null;
+    const eventOrganizationId = event?.organization_id ?? null;
 
     if (!event) {
       return intentError("EVENT_NOT_FOUND", "Evento não encontrado.", { httpStatus: 404 });
@@ -360,10 +358,6 @@ export async function POST(req: NextRequest) {
       ? await prisma.profile.findUnique({ where: { id: userId } })
       : null;
     const isAdmin = Array.isArray(profile?.roles) ? profile.roles.includes("admin") : false;
-    if (event.is_test && !isAdmin) {
-      return intentError("EVENT_NOT_AVAILABLE", "Evento não disponível.", { httpStatus: 404 });
-    }
-
     // Atualizar contacto no perfil se fornecido (normalizado)
     if (userId && contact && contact.trim()) {
       const normalizedContact = normalizePhone(contact.trim());
@@ -375,7 +369,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    if (event.is_deleted || event.status !== "PUBLISHED" || event.type !== "ORGANIZER_EVENT") {
+    if (event.is_deleted || event.status !== "PUBLISHED" || event.type !== "ORGANIZATION_EVENT") {
       return intentError("EVENT_CLOSED", "Evento indisponível para compra.", { httpStatus: 400 });
     }
 
@@ -431,7 +425,7 @@ export async function POST(req: NextRequest) {
 
     const padelConfig = await prisma.padelTournamentConfig.findUnique({
       where: { eventId: event.id },
-      select: { organizerId: true },
+      select: { organizationId: true },
     });
 
     const isResaleRequest =
@@ -720,7 +714,7 @@ export async function POST(req: NextRequest) {
         throw new Error("PROMO_INVALID");
       }
 
-      // Scope ao evento já garantido no filtro eventId; não há organizerId na tabela nova.
+      // Scope ao evento já garantido no filtro eventId; não há organizationId na tabela nova.
       if (promo.eventId && promo.eventId !== event.id) {
         throw new Error("PROMO_SCOPE");
       }
@@ -863,12 +857,12 @@ export async function POST(req: NextRequest) {
     const pricing = computePricing(preDiscountAmountCents, discountCents, {
       eventFeeModeOverride: "INCLUDED" as FeeMode,
       eventFeeMode: (event.fee_mode as FeeMode | null) ?? undefined,
-      organizerFeeMode: (event.org_fee_mode as FeeMode | null) ?? undefined,
+      organizationFeeMode: (event.org_fee_mode as FeeMode | null) ?? undefined,
       platformDefaultFeeMode: "INCLUDED" as FeeMode,
       eventPlatformFeeBpsOverride: event.platform_fee_bps_override,
       eventPlatformFeeFixedCentsOverride: event.platform_fee_fixed_cents_override,
-      organizerPlatformFeeBps: event.org_platform_fee_bps,
-      organizerPlatformFeeFixedCents: event.org_platform_fee_fixed_cents,
+      organizationPlatformFeeBps: event.org_platform_fee_bps,
+      organizationPlatformFeeFixedCents: event.org_platform_fee_fixed_cents,
       platformDefaultFeeBps: defaultFeeBps,
       platformDefaultFeeFixedCents: defaultFeeFixed,
       isPlatformOrg,
@@ -889,18 +883,18 @@ export async function POST(req: NextRequest) {
 
     // Stripe account rules
     let stripeAccountId = event.org_stripe_account_id ?? null;
-    const payoutModeRaw = (event.payout_mode || "ORGANIZER").toString().toUpperCase();
-    const organizerStripeReady = Boolean(event.org_stripe_charges_enabled && event.org_stripe_payouts_enabled);
+    const payoutModeRaw = (event.payout_mode || "ORGANIZATION").toString().toUpperCase();
+    const organizationStripeReady = Boolean(event.org_stripe_charges_enabled && event.org_stripe_payouts_enabled);
 
     // Plataforma ORYA: usa conta da plataforma, não exige Connect
-    const requiresOrganizerStripe = !isPlatformOrg && payoutModeRaw !== "PLATFORM";
+    const requiresOrganizationStripe = !isPlatformOrg && payoutModeRaw !== "PLATFORM";
 
-    if (!requiresOrganizerStripe) {
+    if (!requiresOrganizationStripe) {
       stripeAccountId = null;
     } else {
-      // Organizadores externos: exigem Connect pronto
-      if (!stripeAccountId || !organizerStripeReady) {
-        return intentError("ORGANIZER_STRIPE_NOT_CONNECTED", "Pagamentos estão desativados porque o organizador ainda não ligou a Stripe.", {
+      // Organizações externos: exigem Connect pronto
+      if (!stripeAccountId || !organizationStripeReady) {
+        return intentError("ORGANIZATION_STRIPE_NOT_CONNECTED", "Pagamentos estão desativados porque o organização ainda não ligou a Stripe.", {
           httpStatus: 409,
           status: "FAILED",
           nextAction: "CONNECT_STRIPE",
@@ -1862,8 +1856,6 @@ export async function POST(req: NextRequest) {
               amountCents: 0,
               platformFeeCents: 0,
               stripeFeeCents: 0,
-              mode: event.is_test ? "TEST" : "LIVE",
-              isTest: Boolean(event.is_test),
             },
           });
         });
@@ -1877,7 +1869,7 @@ export async function POST(req: NextRequest) {
           const emailToSave = userData?.user?.email || null;
           const phoneToSave = userData?.user?.phone || contact || profile?.contactPhone || null;
           await upsertPadelPlayerProfile({
-            organizerId: padelConfig.organizerId,
+            organizationId: padelConfig.organizationId,
             fullName,
             email: emailToSave,
             phone: phoneToSave,
@@ -1987,8 +1979,6 @@ export async function POST(req: NextRequest) {
           amountCents: 0,
           platformFeeCents: 0,
           stripeFeeCents: 0,
-          mode: event.is_test ? "TEST" : "LIVE",
-          isTest: Boolean(event.is_test),
         },
       });
       await enqueueOperation({
@@ -2003,18 +1993,18 @@ export async function POST(req: NextRequest) {
         const emailToSave = userData?.user?.email || null;
         const phoneToSave = userData?.user?.phone || contact || profile?.contactPhone || null;
         await upsertPadelPlayerProfile({
-          organizerId: padelConfig.organizerId,
+          organizationId: padelConfig.organizationId,
           fullName,
           email: emailToSave,
           phone: phoneToSave,
         });
       }
 
-      // Notificação para o organizer (se existir) — respeita prefs
-      if (eventOrganizerId) {
+      // Notificação para o organization (se existir) — respeita prefs
+      if (eventOrganizationId) {
         try {
-          const ownerMembers = await prisma.organizerMember.findMany({
-            where: { organizerId: eventOrganizerId, role: { in: ["OWNER", "CO_OWNER", "ADMIN"] } },
+          const ownerMembers = await prisma.organizationMember.findMany({
+            where: { organizationId: eventOrganizationId, role: { in: ["OWNER", "CO_OWNER", "ADMIN"] } },
             select: { userId: true },
           });
           const uniqOwners = Array.from(new Set(ownerMembers.map((m) => m.userId)));
@@ -2027,7 +2017,7 @@ export async function POST(req: NextRequest) {
                   type: NotificationType.EVENT_SALE,
                   title: "Nova reserva gratuita",
                   body: `Recebeste uma reserva para ${event.title}.`,
-                  ctaUrl: `/organizador?tab=analyze&section=vendas&eventId=${event.id}`,
+                  ctaUrl: `/organizacao?tab=analyze&section=vendas&eventId=${event.id}`,
                   ctaLabel: "Ver vendas",
                   payload: { eventId: event.id, title: event.title },
                 });
@@ -2129,7 +2119,7 @@ export async function POST(req: NextRequest) {
       intentParams.transfer_data = {
         destination: stripeAccountId,
       };
-      // Apenas aplica application_fee se não for organizer admin
+      // Apenas aplica application_fee se não for organization admin
       if (!isPlatformOrg) {
         intentParams.application_fee_amount = platformFeeCents;
       }
@@ -2196,7 +2186,7 @@ export async function POST(req: NextRequest) {
       const emailToSave = userData?.user?.email || guestEmail || null;
       const phoneToSave = userData?.user?.phone || contact || guestPhone || null;
       await upsertPadelPlayerProfile({
-        organizerId: padelConfig.organizerId,
+        organizationId: padelConfig.organizationId,
         fullName,
         email: emailToSave,
         phone: phoneToSave,

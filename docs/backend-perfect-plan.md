@@ -16,14 +16,14 @@
   - Memberships, tiers, perks, access control, posts/announcements.
 
 ## Core domain (shared)
-- Identity + access: Profile, Organizer, OrganizerMember, OrganizerMemberInvite, OrganizerOwnerTransfer.
+- Identity + access: Profile, Organization, OrganizationMember, OrganizationMemberInvite, OrganizationOwnerTransfer.
 - Org config: OrganizationForm, OrganizationFormField, OrganizationFormSubmission, OrganizationUpdate, OrganizationModuleEntry,
-  OrganizerOfficialEmailRequest, OrganizationAuditLog.
+  OrganizationOfficialEmailRequest, OrganizationAuditLog.
 - Commerce + ops: PaymentEvent, Operation, PlatformSetting, Refund, SaleSummary, SaleLine.
 - Promo: PromoCode, PromoRedemption (optional core capability).
 - Notifications + email: Notification, NotificationPreference, NotificationOutbox, EmailIdentity, EmailOutbox, MatchNotification.
 - Global ids: GlobalUsername, Lock.
-- Infrastructure/auth tables (supabase): follows, organizer_follows, audit_log_entries, flow_state, identities, instances,
+- Infrastructure/auth tables (supabase): follows, organization_follows, audit_log_entries, flow_state, identities, instances,
   mfa_*, oauth_*, one_time_tokens, refresh_tokens, saml_*, schema_migrations, sessions, sso_*, users.
 
 ## Module mapping (current schema)
@@ -44,14 +44,14 @@
 ## API mapping (current)
 - Core/auth: app/api/auth/*, app/api/users/*, app/api/profiles/*, app/api/username/*,
   app/api/notifications/*, app/api/email/*, app/api/upload/*, app/api/social/*.
-- Organizer core: app/api/organizador/organizations/*, app/api/organizador/become, app/api/organizador/me,
-  app/api/organizador/username, app/api/organizador/updates/*,
-  app/api/organizador/payouts/*, app/api/organizador/finance/*, app/api/organizador/pagamentos/*,
-  app/api/organizador/marketing/*, app/api/organizador/estatisticas/*.
-- EVENTOS: app/api/eventos/*, app/api/organizador/events/*, app/api/organizador/checkin/*,
+- Organization core: app/api/organizacao/organizations/*, app/api/organizacao/become, app/api/organizacao/me,
+  app/api/organizacao/username, app/api/organizacao/updates/*,
+  app/api/organizacao/payouts/*, app/api/organizacao/finance/*, app/api/organizacao/pagamentos/*,
+  app/api/organizacao/marketing/*, app/api/organizacao/estatisticas/*.
+- EVENTOS: app/api/eventos/*, app/api/organizacao/events/*, app/api/organizacao/checkin/*,
   app/api/tickets/*, app/api/payments/*, app/api/checkout/*, app/api/stripe/webhook, app/api/inscricoes/*,
-  app/api/organizador/inscricoes/*.
-- PADEL: app/api/padel/*, app/api/organizador/padel/*, app/api/organizador/tournaments/*, app/api/tournaments/*,
+  app/api/organizacao/inscricoes/*.
+- PADEL: app/api/padel/*, app/api/organizacao/padel/*, app/api/organizacao/tournaments/*, app/api/tournaments/*,
   app/api/cron/padel/*.
 - RESERVAS: app/api/cron/reservations/cleanup (ticket holds only).
 
@@ -68,11 +68,11 @@
 ## Cleanup candidates (needs confirmation before delete)
 - Duplicate event resale endpoints: app/api/eventos/[slug]/resales vs app/api/eventos/[slug]/revendas.
 - Legacy fields/types not referenced by UI (example: galleryImages in app/types/event.ts).
-- Optional organizer sections that are not used (marketing/promoters/content) if we want a strict minimal scope.
+- Optional organization sections that are not used (marketing/promoters/content) if we want a strict minimal scope.
 
 ## Execution checklist
 1) Define category blueprint (required fields, tabs, dashboard blocks).
-2) Enforce category gating in organizer dashboard and routes.
+2) Enforce category gating in organization dashboard and routes.
 3) Build RESERVAS schema + APIs.
 4) Build CLUBS schema + APIs (memberships).
 5) Remove confirmed dead code and legacy endpoints.

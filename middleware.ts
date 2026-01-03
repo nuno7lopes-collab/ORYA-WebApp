@@ -5,6 +5,8 @@ import type { NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 
 export async function middleware(req: NextRequest) {
+  const pathname = req.nextUrl.pathname;
+
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
@@ -17,9 +19,11 @@ export async function middleware(req: NextRequest) {
       headers: req.headers,
     },
   });
-  const orgParam = req.nextUrl.searchParams.get("org") ?? req.nextUrl.searchParams.get("organizerId");
+  const orgParam =
+    req.nextUrl.searchParams.get("org") ??
+    req.nextUrl.searchParams.get("organizationId");
   if (orgParam && /^\d+$/.test(orgParam)) {
-    res.cookies.set("orya_org", orgParam, {
+    res.cookies.set("orya_organization", orgParam, {
       httpOnly: false,
       sameSite: "lax",
       path: "/",
@@ -47,10 +51,9 @@ export async function middleware(req: NextRequest) {
   } = await supabase.auth.getUser();
 
   // Auth wall para áreas privadas
-  const pathname = req.nextUrl.pathname;
   const isProtected =
     pathname.startsWith("/me") ||
-    pathname.startsWith("/organizador");
+    pathname.startsWith("/organizacao");
 
   if (isProtected && !user) {
     const loginUrl = new URL("/login", req.url);
@@ -62,5 +65,5 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/me/:path*", "/organizador/:path*"],
+  matcher: ["/me/:path*", "/organizacao/:path*"],
 };

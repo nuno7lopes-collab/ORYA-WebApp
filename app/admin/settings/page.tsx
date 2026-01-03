@@ -62,8 +62,8 @@ export default function AdminSettingsPage() {
   const oryaFeeCents = computeFee(sampleBase, parsedPlatformBps, parsedPlatformFixedCents);
   const stripeFeeOnTopCents = computeFee(sampleBase + oryaFeeCents, parsedStripeBps, parsedStripeFixedCents);
   const stripeFeeIncludedCents = computeFee(sampleBase, parsedStripeBps, parsedStripeFixedCents);
-  const organizerNetOnTop = Math.max(0, sampleBase - stripeFeeOnTopCents);
-  const organizerNetIncluded = Math.max(0, sampleBase - oryaFeeCents - stripeFeeIncludedCents);
+  const organizationNetOnTop = Math.max(0, sampleBase - stripeFeeOnTopCents);
+  const organizationNetIncluded = Math.max(0, sampleBase - oryaFeeCents - stripeFeeIncludedCents);
 
   const handleSave = async () => {
     setSaveError(null);
@@ -231,13 +231,13 @@ export default function AdminSettingsPage() {
                 <span>{formatEur(sampleBase + oryaFeeCents)}</span>
               </p>
               <p className="flex justify-between text-white/70">
-                <span>Recebe organizador (após Stripe)</span>
-                <span>{formatEur(organizerNetOnTop)}</span>
+                <span>Recebe organização (após Stripe)</span>
+                <span>{formatEur(organizationNetOnTop)}</span>
               </p>
               <p className="mt-1 text-[11px] text-white/60">Stripe cobra sobre o total (bilhete + taxa ORYA).</p>
             </div>
             <div className="rounded-xl border border-white/10 bg-black/20 p-3">
-              <p className="mb-2 text-xs uppercase tracking-[0.15em] text-white/60">Organizador absorve (INCLUDED)</p>
+              <p className="mb-2 text-xs uppercase tracking-[0.15em] text-white/60">Organização absorve (INCLUDED)</p>
               <p className="flex justify-between">
                 <span>Preço mostrado</span>
                 <span>10,00 €</span>
@@ -251,8 +251,8 @@ export default function AdminSettingsPage() {
                 <span suppressHydrationWarning>{formatEur(stripeFeeIncludedCents)}</span>
               </p>
               <p className="flex justify-between font-semibold">
-                <span>Recebe organizador (após Stripe)</span>
-                <span>{formatEur(organizerNetIncluded)}</span>
+                <span>Recebe organização (após Stripe)</span>
+                <span>{formatEur(organizationNetIncluded)}</span>
               </p>
               <p className="text-[11px] text-white/60">A taxa ORYA é deduzida ao valor. Stripe deduz a sua própria taxa no payout.</p>
             </div>

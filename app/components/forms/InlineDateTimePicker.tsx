@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { CTA_PRIMARY } from "@/app/organizador/dashboardUi";
+import { CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
 
 type Props = {
   label: string;

@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import useSWR from "swr";
 import { AdminLayout } from "@/app/admin/components/AdminLayout";
 import { AdminTopActions } from "@/app/admin/components/AdminTopActions";
-import { CTA_PRIMARY } from "@/app/organizador/dashboardUi";
+import { CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
 
 type PaymentEvent = {
   id: number;
@@ -38,8 +38,8 @@ type OverviewResponse =
   | {
       ok: true;
       totals: Aggregate;
-      byOrganizer: {
-        organizerId: number;
+      byOrganization: {
+        organizationId: number;
         grossCents: number;
         discountCents: number;
         platformFeeCents: number;
@@ -81,7 +81,7 @@ export default function AdminPaymentsPage() {
   const [mode, setMode] = useState<string>("ALL");
   const [q, setQ] = useState("");
   const [cursor, setCursor] = useState<number | null>(null);
-  const [organizerId, setOrganizerId] = useState("");
+  const [organizationId, setOrganizationId] = useState("");
   const [eventId, setEventId] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
@@ -104,12 +104,12 @@ export default function AdminPaymentsPage() {
   const overviewParams = useMemo(() => {
     const params = new URLSearchParams();
     if (mode !== "ALL") params.set("mode", mode);
-    if (organizerId.trim()) params.set("organizerId", organizerId.trim());
+    if (organizationId.trim()) params.set("organizationId", organizationId.trim());
     if (eventId.trim()) params.set("eventId", eventId.trim());
     if (from) params.set("from", from);
     if (to) params.set("to", to);
     return params.toString() ? `?${params.toString()}` : "";
-  }, [mode, organizerId, eventId, from, to]);
+  }, [mode, organizationId, eventId, from, to]);
 
   const { data: overview } = useSWR<OverviewResponse>(
     `/api/admin/payments/overview${overviewParams}`,
@@ -121,7 +121,7 @@ export default function AdminPaymentsPage() {
   const pagination = data && "ok" in data && data.ok ? data.pagination : { nextCursor: null, hasMore: false };
   const errorMsg = data && "ok" in data && !data.ok ? data.error || "Falha ao carregar intents." : null;
   const overviewTotals = overview && "ok" in overview && overview.ok ? overview.totals : null;
-  const overviewByOrganizer = overview && "ok" in overview && overview.ok ? overview.byOrganizer : [];
+  const overviewByOrganization = overview && "ok" in overview && overview.ok ? overview.byOrganization : [];
   const overviewError = overview && "ok" in overview && !overview.ok ? overview.error || "Falha ao carregar overview." : null;
 
   function badgeClass(s: string) {
@@ -239,11 +239,11 @@ export default function AdminPaymentsPage() {
 
               <div className="grid gap-3 md:grid-cols-4">
                 <div>
-                  <label className="mb-1 block text-[11px] text-white/70">Organizer ID</label>
+                  <label className="mb-1 block text-[11px] text-white/70">Organization ID</label>
                   <input
                     type="text"
-                    value={organizerId}
-                    onChange={(e) => setOrganizerId(e.target.value)}
+                    value={organizationId}
+                    onChange={(e) => setOrganizationId(e.target.value)}
                     placeholder="ex: 12"
                     className="w-full rounded-xl border border-white/15 bg-black/50 px-3 py-2 text-sm text-white outline-none focus:border-white/30"
                   />
@@ -285,7 +285,7 @@ export default function AdminPaymentsPage() {
           <div className="border-b border-white/10 px-4 py-3">
             <h3 className="text-sm font-semibold text-white">Visão global (sale_summaries)</h3>
             <p className="text-[11px] text-white/60">
-              Filtros de modo/organizer/evento/período aplicados. Valores estimam fee Stripe base.
+              Filtros de modo/organization/evento/período aplicados. Valores estimam fee Stripe base.
             </p>
           </div>
           {overviewError && (
@@ -317,13 +317,13 @@ export default function AdminPaymentsPage() {
             </div>
           )}
 
-          {overviewByOrganizer && overviewByOrganizer.length > 0 && (
+          {overviewByOrganization && overviewByOrganization.length > 0 && (
             <div className="px-4 pb-4">
               <div className="overflow-auto rounded-xl border border-white/10">
                 <table className="min-w-full text-left text-xs text-white/90">
                   <thead className="bg-black/70">
                     <tr className="border-b border-white/10 text-[11px] uppercase tracking-[0.16em] text-white/60">
-                      <th className="px-3 py-3">Organizer</th>
+                      <th className="px-3 py-3">Organization</th>
                       <th className="px-3 py-3">Bruto</th>
                       <th className="px-3 py-3">Taxa ORYA</th>
                       <th className="px-3 py-3">Fee Stripe (est.)</th>
@@ -333,9 +333,9 @@ export default function AdminPaymentsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {overviewByOrganizer.map((o) => (
-                      <tr key={o.organizerId} className="border-b border-white/5">
-                        <td className="px-3 py-2">#{o.organizerId}</td>
+                    {overviewByOrganization.map((o) => (
+                      <tr key={o.organizationId} className="border-b border-white/5">
+                        <td className="px-3 py-2">#{o.organizationId}</td>
                         <td className="px-3 py-2">{formatMoney(o.grossCents)}</td>
                         <td className="px-3 py-2">{formatMoney(o.platformFeeCents)}</td>
                         <td className="px-3 py-2">{formatMoney(o.stripeFeeCents)}</td>

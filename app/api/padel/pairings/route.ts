@@ -10,7 +10,7 @@ import {
   PadelPairingSlotStatus,
   PadelPaymentMode,
   PadelPairingJoinMode,
-  OrganizerMemberRole,
+  OrganizationMemberRole,
 } from "@prisma/client";
 import { randomUUID } from "crypto";
 import { createSupabaseServer } from "@/lib/supabaseServer";
@@ -23,16 +23,17 @@ import {
   computeSplitDeadlineAt,
   computePartnerLinkExpiresAt,
 } from "@/domain/padelDeadlines";
-import { getActiveOrganizerForUser } from "@/lib/organizerContext";
+import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { checkPadelCategoryLimit } from "@/domain/padelCategoryLimit";
+import { parseOrganizationId } from "@/lib/organizationId";
 
-const allowedRoles: OrganizerMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
+const allowedRoles: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
 
 async function syncPlayersFromSlots({
-  organizerId,
+  organizationId,
   slots,
 }: {
-  organizerId: number;
+  organizationId: number;
   slots: Array<{
     profileId: string | null;
     invitedContact: string | null;
@@ -50,14 +51,14 @@ async function syncPlayersFromSlots({
     });
     for (const profile of profiles) {
       const exists = await prisma.padelPlayerProfile.findFirst({
-        where: { organizerId, userId: profile.id },
+        where: { organizationId, userId: profile.id },
         select: { id: true },
       });
       if (exists) continue;
       const fullName = profile.fullName?.trim() || "Jogador ORYA";
       await prisma.padelPlayerProfile.create({
         data: {
-          organizerId,
+          organizationId,
           userId: profile.id,
           fullName,
           displayName: fullName,
@@ -82,14 +83,14 @@ async function syncPlayersFromSlots({
     const phone = !isEmail ? contact : null;
     if (email) {
       const exists = await prisma.padelPlayerProfile.findFirst({
-        where: { organizerId, email },
+        where: { organizationId, email },
         select: { id: true },
       });
       if (exists) continue;
     }
     await prisma.padelPlayerProfile.create({
       data: {
-        organizerId,
+        organizationId,
         fullName: contact,
         displayName: contact,
         email: email || undefined,
@@ -111,7 +112,7 @@ export async function POST(req: NextRequest) {
 
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
   const eventId = body && typeof body.eventId === "number" ? body.eventId : Number(body?.eventId);
-  const organizerIdRaw = body && typeof body.organizerId === "number" ? body.organizerId : Number(body?.organizerId);
+  const organizationIdRaw = parseOrganizationId(body?.organizationId);
   const categoryId = body && typeof body.categoryId === "number" ? body.categoryId : body?.categoryId === null ? null : Number(body?.categoryId);
   const paymentMode = typeof body?.paymentMode === "string" ? (body?.paymentMode as PadelPaymentMode) : null;
   const pairingJoinModeRaw = typeof body?.pairingJoinMode === "string" ? (body?.pairingJoinMode as PadelPairingJoinMode) : "INVITE_PARTNER";
@@ -129,11 +130,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "INVALID_INPUT" }, { status: 400 });
   }
 
-  // Resolver organizer + flag padel v2
+  // Resolver organization + flag padel v2
   const event = await prisma.event.findUnique({
     where: { id: eventId },
     select: {
-      organizerId: true,
+      organizationId: true,
       startsAt: true,
       padelTournamentConfig: { select: { padelV2Enabled: true } },
     },
@@ -141,9 +142,9 @@ export async function POST(req: NextRequest) {
   if (!event || !event.padelTournamentConfig?.padelV2Enabled) {
     return NextResponse.json({ ok: false, error: "EVENT_NOT_PADDEL_V2" }, { status: 400 });
   }
-  const organizerId = Number.isFinite(organizerIdRaw) && organizerIdRaw ? organizerIdRaw : event.organizerId;
-  if (!organizerId) {
-    return NextResponse.json({ ok: false, error: "ORGANIZER_MISSING" }, { status: 400 });
+  const organizationId = organizationIdRaw ?? event.organizationId;
+  if (!organizationId) {
+    return NextResponse.json({ ok: false, error: "ORGANIZATION_MISSING" }, { status: 400 });
   }
 
   // Basic guard: only proceed if padel_v2_enabled is active on the tournament config.
@@ -151,13 +152,13 @@ export async function POST(req: NextRequest) {
     where: { eventId },
     select: {
       padelV2Enabled: true,
-      organizerId: true,
+      organizationId: true,
       eligibilityType: true,
       splitDeadlineHours: true,
       defaultCategoryId: true,
     },
   });
-  if (!config?.padelV2Enabled || config.organizerId !== organizerId) {
+  if (!config?.padelV2Enabled || config.organizationId !== organizationId) {
     return NextResponse.json({ ok: false, error: "PADEL_V2_DISABLED" }, { status: 400 });
   }
 
@@ -457,7 +458,7 @@ export async function POST(req: NextRequest) {
       const created = await tx.padelPairing.create({
         data: {
           eventId,
-          organizerId,
+          organizationId,
           categoryId: effectiveCategoryId,
           payment_mode: paymentMode,
           createdByUserId: user.id,
@@ -485,9 +486,9 @@ export async function POST(req: NextRequest) {
       return created;
     });
 
-    // Auto-criar perfis de jogador para o organizador (roster)
+    // Auto-criar perfis de jogador para o organização (roster)
     await syncPlayersFromSlots({
-      organizerId,
+      organizationId,
       slots: pairing.slots.map((s) => ({
         profileId: (s as { profileId?: string | null }).profileId ?? null,
         invitedContact: (s as { invitedContact?: string | null }).invitedContact ?? null,
@@ -518,7 +519,7 @@ export async function GET(req: NextRequest) {
       where: { id: pairingId },
       include: {
         slots: { include: { playerProfile: true } },
-        event: { select: { organizerId: true } },
+        event: { select: { organizationId: true } },
       },
     });
     if (!pairing) return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
@@ -528,11 +529,11 @@ export async function GET(req: NextRequest) {
       pairing.player2UserId === user.id ||
       pairing.slots.some((s) => s.profileId === user.id);
     if (!isParticipant) {
-      const { organizer } = await getActiveOrganizerForUser(user.id, {
-        organizerId: pairing.organizerId,
+      const { organization } = await getActiveOrganizationForUser(user.id, {
+        organizationId: pairing.organizationId,
         roles: allowedRoles,
       });
-      if (!organizer) {
+      if (!organization) {
         return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
       }
     }
@@ -560,16 +561,16 @@ export async function GET(req: NextRequest) {
 
   const event = await prisma.event.findUnique({
     where: { id: eventId },
-    select: { organizerId: true },
+    select: { organizationId: true },
   });
-  if (!event?.organizerId) {
+  if (!event?.organizationId) {
     return NextResponse.json({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
   }
-  const { organizer } = await getActiveOrganizerForUser(user.id, {
-    organizerId: event.organizerId,
+  const { organization } = await getActiveOrganizationForUser(user.id, {
+    organizationId: event.organizationId,
     roles: allowedRoles,
   });
-  if (!organizer) {
+  if (!organization) {
     return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
   }
 

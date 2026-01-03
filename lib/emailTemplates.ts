@@ -9,14 +9,14 @@ type PurchaseEmailPayload = {
 };
 
 type OwnerTransferEmailPayload = {
-  organizerName: string;
+  organizationName: string;
   actorName: string;
   confirmUrl: string;
   expiresAt?: Date | null;
 };
 
 type OfficialEmailVerificationPayload = {
-  organizerName: string;
+  organizationName: string;
   confirmUrl: string;
   expiresAt?: Date | null;
   pendingEmail: string;
@@ -111,7 +111,7 @@ export function renderOwnerTransferEmail(payload: OwnerTransferEmailPayload) {
   const html = `
     <div style="font-family: Arial, sans-serif; color: #0f172a;">
       <h2 style="color:#111827;">Pedido para te tornares OWNER</h2>
-      <p><strong>${payload.actorName}</strong> pediu para te passar o papel de OWNER da organização <strong>${payload.organizerName}</strong>.</p>
+      <p><strong>${payload.actorName}</strong> pediu para te passar o papel de OWNER da organização <strong>${payload.organizationName}</strong>.</p>
       <p>Confirmares significa que ficas como OWNER único e os outros Owners passam a Co-owner.</p>
       <p style="margin:16px 0;"><a href="${payload.confirmUrl}" style="background:#111827;color:#ffffff;padding:12px 18px;border-radius:10px;text-decoration:none;font-weight:bold;">Confirmar transferência</a></p>
       <p style="color:#6b7280; font-size:12px;">${expiresLine || "O pedido expira em breve."}</p>
@@ -119,12 +119,12 @@ export function renderOwnerTransferEmail(payload: OwnerTransferEmailPayload) {
   `;
 
   const text = `Pedido para te tornares OWNER
-${payload.actorName} quer passar a organização "${payload.organizerName}" para ti.
+${payload.actorName} quer passar a organização "${payload.organizationName}" para ti.
 Confirma aqui: ${payload.confirmUrl}
 ${expiresLine}`;
 
   return {
-    subject: `🚀 Pedido de OWNER – ${payload.organizerName}`,
+    subject: `🚀 Pedido de OWNER – ${payload.organizationName}`,
     html,
     text,
   };
@@ -135,21 +135,21 @@ export function renderOfficialEmailVerificationEmail(payload: OfficialEmailVerif
   const html = `
     <div style="font-family: Arial, sans-serif; color: #0f172a;">
       <h2 style="color:#111827;">Verifica o email oficial</h2>
-      <p>Queres definir <strong>${payload.pendingEmail}</strong> como email oficial da organização <strong>${payload.organizerName}</strong>.</p>
+      <p>Queres definir <strong>${payload.pendingEmail}</strong> como email oficial da organização <strong>${payload.organizationName}</strong>.</p>
       <p>Usamos este email para faturação, alertas e pedidos sensíveis.</p>
       <p style="margin:16px 0;"><a href="${payload.confirmUrl}" style="background:#111827;color:#ffffff;padding:12px 18px;border-radius:10px;text-decoration:none;font-weight:bold;">Confirmar email</a></p>
       <p style="color:#6b7280; font-size:12px;">${expiresLine || "O pedido expira em breve."}</p>
     </div>
   `;
 
-  const text = `Verifica o email oficial – ${payload.organizerName}
+  const text = `Verifica o email oficial – ${payload.organizationName}
 
 Email: ${payload.pendingEmail}
 Confirmar: ${payload.confirmUrl}
 ${expiresLine}`;
 
   return {
-    subject: `📧 Verifica o email oficial – ${payload.organizerName}`,
+    subject: `📧 Verifica o email oficial – ${payload.organizationName}`,
     html,
     text,
   };

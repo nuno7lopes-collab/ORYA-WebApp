@@ -31,8 +31,8 @@ function CarteiraContent() {
     qrToken?: string | null;
     event?: {
       slug: string;
-      organizerName: string | null;
-      organizerUsername: string | null;
+      organizationName: string | null;
+      organizationUsername: string | null;
     } | null;
     cached?: boolean;
   }>(null);
@@ -253,18 +253,18 @@ function CarteiraContent() {
                         {passStatusLabel}
                       </span>
                     </div>
-                    {passData.event?.organizerName && (
+                    {passData.event?.organizationName && (
                       <p className="mt-3 text-[12px] text-white/60">
                         Organização:{" "}
-                        {passData.event.organizerUsername ? (
+                        {passData.event.organizationUsername ? (
                           <Link
-                            href={`/${passData.event.organizerUsername}`}
+                            href={`/${passData.event.organizationUsername}`}
                             className="text-white hover:text-white/80"
                           >
-                            {passData.event.organizerName}
+                            {passData.event.organizationName}
                           </Link>
                         ) : (
-                          <span className="text-white">{passData.event.organizerName}</span>
+                          <span className="text-white">{passData.event.organizationName}</span>
                         )}
                       </p>
                     )}

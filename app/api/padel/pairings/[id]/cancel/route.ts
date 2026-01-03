@@ -8,7 +8,7 @@ import { cancelActiveHold } from "@/domain/padelPairingHold";
 import { readNumericParam } from "@/lib/routeParams";
 
 // Cancela pairing Padel v2 (MVP: estados DB; refund efetivo fica para o checkout/refund handler).
-// Regras: capitão (created_by_user_id) ou staff OWNER/ADMIN do organizer.
+// Regras: capitão (created_by_user_id) ou staff OWNER/ADMIN do organization.
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const pairingId = readNumericParam(params?.id, req, "pairings");
   if (pairingId === null) return NextResponse.json({ ok: false, error: "INVALID_ID" }, { status: 400 });
@@ -22,7 +22,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const pairing = await prisma.padelPairing.findUnique({
     where: { id: pairingId },
     include: {
-      event: { select: { organizerId: true } },
+      event: { select: { organizationId: true } },
       slots: true,
     },
   });
@@ -36,9 +36,9 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const isCaptain = pairing.createdByUserId === user.id;
   let isStaff = false;
   if (!isCaptain) {
-    const staff = await prisma.organizerMember.findFirst({
+    const staff = await prisma.organizationMember.findFirst({
       where: {
-        organizerId: pairing.organizerId,
+        organizationId: pairing.organizationId,
         userId: user.id,
         role: { in: ["OWNER", "CO_OWNER", "ADMIN"] },
       },

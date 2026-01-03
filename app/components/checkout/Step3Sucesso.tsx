@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useCheckout } from "./contextoCheckout";
 import { formatEuro } from "@/lib/money";
-import { CTA_PRIMARY } from "@/app/organizador/dashboardUi";
+import { CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
 
 const FREE_PLACEHOLDER_INTENT_ID = "FREE_CHECKOUT";
 

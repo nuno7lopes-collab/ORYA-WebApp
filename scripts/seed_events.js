@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Seed de eventos fake (organizer + eventos + ticket types + entitlements).
+ * Seed de eventos fake (organization + eventos + ticket types + entitlements).
  *
  * Uso:
  *   node scripts/seed_events.js
@@ -93,17 +93,17 @@ async function resolveOwner() {
 
 async function main() {
   const owner = await resolveOwner();
-  const organizerUsername = process.env.SEED_ORG_USERNAME || "orya-demo";
+  const organizationUsername = process.env.SEED_ORG_USERNAME || "orya-demo";
   console.log("[seed-events] Owner:", { id: owner.id, username: owner.username ?? null });
 
-  const organizerExisting = await prisma.organizer.findFirst({
-    where: { username: organizerUsername },
+  const organizationExisting = await prisma.organization.findFirst({
+    where: { username: organizationUsername },
   });
-  const organizer =
-    organizerExisting ??
-    (await prisma.organizer.create({
+  const organization =
+    organizationExisting ??
+    (await prisma.organization.create({
       data: {
-        username: organizerUsername,
+        username: organizationUsername,
         publicName: "ORYA Demo Studio",
         businessName: "ORYA Demo Studio",
         city: "Lisboa",
@@ -112,9 +112,9 @@ async function main() {
       },
     }));
 
-  if (organizerExisting) {
-    await prisma.organizer.update({
-      where: { id: organizerExisting.id },
+  if (organizationExisting) {
+    await prisma.organization.update({
+      where: { id: organizationExisting.id },
       data: {
         publicName: "ORYA Demo Studio",
         businessName: "ORYA Demo Studio",
@@ -124,7 +124,7 @@ async function main() {
       },
     });
   }
-  console.log("[seed-events] Organizer:", { id: organizer.id, username: organizer.username ?? null });
+  console.log("[seed-events] Organization:", { id: organization.id, username: organization.username ?? null });
 
   const now = new Date();
   const dayMs = 24 * 60 * 60 * 1000;
@@ -221,7 +221,7 @@ async function main() {
       update: {
         title: seed.title,
         description: seed.description,
-        organizerId: organizer.id,
+        organizationId: organization.id,
         ownerUserId: owner.id,
         startsAt,
         endsAt,
@@ -237,8 +237,8 @@ async function main() {
         slug,
         title: seed.title,
         description: seed.description,
-        type: "ORGANIZER_EVENT",
-        organizerId: organizer.id,
+        type: "ORGANIZATION_EVENT",
+        organizationId: organization.id,
         ownerUserId: owner.id,
         startsAt,
         endsAt,
@@ -341,7 +341,7 @@ async function main() {
 
   console.log("Seed concluída:", {
     owner: { id: owner.id, username: owner.username ?? null },
-    organizer: { id: organizer.id, username: organizer.username ?? null },
+    organization: { id: organization.id, username: organization.username ?? null },
     events: created,
   });
 }

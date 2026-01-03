@@ -145,7 +145,7 @@ Contains:
 
 ### 4.5 Organisation Public Profiles
 
-#### Organizador (Events)
+#### Organização (Events)
 
 - Cover, logo, short description.
 - Upcoming events (with price and CTA Comprar).

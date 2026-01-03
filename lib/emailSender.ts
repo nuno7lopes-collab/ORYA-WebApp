@@ -176,7 +176,7 @@ function getAppBaseUrl() {
 
 type OwnerTransferEmailInput = {
   to: string;
-  organizerName: string;
+  organizationName: string;
   actorName: string;
   token: string;
   expiresAt?: Date | null;
@@ -185,9 +185,9 @@ type OwnerTransferEmailInput = {
 export async function sendOwnerTransferEmail(input: OwnerTransferEmailInput) {
   assertResendReady();
   const baseUrl = getAppBaseUrl();
-  const confirmUrl = `${baseUrl}/organizador/owner/confirm?token=${encodeURIComponent(input.token)}`;
+  const confirmUrl = `${baseUrl}/organizacao/owner/confirm?token=${encodeURIComponent(input.token)}`;
   const { subject, html, text } = renderOwnerTransferEmail({
-    organizerName: input.organizerName,
+    organizationName: input.organizationName,
     actorName: input.actorName,
     confirmUrl,
     expiresAt: input.expiresAt,
@@ -203,7 +203,7 @@ export async function sendOwnerTransferEmail(input: OwnerTransferEmailInput) {
 
 type OfficialEmailVerificationInput = {
   to: string;
-  organizerName: string;
+  organizationName: string;
   token: string;
   pendingEmail: string;
   expiresAt?: Date | null;
@@ -212,9 +212,9 @@ type OfficialEmailVerificationInput = {
 export async function sendOfficialEmailVerificationEmail(input: OfficialEmailVerificationInput) {
   assertResendReady();
   const baseUrl = getAppBaseUrl();
-  const confirmUrl = `${baseUrl}/organizador/settings/verify?token=${encodeURIComponent(input.token)}`;
+  const confirmUrl = `${baseUrl}/organizacao/settings/verify?token=${encodeURIComponent(input.token)}`;
   const { subject, html, text } = renderOfficialEmailVerificationEmail({
-    organizerName: input.organizerName,
+    organizationName: input.organizationName,
     confirmUrl,
     expiresAt: input.expiresAt,
     pendingEmail: input.pendingEmail,

@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react";
 import useSWR from "swr";
 import { supabaseBrowser } from "@/lib/supabaseBrowser";
 
-type Role = "user" | "organizer" | "admin" | string;
+type Role = "user" | "organization" | "admin" | string;
 
 type ApiMeResponse = {
   user: {

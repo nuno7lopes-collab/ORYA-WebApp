@@ -26,7 +26,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       slots: true,
       event: {
         select: {
-          organizerId: true,
+          organizationId: true,
           startsAt: true,
           padelTournamentConfig: { select: { splitDeadlineHours: true } },
         },
@@ -41,9 +41,9 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const isCaptain = pairing.createdByUserId === user.id;
   let isStaff = false;
   if (!isCaptain) {
-    const staff = await prisma.organizerMember.findFirst({
+    const staff = await prisma.organizationMember.findFirst({
       where: {
-        organizerId: pairing.organizerId,
+        organizationId: pairing.organizationId,
         userId: user.id,
         role: { in: ["OWNER", "CO_OWNER", "ADMIN"] },
       },

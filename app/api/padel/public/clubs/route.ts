@@ -50,7 +50,7 @@ export async function GET(req: NextRequest) {
         address: true,
         courtsCount: true,
         slug: true,
-        organizer: {
+        organization: {
           select: {
             publicName: true,
             username: true,
@@ -91,8 +91,8 @@ export async function GET(req: NextRequest) {
           address: club.address ?? null,
           courtsCount: club.courtsCount ?? 0,
           slug: club.slug ?? null,
-          organizerName: club.organizer?.publicName ?? club.organizer?.username ?? null,
-          organizerUsername: club.organizer?.username ?? null,
+          organizationName: club.organization?.publicName ?? club.organization?.username ?? null,
+          organizationUsername: club.organization?.username ?? null,
           courts: includeCourts ? courtsByClub.get(club.id) ?? [] : [],
         })),
       },

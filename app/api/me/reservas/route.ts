@@ -15,7 +15,7 @@ export async function GET(_req: NextRequest) {
       take: 200,
       select: {
         id: true,
-        organizerId: true,
+        organizationId: true,
         availabilityId: true,
         startsAt: true,
         durationMinutes: true,
@@ -47,7 +47,7 @@ export async function GET(_req: NextRequest) {
                 cancellationWindowMinutes: true,
               },
             },
-            organizer: {
+            organization: {
               select: {
                 id: true,
                 publicName: true,
@@ -62,16 +62,16 @@ export async function GET(_req: NextRequest) {
       },
     });
 
-    const organizerIds = Array.from(new Set(bookings.map((booking) => booking.organizerId)));
-    const defaults = organizerIds.length
+    const organizationIds = Array.from(new Set(bookings.map((booking) => booking.organizationId)));
+    const defaults = organizationIds.length
       ? await prisma.organizationPolicy.findMany({
           where: {
-            organizerId: { in: organizerIds },
+            organizationId: { in: organizationIds },
             policyType: "MODERATE",
           },
           select: {
             id: true,
-            organizerId: true,
+            organizationId: true,
             name: true,
             policyType: true,
             cancellationWindowMinutes: true,
@@ -79,9 +79,9 @@ export async function GET(_req: NextRequest) {
         })
       : [];
 
-    const defaultByOrganizer = new Map<number, (typeof defaults)[number]>();
+    const defaultByOrganization = new Map<number, (typeof defaults)[number]>();
     defaults.forEach((policy) => {
-      defaultByOrganizer.set(policy.organizerId, policy);
+      defaultByOrganization.set(policy.organizationId, policy);
     });
 
     const now = new Date();
@@ -90,7 +90,7 @@ export async function GET(_req: NextRequest) {
       const policyRaw =
         booking.policyRef?.policy ??
         booking.service?.policy ??
-        defaultByOrganizer.get(booking.organizerId) ??
+        defaultByOrganization.get(booking.organizationId) ??
         null;
 
       const policy = policyRaw
@@ -117,7 +117,7 @@ export async function GET(_req: NextRequest) {
         createdAt: booking.createdAt,
         availabilityId: booking.availabilityId,
         service: booking.service ? { id: booking.service.id, name: booking.service.name } : null,
-        organizer: booking.service?.organizer ?? null,
+        organization: booking.service?.organization ?? null,
         policy,
         cancellation: {
           allowed: decision.allowed,

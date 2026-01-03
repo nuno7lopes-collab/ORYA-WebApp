@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { Prisma, OrganizationFormSubmissionStatus } from "@prisma/client";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { isValidPhone, normalizePhone } from "@/lib/phone";
-import { getCustomPremiumProfileModules, isCustomPremiumActive } from "@/lib/organizerPremium";
+import { getCustomPremiumProfileModules, isCustomPremiumActive } from "@/lib/organizationPremium";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const COUNTED_STATUSES: OrganizationFormSubmissionStatus[] = [
@@ -55,16 +55,16 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
       where: { id: formId },
       include: {
         fields: { orderBy: { order: "asc" } },
-        organizer: { select: { id: true, status: true, username: true, liveHubPremiumEnabled: true } },
+        organization: { select: { id: true, status: true, username: true, liveHubPremiumEnabled: true } },
       },
     });
 
-    if (!form || form.organizer.status !== "ACTIVE") {
+    if (!form || form.organization.status !== "ACTIVE") {
       return NextResponse.json({ ok: false, error: "Formulário não disponível." }, { status: 404 });
     }
 
-    const premiumActive = isCustomPremiumActive(form.organizer);
-    const premiumModules = premiumActive ? getCustomPremiumProfileModules(form.organizer) ?? {} : {};
+    const premiumActive = isCustomPremiumActive(form.organization);
+    const premiumModules = premiumActive ? getCustomPremiumProfileModules(form.organization) ?? {} : {};
     const allowInscricoes = Boolean(premiumModules.inscricoes);
     const isPublic = form.status !== "ARCHIVED";
     if (!isPublic) {
@@ -72,8 +72,8 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
     }
 
     const moduleEnabled = await prisma.organizationModuleEntry.findFirst({
-      where: { organizerId: form.organizer.id, moduleKey: "INSCRICOES", enabled: true },
-      select: { organizerId: true },
+      where: { organizationId: form.organization.id, moduleKey: "INSCRICOES", enabled: true },
+      select: { organizationId: true },
     });
     if (!moduleEnabled || !allowInscricoes) {
       return NextResponse.json({ ok: false, error: "Formulário não disponível." }, { status: 404 });

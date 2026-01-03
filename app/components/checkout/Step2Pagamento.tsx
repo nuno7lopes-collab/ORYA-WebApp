@@ -16,7 +16,7 @@ import { type CheckoutBreakdown, useCheckout } from "./contextoCheckout";
 import { supabaseBrowser } from "@/lib/supabaseBrowser";
 import { isValidPhone, sanitizePhone } from "@/lib/phone";
 import { sanitizeUsername, validateUsername } from "@/lib/username";
-import { CTA_PRIMARY } from "@/app/organizador/dashboardUi";
+import { CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
 
 function isValidEmail(email: string) {
   return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email);
@@ -915,11 +915,11 @@ export default function Step2Pagamento() {
                   ? data.error
                   : "Não foi possível preparar o pagamento.";
 
-          if (respCode === "ORGANIZER_STRIPE_NOT_CONNECTED") {
+          if (respCode === "ORGANIZATION_STRIPE_NOT_CONNECTED") {
             if (!cancelled) {
               setError(
                 data?.message ||
-                  "Pagamentos desativados para este evento enquanto o organizador não ligar a Stripe.",
+                  "Pagamentos desativados para este evento enquanto o organização não ligar a Stripe.",
               );
               setAuthInfo("Liga a Stripe em Finanças & Payouts para ativares pagamentos.");
             }

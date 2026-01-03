@@ -17,7 +17,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     where: { id: pairingId },
     select: {
       id: true,
-      organizerId: true,
+      organizationId: true,
       player1UserId: true,
       player2UserId: true,
       lifecycleStatus: true,
@@ -27,7 +27,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   });
   if (!pairing) return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
 
-  // Apenas capitão ou staff do organizer
+  // Apenas capitão ou staff do organization
   const isCaptain = pairing.player1UserId === authData.user.id;
   if (!isCaptain) {
     return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });

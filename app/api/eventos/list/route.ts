@@ -53,23 +53,19 @@ export async function GET(req: NextRequest) {
   try {
     const filters: Prisma.EventWhereInput[] = [
       { status: { in: ["PUBLISHED", "DATE_CHANGED"] } },
-      { isTest: { not: true } },
       { isDeleted: false },
-      { organizerId: { not: null } },
-      { organizer: { status: "ACTIVE" } },
+      { organizationId: { not: null } },
+      { organization: { status: "ACTIVE" } },
     ];
 
     if (category && category !== "all") {
       const normalized = category.toUpperCase();
-      if (normalized === "PADEL") {
+      if (normalized === "PADEL" || normalized === "DESPORTO") {
         filters.push({ templateType: "PADEL" });
-      } else if (normalized === "GERAL" || normalized === "EVENTOS") {
+      } else {
         filters.push({
           OR: [{ templateType: { not: "PADEL" } }, { templateType: null }],
         });
-      } else {
-        const normalizedCategory = normalized === "DESPORTO" ? "PADEL" : normalized;
-        filters.push({ templateType: normalizedCategory as Prisma.EventWhereInput["templateType"] });
       }
     }
 

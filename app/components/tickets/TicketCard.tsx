@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { CTA_PRIMARY } from "@/app/organizador/dashboardUi";
+import { getEventCoverUrl } from "@/lib/eventCover";
+import { CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
 
 export type TicketCardProps = {
   id: string;
@@ -73,25 +74,24 @@ export function TicketCard(props: TicketCardProps) {
     }
   }
 
-  const hasCover = Boolean(event.coverImageUrl);
+  const coverSrc = getEventCoverUrl(event.coverImageUrl, {
+    seed: event.slug ?? event.title ?? id,
+    width: 800,
+    quality: 70,
+    format: "webp",
+  });
 
   return (
     <article className="group relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-b from-white/5 via-black/80 to-black/95 hover:border-[#6BFFFF]/70 transition-colors shadow-[0_16px_45px_rgba(0,0,0,0.75)]">
       {/* Poster visual */}
       <div className="relative w-full overflow-hidden">
         <div className="relative aspect-[3/4] w-full">
-          {hasCover ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={event.coverImageUrl as string}
-              alt={event.title}
-              className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
-            />
-          ) : (
-            <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-[#1b1b2f] via-black to-[#141421] text-[11px] text-white/40">
-              Sem imagem de capa
-            </div>
-          )}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={coverSrc}
+            alt={event.title}
+            className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
+          />
 
           {/* Overlay gradient */}
           <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent" />

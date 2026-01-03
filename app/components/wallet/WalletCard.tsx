@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
-import { defaultBlurDataURL, optimizeImageUrl } from "@/lib/image";
+import { defaultBlurDataURL } from "@/lib/image";
+import { getEventCoverUrl } from "@/lib/eventCover";
 import { WalletItem } from "./useWallet";
 
 type Props = {
@@ -24,6 +25,12 @@ export function WalletCard({ item, compact = false }: Props) {
         minute: "2-digit",
       })
     : "Data a anunciar";
+  const coverSrc = getEventCoverUrl(item.snapshot.coverUrl, {
+    seed: item.snapshot.title ?? item.entitlementId,
+    width: compact ? 500 : 700,
+    quality: 75,
+    format: "webp",
+  });
 
   return (
     <article
@@ -32,21 +39,15 @@ export function WalletCard({ item, compact = false }: Props) {
       }`}
     >
       <div className="absolute inset-0 overflow-hidden">
-        {item.snapshot.coverUrl ? (
-          <Image
-            src={optimizeImageUrl(item.snapshot.coverUrl, compact ? 500 : 700, 75)}
-            alt={item.snapshot.title}
-            fill
-            sizes={compact ? "260px" : "400px"}
-            className="object-cover transition-transform duration-500 group-hover:scale-[1.03]"
-            placeholder="blur"
-            blurDataURL={defaultBlurDataURL}
-          />
-        ) : (
-          <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] text-[11px] font-semibold text-black/80">
-            ORYA
-          </div>
-        )}
+        <Image
+          src={coverSrc}
+          alt={item.snapshot.title}
+          fill
+          sizes={compact ? "260px" : "400px"}
+          className="object-cover transition-transform duration-500 group-hover:scale-[1.03]"
+          placeholder="blur"
+          blurDataURL={defaultBlurDataURL}
+        />
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/85 via-black/35 to-transparent" />
       </div>
 

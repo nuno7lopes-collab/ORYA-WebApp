@@ -7,7 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import type { Prisma } from "@prisma/client";
 import { UsersTableClient } from "./UsersTableClient";
-import { CTA_PRIMARY } from "@/app/organizador/dashboardUi";
+import { CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
 
 type AdminUsersPageProps = {
   searchParams?: {
@@ -51,12 +51,12 @@ export default async function AdminUsersPage({ searchParams }: AdminUsersPagePro
     ];
   }
 
-  const [totalUsers, totalOrganizers, totalAdmins, users] = await Promise.all([
+  const [totalUsers, totalOrganizations, totalAdmins, users] = await Promise.all([
     prisma.profile.count(),
     prisma.profile.count({
       where: {
         roles: {
-          has: "organizer",
+          has: "organization",
         },
       },
     }),
@@ -157,11 +157,11 @@ export default async function AdminUsersPage({ searchParams }: AdminUsersPagePro
           </div>
           <div className="rounded-2xl border border-white/12 bg-black/60 px-4 py-3">
             <p className="text-[11px] text-white/55 uppercase tracking-[0.14em]">
-              Organizadores
+              Organizações
             </p>
-            <p className="mt-1 text-2xl font-semibold">{totalOrganizers}</p>
+            <p className="mt-1 text-2xl font-semibold">{totalOrganizations}</p>
             <p className="mt-1 text-[11px] text-white/55">
-              Perfis com role de organizador ativa.
+              Perfis com role de organização ativa.
             </p>
           </div>
           <div className="rounded-2xl border border-white/12 bg-black/60 px-4 py-3">

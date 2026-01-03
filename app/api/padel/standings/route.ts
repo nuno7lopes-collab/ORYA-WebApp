@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
-import { getActiveOrganizerForUser } from "@/lib/organizerContext";
+import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 
 export async function GET(req: NextRequest) {
   try {
@@ -17,17 +17,17 @@ export async function GET(req: NextRequest) {
 
     const event = await prisma.event.findUnique({
       where: { id: eventId, isDeleted: false },
-      select: { organizerId: true },
+      select: { organizationId: true },
     });
-    if (!event?.organizerId) {
+    if (!event?.organizationId) {
       return NextResponse.json({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
     }
 
-    const { organizer } = await getActiveOrganizerForUser(user.id, {
-      organizerId: event.organizerId,
+    const { organization } = await getActiveOrganizationForUser(user.id, {
+      organizationId: event.organizationId,
       roles: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"],
     });
-    if (!organizer) return NextResponse.json({ ok: false, error: "NO_ORGANIZER" }, { status: 403 });
+    if (!organization) return NextResponse.json({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });
 
     // Standings por grupos (roundType=GROUPS) com desempates
     const matches = await prisma.padelMatch.findMany({

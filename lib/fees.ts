@@ -23,7 +23,7 @@ export type CombinedFeesResult = {
 
 /**
  * Calcula taxa ORYA + estimativa Stripe para apresentar como "taxa da plataforma".
- * - Quando feeMode = ADDED, ajusta o total para que o organizador receba aprox. o subtotal depois de ORYA + Stripe.
+ * - Quando feeMode = ADDED, ajusta o total para que o organização receba aprox. o subtotal depois de ORYA + Stripe.
  * - Quando feeMode = INCLUDED, as taxas são deduzidas do preço base.
  */
 export function computeCombinedFees(params: ComputeCombinedFeesParams): CombinedFeesResult {

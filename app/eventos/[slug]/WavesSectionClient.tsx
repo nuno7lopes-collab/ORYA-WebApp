@@ -1,6 +1,6 @@
 "use client";
 import { useCheckout } from "@/app/components/checkout/contextoCheckout";
-import { CTA_PRIMARY } from "@/app/organizador/dashboardUi";
+import { CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
 
 export type WaveStatus = "on_sale" | "upcoming" | "closed" | "sold_out";
 
@@ -31,7 +31,7 @@ type WavesSectionClientProps = {
   checkoutUiVariant?: "DEFAULT" | "PADEL";
   padelMeta?: {
     eventId: number;
-    organizerId: number | null;
+    organizationId: number | null;
     categoryId?: number | null;
     categoryLinkId?: number | null;
   };

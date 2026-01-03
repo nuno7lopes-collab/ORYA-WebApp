@@ -1,0 +1,178 @@
+"use client";
+
+import { useState } from "react";
+import { CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
+
+type LiveHubVisibility = "PUBLIC" | "PRIVATE" | "DISABLED";
+
+type EventLivePrepClientProps = {
+  event: {
+    id: number;
+    slug: string;
+    title: string;
+    liveHubVisibility: LiveHubVisibility;
+    liveStreamUrl: string | null;
+  };
+  tournamentId?: number | null;
+};
+
+export default function EventLivePrepClient({
+  event,
+  tournamentId,
+}: EventLivePrepClientProps) {
+  const [currentTournamentId, setCurrentTournamentId] = useState<number | null>(tournamentId ?? null);
+
+  const [liveHubVisibility, setLiveHubVisibility] = useState<LiveHubVisibility>(
+    event.liveHubVisibility ?? "PUBLIC",
+  );
+  const [liveStreamUrl, setLiveStreamUrl] = useState(event.liveStreamUrl ?? "");
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [creatingTournament, setCreatingTournament] = useState(false);
+  const [tournamentMessage, setTournamentMessage] = useState<string | null>(null);
+  const [bracketSize, setBracketSize] = useState(16);
+
+  const handleSave = async () => {
+    setSaving(true);
+    setMessage(null);
+    try {
+      const res = await fetch("/api/organizacao/events/update", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          eventId: event.id,
+          liveHubVisibility,
+          liveStreamUrl: liveStreamUrl.trim() || null,
+        }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) {
+        setMessage(json?.error || "Erro ao guardar LiveHub.");
+        return;
+      }
+      setMessage("LiveHub atualizado.");
+    } catch {
+      setMessage("Erro inesperado ao guardar LiveHub.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCreateTournament = async () => {
+    setCreatingTournament(true);
+    setTournamentMessage(null);
+    try {
+      const res = await fetch("/api/organizacao/tournaments/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ eventId: event.id, bracketSize }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) {
+        setTournamentMessage(json?.error || "Erro ao criar torneio.");
+        return;
+      }
+      setCurrentTournamentId(json.tournamentId);
+      setTournamentMessage("Torneio criado.");
+    } catch {
+      setTournamentMessage("Erro inesperado ao criar torneio.");
+    } finally {
+      setCreatingTournament(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <section className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1226]/75 to-[#050912]/90 p-5 space-y-4 shadow-[0_26px_90px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
+        <div className="space-y-1">
+          <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">LiveHub</p>
+          <p className="text-sm text-white/70">Define visibilidade e a livestream antes de começares.</p>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-2">
+          <div className="space-y-1">
+            <label className="text-sm font-medium">Visibilidade</label>
+            <select
+              value={liveHubVisibility}
+              onChange={(e) => setLiveHubVisibility(e.target.value as LiveHubVisibility)}
+              className="w-full rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-white/60"
+            >
+              <option value="PUBLIC">Público</option>
+              <option value="PRIVATE">Privado (só participantes)</option>
+              <option value="DISABLED">Desativado</option>
+            </select>
+            <p className="text-[11px] text-white/55">
+              Público é sempre visível; privado mostra apenas a participantes; desativado oculta o LiveHub.
+            </p>
+          </div>
+
+          <div className="space-y-1 md:col-span-2">
+            <label className="text-sm font-medium">URL da livestream</label>
+            <input
+              value={liveStreamUrl}
+              onChange={(e) => setLiveStreamUrl(e.target.value)}
+              placeholder="https://youtu.be/..."
+              className="w-full rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-white/60"
+            />
+            <p className="text-[11px] text-white/55">
+              Se vazio, o LiveHub mostra o módulo de vídeo como indisponível.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={saving}
+            className={`${CTA_PRIMARY} disabled:opacity-60`}
+          >
+            {saving ? "A guardar…" : "Guardar LiveHub"}
+          </button>
+          {message && <span className="text-[12px] text-white/70">{message}</span>}
+        </div>
+      </section>
+
+      <section className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1226]/75 to-[#050912]/90 p-5 space-y-4 shadow-[0_26px_90px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
+        <div className="space-y-1">
+          <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Torneio</p>
+          <p className="text-sm text-white/70">Cria a bracket quando estiveres pronto para gerir jogos.</p>
+        </div>
+
+        {!currentTournamentId ? (
+          <div className="grid gap-3 md:grid-cols-[240px_1fr] md:items-end">
+            <div className="space-y-1">
+              <label className="text-sm font-medium">Tamanho da bracket</label>
+              <select
+                value={bracketSize}
+                onChange={(e) => setBracketSize(Number(e.target.value))}
+                className="w-full rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-white/60"
+              >
+                {[2, 4, 8, 16, 32, 64].map((size) => (
+                  <option key={size} value={size}>
+                    {size} jogadores
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={handleCreateTournament}
+                disabled={creatingTournament}
+                className={`${CTA_PRIMARY} disabled:opacity-60`}
+              >
+                {creatingTournament ? "A criar…" : "Criar torneio KO"}
+              </button>
+              {tournamentMessage && <span className="text-[12px] text-white/70">{tournamentMessage}</span>}
+            </div>
+          </div>
+        ) : (
+          <p className="text-[12px] text-white/60">
+            Torneio pronto. Usa o separador Bracket para gerir participantes, jogos e resultados.
+          </p>
+        )}
+      </section>
+    </div>
+  );
+}

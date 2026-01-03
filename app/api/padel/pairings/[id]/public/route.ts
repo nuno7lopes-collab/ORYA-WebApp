@@ -21,16 +21,16 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
   const pairing = await prisma.padelPairing.findUnique({
     where: { id: pairingId },
-    include: { slots: true, event: { select: { organizerId: true } } },
+    include: { slots: true, event: { select: { organizationId: true } } },
   });
   if (!pairing) return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
 
   const isCaptain = pairing.createdByUserId === user.id;
   let isStaff = false;
   if (!isCaptain) {
-    const staff = await prisma.organizerMember.findFirst({
+    const staff = await prisma.organizationMember.findFirst({
       where: {
-        organizerId: pairing.organizerId,
+        organizationId: pairing.organizationId,
         userId: user.id,
         role: { in: ["OWNER", "CO_OWNER", "ADMIN"] },
       },

@@ -21,8 +21,8 @@ type FormPayload = {
   title: string;
   description?: string | null;
   status: "DRAFT" | "PUBLISHED" | "ARCHIVED";
-  organizerName: string;
-  organizerUsername?: string | null;
+  organizationName: string;
+  organizationUsername?: string | null;
   capacity?: number | null;
   waitlistEnabled: boolean;
   startAt?: string | null;
@@ -135,12 +135,12 @@ export function FormSubmissionClient({ form }: { form: FormPayload }) {
           </div>
           <div className="text-[12px] text-white/60">
             Organização:{" "}
-            {form.organizerUsername ? (
-              <Link href={`/${form.organizerUsername}`} className="text-white hover:text-white/80">
-                {form.organizerName}
+            {form.organizationUsername ? (
+              <Link href={`/${form.organizationUsername}`} className="text-white hover:text-white/80">
+                {form.organizationName}
               </Link>
             ) : (
-              <span className="text-white">{form.organizerName}</span>
+              <span className="text-white">{form.organizationName}</span>
             )}
           </div>
         </header>

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ReactNode } from "react";
-import { CTA_PRIMARY } from "@/app/organizador/dashboardUi";
+import { CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
 
 type AdminLayoutProps = {
   children: ReactNode;
@@ -13,7 +13,7 @@ type AdminLayoutProps = {
 
 const navItems = [
   { href: "/admin", label: "Dashboard" },
-  { href: "/admin/organizadores", label: "Organizadores" },
+  { href: "/admin/organizacoes", label: "Organizações" },
   { href: "/admin/eventos", label: "Eventos" },
   { href: "/admin/tickets", label: "Bilhetes" },
   { href: "/admin/payments", label: "Pagamentos" },

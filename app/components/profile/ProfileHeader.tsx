@@ -40,6 +40,10 @@ export type ProfileHeaderProps = {
   initialIsFollowing?: boolean;
   /** Se o perfil é verificado */
   isVerified?: boolean;
+  /** Se pode abrir listas de seguidores */
+  canOpenLists?: boolean;
+  /** Se o viewer é amigo (follow mútuo) */
+  isMutual?: boolean;
 };
 
 export default function ProfileHeader({
@@ -57,6 +61,8 @@ export default function ProfileHeader({
   targetUserId,
   initialIsFollowing,
   isVerified = false,
+  canOpenLists = true,
+  isMutual = false,
 }: ProfileHeaderProps) {
   const router = useRouter();
   const displayName = name?.trim() || "Utilizador ORYA";
@@ -93,7 +99,8 @@ export default function ProfileHeader({
     setAvatar(safeAvatarUrl);
     setCover(safeCoverUrl);
     setAvatarVersion(avatarUpdatedAt ?? null);
-  }, [displayName, handle, bio, safeAvatarUrl, safeCoverUrl, avatarUpdatedAt]);
+    setMutualBadge(isMutual);
+  }, [displayName, handle, bio, safeAvatarUrl, safeCoverUrl, avatarUpdatedAt, isMutual]);
 
   useEffect(() => {
     if (!showEditControls) {
@@ -211,7 +218,9 @@ export default function ProfileHeader({
     }
   };
 
-  const showPrivateBadge = visibility === "PRIVATE";
+  const showPrivateBadge = visibility ? visibility !== "PUBLIC" : false;
+  const [mutualBadge, setMutualBadge] = useState(isMutual);
+  const showMutualBadge = !isOwner && mutualBadge;
   const followersCount = followers ?? null;
   const followingCount = following ?? null;
   const [followersDisplay, setFollowersDisplay] = useState(followersCount ?? 0);
@@ -219,7 +228,13 @@ export default function ProfileHeader({
   const [showFollowingModal, setShowFollowingModal] = useState(false);
   const [listLoading, setListLoading] = useState(false);
   const [listItems, setListItems] = useState<
-    Array<{ userId: string; username: string | null; fullName: string | null; avatarUrl: string | null }>
+    Array<{
+      userId: string;
+      username: string | null;
+      fullName: string | null;
+      avatarUrl: string | null;
+      isMutual?: boolean;
+    }>
   >([]);
   const handleFollowChange = (next: boolean) => {
     setFollowersDisplay((prev) => Math.max(0, (prev ?? 0) + (next ? 1 : -1)));
@@ -248,18 +263,26 @@ export default function ProfileHeader({
       <ProfileStatPill
         label="Seguidores"
         value={followersDisplay ?? "—"}
-        onClick={() => {
-          setShowFollowersModal(true);
-          loadList("followers");
-        }}
+        onClick={
+          canOpenLists
+            ? () => {
+                setShowFollowersModal(true);
+                loadList("followers");
+              }
+            : undefined
+        }
       />
       <ProfileStatPill
         label="A seguir"
         value={followingCount ?? "—"}
-        onClick={() => {
-          setShowFollowingModal(true);
-          loadList("following");
-        }}
+        onClick={
+          canOpenLists
+            ? () => {
+                setShowFollowingModal(true);
+                loadList("following");
+              }
+            : undefined
+        }
       />
     </>
   );
@@ -409,11 +432,18 @@ export default function ProfileHeader({
     </div>
   );
 
-  const linksSlot = showPrivateBadge ? (
+  const linksSlot = showPrivateBadge || showMutualBadge ? (
     <div className="flex flex-wrap items-center gap-2 text-[11px] text-white/75">
-      <span className="rounded-full border border-white/25 bg-white/10 px-2.5 py-1 text-[11px] text-white/75">
-        Perfil privado
-      </span>
+      {showPrivateBadge && (
+        <span className="rounded-full border border-white/25 bg-white/10 px-2.5 py-1 text-[11px] text-white/75">
+          Perfil privado
+        </span>
+      )}
+      {showMutualBadge && (
+        <span className="rounded-full border border-emerald-400/40 bg-emerald-500/15 px-2.5 py-1 text-[11px] text-emerald-50">
+          Teu amigo
+        </span>
+      )}
     </div>
   ) : null;
 
@@ -430,6 +460,7 @@ export default function ProfileHeader({
       targetUserId={targetUserId}
       initialIsFollowing={initialIsFollowing ?? false}
       onChange={handleFollowChange}
+      onMutualChange={setMutualBadge}
     />
   ) : null;
 
@@ -625,6 +656,11 @@ export default function ProfileHeader({
                         </p>
                         {item.username && (
                           <p className="text-[11px] text-white/65 truncate">@{item.username}</p>
+                        )}
+                        {item.isMutual && (
+                          <span className="mt-1 inline-flex rounded-full border border-emerald-400/40 bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-50">
+                            Teu amigo
+                          </span>
                         )}
                       </div>
                     </Link>

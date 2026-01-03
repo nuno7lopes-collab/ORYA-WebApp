@@ -1,14 +1,14 @@
 -- Remove legacy staff assignments and staff notification types.
 
 UPDATE "app_v3"."notifications"
-SET "type" = 'ORGANIZER_INVITE'
+SET "type" = 'ORGANIZATION_INVITE'
 WHERE "type" IN ('STAFF_INVITE', 'STAFF_ROLE_CHANGE');
 
 ALTER TYPE "app_v3"."NotificationType" RENAME TO "NotificationType_old";
 
 CREATE TYPE "app_v3"."NotificationType" AS ENUM (
-  'ORGANIZER_INVITE',
-  'ORGANIZER_TRANSFER',
+  'ORGANIZATION_INVITE',
+  'ORGANIZATION_TRANSFER',
   'EVENT_SALE',
   'EVENT_PAYOUT_STATUS',
   'STRIPE_STATUS',
@@ -24,7 +24,7 @@ CREATE TYPE "app_v3"."NotificationType" AS ENUM (
   'TICKET_TRANSFER_ACCEPTED',
   'TICKET_TRANSFER_DECLINED',
   'CLUB_INVITE',
-  'NEW_EVENT_FROM_FOLLOWED_ORGANIZER'
+  'NEW_EVENT_FROM_FOLLOWED_ORGANIZATION'
 );
 
 ALTER TABLE "app_v3"."notifications"

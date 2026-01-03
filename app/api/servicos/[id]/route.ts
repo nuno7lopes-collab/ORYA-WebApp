@@ -15,7 +15,7 @@ export async function GET(
       where: {
         id: serviceId,
         isActive: true,
-        organizer: {
+        organization: {
           status: "ACTIVE",
           organizationCategory: "RESERVAS",
         },
@@ -36,7 +36,7 @@ export async function GET(
             cancellationWindowMinutes: true,
           },
         },
-        organizer: {
+        organization: {
           select: {
             id: true,
             publicName: true,
@@ -59,11 +59,11 @@ export async function GET(
     const policy =
       service.policy ??
       (await prisma.organizationPolicy.findFirst({
-        where: { organizerId: service.organizer.id, policyType: "MODERATE" },
+        where: { organizationId: service.organization.id, policyType: "MODERATE" },
         select: { id: true, name: true, policyType: true, cancellationWindowMinutes: true },
       })) ??
       (await prisma.organizationPolicy.findFirst({
-        where: { organizerId: service.organizer.id },
+        where: { organizationId: service.organization.id },
         orderBy: { createdAt: "asc" },
         select: { id: true, name: true, policyType: true, cancellationWindowMinutes: true },
       }));

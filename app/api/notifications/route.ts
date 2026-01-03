@@ -40,6 +40,31 @@ export async function GET(req: NextRequest) {
       take: limit,
     });
 
+    const followSourceIds = notifications
+      .filter((n) => n.type === "FOLLOWED_YOU" && n.fromUserId)
+      .map((n) => n.fromUserId as string);
+    const mutualSet = new Set<string>();
+    if (followSourceIds.length > 0) {
+      const mutualRows = await prisma.follows.findMany({
+        where: {
+          follower_id: user.id,
+          following_id: { in: followSourceIds },
+        },
+        select: { following_id: true },
+      });
+      mutualRows.forEach((row) => mutualSet.add(row.following_id));
+    }
+
+    const items = notifications.map((item) => {
+      if (item.type === "FOLLOWED_YOU") {
+        return {
+          ...item,
+          meta: { isMutual: mutualSet.has(item.fromUserId ?? "") },
+        };
+      }
+      return item;
+    });
+
     const unreadCount = await prisma.notification.count({
       where: { userId: user.id, isRead: false },
     });
@@ -47,8 +72,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       ok: true,
       unreadCount,
-      notifications,
-      items: notifications,
+      notifications: items,
+      items,
     });
   } catch (err) {
     if (err instanceof AuthRequiredError) {

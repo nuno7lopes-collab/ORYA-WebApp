@@ -1,14 +1,14 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
 import { useUser } from "@/app/hooks/useUser";
 import Link from "next/link";
 import { supabaseBrowser } from "@/lib/supabaseBrowser";
-import Image from "next/image";
-import { CTA_PRIMARY } from "@/app/organizador/dashboardUi";
+import { CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
 import { Avatar } from "@/components/ui/avatar";
+import { getEventCoverUrl } from "@/lib/eventCover";
 import MobileBottomNav from "./MobileBottomNav";
 import useSWR from "swr";
 
@@ -24,7 +24,7 @@ type SearchEvent = {
   isFree: boolean;
 };
 
-type SearchOrganizer = {
+type SearchOrganization = {
   id: number;
   username: string | null;
   publicName: string | null;
@@ -43,7 +43,7 @@ type SearchUser = {
   isFollowing?: boolean;
 };
 
-type SearchTab = "all" | "events" | "organizers" | "users";
+type SearchTab = "all" | "events" | "organizations" | "users";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -65,19 +65,19 @@ export function Navbar() {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [eventResults, setEventResults] = useState<SearchEvent[]>([]);
-  const [organizerResults, setOrganizerResults] = useState<SearchOrganizer[]>([]);
+  const [organizationResults, setOrganizationResults] = useState<SearchOrganization[]>([]);
   const [userResults, setUserResults] = useState<SearchUser[]>([]);
   const [isSuggestLoading, setIsSuggestLoading] = useState(false);
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [activeSearchTab, setActiveSearchTab] = useState<SearchTab>("all");
   const [followPending, setFollowPending] = useState<Record<string, boolean>>({});
   const [hydratedPathname, setHydratedPathname] = useState<string | null>(null);
-  const [lastOrganizerUsername, setLastOrganizerUsername] = useState<string | null>(null);
+  const [lastOrganizationUsername, setLastOrganizationUsername] = useState<string | null>(null);
   const profileMenuRef = useRef<HTMLDivElement | null>(null);
   const searchPanelRef = useRef<HTMLDivElement | null>(null);
   const lastScrollYRef = useRef(0);
   const pathname = hydratedPathname ?? "";
-  const shouldHide = rawPathname?.startsWith("/organizador");
+  const shouldHide = rawPathname?.startsWith("/organizacao");
 
   const Logo = () => (
     <button
@@ -86,11 +86,14 @@ export function Navbar() {
       className="group flex items-center gap-2 transition hover:opacity-90 sm:gap-3"
       aria-label="Voltar à homepage ORYA"
     >
-      <Image
-        src="/brand/orya-logo.png"
+      <img
+        src="/brand/orya-logo-56.png"
+        srcSet="/brand/orya-logo-56.png 1x, /brand/orya-logo-112.png 2x"
         alt="Logo ORYA"
         width={56}
         height={56}
+        loading="eager"
+        decoding="async"
         className="h-14 w-14 shrink-0 rounded-full object-cover"
       />
       <span className="text-base font-semibold leading-none tracking-[0.18em] text-white sm:text-lg sm:tracking-[0.24em]">
@@ -106,7 +109,7 @@ export function Navbar() {
     }
   }, [rawPathname]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (typeof document === "undefined") return;
     if (shouldHide) {
       document.body.dataset.navHidden = "true";
@@ -248,7 +251,7 @@ export function Navbar() {
       const q = searchQuery.trim();
       if (q.length < 1) {
         setEventResults([]);
-        setOrganizerResults([]);
+        setOrganizationResults([]);
         setUserResults([]);
         setIsSuggestLoading(false);
         return;
@@ -256,7 +259,7 @@ export function Navbar() {
       try {
         setIsSuggestLoading(true);
         const query = encodeURIComponent(q);
-        const [eventsData, usersData, organizersData] = await Promise.all([
+        const [eventsData, usersData, organizationsData] = await Promise.all([
           fetch(`/api/explorar/list?q=${query}&limit=6`, {
             cache: "no-store",
             signal: controller.signal,
@@ -269,7 +272,7 @@ export function Navbar() {
           })
             .then((res) => (res.ok ? res.json() : null))
             .catch(() => null),
-          fetch(`/api/organizers/search?q=${query}&limit=6`, {
+          fetch(`/api/organizations/search?q=${query}&limit=6`, {
             cache: "no-store",
             signal: controller.signal,
           })
@@ -296,8 +299,8 @@ export function Navbar() {
           ? (usersData.results as SearchUser[])
           : [];
 
-        const organizerItems = Array.isArray(organizersData?.results)
-          ? (organizersData.results as SearchOrganizer[])
+        const organizationItems = Array.isArray(organizationsData?.results)
+          ? (organizationsData.results as SearchOrganization[])
           : [];
 
         setEventResults(
@@ -314,12 +317,12 @@ export function Navbar() {
           })),
         );
         setUserResults(userItems);
-        setOrganizerResults(organizerItems);
+        setOrganizationResults(organizationItems);
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") return;
         if (active) {
           setEventResults([]);
-          setOrganizerResults([]);
+          setOrganizationResults([]);
           setUserResults([]);
         }
       } finally {
@@ -362,7 +365,7 @@ export function Navbar() {
       : "Data a anunciar";
 
   const hasResults =
-    eventResults.length > 0 || organizerResults.length > 0 || userResults.length > 0;
+    eventResults.length > 0 || organizationResults.length > 0 || userResults.length > 0;
   const normalizedQuery = searchQuery.trim();
   const hasActiveQuery = normalizedQuery.length >= 1;
 
@@ -378,8 +381,8 @@ export function Navbar() {
     );
   };
 
-  const updateOrganizerFollowState = (targetId: number, next: boolean) => {
-    setOrganizerResults((prev) =>
+  const updateOrganizationFollowState = (targetId: number, next: boolean) => {
+    setOrganizationResults((prev) =>
       prev.map((item) =>
         item.id === targetId ? { ...item, isFollowing: next } : item,
       ),
@@ -414,25 +417,25 @@ export function Navbar() {
     }
   };
 
-  const toggleOrganizerFollow = async (targetId: number, next: boolean) => {
+  const toggleOrganizationFollow = async (targetId: number, next: boolean) => {
     if (!ensureAuthForFollow()) return;
     const key = `org_${targetId}`;
     setFollowPendingFlag(key, true);
-    updateOrganizerFollowState(targetId, next);
+    updateOrganizationFollowState(targetId, next);
     try {
       const res = await fetch(
-        next ? "/api/social/follow-organizer" : "/api/social/unfollow-organizer",
+        next ? "/api/social/follow-organization" : "/api/social/unfollow-organization",
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ organizerId: targetId }),
+          body: JSON.stringify({ organizationId: targetId }),
         },
       );
       if (!res.ok) {
-        updateOrganizerFollowState(targetId, !next);
+        updateOrganizationFollowState(targetId, !next);
       }
     } catch {
-      updateOrganizerFollowState(targetId, !next);
+      updateOrganizationFollowState(targetId, !next);
     } finally {
       setFollowPendingFlag(key, false);
     }
@@ -446,14 +449,14 @@ export function Navbar() {
   const searchTabs: Array<{ key: SearchTab; label: string }> = [
     { key: "all", label: "Global" },
     { key: "events", label: "Eventos" },
-    { key: "organizers", label: "Organizadores" },
+    { key: "organizations", label: "Organizações" },
     { key: "users", label: "Utilizadores" },
   ];
 
   useEffect(() => {
     try {
-      const stored = sessionStorage.getItem("orya_last_organizer_username");
-      if (stored) setLastOrganizerUsername(stored);
+      const stored = sessionStorage.getItem("orya_last_organization_username");
+      if (stored) setLastOrganizationUsername(stored);
     } catch {
       // ignore storage issues
     }
@@ -509,9 +512,9 @@ export function Navbar() {
               </button>
               <button
                 type="button"
-                onClick={() => router.push("/organizador")}
+                onClick={() => router.push("/organizacao")}
                 className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
-                  pathname?.startsWith("/organizador")
+                  pathname?.startsWith("/organizacao")
                     ? "bg-[linear-gradient(120deg,rgba(107,255,255,0.18),rgba(22,70,245,0.22))] text-white border border-white/28 shadow-[0_0_18px_rgba(22,70,245,0.28)]"
                     : "text-white/85 hover:text-white bg-white/5 border border-white/16 hover:border-white/26"
                 }`}
@@ -545,7 +548,7 @@ export function Navbar() {
             {/* Acesso rápido a Organizar no mobile */}
             <button
               type="button"
-              onClick={() => router.push("/organizador")}
+              onClick={() => router.push("/organizacao")}
               className="inline-flex md:hidden items-center rounded-full border border-white/16 bg-white/10 px-3 py-1.5 text-[11px] font-semibold text-white/90 hover:border-white/28 hover:bg-white/16 transition"
             >
               Organizar
@@ -627,22 +630,22 @@ export function Navbar() {
                       <span>Definições</span>
                     </Link>
                     <Link
-                      href="/organizador"
+                      href="/organizacao"
                       onClick={() => setIsProfileMenuOpen(false)}
                       className="flex w-full items-center justify-between rounded-xl px-2.5 py-2 text-left hover:bg-white/8"
                     >
                       <span>Organizar (modo empresa)</span>
                     </Link>
-                    {lastOrganizerUsername && (
+                    {lastOrganizationUsername && (
                       <Link
-                        href={`/${lastOrganizerUsername}`}
+                        href={`/${lastOrganizationUsername}`}
                         onClick={() => setIsProfileMenuOpen(false)}
                         className="flex w-full items-center justify-between rounded-xl px-2.5 py-2 text-left hover:bg-white/8"
                       >
                         <span>Ver página pública</span>
                       </Link>
                     )}
-                    {pathname?.startsWith("/organizador") && (
+                    {pathname?.startsWith("/organizacao") && (
                       <Link
                         href="/me"
                         onClick={() => setIsProfileMenuOpen(false)}
@@ -651,7 +654,7 @@ export function Navbar() {
                         <span>Voltar a utilizador</span>
                       </Link>
                     )}
-                    {/* Dashboard de organizador removido do dropdown: já está acessível na nav */}
+                    {/* Dashboard de organização removido do dropdown: já está acessível na nav */}
                     <div className="my-1 h-px w-full bg-white/10" />
                     <button
                       type="button"
@@ -746,7 +749,7 @@ export function Navbar() {
                   <div className="mt-3 max-h-[60vh] space-y-4 overflow-y-auto pr-1">
                     {!hasActiveQuery && (
                       <p className="text-[11px] text-white/70">
-                        Começa a escrever para veres eventos, organizadores e utilizadores.
+                        Começa a escrever para veres eventos, organizações e utilizadores.
                       </p>
                     )}
 
@@ -772,52 +775,54 @@ export function Navbar() {
                             )}
                           </div>
                           <div className="mt-2 space-y-2">
-                            {eventResults.slice(0, 3).map((item) => (
-                              <button
-                                key={`event-${item.id}`}
-                                type="button"
-                                onClick={() => goTo(buildEventHref(item.slug))}
-                                className="w-full rounded-xl border border-white/12 bg-[linear-gradient(120deg,rgba(255,255,255,0.04),rgba(8,10,22,0.7))] p-2.5 text-left hover:border-white/20 hover:bg-white/8 transition flex gap-3"
-                              >
-                                <div className="h-12 w-12 overflow-hidden rounded-lg border border-white/10 bg-[radial-gradient(circle_at_30%_30%,rgba(255,0,200,0.14),transparent_45%),radial-gradient(circle_at_70%_70%,rgba(107,255,255,0.14),transparent_50%),#0b0f1b]">
-                                  {item.coverImageUrl ? (
-                                    // eslint-disable-next-line @next/next/no-img-element
+                            {eventResults.slice(0, 3).map((item) => {
+                              const coverSrc = getEventCoverUrl(item.coverImageUrl, {
+                                seed: item.slug ?? item.id,
+                                width: 200,
+                                quality: 70,
+                                format: "webp",
+                              });
+                              return (
+                                <button
+                                  key={`event-${item.id}`}
+                                  type="button"
+                                  onClick={() => goTo(buildEventHref(item.slug))}
+                                  className="w-full rounded-xl border border-white/12 bg-[linear-gradient(120deg,rgba(255,255,255,0.04),rgba(8,10,22,0.7))] p-2.5 text-left hover:border-white/20 hover:bg-white/8 transition flex gap-3"
+                                >
+                                  <div className="h-12 w-12 overflow-hidden rounded-lg border border-white/10 bg-[radial-gradient(circle_at_30%_30%,rgba(255,0,200,0.14),transparent_45%),radial-gradient(circle_at_70%_70%,rgba(107,255,255,0.14),transparent_50%),#0b0f1b]">
+                                    {/* eslint-disable-next-line @next/next/no-img-element */}
                                     <img
-                                      src={item.coverImageUrl}
+                                      src={coverSrc}
                                       alt={item.title}
                                       className="h-full w-full object-cover"
                                     />
-                                  ) : (
-                                    <div className="flex h-full w-full items-center justify-center text-[10px] font-semibold uppercase tracking-wide text-white/55">
-                                      ORYA
-                                    </div>
-                                  )}
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <p className="text-[12px] font-semibold text-white line-clamp-1">
-                                    {item.title}
-                                  </p>
-                                  <p className="text-[10px] text-white/80 line-clamp-1">
-                                    {item.locationName || item.locationCity || "Local a anunciar"}
-                                  </p>
-                                  <p className="text-[10px] text-white/70">
-                                    {formatEventDate(item.startsAt)}
-                                  </p>
-                                </div>
-                                <div className="flex flex-col items-end gap-1 text-[10px] text-white/70">
-                                  <span>
-                                    {item.isFree
-                                      ? "Grátis"
-                                      : item.priceFrom !== null
-                                        ? `Desde ${item.priceFrom.toFixed(2)} €`
-                                        : "Preço a anunciar"}
-                                  </span>
-                                  <span className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[10px] text-white/85">
-                                    Ver
-                                  </span>
-                                </div>
-                              </button>
-                            ))}
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-[12px] font-semibold text-white line-clamp-1">
+                                      {item.title}
+                                    </p>
+                                    <p className="text-[10px] text-white/80 line-clamp-1">
+                                      {item.locationName || item.locationCity || "Local a anunciar"}
+                                    </p>
+                                    <p className="text-[10px] text-white/70">
+                                      {formatEventDate(item.startsAt)}
+                                    </p>
+                                  </div>
+                                  <div className="flex flex-col items-end gap-1 text-[10px] text-white/70">
+                                    <span>
+                                      {item.isFree
+                                        ? "Grátis"
+                                        : item.priceFrom !== null
+                                          ? `Desde ${item.priceFrom.toFixed(2)} €`
+                                          : "Preço a anunciar"}
+                                    </span>
+                                    <span className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[10px] text-white/85">
+                                      Ver
+                                    </span>
+                                  </div>
+                                </button>
+                              );
+                            })}
                             {eventResults.length === 0 && (
                               <p className="text-[11px] text-white/60">Nenhum evento encontrado.</p>
                             )}
@@ -826,11 +831,11 @@ export function Navbar() {
 
                         <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
                           <div className="flex items-center justify-between text-[11px] text-white/75">
-                            <span>Organizadores</span>
-                            {organizerResults.length > 0 && (
+                            <span>Organizações</span>
+                            {organizationResults.length > 0 && (
                               <button
                                 type="button"
-                                onClick={() => setActiveSearchTab("organizers")}
+                                onClick={() => setActiveSearchTab("organizations")}
                                 className="rounded-full border border-white/12 bg-white/5 px-2 py-0.5 text-[10px] text-white/70 hover:bg-white/10"
                               >
                                 Ver tudo
@@ -838,14 +843,14 @@ export function Navbar() {
                             )}
                           </div>
                           <div className="mt-2 space-y-2">
-                            {organizerResults.slice(0, 3).map((item) => {
+                            {organizationResults.slice(0, 3).map((item) => {
                               const isFollowing = Boolean(item.isFollowing);
                               const pending = followPending[`org_${item.id}`];
                               const displayName =
                                 item.publicName?.trim() ||
                                 item.businessName?.trim() ||
                                 item.username ||
-                                "Organizador ORYA";
+                                "Organização ORYA";
                               return (
                                 <div
                                   key={`org-${item.id}`}
@@ -868,14 +873,14 @@ export function Navbar() {
                                         {displayName}
                                       </p>
                                       <p className="text-[10px] text-white/70 line-clamp-1">
-                                        {item.username ? `@${item.username}` : item.city || "Organizador"}
+                                        {item.username ? `@${item.username}` : item.city || "Organização"}
                                       </p>
                                     </div>
                                   </button>
                                   <button
                                     type="button"
                                     disabled={pending}
-                                    onClick={() => toggleOrganizerFollow(item.id, !isFollowing)}
+                                    onClick={() => toggleOrganizationFollow(item.id, !isFollowing)}
                                     className={`rounded-full px-3 py-1 text-[10px] font-semibold transition ${
                                       isFollowing
                                         ? "border border-emerald-300/40 bg-emerald-400/15 text-emerald-100"
@@ -887,8 +892,8 @@ export function Navbar() {
                                 </div>
                               );
                             })}
-                            {organizerResults.length === 0 && (
-                              <p className="text-[11px] text-white/60">Nenhum organizador encontrado.</p>
+                            {organizationResults.length === 0 && (
+                              <p className="text-[11px] text-white/60">Nenhum organização encontrado.</p>
                             )}
                           </div>
                         </div>
@@ -963,68 +968,70 @@ export function Navbar() {
 
                     {hasActiveQuery && activeSearchTab === "events" && (
                       <div className="space-y-2">
-                        {eventResults.map((item) => (
-                          <button
-                            key={`event-tab-${item.id}`}
-                            type="button"
-                            onClick={() => goTo(buildEventHref(item.slug))}
-                            className="w-full rounded-xl border border-white/12 bg-[linear-gradient(120deg,rgba(255,255,255,0.04),rgba(8,10,22,0.7))] p-2.5 text-left hover:border-white/20 hover:bg-white/8 transition flex gap-3"
-                          >
-                            <div className="h-12 w-12 overflow-hidden rounded-lg border border-white/10 bg-[radial-gradient(circle_at_30%_30%,rgba(255,0,200,0.14),transparent_45%),radial-gradient(circle_at_70%_70%,rgba(107,255,255,0.14),transparent_50%),#0b0f1b]">
-                              {item.coverImageUrl ? (
-                                // eslint-disable-next-line @next/next/no-img-element
+                        {eventResults.map((item) => {
+                          const coverSrc = getEventCoverUrl(item.coverImageUrl, {
+                            seed: item.slug ?? item.id,
+                            width: 200,
+                            quality: 70,
+                            format: "webp",
+                          });
+                          return (
+                            <button
+                              key={`event-tab-${item.id}`}
+                              type="button"
+                              onClick={() => goTo(buildEventHref(item.slug))}
+                              className="w-full rounded-xl border border-white/12 bg-[linear-gradient(120deg,rgba(255,255,255,0.04),rgba(8,10,22,0.7))] p-2.5 text-left hover:border-white/20 hover:bg-white/8 transition flex gap-3"
+                            >
+                              <div className="h-12 w-12 overflow-hidden rounded-lg border border-white/10 bg-[radial-gradient(circle_at_30%_30%,rgba(255,0,200,0.14),transparent_45%),radial-gradient(circle_at_70%_70%,rgba(107,255,255,0.14),transparent_50%),#0b0f1b]">
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
                                 <img
-                                  src={item.coverImageUrl}
+                                  src={coverSrc}
                                   alt={item.title}
                                   className="h-full w-full object-cover"
                                 />
-                              ) : (
-                                <div className="flex h-full w-full items-center justify-center text-[10px] font-semibold uppercase tracking-wide text-white/55">
-                                  ORYA
-                                </div>
-                              )}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-[12px] font-semibold text-white line-clamp-1">
-                                {item.title}
-                              </p>
-                              <p className="text-[10px] text-white/80 line-clamp-1">
-                                {item.locationName || item.locationCity || "Local a anunciar"}
-                              </p>
-                              <p className="text-[10px] text-white/70">
-                                {formatEventDate(item.startsAt)}
-                              </p>
-                            </div>
-                            <div className="flex flex-col items-end gap-1 text-[10px] text-white/70">
-                              <span>
-                                {item.isFree
-                                  ? "Grátis"
-                                  : item.priceFrom !== null
-                                    ? `Desde ${item.priceFrom.toFixed(2)} €`
-                                    : "Preço a anunciar"}
-                              </span>
-                              <span className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[10px] text-white/85">
-                                Ver
-                              </span>
-                            </div>
-                          </button>
-                        ))}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-[12px] font-semibold text-white line-clamp-1">
+                                  {item.title}
+                                </p>
+                                <p className="text-[10px] text-white/80 line-clamp-1">
+                                  {item.locationName || item.locationCity || "Local a anunciar"}
+                                </p>
+                                <p className="text-[10px] text-white/70">
+                                  {formatEventDate(item.startsAt)}
+                                </p>
+                              </div>
+                              <div className="flex flex-col items-end gap-1 text-[10px] text-white/70">
+                                <span>
+                                  {item.isFree
+                                    ? "Grátis"
+                                    : item.priceFrom !== null
+                                      ? `Desde ${item.priceFrom.toFixed(2)} €`
+                                      : "Preço a anunciar"}
+                                </span>
+                                <span className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[10px] text-white/85">
+                                  Ver
+                                </span>
+                              </div>
+                            </button>
+                          );
+                        })}
                         {eventResults.length === 0 && (
                           <p className="text-[11px] text-white/60">Nenhum evento encontrado.</p>
                         )}
                       </div>
                     )}
 
-                    {hasActiveQuery && activeSearchTab === "organizers" && (
+                    {hasActiveQuery && activeSearchTab === "organizations" && (
                       <div className="space-y-2">
-                        {organizerResults.map((item) => {
+                        {organizationResults.map((item) => {
                           const isFollowing = Boolean(item.isFollowing);
                           const pending = followPending[`org_${item.id}`];
                           const displayName =
                             item.publicName?.trim() ||
                             item.businessName?.trim() ||
                             item.username ||
-                            "Organizador ORYA";
+                            "Organização ORYA";
                           return (
                             <div
                               key={`org-tab-${item.id}`}
@@ -1047,14 +1054,14 @@ export function Navbar() {
                                     {displayName}
                                   </p>
                                   <p className="text-[10px] text-white/70 line-clamp-1">
-                                    {item.username ? `@${item.username}` : item.city || "Organizador"}
+                                    {item.username ? `@${item.username}` : item.city || "Organização"}
                                   </p>
                                 </div>
                               </button>
                               <button
                                 type="button"
                                 disabled={pending}
-                                onClick={() => toggleOrganizerFollow(item.id, !isFollowing)}
+                                onClick={() => toggleOrganizationFollow(item.id, !isFollowing)}
                                 className={`rounded-full px-3 py-1 text-[10px] font-semibold transition ${
                                   isFollowing
                                     ? "border border-emerald-300/40 bg-emerald-400/15 text-emerald-100"
@@ -1066,8 +1073,8 @@ export function Navbar() {
                             </div>
                           );
                         })}
-                        {organizerResults.length === 0 && (
-                          <p className="text-[11px] text-white/60">Nenhum organizador encontrado.</p>
+                        {organizationResults.length === 0 && (
+                          <p className="text-[11px] text-white/60">Nenhum organização encontrado.</p>
                         )}
                       </div>
                     )}
@@ -1132,7 +1139,7 @@ export function Navbar() {
           </div>
         </div>
       )}
-      <MobileBottomNav pathname={pathname} socialBadgeCount={unreadCount} />
+      {!shouldHide && <MobileBottomNav pathname={pathname} socialBadgeCount={unreadCount} />}
     </>
   );
 }

@@ -1,10 +1,10 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
-import { OrganizerMemberRole, padel_match_status, Prisma } from "@prisma/client";
+import { OrganizationMemberRole, padel_match_status, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { getActiveOrganizerForUser } from "@/lib/organizerContext";
+import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { isValidScore } from "@/lib/padel/validation";
 import {
   queueMatchChanged,
@@ -12,7 +12,7 @@ import {
   queueNextOpponent,
 } from "@/domain/notifications/tournament";
 
-const allowedRoles: OrganizerMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
+const allowedRoles: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
 
 function sortRoundsBySize(matches: Array<{ roundLabel: string | null }>) {
   const counts = matches.reduce<Record<string, number>>((acc, m) => {
@@ -38,14 +38,14 @@ export async function GET(req: NextRequest) {
 
   const event = await prisma.event.findUnique({
     where: { id: eventId },
-    select: { organizerId: true },
+    select: { organizationId: true },
   });
-  if (!event?.organizerId) return NextResponse.json({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
-  const { organizer } = await getActiveOrganizerForUser(user.id, {
-    organizerId: event.organizerId,
+  if (!event?.organizationId) return NextResponse.json({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+  const { organization } = await getActiveOrganizationForUser(user.id, {
+    organizationId: event.organizationId,
     roles: allowedRoles,
   });
-  if (!organizer) return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  if (!organization) return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
   const matches = await prisma.padelMatch.findMany({
     where: { eventId, ...matchCategoryFilter },
@@ -91,15 +91,15 @@ export async function POST(req: NextRequest) {
 
   const match = await prisma.padelMatch.findUnique({
     where: { id: matchId },
-    include: { event: { select: { organizerId: true } } },
+    include: { event: { select: { organizationId: true } } },
   });
-  if (!match || !match.event?.organizerId) return NextResponse.json({ ok: false, error: "MATCH_NOT_FOUND" }, { status: 404 });
+  if (!match || !match.event?.organizationId) return NextResponse.json({ ok: false, error: "MATCH_NOT_FOUND" }, { status: 404 });
 
-  const { organizer } = await getActiveOrganizerForUser(user.id, {
-    organizerId: match.event.organizerId,
+  const { organization } = await getActiveOrganizationForUser(user.id, {
+    organizationId: match.event.organizationId,
     roles: allowedRoles,
   });
-  if (!organizer) return NextResponse.json({ ok: false, error: "NO_ORGANIZER" }, { status: 403 });
+  if (!organization) return NextResponse.json({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });
 
   if (scoreRaw && !isValidScore(scoreRaw)) {
     return NextResponse.json({ ok: false, error: "INVALID_SCORE" }, { status: 400 });

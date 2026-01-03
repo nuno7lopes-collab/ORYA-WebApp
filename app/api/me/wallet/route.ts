@@ -151,7 +151,7 @@ export async function GET(req: NextRequest) {
           type: e.type,
           status: e.status,
           isOwner: true,
-          isOrganizer: false,
+          isOrganization: false,
           isAdmin,
           checkinWindow,
           outsideWindow,

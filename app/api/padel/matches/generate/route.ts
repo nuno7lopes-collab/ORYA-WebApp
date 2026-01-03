@@ -1,13 +1,13 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
-import { OrganizerMemberRole, padel_format, Prisma } from "@prisma/client";
+import { OrganizationMemberRole, padel_format, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { getActiveOrganizerForUser } from "@/lib/organizerContext";
+import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { queueBracketPublished } from "@/domain/notifications/tournament";
 
-const allowedRoles: OrganizerMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
+const allowedRoles: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
 type GroupsConfig = {
   mode: "AUTO" | "MANUAL";
   groupCount?: number | null;
@@ -106,9 +106,9 @@ export async function POST(req: NextRequest) {
 
   const event = await prisma.event.findUnique({
     where: { id: eventId, isDeleted: false },
-    select: { id: true, organizerId: true },
+    select: { id: true, organizationId: true },
   });
-  if (!event || !event.organizerId) return NextResponse.json({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+  if (!event || !event.organizationId) return NextResponse.json({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
 
   const resolvedCategoryId = Number.isFinite(categoryId) ? categoryId : null;
   if (resolvedCategoryId) {
@@ -122,11 +122,11 @@ export async function POST(req: NextRequest) {
   }
   const matchCategoryFilter = resolvedCategoryId ? { categoryId: resolvedCategoryId } : {};
 
-  const { organizer, membership } = await getActiveOrganizerForUser(user.id, {
-    organizerId: event.organizerId,
+  const { organization, membership } = await getActiveOrganizationForUser(user.id, {
+    organizationId: event.organizationId,
     roles: allowedRoles,
   });
-  if (!organizer) return NextResponse.json({ ok: false, error: "NO_ORGANIZER" }, { status: 403 });
+  if (!organization) return NextResponse.json({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });
 
   const config = await prisma.padelTournamentConfig.findUnique({
     where: { eventId },

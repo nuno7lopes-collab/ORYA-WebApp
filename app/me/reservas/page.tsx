@@ -23,7 +23,7 @@ type BookingItem = {
   createdAt: string;
   availabilityId: number | null;
   service: { id: number; name: string | null } | null;
-  organizer: {
+  organization: {
     id: number;
     publicName: string | null;
     businessName: string | null;
@@ -177,8 +177,8 @@ export default function MinhasReservasPage() {
                       </p>
                       <p className="text-[12px] text-white/60">
                         {new Date(booking.startsAt).toLocaleString("pt-PT", { dateStyle: "medium", timeStyle: "short" })}
-                        {booking.organizer?.publicName || booking.organizer?.businessName
-                          ? ` · ${booking.organizer.publicName || booking.organizer.businessName}`
+                        {booking.organization?.publicName || booking.organization?.businessName
+                          ? ` · ${booking.organization.publicName || booking.organization.businessName}`
                           : ""}
                       </p>
                       {booking.policy && (

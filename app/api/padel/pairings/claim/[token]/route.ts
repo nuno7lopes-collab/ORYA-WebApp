@@ -17,10 +17,10 @@ import { PairingAction, transition } from "@/domain/padelPairingStateMachine";
 import { ensureEntriesForConfirmedPairing } from "@/domain/tournaments/ensureEntriesForConfirmedPairing";
 import { checkPadelCategoryLimit } from "@/domain/padelCategoryLimit";
 
-async function ensurePlayerProfile(params: { organizerId: number; userId: string }) {
-  const { organizerId, userId } = params;
+async function ensurePlayerProfile(params: { organizationId: number; userId: string }) {
+  const { organizationId, userId } = params;
   const existing = await prisma.padelPlayerProfile.findFirst({
-    where: { organizerId, userId },
+    where: { organizationId, userId },
     select: { id: true },
   });
   if (existing) return existing.id;
@@ -32,7 +32,7 @@ async function ensurePlayerProfile(params: { organizerId: number; userId: string
   const email = authUser?.email ?? null;
   const created = await prisma.padelPlayerProfile.create({
     data: {
-      organizerId,
+      organizationId,
       userId,
       fullName: name,
       displayName: name,
@@ -58,7 +58,7 @@ export async function GET(_: NextRequest, { params }: { params: { token: string 
       lockedUntil: true,
       payment_mode: true,
       eventId: true,
-      organizerId: true,
+      organizationId: true,
       categoryId: true,
       player1UserId: true,
       player2UserId: true,
@@ -106,7 +106,7 @@ export async function GET(_: NextRequest, { params }: { params: { token: string 
     })),
   };
   return NextResponse.json(
-    { ok: true, pairing: pairingPayload, ticketTypes, organizerId: pairing.organizerId, status: "PREVIEW_ONLY", padelEvent },
+    { ok: true, pairing: pairingPayload, ticketTypes, organizationId: pairing.organizationId, status: "PREVIEW_ONLY", padelEvent },
     { status: 200 },
   );
 }
@@ -219,7 +219,7 @@ export async function POST(_: NextRequest, { params }: { params: { token: string
   }
 
   try {
-    const playerProfileId = await ensurePlayerProfile({ organizerId: pairing.organizerId, userId: user.id });
+    const playerProfileId = await ensurePlayerProfile({ organizationId: pairing.organizationId, userId: user.id });
     const { pairing: updated, shouldEnsureEntries } = await prisma.$transaction(async (tx) => {
       // Se já tem ticket, validar apropriação
       if (pendingSlot.ticketId) {

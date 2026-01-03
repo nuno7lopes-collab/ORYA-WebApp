@@ -32,10 +32,10 @@ export function normalizeProfileCoverUrl(raw: string | null | undefined) {
   return normalizePublicUrl(raw, coverBuckets);
 }
 
-export function normalizeOrganizerAvatarUrl(raw: string | null | undefined) {
+export function normalizeOrganizationAvatarUrl(raw: string | null | undefined) {
   return normalizePublicUrl(raw, avatarBuckets);
 }
 
-export function normalizeOrganizerCoverUrl(raw: string | null | undefined) {
+export function normalizeOrganizationCoverUrl(raw: string | null | undefined) {
   return normalizePublicUrl(raw, coverBuckets);
 }

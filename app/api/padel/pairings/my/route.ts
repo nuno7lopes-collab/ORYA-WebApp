@@ -34,7 +34,7 @@ export async function GET(req: NextRequest) {
           },
         },
         event: {
-          select: { id: true, title: true, slug: true, organizerId: true, templateType: true },
+          select: { id: true, title: true, slug: true, organizationId: true, templateType: true },
         },
         category: { select: { label: true } },
       },

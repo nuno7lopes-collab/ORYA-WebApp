@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import OrganizerFollowClient from "@/app/components/profile/OrganizerFollowClient";
+import OrganizationFollowClient from "@/app/components/profile/OrganizationFollowClient";
 import ProfileHeaderLayout, {
   ProfileStatPill,
   ProfileVerifiedBadge,
@@ -18,7 +18,7 @@ type OrganizationProfileHeaderProps = {
   city: string | null;
   followersCount?: number | null;
   followingCount?: number | null;
-  organizerId: number;
+  organizationId: number;
   initialIsFollowing?: boolean;
   canEdit?: boolean;
   isPublic?: boolean;
@@ -38,7 +38,7 @@ export default function OrganizationProfileHeader({
   city,
   followersCount,
   followingCount,
-  organizerId,
+  organizationId,
   initialIsFollowing = false,
   canEdit,
   isPublic = true,
@@ -180,14 +180,14 @@ export default function OrganizationProfileHeader({
 
   const actionsSlot = canEdit ? (
     <Link
-      href="/organizador#perfil-publico"
+      href="/organizacao#perfil-publico"
       className="inline-flex items-center rounded-full border border-white/20 bg-white/8 px-4 py-2 text-[12px] font-semibold text-white/80 hover:bg-white/12"
     >
       Editar perfil
     </Link>
   ) : (
-    <OrganizerFollowClient
-      organizerId={organizerId}
+    <OrganizationFollowClient
+      organizationId={organizationId}
       initialIsFollowing={initialIsFollowing}
       onChange={(next) => {
         setFollowersDisplay((prev) => Math.max(0, (prev ?? 0) + (next ? 1 : -1)));

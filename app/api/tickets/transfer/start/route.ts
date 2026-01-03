@@ -130,12 +130,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // TODO(followers): quando existir tabela de seguidores, garantir follow mútuo
-    // Exemplo esperado:
-    // const isFriend = await isMutualFollower(userId, targetProfile.id);
-    // if (!isFriend) return NextResponse.json({ ok: false, error: "NOT_FRIEND" }, { status: 403 });
-    // Por agora, esta regra fica desativada até termos o modelo de followers.
-
     // 5. Criar registo em ticket_transfers com status PENDING
     const transfer = await prisma.ticketTransfer.create({
       data: {
@@ -150,7 +144,7 @@ export async function POST(req: NextRequest) {
       await createNotification({
         userId: targetProfile.id,
         fromUserId: userId,
-        organizerId: ticket.event?.organizerId ?? null,
+        organizationId: ticket.event?.organizationId ?? null,
         eventId: ticket.eventId,
         ticketId: ticket.id,
         type: NotificationType.TICKET_TRANSFER_RECEIVED,

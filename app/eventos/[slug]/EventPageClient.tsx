@@ -26,7 +26,7 @@ type EventPageClientProps = {
   checkoutUiVariant: "DEFAULT" | "PADEL";
   padelMeta?: {
     eventId: number;
-    organizerId: number | null;
+    organizationId: number | null;
     categoryId?: number | null;
     categoryLinkId?: number | null;
   };
@@ -202,7 +202,7 @@ export default function EventPageClient({
           typeof json?.pairing?.categoryId === "number" ? json.pairing.categoryId : null;
         const metaFromInvite = {
           eventId: pairing.eventId,
-          organizerId: json.organizerId ?? null,
+          organizationId: json.organizationId ?? null,
           categoryId: pairingCategoryId,
           categoryLinkId: ticketFromWaves?.padelCategoryLinkId ?? null,
         };

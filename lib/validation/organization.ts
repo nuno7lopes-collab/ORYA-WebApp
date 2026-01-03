@@ -69,7 +69,7 @@ const optionalTrimmedString = z
 
 const moduleKeys = ORGANIZATION_MODULES as unknown as [string, ...string[]];
 
-export const becomeOrganizerSchema = z.object({
+export const becomeOrganizationSchema = z.object({
   organizationCategory: z
     .string()
     .trim()
@@ -111,5 +111,5 @@ export const becomeOrganizerSchema = z.object({
   ),
 });
 
-export type BecomeOrganizerSchema = typeof becomeOrganizerSchema;
-export type BecomeOrganizerFormValues = z.input<typeof becomeOrganizerSchema>;
+export type BecomeOrganizationSchema = typeof becomeOrganizationSchema;
+export type BecomeOrganizationFormValues = z.input<typeof becomeOrganizationSchema>;

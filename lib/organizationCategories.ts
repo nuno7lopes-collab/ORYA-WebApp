@@ -1,4 +1,4 @@
-export const ORGANIZATION_CATEGORIES = ["EVENTOS", "PADEL", "RESERVAS", "CLUBS"] as const;
+export const ORGANIZATION_CATEGORIES = ["EVENTOS", "PADEL", "RESERVAS"] as const;
 export type OrganizationCategory = (typeof ORGANIZATION_CATEGORIES)[number];
 
 export const ORGANIZATION_MODULES = ["INSCRICOES"] as const;
@@ -14,7 +14,6 @@ export const ORGANIZATION_CATEGORY_LABELS: Record<OrganizationCategory, string> 
   EVENTOS: "Eventos",
   PADEL: "Padel",
   RESERVAS: "Reservas",
-  CLUBS: "Clubes",
 };
 
 export function normalizeOrganizationCategory(value?: string | null): OrganizationCategory {

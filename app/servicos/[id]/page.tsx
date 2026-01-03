@@ -33,7 +33,7 @@ type Service = {
     policyType: string;
     cancellationWindowMinutes: number | null;
   } | null;
-  organizer: {
+  organization: {
     id: number;
     publicName: string | null;
     businessName: string | null;
@@ -398,14 +398,14 @@ export default function ServicoDetalhePublicoPage() {
               </p>
             </div>
           )}
-          {service?.organizer && (
+          {service?.organization && (
             <div className="mt-4 border-t border-white/10 pt-4 text-sm text-white/70">
               <p className="font-semibold text-white">
-                {service.organizer.publicName || service.organizer.businessName || "Organização"}
+                {service.organization.publicName || service.organization.businessName || "Organização"}
               </p>
-              <p>{service.organizer.city || "Cidade não definida"}</p>
-              {service.organizer.publicWebsite && (
-                <a href={service.organizer.publicWebsite} className="text-[#6BFFFF]" target="_blank" rel="noreferrer">
+              <p>{service.organization.city || "Cidade não definida"}</p>
+              {service.organization.publicWebsite && (
+                <a href={service.organization.publicWebsite} className="text-[#6BFFFF]" target="_blank" rel="noreferrer">
                   Website
                 </a>
               )}

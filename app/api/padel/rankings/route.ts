@@ -1,16 +1,17 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
-import { OrganizerMemberRole } from "@prisma/client";
+import { OrganizationMemberRole } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { getActiveOrganizerForUser } from "@/lib/organizerContext";
+import { getActiveOrganizationForUser } from "@/lib/organizationContext";
+import { resolveOrganizationIdFromParams } from "@/lib/organizationId";
 import { PadelPointsTable } from "@/lib/padel/validation";
 
-const allowedRoles: OrganizerMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
+const allowedRoles: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
 
 export async function GET(req: NextRequest) {
-  const organizerId = req.nextUrl.searchParams.get("organizerId");
+  const organizationId = resolveOrganizationIdFromParams(req.nextUrl.searchParams);
   const eventId = req.nextUrl.searchParams.get("eventId");
 
   if (eventId) {
@@ -34,16 +35,13 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: true, items }, { status: 200 });
   }
 
-  if (!organizerId) {
-    return NextResponse.json({ ok: false, error: "MISSING_ORGANIZER" }, { status: 400 });
+  if (!organizationId) {
+    return NextResponse.json({ ok: false, error: "MISSING_ORGANIZATION" }, { status: 400 });
   }
-  const oId = Number(organizerId);
-  if (!Number.isFinite(oId)) {
-    return NextResponse.json({ ok: false, error: "INVALID_ORGANIZER" }, { status: 400 });
-  }
+  const oId = organizationId;
 
   const entries = await prisma.padelRankingEntry.findMany({
-    where: { organizerId: oId },
+    where: { organizationId: oId },
     include: { player: true },
   });
 
@@ -85,15 +83,15 @@ export async function POST(req: NextRequest) {
 
   const event = await prisma.event.findUnique({
     where: { id: eventId, isDeleted: false },
-    select: { id: true, organizerId: true },
+    select: { id: true, organizationId: true },
   });
-  if (!event || !event.organizerId) return NextResponse.json({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+  if (!event || !event.organizationId) return NextResponse.json({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
 
-  const { organizer } = await getActiveOrganizerForUser(user.id, {
-    organizerId: event.organizerId,
+  const { organization } = await getActiveOrganizationForUser(user.id, {
+    organizationId: event.organizationId,
     roles: allowedRoles,
   });
-  if (!organizer) return NextResponse.json({ ok: false, error: "NO_ORGANIZER" }, { status: 403 });
+  if (!organization) return NextResponse.json({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });
 
   const config = await prisma.padelTournamentConfig.findUnique({
     where: { eventId },
@@ -123,7 +121,7 @@ export async function POST(req: NextRequest) {
 
   const playerProfiles = profileIds.size
     ? await prisma.padelPlayerProfile.findMany({
-        where: { organizerId: event.organizerId!, userId: { in: Array.from(profileIds) } },
+        where: { organizationId: event.organizationId!, userId: { in: Array.from(profileIds) } },
         select: { id: true, userId: true },
       })
     : [];
@@ -177,7 +175,7 @@ export async function POST(req: NextRequest) {
   await prisma.$transaction(async (tx) => {
     await tx.padelRankingEntry.deleteMany({ where: { eventId } });
     const entries = Object.entries(playerPoints).map(([playerIdStr, points]) => ({
-      organizerId: event.organizerId!,
+      organizationId: event.organizationId!,
       eventId,
       playerId: Number(playerIdStr),
       points,

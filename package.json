@@ -6,12 +6,13 @@
     "dev": "NODE_TLS_REJECT_UNAUTHORIZED=0 next dev",
     "build": "next build",
     "start": "next start",
-    "backup": "node backup.js",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "worker": "node scripts/operations-loop.js",
     "postinstall": "prisma generate",
-    "prisma:generate": "prisma generate"
+    "prisma:generate": "prisma generate",
+    "covers:build": "node scripts/generate_cover_library.js",
+    "covers:fetch": "node scripts/fetch_openverse_covers.js"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",

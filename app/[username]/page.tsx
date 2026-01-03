@@ -4,14 +4,14 @@ import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import ProfileHeader from "@/app/components/profile/ProfileHeader";
 import OrganizationProfileHeader from "@/app/components/profile/OrganizationProfileHeader";
-import OrganizerAgendaTabs from "@/app/components/profile/OrganizerAgendaTabs";
-import { optimizeImageUrl } from "@/lib/image";
+import OrganizationAgendaTabs from "@/app/components/profile/OrganizationAgendaTabs";
+import { getEventCoverUrl } from "@/lib/eventCover";
 import {
   getCustomPremiumKey,
   getCustomPremiumProfileModules,
   isCustomPremiumActive,
-} from "@/lib/organizerPremium";
-import type { OrganizationCategory } from "@/lib/organizationCategories";
+} from "@/lib/organizationPremium";
+import { normalizeOrganizationCategory, type OrganizationCategory } from "@/lib/organizationCategories";
 import { OrganizationFormStatus } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
@@ -61,7 +61,7 @@ function formatTimeLabel(date: Date | null, timezone: string) {
   }).format(date);
 }
 
-type OrganizerEvent = {
+type OrganizationEvent = {
   id: number;
   slug: string;
   title: string;
@@ -124,19 +124,12 @@ const CATEGORY_META: Record<
     noun: "evento",
     nounPlural: "eventos",
   },
-  CLUBS: {
-    label: "Clubes",
-    cta: "Ver clubes",
-    noun: "evento",
-    nounPlural: "eventos",
-  },
 };
 
 const CATEGORY_TEMPLATE: Record<OrganizationCategory, "PADEL" | "VOLUNTEERING" | null> = {
   EVENTOS: null,
   PADEL: "PADEL",
   RESERVAS: null,
-  CLUBS: null,
 };
 
 function formatEventDateRange(start: Date | null, end: Date | null, timezone?: string | null) {
@@ -159,7 +152,7 @@ function formatEventDateRange(start: Date | null, end: Date | null, timezone?: s
   return `${dayStr} · ${startTimeStr}${endTimeStr ? ` – ${endTimeStr}` : ""}`;
 }
 
-function buildAgendaGroups(events: OrganizerEvent[], pastEventIds?: Set<number>) {
+function buildAgendaGroups(events: OrganizationEvent[], pastEventIds?: Set<number>) {
   const groups: AgendaGroup[] = [];
   const groupMap = new Map<string, AgendaGroup>();
 
@@ -209,7 +202,7 @@ export default async function UserProfilePage({ params }: PageProps) {
     redirect("/me");
   }
 
-  const [viewerId, profile, organizerProfileRaw] = await Promise.all([
+  const [viewerId, profile, organizationProfileRaw] = await Promise.all([
     getViewerId(),
     prisma.profile.findUnique({
       where: { username: usernameParam },
@@ -227,7 +220,7 @@ export default async function UserProfilePage({ params }: PageProps) {
         updatedAt: true,
       },
     }),
-    prisma.organizer.findFirst({
+    prisma.organization.findFirst({
       where: { username: usernameParam, status: "ACTIVE" },
       select: {
         id: true,
@@ -262,35 +255,34 @@ export default async function UserProfilePage({ params }: PageProps) {
     }),
   ]);
 
-  const organizerProfile = organizerProfileRaw;
+  const organizationProfile = organizationProfileRaw;
 
-  if (!profile && !organizerProfile) {
+  if (!profile && !organizationProfile) {
     notFound();
   }
 
-  if (!profile && organizerProfile) {
+  if (!profile && organizationProfile) {
     const now = new Date();
-    const organizationCategory =
-      (organizerProfile.organizationCategory as OrganizationCategory | null) ?? "EVENTOS";
+    const organizationCategory = normalizeOrganizationCategory(organizationProfile.organizationCategory);
     const categoryMeta = CATEGORY_META[organizationCategory];
     const categoryTemplate = CATEGORY_TEMPLATE[organizationCategory];
     const orgDisplayName =
-      organizerProfile.publicName?.trim() ||
-      organizerProfile.businessName?.trim() ||
+      organizationProfile.publicName?.trim() ||
+      organizationProfile.businessName?.trim() ||
       "Organização ORYA";
     const modules =
-      (organizerProfile.organizationModules?.map((module) => module.moduleKey) ?? []) as string[];
+      (organizationProfile.organizationModules?.map((module) => module.moduleKey) ?? []) as string[];
     const editorMembership = viewerId
-      ? await prisma.organizerMember.findFirst({
-          where: { organizerId: organizerProfile.id, userId: viewerId, role: { in: ["OWNER", "ADMIN"] } },
+      ? await prisma.organizationMember.findFirst({
+          where: { organizationId: organizationProfile.id, userId: viewerId, role: { in: ["OWNER", "ADMIN"] } },
           select: { userId: true, role: true },
         })
       : null;
     const canEditOrgProfile = Boolean(editorMembership);
-    const contactEmail = organizerProfile.officialEmail?.trim() || null;
-    const publicWebsite = organizerProfile.publicWebsite?.trim() || null;
-    const publicInstagram = organizerProfile.publicInstagram?.trim() || null;
-    const publicYoutube = organizerProfile.publicYoutube?.trim() || null;
+    const contactEmail = organizationProfile.officialEmail?.trim() || null;
+    const publicWebsite = organizationProfile.publicWebsite?.trim() || null;
+    const publicInstagram = organizationProfile.publicInstagram?.trim() || null;
+    const publicYoutube = organizationProfile.publicYoutube?.trim() || null;
     const publicWebsiteHref = publicWebsite
       ? (() => {
           const normalized = /^https?:\/\//i.test(publicWebsite)
@@ -304,26 +296,26 @@ export default async function UserProfilePage({ params }: PageProps) {
           }
         })()
       : null;
-    const publicDescription = organizerProfile.publicDescription?.trim() || null;
-    const premiumKey = getCustomPremiumKey(organizerProfile);
-    const premiumActive = isCustomPremiumActive(organizerProfile);
-    const premiumModules = premiumActive ? getCustomPremiumProfileModules(organizerProfile) ?? {} : {};
+    const publicDescription = organizationProfile.publicDescription?.trim() || null;
+    const premiumKey = getCustomPremiumKey(organizationProfile);
+    const premiumActive = isCustomPremiumActive(organizationProfile);
+    const premiumModules = premiumActive ? getCustomPremiumProfileModules(organizationProfile) ?? {} : {};
     const isOneVOnePremium = premiumActive && premiumKey === "ONEVONE";
     const hasInscricoes = modules.includes("INSCRICOES") && Boolean(premiumModules.inscricoes);
     const shouldLoadForms = hasInscricoes || canEditOrgProfile;
 
     const formsWhere = {
-      organizerId: organizerProfile.id,
+      organizationId: organizationProfile.id,
       status: { in: [OrganizationFormStatus.PUBLISHED, OrganizationFormStatus.DRAFT] },
     };
 
     const [events, followersCount, followRow, forms] = await Promise.all([
       prisma.event.findMany({
         where: {
-          organizerId: organizerProfile.id,
+          organizationId: organizationProfile.id,
           status: "PUBLISHED",
           isDeleted: false,
-          type: "ORGANIZER_EVENT",
+          type: "ORGANIZATION_EVENT",
         },
         orderBy: [{ startsAt: "asc" }],
         select: {
@@ -342,12 +334,12 @@ export default async function UserProfilePage({ params }: PageProps) {
           ticketTypes: { select: { price: true } },
         },
       }),
-      prisma.organizer_follows.count({
-        where: { organizer_id: organizerProfile.id },
+      prisma.organization_follows.count({
+        where: { organization_id: organizationProfile.id },
       }),
       viewerId
-        ? prisma.organizer_follows.findFirst({
-            where: { organizer_id: organizerProfile.id, follower_id: viewerId },
+        ? prisma.organization_follows.findFirst({
+            where: { organization_id: organizationProfile.id, follower_id: viewerId },
             select: { follower_id: true },
           })
         : Promise.resolve(null),
@@ -370,13 +362,13 @@ export default async function UserProfilePage({ params }: PageProps) {
     ]);
 
     const categoryEvents = categoryTemplate
-      ? (events as OrganizerEvent[]).filter(
+      ? (events as OrganizationEvent[]).filter(
           (event) =>
             event.templateType === categoryTemplate ||
             event.templateType === null ||
             event.templateType === "OTHER",
         )
-      : (events as OrganizerEvent[]);
+      : (events as OrganizationEvent[]);
     const upcomingEvents = categoryEvents
       .filter((event) => event.startsAt && event.startsAt >= now)
       .sort((a, b) => (a.startsAt?.getTime() ?? 0) - (b.startsAt?.getTime() ?? 0));
@@ -385,14 +377,21 @@ export default async function UserProfilePage({ params }: PageProps) {
       .sort((a, b) => (b.startsAt?.getTime() ?? 0) - (a.startsAt?.getTime() ?? 0));
     const spotlightEvent = upcomingEvents[0] ?? null;
     const coverCandidate =
-      organizerProfile.brandingCoverUrl?.trim() ||
+      organizationProfile.brandingCoverUrl?.trim() ||
       spotlightEvent?.coverImageUrl ||
       upcomingEvents.find((event) => event.coverImageUrl)?.coverImageUrl ||
       pastEvents.find((event) => event.coverImageUrl)?.coverImageUrl ||
       null;
-    const headerCoverUrl = coverCandidate ? optimizeImageUrl(coverCandidate, 1400, 72) : null;
+    const headerCoverUrl = coverCandidate
+      ? getEventCoverUrl(coverCandidate, {
+          seed: organizationProfile.username ?? organizationProfile.id,
+          width: 1400,
+          quality: 72,
+          format: "webp",
+        })
+      : null;
     const initialIsFollowing = Boolean(followRow);
-    const isVerified = Boolean(organizerProfile.officialEmailVerifiedAt);
+    const isVerified = Boolean(organizationProfile.officialEmailVerifiedAt);
     const followersTotal = followersCount ?? 0;
     const pastEventIds = new Set(pastEvents.map((event) => event.id));
     const agendaUpcomingEvents = spotlightEvent
@@ -407,9 +406,16 @@ export default async function UserProfilePage({ params }: PageProps) {
     const showInscricoes = hasInscricoes;
     const spotlightCtaLabel = spotlightEvent?.isFree ? "Garantir lugar" : "Comprar bilhete";
     const spotlightCtaHref = spotlightEvent ? buildTicketHref(spotlightEvent.slug) : null;
-    const inscriptionsCoverUrl = spotlightEvent?.coverImageUrl
-      ? optimizeImageUrl(spotlightEvent.coverImageUrl, 900, 70)
-      : "/images/placeholder-event.jpg";
+    const inscriptionsCoverUrl = getEventCoverUrl(spotlightEvent?.coverImageUrl ?? null, {
+      seed:
+        spotlightEvent?.slug ??
+        spotlightEvent?.id ??
+        organizationProfile.username ??
+        organizationProfile.id,
+      width: 900,
+      quality: 70,
+      format: "webp",
+    });
     const featuredFormDateLabel = featuredForm
       ? formatFormDateRange(featuredForm.startAt, featuredForm.endAt)
       : null;
@@ -420,13 +426,13 @@ export default async function UserProfilePage({ params }: PageProps) {
 
     const padelPlayersCount =
       organizationCategory === "PADEL"
-        ? await prisma.padelPlayerProfile.count({ where: { organizerId: organizerProfile.id } })
+        ? await prisma.padelPlayerProfile.count({ where: { organizationId: organizationProfile.id } })
         : 0;
 
     const padelTopPlayers =
       organizationCategory === "PADEL"
         ? await prisma.padelPlayerProfile.findMany({
-            where: { organizerId: organizerProfile.id, isActive: true },
+            where: { organizationId: organizationProfile.id, isActive: true },
             orderBy: { createdAt: "desc" },
             take: 4,
             select: {
@@ -444,14 +450,14 @@ export default async function UserProfilePage({ params }: PageProps) {
         <section className="relative flex flex-col gap-8 py-10">
           <OrganizationProfileHeader
             name={orgDisplayName}
-            username={organizerProfile.username ?? usernameParam}
-            avatarUrl={organizerProfile.brandingAvatarUrl ?? null}
+            username={organizationProfile.username ?? usernameParam}
+            avatarUrl={organizationProfile.brandingAvatarUrl ?? null}
             coverUrl={headerCoverUrl}
             bio={publicDescription}
-            city={organizerProfile.city ?? null}
+            city={organizationProfile.city ?? null}
             followersCount={followersTotal}
             followingCount={0}
-            organizerId={organizerProfile.id}
+            organizationId={organizationProfile.id}
             initialIsFollowing={initialIsFollowing}
             canEdit={canEditOrgProfile}
             isPublic
@@ -465,7 +471,7 @@ export default async function UserProfilePage({ params }: PageProps) {
           <div className="px-5 sm:px-8">
             <div className="orya-page-width flex flex-col gap-8">
               <section className="grid gap-6 md:grid-cols-3 md:grid-rows-[auto_1fr] md:items-start">
-                <OrganizerAgendaTabs
+                <OrganizationAgendaTabs
                   title="Agenda pública"
                   anchorId="agenda"
                   layout="grid"
@@ -595,9 +601,10 @@ export default async function UserProfilePage({ params }: PageProps) {
 
   const resolvedProfile = profile;
   const isOwner = viewerId === resolvedProfile.id;
-  const isPrivate = resolvedProfile.visibility === "PRIVATE";
-  const canShowPrivate = isOwner || !isPrivate;
+  const isPrivate = resolvedProfile.visibility !== "PUBLIC";
+  let isFollowing = false;
   let initialIsFollowing = false;
+  let isMutual = false;
 
   let stats = {
     total: 0,
@@ -626,15 +633,25 @@ export default async function UserProfilePage({ params }: PageProps) {
     followingCount = following;
 
     if (!isOwner && viewerId) {
-      const followRow = await prisma.follows.findFirst({
-        where: { follower_id: viewerId, following_id: resolvedProfile.id },
-        select: { id: true },
-      });
+      const [followRow, followerRow] = await Promise.all([
+        prisma.follows.findFirst({
+          where: { follower_id: viewerId, following_id: resolvedProfile.id },
+          select: { id: true },
+        }),
+        prisma.follows.findFirst({
+          where: { follower_id: resolvedProfile.id, following_id: viewerId },
+          select: { id: true },
+        }),
+      ]);
       initialIsFollowing = Boolean(followRow);
+      isFollowing = Boolean(followRow);
+      isMutual = Boolean(followRow && followerRow);
     }
   }
 
-  if (canShowPrivate && (prisma as any).entitlement) {
+  const canSeePrivateTimeline = isOwner || !isPrivate || isFollowing;
+
+  if (canSeePrivateTimeline && (prisma as any).entitlement) {
     const now = new Date();
     try {
       const [total, upcoming, past, recentEntitlements] = await Promise.all([
@@ -680,7 +697,7 @@ export default async function UserProfilePage({ params }: PageProps) {
   }
 
   const displayName =
-    organizerProfile?.publicName?.trim() ||
+    organizationProfile?.publicName?.trim() ||
     resolvedProfile.fullName?.trim() ||
     resolvedProfile.username ||
     "Utilizador ORYA";
@@ -689,7 +706,14 @@ export default async function UserProfilePage({ params }: PageProps) {
     recent.find((item) => item.coverUrl)?.coverUrl ||
     resolvedProfile.avatarUrl ||
     null;
-  const headerCoverUrl = coverCandidate ? optimizeImageUrl(coverCandidate, 1400, 72) : null;
+  const headerCoverUrl = coverCandidate
+    ? getEventCoverUrl(coverCandidate, {
+        seed: resolvedProfile.username ?? resolvedProfile.id,
+        width: 1400,
+        quality: 72,
+        format: "webp",
+      })
+    : null;
 
   return (
     <main className="relative min-h-screen w-full overflow-hidden text-white">
@@ -709,11 +733,13 @@ export default async function UserProfilePage({ params }: PageProps) {
           targetUserId={resolvedProfile.id}
           initialIsFollowing={initialIsFollowing}
           isVerified={resolvedProfile.is_verified}
+          canOpenLists={canSeePrivateTimeline}
+          isMutual={isMutual}
         />
 
         <div className="px-5 sm:px-8">
           <div className="orya-page-width flex flex-col gap-6">
-            {canShowPrivate ? (
+            {canSeePrivateTimeline ? (
               <>
                 <section className="rounded-3xl border border-white/15 bg-white/5 p-5 shadow-[0_24px_60px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
                   <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -796,8 +822,8 @@ export default async function UserProfilePage({ params }: PageProps) {
               <section className="rounded-3xl border border-white/15 bg-white/5 p-6 shadow-[0_26px_70px_rgba(0,0,0,0.6)] backdrop-blur-2xl text-center">
                 <h2 className="text-lg font-semibold text-white">Perfil privado</h2>
                 <p className="mt-2 text-sm text-white/70">
-                  {displayName} mantém a timeline privada. Só o próprio consegue ver os eventos e
-                  bilhetes.
+                  {displayName} mantém a timeline privada. Envia um pedido para seguir e aguarda
+                  aprovação.
                 </p>
               </section>
             )}
@@ -830,7 +856,7 @@ function EventSpotlightCard({
   ctaHref,
   variant = "default",
 }: {
-  event: OrganizerEvent | null;
+  event: OrganizationEvent | null;
   label: string;
   emptyLabel: string;
   ctaLabel: string;
@@ -847,7 +873,12 @@ function EventSpotlightCard({
     );
   }
 
-  const cover = event.coverImageUrl ? optimizeImageUrl(event.coverImageUrl, 1400, 72) : null;
+  const cover = getEventCoverUrl(event.coverImageUrl, {
+    seed: event.slug ?? event.id ?? event.title,
+    width: 1400,
+    quality: 72,
+    format: "webp",
+  });
   const eventHref = `/eventos/${event.slug}`;
   const wrapperClass =
     variant === "embedded"
@@ -856,12 +887,10 @@ function EventSpotlightCard({
 
   return (
     <div className={wrapperClass}>
-      {cover && (
-        <div
-          className="absolute inset-0 bg-cover bg-center"
-          style={{ backgroundImage: `url(${cover})` }}
-        />
-      )}
+      <div
+        className="absolute inset-0 bg-cover bg-center"
+        style={{ backgroundImage: `url(${cover})` }}
+      />
       <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/35 to-transparent" />
       <Link
         href={eventHref}
@@ -945,22 +974,22 @@ function RecentCard({
 }: {
   item: { id: string; title: string; venueName: string | null; coverUrl: string | null; startAt: Date | null };
 }) {
+  const coverUrl = getEventCoverUrl(item.coverUrl, {
+    seed: item.id ?? item.title,
+    width: 200,
+    quality: 70,
+    format: "webp",
+  });
   return (
     <div className="relative overflow-hidden rounded-2xl border border-white/15 bg-white/5 p-3 shadow-[0_12px_36px_rgba(0,0,0,0.5)] backdrop-blur-2xl">
       <div className="flex items-center gap-3">
         <div className="h-16 w-16 overflow-hidden rounded-xl border border-white/10 bg-[radial-gradient(circle_at_30%_30%,rgba(255,0,200,0.14),transparent_45%),radial-gradient(circle_at_70%_70%,rgba(107,255,255,0.14),transparent_50%),#0b0f1b]">
-          {item.coverUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={item.coverUrl}
-              alt={item.title}
-              className="h-full w-full object-cover"
-            />
-          ) : (
-            <div className="flex h-full w-full items-center justify-center text-[10px] font-semibold uppercase tracking-wide text-white/55">
-              ORYA
-            </div>
-          )}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={coverUrl}
+            alt={item.title}
+            className="h-full w-full object-cover"
+          />
         </div>
         <div className="flex-1">
           <p className="text-sm font-semibold text-white line-clamp-2">{item.title}</p>

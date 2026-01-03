@@ -26,7 +26,7 @@ async function main() {
       startsAt: true,
       endsAt: true,
       locationCity: true,
-      organizerId: true,
+      organizationId: true,
     },
   });
 

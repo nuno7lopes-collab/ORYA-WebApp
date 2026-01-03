@@ -57,7 +57,7 @@ export async function GET(
       where: {
         id: serviceId,
         isActive: true,
-        organizer: {
+        organization: {
           status: "ACTIVE",
           organizationCategory: "RESERVAS",
         },

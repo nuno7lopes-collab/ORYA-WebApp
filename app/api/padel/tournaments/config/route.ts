@@ -1,12 +1,13 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
-import { OrganizerMemberRole, padel_format } from "@prisma/client";
+import { OrganizationMemberRole, padel_format } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { getActiveOrganizerForUser } from "@/lib/organizerContext";
+import { getActiveOrganizationForUser } from "@/lib/organizationContext";
+import { parseOrganizationId } from "@/lib/organizationId";
 
-const allowedRoles: OrganizerMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
+const allowedRoles: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
 
 export async function GET(req: NextRequest) {
   const supabase = await createSupabaseServer();
@@ -19,18 +20,18 @@ export async function GET(req: NextRequest) {
   const eventId = Number(req.nextUrl.searchParams.get("eventId"));
   if (!Number.isFinite(eventId)) return NextResponse.json({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
 
-  // Garantir que o requester tem permissão no organizer deste evento
+  // Garantir que o requester tem permissão no organization deste evento
   const event = await prisma.event.findUnique({
     where: { id: eventId, isDeleted: false },
-    select: { organizerId: true },
+    select: { organizationId: true },
   });
-  if (!event?.organizerId) return NextResponse.json({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+  if (!event?.organizationId) return NextResponse.json({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
 
-  const { organizer, membership } = await getActiveOrganizerForUser(user.id, {
-    organizerId: event.organizerId,
+  const { organization, membership } = await getActiveOrganizationForUser(user.id, {
+    organizationId: event.organizationId,
     roles: allowedRoles,
   });
-  if (!organizer || !membership) return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  if (!organization || !membership) return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
   const config = await prisma.padelTournamentConfig.findUnique({
     where: { eventId },
@@ -46,7 +47,7 @@ export async function GET(req: NextRequest) {
       config: config
         ? {
             ...config,
-            organizerId: config.organizerId,
+            organizationId: config.organizationId,
           }
         : null,
     },
@@ -66,7 +67,7 @@ export async function POST(req: NextRequest) {
   if (!body) return NextResponse.json({ ok: false, error: "INVALID_BODY" }, { status: 400 });
 
   const eventId = typeof body.eventId === "number" ? body.eventId : Number(body.eventId);
-  const organizerIdBody = typeof body.organizerId === "number" ? body.organizerId : Number(body.organizerId);
+  const organizationIdBody = parseOrganizationId(body.organizationId);
   const format =
     typeof body.format === "string" && Object.values(padel_format).includes(body.format as padel_format)
       ? (body.format as padel_format)
@@ -88,16 +89,16 @@ export async function POST(req: NextRequest) {
         }
       : null;
 
-  if (!Number.isFinite(eventId) || !Number.isFinite(organizerIdBody) || !format) {
+  if (!Number.isFinite(eventId) || !organizationIdBody || !format) {
     return NextResponse.json({ ok: false, error: "MISSING_FIELDS" }, { status: 400 });
   }
 
-  const { organizer } = await getActiveOrganizerForUser(user.id, {
-    organizerId: organizerIdBody,
+  const { organization } = await getActiveOrganizationForUser(user.id, {
+    organizationId: organizationIdBody,
     roles: allowedRoles,
   });
-  if (!organizer || organizer.id !== organizerIdBody) {
-    return NextResponse.json({ ok: false, error: "NO_ORGANIZER" }, { status: 403 });
+  if (!organization || organization.id !== organizationIdBody) {
+    return NextResponse.json({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });
   }
 
   // Formatos suportados (alinhados com geração de jogos)
@@ -129,7 +130,7 @@ export async function POST(req: NextRequest) {
       where: { eventId },
       create: {
         eventId,
-        organizerId: organizerIdBody,
+        organizationId: organizationIdBody,
         numberOfCourts: Math.max(1, numberOfCourts || 1),
         ruleSetId: ruleSetId || undefined,
         defaultCategoryId: defaultCategoryId || undefined,

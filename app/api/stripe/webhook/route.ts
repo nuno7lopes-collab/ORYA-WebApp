@@ -46,7 +46,7 @@ const FREE_PLACEHOLDER_INTENT_ID = "FREE_CHECKOUT";
 const PREMIUM_PRICE_IDS = new Set(env.stripePremiumPriceIds);
 const PREMIUM_PRODUCT_IDS = new Set(env.stripePremiumProductIds);
 
-type OrganizerPremiumRecord = {
+type OrganizationPremiumRecord = {
   id: number;
   username: string | null;
   liveHubPremiumEnabled: boolean;
@@ -54,11 +54,11 @@ type OrganizerPremiumRecord = {
   stripeSubscriptionId: string | null;
 };
 
-type OrganizerMatchSource = "metadata" | "customer_metadata" | "customer_id" | "subscription_id";
+type OrganizationMatchSource = "metadata" | "customer_metadata" | "customer_id" | "subscription_id";
 
 const normalizeUsername = (value?: string | null) => (typeof value === "string" ? value.trim().toLowerCase() : "");
 
-function parseOrganizerId(raw?: string | null) {
+function parseOrganizationId(raw?: string | null) {
   if (typeof raw !== "string") return null;
   const parsed = Number(raw);
   return Number.isFinite(parsed) ? Math.trunc(parsed) : null;
@@ -70,20 +70,20 @@ function parseMetadataFlag(raw?: string | null) {
   return ["1", "true", "yes", "on"].includes(normalized);
 }
 
-function extractOrganizerHint(metadata?: Stripe.Metadata | null) {
-  if (!metadata) return { organizerId: null, organizerUsername: "" };
+function extractOrganizationHint(metadata?: Stripe.Metadata | null) {
+  if (!metadata) return { organizationId: null, organizationUsername: "" };
   return {
-    organizerId: parseOrganizerId(metadata.organizerId ?? metadata.organizer_id ?? null),
-    organizerUsername: normalizeUsername(metadata.organizerUsername ?? metadata.organizer_username ?? null),
+    organizationId: parseOrganizationId(metadata.organizationId ?? metadata.organization_id ?? null),
+    organizationUsername: normalizeUsername(metadata.organizationUsername ?? metadata.organization_username ?? null),
   };
 }
 
-async function findOrganizerByHint(
-  hint: { organizerId: number | null; organizerUsername: string },
-): Promise<OrganizerPremiumRecord | null> {
-  if (hint.organizerId) {
-    return prisma.organizer.findUnique({
-      where: { id: hint.organizerId },
+async function findOrganizationByHint(
+  hint: { organizationId: number | null; organizationUsername: string },
+): Promise<OrganizationPremiumRecord | null> {
+  if (hint.organizationId) {
+    return prisma.organization.findUnique({
+      where: { id: hint.organizationId },
       select: {
         id: true,
         username: true,
@@ -93,9 +93,9 @@ async function findOrganizerByHint(
       },
     });
   }
-  if (hint.organizerUsername) {
-    return prisma.organizer.findFirst({
-      where: { username: hint.organizerUsername },
+  if (hint.organizationUsername) {
+    return prisma.organization.findFirst({
+      where: { username: hint.organizationUsername },
       select: {
         id: true,
         username: true,
@@ -131,17 +131,17 @@ function isSubscriptionActive(subscription: Stripe.Subscription) {
   return ["active", "trialing", "past_due"].includes(subscription.status);
 }
 
-async function resolveOrganizerForSubscription(subscription: Stripe.Subscription) {
-  const subscriptionHint = extractOrganizerHint(subscription.metadata);
+async function resolveOrganizationForSubscription(subscription: Stripe.Subscription) {
+  const subscriptionHint = extractOrganizationHint(subscription.metadata);
   const subscriptionCustomerId =
     typeof subscription.customer === "string" ? subscription.customer : subscription.customer?.id ?? null;
 
-  const organizerFromSubscription = await findOrganizerByHint(subscriptionHint);
-  if (organizerFromSubscription) {
+  const organizationFromSubscription = await findOrganizationByHint(subscriptionHint);
+  if (organizationFromSubscription) {
     return {
-      organizer: organizerFromSubscription,
+      organization: organizationFromSubscription,
       customerId: subscriptionCustomerId,
-      source: "metadata" as OrganizerMatchSource,
+      source: "metadata" as OrganizationMatchSource,
     };
   }
 
@@ -149,13 +149,13 @@ async function resolveOrganizerForSubscription(subscription: Stripe.Subscription
     try {
       const customer = await stripe.customers.retrieve(subscriptionCustomerId);
       if (!("deleted" in customer)) {
-        const customerHint = extractOrganizerHint(customer.metadata ?? null);
-        const organizerFromCustomer = await findOrganizerByHint(customerHint);
-        if (organizerFromCustomer) {
+        const customerHint = extractOrganizationHint(customer.metadata ?? null);
+        const organizationFromCustomer = await findOrganizationByHint(customerHint);
+        if (organizationFromCustomer) {
           return {
-            organizer: organizerFromCustomer,
+            organization: organizationFromCustomer,
             customerId: subscriptionCustomerId,
-            source: "customer_metadata" as OrganizerMatchSource,
+            source: "customer_metadata" as OrganizationMatchSource,
           };
         }
       }
@@ -165,7 +165,7 @@ async function resolveOrganizerForSubscription(subscription: Stripe.Subscription
   }
 
   if (subscriptionCustomerId) {
-    const organizerByCustomer = await prisma.organizer.findFirst({
+    const organizationByCustomer = await prisma.organization.findFirst({
       where: { stripeCustomerId: subscriptionCustomerId },
       select: {
         id: true,
@@ -175,16 +175,16 @@ async function resolveOrganizerForSubscription(subscription: Stripe.Subscription
         stripeSubscriptionId: true,
       },
     });
-    if (organizerByCustomer) {
+    if (organizationByCustomer) {
       return {
-        organizer: organizerByCustomer,
+        organization: organizationByCustomer,
         customerId: subscriptionCustomerId,
-        source: "customer_id" as OrganizerMatchSource,
+        source: "customer_id" as OrganizationMatchSource,
       };
     }
   }
 
-  const organizerBySubscription = await prisma.organizer.findFirst({
+  const organizationBySubscription = await prisma.organization.findFirst({
     where: { stripeSubscriptionId: subscription.id },
     select: {
       id: true,
@@ -195,51 +195,51 @@ async function resolveOrganizerForSubscription(subscription: Stripe.Subscription
     },
   });
 
-  if (organizerBySubscription) {
+  if (organizationBySubscription) {
     return {
-      organizer: organizerBySubscription,
+      organization: organizationBySubscription,
       customerId: subscriptionCustomerId,
-      source: "subscription_id" as OrganizerMatchSource,
+      source: "subscription_id" as OrganizationMatchSource,
     };
   }
 
   return null;
 }
 
-async function syncOrganizerPremiumFromSubscription(subscription: Stripe.Subscription) {
+async function syncOrganizationPremiumFromSubscription(subscription: Stripe.Subscription) {
   if (!isPremiumSubscription(subscription)) {
     console.log("[Webhook] Subscrição ignorada (não premium)", { id: subscription.id, status: subscription.status });
     return;
   }
 
-  const match = await resolveOrganizerForSubscription(subscription);
+  const match = await resolveOrganizationForSubscription(subscription);
   if (!match) {
-    console.warn("[Webhook] Subscrição premium sem organizador associado", {
+    console.warn("[Webhook] Subscrição premium sem organização associado", {
       subscriptionId: subscription.id,
       customerId: typeof subscription.customer === "string" ? subscription.customer : subscription.customer?.id ?? null,
     });
     return;
   }
 
-  const { organizer, customerId, source } = match;
+  const { organization, customerId, source } = match;
   const premiumActive = isSubscriptionActive(subscription);
 
-  const updateData: Prisma.OrganizerUpdateInput = {
+  const updateData: Prisma.OrganizationUpdateInput = {
     liveHubPremiumEnabled: premiumActive,
     stripeSubscriptionId: subscription.id,
   };
 
-  if (customerId && (source === "metadata" || source === "customer_metadata" || !organizer.stripeCustomerId)) {
+  if (customerId && (source === "metadata" || source === "customer_metadata" || !organization.stripeCustomerId)) {
     updateData.stripeCustomerId = customerId;
   }
 
-  await prisma.organizer.update({
-    where: { id: organizer.id },
+  await prisma.organization.update({
+    where: { id: organization.id },
     data: updateData,
   });
 
   console.log("[Webhook] Premium sync", {
-    organizerId: organizer.id,
+    organizationId: organization.id,
     premiumActive,
     subscriptionId: subscription.id,
     source,
@@ -388,7 +388,7 @@ export async function POST(req: NextRequest) {
               ? subscription.customer
               : subscription.customer?.id ?? null,
         });
-        await syncOrganizerPremiumFromSubscription(subscription);
+        await syncOrganizationPremiumFromSubscription(subscription);
         break;
       }
 

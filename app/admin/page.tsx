@@ -151,10 +151,10 @@ export default async function AdminDashboardPage() {
     },
   });
 
-  const [usersCount, organizersCount, eventsCount, ticketsCount, revenueAgg, recentEvents, recentTickets, recentPaymentEvents] =
+  const [usersCount, organizationsCount, eventsCount, ticketsCount, revenueAgg, recentEvents, recentTickets, recentPaymentEvents] =
     await Promise.all([
       prisma.profile.count(),
-      prisma.organizer.count(),
+      prisma.organization.count(),
       prisma.event.count(),
       prisma.ticket.count(),
       prisma.ticket.aggregate({
@@ -197,7 +197,7 @@ export default async function AdminDashboardPage() {
   return (
     <AdminLayout
       title="Admin ORYA – visão geral da plataforma"
-      subtitle="Monitoriza utilizadores, organizadores, eventos, bilhetes e pagamentos num só ecrã."
+      subtitle="Monitoriza utilizadores, organizações, eventos, bilhetes e pagamentos num só ecrã."
     >
       <section className="space-y-8">
         <div className="space-y-3">
@@ -211,10 +211,10 @@ export default async function AdminDashboardPage() {
           </div>
           <div className="flex flex-wrap gap-2 text-[11px]">
             <Link
-              href="/admin/organizadores"
+              href="/admin/organizacoes"
               className="inline-flex items-center gap-1 rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-white/80 transition hover:border-white/25 hover:bg-white/10"
             >
-              Gerir pedidos de organizador
+              Gerir pedidos de organização
             </Link>
             <Link
               href="/admin/eventos"
@@ -251,8 +251,8 @@ export default async function AdminDashboardPage() {
             tone="magenta"
           />
           <StatCard
-            label="Organizadores"
-            value={organizersCount}
+            label="Organizações"
+            value={organizationsCount}
             helper="Entidades a criar eventos pagos."
             tone="emerald"
           />

@@ -1,5 +1,5 @@
 /**
- * Seed de teste para Padel (organizer + jogadores + evento).
+ * Seed de teste para Padel (organization + jogadores + evento).
  *
  * NOTA: não corre automaticamente. Usa:
  *   npx ts-node scripts/seed_padel.ts
@@ -9,7 +9,7 @@
  *   - Ajusta emails/usernames se necessário.
  */
 
-import { PrismaClient, EventTemplateType, ResaleMode, FeeMode, PayoutMode, OrganizerStatus, OrganizationCategory } from "@prisma/client";
+import { PrismaClient, EventTemplateType, ResaleMode, FeeMode, PayoutMode, OrganizationStatus, OrganizationCategory } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
@@ -17,19 +17,19 @@ async function main() {
   const userId = process.env.USER_ID_TEST;
   if (!userId) throw new Error("Define USER_ID_TEST com o id do utilizador (auth.users.id).");
 
-  const existingOrganizer = await prisma.organizer.findFirst({
+  const existingOrganization = await prisma.organization.findFirst({
     where: { username: "club-padel-demo" },
   });
-  const organizer =
-    existingOrganizer ??
-    (await prisma.organizer.create({
+  const organization =
+    existingOrganization ??
+    (await prisma.organization.create({
       data: {
         username: "club-padel-demo",
         publicName: "Clube Padel Demo",
         businessName: "Clube Padel Demo",
         city: "Lisboa",
         entityType: "CLUBE",
-        status: OrganizerStatus.ACTIVE,
+        status: OrganizationStatus.ACTIVE,
         organizationCategory: OrganizationCategory.PADEL,
       },
     }));
@@ -44,7 +44,7 @@ async function main() {
   const players = await Promise.all(
     playersData.map(async (p) => {
       const existing = await prisma.padelPlayerProfile.findFirst({
-        where: { organizerId: organizer.id, email: p.email },
+        where: { organizationId: organization.id, email: p.email },
       });
       if (existing) {
         return prisma.padelPlayerProfile.update({
@@ -53,7 +53,7 @@ async function main() {
         });
       }
       return prisma.padelPlayerProfile.create({
-        data: { organizerId: organizer.id, fullName: p.fullName, email: p.email, level: p.level },
+        data: { organizationId: organization.id, fullName: p.fullName, email: p.email, level: p.level },
       });
     }),
   );
@@ -63,10 +63,10 @@ async function main() {
       slug: `torneio-padel-demo-${Math.random().toString(36).slice(2, 6)}`,
       title: "Torneio Padel Demo",
       description: "Seed de teste Padel",
-      type: "ORGANIZER_EVENT",
+      type: "ORGANIZATION_EVENT",
       templateType: EventTemplateType.PADEL,
       ownerUserId: userId,
-      organizerId: organizer.id,
+      organizationId: organization.id,
       startsAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
       endsAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000 + 3 * 60 * 60 * 1000),
       locationName: "Clube Demo",
@@ -75,7 +75,7 @@ async function main() {
       status: "PUBLISHED",
       resaleMode: ResaleMode.ALWAYS,
       feeMode: FeeMode.INCLUDED,
-      payoutMode: PayoutMode.ORGANIZER,
+      payoutMode: PayoutMode.ORGANIZATION,
     },
   });
 
@@ -83,14 +83,14 @@ async function main() {
     where: { eventId: event.id },
     create: {
       eventId: event.id,
-      organizerId: organizer.id,
+      organizationId: organization.id,
       format: "TODOS_CONTRA_TODOS",
       numberOfCourts: 2,
     },
     update: {},
   });
 
-  console.log("Seed Padel criada com sucesso:", { organizerId: organizer.id, eventId: event.id });
+  console.log("Seed Padel criada com sucesso:", { organizationId: organization.id, eventId: event.id });
 }
 
 main()

@@ -77,18 +77,18 @@ export async function GET(req: NextRequest) {
       ? new Date(Math.max(range.start.getTime(), now.getTime()))
       : now;
 
-    const organizerFilter: Prisma.OrganizerWhereInput = {
+    const organizationFilter: Prisma.OrganizationWhereInput = {
       status: "ACTIVE",
       organizationCategory: "RESERVAS",
     };
 
     if (cityParam && cityParam.toLowerCase() !== "portugal") {
-      organizerFilter.city = { contains: cityParam, mode: "insensitive" };
+      organizationFilter.city = { contains: cityParam, mode: "insensitive" };
     }
 
     const where: Prisma.ServiceWhereInput = {
       isActive: true,
-      organizer: organizerFilter,
+      organization: organizationFilter,
     };
 
     if (priceMinCents > 0 || priceMaxCents !== null) {
@@ -114,8 +114,8 @@ export async function GET(req: NextRequest) {
       where.OR = [
         { name: { contains: q, mode: "insensitive" } },
         { description: { contains: q, mode: "insensitive" } },
-        { organizer: { publicName: { contains: q, mode: "insensitive" } } },
-        { organizer: { businessName: { contains: q, mode: "insensitive" } } },
+        { organization: { publicName: { contains: q, mode: "insensitive" } } },
+        { organization: { businessName: { contains: q, mode: "insensitive" } } },
       ];
     }
 
@@ -131,7 +131,7 @@ export async function GET(req: NextRequest) {
         durationMinutes: true,
         price: true,
         currency: true,
-        organizer: {
+        organization: {
           select: {
             id: true,
             publicName: true,

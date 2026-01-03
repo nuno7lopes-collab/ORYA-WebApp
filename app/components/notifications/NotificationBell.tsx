@@ -18,17 +18,19 @@ type NotificationDto = {
   readAt?: string | null;
   isRead?: boolean;
   createdAt: string;
+  meta?: { isMutual?: boolean };
 };
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
 const TYPE_LABEL: Record<string, string> = {
-  ORGANIZER_INVITE: "Convite de organização",
+  ORGANIZATION_INVITE: "Convite de organização",
   EVENT_SALE: "Venda",
   STRIPE_STATUS: "Stripe",
   EVENT_REMINDER: "Lembrete",
   FRIEND_REQUEST: "Pedido de amizade",
   FRIEND_ACCEPT: "Amigo aceitou",
+  FOLLOWED_YOU: "Segue-te",
   MARKETING_PROMO_ALERT: "Marketing",
   SYSTEM_ANNOUNCE: "Sistema",
 };
@@ -42,11 +44,11 @@ export function NotificationBell() {
     filter === "sales"
       ? "EVENT_SALE"
       : filter === "invites"
-        ? "ORGANIZER_INVITE"
+        ? "ORGANIZATION_INVITE"
         : filter === "system"
           ? "STRIPE_STATUS,MARKETING_PROMO_ALERT,SYSTEM_ANNOUNCE"
           : filter === "social"
-            ? "FRIEND_REQUEST,FRIEND_ACCEPT"
+            ? "FRIEND_REQUEST,FRIEND_ACCEPT,FOLLOWED_YOU"
             : undefined;
   const query = user
     ? `/api/notifications?status=all${queryTypes ? `&types=${encodeURIComponent(queryTypes)}` : ""}`
@@ -167,10 +169,16 @@ export function NotificationBell() {
                         : "border-emerald-400/30 bg-emerald-500/8"
                     }`}
                   >
+                    {(() => {
+                      const typeLabel =
+                        n.type === "FOLLOWED_YOU" && n.meta?.isMutual
+                          ? "Teu amigo"
+                          : TYPE_LABEL[n.type] ?? "Atualização";
+                      return (
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2">
                         <span className="text-[11px] text-white/60">
-                          {TYPE_LABEL[n.type] ?? "Atualização"}
+                          {typeLabel}
                         </span>
                         {(n.isRead === false || (!n.isRead && !n.readAt)) && (
                           <span className="h-2 w-2 rounded-full bg-emerald-400" />
@@ -180,6 +188,8 @@ export function NotificationBell() {
                         {formatDistanceToNow(new Date(n.createdAt), { locale: pt, addSuffix: true })}
                       </span>
                     </div>
+                      );
+                    })()}
                     <p className="mt-1 text-[13px] font-semibold text-white">{n.title}</p>
                     <p className="text-white/70">{n.body}</p>
                     {n.ctaUrl && n.ctaLabel && (

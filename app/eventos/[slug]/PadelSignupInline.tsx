@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 
 type Props = {
   eventId: number;
-  organizerId: number | null;
+  organizationId: number | null;
   ticketTypeId: number | null;
   categoryId?: number | null;
   padelV2Enabled: boolean;
@@ -15,7 +15,7 @@ type Props = {
 
 export default function PadelSignupInline({
   eventId,
-  organizerId,
+  organizationId,
   ticketTypeId,
   categoryId,
   padelV2Enabled,
@@ -27,7 +27,7 @@ export default function PadelSignupInline({
   const [loadingSplit, setLoadingSplit] = useState(false);
 
   const isPadelV2 = templateType === "PADEL" && padelV2Enabled;
-  const canProceed = isPadelV2 && organizerId && ticketTypeId;
+  const canProceed = isPadelV2 && organizationId && ticketTypeId;
 
   const createPairing = async (mode: "FULL" | "SPLIT") => {
     if (!canProceed) {
@@ -42,7 +42,7 @@ export default function PadelSignupInline({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           eventId,
-          organizerId,
+          organizationId,
           categoryId: categoryId ?? undefined,
           paymentMode: mode,
         }),

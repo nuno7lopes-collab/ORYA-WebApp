@@ -3,12 +3,16 @@ export function optimizeImageUrl(
   width = 1200,
   quality = 75,
   format: "webp" | "avif" | "auto" = "webp",
+  height?: number,
+  resize?: "cover" | "contain" | "fill" | "inside" | "outside",
 ) {
   if (!url || typeof url !== "string") return url ?? "";
   try {
     const parsed = new URL(url);
     if (parsed.hostname.includes("supabase.co")) {
       parsed.searchParams.set("width", String(width));
+      if (height) parsed.searchParams.set("height", String(height));
+      if (resize) parsed.searchParams.set("resize", resize);
       parsed.searchParams.set("quality", String(quality));
       parsed.searchParams.set("format", format);
       return parsed.toString();

@@ -28,7 +28,7 @@ const ERROR_MAP: Record<BookingError, { status: number; message: string }> = {
   HORARIO_PASSADO: { status: 400, message: "Este horário já passou." },
   SEM_VAGAS: { status: 409, message: "Sem vagas disponíveis." },
   JA_RESERVADO: { status: 409, message: "Já tens uma reserva para este horário." },
-  STRIPE_NOT_READY: { status: 409, message: "Pagamentos indisponíveis para este organizador." },
+  STRIPE_NOT_READY: { status: 409, message: "Pagamentos indisponíveis para este organização." },
   CURRENCY_NOT_SUPPORTED: { status: 400, message: "Moeda não suportada." },
 };
 
@@ -64,7 +64,7 @@ export async function POST(
             id: number;
             price: number;
             currency: string;
-            organizerId: number;
+            organizationId: number;
           };
           availability: { id: number; capacity: number; status: string };
           policy: {
@@ -73,7 +73,7 @@ export async function POST(
             policyType: string;
             cancellationWindowMinutes: number | null;
           } | null;
-          organizer: {
+          organization: {
             id: number;
             orgType: string | null;
             stripeAccountId: string | null;
@@ -94,7 +94,7 @@ export async function POST(
           service: {
             select: {
               id: true,
-              organizerId: true,
+              organizationId: true,
               price: true,
               currency: true,
               durationMinutes: true,
@@ -108,7 +108,7 @@ export async function POST(
                   cancellationWindowMinutes: true,
                 },
               },
-              organizer: {
+              organization: {
                 select: {
                   id: true,
                   status: true,
@@ -136,8 +136,8 @@ export async function POST(
       }
 
       if (
-        availability.service.organizer.status !== "ACTIVE" ||
-        availability.service.organizer.organizationCategory !== "RESERVAS"
+        availability.service.organization.status !== "ACTIVE" ||
+        availability.service.organization.organizationCategory !== "RESERVAS"
       ) {
         return { error: "SERVICO_INVALIDO" as const };
       }
@@ -188,7 +188,7 @@ export async function POST(
             id: availability.serviceId,
             price: availability.service.price,
             currency: availability.service.currency,
-            organizerId: availability.service.organizerId,
+            organizationId: availability.service.organizationId,
           },
           availability: {
             id: availability.id,
@@ -196,15 +196,15 @@ export async function POST(
             status: availability.status,
           },
           policy: policyRef?.policy ?? null,
-          organizer: {
-            id: availability.service.organizer.id,
-            orgType: availability.service.organizer.orgType,
-            stripeAccountId: availability.service.organizer.stripeAccountId,
-            stripeChargesEnabled: availability.service.organizer.stripeChargesEnabled,
-            stripePayoutsEnabled: availability.service.organizer.stripePayoutsEnabled,
-            feeMode: availability.service.organizer.feeMode,
-            platformFeeBps: availability.service.organizer.platformFeeBps,
-            platformFeeFixedCents: availability.service.organizer.platformFeeFixedCents,
+          organization: {
+            id: availability.service.organization.id,
+            orgType: availability.service.organization.orgType,
+            stripeAccountId: availability.service.organization.stripeAccountId,
+            stripeChargesEnabled: availability.service.organization.stripeChargesEnabled,
+            stripePayoutsEnabled: availability.service.organization.stripePayoutsEnabled,
+            feeMode: availability.service.organization.feeMode,
+            platformFeeBps: availability.service.organization.platformFeeBps,
+            platformFeeFixedCents: availability.service.organization.platformFeeFixedCents,
           },
           reuseIntentId: existingBooking.paymentIntentId,
         };
@@ -235,11 +235,11 @@ export async function POST(
       const policy =
         availability.service.policy ??
         (await tx.organizationPolicy.findFirst({
-          where: { organizerId: availability.service.organizerId, policyType: "MODERATE" },
+          where: { organizationId: availability.service.organizationId, policyType: "MODERATE" },
           select: { id: true, name: true, policyType: true, cancellationWindowMinutes: true },
         })) ??
         (await tx.organizationPolicy.findFirst({
-          where: { organizerId: availability.service.organizerId },
+          where: { organizationId: availability.service.organizationId },
           orderBy: { createdAt: "asc" },
           select: { id: true, name: true, policyType: true, cancellationWindowMinutes: true },
         }));
@@ -247,7 +247,7 @@ export async function POST(
       const booking = await tx.booking.create({
         data: {
           serviceId: availability.serviceId,
-          organizerId: availability.service.organizerId,
+          organizationId: availability.service.organizationId,
           userId: user.id,
           availabilityId,
           startsAt: availability.startsAt,
@@ -281,7 +281,7 @@ export async function POST(
           id: availability.serviceId,
           price: availability.service.price,
           currency: availability.service.currency,
-          organizerId: availability.service.organizerId,
+          organizationId: availability.service.organizationId,
         },
         availability: {
           id: availability.id,
@@ -296,15 +296,15 @@ export async function POST(
               cancellationWindowMinutes: policy.cancellationWindowMinutes,
             }
           : null,
-        organizer: {
-          id: availability.service.organizer.id,
-          orgType: availability.service.organizer.orgType,
-          stripeAccountId: availability.service.organizer.stripeAccountId,
-          stripeChargesEnabled: availability.service.organizer.stripeChargesEnabled,
-          stripePayoutsEnabled: availability.service.organizer.stripePayoutsEnabled,
-          feeMode: availability.service.organizer.feeMode,
-          platformFeeBps: availability.service.organizer.platformFeeBps,
-          platformFeeFixedCents: availability.service.organizer.platformFeeFixedCents,
+        organization: {
+          id: availability.service.organization.id,
+          orgType: availability.service.organization.orgType,
+          stripeAccountId: availability.service.organization.stripeAccountId,
+          stripeChargesEnabled: availability.service.organization.stripeChargesEnabled,
+          stripePayoutsEnabled: availability.service.organization.stripePayoutsEnabled,
+          feeMode: availability.service.organization.feeMode,
+          platformFeeBps: availability.service.organization.platformFeeBps,
+          platformFeeFixedCents: availability.service.organization.platformFeeFixedCents,
         },
       };
     });
@@ -317,7 +317,7 @@ export async function POST(
       );
     }
 
-    const { booking, service, policy, organizer, reuseIntentId } = result;
+    const { booking, service, policy, organization, reuseIntentId } = result;
     const currency = (service.currency || "EUR").toUpperCase();
     if (currency !== "EUR") {
       return NextResponse.json(
@@ -326,11 +326,11 @@ export async function POST(
       );
     }
 
-    const isPlatformOrg = organizer.orgType === "PLATFORM";
+    const isPlatformOrg = organization.orgType === "PLATFORM";
     const connectStatus = resolveConnectStatus(
-      organizer.stripeAccountId ?? null,
-      organizer.stripeChargesEnabled ?? false,
-      organizer.stripePayoutsEnabled ?? false,
+      organization.stripeAccountId ?? null,
+      organization.stripeChargesEnabled ?? false,
+      organization.stripePayoutsEnabled ?? false,
     );
     if (!isPlatformOrg && connectStatus !== "READY") {
       return NextResponse.json(
@@ -357,8 +357,8 @@ export async function POST(
     const stripeBaseFees = await getStripeBaseFees();
     const pricing = computePricing(service.price, 0, {
       platformDefaultFeeMode: "INCLUDED",
-      organizerPlatformFeeBps: organizer.platformFeeBps ?? undefined,
-      organizerPlatformFeeFixedCents: organizer.platformFeeFixedCents ?? undefined,
+      organizationPlatformFeeBps: organization.platformFeeBps ?? undefined,
+      organizationPlatformFeeFixedCents: organization.platformFeeFixedCents ?? undefined,
       platformDefaultFeeBps: defaultFeeBps,
       platformDefaultFeeFixedCents: defaultFeeFixed,
       isPlatformOrg,
@@ -393,12 +393,12 @@ export async function POST(
               bookingId: confirmed.id,
               serviceId: service.id,
               availabilityId,
-              organizerId: service.organizerId,
+              organizationId: service.organizationId,
             },
           },
         });
         await recordOrganizationAudit(tx, {
-          organizerId: service.organizerId,
+          organizationId: service.organizationId,
           actorUserId: user.id,
           action: "BOOKING_CREATED",
           metadata: {
@@ -434,7 +434,7 @@ export async function POST(
         bookingId: String(booking.id),
         serviceId: String(service.id),
         availabilityId: String(availabilityId),
-        organizerId: String(service.organizerId),
+        organizationId: String(service.organizationId),
         userId: user.id,
         policyId: policy?.id ? String(policy.id) : "",
         purchaseId,
@@ -446,11 +446,11 @@ export async function POST(
 
     try {
       const intent =
-        !isPlatformOrg && organizer.stripeAccountId
+        !isPlatformOrg && organization.stripeAccountId
           ? await stripe.paymentIntents.create(
               {
                 ...intentParams,
-                transfer_data: { destination: organizer.stripeAccountId },
+                transfer_data: { destination: organization.stripeAccountId },
                 application_fee_amount: platformFeeCents,
               },
               { idempotencyKey: purchaseId },

@@ -19,7 +19,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   const pairing = await prisma.padelPairing.findUnique({
     where: { id: pairingId },
-    include: { slots: true, event: { select: { organizerId: true } } },
+    include: { slots: true, event: { select: { organizationId: true } } },
   });
   if (!pairing) return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
   if (pairing.payment_mode !== PadelPaymentMode.SPLIT) {

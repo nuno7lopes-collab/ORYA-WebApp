@@ -49,8 +49,8 @@ export default function MePage() {
     agendaUrl,
     fetcher,
   );
-  const { data: orgsData } = useSWR<{ ok: boolean; items?: Array<{ organizerId: number; role: string; organizer: { publicName: string | null; businessName: string | null; username: string | null; organizationCategory: string | null } }> }>(
-    user ? "/api/organizador/organizations" : null,
+  const { data: orgsData } = useSWR<{ ok: boolean; items?: Array<{ organizationId: number; role: string; organization: { publicName: string | null; businessName: string | null; username: string | null; organizationCategory: string | null } }> }>(
+    user ? "/api/organizacao/organizations" : null,
     fetcher,
   );
 
@@ -372,15 +372,15 @@ export default function MePage() {
         </div>
       </section>
 
-      {/* ORGANIZACOES */}
+      {/* ORGANIZAÇÕES */}
       <section className="rounded-3xl border border-white/15 bg-white/5 p-5 shadow-[0_24px_70px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-sm font-semibold text-white/95 tracking-[0.08em]">As minhas organizacoes</h2>
-            <p className="text-[11px] text-white/68">Entra rapido no modo organizador.</p>
+            <h2 className="text-sm font-semibold text-white/95 tracking-[0.08em]">As minhas organizações</h2>
+            <p className="text-[11px] text-white/68">Entra rapido no modo organização.</p>
           </div>
           <Link
-            href="/organizador"
+            href="/organizacao"
             className="inline-flex items-center gap-2 rounded-full border border-white/30 bg-white/10 text-white text-[11px] font-semibold px-4 py-1.5 shadow-[0_10px_26px_rgba(255,255,255,0.15)] hover:border-white/45 hover:bg-white/20 hover:scale-[1.02] active:scale-95 transition-transform backdrop-blur"
           >
             Ver painel
@@ -390,7 +390,7 @@ export default function MePage() {
 
         {organizations.length === 0 && (
           <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-4 text-[12px] text-white/70">
-            Ainda nao tens organizacoes associadas.
+            Ainda nao tens organizações associadas.
           </div>
         )}
 
@@ -398,19 +398,19 @@ export default function MePage() {
           <div className="mt-4 grid gap-3 md:grid-cols-2">
             {organizations.map((org) => {
               const name =
-                org.organizer.publicName ||
-                org.organizer.businessName ||
-                org.organizer.username ||
-                "Organizacao";
+                org.organization.publicName ||
+                org.organization.businessName ||
+                org.organization.username ||
+                "Organização";
               return (
                 <Link
-                  key={org.organizerId}
-                  href={`/organizador?tab=overview&org=${org.organizerId}`}
+                  key={org.organizationId}
+                  href={`/organizacao?tab=overview&organizationId=${org.organizationId}`}
                   className="rounded-2xl border border-white/10 bg-white/5 p-4 transition hover:border-white/25 hover:bg-white/10"
                 >
                   <p className="text-sm font-semibold text-white">{name}</p>
                   <p className="text-[12px] text-white/60">
-                    {org.organizer.username ? `@${org.organizer.username}` : ""}
+                    {org.organization.username ? `@${org.organization.username}` : ""}
                   </p>
                   <p className="text-[11px] text-white/50">Role: {org.role}</p>
                 </Link>

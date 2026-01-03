@@ -75,8 +75,8 @@ export async function GET(req: NextRequest) {
       templateType: "PADEL",
       status: { in: ["PUBLISHED", "DATE_CHANGED"] },
       isDeleted: false,
-      organizerId: { not: null },
-      organizer: { status: "ACTIVE" },
+      organizationId: { not: null },
+      organization: { status: "ACTIVE" },
     };
 
     if (city && city.toLowerCase() !== "portugal") {
@@ -159,7 +159,7 @@ export async function GET(req: NextRequest) {
       take: limit,
       include: {
         ticketTypes: { select: { price: true, status: true } },
-        organizer: { select: { publicName: true, username: true } },
+        organization: { select: { publicName: true, username: true } },
         padelTournamentConfig: { select: { format: true, eligibilityType: true, padelClubId: true } },
         padelCategoryLinks: {
           where: { isEnabled: true },
@@ -196,7 +196,7 @@ export async function GET(req: NextRequest) {
         locationName: event.locationName ?? null,
         locationCity: event.locationCity ?? null,
         priceFrom,
-        organizerName: event.organizer?.publicName ?? event.organizer?.username ?? null,
+        organizationName: event.organization?.publicName ?? event.organization?.username ?? null,
         format: event.padelTournamentConfig?.format ?? null,
         eligibility: event.padelTournamentConfig?.eligibilityType ?? null,
         levels,

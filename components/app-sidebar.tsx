@@ -11,14 +11,16 @@ import {
   type OrganizationCategory,
 } from "@/lib/organizationCategories";
 import { cn } from "@/lib/utils";
-import { CTA_PRIMARY } from "@/app/organizador/dashboardUi";
+import { CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
 import { Avatar } from "@/components/ui/avatar";
-import { getOrganizerRoleFlags } from "@/lib/organizerUiPermissions";
+import { getOrganizationRoleFlags } from "@/lib/organizationUiPermissions";
+
+const ORG_COOKIE_MAX_AGE = 60 * 60 * 24 * 30;
 
 type OrgOption = {
-  organizerId: number;
+  organizationId: number;
   role: string;
-  organizer: {
+  organization: {
     id: number;
     username: string | null;
     publicName: string | null;
@@ -54,7 +56,7 @@ type ObjectiveTab = "create" | "manage" | "promote" | "analyze";
 const OBJECTIVE_TABS = ["create", "manage", "promote", "analyze"] as const;
 
 const baseTabHref = (tab: ObjectiveTab) =>
-  tab === "create" ? "/organizador?tab=overview" : `/organizador?tab=${tab}`;
+  tab === "create" ? "/organizacao?tab=overview" : `/organizacao?tab=${tab}`;
 
 const mapTabToObjective = (tab?: string | null): ObjectiveTab => {
   if (OBJECTIVE_TABS.includes((tab as ObjectiveTab) || "create")) {
@@ -69,11 +71,10 @@ const mapTabToObjective = (tab?: string | null): ObjectiveTab => {
 };
 
 const CATEGORY_CTA: Record<OrganizationCategory, { label: string; href: string }> = {
-  EVENTOS: { label: "Criar evento", href: "/organizador/eventos/novo" },
-  PADEL: { label: "Criar evento", href: "/organizador/eventos/novo?preset=padel" },
+  EVENTOS: { label: "Criar evento", href: "/organizacao/eventos/novo" },
+  PADEL: { label: "Criar evento", href: "/organizacao/eventos/novo?preset=padel" },
   // "Reserva" é o ato; aqui o CTA cria serviços.
-  RESERVAS: { label: "Criar serviço", href: "/organizador/reservas/novo" },
-  CLUBS: { label: "Criar clube", href: "/em-breve" },
+  RESERVAS: { label: "Criar serviço", href: "/organizacao/reservas/novo" },
 };
 
 function buildNav() {
@@ -118,28 +119,28 @@ export function AppSidebar({
   const [switchingOrgId, setSwitchingOrgId] = useState<number | null>(null);
 
   const currentObjective = useMemo(() => {
-    if (pathname?.startsWith("/organizador/updates")) return "promote";
-    if (pathname?.startsWith("/organizador/inscricoes")) return "manage";
-    if (pathname?.startsWith("/organizador/calendario")) return "manage";
-    if (pathname?.startsWith("/organizador/scan")) return "manage";
-    if (pathname?.startsWith("/organizador/staff")) return "manage";
-    if (pathname?.startsWith("/organizador/settings")) return "manage";
-    if (pathname?.startsWith("/organizador/faturacao")) return "analyze";
-    if (pathname?.startsWith("/organizador/pagamentos/invoices")) return "analyze";
-    if (pathname?.startsWith("/organizador/tournaments/") && pathname?.endsWith("/finance")) return "analyze";
-    if (pathname?.startsWith("/organizador/tournaments/")) return "manage";
-    if (pathname?.startsWith("/organizador/reservas/novo")) return "create";
-    if (pathname?.startsWith("/organizador/reservas")) return "manage";
-    if (pathname?.startsWith("/organizador/eventos/novo") || pathname?.startsWith("/organizador/padel/torneios/novo")) return "create";
-    if (pathname?.startsWith("/organizador/eventos/")) return "manage";
-    if (pathname?.startsWith("/organizador/padel")) return "manage";
-    if (pathname === "/organizador") return tabParam;
+    if (pathname?.startsWith("/organizacao/updates")) return "promote";
+    if (pathname?.startsWith("/organizacao/inscricoes")) return "manage";
+    if (pathname?.startsWith("/organizacao/calendario")) return "manage";
+    if (pathname?.startsWith("/organizacao/scan")) return "manage";
+    if (pathname?.startsWith("/organizacao/staff")) return "manage";
+    if (pathname?.startsWith("/organizacao/settings")) return "manage";
+    if (pathname?.startsWith("/organizacao/faturacao")) return "analyze";
+    if (pathname?.startsWith("/organizacao/pagamentos/invoices")) return "analyze";
+    if (pathname?.startsWith("/organizacao/tournaments/") && pathname?.endsWith("/finance")) return "analyze";
+    if (pathname?.startsWith("/organizacao/tournaments/")) return "manage";
+    if (pathname?.startsWith("/organizacao/reservas/novo")) return "create";
+    if (pathname?.startsWith("/organizacao/reservas")) return "manage";
+    if (pathname?.startsWith("/organizacao/eventos/novo") || pathname?.startsWith("/organizacao/padel/torneios/novo")) return "create";
+    if (pathname?.startsWith("/organizacao/eventos/")) return "manage";
+    if (pathname?.startsWith("/organizacao/padel")) return "manage";
+    if (pathname === "/organizacao") return tabParam;
     return tabParam;
   }, [pathname, tabParam]);
 
   const currentSubKey = useMemo(() => {
-    if (pathname?.startsWith("/organizador/staff")) return "staff";
-    if (pathname?.startsWith("/organizador/settings")) return "settings";
+    if (pathname?.startsWith("/organizacao/staff")) return "staff";
+    if (pathname?.startsWith("/organizacao/settings")) return "settings";
     return null;
   }, [pathname]);
 
@@ -152,10 +153,10 @@ export function AppSidebar({
     if (switchingOrgId) return;
     setSwitchingOrgId(orgId);
     try {
-      const res = await fetch("/api/organizador/organizations/switch", {
+      const res = await fetch("/api/organizacao/organizations/switch", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ organizerId: orgId }),
+        body: JSON.stringify({ organizationId: orgId }),
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || json?.ok === false) {
@@ -163,12 +164,12 @@ export function AppSidebar({
         return;
       }
       try {
-        document.cookie = `orya_org=${orgId}; path=/; SameSite=Lax`;
+        document.cookie = `orya_organization=${orgId}; path=/; Max-Age=${ORG_COOKIE_MAX_AGE}; SameSite=Lax`;
       } catch {
         /* ignore */
       }
       setOrgOpen(false);
-      router.replace(`/organizador?tab=overview&org=${orgId}`);
+      router.replace(`/organizacao?tab=overview&organizationId=${orgId}`);
       router.refresh();
     } catch (err) {
       console.error("[org switch] erro inesperado", err);
@@ -179,7 +180,7 @@ export function AppSidebar({
 
   const goUserMode = () => {
     try {
-      document.cookie = "orya_org=; path=/; Max-Age=0; SameSite=Lax";
+      document.cookie = "orya_organization=; path=/; Max-Age=0; SameSite=Lax";
     } catch {
       /* ignore */
     }
@@ -193,6 +194,11 @@ export function AppSidebar({
     } catch (err) {
       console.error("Erro no signOut", err);
     } finally {
+      try {
+        document.cookie = "orya_organization=; path=/; Max-Age=0; SameSite=Lax";
+      } catch {
+        /* ignore */
+      }
       router.push("/login");
     }
   };
@@ -201,15 +207,15 @@ export function AppSidebar({
   const userInitial = (userLabel || "U").charAt(0).toUpperCase();
 
   const orgList = orgOptions ?? [];
-  const orgCurrent = orgList.find((o) => o.organizerId === activeOrg?.id) ?? orgList[0] ?? null;
-  const orgButtonAvatar = orgCurrent?.organizer.brandingAvatarUrl || orgAvatar;
+  const orgCurrent = orgList.find((o) => o.organizationId === activeOrg?.id) ?? orgList[0] ?? null;
+  const orgButtonAvatar = orgCurrent?.organization.brandingAvatarUrl || orgAvatar;
   const orgCategoryValue =
-    orgCurrent?.organizer.organizationCategory ?? activeOrg?.organizationCategory ?? null;
+    orgCurrent?.organization.organizationCategory ?? activeOrg?.organizationCategory ?? null;
   const orgCategory = normalizeOrganizationCategory(orgCategoryValue);
   const categoryLabel = ORGANIZATION_CATEGORY_LABELS[orgCategory];
   const categoryCta = CATEGORY_CTA[orgCategory];
-  const manageHref = orgCategory === "RESERVAS" ? "/organizador/reservas" : baseTabHref("manage");
-  const roleFlags = getOrganizerRoleFlags(orgCurrent?.role ?? null);
+  const manageHref = orgCategory === "RESERVAS" ? "/organizacao/reservas" : baseTabHref("manage");
+  const roleFlags = getOrganizationRoleFlags(orgCurrent?.role ?? null);
 
   return (
     <>
@@ -227,7 +233,7 @@ export function AppSidebar({
             <div className="flex items-center gap-2">
               <Avatar
                 src={orgButtonAvatar}
-                name={orgCurrent?.organizer.publicName || orgCurrent?.organizer.businessName || orgDisplay}
+                name={orgCurrent?.organization.publicName || orgCurrent?.organization.businessName || orgDisplay}
                 className="h-8 w-8 rounded-lg border border-white/10"
                 textClassName="text-[11px] font-semibold uppercase tracking-[0.16em] text-white/80"
                 fallbackText="OR"
@@ -235,8 +241,8 @@ export function AppSidebar({
               <div className="text-left">
                 <p className="text-[11px] uppercase tracking-[0.18em] text-white/50">Organização</p>
                 <p className="text-sm font-semibold text-white">
-                  {orgCurrent?.organizer.publicName ||
-                    orgCurrent?.organizer.businessName ||
+                  {orgCurrent?.organization.publicName ||
+                    orgCurrent?.organization.businessName ||
                     "Selecionar"}
                 </p>
               </div>
@@ -246,14 +252,14 @@ export function AppSidebar({
           {orgOpen && (
             <div className="mt-2 space-y-1">
               {orgList.map((item) => {
-                const isActive = item.organizerId === orgCurrent?.organizerId;
-                const isSwitching = switchingOrgId === item.organizerId;
+                const isActive = item.organizationId === orgCurrent?.organizationId;
+                const isSwitching = switchingOrgId === item.organizationId;
                 return (
                   <button
-                    key={item.organizerId}
+                    key={item.organizationId}
                     type="button"
                     disabled={isSwitching}
-                    onClick={() => switchOrg(item.organizerId)}
+                    onClick={() => switchOrg(item.organizationId)}
                     className={cn(
                       "flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm transition",
                       isActive ? "bg-white/10 text-white" : "text-white/80 hover:bg-white/10",
@@ -261,7 +267,7 @@ export function AppSidebar({
                     )}
                   >
                     <span className="text-left">
-                      {item.organizer.publicName || item.organizer.businessName}
+                      {item.organization.publicName || item.organization.businessName}
                     </span>
                     <div className="flex items-center gap-1 text-[10px] uppercase tracking-[0.12em]">
                       <span className="rounded-full border border-white/15 bg-white/5 px-2 py-[1px] text-white/70">
@@ -273,7 +279,7 @@ export function AppSidebar({
                 );
               })}
               <Link
-                href="/organizador/become"
+                href="/organizacao/become"
                 className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm text-white/80 transition hover:bg-white/10"
                 onClick={() => setOrgOpen(false)}
               >
@@ -325,12 +331,12 @@ export function AppSidebar({
         <div className="pt-2">
           <p className="px-2 text-[10px] uppercase tracking-[0.24em] text-white/45">Secundário</p>
           {roleFlags.canManageMembers && (
-            <Link href="/organizador/staff" className={subLinkClass(currentSubKey === "staff")} data-tour="staff">
+            <Link href="/organizacao/staff" className={subLinkClass(currentSubKey === "staff")} data-tour="staff">
               <span>Staff</span>
             </Link>
           )}
           {roleFlags.canEditOrg && (
-            <Link href="/organizador/settings" className={subLinkClass(currentSubKey === "settings")}>
+            <Link href="/organizacao/settings" className={subLinkClass(currentSubKey === "settings")}>
               <span>Definições</span>
             </Link>
           )}

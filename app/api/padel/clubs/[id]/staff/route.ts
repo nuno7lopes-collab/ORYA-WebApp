@@ -1,13 +1,14 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
-import { OrganizerMemberRole } from "@prisma/client";
+import { OrganizationMemberRole } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { getActiveOrganizerForUser } from "@/lib/organizerContext";
+import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { readNumericParam } from "@/lib/routeParams";
 
-const allowedRoles: OrganizerMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
+const readRoles: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
+const writeRoles: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
 
 export async function GET(req: NextRequest) {
   const clubId = readNumericParam(undefined, req, "clubs");
@@ -17,10 +18,10 @@ export async function GET(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
-  const { organizer } = await getActiveOrganizerForUser(user.id, { roles: allowedRoles });
-  if (!organizer) return NextResponse.json({ ok: false, error: "NO_ORGANIZER" }, { status: 403 });
+  const { organization } = await getActiveOrganizationForUser(user.id, { roles: readRoles });
+  if (!organization) return NextResponse.json({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });
 
-  const club = await prisma.padelClub.findFirst({ where: { id: clubId, organizerId: organizer.id, deletedAt: null } });
+  const club = await prisma.padelClub.findFirst({ where: { id: clubId, organizationId: organization.id, deletedAt: null } });
   if (!club) return NextResponse.json({ ok: false, error: "CLUB_NOT_FOUND" }, { status: 404 });
 
   const staff = await prisma.padelClubStaff.findMany({
@@ -42,10 +43,10 @@ export async function POST(req: NextRequest) {
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
   if (!body) return NextResponse.json({ ok: false, error: "INVALID_BODY" }, { status: 400 });
 
-  const { organizer } = await getActiveOrganizerForUser(user.id, { roles: allowedRoles });
-  if (!organizer) return NextResponse.json({ ok: false, error: "NO_ORGANIZER" }, { status: 403 });
+  const { organization } = await getActiveOrganizationForUser(user.id, { roles: writeRoles });
+  if (!organization) return NextResponse.json({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });
 
-  const club = await prisma.padelClub.findFirst({ where: { id: clubId, organizerId: organizer.id, deletedAt: null } });
+  const club = await prisma.padelClub.findFirst({ where: { id: clubId, organizationId: organization.id, deletedAt: null } });
   if (!club) return NextResponse.json({ ok: false, error: "CLUB_NOT_FOUND" }, { status: 404 });
 
   const staffId = typeof body.id === "number" ? body.id : null;
@@ -120,10 +121,10 @@ export async function DELETE(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
-  const { organizer } = await getActiveOrganizerForUser(user.id, { roles: allowedRoles });
-  if (!organizer) return NextResponse.json({ ok: false, error: "NO_ORGANIZER" }, { status: 403 });
+  const { organization } = await getActiveOrganizationForUser(user.id, { roles: writeRoles });
+  if (!organization) return NextResponse.json({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });
 
-  const club = await prisma.padelClub.findFirst({ where: { id: clubId, organizerId: organizer.id, deletedAt: null } });
+  const club = await prisma.padelClub.findFirst({ where: { id: clubId, organizationId: organization.id, deletedAt: null } });
   if (!club) return NextResponse.json({ ok: false, error: "CLUB_NOT_FOUND" }, { status: 404 });
 
   const url = new URL(req.url);

@@ -52,7 +52,7 @@ export async function GET(_: Request, context: { params: Params | Promise<Params
             slug: true,
             startsAt: true,
             endsAt: true,
-            organizer: {
+            organization: {
               select: {
                 username: true,
                 publicName: true,
@@ -70,7 +70,7 @@ export async function GET(_: Request, context: { params: Params | Promise<Params
     type: ent.type,
     status: ent.status,
     isOwner: true,
-    isOrganizer: false,
+    isOrganization: false,
     isAdmin,
     checkinWindow,
     outsideWindow,
@@ -91,10 +91,7 @@ export async function GET(_: Request, context: { params: Params | Promise<Params
     qrToken = token;
   }
 
-  const organizerName =
-    event?.organizer?.publicName ||
-    event?.organizer?.businessName ||
-    null;
+  const organizationName = event?.organization?.publicName || event?.organization?.businessName || null;
 
   return NextResponse.json({
     entitlementId: ent.id,
@@ -114,8 +111,8 @@ export async function GET(_: Request, context: { params: Params | Promise<Params
       ? {
           id: event.id,
           slug: event.slug,
-          organizerName,
-          organizerUsername: event.organizer?.username ?? null,
+          organizationName,
+          organizationUsername: event.organization?.username ?? null,
         }
       : null,
     audit: {

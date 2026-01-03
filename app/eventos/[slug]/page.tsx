@@ -12,6 +12,7 @@ import type { Metadata } from "next";
 import type { Prisma } from "@prisma/client";
 import Image from "next/image";
 import { defaultBlurDataURL, optimizeImageUrl } from "@/lib/image";
+import { getEventCoverSuggestionIds, getEventCoverUrl } from "@/lib/eventCover";
 import { buildPadelEventSnapshot } from "@/lib/padel/eventSnapshot";
 import type { CSSProperties } from "react";
 import EventBackgroundTuner from "./EventBackgroundTuner";
@@ -19,7 +20,7 @@ import { normalizeEmail } from "@/lib/utils/email";
 import { sanitizeUsername } from "@/lib/username";
 import InviteGateClient from "./InviteGateClient";
 import { Avatar } from "@/components/ui/avatar";
-import { CTA_PRIMARY } from "@/app/organizador/dashboardUi";
+import { CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
 
 type EventPageParams = { slug: string };
 type EventPageParamsInput = EventPageParams | Promise<EventPageParams>;
@@ -54,7 +55,7 @@ export async function generateMetadata(
       title: true,
       description: true,
       locationName: true,
-      organizerId: true,
+      organizationId: true,
     },
   });
   if (!event) {
@@ -66,13 +67,13 @@ export async function generateMetadata(
           title: true,
           description: true,
           locationName: true,
-          organizerId: true,
+          organizationId: true,
         },
       });
     }
   }
 
-  if (!event || !event.organizerId) {
+  if (!event || !event.organizationId) {
     return {
       title: "Evento não encontrado | ORYA",
       description: "Este evento já não está disponível.",
@@ -210,7 +211,7 @@ export default async function EventPage({
         include: { category: { select: { label: true } } },
       },
       padelTournamentConfig: true,
-      organizer: {
+      organization: {
         select: {
           username: true,
           publicName: true,
@@ -221,7 +222,7 @@ export default async function EventPage({
       },
     },
   });
-  if (!event || !event.organizerId) {
+  if (!event || !event.organizationId) {
     const normalized = slugify(slug);
     if (normalized && normalized !== slug) {
       const fallback = await prisma.event.findUnique({
@@ -238,7 +239,7 @@ export default async function EventPage({
             include: { category: { select: { label: true } } },
           },
           padelTournamentConfig: true,
-          organizer: {
+          organization: {
             select: {
               username: true,
               publicName: true,
@@ -249,13 +250,10 @@ export default async function EventPage({
           },
         },
       });
-      if (fallback && fallback.organizerId) {
+      if (fallback && fallback.organizationId) {
         redirect(`/eventos/${fallback.slug}`);
       }
     }
-    notFound();
-  }
-  if (event.isTest && !isAdmin) {
     notFound();
   }
   const publicAccessMode = event.publicAccessMode ?? (event.inviteOnly ? "INVITE" : "OPEN");
@@ -303,17 +301,17 @@ export default async function EventPage({
   // Buscar bilhetes ligados a este evento (para contagem de pessoas)
   const safeLocationName = event.locationName || "Local a anunciar";
   const safeTimezone = event.timezone || "Europe/Lisbon";
-  const organizerDisplay =
-    event.organizer?.publicName ||
-    event.organizer?.businessName ||
+  const organizationDisplay =
+    event.organization?.publicName ||
+    event.organization?.businessName ||
     null;
-  const organizerUsername =
-    event.organizer?.status === "ACTIVE"
-      ? event.organizer?.username ?? null
+  const organizationUsername =
+    event.organization?.status === "ACTIVE"
+      ? event.organization?.username ?? null
       : null;
-  const safeOrganizer = organizerDisplay || "Organização ORYA";
-  const organizerAvatarUrl = event.organizer?.brandingAvatarUrl?.trim() || null;
-  const organizerHandle = organizerUsername ? `@${organizerUsername}` : null;
+  const safeOrganization = organizationDisplay || "Organização ORYA";
+  const organizationAvatarUrl = event.organization?.brandingAvatarUrl?.trim() || null;
+  const organizationHandle = organizationUsername ? `@${organizationUsername}` : null;
   const liveHubVisibility = event.liveHubVisibility ?? "PUBLIC";
 
   // Nota: no modelo atual, não determinamos o utilizador autenticado neste
@@ -346,13 +344,18 @@ export default async function EventPage({
       ? event.description.trim()
       : "A descrição deste evento será atualizada em breve.";
 
-  const rawCover =
-    event.coverImageUrl && event.coverImageUrl.trim().length > 0
-      ? event.coverImageUrl
-      : "/images/placeholder-event.jpg";
-  const cover = optimizeImageUrl(rawCover, 1200, 72, "webp");
+  const hasCover = Boolean(event.coverImageUrl && event.coverImageUrl.trim().length > 0);
+  const cover = getEventCoverUrl(event.coverImageUrl, {
+    seed: event.slug ?? event.title ?? String(event.id),
+    suggestedIds: getEventCoverSuggestionIds({ templateType: event.templateType ?? null }),
+    width: 1200,
+    quality: 72,
+    format: "webp",
+  });
   // versão ultra-leve apenas para o blur de fundo (mantém o efeito mas evita puxar MBs)
-  const blurredCover = optimizeImageUrl(rawCover, 120, 20, "webp");
+  const blurredCover = hasCover
+    ? optimizeImageUrl(event.coverImageUrl, 120, 20, "webp", 120, "cover")
+    : null;
 
   const nowDate = new Date();
   const eventEnded = endDateObj < nowDate;
@@ -566,39 +569,40 @@ export default async function EventPage({
       style={backgroundVars}
     >
       <CheckoutProvider>
-        <EventBackgroundTuner targetId="event-page" defaults={backgroundDefaults} />
-        {/* BG: blur da capa a cobrir o topo da página com transição super suave para o fundo ORYA */}
-        <div
-          className="pointer-events-none fixed inset-0 overflow-hidden"
-          aria-hidden="true"
-        >
-          {/* camada principal: cover blur com máscara para fazer o fade vertical muito suave */}
+        {hasCover && <EventBackgroundTuner targetId="event-page" defaults={backgroundDefaults} />}
+        {hasCover && (
           <div
-            className="h-full w-full"
-            style={{
-              backgroundImage: `url(${blurredCover})`,
-              backgroundSize: "cover",
-              backgroundPosition: "center",
-              filter:
-                "blur(var(--event-bg-blur, 56px)) saturate(var(--event-bg-saturate, 1.28)) brightness(var(--event-bg-brightness, 1.06))",
-              WebkitFilter:
-                "blur(var(--event-bg-blur, 56px)) saturate(var(--event-bg-saturate, 1.28)) brightness(var(--event-bg-brightness, 1.06))",
-              transform: "scale(var(--event-bg-scale, 1.28))",
-              WebkitTransform: "scale(var(--event-bg-scale, 1.28))",
-              WebkitMaskImage: EVENT_BG_MASK,
-              maskImage: EVENT_BG_MASK,
-            }}
-          />
-          {/* overlay extra para garantir legibilidade no topo da hero e uma transição ainda mais orgânica */}
-          <div className="absolute inset-0" style={{ background: EVENT_BG_OVERLAY }} />
-          {/* fade tardio para preto para unir com o fundo */}
-          <div
-            className="absolute inset-0"
-            style={{
-              background: EVENT_BG_FADE,
-            }}
-          />
-        </div>
+            className="pointer-events-none fixed inset-0 overflow-hidden"
+            aria-hidden="true"
+          >
+            {/* camada principal: cover blur com máscara para fazer o fade vertical muito suave */}
+            <div
+              className="h-full w-full"
+              style={{
+                backgroundImage: `url(${blurredCover})`,
+                backgroundSize: "cover",
+                backgroundPosition: "center",
+                filter:
+                  "blur(var(--event-bg-blur, 56px)) saturate(var(--event-bg-saturate, 1.28)) brightness(var(--event-bg-brightness, 1.06))",
+                WebkitFilter:
+                  "blur(var(--event-bg-blur, 56px)) saturate(var(--event-bg-saturate, 1.28)) brightness(var(--event-bg-brightness, 1.06))",
+                transform: "scale(var(--event-bg-scale, 1.28))",
+                WebkitTransform: "scale(var(--event-bg-scale, 1.28))",
+                WebkitMaskImage: EVENT_BG_MASK,
+                maskImage: EVENT_BG_MASK,
+              }}
+            />
+            {/* overlay extra para garantir legibilidade no topo da hero e uma transição ainda mais orgânica */}
+            <div className="absolute inset-0" style={{ background: EVENT_BG_OVERLAY }} />
+            {/* fade tardio para preto para unir com o fundo */}
+            <div
+              className="absolute inset-0"
+              style={{
+                background: EVENT_BG_FADE,
+              }}
+            />
+          </div>
+        )}
 
         {/* ========== HERO ============ */}
         <section className="relative z-10 w-full pb-16 pt-20 md:pb-20 md:pt-28">
@@ -613,12 +617,12 @@ export default async function EventPage({
             <div className="hidden items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[10px] uppercase tracking-[0.2em] text-white/70 sm:flex">
               <span>Evento ORYA</span>
               <span className="h-1 w-1 rounded-full bg-white/40" />
-              {organizerUsername ? (
-                <Link href={`/${organizerUsername}`} className="text-white/80 hover:text-white">
-                  {safeOrganizer}
+              {organizationUsername ? (
+                <Link href={`/${organizationUsername}`} className="text-white/80 hover:text-white">
+                  {safeOrganization}
                 </Link>
               ) : (
-                <span>{safeOrganizer}</span>
+                <span>{safeOrganization}</span>
               )}
             </div>
           </div>
@@ -668,42 +672,42 @@ export default async function EventPage({
                     <p className="text-[10px] uppercase tracking-[0.2em] text-white/60">
                       Organizado por
                     </p>
-                    {organizerUsername ? (
+                    {organizationUsername ? (
                       <Link
-                        href={`/${organizerUsername}`}
+                        href={`/${organizationUsername}`}
                         className="mt-2 inline-flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-3 py-2 transition hover:border-white/20 hover:bg-white/10"
                       >
                         <Avatar
-                          src={organizerAvatarUrl}
-                          name={safeOrganizer}
+                          src={organizationAvatarUrl}
+                          name={safeOrganization}
                           className="h-10 w-10 border border-white/20"
                           textClassName="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/80"
                           fallbackText="OR"
                         />
                         <div className="flex flex-col">
                           <div className="flex items-center gap-2">
-                            <span className="text-sm font-semibold text-white">{safeOrganizer}</span>
+                            <span className="text-sm font-semibold text-white">{safeOrganization}</span>
                             <span className="rounded-full border border-white/20 bg-white/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-white/65">
                               Organização
                             </span>
                           </div>
-                          {organizerHandle && (
-                            <span className="text-xs text-white/60">{organizerHandle}</span>
+                          {organizationHandle && (
+                            <span className="text-xs text-white/60">{organizationHandle}</span>
                           )}
                         </div>
                       </Link>
                     ) : (
                       <div className="mt-2 inline-flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-3 py-2">
                         <Avatar
-                          src={organizerAvatarUrl}
-                          name={safeOrganizer}
+                          src={organizationAvatarUrl}
+                          name={safeOrganization}
                           className="h-10 w-10 border border-white/20"
                           textClassName="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/80"
                           fallbackText="OR"
                         />
                         <div className="flex flex-col">
                           <div className="flex items-center gap-2">
-                            <span className="text-sm font-semibold text-white">{safeOrganizer}</span>
+                            <span className="text-sm font-semibold text-white">{safeOrganization}</span>
                             <span className="rounded-full border border-white/20 bg-white/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-white/65">
                               Organização
                             </span>
@@ -743,7 +747,7 @@ export default async function EventPage({
 
             <div className="relative">
               <div className="pointer-events-none absolute -inset-[1px] rounded-[34px] bg-[conic-gradient(from_120deg,rgba(107,255,255,0.5),rgba(255,0,200,0.4),rgba(22,70,245,0.5),rgba(107,255,255,0.5))] opacity-60 blur-[2px]" />
-              <div className="relative h-full min-h-[260px] overflow-hidden rounded-[32px] border border-white/15 bg-white/5 shadow-[0_28px_70px_rgba(0,0,0,0.85)]">
+              <div className="relative aspect-square w-full overflow-hidden rounded-[32px] border border-white/15 bg-white/5 shadow-[0_28px_70px_rgba(0,0,0,0.85)]">
                 <Image
                   src={cover}
                   alt={`Capa do evento ${event.title}`}
@@ -972,7 +976,7 @@ export default async function EventPage({
                                 checkoutVariant === "PADEL"
                                   ? {
                                       eventId: event.id,
-                                      organizerId: event.organizerId ?? null,
+                                      organizationId: event.organizationId ?? null,
                                       categoryId: padelDefaultCategoryId ?? null,
                                       categoryLinkId: padelDefaultCategoryLinkId ?? null,
                                   }
@@ -1042,7 +1046,7 @@ export default async function EventPage({
                                     checkoutVariant === "PADEL"
                                       ? {
                                           eventId: event.id,
-                                          organizerId: event.organizerId ?? null,
+                                          organizationId: event.organizationId ?? null,
                                           categoryId: padelDefaultCategoryId ?? null,
                                           categoryLinkId: padelDefaultCategoryLinkId ?? null,
                                         }
@@ -1218,7 +1222,7 @@ export default async function EventPage({
             checkoutVariant === "PADEL"
               ? {
                   eventId: event.id,
-                  organizerId: event.organizerId ?? null,
+                  organizationId: event.organizationId ?? null,
                   categoryId: padelDefaultCategoryId ?? null,
                   categoryLinkId: padelDefaultCategoryLinkId ?? null,
                 }

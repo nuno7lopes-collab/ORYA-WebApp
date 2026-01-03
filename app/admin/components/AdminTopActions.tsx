@@ -14,8 +14,8 @@ export function AdminTopActions({ showTicketsExport, showPaymentsExport }: Admin
 
   return (
     <div className="flex flex-wrap items-center gap-2 text-[11px]">
-      <Link href="/admin/organizadores" className={linkBase}>
-        Organizadores
+      <Link href="/admin/organizacoes" className={linkBase}>
+        Organizações
       </Link>
       <Link href="/admin/eventos" className={linkBase}>
         Eventos

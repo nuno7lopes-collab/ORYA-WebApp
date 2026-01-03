@@ -2,7 +2,7 @@ export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
 import {
-  OrganizerMemberRole,
+  OrganizationMemberRole,
   padel_format,
   PadelPairingLifecycleStatus,
   PadelPairingSlotStatus,
@@ -10,11 +10,11 @@ import {
 } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { getActiveOrganizerForUser } from "@/lib/organizerContext";
+import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { enqueueOperation } from "@/lib/operations/enqueue";
 import { refundKey } from "@/lib/stripe/idempotency";
 
-const allowedRoles: OrganizerMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
+const allowedRoles: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
 
 type LinkInput = {
   padelCategoryId?: number | null;
@@ -118,15 +118,15 @@ export async function GET(req: NextRequest) {
 
   const event = await prisma.event.findUnique({
     where: { id: eventId, isDeleted: false },
-    select: { organizerId: true },
+    select: { organizationId: true },
   });
-  if (!event?.organizerId) return NextResponse.json({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+  if (!event?.organizationId) return NextResponse.json({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
 
-  const { organizer, membership } = await getActiveOrganizerForUser(user.id, {
-    organizerId: event.organizerId,
+  const { organization, membership } = await getActiveOrganizationForUser(user.id, {
+    organizationId: event.organizationId,
     roles: allowedRoles,
   });
-  if (!organizer || !membership) return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  if (!organization || !membership) return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
   const links = await prisma.padelEventCategoryLink.findMany({
     where: { eventId },
@@ -168,21 +168,21 @@ export async function POST(req: NextRequest) {
 
   const event = await prisma.event.findUnique({
     where: { id: eventId, isDeleted: false },
-    select: { organizerId: true, startsAt: true },
+    select: { organizationId: true, startsAt: true },
   });
-  if (!event?.organizerId) return NextResponse.json({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+  if (!event?.organizationId) return NextResponse.json({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
 
-  const { organizer, membership } = await getActiveOrganizerForUser(user.id, {
-    organizerId: event.organizerId,
+  const { organization, membership } = await getActiveOrganizationForUser(user.id, {
+    organizationId: event.organizationId,
     roles: allowedRoles,
   });
-  if (!organizer || !membership) return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  if (!organization || !membership) return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
-  const organizerCategories = await prisma.padelCategory.findMany({
-    where: { organizerId: organizer.id },
+  const organizationCategories = await prisma.padelCategory.findMany({
+    where: { organizationId: organization.id },
     select: { id: true },
   });
-  const validCategoryIds = new Set(organizerCategories.map((c) => c.id));
+  const validCategoryIds = new Set(organizationCategories.map((c) => c.id));
 
   const existing = await prisma.padelEventCategoryLink.findMany({
     where: { eventId },
@@ -206,13 +206,21 @@ export async function POST(req: NextRequest) {
       throw new Error("INVALID_CATEGORY");
     }
     const format = typeof link.format === "string" && allowedFormats.has(link.format) ? (link.format as any) : undefined;
+    const capacityTeams =
+      typeof link.capacityTeams === "number" && Number.isFinite(link.capacityTeams) && link.capacityTeams > 0
+        ? Math.floor(link.capacityTeams)
+        : null;
+    const capacityPlayers =
+      typeof link.capacityPlayers === "number" && Number.isFinite(link.capacityPlayers) && link.capacityPlayers > 0
+        ? Math.floor(link.capacityPlayers)
+        : null;
 
     return prisma.padelEventCategoryLink.upsert({
       where: { eventId_padelCategoryId: { eventId, padelCategoryId } },
       update: {
         format: format ?? undefined,
-        capacityTeams: typeof link.capacityTeams === "number" ? link.capacityTeams : null,
-        capacityPlayers: typeof link.capacityPlayers === "number" ? link.capacityPlayers : null,
+        capacityTeams,
+        capacityPlayers,
         liveStreamUrl: typeof link.liveStreamUrl === "string" ? link.liveStreamUrl.trim() || null : null,
         isEnabled: typeof link.isEnabled === "boolean" ? link.isEnabled : undefined,
         isHidden: typeof link.isHidden === "boolean" ? link.isHidden : undefined,
@@ -221,8 +229,8 @@ export async function POST(req: NextRequest) {
         eventId,
         padelCategoryId,
         format: format ?? undefined,
-        capacityTeams: typeof link.capacityTeams === "number" ? link.capacityTeams : null,
-        capacityPlayers: typeof link.capacityPlayers === "number" ? link.capacityPlayers : null,
+        capacityTeams,
+        capacityPlayers,
         liveStreamUrl: typeof link.liveStreamUrl === "string" ? link.liveStreamUrl.trim() || null : null,
         isEnabled: typeof link.isEnabled === "boolean" ? link.isEnabled : true,
         isHidden: typeof link.isHidden === "boolean" ? link.isHidden : false,

@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
   } = await supabase.auth.getUser();
 
   try {
-    const results = await prisma.organizer.findMany({
+    const results = await prisma.organization.findMany({
       where: {
         status: "ACTIVE",
         AND: [
@@ -51,11 +51,11 @@ export async function GET(req: NextRequest) {
 
     const followingSet = new Set<number>();
     if (user && results.length > 0) {
-      const rows = await prisma.organizer_follows.findMany({
-        where: { follower_id: user.id, organizer_id: { in: results.map((r) => r.id) } },
-        select: { organizer_id: true },
+      const rows = await prisma.organization_follows.findMany({
+        where: { follower_id: user.id, organization_id: { in: results.map((r) => r.id) } },
+        select: { organization_id: true },
       });
-      rows.forEach((row) => followingSet.add(row.organizer_id));
+      rows.forEach((row) => followingSet.add(row.organization_id));
     }
 
     const mapped = results.map((r) => ({
@@ -85,7 +85,7 @@ export async function GET(req: NextRequest) {
       { status: 200 },
     );
   } catch (err) {
-    console.error("[organizers/search]", err);
+    console.error("[organizations/search]", err);
     return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }

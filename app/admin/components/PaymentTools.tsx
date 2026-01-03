@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { CTA_PRIMARY } from "@/app/organizador/dashboardUi";
+import { CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
 
 type Status = "idle" | "loading" | "success" | "error";
 

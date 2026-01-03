@@ -16,7 +16,7 @@ type ServiceItem = {
   durationMinutes: number;
   price: number;
   currency: string;
-  organizer: {
+  organization: {
     id: number;
     publicName: string | null;
     businessName: string | null;
@@ -192,7 +192,7 @@ export default function ServicosPage() {
                   </p>
                 </div>
                 <span className="rounded-full border border-white/15 bg-white/10 px-2 py-1 text-[11px] text-white/70">
-                  {item.organizer.city || "Cidade"}
+                  {item.organization.city || "Cidade"}
                 </span>
               </div>
               {item.description && (
@@ -200,7 +200,7 @@ export default function ServicosPage() {
               )}
               <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
                 <div className="text-[12px] text-white/60">
-                  {item.organizer.publicName || item.organizer.businessName || "Organização"}
+                  {item.organization.publicName || item.organization.businessName || "Organização"}
                 </div>
                 <div className="text-[12px] text-white/70">
                   {item.nextAvailability

@@ -37,7 +37,7 @@ export async function fulfillServiceBookingIntent(
   const bookingId = parseId(meta.bookingId);
   const serviceId = parseId(meta.serviceId);
   const availabilityId = parseId(meta.availabilityId);
-  const organizerId = parseId(meta.organizerId);
+  const organizationId = parseId(meta.organizationId);
   const policyId = parseId(meta.policyId);
   const userId = typeof meta.userId === "string" ? meta.userId : null;
   const platformFeeCents = parseNumber(meta.platformFeeCents) ?? 0;
@@ -82,7 +82,7 @@ export async function fulfillServiceBookingIntent(
 
     const availability = booking?.availability ?? availabilityWithService;
 
-    if (!booking && availabilityWithService && serviceId && organizerId && userId) {
+    if (!booking && availabilityWithService && serviceId && organizationId && userId) {
       if (availabilityWithService.serviceId !== serviceId) {
         throw new Error("SERVICE_BOOKING_MISMATCH");
       }
@@ -100,7 +100,7 @@ export async function fulfillServiceBookingIntent(
       booking = await tx.booking.create({
         data: {
           serviceId,
-          organizerId,
+          organizationId,
           userId,
           availabilityId: availabilityWithService.id,
           startsAt: availabilityWithService.startsAt,
@@ -139,16 +139,16 @@ export async function fulfillServiceBookingIntent(
       const policy =
         (policyId
           ? await tx.organizationPolicy.findFirst({
-              where: { id: policyId, organizerId: organizerId ?? booking.organizerId },
+              where: { id: policyId, organizationId: organizationId ?? booking.organizationId },
               select: { id: true },
             })
           : null) ??
         (await tx.organizationPolicy.findFirst({
-          where: { organizerId: organizerId ?? booking.organizerId, policyType: "MODERATE" },
+          where: { organizationId: organizationId ?? booking.organizationId, policyType: "MODERATE" },
           select: { id: true },
         })) ??
         (await tx.organizationPolicy.findFirst({
-          where: { organizerId: organizerId ?? booking.organizerId },
+          where: { organizationId: organizationId ?? booking.organizationId },
           orderBy: { createdAt: "asc" },
           select: { id: true },
         }));
@@ -167,7 +167,7 @@ export async function fulfillServiceBookingIntent(
     if (!existingTransaction) {
       await tx.transaction.create({
         data: {
-          organizerId: organizerId ?? booking.organizerId,
+          organizationId: organizationId ?? booking.organizationId,
           userId: userId ?? booking.userId,
           amountCents,
           currency: (intent.currency ?? "eur").toUpperCase(),
@@ -195,13 +195,13 @@ export async function fulfillServiceBookingIntent(
             bookingId: booking.id,
             serviceId: booking.serviceId,
             availabilityId: booking.availabilityId,
-            organizerId: organizerId ?? booking.organizerId,
+            organizationId: organizationId ?? booking.organizationId,
           },
         },
       });
 
       await recordOrganizationAudit(tx, {
-        organizerId: organizerId ?? booking.organizerId,
+        organizationId: organizationId ?? booking.organizationId,
         actorUserId: userId ?? booking.userId,
         action: "BOOKING_CREATED",
         metadata: {
@@ -213,7 +213,7 @@ export async function fulfillServiceBookingIntent(
       });
     } else if (isCancelled) {
       await recordOrganizationAudit(tx, {
-        organizerId: organizerId ?? booking.organizerId,
+        organizationId: organizationId ?? booking.organizationId,
         actorUserId: userId ?? booking.userId,
         action: "BOOKING_PAYMENT_AFTER_CANCEL",
         metadata: {

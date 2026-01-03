@@ -53,7 +53,7 @@ export async function POST(
           service: {
             select: {
               id: true,
-              organizerId: true,
+              organizationId: true,
               policy: {
                 select: {
                   id: true,
@@ -79,9 +79,9 @@ export async function POST(
         return { booking, policy: booking.policyRef?.policy ?? booking.service?.policy ?? null, already: true };
       }
 
-      const fallbackPolicy = booking.organizerId
+      const fallbackPolicy = booking.organizationId
         ? await tx.organizationPolicy.findFirst({
-            where: { organizerId: booking.organizerId, policyType: "MODERATE" },
+            where: { organizationId: booking.organizationId, policyType: "MODERATE" },
             select: {
               id: true,
               name: true,
@@ -128,7 +128,7 @@ export async function POST(
       }
 
       await recordOrganizationAudit(tx, {
-        organizerId: booking.organizerId,
+        organizationId: booking.organizationId,
         actorUserId: user.id,
         action: "BOOKING_CANCELLED",
         metadata: {

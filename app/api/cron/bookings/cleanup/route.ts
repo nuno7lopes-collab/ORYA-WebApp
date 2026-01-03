@@ -18,7 +18,7 @@ export async function GET(req: NextRequest) {
         status: "PENDING",
         createdAt: { lt: cutoff },
       },
-      select: { id: true, availabilityId: true, organizerId: true, serviceId: true, userId: true },
+      select: { id: true, availabilityId: true, organizationId: true, serviceId: true, userId: true },
     });
 
     if (stale.length === 0) {
@@ -38,7 +38,7 @@ export async function GET(req: NextRequest) {
 
       for (const booking of stale) {
         await recordOrganizationAudit(tx, {
-          organizerId: booking.organizerId,
+          organizationId: booking.organizationId,
           actorUserId: null,
           action: "BOOKING_AUTO_CANCELLED",
           metadata: {

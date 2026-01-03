@@ -12,7 +12,7 @@ export type CreateNotificationInput = {
   priority?: NotificationPriority;
   senderVisibility?: "PUBLIC" | "PRIVATE";
   fromUserId?: string | null;
-  organizerId?: number | null;
+  organizationId?: number | null;
   eventId?: number | null;
   ticketId?: string | null;
   inviteId?: string | null;
@@ -32,7 +32,7 @@ export async function shouldNotify(userId: string, type: NotificationType) {
     case "STRIPE_STATUS":
       return prefs.allowSystemAnnouncements;
     case "EVENT_REMINDER":
-    case "NEW_EVENT_FROM_FOLLOWED_ORGANIZER":
+    case "NEW_EVENT_FROM_FOLLOWED_ORGANIZATION":
       return prefs.allowEventReminders;
     default:
       return true;
@@ -71,7 +71,7 @@ export async function createNotification(input: CreateNotificationInput) {
     priority = "NORMAL",
     senderVisibility = "PUBLIC",
     fromUserId = null,
-    organizerId = null,
+    organizationId = null,
     eventId = null,
     ticketId = null,
     inviteId = null,
@@ -87,7 +87,7 @@ export async function createNotification(input: CreateNotificationInput) {
     ctaLabel: ctaLabel || undefined,
     priority,
     fromUserId: fromUserId || undefined,
-    organizerId: organizerId ?? undefined,
+    organizationId: organizationId ?? undefined,
     eventId: eventId ?? undefined,
     ticketId: ticketId ?? undefined,
     inviteId: inviteId ?? undefined,

@@ -24,7 +24,7 @@ const RESERVED_ROOT_ROUTES = new Set([
   "mapa",
   "me",
   "onboarding",
-  "organizador",
+  "organização",
   "padel",
   "resale",
   "reset-password",

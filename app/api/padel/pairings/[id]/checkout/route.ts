@@ -34,7 +34,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     where: { id: pairingId },
     include: {
       slots: true,
-      event: { select: { organizerId: true, slug: true, id: true } },
+      event: { select: { organizationId: true, slug: true, id: true } },
     },
   });
   if (!pairing) return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });

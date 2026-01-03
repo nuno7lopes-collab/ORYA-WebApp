@@ -2,24 +2,24 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
-import { getActiveOrganizerForUser } from "@/lib/organizerContext";
-import { resolveOrganizerIdFromRequest } from "@/lib/organizerId";
+import { getActiveOrganizationForUser } from "@/lib/organizationContext";
+import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 
 export async function GET(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
 
-    const organizerId = resolveOrganizerIdFromRequest(req);
-    const { organizer } = await getActiveOrganizerForUser(user.id, {
-      organizerId: organizerId ?? undefined,
+    const organizationId = resolveOrganizationIdFromRequest(req);
+    const { organization } = await getActiveOrganizationForUser(user.id, {
+      organizationId: organizationId ?? undefined,
     });
-    if (!organizer) {
-      return NextResponse.json({ ok: false, error: "Organizador não encontrado." }, { status: 403 });
+    if (!organization) {
+      return NextResponse.json({ ok: false, error: "Organização não encontrado." }, { status: 403 });
     }
 
     const categories = await prisma.padelCategory.findMany({
-      where: { organizerId: organizer.id, isActive: true },
+      where: { organizationId: organization.id, isActive: true },
       orderBy: [{ season: "desc" }, { year: "desc" }, { createdAt: "desc" }],
       select: { id: true, label: true, minLevel: true, maxLevel: true },
     });

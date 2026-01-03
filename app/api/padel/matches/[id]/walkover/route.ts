@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { OrganizerMemberRole, padel_match_status } from "@prisma/client";
+import { OrganizationMemberRole, padel_match_status } from "@prisma/client";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { canMarkWalkover } from "@/domain/padel/pairingPolicy";
-import { getActiveOrganizerForUser } from "@/lib/organizerContext";
+import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { readNumericParam } from "@/lib/routeParams";
 
-const allowedRoles: OrganizerMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
+const allowedRoles: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const matchId = readNumericParam(params?.id, req, "matches");
@@ -24,11 +24,11 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       pairingBId: true,
       eventId: true,
       status: true,
-      event: { select: { organizerId: true } },
+      event: { select: { organizationId: true } },
     },
   });
   if (!match) return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
-  if (!match.event?.organizerId) {
+  if (!match.event?.organizationId) {
     return NextResponse.json({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
   }
   if (match.status === padel_match_status.DONE) {
@@ -46,11 +46,11 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     return NextResponse.json({ ok: false, error: "MISSING_PAIRINGS" }, { status: 400 });
   }
 
-  const { organizer } = await getActiveOrganizerForUser(authData.user.id, {
-    organizerId: match.event.organizerId,
+  const { organization } = await getActiveOrganizationForUser(authData.user.id, {
+    organizationId: match.event.organizationId,
     roles: allowedRoles,
   });
-  if (!organizer) {
+  if (!organization) {
     return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
   }
 

@@ -122,7 +122,7 @@ export async function POST(req: NextRequest) {
           title: true,
           status: true,
           type: true,
-          organizerId: true,
+          organizationId: true,
           startsAt: true,
           updatedAt: true,
         },

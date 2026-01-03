@@ -5,7 +5,7 @@ import { Prisma, EventStatus, EventType } from "@prisma/client";
 
 // Fase 6.13 – Listar eventos (admin)
 // GET /api/admin/eventos/list
-// Permite ao admin pesquisar eventos globalmente por título/slug/organizador
+// Permite ao admin pesquisar eventos globalmente por título/slug/organizacao
 
 export async function GET(req: NextRequest) {
   try {
@@ -58,7 +58,7 @@ export async function GET(req: NextRequest) {
         { title: { contains: search, mode: "insensitive" } },
         { slug: { contains: search, mode: "insensitive" } },
         {
-          organizer: {
+          organization: {
             publicName: { contains: search, mode: "insensitive" },
           },
         },
@@ -76,7 +76,7 @@ export async function GET(req: NextRequest) {
     const events = await prisma.event.findMany({
       where,
       include: {
-        organizer: {
+        organization: {
           select: {
             id: true,
             publicName: true,
@@ -98,10 +98,10 @@ export async function GET(req: NextRequest) {
       startsAt: evt.startsAt,
       endsAt: evt.endsAt,
       createdAt: evt.createdAt,
-      organizer: evt.organizer
+      organization: evt.organization
         ? {
-            id: evt.organizer.id,
-            publicName: evt.organizer.publicName,
+            id: evt.organization.id,
+            publicName: evt.organization.publicName,
           }
         : null,
     }));

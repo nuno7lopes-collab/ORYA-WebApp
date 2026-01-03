@@ -1,17 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
-import { OrganizerMemberRole } from "@prisma/client";
+import { OrganizationMemberRole } from "@prisma/client";
 import { DEFAULT_ORGANIZATION_CATEGORY } from "@/lib/organizationCategories";
 import { resolveLiveHubModules } from "@/lib/liveHubConfig";
 import { summarizeMatchStatus, computeStandingsForGroup } from "@/domain/tournaments/structure";
 import { type TieBreakRule } from "@/domain/tournaments/standings";
 import { getTournamentStructure } from "@/domain/tournaments/structureData";
 import { getWinnerSideFromScore, type MatchScorePayload } from "@/domain/tournaments/matchRules";
-import { canScanTickets } from "@/lib/organizerAccess";
+import { canScanTickets } from "@/lib/organizationAccess";
 import { normalizeEmail } from "@/lib/utils/email";
 import { sanitizeUsername } from "@/lib/username";
-import { getCustomLiveHubModules, isCustomPremiumActive } from "@/lib/organizerPremium";
+import { getCustomLiveHubModules, isCustomPremiumActive } from "@/lib/organizationPremium";
 
 function slugify(input: string): string {
   return input
@@ -46,7 +46,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ slu
         locationName: true,
         locationCity: true,
         coverImageUrl: true,
-        organizerId: true,
+        organizationId: true,
         liveHubVisibility: true,
         liveStreamUrl: true,
         timezone: true,
@@ -55,7 +55,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ slu
         participantAccessMode: true,
         publicTicketTypeIds: true,
         participantTicketTypeIds: true,
-        organizer: {
+        organization: {
           select: {
             id: true,
             publicName: true,
@@ -93,7 +93,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ slu
             locationName: true,
             locationCity: true,
             coverImageUrl: true,
-            organizerId: true,
+            organizationId: true,
             liveHubVisibility: true,
             liveStreamUrl: true,
             timezone: true,
@@ -102,7 +102,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ slu
             participantAccessMode: true,
             publicTicketTypeIds: true,
             participantTicketTypeIds: true,
-            organizer: {
+            organization: {
               select: {
                 id: true,
                 publicName: true,
@@ -141,15 +141,15 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ slu
       })
     : [];
 
-  let isOrganizer = false;
-  let organizerRole: OrganizerMemberRole | null = null;
+  let isOrganization = false;
+  let organizationRole: OrganizationMemberRole | null = null;
   let canEditMatches = false;
-  if (userId && event.organizerId) {
+  if (userId && event.organizationId) {
     const access = await canScanTickets(userId, event.id);
-    organizerRole = access.membershipRole ?? null;
-    const hasMembership = Boolean(organizerRole);
-    isOrganizer = access.allowed || hasMembership;
-    canEditMatches = organizerRole ? organizerRole !== OrganizerMemberRole.VIEWER : false;
+    organizationRole = access.membershipRole ?? null;
+    const hasMembership = Boolean(organizationRole);
+    isOrganization = access.allowed || hasMembership;
+    canEditMatches = organizationRole ? organizationRole !== OrganizationMemberRole.VIEWER : false;
   }
 
   const profile = userId
@@ -202,20 +202,20 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ slu
             ? isParticipantInvited
             : false;
 
-  const viewerRole = isOrganizer ? "ORGANIZER" : isParticipant ? "PARTICIPANT" : "PUBLIC";
+  const viewerRole = isOrganization ? "ORGANIZATION" : isParticipant ? "PARTICIPANT" : "PUBLIC";
   const liveHubVisibility = event.liveHubVisibility ?? "PUBLIC";
   const liveHubAllowed =
     liveHubVisibility === "PUBLIC"
       ? true
       : liveHubVisibility === "PRIVATE"
-        ? isOrganizer || isParticipant
+        ? isOrganization || isParticipant
         : false;
 
-  const category = event.organizer?.organizationCategory ?? DEFAULT_ORGANIZATION_CATEGORY;
-  const premiumActive = isCustomPremiumActive(event.organizer);
+  const category = event.organization?.organizationCategory ?? DEFAULT_ORGANIZATION_CATEGORY;
+  const premiumActive = isCustomPremiumActive(event.organization);
   const liveHubMode = premiumActive ? "PREMIUM" : "DEFAULT";
   const modules = resolveLiveHubModules({ category, mode: liveHubMode, premiumActive });
-  const customModules = getCustomLiveHubModules(event.organizer);
+  const customModules = getCustomLiveHubModules(event.organization);
   const liveHubModules = premiumActive && customModules?.length ? customModules : modules;
 
   let tournamentPayload: any = null;
@@ -427,18 +427,18 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ slu
     }
   }
 
-  let organizerFollowed = false;
-  if (userId && event.organizer?.id) {
-    const follow = await prisma.organizer_follows.findUnique({
+  let organizationFollowed = false;
+  if (userId && event.organization?.id) {
+    const follow = await prisma.organization_follows.findUnique({
       where: {
-        follower_id_organizer_id: {
+        follower_id_organization_id: {
           follower_id: userId,
-          organizer_id: event.organizer.id,
+          organization_id: event.organization.id,
         },
       },
-      select: { organizer_id: true },
+      select: { organization_id: true },
     });
-    organizerFollowed = Boolean(follow);
+    organizationFollowed = Boolean(follow);
   }
 
     const res = NextResponse.json(
@@ -464,19 +464,19 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ slu
           publicTicketTypeIds,
           participantTicketTypeIds,
         },
-        organizer: event.organizer
+        organization: event.organization
           ? {
-              id: event.organizer.id,
-              publicName: event.organizer.publicName,
-              username: event.organizer.username,
-              organizationCategory: event.organizer.organizationCategory,
-              brandingAvatarUrl: event.organizer.brandingAvatarUrl,
-              liveHubPremiumEnabled: event.organizer.liveHubPremiumEnabled,
-              isFollowed: organizerFollowed,
+              id: event.organization.id,
+              publicName: event.organization.publicName,
+              username: event.organization.username,
+              organizationCategory: event.organization.organizationCategory,
+              brandingAvatarUrl: event.organization.brandingAvatarUrl,
+              liveHubPremiumEnabled: event.organization.liveHubPremiumEnabled,
+              isFollowed: organizationFollowed,
             }
           : null,
         viewerRole,
-        organizerRole,
+        organizationRole,
         canEditMatches,
         access: {
           publicAccessMode,

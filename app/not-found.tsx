@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CTA_PRIMARY } from "@/app/organizador/dashboardUi";
+import { CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
 
 export default function NotFound() {
   return (
