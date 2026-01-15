@@ -7,8 +7,8 @@ import { usePathname, useSearchParams } from "next/navigation";
 import type { LiveHubModule, LiveHubViewerRole } from "@/lib/liveHubConfig";
 import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
 import { useUser } from "@/app/hooks/useUser";
-import { getCustomLiveHubMatchOrder } from "@/lib/organizationPremium";
 import { Avatar } from "@/components/ui/avatar";
+import ChatThread from "@/components/chat/ChatThread";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 const LOCALE = "pt-PT";
@@ -302,7 +302,7 @@ function getStreamEmbed(url?: string | null) {
     const parentHost =
       typeof window !== "undefined"
         ? window.location.hostname
-        : (process.env.NEXT_PUBLIC_BASE_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? "app.orya.pt")
+        : (process.env.NEXT_PUBLIC_BASE_URL ?? process.env.NEXT_PUBLIC_SITE_URL ?? "app.orya.pt")
             .replace(/^https?:\/\//, "");
 
     if (host === "youtu.be") {
@@ -1806,7 +1806,7 @@ function OneVOneLiveLayout({
               Override
             </span>
           )}
-          <span>{nowMatch ? (nowIsLive ? "Ao vivo" : "Ultimo resultado") : "Sem destaque"}</span>
+          <span>{nowMatch ? (nowIsLive ? "Ao vivo" : "Último") : "Sem"}</span>
         </div>
       </div>
       {nowSponsor && (
@@ -1982,15 +1982,21 @@ function OneVOneLiveLayout({
             ))}
           </div>
           <div className="rounded-2xl border border-white/10 bg-black/30 p-4 text-sm text-white/70">
-            {activeTab === "chat" && "Chat disponível em breve."}
+            {activeTab === "chat" && (
+              <ChatThread
+                entityType="EVENT"
+                entityId={event.id}
+                canPostAnnouncements={canPostAnnouncements}
+              />
+            )}
             {activeTab === "stats" && "Stats do torneio em breve."}
             {activeTab === "rules" && (
               <ul className="space-y-1 text-sm text-white/70">
                 <li>Jogo a eliminar direto (1v1).</li>
-                <li>Vence quem chega primeiro ao limite de golos.</li>
-                <li>Limite padrão: {goalDefaultLimit} golos.</li>
+                <li>Vence quem atingir o limite.</li>
+                <li>Limite padrão: {goalDefaultLimit}.</li>
                 {goalRoundOverrides && (
-                  <li>Existem limites por ronda configurados pelo organização.</li>
+                  <li>Limites por ronda configurados.</li>
                 )}
                 <li>Fair play obrigatório.</li>
                 <li>Decisões do staff são finais.</li>
@@ -2276,7 +2282,7 @@ function OneVOneLiveLayout({
               </div>
             </>
           ) : (
-            <p className="text-xs text-white/50">Configuração avançada reservada a ADMIN.</p>
+            <p className="text-xs text-white/50">Avançado: só ADMIN.</p>
           )}
         </section>
       )}
@@ -2316,7 +2322,6 @@ export default function EventLiveClient({
         publicName: string;
         username: string | null;
         brandingAvatarUrl: string | null;
-        liveHubPremiumEnabled?: boolean | null;
         isFollowed?: boolean;
       }
     | null) ?? null;
@@ -2365,6 +2370,9 @@ export default function EventLiveClient({
   const viewerRole: LiveHubViewerRole = data.viewerRole;
   const canEditMatches = Boolean(data?.canEditMatches);
   const organizationRole = typeof data?.organizationRole === "string" ? data.organizationRole : null;
+  const canPostAnnouncements =
+    organizationRole !== null &&
+    ["OWNER", "CO_OWNER", "ADMIN", "STAFF", "TRAINER"].includes(organizationRole);
   const canManageLiveConfig =
     organizationRole === "OWNER" || organizationRole === "CO_OWNER" || organizationRole === "ADMIN";
   const canResolveDispute = canManageLiveConfig;
@@ -2450,19 +2458,12 @@ export default function EventLiveClient({
     a.updatedAt && b.updatedAt ? new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime() : 0;
   const latestCompletedMatch = completedMatches.slice().sort(byUpdatedAtDesc)[0] ?? null;
   const defaultNowMatch = liveMatches.sort(compareMatchOrder)[0] ?? latestCompletedMatch;
-  const oneVOneOrderedMatches = flatMatches.slice().sort(compareBracketOrder);
-  const oneVOneLiveMatches = oneVOneOrderedMatches.filter((m) => m.status === "IN_PROGRESS" || m.status === "LIVE");
-  const oneVOneLatestCompleted = oneVOneOrderedMatches.filter((m) => m.status === "DONE").sort(byUpdatedAtDesc)[0] ?? null;
-  const oneVOneNowMatch = oneVOneLiveMatches[0] ?? oneVOneLatestCompleted;
-  const usePremium = liveHub?.mode === "PREMIUM";
-  const matchOrder = usePremium ? getCustomLiveHubMatchOrder(organization) : null;
-  const useOneVOneOrdering = matchOrder === "ONEVONE";
-  const isOneVOne = useOneVOneOrdering;
+  const isOneVOne = false;
   const featuredMatchId = typeof tournamentView?.featuredMatchId === "number" ? tournamentView.featuredMatchId : null;
   const featuredMatch = featuredMatchId ? flatMatches.find((m) => m.id === featuredMatchId) ?? null : null;
   const featuredActive =
     featuredMatch && featuredMatch.status !== "DONE" && featuredMatch.status !== "CANCELLED" ? featuredMatch : null;
-  const autoNowMatch = useOneVOneOrdering ? oneVOneNowMatch : defaultNowMatch;
+  const autoNowMatch = defaultNowMatch;
   const nowMatch = featuredActive ?? autoNowMatch;
 
   const upcomingMatches = flatMatches
@@ -2511,7 +2512,11 @@ export default function EventLiveClient({
   const isOrganizationEdit =
     viewerRole === "ORGANIZATION" && canEditMatches && isOrganizationRoute && searchParams?.get("edit") === "1";
   const organizationEditHref = (() => {
-    const base = isOrganizationRoute && pathname ? pathname : `/organizacao/eventos/${event.id}/live`;
+    const defaultBase =
+      event.templateType === "PADEL"
+        ? `/organizacao/torneios/${event.id}/live`
+        : `/organizacao/eventos/${event.id}/live`;
+    const base = isOrganizationRoute && pathname ? pathname : defaultBase;
     const params = new URLSearchParams(searchParams?.toString());
     params.set("tab", "preview");
     params.set("edit", "1");
@@ -2569,8 +2574,8 @@ export default function EventLiveClient({
     const inlineStatus = nowMatch
       ? nowMatch.status === "IN_PROGRESS" || nowMatch.status === "LIVE"
         ? "Ao vivo"
-        : "Ultimo resultado"
-      : "Sem destaque";
+        : "Último"
+      : "Sem";
     return (
       <div className="space-y-4">
         {hero && (

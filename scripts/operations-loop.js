@@ -1,5 +1,5 @@
 // Loop simples para processar operações (worker) via endpoint interno.
-// Requer ORYA_CRON_SECRET definido. Opcional: WORKER_API_URL, WORKER_INTERVAL_MS.
+// Requer ORYA_CRON_SECRET definido. Opcional: WORKER_API_URL, WORKER_INTERVAL_MS, WORKER_METHOD.
 const fs = require("fs");
 const path = require("path");
 
@@ -32,15 +32,17 @@ if (!secret) {
 }
 
 const url = process.env.WORKER_API_URL || "http://localhost:3000/api/cron/operations";
+const method = (process.env.WORKER_METHOD || "POST").toUpperCase();
 const intervalMs = Number(process.env.WORKER_INTERVAL_MS || "1000");
 
 let stopped = false;
+let failureCount = 0;
 
 async function tick() {
   if (stopped) return;
   try {
     const res = await fetch(url, {
-      method: "POST",
+      method,
       headers: {
         "X-ORYA-CRON-SECRET": secret,
       },
@@ -53,15 +55,27 @@ async function tick() {
         body: json,
       });
     } else if (json?.processed > 0) {
+      failureCount = 0;
       console.log("[worker] Batch processado", {
         processed: json.processed,
       });
+    } else {
+      failureCount = 0;
     }
   } catch (err) {
-    console.error("[worker] Erro no loop", err);
+    failureCount += 1;
+    const backoffMs = Math.min(30000, intervalMs * Math.pow(2, Math.min(failureCount, 5)));
+    const cause = err && typeof err === "object" ? err.cause : null;
+    const code = cause && typeof cause === "object" ? cause.code : null;
+    const hint =
+      code === "ECONNREFUSED"
+        ? "Servidor indisponível. Confirma se o `npm run dev` está ativo."
+        : "Falha a chamar o worker.";
+    console.error("[worker] Erro no loop", { message: err?.message || err, hint, backoffMs });
   } finally {
     if (!stopped) {
-      setTimeout(tick, intervalMs);
+      const delay = failureCount > 0 ? Math.min(30000, intervalMs * Math.pow(2, Math.min(failureCount, 5))) : intervalMs;
+      setTimeout(tick, delay);
     }
   }
 }
@@ -72,5 +86,5 @@ process.on("SIGINT", () => {
   process.exit(0);
 });
 
-console.log(`[worker] A correr contra ${url} a cada ${intervalMs}ms`);
+console.log(`[worker] A correr ${method} ${url} a cada ${intervalMs}ms`);
 tick();

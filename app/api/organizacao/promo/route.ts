@@ -30,11 +30,11 @@ async function requireOrganization(req: NextRequest) {
   const { organizationId, hasOrgParam } = resolveOrganizationId(req);
   const { organization, membership } = await getActiveOrganizationForUser(user.id, {
     organizationId: organizationId ?? undefined,
-    roles: ["OWNER", "CO_OWNER", "ADMIN"],
+    roles: ["OWNER", "CO_OWNER", "ADMIN", "PROMOTER"],
     allowFallback: !hasOrgParam,
   });
 
-  if (!membership || !organization || !isOrgAdminOrAbove(membership.role)) {
+  if (!membership || !organization) {
     return { error: "ORGANIZATION_NOT_FOUND" as const };
   }
 
@@ -49,6 +49,9 @@ export async function GET(req: NextRequest) {
         ctx.error === "UNAUTHENTICATED" ? 401 : ctx.error === "PROFILE_NOT_FOUND" ? 404 : 403;
       return NextResponse.json({ ok: false, error: ctx.error }, { status });
     }
+    if (!isOrgAdminOrAbove(ctx.membership.role) && ctx.membership.role !== "PROMOTER") {
+      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    }
 
     const promoRepo = (prisma as unknown as {
       promoCode?: {
@@ -62,21 +65,41 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    const organizationEvents = await prisma.event.findMany({
-      where: { organizationId: ctx.organization.id },
-      select: { id: true, title: true, slug: true },
-    });
-    const eventIds = organizationEvents.map((e) => e.id);
+    const isPromoter = ctx.membership.role === "PROMOTER";
+
+    let organizationEvents: { id: number; title: string; slug: string }[] = [];
+    let eventIds: number[] = [];
+
+    if (!isPromoter) {
+      organizationEvents = await prisma.event.findMany({
+        where: { organizationId: ctx.organization.id },
+        select: { id: true, title: true, slug: true },
+      });
+      eventIds = organizationEvents.map((e) => e.id);
+    }
 
     const promoCodes = await prisma.promoCode.findMany({
-      where: {
-        OR: [{ organizationId: ctx.organization.id }, { eventId: { in: eventIds } }],
-      },
+      where: isPromoter
+        ? { promoterUserId: ctx.profile.id }
+        : {
+            OR: [{ organizationId: ctx.organization.id }, ...(eventIds.length ? [{ eventId: { in: eventIds } }] : [])],
+          },
       orderBy: { createdAt: "desc" },
       include: {
         redemptions: true,
+        promoter: { select: { id: true, fullName: true, username: true, avatarUrl: true } },
       },
     });
+
+    if (isPromoter) {
+      eventIds = promoCodes
+        .map((promo) => promo.eventId)
+        .filter((id): id is number => typeof id === "number" && Number.isFinite(id));
+      organizationEvents = await prisma.event.findMany({
+        where: { organizationId: ctx.organization.id, ...(eventIds.length ? { id: { in: eventIds } } : {}) },
+        select: { id: true, title: true, slug: true },
+      });
+    }
 
     const promoIds = promoCodes.map((p) => p.id);
     const promoCodesList = promoCodes.map((p) => p.code);
@@ -152,8 +175,11 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       ok: true,
+      viewerRole: ctx.membership.role,
       promoCodes: promoCodes.map((p) => ({
         ...p,
+        promoterUserId: p.promoterUserId ?? null,
+        promoter: p.promoter ?? null,
         status:
           !p.active
             ? "INACTIVE"
@@ -233,6 +259,7 @@ export async function POST(req: NextRequest) {
       autoApply,
       minQuantity,
       minTotalCents,
+      promoterUserId,
     } = body as {
       code?: string;
       type?: "PERCENTAGE" | "FIXED";
@@ -246,6 +273,7 @@ export async function POST(req: NextRequest) {
       autoApply?: boolean;
       minQuantity?: number | null;
       minTotalCents?: number | null;
+      promoterUserId?: string | null;
     };
 
     const cleanCode = (code || "").trim();
@@ -287,6 +315,18 @@ export async function POST(req: NextRequest) {
       return Number.isNaN(dt.getTime()) ? null : dt;
     };
 
+    let resolvedPromoterId: string | null = null;
+    if (typeof promoterUserId === "string") {
+      const promoterMember = await prisma.organizationMember.findUnique({
+        where: { organizationId_userId: { organizationId: ctx.organization.id, userId: promoterUserId } },
+        select: { role: true },
+      });
+      if (!promoterMember || promoterMember.role !== "PROMOTER") {
+        return NextResponse.json({ ok: false, error: "Promoter inválido." }, { status: 400 });
+      }
+      resolvedPromoterId = promoterUserId;
+    }
+
     const created = await prisma.promoCode.create({
       data: {
         code: finalCode,
@@ -302,6 +342,7 @@ export async function POST(req: NextRequest) {
         autoApply: auto,
         minQuantity: minQuantity ?? null,
         minTotalCents: minTotalCents ?? null,
+        promoterUserId: resolvedPromoterId,
       },
     });
 
@@ -379,6 +420,7 @@ export async function PATCH(req: NextRequest) {
       minCartValueCents,
       name,
       description,
+      promoterUserId,
     } = body as {
       active?: boolean;
       autoApply?: boolean;
@@ -395,6 +437,7 @@ export async function PATCH(req: NextRequest) {
       minCartValueCents?: number | null;
       name?: string | null;
       description?: string | null;
+      promoterUserId?: string | null;
     };
 
     let targetEventId: number | null | undefined = undefined;
@@ -440,6 +483,17 @@ export async function PATCH(req: NextRequest) {
     if (minCartValueCents !== undefined) dataUpdate.minCartValueCents = minCartValueCents;
     if (typeof name === "string") dataUpdate.name = name.trim() || null;
     if (typeof description === "string") dataUpdate.description = description.trim() || null;
+    if (typeof promoterUserId === "string") {
+      const promoterMember = await prisma.organizationMember.findUnique({
+        where: { organizationId_userId: { organizationId: ctx.organization.id, userId: promoterUserId } },
+        select: { role: true },
+      });
+      if (!promoterMember || promoterMember.role !== "PROMOTER") {
+        return NextResponse.json({ ok: false, error: "Promoter inválido." }, { status: 400 });
+      }
+      dataUpdate.promoterUserId = promoterUserId;
+    }
+    if (promoterUserId === null) dataUpdate.promoterUserId = null;
 
     const updated = await prisma.promoCode.update({
       where: { id: promo.id },

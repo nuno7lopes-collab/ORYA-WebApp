@@ -5,6 +5,7 @@ import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
+import { ensureReservasModuleAccess } from "@/lib/reservas/access";
 import { OrganizationMemberRole } from "@prisma/client";
 
 const ALLOWED_ROLES: OrganizationMemberRole[] = [
@@ -14,191 +15,90 @@ const ALLOWED_ROLES: OrganizationMemberRole[] = [
   OrganizationMemberRole.STAFF,
 ];
 
+function parseId(value: string) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 function getRequestMeta(req: NextRequest) {
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
   const userAgent = req.headers.get("user-agent") ?? null;
   return { ip, userAgent };
 }
 
-function parseId(value: string) {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-async function resolveContext(req: NextRequest) {
-  const supabase = await createSupabaseServer();
-  const user = await ensureAuthenticated(supabase);
-  const profile = await prisma.profile.findUnique({ where: { id: user.id } });
-  if (!profile) {
-    return { error: NextResponse.json({ ok: false, error: "Perfil não encontrado." }, { status: 403 }) };
-  }
-  const organizationId = resolveOrganizationIdFromRequest(req);
-  const { organization, membership } = await getActiveOrganizationForUser(profile.id, {
-    organizationId: organizationId ?? undefined,
-    roles: [...ALLOWED_ROLES],
-  });
-  if (!organization || !membership) {
-    return { error: NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 }) };
-  }
-  return { organization, actorUserId: profile.id };
-}
-
-export async function GET(
-  req: NextRequest,
-  { params }: { params: { id: string; availabilityId: string } }
-) {
-  const serviceId = parseId(params.id);
-  const availabilityId = parseId(params.availabilityId);
-  if (!serviceId || !availabilityId) {
-    return NextResponse.json({ ok: false, error: "Dados inválidos." }, { status: 400 });
-  }
-
-  try {
-    const context = await resolveContext(req);
-    if ("error" in context) return context.error;
-
-    const availability = await prisma.availability.findFirst({
-      where: {
-        id: availabilityId,
-        serviceId,
-        service: { organizationId: context.organization.id },
-      },
-      select: {
-        id: true,
-        startsAt: true,
-        durationMinutes: true,
-        capacity: true,
-        status: true,
-      },
-    });
-
-    if (!availability) {
-      return NextResponse.json({ ok: false, error: "Horário não encontrado." }, { status: 404 });
-    }
-
-    return NextResponse.json({ ok: true, availability });
-  } catch (err) {
-    if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Não autenticado." }, { status: 401 });
-    }
-    console.error("GET /api/organizacao/servicos/[id]/disponibilidade/[availabilityId] error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao carregar horário." }, { status: 500 });
-  }
-}
-
-export async function PATCH(
-  req: NextRequest,
-  { params }: { params: { id: string; availabilityId: string } }
-) {
-  const serviceId = parseId(params.id);
-  const availabilityId = parseId(params.availabilityId);
-  if (!serviceId || !availabilityId) {
-    return NextResponse.json({ ok: false, error: "Dados inválidos." }, { status: 400 });
-  }
-
-  try {
-    const context = await resolveContext(req);
-    if ("error" in context) return context.error;
-
-    const existing = await prisma.availability.findFirst({
-      where: {
-        id: availabilityId,
-        serviceId,
-        service: { organizationId: context.organization.id },
-      },
-      select: { id: true },
-    });
-
-    if (!existing) {
-      return NextResponse.json({ ok: false, error: "Horário não encontrado." }, { status: 404 });
-    }
-
-    const payload = await req.json().catch(() => ({}));
-    const updates: Record<string, unknown> = {};
-    if (payload?.startsAt) {
-      const parsed = new Date(payload.startsAt);
-      if (!Number.isNaN(parsed.getTime())) updates.startsAt = parsed;
-    }
-    if (Number.isFinite(Number(payload?.durationMinutes))) updates.durationMinutes = Number(payload.durationMinutes);
-    const capacityValue = Number(payload?.capacity);
-    if (Number.isFinite(capacityValue) && capacityValue > 0) {
-      updates.capacity = Math.floor(capacityValue);
-    }
-    if (typeof payload?.status === "string") updates.status = payload.status;
-
-    if (Object.keys(updates).length === 0) {
-      return NextResponse.json({ ok: false, error: "Sem alterações." }, { status: 400 });
-    }
-
-    const availability = await prisma.availability.update({
-      where: { id: availabilityId },
-      data: updates,
-    });
-
-    return NextResponse.json({ ok: true, availability });
-  } catch (err) {
-    if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Não autenticado." }, { status: 401 });
-    }
-    console.error("PATCH /api/organizacao/servicos/[id]/disponibilidade/[availabilityId] error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao atualizar horário." }, { status: 500 });
-  }
-}
-
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: { id: string; availabilityId: string } }
+  { params }: { params: Promise<{ id: string; availabilityId: string }> },
 ) {
-  const serviceId = parseId(params.id);
-  const availabilityId = parseId(params.availabilityId);
-  if (!serviceId || !availabilityId) {
+  const resolved = await params;
+  const serviceId = parseId(resolved.id);
+  const overrideId = parseId(resolved.availabilityId);
+  if (!serviceId || !overrideId) {
     return NextResponse.json({ ok: false, error: "Dados inválidos." }, { status: 400 });
   }
 
   try {
-    const context = await resolveContext(req);
-    if ("error" in context) return context.error;
+    const supabase = await createSupabaseServer();
+    const user = await ensureAuthenticated(supabase);
+    const profile = await prisma.profile.findUnique({ where: { id: user.id } });
 
-    const existing = await prisma.availability.findFirst({
-      where: {
-        id: availabilityId,
-        serviceId,
-        service: { organizationId: context.organization.id },
-      },
-      select: { id: true },
-    });
-
-    if (!existing) {
-      return NextResponse.json({ ok: false, error: "Horário não encontrado." }, { status: 404 });
+    if (!profile) {
+      return NextResponse.json({ ok: false, error: "Perfil não encontrado." }, { status: 403 });
     }
 
+    const organizationId = resolveOrganizationIdFromRequest(req);
+    const { organization, membership } = await getActiveOrganizationForUser(profile.id, {
+      organizationId: organizationId ?? undefined,
+      roles: [...ALLOWED_ROLES],
+    });
+
+    if (!organization || !membership) {
+      return NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 });
+    }
+    const reservasAccess = await ensureReservasModuleAccess(organization);
+    if (!reservasAccess.ok) {
+      return NextResponse.json({ ok: false, error: reservasAccess.error }, { status: 403 });
+    }
+
+    const service = await prisma.service.findFirst({
+      where: { id: serviceId, organizationId: organization.id },
+      select: { id: true },
+    });
+    if (!service) {
+      return NextResponse.json({ ok: false, error: "Serviço não encontrado." }, { status: 404 });
+    }
+
+    const override = await prisma.availabilityOverride.findFirst({
+      where: { id: overrideId, organizationId: organization.id },
+      select: { id: true, date: true, kind: true, scopeType: true, scopeId: true },
+    });
+    if (!override) {
+      return NextResponse.json({ ok: false, error: "Override não encontrado." }, { status: 404 });
+    }
+
+    if (membership.role === OrganizationMemberRole.STAFF) {
+      if (override.scopeType === "ORGANIZATION" || override.scopeType === "RESOURCE") {
+        return NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 });
+      }
+      const professional = await prisma.reservationProfessional.findFirst({
+        where: { id: override.scopeId, organizationId: organization.id, userId: profile.id },
+        select: { id: true },
+      });
+      if (!professional) {
+        return NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 });
+      }
+    }
+
+    await prisma.availabilityOverride.delete({ where: { id: override.id } });
+
     const { ip, userAgent } = getRequestMeta(req);
-    await prisma.$transaction(async (tx) => {
-      const updated = await tx.availability.update({
-        where: { id: availabilityId },
-        data: { status: "CANCELLED" },
-      });
-
-      const bookingUpdates = await tx.booking.updateMany({
-        where: {
-          availabilityId,
-          status: { in: ["PENDING", "CONFIRMED"] },
-        },
-        data: { status: "CANCELLED" },
-      });
-
-      await recordOrganizationAudit(tx, {
-        organizationId: context.organization.id,
-        actorUserId: context.actorUserId,
-        action: "AVAILABILITY_CANCELLED",
-        metadata: {
-          serviceId,
-          availabilityId: updated.id,
-          cancelledBookings: bookingUpdates.count,
-        },
-        ip,
-        userAgent,
-      });
+    await recordOrganizationAudit(prisma, {
+      organizationId: organization.id,
+      actorUserId: profile.id,
+      action: "AVAILABILITY_OVERRIDE_DELETED",
+      metadata: { overrideId: override.id, date: override.date.toISOString(), kind: override.kind },
+      ip,
+      userAgent,
     });
 
     return NextResponse.json({ ok: true });
@@ -207,6 +107,6 @@ export async function DELETE(
       return NextResponse.json({ ok: false, error: "Não autenticado." }, { status: 401 });
     }
     console.error("DELETE /api/organizacao/servicos/[id]/disponibilidade/[availabilityId] error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao cancelar horário." }, { status: 500 });
+    return NextResponse.json({ ok: false, error: "Erro ao remover override." }, { status: 500 });
   }
 }

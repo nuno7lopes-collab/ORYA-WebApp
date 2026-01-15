@@ -31,6 +31,10 @@ export type CheckoutBreakdown = {
   totalCents: number;
   currency: string;
   discountCents?: number;
+  platformFeeCents?: number;
+  cardPlatformFeeCents?: number;
+  cardPlatformFeeBps?: number;
+  paymentMethod?: "mbway" | "card";
 } | null;
 
 type CheckoutContextType = {

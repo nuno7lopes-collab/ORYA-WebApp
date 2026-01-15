@@ -1,4 +1,4 @@
-import { OrganizationMemberRole } from "@prisma/client";
+import { OrganizationMemberRole, OrganizationStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { resolveOrganizationIdFromCookies } from "@/lib/organizationId";
 
@@ -6,11 +6,13 @@ type Options = {
   organizationId?: number | null;
   roles?: OrganizationMemberRole[];
   allowFallback?: boolean;
+  allowedStatuses?: OrganizationStatus[];
   // Se quisermos forçar leitura de cookie, basta passar organizationId externamente
 };
 
 export async function getActiveOrganizationForUser(userId: string, opts: Options = {}) {
   const { roles, allowFallback = false } = opts;
+  const allowedStatuses = opts.allowedStatuses ?? [OrganizationStatus.ACTIVE];
   const directOrganizationId =
     typeof opts.organizationId === "number" && Number.isFinite(opts.organizationId)
       ? opts.organizationId
@@ -25,7 +27,7 @@ export async function getActiveOrganizationForUser(userId: string, opts: Options
         userId,
         organizationId,
         ...(roles ? { role: { in: roles } } : {}),
-        organization: { status: "ACTIVE" },
+        organization: { status: { in: allowedStatuses } },
       },
       include: { organization: true },
     });
@@ -42,7 +44,7 @@ export async function getActiveOrganizationForUser(userId: string, opts: Options
     where: {
       userId,
       ...(roles ? { role: { in: roles } } : {}),
-      organization: { status: "ACTIVE" },
+      organization: { status: { in: allowedStatuses } },
     },
     include: { organization: true },
     orderBy: [{ lastUsedAt: "desc" }, { createdAt: "asc" }],

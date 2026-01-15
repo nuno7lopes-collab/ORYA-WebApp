@@ -82,8 +82,6 @@ const TOUR_KEY = "orya_organization_tour_seen_v2";
 const TOUR_PROGRESS_KEY = "orya_organization_tour_step_v2";
 const TOUR_GLOBAL_KEY = "orya_organization_tour_seen_once";
 const TOUR_EVENT = "orya:startTour";
-const SIDEBAR_WIDTH_EVENT = "orya:sidebar-width";
-const SIDEBAR_READY_EVENT = "orya:sidebar-ready";
 
 const anchorSelectors = (anchor?: string) => {
   if (!anchor) return [] as string[];
@@ -91,8 +89,6 @@ const anchorSelectors = (anchor?: string) => {
   if (anchor === "[data-tour='org-switcher']" || anchor === "[data-tour='org-switcher-button']") {
     list.push("[data-tour='org-switcher-button']", "[data-tour='org-switcher']");
   }
-  // Fallback apenas quando há anchor definido
-  list.push("[data-tour='sidebar-rail']");
   return list;
 };
 
@@ -245,23 +241,6 @@ export function OrganizationTour({ organizationId }: OrganizationTourProps) {
       el?.scrollIntoView({ behavior: "smooth", block: "center" });
     }
   }, [anchorRect, highlightEnabled, step.anchor]);
-
-  useEffect(() => {
-    if (!highlightEnabled) return;
-    const handler = () => {
-      if (!step.anchor) return;
-      const el = document.querySelector(step.anchor) as HTMLElement | null;
-      if (!el) return;
-      setAnchorRect(el.getBoundingClientRect());
-      setAnchorEl(el);
-    };
-    window.addEventListener(SIDEBAR_WIDTH_EVENT, handler);
-    window.addEventListener(SIDEBAR_READY_EVENT, handler);
-    return () => {
-      window.removeEventListener(SIDEBAR_WIDTH_EVENT, handler);
-      window.removeEventListener(SIDEBAR_READY_EVENT, handler);
-    };
-  }, [highlightEnabled, step.anchor]);
 
   useEffect(() => {
     if (typeof document === "undefined") return;

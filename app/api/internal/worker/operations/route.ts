@@ -8,7 +8,7 @@ import { stripe } from "@/lib/stripeClient";
 import { handleRefund } from "@/app/api/stripe/webhook/route";
 import { OperationType } from "../types";
 import { refundPurchase } from "@/lib/refunds/refundService";
-import { PaymentEventSource, RefundReason, EntitlementType, EntitlementStatus, Prisma } from "@prisma/client";
+import { PaymentEventSource, RefundReason, EntitlementType, EntitlementStatus, Prisma, NotificationType } from "@prisma/client";
 import { FulfillPayload } from "@/lib/operations/types";
 import { fulfillPaidIntent } from "@/lib/operations/fulfillPaid";
 import { markSaleDisputed } from "@/domain/finance/disputes";
@@ -24,18 +24,20 @@ import { fulfillPadelSplitIntent } from "@/lib/operations/fulfillPadelSplit";
 import { fulfillPadelSecondCharge } from "@/lib/operations/fulfillPadelSecondCharge";
 import { fulfillPadelFullIntent } from "@/lib/operations/fulfillPadelFull";
 import { fulfillServiceBookingIntent } from "@/lib/operations/fulfillServiceBooking";
+import { fulfillServiceCreditPurchaseIntent } from "@/lib/operations/fulfillServiceCredits";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { createNotification } from "@/lib/notifications";
-import { NotificationType } from "@prisma/client";
 import { applyPromoRedemptionOperation } from "@/lib/operations/applyPromoRedemption";
 import { normalizeEmail } from "@/lib/utils/email";
+import { getAppBaseUrl } from "@/lib/appBaseUrl";
 
 const MAX_ATTEMPTS = 5;
 const BATCH_SIZE = 5;
 const INTERNAL_HEADER = "X-ORYA-CRON-SECRET";
+const NOTIFICATION_BATCH_SIZE = 20;
+const NOTIFICATION_MAX_RETRIES = 5;
 
-const RAW_BASE_URL = process.env.NEXT_PUBLIC_BASE_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? "https://app.orya.pt";
-const BASE_URL = RAW_BASE_URL.startsWith("http") ? RAW_BASE_URL : `https://${RAW_BASE_URL}`;
+const BASE_URL = getAppBaseUrl();
 const absUrl = (path: string) => (/^https?:\/\//i.test(path) ? path : `${BASE_URL}${path.startsWith("/") ? path : `/${path}`}`);
 
 type OperationRecord = {
@@ -190,6 +192,10 @@ async function processSendEmailOutbox(op: OperationRecord) {
     throw new Error("SEND_EMAIL_OUTBOX missing fields");
   }
 
+  const fallbackTicketUrl = entitlementId
+    ? `/me/bilhetes/${entitlementId}`
+    : "/me/carteira?section=wallet";
+
   await prisma.emailOutbox.upsert({
     where: { dedupeKey },
     update: {},
@@ -217,7 +223,7 @@ async function processSendEmailOutbox(op: OperationRecord) {
           endsAt: tpl?.endsAt ?? null,
           locationName: tpl?.locationName ?? null,
           ticketsCount: tpl?.ticketsCount ?? 1,
-          ticketUrl: tpl?.ticketUrl ? absUrl(tpl.ticketUrl) : absUrl("/me/carteira"),
+          ticketUrl: tpl?.ticketUrl ? absUrl(tpl.ticketUrl) : absUrl(fallbackTicketUrl),
         });
         break;
       }
@@ -228,7 +234,7 @@ async function processSendEmailOutbox(op: OperationRecord) {
           eventTitle: tpl?.eventTitle ?? "Entitlement entregue",
           startsAt: tpl?.startsAt ?? null,
           venue: tpl?.locationName ?? null,
-          ticketUrl: tpl?.ticketUrl ? absUrl(tpl.ticketUrl) : absUrl("/me/carteira"),
+          ticketUrl: tpl?.ticketUrl ? absUrl(tpl.ticketUrl) : absUrl(fallbackTicketUrl),
         });
         break;
       }
@@ -236,7 +242,7 @@ async function processSendEmailOutbox(op: OperationRecord) {
         await sendClaimEmail({
           to: recipient,
           eventTitle: tpl?.eventTitle ?? "Claim concluído",
-          ticketUrl: tpl?.ticketUrl ? absUrl(tpl.ticketUrl) : absUrl("/me/carteira"),
+          ticketUrl: tpl?.ticketUrl ? absUrl(tpl.ticketUrl) : absUrl(fallbackTicketUrl),
         });
         break;
       }
@@ -246,7 +252,7 @@ async function processSendEmailOutbox(op: OperationRecord) {
           eventTitle: tpl?.eventTitle ?? "Refund ORYA",
           amountRefundedBaseCents: tpl?.amountRefundedBaseCents ?? null,
           reason: tpl?.reason ?? null,
-          ticketUrl: tpl?.ticketUrl ? absUrl(tpl.ticketUrl) : absUrl("/me/carteira"),
+          ticketUrl: tpl?.ticketUrl ? absUrl(tpl.ticketUrl) : absUrl(fallbackTicketUrl),
         });
         break;
       }
@@ -255,7 +261,7 @@ async function processSendEmailOutbox(op: OperationRecord) {
           to: recipient,
           eventTitle: tpl?.eventTitle ?? "Atualização ORYA",
           message: tpl?.message ?? "Atualização relevante sobre o teu acesso.",
-          ticketUrl: tpl?.ticketUrl ? absUrl(tpl.ticketUrl) : absUrl("/me/carteira"),
+          ticketUrl: tpl?.ticketUrl ? absUrl(tpl.ticketUrl) : absUrl(fallbackTicketUrl),
         });
         break;
       }
@@ -345,6 +351,7 @@ export async function runOperationsBatch() {
     }
   }
 
+  await processNotificationOutbox();
   return results;
 }
 
@@ -376,18 +383,411 @@ async function processOperation(op: OperationRecord) {
   }
 }
 
+async function processNotificationOutbox() {
+  const pending = await prisma.notificationOutbox.findMany({
+    where: {
+      status: { in: ["PENDING", "FAILED", "SENDING"] },
+      retries: { lt: NOTIFICATION_MAX_RETRIES },
+    },
+    orderBy: { createdAt: "asc" },
+    take: NOTIFICATION_BATCH_SIZE,
+  });
+
+  for (const item of pending) {
+    const claimed = await prisma.notificationOutbox.updateMany({
+      where: { id: item.id, status: { in: ["PENDING", "FAILED", "SENDING"] } },
+      data: { status: "SENDING" },
+    });
+    if (claimed.count === 0) continue;
+
+    try {
+      await deliverNotificationOutbox(item);
+      await prisma.notificationOutbox.update({
+        where: { id: item.id },
+        data: { status: "SENT", sentAt: new Date(), lastError: null },
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      await prisma.notificationOutbox.update({
+        where: { id: item.id },
+        data: {
+          status: "FAILED",
+          lastError: message.slice(0, 200),
+          retries: { increment: 1 },
+        },
+      });
+    }
+  }
+}
+
+async function deliverNotificationOutbox(item: {
+  id: string;
+  userId: string | null;
+  notificationType: string;
+  payload: unknown;
+}) {
+  if (!item.userId) throw new Error("OUTBOX_MISSING_USER");
+  const payload = item.payload && typeof item.payload === "object" ? (item.payload as Record<string, unknown>) : {};
+  const inviterUserId = typeof payload.inviterUserId === "string" ? payload.inviterUserId : null;
+  const formatTime = (value: Date, timezone?: string | null) =>
+    new Intl.DateTimeFormat("pt-PT", {
+      timeZone: timezone || "Europe/Lisbon",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(value);
+  const pairingLabel = (pairing?: { slots?: Array<{ playerProfile?: { displayName?: string | null; fullName?: string | null } | null }> | null }) => {
+    const names =
+      pairing?.slots
+        ?.map((slot) => slot.playerProfile?.displayName || slot.playerProfile?.fullName || null)
+        .filter((name): name is string => Boolean(name)) || [];
+    return names.length > 0 ? names.slice(0, 2).join(" / ") : "Dupla";
+  };
+  const formatScoreLabel = (match: { scoreSets?: unknown; score?: unknown }) => {
+    const scoreSets = Array.isArray(match.scoreSets) ? (match.scoreSets as Array<{ teamA: number; teamB: number }>) : null;
+    if (scoreSets?.length) {
+      return scoreSets.map((set) => `${set.teamA}-${set.teamB}`).join(", ");
+    }
+    const score = match.score && typeof match.score === "object" ? (match.score as Record<string, unknown>) : {};
+    const resultType =
+      score.resultType === "WALKOVER" || score.walkover === true
+        ? "WALKOVER"
+        : score.resultType === "RETIREMENT"
+          ? "RETIREMENT"
+          : score.resultType === "INJURY"
+            ? "INJURY"
+            : null;
+    if (resultType === "WALKOVER") return "WO";
+    if (resultType === "RETIREMENT") return "Desistência";
+    if (resultType === "INJURY") return "Lesão";
+    return "—";
+  };
+
+  if (item.notificationType === "PAIRING_INVITE") {
+    const pairingId = typeof payload.pairingId === "number" ? payload.pairingId : Number(payload.pairingId);
+    const pairing = Number.isFinite(pairingId)
+      ? await prisma.padelPairing.findUnique({
+          where: { id: pairingId },
+          select: {
+            id: true,
+            partnerInviteToken: true,
+            event: { select: { id: true, title: true, slug: true, organizationId: true } },
+          },
+        })
+      : null;
+    const eventSlug = pairing?.event?.slug ?? null;
+    const token =
+      typeof payload.token === "string" && payload.token.trim().length > 0
+        ? payload.token.trim()
+        : pairing?.partnerInviteToken ?? null;
+    const viewerRole = payload.viewerRole === "CAPTAIN" ? "CAPTAIN" : "INVITED";
+    let entitlementId: string | null = null;
+    if (Number.isFinite(pairingId)) {
+      const ticket = await prisma.ticket.findFirst({
+        where: {
+          pairingId,
+          OR: [{ userId: item.userId }, { ownerUserId: item.userId }],
+        },
+        select: {
+          purchaseId: true,
+          saleSummary: { select: { purchaseId: true, paymentIntentId: true } },
+        },
+      });
+      const purchaseId =
+        ticket?.purchaseId ?? ticket?.saleSummary?.purchaseId ?? ticket?.saleSummary?.paymentIntentId ?? null;
+      if (purchaseId) {
+        const entitlement = await prisma.entitlement.findFirst({
+          where: {
+            purchaseId,
+            ownerUserId: item.userId,
+            type: "PADEL_ENTRY",
+          },
+          select: { id: true },
+        });
+        entitlementId = entitlement?.id ?? null;
+      }
+    }
+    const ctaUrl = entitlementId
+      ? `/me/bilhetes/${entitlementId}`
+      : token && eventSlug
+        ? `/eventos/${eventSlug}?inviteToken=${encodeURIComponent(token)}`
+        : "/me/carteira";
+    const ctaLabel =
+      viewerRole === "CAPTAIN"
+        ? "Ver estado"
+        : entitlementId
+          ? "Ver bilhete"
+          : "Aceitar convite";
+    const eventTitle = pairing?.event?.title ?? null;
+
+    await prisma.notification.create({
+      data: {
+        userId: item.userId,
+        type: NotificationType.PAIRING_INVITE,
+        title: viewerRole === "CAPTAIN" ? "Convite enviado" : "Convite para dupla",
+        body:
+          viewerRole === "CAPTAIN"
+            ? eventTitle
+              ? `Convite enviado para o torneio ${eventTitle}.`
+              : "Convite enviado para a tua dupla."
+            : eventTitle
+              ? `Foste convidado para uma dupla no torneio ${eventTitle}.`
+              : "Foste convidado para uma dupla de padel.",
+        payload,
+        ctaUrl,
+        ctaLabel,
+        priority: "HIGH",
+        fromUserId: inviterUserId ?? undefined,
+        organizationId: pairing?.event?.organizationId ?? undefined,
+        eventId: pairing?.event?.id ?? undefined,
+      },
+    });
+    return;
+  }
+
+  if (item.notificationType === "MATCH_CHANGED") {
+    const matchId = typeof payload.matchId === "number" ? payload.matchId : Number(payload.matchId);
+    if (!Number.isFinite(matchId)) throw new Error("MATCH_NOT_FOUND");
+    const match = await prisma.padelMatch.findUnique({
+      where: { id: matchId },
+      include: {
+        event: { select: { id: true, title: true, slug: true, organizationId: true, timezone: true } },
+        court: { select: { name: true } },
+        pairingA: { include: { slots: { include: { playerProfile: true } } } },
+        pairingB: { include: { slots: { include: { playerProfile: true } } } },
+      },
+    });
+    if (!match?.event) throw new Error("MATCH_NOT_FOUND");
+
+    const startAt =
+      typeof payload.startAt === "string"
+        ? new Date(payload.startAt)
+        : match.plannedStartAt ?? match.startTime ?? null;
+    const validStartAt = startAt && !Number.isNaN(startAt.getTime()) ? startAt : null;
+    const courtLabel = match.court?.name || match.courtName || match.courtNumber || match.courtId || "Quadra";
+    const teamA = pairingLabel(match.pairingA);
+    const teamB = pairingLabel(match.pairingB);
+    const title = validStartAt ? "Horário atualizado" : "Jogo adiado";
+    const body = validStartAt
+      ? `${teamA} vs ${teamB} · ${formatTime(validStartAt, match.event.timezone)} · ${courtLabel}`
+      : `${teamA} vs ${teamB} · Novo horário a definir.`;
+    const ctaUrl = match.event.slug ? `/eventos/${match.event.slug}` : "/eventos";
+
+    await prisma.notification.create({
+      data: {
+        userId: item.userId,
+        type: NotificationType.EVENT_REMINDER,
+        title,
+        body,
+        payload,
+        ctaUrl,
+        ctaLabel: "Ver torneio",
+        organizationId: match.event.organizationId ?? undefined,
+        eventId: match.event.id ?? undefined,
+      },
+    });
+    return;
+  }
+
+  if (item.notificationType === "MATCH_RESULT") {
+    const matchId = typeof payload.matchId === "number" ? payload.matchId : Number(payload.matchId);
+    if (!Number.isFinite(matchId)) throw new Error("MATCH_NOT_FOUND");
+    const match = await prisma.padelMatch.findUnique({
+      where: { id: matchId },
+      include: {
+        event: { select: { id: true, title: true, slug: true, organizationId: true } },
+        pairingA: { include: { slots: { include: { playerProfile: true } } } },
+        pairingB: { include: { slots: { include: { playerProfile: true } } } },
+      },
+    });
+    if (!match?.event) throw new Error("MATCH_NOT_FOUND");
+    const scoreLabel = formatScoreLabel(match);
+    const teamA = pairingLabel(match.pairingA);
+    const teamB = pairingLabel(match.pairingB);
+    const title = "Resultado final";
+    const body = scoreLabel !== "—" ? `${teamA} vs ${teamB} · ${scoreLabel}` : `${teamA} vs ${teamB}`;
+    const ctaUrl = match.event.slug ? `/eventos/${match.event.slug}` : "/eventos";
+
+    await prisma.notification.create({
+      data: {
+        userId: item.userId,
+        type: NotificationType.EVENT_REMINDER,
+        title,
+        body,
+        payload,
+        ctaUrl,
+        ctaLabel: "Ver torneio",
+        organizationId: match.event.organizationId ?? undefined,
+        eventId: match.event.id ?? undefined,
+      },
+    });
+    return;
+  }
+
+  if (item.notificationType === "NEXT_OPPONENT") {
+    const matchId = typeof payload.matchId === "number" ? payload.matchId : Number(payload.matchId);
+    if (!Number.isFinite(matchId)) throw new Error("MATCH_NOT_FOUND");
+    const match = await prisma.padelMatch.findUnique({
+      where: { id: matchId },
+      include: { event: { select: { id: true, title: true, slug: true, organizationId: true } } },
+    });
+    if (!match?.event) throw new Error("MATCH_NOT_FOUND");
+    const ctaUrl = match.event.slug ? `/eventos/${match.event.slug}` : "/eventos";
+
+    await prisma.notification.create({
+      data: {
+        userId: item.userId,
+        type: NotificationType.EVENT_REMINDER,
+        title: "Próximo adversário definido",
+        body: match.event.title ? `No torneio ${match.event.title}.` : "Ver detalhes do torneio.",
+        payload,
+        ctaUrl,
+        ctaLabel: "Ver torneio",
+        organizationId: match.event.organizationId ?? undefined,
+        eventId: match.event.id ?? undefined,
+      },
+    });
+    return;
+  }
+
+  if (item.notificationType === "CHAMPION" || item.notificationType === "ELIMINATED") {
+    const tournamentId =
+      typeof payload.tournamentId === "number" ? payload.tournamentId : Number(payload.tournamentId);
+    if (!Number.isFinite(tournamentId)) throw new Error("EVENT_NOT_FOUND");
+    const event = await prisma.event.findUnique({
+      where: { id: tournamentId },
+      select: { id: true, title: true, slug: true, organizationId: true },
+    });
+    if (!event) throw new Error("EVENT_NOT_FOUND");
+    const isChampion = item.notificationType === "CHAMPION";
+    const title = isChampion ? "Campeão!" : "Eliminação";
+    const body = event.title
+      ? isChampion
+        ? `És campeão do torneio ${event.title}.`
+        : `Ficaste eliminado no torneio ${event.title}.`
+      : isChampion
+        ? "És campeão do torneio."
+        : "Ficaste eliminado no torneio.";
+    const ctaUrl = event.slug ? `/eventos/${event.slug}` : "/eventos";
+
+    await prisma.notification.create({
+      data: {
+        userId: item.userId,
+        type: NotificationType.EVENT_REMINDER,
+        title,
+        body,
+        payload,
+        ctaUrl,
+        ctaLabel: "Ver torneio",
+        organizationId: event.organizationId ?? undefined,
+        eventId: event.id ?? undefined,
+      },
+    });
+    return;
+  }
+
+  if (item.notificationType === "BRACKET_PUBLISHED") {
+    const tournamentId =
+      typeof payload.tournamentId === "number" ? payload.tournamentId : Number(payload.tournamentId);
+    if (!Number.isFinite(tournamentId)) throw new Error("EVENT_NOT_FOUND");
+    const event = await prisma.event.findUnique({
+      where: { id: tournamentId },
+      select: { id: true, title: true, slug: true, organizationId: true },
+    });
+    if (!event) throw new Error("EVENT_NOT_FOUND");
+    const title = "Bracket publicado";
+    const body = event.title
+      ? `O bracket do torneio ${event.title} já está disponível.`
+      : "O bracket do torneio já está disponível.";
+    const ctaUrl = event.slug ? `/eventos/${event.slug}` : "/eventos";
+
+    await prisma.notification.create({
+      data: {
+        userId: item.userId,
+        type: NotificationType.EVENT_REMINDER,
+        title,
+        body,
+        payload,
+        ctaUrl,
+        ctaLabel: "Ver torneio",
+        organizationId: event.organizationId ?? undefined,
+        eventId: event.id ?? undefined,
+      },
+    });
+    return;
+  }
+
+  if (item.notificationType === "TOURNAMENT_EVE_REMINDER") {
+    const tournamentId =
+      typeof payload.tournamentId === "number" ? payload.tournamentId : Number(payload.tournamentId);
+    if (!Number.isFinite(tournamentId)) throw new Error("EVENT_NOT_FOUND");
+    const event = await prisma.event.findUnique({
+      where: { id: tournamentId },
+      select: { id: true, title: true, slug: true, startsAt: true, timezone: true, organizationId: true },
+    });
+    if (!event) throw new Error("EVENT_NOT_FOUND");
+    const startLabel = event.startsAt ? formatTime(event.startsAt, event.timezone) : null;
+    const title = "Torneio amanhã";
+    const body = event.title
+      ? startLabel
+        ? `O torneio ${event.title} começa amanhã às ${startLabel}.`
+        : `O torneio ${event.title} começa amanhã.`
+      : startLabel
+        ? `O torneio começa amanhã às ${startLabel}.`
+        : "O torneio começa amanhã.";
+    const ctaUrl = event.slug ? `/eventos/${event.slug}` : "/eventos";
+
+    await prisma.notification.create({
+      data: {
+        userId: item.userId,
+        type: NotificationType.EVENT_REMINDER,
+        title,
+        body,
+        payload,
+        ctaUrl,
+        ctaLabel: "Ver torneio",
+        organizationId: event.organizationId ?? undefined,
+        eventId: event.id ?? undefined,
+      },
+    });
+    return;
+  }
+
+  await prisma.notification.create({
+    data: {
+      userId: item.userId,
+      type: NotificationType.SYSTEM_ANNOUNCE,
+      title: "Notificação",
+      body: "Tens uma nova notificação.",
+      payload,
+      ctaUrl: "/social?tab=notifications",
+      ctaLabel: "Ver",
+      priority: "NORMAL",
+      fromUserId: inviterUserId ?? undefined,
+    },
+  });
+}
+
 async function performPaymentFulfillment(intent: Stripe.PaymentIntent, stripeEventId?: string) {
   const handledService = await fulfillServiceBookingIntent(intent as Stripe.PaymentIntent);
+  const handledCredits = await fulfillServiceCreditPurchaseIntent(intent as Stripe.PaymentIntent);
   const handledResale = await fulfillResaleIntent(intent as Stripe.PaymentIntent);
   const handledPadelSplit = await fulfillPadelSplitIntent(intent as Stripe.PaymentIntent, null);
   const handledPadelFull = await fulfillPadelFullIntent(intent as Stripe.PaymentIntent);
   const handledSecondCharge = await fulfillPadelSecondCharge(intent as Stripe.PaymentIntent);
   const handledPaid =
-    handledService || handledResale || handledPadelSplit || handledPadelFull || handledSecondCharge
+    handledService || handledCredits || handledResale || handledPadelSplit || handledPadelFull || handledSecondCharge
       ? true
       : await fulfillPaidIntent(intent as Stripe.PaymentIntent, stripeEventId);
 
-  return handledService || handledResale || handledPadelSplit || handledPadelFull || handledSecondCharge || handledPaid;
+  return (
+    handledService ||
+    handledCredits ||
+    handledResale ||
+    handledPadelSplit ||
+    handledPadelFull ||
+    handledSecondCharge ||
+    handledPaid
+  );
 }
 
 async function processStripeEvent(op: OperationRecord) {
@@ -785,7 +1185,7 @@ async function processSendEmailReceipt(op: OperationRecord) {
     endsAt: event.endsAt?.toISOString() ?? null,
     locationName: event.locationName ?? null,
     ticketsCount,
-    ticketUrl: absUrl("/me/carteira"),
+    ticketUrl: absUrl("/me/carteira?section=wallet"),
   });
 }
 
@@ -811,7 +1211,7 @@ async function processSendNotificationPurchase(op: OperationRecord) {
       type: NotificationType.EVENT_SALE,
       title: "Compra confirmada",
       body: eventId ? `A tua compra para o evento ${eventId} foi confirmada.` : "Compra confirmada.",
-      ctaUrl: absUrl("/me/carteira"),
+      ctaUrl: absUrl("/me/carteira?section=wallet"),
       ctaLabel: "Ver bilhetes",
       payload: { purchaseId, eventId },
     });

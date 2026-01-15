@@ -1,9 +1,9 @@
 export const runtime = "nodejs";
 
-import { redirect } from "next/navigation";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import BecomeOrganizationForm from "@/components/organization/BecomeOrganizationForm";
 import BackLink from "@/components/BackLink";
+import { AuthGate } from "@/app/components/autenticação/AuthGate";
 
 // app/organizacao/become/page.tsx
 
@@ -14,11 +14,11 @@ export default async function BecomeOrganizationPage() {
   } = await supabase.auth.getUser();
 
   if (!user) {
-    redirect("/login?next=/organizacao/become");
+    return <AuthGate />;
   }
 
   return (
-    <div className="min-h-screen px-4 py-12 text-white">
+    <div className="min-h-screen px-4 pb-12 pt-16 text-white">
       <div className="mx-auto max-w-[1160px] space-y-10">
         <div className="flex items-center justify-start">
           <BackLink hrefFallback="/explorar" label="Voltar" />
@@ -29,8 +29,8 @@ export default async function BecomeOrganizationPage() {
             Organização • Onboarding
           </div>
           <h1 className="text-3xl font-semibold md:text-[32px]">Cria o teu painel de organização</h1>
-          <p className="mx-auto max-w-3xl text-[15px] text-white/75 md:text-base">
-            Em 3 passos escolhes a categoria (Eventos, PADEL ou Reservas), ligas módulos e publicas o teu perfil.
+          <p className="mx-auto max-w-2xl text-[15px] text-white/75 md:text-base">
+            Configuração simples e rápida para entrares no teu painel.
           </p>
         </header>
 

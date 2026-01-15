@@ -12,6 +12,16 @@ export async function GET(req: NextRequest) {
   try {
     const url = new URL(req.url);
     const limit = Math.min(Number(url.searchParams.get("limit") ?? 100), 500);
+    const templateTypeParam = url.searchParams.get("templateType");
+    const templateType =
+      typeof templateTypeParam === "string" && templateTypeParam.trim()
+        ? templateTypeParam.trim().toUpperCase()
+        : null;
+    const excludeTemplateTypeParam = url.searchParams.get("excludeTemplateType");
+    const excludeTemplateType =
+      typeof excludeTemplateTypeParam === "string" && excludeTemplateTypeParam.trim()
+        ? excludeTemplateTypeParam.trim().toUpperCase()
+        : null;
 
     const supabase = await createSupabaseServer();
 
@@ -28,7 +38,20 @@ export async function GET(req: NextRequest) {
         {
           ok: false,
           error:
-            "Perfil não encontrado. Completa o onboarding antes de gerires eventos como organização.",
+            "Perfil não encontrado. Completa o onboarding de utilizador antes de gerires eventos como organização.",
+        },
+        { status: 403 }
+      );
+    }
+    const hasUserOnboarding =
+      profile.onboardingDone ||
+      (Boolean(profile.fullName?.trim()) && Boolean(profile.username?.trim()));
+    if (!hasUserOnboarding) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            "Completa o onboarding de utilizador (nome e username) antes de gerires eventos de organização.",
         },
         { status: 403 }
       );
@@ -55,6 +78,11 @@ export async function GET(req: NextRequest) {
       where: {
         isDeleted: false,
         organizationId: organization.id,
+        ...(templateType
+          ? { templateType }
+          : excludeTemplateType
+            ? { NOT: { templateType: excludeTemplateType } }
+            : {}),
       },
       orderBy: {
         startsAt: "asc",

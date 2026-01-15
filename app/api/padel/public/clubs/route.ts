@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { PORTUGAL_CITIES } from "@/config/cities";
 import { Prisma } from "@prisma/client";
+import { enforcePublicRateLimit } from "@/lib/padel/publicRateLimit";
 
 const DEFAULT_LIMIT = 12;
 
@@ -15,6 +16,12 @@ function clampLimit(raw: string | null) {
 
 export async function GET(req: NextRequest) {
   try {
+    const rateLimited = await enforcePublicRateLimit(req, {
+      keyPrefix: "padel_public_clubs",
+      max: 120,
+    });
+    if (rateLimited) return rateLimited;
+
     const params = req.nextUrl.searchParams;
     const q = params.get("q")?.trim() ?? "";
     const city = params.get("city")?.trim() ?? "";

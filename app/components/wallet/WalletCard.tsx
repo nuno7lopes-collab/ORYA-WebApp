@@ -64,7 +64,7 @@ export function WalletCard({ item, compact = false }: Props) {
 
         <div className="mt-3 flex items-center justify-between gap-2">
           <Link
-            href={`/me/wallet/${item.entitlementId}`}
+            href={`/me/bilhetes/${encodeURIComponent(item.entitlementId)}`}
             className="text-[11px] font-semibold text-white/90 underline underline-offset-4 hover:text-white"
           >
             Ver detalhe

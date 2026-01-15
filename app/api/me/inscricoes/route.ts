@@ -53,10 +53,14 @@ export async function GET() {
     if (!pairing && entry.event?.slug) nextAction = "VIEW_LIVE";
     if (nextAction === "NONE" && entry.event?.slug) nextAction = "VIEW_LIVE";
 
-    const paymentStatusLabel =
-      pairing?.lifecycleStatus === "PENDING_PARTNER_PAYMENT"
+    const isCancelled =
+      pairing?.pairingStatus === "CANCELLED" || pairing?.lifecycleStatus === "CANCELLED_INCOMPLETE";
+    const isComplete = pairing?.pairingStatus === "COMPLETE";
+    const paymentStatusLabel = isCancelled
+      ? "Cancelado"
+      : pairing?.lifecycleStatus === "PENDING_PARTNER_PAYMENT"
         ? "À espera do parceiro"
-        : pairing?.lifecycleStatus?.startsWith("CONFIRMED")
+        : isComplete
           ? "Confirmado"
           : "Pendente";
 
@@ -64,11 +68,15 @@ export async function GET() {
     const liveUrl = entry.event?.slug
       ? `/eventos/${entry.event.slug}/live${pairing?.id ? `?pairingId=${pairing.id}` : ""}`
       : null;
+    const pairingUrl =
+      entry.event?.slug && pairing?.id
+        ? `/eventos/${entry.event.slug}?pairingId=${pairing.id}`
+        : null;
     const ctaUrl =
       nextAction === "PAY_PARTNER"
-        ? `/pairings/${pairing?.id ?? ""}/checkout`
+        ? pairingUrl
         : nextAction === "CONFIRM_GUARANTEE"
-          ? `/pairings/${pairing?.id ?? ""}/guarantee`
+          ? pairingUrl
           : nextAction === "VIEW_LIVE" && liveUrl
             ? liveUrl
             : null;

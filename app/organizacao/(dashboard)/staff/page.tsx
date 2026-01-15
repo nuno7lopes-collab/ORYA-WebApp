@@ -1,8 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import useSWR from "swr";
-import { useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useUser } from "@/app/hooks/useUser";
 import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
 import { ConfirmDestructiveActionDialog } from "@/app/components/ConfirmDestructiveActionDialog";
@@ -10,8 +11,9 @@ import { trackEvent } from "@/lib/analytics";
 import { RoleBadge } from "../../RoleBadge";
 import { CTA_DANGER, CTA_GHOST, CTA_NEUTRAL, CTA_PRIMARY, CTA_SECONDARY, CTA_SUCCESS } from "@/app/organizacao/dashboardUi";
 import { Avatar } from "@/components/ui/avatar";
+import { cn } from "@/lib/utils";
 
-type MemberRole = "OWNER" | "CO_OWNER" | "ADMIN" | "STAFF" | "PROMOTER" | "VIEWER";
+type MemberRole = "OWNER" | "CO_OWNER" | "ADMIN" | "STAFF" | "TRAINER" | "PROMOTER";
 
 type Member = {
   userId: string;
@@ -53,6 +55,22 @@ type InvitesResponse = {
   organizationId?: number | null;
   error?: string;
 };
+type TrainerItem = {
+  userId: string;
+  fullName: string | null;
+  username: string | null;
+  avatarUrl: string | null;
+  isPublished: boolean;
+  reviewStatus: "DRAFT" | "PENDING" | "APPROVED" | "REJECTED";
+  reviewNote: string | null;
+  reviewRequestedAt: string | null;
+};
+type TrainersResponse = {
+  ok: boolean;
+  items: TrainerItem[];
+  organizationId?: number | null;
+  error?: string;
+};
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -61,8 +79,8 @@ const roleLabels: Record<MemberRole, string> = {
   CO_OWNER: "Co-owner",
   ADMIN: "Admin",
   STAFF: "Staff",
+  TRAINER: "Treinador",
   PROMOTER: "Promoter",
-  VIEWER: "Viewer",
 };
 
 const roleOrder: Record<MemberRole, number> = {
@@ -70,8 +88,8 @@ const roleOrder: Record<MemberRole, number> = {
   CO_OWNER: 1,
   ADMIN: 2,
   STAFF: 3,
-  PROMOTER: 4,
-  VIEWER: 5,
+  TRAINER: 4,
+  PROMOTER: 5,
 };
 
 const statusTone: Record<InviteStatus, string> = {
@@ -85,11 +103,27 @@ const statusTone: Record<InviteStatus, string> = {
   CANCELLED: "border-white/15 bg-gradient-to-r from-white/8 via-white/4 to-white/6 text-white/65",
 };
 
+const trainerStatusLabel: Record<TrainerItem["reviewStatus"], string> = {
+  DRAFT: "Rascunho",
+  PENDING: "Em revisão",
+  APPROVED: "Aprovado",
+  REJECTED: "Recusado",
+};
+
+const trainerStatusTone: Record<TrainerItem["reviewStatus"], string> = {
+  DRAFT: "border-white/15 bg-white/5 text-white/60",
+  PENDING: "border-amber-300/50 bg-amber-400/10 text-amber-100",
+  APPROVED: "border-emerald-300/50 bg-emerald-400/10 text-emerald-100",
+  REJECTED: "border-rose-300/50 bg-rose-400/10 text-rose-100",
+};
+
 function canManageMember(actorRole: MemberRole | null, targetRole: MemberRole) {
   if (!actorRole) return false;
   if (actorRole === "OWNER") return true;
   if (actorRole === "CO_OWNER") return targetRole !== "OWNER" && targetRole !== "CO_OWNER";
-  if (actorRole === "ADMIN") return targetRole === "STAFF" || targetRole === "PROMOTER" || targetRole === "VIEWER";
+  if (actorRole === "ADMIN") {
+    return targetRole === "STAFF" || targetRole === "TRAINER" || targetRole === "PROMOTER";
+  }
   return false;
 }
 
@@ -101,7 +135,7 @@ function canAssignRole(actorRole: MemberRole | null, targetRole: MemberRole, des
     return targetRole !== "OWNER" && targetRole !== "CO_OWNER";
   }
   if (actorRole === "ADMIN") {
-    const allowed = desiredRole === "STAFF" || desiredRole === "PROMOTER" || desiredRole === "VIEWER";
+    const allowed = desiredRole === "STAFF" || desiredRole === "TRAINER" || desiredRole === "PROMOTER";
     return allowed && targetRole !== "OWNER" && targetRole !== "CO_OWNER" && targetRole !== "ADMIN";
   }
   return false;
@@ -130,6 +164,7 @@ type OrganizationStaffPageProps = {
 
 export default function OrganizationStaffPage({ embedded }: OrganizationStaffPageProps) {
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const { user, profile, isLoading: isUserLoading } = useUser();
   const { openModal } = useAuthModal();
@@ -156,6 +191,12 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
     label: "",
   });
   const [roleConfirmOpen, setRoleConfirmOpen] = useState(false);
+  const [trainerActionLoading, setTrainerActionLoading] = useState<string | null>(null);
+  const [newTrainerUsername, setNewTrainerUsername] = useState("");
+  const [creatingTrainer, setCreatingTrainer] = useState(false);
+  const [reviewDialogOpen, setReviewDialogOpen] = useState(false);
+  const [reviewTarget, setReviewTarget] = useState<TrainerItem | null>(null);
+  const [reviewNote, setReviewNote] = useState("");
 
   const [toasts, setToasts] = useState<Toast[]>([]);
 
@@ -167,6 +208,8 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
 
   const eventIdParam = searchParams?.get("eventId");
   const eventId = eventIdParam ? Number(eventIdParam) : null;
+  const staffTabParam = searchParams?.get("staff");
+  const activeStaffTab = staffTabParam === "convidados" ? "convidados" : "membros";
   const organizationIdParam =
     searchParams?.get("organizationId") ?? (meData?.organization?.id ? String(meData.organization.id) : null);
   const organizationId = organizationIdParam ? Number(organizationIdParam) : null;
@@ -200,10 +243,26 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
 
   const members = membersData?.items ?? [];
   const invites = useMemo(() => invitesData?.items ?? [], [invitesData?.items]);
-  const pendingInvites = useMemo(() => invites.filter((i) => i.status !== "CANCELLED"), [invites]);
+  const pendingInvites = useMemo(
+    () => invites.filter((i) => i.status === "PENDING" || i.status === "EXPIRED" || i.status === "DECLINED"),
+    [invites],
+  );
   const viewerRole: MemberRole | null = membersData?.viewerRole ?? invitesData?.viewerRole ?? null;
   const resolvedOrganizationId = organizationId ?? membersData?.organizationId ?? invitesData?.organizationId ?? null;
   const canInvite = viewerRole === "OWNER" || viewerRole === "CO_OWNER" || viewerRole === "ADMIN";
+  const trainersKey = useMemo(() => {
+    if (!user) return null;
+    if (!resolvedOrganizationId) return null;
+    if (!canInvite) return null;
+    return `/api/organizacao/trainers?organizationId=${resolvedOrganizationId}`;
+  }, [user, resolvedOrganizationId, canInvite]);
+  const { data: trainersData, mutate: mutateTrainers } = useSWR<TrainersResponse>(
+    trainersKey,
+    fetcher,
+    { revalidateOnFocus: false },
+  );
+  const canManageTrainers = canInvite;
+  const trainers = trainersData?.items ?? [];
   const ownerCount = useMemo(() => members.filter((m) => m.role === "OWNER").length, [members]);
 
   const sortedMembers = useMemo(() => {
@@ -221,6 +280,71 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
     }, 4200);
+  };
+
+  const handleTrainerAction = async (trainer: TrainerItem, action: "APPROVE" | "REJECT" | "PUBLISH" | "HIDE", note?: string) => {
+    if (!resolvedOrganizationId) return;
+    setTrainerActionLoading(trainer.userId);
+    try {
+      const res = await fetch("/api/organizacao/trainers", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          organizationId: resolvedOrganizationId,
+          userId: trainer.userId,
+          action,
+          reviewNote: note ?? null,
+        }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.error || "Não foi possível atualizar o treinador.");
+      }
+      if (mutateTrainers) await mutateTrainers();
+      if (action === "APPROVE") pushToast("Treinador aprovado e publicado.", "success");
+      if (action === "REJECT") pushToast("Treinador recusado.", "success");
+      if (action === "PUBLISH") pushToast("Treinador publicado.", "success");
+      if (action === "HIDE") pushToast("Treinador ocultado.", "success");
+    } catch (err) {
+      pushToast(err instanceof Error ? err.message : "Erro ao atualizar treinador.");
+    } finally {
+      setTrainerActionLoading(null);
+    }
+  };
+
+  const openRejectDialog = (trainer: TrainerItem) => {
+    setReviewTarget(trainer);
+    setReviewNote("");
+    setReviewDialogOpen(true);
+  };
+
+  const handleCreateTrainerProfile = async () => {
+    if (!resolvedOrganizationId) return;
+    const value = newTrainerUsername.trim();
+    if (!value) {
+      pushToast("Indica o username do treinador.");
+      return;
+    }
+    setCreatingTrainer(true);
+    try {
+      const res = await fetch("/api/organizacao/trainers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ organizationId: resolvedOrganizationId, username: value }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) {
+        pushToast(json?.error || "Não foi possível criar o perfil.");
+        return;
+      }
+      setNewTrainerUsername("");
+      pushToast("Perfil de treinador criado.", "success");
+      if (mutateTrainers) await mutateTrainers();
+    } catch (err) {
+      pushToast(err instanceof Error ? err.message : "Erro ao criar perfil.");
+    } finally {
+      setCreatingTrainer(false);
+    }
   };
 
   const handleRequireLogin = () => {
@@ -445,7 +569,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
 
   if (isUserLoading) {
     return (
-      <div className="w-full px-4 py-8 md:px-6 lg:px-8">
+      <div className={cn("w-full py-8")}>
         <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-5 text-sm text-white/70 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
           A carregar a tua conta…
         </div>
@@ -455,10 +579,10 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
 
   if (!user) {
     return (
-      <div className="w-full px-4 py-8 md:px-6 lg:px-8">
+      <div className={cn("w-full py-8")}>
         <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-6 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl space-y-3 text-white">
-          <h1 className="text-2xl font-semibold">Staff</h1>
-          <p className="text-white/70">Precisas de iniciar sessão para gerir o staff.</p>
+          <h1 className="text-2xl font-semibold">Equipa</h1>
+          <p className="text-white/70">Inicia sessão para gerir o staff.</p>
           <button
             type="button"
             onClick={handleRequireLogin}
@@ -471,19 +595,30 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
     );
   }
 
-  const emptyClass = embedded
-    ? "space-y-4 text-white"
-    : "w-full px-4 py-8 space-y-4 text-white md:px-6 lg:px-8";
-  const wrapperClass = embedded
-    ? "space-y-6 text-white"
-    : "w-full px-4 py-8 space-y-6 text-white md:px-6 lg:px-8";
+  const emptyClass = cn(
+    embedded ? "space-y-4 text-white" : "w-full space-y-4 py-8 text-white",
+  );
+  const wrapperClass = cn(
+    embedded ? "space-y-6 text-white" : "w-full space-y-6 py-8 text-white",
+  );
+  const staffTabs = [
+    { key: "membros", label: "Equipa" },
+    { key: "convidados", label: "Convidados" },
+  ];
+  const setStaffTab = (next: "membros" | "convidados") => {
+    const params = new URLSearchParams(searchParams?.toString());
+    if (next === "membros") params.delete("staff");
+    else params.set("staff", next);
+    const query = params.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+  };
 
   if (!isOrganizationProfile && !hasMembership) {
     return (
       <div className={emptyClass}>
         <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-6 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl space-y-2">
-          <h1 className="text-2xl font-semibold">Staff</h1>
-          <p className="text-sm text-white/70">Ativa primeiro o perfil de organização ou aceita um convite para entrares.</p>
+          <h1 className="text-2xl font-semibold">Equipa</h1>
+          <p className="text-sm text-white/70">Ativa o perfil ou aceita convite.</p>
         </div>
       </div>
     );
@@ -496,26 +631,26 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
         <div className="relative flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div className="space-y-1">
             <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] uppercase tracking-[0.26em] text-white/80 shadow-[0_10px_30px_rgba(0,0,0,0.4)]">
-              Staff &amp; segurança
+              Equipa &amp; segurança
             </div>
             <h1 className="text-3xl font-semibold drop-shadow-[0_10px_40px_rgba(0,0,0,0.55)]">
               Controla quem tem acesso {meData?.organization?.publicName ? ` · ${meData.organization.publicName}` : ""}
             </h1>
-            <p className="text-sm text-white/70">
-              Define papéis, gere convites e, quando ativo, transfere a organização de forma segura. Pelo menos um Owner tem de existir sempre.
-            </p>
+            <p className="text-sm text-white/70">Papéis, convites e transferências.</p>
             {viewerRole === "OWNER" && !orgTransferEnabled && (
-              <p className="text-[11px] text-white/55">Transferência de Owner desativada enquanto a flag global estiver off.</p>
+              <p className="text-[11px] text-white/55">Transferência de Owner desativada.</p>
             )}
-          </div>
-          <div className="flex flex-wrap gap-2 text-[12px]">
-            <button
-              type="button"
-              onClick={() => setInviteModalOpen(true)}
-              className={primaryCta}
-            >
-              Convidar membro
-            </button>
+        </div>
+        <div className="flex flex-wrap gap-2 text-[12px]">
+            {activeStaffTab === "membros" && (
+              <button
+                type="button"
+                onClick={() => setInviteModalOpen(true)}
+                className={primaryCta}
+              >
+                Convidar membro
+              </button>
+            )}
             {viewerRole === "OWNER" && orgTransferEnabled && (
               <button
                 type="button"
@@ -539,13 +674,160 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
         </div>
       </div>
 
+      <div className="flex flex-wrap gap-2 rounded-2xl border border-white/12 bg-white/5 px-2 py-2 text-sm shadow-[0_16px_50px_rgba(0,0,0,0.4)]">
+        {staffTabs.map((tab) => (
+          <button
+            key={tab.key}
+            type="button"
+            onClick={() => setStaffTab(tab.key as "membros" | "convidados")}
+            className={`rounded-xl px-3 py-2 font-semibold transition ${
+              activeStaffTab === tab.key
+                ? "bg-gradient-to-r from-[#FF7AD1]/60 via-[#7FE0FF]/35 to-[#6A7BFF]/55 text-white shadow-[0_14px_36px_rgba(107,255,255,0.45)]"
+                : "text-white/80 hover:bg-white/10"
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {viewerRole === "TRAINER" && (
+        <div className="rounded-3xl border border-cyan-300/20 bg-cyan-500/10 px-4 py-3 text-sm text-cyan-50">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p>O teu perfil de treinador está pronto para editar.</p>
+            <Link href="/organizacao/treinadores" className={CTA_SECONDARY}>
+              Editar perfil
+            </Link>
+          </div>
+        </div>
+      )}
+
       <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
-        <section className="relative overflow-hidden rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1226]/75 to-[#050912]/90 p-4 space-y-3 shadow-[0_26px_90px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
+        {activeStaffTab === "convidados" && canManageTrainers && (
+          <section className="relative overflow-hidden rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1226]/75 to-[#050912]/90 p-4 space-y-3 shadow-[0_26px_90px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h2 className="text-sm font-semibold">Treinadores</h2>
+                <p className="text-[12px] text-white/60">Publica perfis para aparecerem no clube.</p>
+              </div>
+              <div className="text-[11px] text-white/60">
+                {trainers.length} treinador{trainers.length === 1 ? "" : "es"}
+              </div>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+              <p className="text-[12px] text-white/70">Criar perfil por username</p>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <input
+                  value={newTrainerUsername}
+                  onChange={(e) => setNewTrainerUsername(e.target.value)}
+                  placeholder="@username"
+                  className="flex-1 rounded-full border border-white/15 bg-black/30 px-4 py-2 text-sm text-white outline-none focus:border-[#6BFFFF]"
+                />
+                <button
+                  type="button"
+                  onClick={handleCreateTrainerProfile}
+                  disabled={creatingTrainer}
+                  className={`rounded-full border border-emerald-300/50 bg-emerald-400/10 px-4 py-2 text-sm font-semibold text-emerald-100 transition ${
+                    creatingTrainer ? "opacity-60" : "hover:border-emerald-300/80"
+                  }`}
+                >
+                  {creatingTrainer ? "A criar…" : "Criar perfil"}
+                </button>
+              </div>
+              <p className="mt-2 text-[11px] text-white/50">
+                O treinador pode editar o perfil assim que tiver role Treinador.
+              </p>
+            </div>
+            {trainers.length === 0 ? (
+              <div className="rounded-lg border border-white/10 bg-white/5 p-4 text-sm text-white/70">
+                Sem treinadores com role atribuído.
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {trainers.map((trainer) => {
+                  const displayName = trainer.fullName || trainer.username || "Treinador";
+                  const isLoading = trainerActionLoading === trainer.userId;
+                  const statusLabel = trainerStatusLabel[trainer.reviewStatus];
+                  return (
+                    <div
+                      key={trainer.userId}
+                      className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/12 bg-white/5 px-3 py-2"
+                    >
+                      <div className="flex items-center gap-3">
+                        <Avatar
+                          src={trainer.avatarUrl}
+                          name={displayName}
+                          className="h-9 w-9 border border-white/10"
+                          textClassName="text-xs font-semibold uppercase tracking-[0.16em] text-white/80"
+                          fallbackText="TR"
+                        />
+                        <div>
+                          <p className="text-sm font-semibold text-white">{displayName}</p>
+                          {trainer.username && (
+                            <p className="text-[11px] text-white/60">@{trainer.username}</p>
+                          )}
+                          {trainer.reviewStatus === "REJECTED" && trainer.reviewNote && (
+                            <p className="text-[11px] text-rose-200">Motivo: {trainer.reviewNote}</p>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span
+                          className={`rounded-full border px-3 py-1 text-[11px] uppercase tracking-[0.18em] ${trainerStatusTone[trainer.reviewStatus]}`}
+                        >
+                          {statusLabel}
+                        </span>
+                        {trainer.reviewStatus === "PENDING" && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => handleTrainerAction(trainer, "APPROVE")}
+                              disabled={isLoading}
+                              className={`rounded-full border border-emerald-300/50 bg-emerald-400/10 px-3 py-1 text-[11px] font-semibold text-emerald-100 transition ${isLoading ? "opacity-60" : ""}`}
+                            >
+                              Aprovar
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => openRejectDialog(trainer)}
+                              disabled={isLoading}
+                              className={`rounded-full border border-rose-300/50 bg-rose-400/10 px-3 py-1 text-[11px] font-semibold text-rose-100 transition ${isLoading ? "opacity-60" : ""}`}
+                            >
+                              Recusar
+                            </button>
+                          </>
+                        )}
+                        {trainer.reviewStatus === "APPROVED" && (
+                          <button
+                            type="button"
+                            onClick={() => handleTrainerAction(trainer, trainer.isPublished ? "HIDE" : "PUBLISH")}
+                            disabled={isLoading}
+                            className={`rounded-full border px-3 py-1 text-[11px] font-semibold transition ${
+                              trainer.isPublished
+                                ? "border-white/20 bg-white/5 text-white/70 hover:border-white/40 hover:text-white"
+                                : "border-emerald-300/50 bg-emerald-400/10 text-emerald-100"
+                            } ${isLoading ? "opacity-60" : ""}`}
+                          >
+                            {trainer.isPublished ? "Ocultar" : "Publicar"}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+        )}
+
+        {activeStaffTab === "membros" && (
+          <>
+            <section className="relative overflow-hidden rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1226]/75 to-[#050912]/90 p-4 space-y-3 shadow-[0_26px_90px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <h2 className="text-sm font-semibold">Membros</h2>
               <p className="text-[12px] text-white/60">
-                Papéis: Owner, Co-owner, Admin, Staff e Viewer.
+                Papéis: Owner, Co-owner, Admin, Staff, Treinador e Promoter.
               </p>
             </div>
             <div className="text-[11px] text-white/60">
@@ -575,7 +857,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
 
           {!isMembersLoading && sortedMembers.length === 0 && (
             <div className="rounded-lg border border-white/10 bg-white/5 p-4 text-sm">
-              <p>Ainda não tens membros nesta organização. Convida alguém com Owner/Co-owner/Admin para começares.</p>
+              <p>Sem membros. Convida um admin.</p>
             </div>
           )}
 
@@ -635,11 +917,11 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
                         <option value="STAFF" disabled={!canAssignRole(viewerRole, m.role, "STAFF")}>
                           Staff
                         </option>
+                        <option value="TRAINER" disabled={!canAssignRole(viewerRole, m.role, "TRAINER")}>
+                          Treinador
+                        </option>
                         <option value="PROMOTER" disabled={!canAssignRole(viewerRole, m.role, "PROMOTER")}>
                           Promoter
-                        </option>
-                        <option value="VIEWER" disabled={!canAssignRole(viewerRole, m.role, "VIEWER")}>
-                          Viewer
                         </option>
                       </select>
                       <button
@@ -662,7 +944,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <h2 className="text-sm font-semibold">Convites</h2>
-              <p className="text-[12px] text-white/60">Gerir convites pendentes, reenvios e respostas.</p>
+              <p className="text-[12px] text-white/60">Pendentes e reenvios.</p>
             </div>
             <div className="text-[11px] text-white/60">
               {isInvitesLoading ? "A carregar…" : `${pendingInvites.length} convite${pendingInvites.length === 1 ? "" : "s"}`}
@@ -685,7 +967,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
 
           {!isInvitesLoading && pendingInvites.length === 0 && (
             <div className="rounded-lg border border-dashed border-white/15 bg-white/5 p-4 text-sm text-white/70">
-              Sem convites pendentes. Convida por email ou username para novos acessos.
+              Sem convites pendentes.
             </div>
           )}
 
@@ -779,6 +1061,14 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
             </div>
           )}
         </section>
+          </>
+        )}
+
+        {activeStaffTab === "convidados" && !canManageTrainers && (
+          <section className="rounded-3xl border border-white/12 bg-white/5 p-4 text-sm text-white/70">
+            Sem permissões para gerir convidados.
+          </section>
+        )}
       </div>
 
       <ConfirmDestructiveActionDialog
@@ -836,6 +1126,50 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
         </div>
       )}
 
+      {/* Trainer review modal */}
+      {reviewDialogOpen && reviewTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 backdrop-blur">
+          <div className="w-full max-w-lg space-y-4 rounded-2xl border border-white/10 bg-[#0c1424] p-5 shadow-2xl">
+            <div className="space-y-1">
+              <p className="text-[11px] uppercase tracking-[0.22em] text-white/50">Revisão</p>
+              <h3 className="text-xl font-semibold text-white">Recusar perfil</h3>
+              <p className="text-sm text-white/70">
+                Motivo opcional para o treinador rever e submeter novamente.
+              </p>
+            </div>
+            <div className="space-y-2">
+              <label className="text-[12px] text-white/70">Motivo</label>
+              <textarea
+                value={reviewNote}
+                onChange={(e) => setReviewNote(e.target.value)}
+                rows={4}
+                className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
+                placeholder="Ex: Ajustar bio e preços."
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setReviewDialogOpen(false)}
+                className="rounded-full border border-white/20 bg-white/5 px-4 py-2 text-sm text-white hover:bg-white/10"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  handleTrainerAction(reviewTarget, "REJECT", reviewNote.trim() || undefined);
+                  setReviewDialogOpen(false);
+                }}
+                className="rounded-full bg-rose-500 px-4 py-2 text-sm font-semibold text-white shadow"
+              >
+                Recusar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Invite modal */}
       {inviteModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 backdrop-blur">
@@ -843,7 +1177,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
             <div className="space-y-1">
               <p className="text-[11px] uppercase tracking-[0.22em] text-white/50">Convite</p>
               <h3 className="text-xl font-semibold text-white">Convidar membro</h3>
-              <p className="text-sm text-white/70">Aceita email, username ou ID ORYA. O convite expira em 14 dias.</p>
+              <p className="text-sm text-white/70">Email ou username. Expira em 14 dias.</p>
             </div>
             <div className="space-y-3">
               <div className="space-y-1">
@@ -875,11 +1209,11 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
                   <option value="STAFF" disabled={!canAssignRole(viewerRole, inviteRole, "STAFF")}>
                     Staff
                   </option>
+                  <option value="TRAINER" disabled={!canAssignRole(viewerRole, inviteRole, "TRAINER")}>
+                    Treinador
+                  </option>
                   <option value="PROMOTER" disabled={!canAssignRole(viewerRole, inviteRole, "PROMOTER")}>
                     Promoter
-                  </option>
-                  <option value="VIEWER" disabled={!canAssignRole(viewerRole, inviteRole, "VIEWER")}>
-                    Viewer
                   </option>
                 </select>
               </div>

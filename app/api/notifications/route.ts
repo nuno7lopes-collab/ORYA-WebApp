@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
 import { AuthRequiredError, requireUser } from "@/lib/auth/requireUser";
-import type { NotificationType } from "@prisma/client";
+import { NotificationType } from "@prisma/client";
 
 // Lista notificações com badge de não lidas; só o próprio utilizador pode ver
 export async function GET(req: NextRequest) {
@@ -19,13 +19,17 @@ export async function GET(req: NextRequest) {
     const status = (req.nextUrl.searchParams.get("status") ?? "all").toLowerCase();
     const typesParam = req.nextUrl.searchParams.get("types");
     const limitRaw = Number(req.nextUrl.searchParams.get("limit") ?? 100);
+    const orgIdRaw = req.nextUrl.searchParams.get("organizationId");
+    const organizationId = orgIdRaw ? Number(orgIdRaw) : null;
     const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 200) : 100;
 
+    const validTypes = new Set(Object.values(NotificationType));
     const types = typesParam
       ? typesParam
           .split(",")
           .map((t) => t.trim())
           .filter(Boolean)
+          .filter((t) => validTypes.has(t as NotificationType))
       : [];
 
     const where = {
@@ -33,6 +37,12 @@ export async function GET(req: NextRequest) {
       ...(status === "unread" ? { isRead: false } : {}),
       ...(types.length > 0 ? { type: { in: types as NotificationType[] } } : {}),
     };
+    if (Number.isFinite(organizationId) && organizationId) {
+      where.AND = [
+        ...(where.AND ?? []),
+        { OR: [{ organizationId }, { event: { organizationId } }] },
+      ];
+    }
 
     const notifications = await prisma.notification.findMany({
       where,
@@ -65,9 +75,17 @@ export async function GET(req: NextRequest) {
       return item;
     });
 
-    const unreadCount = await prisma.notification.count({
-      where: { userId: user.id, isRead: false },
-    });
+    const unreadCountWhere = {
+      userId: user.id,
+      isRead: false,
+    } as typeof where;
+    if (Number.isFinite(organizationId) && organizationId) {
+      unreadCountWhere.AND = [
+        ...(unreadCountWhere.AND ?? []),
+        { OR: [{ organizationId }, { event: { organizationId } }] },
+      ];
+    }
+    const unreadCount = await prisma.notification.count({ where: unreadCountWhere });
 
     return NextResponse.json({
       ok: true,

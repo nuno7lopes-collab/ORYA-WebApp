@@ -11,6 +11,39 @@ ORYA e uma rede social de experiencias do mundo real onde utilizadores descobrem
 - Categorias ("Mundos"): descoberta organizada em Events, Padel e Reservations (servicos). Nightlife e um template dentro de Events, nao um mundo separado.
 - Privacidade: reservas e compras sao privadas por defeito; atividade social e opt-in e respeita visibilidade escolhida pelo utilizador.
 
+### 1.1 Padel Perfeito (objetivo e principios)
+
+Objetivo:
+- Jogadores: inscricao simples, agenda clara, resultados em tempo real, historico e ranking.
+- Organizadores/clubes: fluxo guiado, automatizacao maxima, operacao diaria sem friccao.
+- ORYA: padel como pilar social integrado em feed, perfis e pagamentos.
+
+Principios:
+- Simplicidade com profundidade: defaults bons, opcoes avancadas escondidas.
+- Automacao primeiro: gerar jogos, avancos, ranking e notificacoes sem trabalho manual.
+- Tempo real: tudo atualiza instantaneamente (jogos, tabelas, brackets, feed).
+- Mobile-first: organizador e jogador conseguem gerir quase tudo pelo telemovel.
+- Escalavel: funciona para 8 ou 800 equipas, com performance e estabilidade.
+
+Base obrigatoria (competitivo):
+- Ciclo completo do torneio: inscricoes -> sorteio -> jogos -> resultados -> ranking.
+- Multiplos formatos (grupos, eliminatorias, quadro A/B, nonstop).
+- Sorteio com seeds e distribuicao automatica.
+- Passagem de "melhor segundo" e regras de desempate configuraveis.
+- Paginas publicas em tempo real (calendario, resultados, brackets).
+- Multi-organizador com roles (owner/admin/staff).
+- Ranking por torneio e por clube, com tabela de pontos.
+- TV Monitor para ecras no clube.
+
+Diferenciais ORYA (lideranca):
+- Wizard de criacao (fluxo guiado passo a passo).
+- Auto-scheduling com detecao de conflitos e respeito por indisponibilidades.
+- Notificacoes inteligentes por jogo, fase e categoria.
+- Pagamentos in-app com split nativo e confirmacao automatica.
+- UI/UX moderna com identidade visual do clube.
+- Social + comunidade (feed de resultados e community games).
+- Streaming por jogo e base para live score.
+
 ## 2. Modelo de Entidades (alto nivel)
 
 ### 2.1 Principios de dados
@@ -23,7 +56,7 @@ ORYA e uma rede social de experiencias do mundo real onde utilizadores descobrem
 
 - User: entidade base. Guarda dados de autenticacao, nome exibido, username (@), avatar e preferencias basicas.
 - UserProfile: perfil publico e preferencias. Inclui bio, cidade e campos de padel opcionais (nivel, mao dominante, posicao). Estes campos sao obrigatorios apenas quando o utilizador participa num torneio ou ativa modo padel.
-- Follow: relacao unidirecional. Seguir mutuo equivale a amizade. Controlo de visibilidade por utilizador (publico / amigos / privado).
+- Follow: relacao unidirecional. Seguir mutuo equivale a seguimento reciproco. Controlo de visibilidade por utilizador (publico / seguidores / privado).
 - UserActivity: eventos de atividade (RSVP, compra de bilhetes, conquistas de padel). Apenas exibido se respeitar privacidade.
 - Notifications: alertas para follows, confirmacoes de RSVP, compras, convites e outros eventos relevantes.
 
@@ -68,10 +101,14 @@ ORYA e uma rede social de experiencias do mundo real onde utilizadores descobrem
 
 #### Padel
 
-- Tournament: torneio organizado por clube ou utilizador. Campos: nome, intervalo de datas, categoria (mixed/men/women), formato, taxa de inscricao.
-- Division: niveis dentro do torneio.
+- PadelClub: clube de padel dentro de uma Organization; branding, contactos e courts.
+- Court: campos/quadras do clube com estado (ativo/inativo) e bloqueios de horario.
+- Tournament: torneio organizado por clube ou utilizador. Inclui estado (oculto/desenvolvimento/publico/cancelado), formato e taxa de inscricao.
+- Division/Category: niveis e genero dentro do torneio, com limites e formato por categoria.
+- TournamentStage/Group: fases do torneio (grupos, playoffs, consolacao) geradas automaticamente.
 - Pair: equipa de dois utilizadores.
-- Match: resultados e pontuacoes.
+- Match: jogo com horario, court, estado e resultado (com flags WO/desistiu/lesao).
+- PadelRuleSet: regras de jogo e desempate aplicadas ao torneio.
 - PadelPlayerProfile: dados especificos do padel por utilizador (nivel, mao dominante, lado preferido, stats). Criado na primeira participacao.
 - RankingSnapshot: snapshot periodico de ranking para tabelas e historico.
 
@@ -123,7 +160,7 @@ Existe um botao claro "Sair do modo organização" para regressar a experiencia 
   - Proximos Eventos: eventos comprados ou com RSVP.
   - Proximas Reservas: reservas futuras (visiveis apenas ao utilizador).
   - Padel: torneios proximos e ranking atual (se perfil padel ativo).
-  - Onde os amigos vao: atividades publicas de amigos (respeitando privacidade).
+  - Onde quem segues vai: atividades publicas de pessoas que segues (respeitando privacidade).
   - Sugestoes: organizações ou eventos recomendados por interesses/uso.
 - Posts curtos: anuncios de organizações e comentarios de utilizadores, com CTAs contextuais: Comprar, Reservar, Inscrever-me, Juntar-me.
 
@@ -146,7 +183,7 @@ Tabs internas:
 
 - Atividade: feed cronologico de follows, RSVPs publicos, resultados de torneios. Reservas permanecem privadas.
 - Pedidos: follow requests, convites de organização, convites de promoter.
-- Sugestoes: utilizadores recomendados por localizacao, interesses e amigos em comum. Cada item mostra numero de mutuals e botao seguir.
+- Sugestoes: utilizadores recomendados por localizacao, interesses e seguidores em comum. Cada item mostra numero de mutuals e botao seguir.
 - Search: pesquisar utilizadores (opcionalmente organizações).
 
 ### 4.4 Perfil (User Profile)
@@ -193,16 +230,35 @@ Tabs internas:
 - Resumo de politica (nome e janela de cancelamento).
 - CTA Reservar; confirmacao com data/hora, preco, politica e contacto.
 
-### 4.8 Fluxo de Torneio (Padel)
+### 4.8 Padel Perfeito (fluxo e funcionalidades)
 
-- Pagina do torneio com divisoes, taxa de inscricao, deadline e regras.
-- CTA Inscrever-me; utilizador insere parceiro ou escolhe par aleatorio; pagamento via Stripe.
-- Apos inscricao, dupla aparece em bracket/roster; ranking atualiza apos torneio.
+Objetivo: tornar o padel o modulo mais forte do ORYA, com fluxo guiado, automacao e tempo real, sem perder flexibilidade.
+
+Estados da competicao:
+- Oculto: configuracao interna, sem dados publicos.
+- Desenvolvimento: inscricoes abertas e listas visiveis para utilizadores autenticados.
+- Publico: calendario, resultados, brackets e tabelas em tempo real.
+- Cancelado: apenas aviso de cancelamento.
+
+Fluxo do jogador:
+- Descobrir torneio -> pagina publica -> CTA Inscrever-me.
+- Escolher categoria(s) e parceiro (ou procurar parceiro).
+- Pagar (split payment quando aplicavel).
+- Receber agenda e notificacoes (ex: jogo em 30 min).
+- Acompanhar resultados em tempo real e ver ranking/historico no perfil.
+
+Fluxo do organizador:
+- Criar torneio via wizard (dados base, categorias, formato, pagamentos, courts).
+- Abrir inscricoes e acompanhar pagamentos.
+- Gerar brackets e sorteio com seeds.
+- Gerar calendario e ajustar por drag-and-drop.
+- Publicar e inserir resultados (ou delegar a staff).
+- Encerrar com ranking e comunicados.
 
 ### 4.9 Split Payments (Padel e futuros casos)
 
 - Captain paga o total no checkout (MVP). Aviso explica que, se convidados nao pagarem ate a data, o restante sera cobrado ao captain.
-- Apos pagamento, convidados recebem pedido para pagar a sua parte por email/app. O sistema guarda estado (paid/pending). Nao ha refund automatico se alguem sair; o organização decide via politica.
+- Apos pagamento, convidados recebem pedido para pagar a sua parte por email/app. O sistema guarda estado (paid/pending). Nao ha refund automatico se alguem sair; a organizacao decide via politica.
 
 ## 5. Consideracoes Financeiras e Legais
 
@@ -219,22 +275,88 @@ Tabs internas:
 
 ![Matriz de Roles e Permissoes de Organização](./assets/organisation-roles-permissions-matrix.svg)
 
-## 7. Questaoes em Aberto e Decisoes Finais
+## 7. Questoes em Aberto e Decisoes Finais
 
 - Trending (Em Alta) - no inicio e curado manualmente ou gerado por vendas/metricas ate existir recomendacao robusta.
 - Check-in - scanning de bilhetes faz parte do modulo de eventos; tabela e UI existem, mas pode ser desativado no primeiro release e ativado depois.
 - Convites para organizações - podem ser por email ou notificacao. Exigem aceitacao. Roles atribuidas na aceitacao. Utilizadores podem pedir para entrar, sujeito a aprovacao de Owner/Admin.
 - Clubes tab - omitido na bottom navigation do MVP. Clubes existem como organizações sem tab dedicada.
 - Chat - excluido do MVP. Apenas notificacoes e comentarios. Chat em tempo real fica para depois.
+- Padel - regras de desempate padrao vs custom (ate onde vai a configuracao do organizador).
+- Padel - modelo de ranking global (peso por nivel vs fase, e cadencia de expirar pontos).
+- Padel - politica de cancelamento de jogos e impacto no ranking.
+- Padel - validacao de resultados enviados por jogadores.
 
-## 8. Roadmap Pos-MVP (Ideias)
+## 8. Roadmap Pos-MVP (Fases de Implementacao)
 
+### Fase 0 - Fundacoes (core padel)
+
+Objetivo: garantir base tecnica e funcional para o modulo de padel funcionar de ponta a ponta.
+
+Entregas:
+- Modelos base: PadelClub, Court, Tournament, Division/Category, Stage/Group, Match, RuleSet.
+- Regras de estados da competicao (oculto/desenvolvimento/publico/cancelado).
+- Motor de geracao de jogos (grupos, playoffs, quadro A/B, todos contra todos, nonstop).
+- Seeds e sorteio base (aleatorio e manual).
+- Regras de desempate padrao (configuracao por torneio).
+- Logs e auditoria para acoes sensiveis (sorteios, resultados, cancelamentos).
+
+### Fase 1 - MVP Competitivo (padel completo)
+
+Objetivo: igualar o PadelTeams no essencial e permitir torneios reais do inicio ao fim.
+
+Entregas:
+- Criacao de torneio e categorias (com limites, genero, nivel).
+- Inscricoes (dupla/individual) com pagamento Stripe e split payment.
+- Lista de espera (pendentes) quando excede capacidade.
+- Brackets e tabelas publicas em tempo real.
+- Calendario manual com drag-and-drop + bloqueios de horario.
+- Insercao de resultados com foto e flags (WO/desistiu/lesao).
+- Ranking basico por torneio + historico no perfil do jogador.
+- Notificacoes basicas (inscricao confirmada, bracket publicado, torneio iniciou/finalizou).
+
+### Fase 2 - V1+ Diferenciais ORYA
+
+Objetivo: vencer em UX e automacao, reduzindo friccao para organizadores e jogadores.
+
+Entregas:
+- Wizard de criacao (passo a passo com defaults inteligentes).
+- Auto-scheduling inicial com deteccao de conflitos e respeito por indisponibilidades.
+- Notificacoes inteligentes por jogo (ex: 30 min antes).
+- TV Monitor com modos automatico e curado.
+- Easy Mix / community games (torneios rapidos).
+- Templates de torneio (8/16/32) com setups prontos.
+- Personalizacao visual do clube (cores, banner, patrocinadores).
+- Convites privados com codigo (competicoes fechadas).
+- Regras de ranking com modelos pre-definidos (clubes podem ajustar).
+
+### Fase 3 - Escala e Produto Premium
+
+Objetivo: escalar para clubes grandes e elevar a experiencia competitiva.
+
+Entregas:
+- Live score e streaming por jogo (link e base para integracao futura).
+- API e widgets publicos (proximos jogos, tabela, inscricoes).
+- Analitica avancada (pagamentos, tempo medio de jogo, ocupacao de courts).
+- Exportacao PDF/Excel de calendarios, resultados e rankings.
+- Ranking regional/global com filtros por periodo.
+- Multi-idioma e localizacao completa (datas, moedas, textos).
+
+### Fase 4 - Padel Club OS (opcional estrategico)
+
+Objetivo: tornar ORYA o sistema operativo do clube.
+
+Entregas:
+- Reservas de courts e aulas.
+- Gestao de membros e planos (fora do MVP).
+- Financeiro integrado e caixa do clube.
+
+Outras iniciativas transversais (dependem de prioridade global ORYA):
 - Map view com geolocalizacao e clustering.
 - Experiencias publicas criadas por utilizadores com moderacao.
-- Clubes como entidade principal com feeds, eventos e group chats.
-- Chat em tempo real entre utilizadores, staff, promoters e organizações.
+- Clubes como entidade principal com feeds e group chats.
+- Chat em tempo real entre utilizadores, staff, promoters e organizacoes.
 - Payouts automaticos para promoters com thresholds e agendamento.
-- Ferramentas de marketing para organizações (email campaigns, push notifications).
-- Rankings avancados para padel com pontos por jogo, head-to-head e badges.
+- Ferramentas de marketing para organizacoes (email campaigns, push notifications).
 
 Este documento captura todas as decisoes e estruturas necessarias para o ORYA v1. Cada pagina e modulo esta limitado para entregar uma experiencia coesa sem over-engineering. As funcionalidades futuras ficam indicadas, mas nao entram no MVP.

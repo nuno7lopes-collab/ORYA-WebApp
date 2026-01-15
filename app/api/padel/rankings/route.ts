@@ -7,19 +7,77 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromParams } from "@/lib/organizationId";
 import { PadelPointsTable } from "@/lib/padel/validation";
+import { resolvePadelCompetitionState } from "@/domain/padelCompetitionState";
+import { resolvePadelMatchStats } from "@/domain/padel/score";
+import { enforcePublicRateLimit } from "@/lib/padel/publicRateLimit";
+
+const DEFAULT_LIMIT = 50;
+const clampLimit = (raw: string | null) => {
+  const parsed = raw ? Number(raw) : NaN;
+  if (!Number.isFinite(parsed)) return DEFAULT_LIMIT;
+  return Math.min(Math.max(1, Math.floor(parsed)), 200);
+};
 
 const allowedRoles: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
 
 export async function GET(req: NextRequest) {
+  const rateLimited = await enforcePublicRateLimit(req, {
+    keyPrefix: "padel_rankings",
+    max: 120,
+  });
+  if (rateLimited) return rateLimited;
+
   const organizationId = resolveOrganizationIdFromParams(req.nextUrl.searchParams);
   const eventId = req.nextUrl.searchParams.get("eventId");
+  const scope = (req.nextUrl.searchParams.get("scope") || "global").toLowerCase();
+  const limit = clampLimit(req.nextUrl.searchParams.get("limit"));
+  const periodDaysRaw = Number(req.nextUrl.searchParams.get("periodDays"));
+  const periodDays = Number.isFinite(periodDaysRaw) && periodDaysRaw > 0 ? Math.floor(periodDaysRaw) : null;
+  const since = periodDays ? new Date(Date.now() - periodDays * 24 * 60 * 60 * 1000) : null;
+  const levelFilter = req.nextUrl.searchParams.get("level");
+  const cityFilterRaw = req.nextUrl.searchParams.get("city");
+  const cityFilter = cityFilterRaw ? cityFilterRaw.trim() : null;
 
   if (eventId) {
     const eId = Number(eventId);
     if (!Number.isFinite(eId)) return NextResponse.json({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
 
+    const event = await prisma.event.findUnique({
+      where: { id: eId, isDeleted: false },
+      select: {
+        status: true,
+        publicAccessMode: true,
+        inviteOnly: true,
+        locationCity: true,
+        padelTournamentConfig: { select: { advancedSettings: true } },
+      },
+    });
+    if (!event) return NextResponse.json({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+    const competitionState = resolvePadelCompetitionState({
+      eventStatus: event.status,
+      competitionState: (event.padelTournamentConfig?.advancedSettings as any)?.competitionState ?? null,
+    });
+    const isPublicEvent =
+      event.publicAccessMode !== "INVITE" &&
+      !event.inviteOnly &&
+      ["PUBLISHED", "DATE_CHANGED", "FINISHED", "CANCELLED"].includes(event.status) &&
+      competitionState === "PUBLIC";
+    if (!isPublicEvent) {
+      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    }
+    if (cityFilter) {
+      const eventCity = event.locationCity?.trim().toLowerCase() ?? null;
+      if (!eventCity || eventCity !== cityFilter.toLowerCase()) {
+        return NextResponse.json({ ok: true, items: [] }, { status: 200 });
+      }
+    }
+
     const entries = await prisma.padelRankingEntry.findMany({
-      where: { eventId: eId },
+      where: {
+        eventId: eId,
+        ...(since ? { createdAt: { gte: since } } : {}),
+        ...(levelFilter ? { player: { level: levelFilter } } : {}),
+      },
       include: { player: true },
       orderBy: [{ points: "desc" }],
     });
@@ -35,13 +93,66 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: true, items }, { status: 200 });
   }
 
-  if (!organizationId) {
-    return NextResponse.json({ ok: false, error: "MISSING_ORGANIZATION" }, { status: 400 });
+  if (scope === "organization") {
+    if (!organizationId) {
+      return NextResponse.json({ ok: false, error: "MISSING_ORGANIZATION" }, { status: 400 });
+    }
+    const entries = await prisma.padelRankingEntry.findMany({
+      where: {
+        organizationId,
+        ...(since ? { createdAt: { gte: since } } : {}),
+        ...(levelFilter ? { player: { level: levelFilter } } : {}),
+        ...(cityFilter
+          ? {
+              event: {
+                locationCity: {
+                  equals: cityFilter,
+                  mode: "insensitive",
+                },
+              },
+            }
+          : {}),
+      },
+      include: { player: true },
+    });
+
+    const aggregated = Object.values(
+      entries.reduce<Record<number, { player: any; points: number }>>((acc, row) => {
+        const key = row.playerId;
+        if (!acc[key]) acc[key] = { player: row.player, points: 0 };
+        acc[key].points += row.points;
+        return acc;
+      }, {}),
+    ).sort((a, b) => b.points - a.points);
+
+    const items = aggregated.slice(0, limit).map((item, idx) => ({
+      position: idx + 1,
+      points: item.points,
+      player: {
+        id: item.player.id,
+        fullName: item.player.fullName,
+        level: item.player.level,
+      },
+    }));
+
+    return NextResponse.json({ ok: true, items }, { status: 200 });
   }
-  const oId = organizationId;
 
   const entries = await prisma.padelRankingEntry.findMany({
-    where: { organizationId: oId },
+    where: {
+      ...(since ? { createdAt: { gte: since } } : {}),
+      ...(levelFilter ? { player: { level: levelFilter } } : {}),
+      ...(cityFilter
+        ? {
+            event: {
+              locationCity: {
+                equals: cityFilter,
+                mode: "insensitive",
+              },
+            },
+          }
+        : {}),
+    },
     include: { player: true },
   });
 
@@ -54,7 +165,7 @@ export async function GET(req: NextRequest) {
     }, {}),
   ).sort((a, b) => b.points - a.points);
 
-  const items = aggregated.map((item, idx) => ({
+  const items = aggregated.slice(0, limit).map((item, idx) => ({
     position: idx + 1,
     points: item.points,
     player: {
@@ -141,22 +252,19 @@ export async function POST(req: NextRequest) {
   };
 
   matches.forEach((m) => {
+    const scoreObj = m.score && typeof m.score === "object" ? (m.score as Record<string, unknown>) : null;
     const rawSets = Array.isArray(m.scoreSets)
       ? m.scoreSets
-      : Array.isArray((m.score as { sets?: unknown } | null)?.sets)
-        ? ((m.score as { sets?: unknown }).sets as any[])
-        : [];
-    if (!rawSets.length) return;
-    let aSets = 0;
-    let bSets = 0;
-    rawSets.forEach((s) => {
-      const set = s as { teamA?: number; teamB?: number };
-      if (!Number.isFinite(set.teamA) || !Number.isFinite(set.teamB)) return;
-      if (Number(set.teamA) > Number(set.teamB)) aSets += 1;
-      else if (Number(set.teamB) > Number(set.teamA)) bSets += 1;
-    });
-    if (aSets === bSets) return;
-    const winner = aSets > bSets ? "A" : "B";
+      : Array.isArray((scoreObj as { sets?: unknown } | null)?.sets)
+        ? ((scoreObj as { sets?: unknown }).sets as any[])
+        : null;
+    const stats = resolvePadelMatchStats(rawSets, scoreObj);
+    let winner: "A" | "B" | null =
+      stats?.winner ??
+      (scoreObj?.winnerSide === "A" || scoreObj?.winnerSide === "B"
+        ? (scoreObj.winnerSide as "A" | "B")
+        : null);
+    if (!winner) return;
     const winnerPairing = winner === "A" ? m.pairingA : m.pairingB;
     const loserPairing = winner === "A" ? m.pairingB : m.pairingA;
 
@@ -174,13 +282,24 @@ export async function POST(req: NextRequest) {
 
   await prisma.$transaction(async (tx) => {
     await tx.padelRankingEntry.deleteMany({ where: { eventId } });
-    const entries = Object.entries(playerPoints).map(([playerIdStr, points]) => ({
-      organizationId: event.organizationId!,
-      eventId,
-      playerId: Number(playerIdStr),
-      points,
-      position: null,
-    }));
+    const sorted = Object.entries(playerPoints)
+      .map(([playerIdStr, points]) => ({ playerId: Number(playerIdStr), points }))
+      .sort((a, b) => b.points - a.points || a.playerId - b.playerId);
+    let lastPoints: number | null = null;
+    let lastPosition = 0;
+    const entries = sorted.map((row, idx) => {
+      if (lastPoints === null || row.points !== lastPoints) {
+        lastPosition = idx + 1;
+        lastPoints = row.points;
+      }
+      return {
+        organizationId: event.organizationId!,
+        eventId,
+        playerId: row.playerId,
+        points: row.points,
+        position: lastPosition,
+      };
+    });
     if (entries.length > 0) {
       await tx.padelRankingEntry.createMany({ data: entries });
     }

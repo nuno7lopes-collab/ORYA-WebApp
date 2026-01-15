@@ -1,39 +1,16 @@
 // app/api/admin/payments/list/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { createSupabaseServer } from "@/lib/supabaseServer";
+import { requireAdminUser } from "@/lib/admin/auth";
 import type { Prisma, PaymentMode } from "@prisma/client";
 
 const PAGE_SIZE = 50;
 
-async function ensureAdmin() {
-  const supabase = await createSupabaseServer();
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser();
-
-  if (error || !user) {
-    return { ok: false as const, status: 401 as const, reason: "UNAUTHENTICATED" };
-  }
-
-  const profile = await prisma.profile.findUnique({
-    where: { id: user.id },
-    select: { roles: true },
-  });
-  const roles = profile?.roles ?? [];
-  const isAdmin = Array.isArray(roles) && roles.includes("admin");
-  if (!isAdmin) {
-    return { ok: false as const, status: 403 as const, reason: "FORBIDDEN" };
-  }
-  return { ok: true as const };
-}
-
 export async function GET(req: NextRequest) {
   try {
-    const admin = await ensureAdmin();
+    const admin = await requireAdminUser();
     if (!admin.ok) {
-      return NextResponse.json({ ok: false, error: admin.reason }, { status: admin.status });
+      return NextResponse.json({ ok: false, error: admin.error }, { status: admin.status });
     }
 
     const url = new URL(req.url);
@@ -75,10 +52,50 @@ export async function GET(req: NextRequest) {
     const trimmed = hasMore ? items.slice(0, PAGE_SIZE) : items;
     const nextCursor = hasMore ? trimmed[trimmed.length - 1]?.id ?? null : null;
 
+    const intentIds = Array.from(
+      new Set(trimmed.map((item) => item.stripePaymentIntentId).filter(Boolean)),
+    ) as string[];
+    const [payouts, summaries] = await Promise.all([
+      intentIds.length
+        ? prisma.pendingPayout.findMany({
+            where: { paymentIntentId: { in: intentIds } },
+            select: {
+              paymentIntentId: true,
+              status: true,
+              holdUntil: true,
+              transferId: true,
+              amountCents: true,
+            },
+          })
+        : [],
+      intentIds.length
+        ? prisma.saleSummary.findMany({
+            where: { paymentIntentId: { in: intentIds } },
+            select: { id: true, paymentIntentId: true, status: true },
+          })
+        : [],
+    ]);
+    const payoutByIntent = new Map(payouts.map((p) => [p.paymentIntentId, p]));
+    const summaryByIntent = new Map(summaries.map((s) => [s.paymentIntentId, s]));
+
+    const enriched = trimmed.map((item) => {
+      const payout = payoutByIntent.get(item.stripePaymentIntentId);
+      const summary = summaryByIntent.get(item.stripePaymentIntentId);
+      return {
+        ...item,
+        saleSummaryId: summary?.id ?? null,
+        saleStatus: summary?.status ?? null,
+        payoutStatus: payout?.status ?? null,
+        payoutHoldUntil: payout?.holdUntil ?? null,
+        payoutTransferId: payout?.transferId ?? null,
+        payoutAmountCents: payout?.amountCents ?? null,
+      };
+    });
+
     return NextResponse.json(
       {
         ok: true,
-        items: trimmed,
+        items: enriched,
         pagination: { nextCursor, hasMore },
       },
       { status: 200 },

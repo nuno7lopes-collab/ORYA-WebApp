@@ -2,7 +2,9 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { createSupabaseServer } from "@/lib/supabaseServer";
+import { requireAdminUser } from "@/lib/admin/auth";
+import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
+import { getClientIp } from "@/lib/auth/requestValidation";
 
 // Tipos de estados permitidos para organizações (ajusta se o enum tiver outros valores)
 const ALLOWED_STATUSES = ["PENDING", "ACTIVE", "SUSPENDED"] as const;
@@ -14,37 +16,14 @@ type UpdateOrganizationStatusBody = {
   newStatus?: string;
 };
 
-async function getAdminUserId(): Promise<string | null> {
-  const supabase = await createSupabaseServer();
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser();
-
-  if (error || !user) return null;
-
-  const profile = await prisma.profile.findUnique({ where: { id: user.id } });
-
-  if (!profile) return null;
-
-  const roles = (profile.roles as string[] | null) ?? [];
-  const isAdmin = roles.includes("admin");
-
-  if (!isAdmin) return null;
-
-  return user.id;
-}
-
 export async function POST(req: NextRequest) {
   try {
-    const adminUserId = await getAdminUserId();
-
-    if (!adminUserId) {
-      return NextResponse.json(
-        { ok: false, error: "FORBIDDEN" },
-        { status: 403 },
-      );
+    const admin = await requireAdminUser();
+    if (!admin.ok) {
+      return NextResponse.json({ ok: false, error: admin.error }, { status: admin.status });
     }
+    const ip = getClientIp(req);
+    const userAgent = req.headers.get("user-agent");
 
     const body = (await req.json().catch(() => null)) as
       | UpdateOrganizationStatusBody
@@ -136,6 +115,18 @@ export async function POST(req: NextRequest) {
         status: true,
         publicName: true,
       },
+    });
+
+    await recordOrganizationAuditSafe({
+      organizationId: updated.id,
+      actorUserId: admin.userId,
+      action: "admin_organization_status_change",
+      metadata: {
+        fromStatus: organization.status,
+        toStatus: updated.status,
+      },
+      ip,
+      userAgent,
     });
 
     // Se aprovado (ACTIVE), adicionar role organization ao profile

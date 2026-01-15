@@ -6,6 +6,8 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { canManageEvents } from "@/lib/organizationPermissions";
 import EventLiveDashboardClient from "@/app/organizacao/(dashboard)/eventos/EventLiveDashboardClient";
+import { AuthGate } from "@/app/components/autenticação/AuthGate";
+import { cn } from "@/lib/utils";
 
 type PageProps = {
   params: Promise<{ id: string }>;
@@ -19,7 +21,7 @@ export default async function OrganizationEventLivePrepPage({ params }: PageProp
   const supabase = await createSupabaseServer();
   const { data, error } = await supabase.auth.getUser();
   if (error || !data?.user) {
-    redirect(`/login?redirectTo=${encodeURIComponent(`/organizacao/eventos/${eventId}/live`)}`);
+    return <AuthGate />;
   }
 
   const event = await prisma.event.findUnique({
@@ -37,6 +39,8 @@ export default async function OrganizationEventLivePrepPage({ params }: PageProp
   });
   if (!event || !event.organizationId) notFound();
 
+  const fallbackHref = event.templateType === "PADEL" ? "/organizacao/torneios" : "/organizacao/eventos";
+
   const { organization, membership } = await getActiveOrganizationForUser(data.user.id, {
     organizationId: event.organizationId,
   });
@@ -50,10 +54,10 @@ export default async function OrganizationEventLivePrepPage({ params }: PageProp
   ];
   const canOperateLive = allowedRoles.includes(membership.role);
   const canManageLiveConfig = canManageEvents(membership.role);
-  if (!canOperateLive) redirect("/organizacao?tab=manage");
+  if (!canOperateLive) redirect(fallbackHref);
 
   return (
-    <div className="w-full px-4 py-8 text-white md:px-6 lg:px-8">
+    <div className={cn("w-full py-8 text-white")}>
       <EventLiveDashboardClient
         event={{
           id: event.id,

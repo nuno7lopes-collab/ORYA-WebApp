@@ -19,6 +19,21 @@ export async function GET(req: NextRequest) {
     }
 
     const orgParam = resolveOrganizationIdFromParams(req.nextUrl.searchParams);
+    const templateTypeParam = req.nextUrl.searchParams.get("templateType");
+    const templateType =
+      typeof templateTypeParam === "string" && templateTypeParam.trim()
+        ? templateTypeParam.trim().toUpperCase()
+        : null;
+    const excludeTemplateTypeParam = req.nextUrl.searchParams.get("excludeTemplateType");
+    const excludeTemplateType =
+      typeof excludeTemplateTypeParam === "string" && excludeTemplateTypeParam.trim()
+        ? excludeTemplateTypeParam.trim().toUpperCase()
+        : null;
+    const eventTemplateFilter = templateType
+      ? { templateType }
+      : excludeTemplateType
+        ? { NOT: { templateType: excludeTemplateType } }
+        : {};
     const cookieOrgId = req.cookies.get("orya_organization")?.value;
     const orgRaw = orgParam ?? (cookieOrgId ? Number(cookieOrgId) : null);
     const organizationId = typeof orgRaw === "number" && Number.isFinite(orgRaw) ? orgRaw : null;
@@ -36,7 +51,10 @@ export async function GET(req: NextRequest) {
     const from = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
     const events = await prisma.event.findMany({
-      where: { organizationId: organization.id },
+      where: {
+        organizationId: organization.id,
+        ...eventTemplateFilter,
+      },
       select: {
         id: true,
         title: true,

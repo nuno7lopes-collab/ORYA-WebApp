@@ -4,6 +4,7 @@ export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServer } from "@/lib/supabaseServer";
+import { isSameOriginOrApp } from "@/lib/auth/requestValidation";
 
 /**
  * Sincroniza a sessão do supabase (tokens vindos do browser) para cookies HttpOnly.
@@ -11,6 +12,10 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
  */
 export async function POST(req: NextRequest) {
   try {
+    if (!isSameOriginOrApp(req)) {
+      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    }
+
     const supabase = await createSupabaseServer();
     const body = (await req.json().catch(() => null)) as
       | { access_token?: string; refresh_token?: string }

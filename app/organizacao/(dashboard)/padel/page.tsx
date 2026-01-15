@@ -13,7 +13,9 @@ export default function OrganizationPadelRedirect({ searchParams }: Props) {
       if (Array.isArray(value) && value[0]) params.set(key, value[0]);
     });
   }
-  params.set("tab", "manage");
+  if (!params.get("padel")) {
+    params.set("padel", params.get("eventId") ? "calendar" : "clubs");
+  }
   params.set("section", "padel-hub");
-  redirect(`/organizacao?${params.toString()}`);
+  redirect(`/organizacao/torneios?${params.toString()}`);
 }

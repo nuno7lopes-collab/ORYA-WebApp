@@ -1,11 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import { ConfirmDestructiveActionDialog } from "@/app/components/ConfirmDestructiveActionDialog";
-import { ORGANIZATION_CATEGORY_LABELS, normalizeOrganizationCategory } from "@/lib/organizationCategories";
+import {
+  CORE_ORGANIZATION_MODULES,
+  DEFAULT_PRIMARY_MODULE,
+  resolvePrimaryModule,
+} from "@/lib/organizationCategories";
 import { cn } from "@/lib/utils";
 import { trackEvent } from "@/lib/analytics";
 import { useUser } from "@/app/hooks/useUser";
@@ -13,15 +18,31 @@ import { AuthModalProvider } from "@/app/components/autenticação/AuthModalCont
 import PromoCodesPage from "./promo/PromoCodesClient";
 import { SalesAreaChart } from "@/app/components/charts/SalesAreaChart";
 import InvoicesClient from "./pagamentos/invoices/invoices-client";
-import ObjectiveSubnav from "./ObjectiveSubnav";
 import PadelHubSection from "./(dashboard)/padel/PadelHubSection";
-import { CTA_DANGER, CTA_NEUTRAL, CTA_PRIMARY, CTA_SECONDARY, CTA_SUCCESS } from "@/app/organizacao/dashboardUi";
+import ReservasDashboardPage from "./(dashboard)/reservas/page";
+import {
+  CTA_DANGER,
+  CTA_NEUTRAL,
+  CTA_PRIMARY,
+  CTA_SECONDARY,
+  CTA_SUCCESS,
+} from "@/app/organizacao/dashboardUi";
 import OrganizationPublicProfilePanel from "./OrganizationPublicProfilePanel";
 import InscricoesPage from "./(dashboard)/inscricoes/page";
 import { getEventCoverSuggestionIds, getEventCoverUrl } from "@/lib/eventCover";
+import { getProfileCoverUrl } from "@/lib/profileCover";
 import { getOrganizationRoleFlags } from "@/lib/organizationUiPermissions";
+import { ModuleIcon } from "./moduleIcons";
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
+
+const SkeletonBlock = ({ className = "" }: { className?: string }) => (
+  <div className={cn("animate-pulse rounded-3xl border border-white/10 orya-skeleton-surface", className)} />
+);
+
+const SkeletonLine = ({ className = "" }: { className?: string }) => (
+  <div className={cn("animate-pulse rounded-full border border-white/10 orya-skeleton-surface-strong", className)} />
+);
 
 type OverviewResponse = {
   ok: boolean;
@@ -65,6 +86,34 @@ type EventItem = {
 
 type EventsResponse = { ok: boolean; items: EventItem[] };
 
+type ServiceItem = {
+  id: number;
+  title: string;
+  description: string | null;
+  durationMinutes: number;
+  unitPriceCents: number;
+  currency: string;
+  isActive: boolean;
+  categoryTag?: string | null;
+  locationMode?: string | null;
+  _count?: { bookings: number; availabilities: number };
+};
+
+type BookingItem = {
+  id: number;
+  startsAt: string;
+  durationMinutes: number;
+  status: string;
+  price: number;
+  currency: string;
+  createdAt: string;
+  service: { id: number; title: string | null } | null;
+  user: { id: string; fullName: string | null; username: string | null; avatarUrl: string | null } | null;
+};
+
+type ServicesResponse = { ok: boolean; items: ServiceItem[] };
+type BookingsResponse = { ok: boolean; items: BookingItem[] };
+
 type PayoutSummaryResponse =
   | {
       ok: true;
@@ -74,6 +123,7 @@ type PayoutSummaryResponse =
       platformFeesCents: number;
       eventsWithSales: number;
       estimatedPayoutCents: number;
+      payoutAlerts: PayoutAlerts;
     }
   | { ok: false; error?: string };
 
@@ -92,12 +142,21 @@ type PromoCodeRow = {
   autoApply?: boolean;
   minQuantity?: number | null;
   minTotalCents?: number | null;
+  promoterUserId?: string | null;
 };
 
 type PromoListResponse = {
   ok: boolean;
   promoCodes: PromoCodeRow[];
   events: { id: number; title: string; slug: string }[];
+  promoStats?: {
+    promoCodeId: number;
+    tickets: number;
+    grossCents: number;
+    discountCents: number;
+    netCents: number;
+    usesTotal?: number;
+  }[];
   error?: string;
 };
 
@@ -128,6 +187,7 @@ type FinanceOverviewResponse =
         last30: { grossCents: number; netCents: number; feesCents: number; tickets: number };
       };
       upcomingPayoutCents: number;
+      payoutAlerts: PayoutAlerts;
       events: {
         id: number;
         title: string;
@@ -142,6 +202,11 @@ type FinanceOverviewResponse =
       error?: string;
     }
   | { ok: false; error?: string };
+type PayoutAlerts = {
+  holdUntil: string | null;
+  nextAttemptAt: string | null;
+  actionRequired: boolean;
+};
 type MarketingOverviewResponse = {
   ok: boolean;
   totalTickets: number;
@@ -182,14 +247,13 @@ type OrganizationLite = {
   stripeAccountId?: string | null;
   stripeChargesEnabled?: boolean | null;
   stripePayoutsEnabled?: boolean | null;
-  organizationCategory?: string | null;
+  primaryModule?: string | null;
   organizationKind?: string | null;
   username?: string | null;
   modules?: string[] | null;
   publicDescription?: string | null;
   brandingAvatarUrl?: string | null;
   brandingCoverUrl?: string | null;
-  liveHubPremiumEnabled?: boolean | null;
   publicWebsite?: string | null;
   publicInstagram?: string | null;
   publicYoutube?: string | null;
@@ -198,7 +262,7 @@ type OrganizationLite = {
   showAddressPublicly?: boolean | null;
 };
 
-type ObjectiveTab = "create" | "manage" | "promote" | "analyze";
+type ObjectiveTab = "create" | "manage" | "promote" | "analyze" | "profile";
 const MARKETING_TABS = [
   { key: "overview", label: "Visão geral" },
   { key: "promos", label: "Códigos promocionais" },
@@ -208,7 +272,44 @@ const MARKETING_TABS = [
 type MarketingSectionKey = (typeof MARKETING_TABS)[number]["key"];
 const MARKETING_TAB_KEYS = MARKETING_TABS.map((tab) => tab.key) as MarketingSectionKey[];
 
-const OBJECTIVE_TABS: ObjectiveTab[] = ["create", "manage", "promote", "analyze"];
+type DashboardModuleStatus = "active" | "optional" | "soon" | "locked" | "core";
+
+type DashboardModuleCard = {
+  id: string;
+  moduleKey: string;
+  title: string;
+  summary: string;
+  bullets: string[];
+  href?: string;
+  status: DashboardModuleStatus;
+  eyebrow?: string;
+};
+
+const OPERATION_MODULES = ["EVENTOS", "RESERVAS", "TORNEIOS"] as const;
+type OperationModule = (typeof OPERATION_MODULES)[number];
+
+const OPERATION_LABELS: Record<OperationModule, string> = {
+  EVENTOS: "Eventos",
+  RESERVAS: "Reservas",
+  TORNEIOS: "Padel",
+};
+
+const OPTIONAL_MODULES = ["INSCRICOES", "MENSAGENS"] as const;
+type OptionalModule = (typeof OPTIONAL_MODULES)[number];
+const MODULE_ICON_GRADIENTS: Record<string, string> = {
+  EVENTOS: "from-[#FF7AD1]/45 via-[#7FE0FF]/35 to-[#6A7BFF]/45",
+  RESERVAS: "from-[#6BFFFF]/40 via-[#6A7BFF]/30 to-[#0EA5E9]/40",
+  TORNEIOS: "from-[#F59E0B]/35 via-[#FF7AD1]/35 to-[#6A7BFF]/35",
+  INSCRICOES: "from-[#34D399]/35 via-[#6BFFFF]/30 to-[#7FE0FF]/35",
+  MENSAGENS: "from-[#A78BFA]/35 via-[#7FE0FF]/30 to-[#34D399]/35",
+  STAFF: "from-[#60A5FA]/35 via-[#7FE0FF]/30 to-[#F59E0B]/35",
+  FINANCEIRO: "from-[#F97316]/35 via-[#F59E0B]/30 to-[#FF7AD1]/35",
+  MARKETING: "from-[#FF7AD1]/35 via-[#FB7185]/30 to-[#F59E0B]/35",
+  PERFIL_PUBLICO: "from-[#22D3EE]/35 via-[#60A5FA]/30 to-[#A78BFA]/35",
+  DEFINICOES: "from-[#94A3B8]/35 via-[#64748B]/25 to-[#94A3B8]/35",
+};
+
+const OBJECTIVE_TABS: ObjectiveTab[] = ["create", "manage", "promote", "analyze", "profile"];
 type SalesRange = "7d" | "30d" | "90d" | "365d" | "all";
 
 type EventStatusFilter = "all" | "active" | "draft" | "finished" | "ongoing" | "archived";
@@ -234,9 +335,16 @@ const mapTabToObjective = (tab?: string | null): ObjectiveTab => {
   }
 };
 
+type DashboardClientDefaults = {
+  defaultObjective?: ObjectiveTab;
+  defaultSection?: string;
+};
 
-
-function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean }) {
+function OrganizacaoPageInner({
+  hasOrganization,
+  defaultObjective,
+  defaultSection,
+}: { hasOrganization: boolean } & DashboardClientDefaults) {
   const { user, profile, isLoading: userLoading } = useUser();
   const [stripeCtaLoading, setStripeCtaLoading] = useState(false);
   const [stripeCtaError, setStripeCtaError] = useState<string | null>(null);
@@ -253,20 +361,17 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
   const [searchTerm, setSearchTerm] = useState("");
   const [timeScope, setTimeScope] = useState<"all" | "upcoming" | "ongoing" | "past">("all");
   const [eventView, setEventView] = useState<"list" | "grid">("grid");
+  const [manageFiltersOpen, setManageFiltersOpen] = useState<"status" | "period" | "filters" | null>(null);
   const [eventActionLoading, setEventActionLoading] = useState<number | null>(null);
   const [eventDialog, setEventDialog] = useState<{ mode: "archive" | "delete" | "unarchive"; ev: EventItem } | null>(null);
+  const [toolsModalOpen, setToolsModalOpen] = useState(false);
+  const [pendingModuleRemoval, setPendingModuleRemoval] = useState<DashboardModuleCard | null>(null);
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const manageFiltersRef = useRef<HTMLDivElement | null>(null);
   const [marketingSection, setMarketingSection] = useState<MarketingSectionKey>("overview");
   const marketingSectionSourceRef = useRef<"url" | "ui">("url");
-  const handleMarketingSectionSelect = useCallback(
-    (section: MarketingSectionKey) => {
-      marketingSectionSourceRef.current = "ui";
-      setMarketingSection(section);
-    },
-    [setMarketingSection],
-  );
   const [salesRange, setSalesRange] = useState<SalesRange>("30d");
   const salesRangeLabelShort = (range: SalesRange) => {
     switch (range) {
@@ -297,31 +402,12 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
     }
   };
 
-  const tabParamRaw = searchParams?.get("tab");
-  const sectionParamRaw = searchParams?.get("section");
+  const tabParamRaw = searchParams?.get("tab") ?? defaultObjective ?? null;
+  const sectionParamRaw = searchParams?.get("section") ?? null;
   const marketingParamRaw = searchParams?.get("marketing");
   const activeObjective = mapTabToObjective(tabParamRaw);
-  const normalizedSection = sectionParamRaw ?? undefined;
+  const normalizedSection = sectionParamRaw ?? defaultSection ?? undefined;
   const scrollSection = sectionParamRaw ?? undefined;
-
-  useEffect(() => {
-    if (!scrollSection) return;
-    if (typeof window === "undefined") return;
-
-    const scrollTargets: Record<ObjectiveTab, string[]> = {
-      create: ["overview"],
-      manage: ["eventos", "inscricoes", "padel-hub"],
-      promote: ["marketing"],
-      analyze: ["financas", "invoices"],
-    };
-
-    const allowed = scrollTargets[activeObjective] ?? [];
-    if (!allowed.includes(scrollSection)) return;
-    const target = document.getElementById(scrollSection);
-    if (target) {
-      target.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
-  }, [scrollSection, activeObjective]);
 
   useEffect(() => {
     const statusParam = searchParams?.get("status");
@@ -352,6 +438,38 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
     }
   }, [searchParams, marketingParamRaw, sectionParamRaw, activeObjective]);
 
+  useEffect(() => {
+    if (!manageFiltersOpen) return;
+    const handlePointerDown = (event: MouseEvent) => {
+      if (manageFiltersRef.current && !manageFiltersRef.current.contains(event.target as Node)) {
+        setManageFiltersOpen(null);
+      }
+    };
+    const handleKeydown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setManageFiltersOpen(null);
+    };
+    window.addEventListener("mousedown", handlePointerDown);
+    window.addEventListener("keydown", handleKeydown);
+    return () => {
+      window.removeEventListener("mousedown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeydown);
+    };
+  }, [manageFiltersOpen]);
+
+  useEffect(() => {
+    if (!toolsModalOpen || typeof window === "undefined") return;
+    const original = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const handleKeydown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setToolsModalOpen(false);
+    };
+    window.addEventListener("keydown", handleKeydown);
+    return () => {
+      document.body.style.overflow = original;
+      window.removeEventListener("keydown", handleKeydown);
+    };
+  }, [toolsModalOpen]);
+
   const organizationIdParam = searchParams?.get("organizationId");
   const orgMeUrl = useMemo(() => {
     if (!user) return null;
@@ -369,30 +487,256 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
   >(orgMeUrl, fetcher);
 
   const organization = organizationData?.organization ?? null;
-  const organizationCategory = organization?.organizationCategory ?? null;
-  const orgCategory = normalizeOrganizationCategory(organizationCategory);
-  const categoryLabel = ORGANIZATION_CATEGORY_LABELS[orgCategory];
-  const showPadelHub = orgCategory === "PADEL";
-  const loading = userLoading || organizationLoading;
+  const isSuspended = organization?.status === "SUSPENDED";
+  const isActive = organization?.status === "ACTIVE";
+  const isPending = Boolean(organization?.status && !isActive && !isSuspended);
+  const primaryModule = organization?.primaryModule ?? null;
+  const rawModules = useMemo(() => {
+    if (!Array.isArray(organization?.modules)) return [];
+    return organization.modules
+      .filter((module): module is string => typeof module === "string")
+      .map((module) => module.trim().toUpperCase())
+      .filter((module) => module.length > 0);
+  }, [organization?.modules]);
+  const primaryOperation = useMemo<OperationModule>(
+    () => resolvePrimaryModule(primaryModule, rawModules) as OperationModule,
+    [primaryModule, rawModules],
+  );
+  const activeModules = useMemo(() => {
+    const base = new Set<string>([...rawModules, ...CORE_ORGANIZATION_MODULES]);
+    base.add(primaryOperation);
+    return Array.from(base);
+  }, [rawModules, primaryOperation]);
+  const operationLabel = OPERATION_LABELS[primaryOperation];
+  const orgDisplayName =
+    organization?.publicName?.trim() ||
+    organization?.businessName?.trim() ||
+    "Organização";
+  const isReservasOrg = primaryOperation === "RESERVAS";
+  const isTorneiosOrg = primaryOperation === "TORNEIOS";
+  const hasTorneiosModule = activeModules.includes("TORNEIOS");
+  const isTorneiosRoute =
+    pathname?.startsWith("/organizacao/torneios") ||
+    pathname?.startsWith("/organizacao/padel") ||
+    pathname?.startsWith("/organizacao/tournaments");
+  const isEventosRoute = pathname?.startsWith("/organizacao/eventos");
+  const isPadelContext =
+    hasTorneiosModule &&
+    (isTorneiosOrg ||
+      pathname?.startsWith("/organizacao/torneios") ||
+      pathname?.startsWith("/organizacao/padel") ||
+      pathname?.startsWith("/organizacao/tournaments") ||
+      sectionParamRaw === "padel-hub");
+  const eventsScope = useMemo<"PADEL" | "EVENTOS">(() => {
+    if (isTorneiosRoute || sectionParamRaw === "padel-hub") return "PADEL";
+    if (isEventosRoute) return "EVENTOS";
+    return isTorneiosOrg ? "PADEL" : "EVENTOS";
+  }, [isEventosRoute, isTorneiosOrg, isTorneiosRoute, sectionParamRaw]);
+  const eventsScopeQuery = eventsScope === "PADEL" ? "templateType=PADEL" : "excludeTemplateType=PADEL";
+  const eventsScopeSuffix = `?${eventsScopeQuery}`;
+  const eventsScopeAmp = `&${eventsScopeQuery}`;
+  const showPadelHub = hasTorneiosModule;
+  const hasInscricoesModule = activeModules.includes("INSCRICOES");
+  const hasMarketingModule = activeModules.includes("MARKETING");
+  const primaryCreateMeta =
+    primaryOperation === "RESERVAS"
+      ? { label: "Criar serviço", href: "/organizacao/reservas?create=service", singular: "serviço", plural: "serviços" }
+      : primaryOperation === "TORNEIOS"
+        ? { label: "Criar torneio", href: "/organizacao/torneios/novo", singular: "torneio", plural: "torneios" }
+        : { label: "Criar evento", href: "/organizacao/eventos/novo", singular: "evento", plural: "eventos" };
+  const manageCreateMeta = isPadelContext
+    ? { label: "Criar torneio", href: "/organizacao/torneios/novo", singular: "torneio", plural: "torneios" }
+    : primaryCreateMeta;
+  const managePrimaryLabel = isPadelContext ? "Padel" : "Eventos";
+  const managePrimaryLabelLower = isPadelContext ? "torneio" : "evento";
+  const managePrimaryLabelTitle = isPadelContext ? "Torneio" : "Evento";
+  const managePrimarySingularLabel = manageCreateMeta.singular;
+  const manageTitle = isReservasOrg ? "Reservas" : managePrimaryLabel;
+  const manageDescription = isReservasOrg
+    ? "Calendário, serviços e marcações num só painel."
+    : `Entra em cada ${managePrimaryLabelLower} para editar, preparar live, inscrições, página pública e arquivo.`;
+  const eventRouteBase = isPadelContext ? "/organizacao/torneios" : "/organizacao/eventos";
+  const loading = userLoading || organizationLoading || (Boolean(user) && !organizationData);
   const paymentsStatus = organizationData?.paymentsStatus ?? "NO_STRIPE";
   const paymentsMode = organizationData?.paymentsMode ?? "CONNECT";
   const profileStatus = organizationData?.profileStatus ?? "MISSING_CONTACT";
-  const officialEmail = (organization as { officialEmail?: string | null })?.officialEmail ?? null;
-  const officialEmailVerifiedAtRaw = (organization as { officialEmailVerifiedAt?: string | null })?.officialEmailVerifiedAt ?? null;
-  const officialEmailVerifiedAt = officialEmailVerifiedAtRaw ? new Date(officialEmailVerifiedAtRaw) : null;
-  const showOfficialEmailWarning = Boolean(organization) && !officialEmailVerifiedAt;
   const membershipRole = organizationData?.membershipRole ?? null;
   const roleFlags = useMemo(() => getOrganizationRoleFlags(membershipRole), [membershipRole]);
+  const canUseMarketing = roleFlags.canPromote && hasMarketingModule;
   const marketingTabs = useMemo(() => {
-    if (!roleFlags.canPromote) return [];
+    if (!canUseMarketing) return [];
     if (roleFlags.isPromoterOnly) {
       return MARKETING_TABS.filter((tab) => tab.key === "promoters");
     }
     return MARKETING_TABS;
-  }, [roleFlags]);
+  }, [canUseMarketing, roleFlags]);
+  const activeOperationModules = useMemo(
+    () => OPERATION_MODULES.filter((module) => activeModules.includes(module)),
+    [activeModules],
+  );
+  const activeOptionalModules = useMemo(
+    () => OPTIONAL_MODULES.filter((module) => activeModules.includes(module)),
+    [activeModules],
+  );
+  const [primarySelection, setPrimarySelection] = useState<OperationModule>(primaryOperation);
+  const [operationSelection, setOperationSelection] =
+    useState<OperationModule[]>(activeOperationModules);
+  const [optionalSelection, setOptionalSelection] = useState<OptionalModule[]>(activeOptionalModules);
+  const [modulesSaving, setModulesSaving] = useState(false);
+  const activeOperationKey = useMemo(
+    () => [...activeOperationModules].sort().join("|"),
+    [activeOperationModules],
+  );
+  const activeOptionalKey = useMemo(
+    () => [...activeOptionalModules].sort().join("|"),
+    [activeOptionalModules],
+  );
+
+  useEffect(() => {
+    setPrimarySelection(primaryOperation);
+    setOperationSelection(activeOperationModules);
+    setOptionalSelection(activeOptionalModules);
+  }, [organization?.id, primaryOperation, activeOperationKey, activeOptionalKey]);
+
+  const buildModulesPayload = useCallback(
+    (primary: OperationModule, operations: OperationModule[], optional: OptionalModule[]) => {
+      const managed = new Set<string>([...CORE_ORGANIZATION_MODULES, ...OPERATION_MODULES, ...OPTIONAL_MODULES]);
+      const preserved = activeModules.filter((module) => !managed.has(module));
+      const operationSet = new Set<string>([...operations, primary]);
+      const base = new Set<string>([
+        ...CORE_ORGANIZATION_MODULES,
+        ...operationSet,
+        ...optional,
+        ...preserved,
+      ]);
+      return Array.from(base);
+    },
+    [activeModules],
+  );
+
+  const saveModules = useCallback(
+    async (primary: OperationModule, operations: OperationModule[], optional: OptionalModule[]) => {
+      if (!organization) return;
+      setModulesSaving(true);
+      try {
+        const payload: Record<string, unknown> = {
+          modules: buildModulesPayload(primary, operations, optional),
+        };
+        if (organization.primaryModule !== primary) {
+          payload.primaryModule = primary;
+        }
+        const patchUrl = organizationIdParam
+          ? `/api/organizacao/me?organizationId=${organizationIdParam}`
+          : "/api/organizacao/me";
+        const res = await fetch(patchUrl, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const json = await res.json().catch(() => null);
+        if (!res.ok || json?.ok === false) {
+          return;
+        }
+        mutateOrganization();
+      } catch (err) {
+        console.error("[dashboard][modules] update error", err);
+      } finally {
+        setModulesSaving(false);
+      }
+    },
+    [buildModulesPayload, mutateOrganization, organization, organizationIdParam],
+  );
+  const canEditModules = roleFlags.canEditOrg;
+  const setPrimaryModule = useCallback(
+    (moduleKey: OperationModule) => {
+      if (!canEditModules || modulesSaving) return;
+      if (moduleKey === primarySelection) return;
+      const nextOperations = operationSelection.includes(moduleKey)
+        ? operationSelection
+        : [...operationSelection, moduleKey];
+      setPrimarySelection(moduleKey);
+      setOperationSelection(nextOperations);
+      saveModules(moduleKey, nextOperations, optionalSelection);
+    },
+    [canEditModules, modulesSaving, operationSelection, optionalSelection, primarySelection, saveModules],
+  );
+  const activateModule = useCallback(
+    (moduleKey: string) => {
+      if (!canEditModules || modulesSaving) return;
+      if (OPERATION_MODULES.includes(moduleKey as OperationModule)) {
+        const nextKey = moduleKey as OperationModule;
+        if (operationSelection.includes(nextKey)) return;
+        const nextOperations = [...operationSelection, nextKey];
+        setOperationSelection(nextOperations);
+        saveModules(primarySelection, nextOperations, optionalSelection);
+        return;
+      }
+      if (OPTIONAL_MODULES.includes(moduleKey as OptionalModule)) {
+        if (optionalSelection.includes(moduleKey as OptionalModule)) return;
+        const nextOptional = [...optionalSelection, moduleKey as OptionalModule];
+        setOptionalSelection(nextOptional);
+        saveModules(primarySelection, operationSelection, nextOptional);
+      }
+    },
+    [canEditModules, modulesSaving, operationSelection, optionalSelection, primarySelection, saveModules],
+  );
+  const deactivateModule = useCallback(
+    (moduleKey: string) => {
+      if (!canEditModules || modulesSaving) return;
+      if (OPERATION_MODULES.includes(moduleKey as OperationModule)) {
+        const nextKey = moduleKey as OperationModule;
+        if (nextKey === primarySelection) return;
+        if (!operationSelection.includes(nextKey)) return;
+        const nextOperations = operationSelection.filter((module) => module !== nextKey);
+        setOperationSelection(nextOperations);
+        saveModules(primarySelection, nextOperations, optionalSelection);
+        return;
+      }
+      if (!OPTIONAL_MODULES.includes(moduleKey as OptionalModule)) return;
+      if (!optionalSelection.includes(moduleKey as OptionalModule)) return;
+      const nextOptional = optionalSelection.filter((module) => module !== moduleKey);
+      setOptionalSelection(nextOptional);
+      saveModules(primarySelection, operationSelection, nextOptional);
+    },
+    [canEditModules, modulesSaving, operationSelection, optionalSelection, primarySelection, saveModules],
+  );
   const onboardingParam = searchParams?.get("onboarding");
   const [stripeRequirements, setStripeRequirements] = useState<string[]>([]);
   const [stripeSuccessMessage, setStripeSuccessMessage] = useState<string | null>(null);
+  const [checklistDismissed, setChecklistDismissed] = useState(false);
+  const [checklistCollapsed, setChecklistCollapsed] = useState(true);
+
+  useEffect(() => {
+    if (!scrollSection) return;
+    if (typeof window === "undefined") return;
+
+    const scrollTargets: Record<ObjectiveTab, string[]> = {
+      create: ["overview", "modulos"],
+      manage: isReservasOrg
+        ? ["reservas"]
+        : ["eventos", ...(hasInscricoesModule ? ["inscricoes"] : []), ...(showPadelHub ? ["padel-hub"] : [])],
+      promote: ["marketing"],
+      analyze: roleFlags.canViewFinance
+        ? ["overview", "vendas", "financas", "invoices"]
+        : ["financas", "invoices"],
+      profile: ["perfil"],
+    };
+
+    const allowed = scrollTargets[activeObjective] ?? [];
+    if (!allowed.includes(scrollSection)) return;
+    const target = document.getElementById(scrollSection);
+    if (target) {
+      target.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [scrollSection, activeObjective, hasInscricoesModule, isReservasOrg, roleFlags.canViewFinance, showPadelHub]);
+
+  useEffect(() => {
+    if (scrollSection) return;
+    if (typeof window === "undefined") return;
+    if (activeObjective !== "create") return;
+    const container = document.querySelector<HTMLElement>("[data-org-scroll]");
+    container?.scrollTo({ top: 0 });
+  }, [scrollSection, activeObjective]);
 
   useEffect(() => {
     if (marketingTabs.length === 0) return;
@@ -437,30 +781,49 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
     }
   }, [organization, profile, businessName, city, entityType, payoutIban]);
 
+  const shouldLoadOverview = organization?.status === "ACTIVE" && !isReservasOrg && roleFlags.canViewFinance;
   const { data: overview } = useSWR<OverviewResponse>(
-    organization?.status === "ACTIVE" ? "/api/organizacao/estatisticas/overview?range=30d" : null,
+    shouldLoadOverview
+      ? `/api/organizacao/estatisticas/overview?range=30d${eventsScopeAmp}`
+      : null,
     fetcher,
     { revalidateOnFocus: false }
   );
 
   const shouldLoadOverviewSeries =
     organization?.status === "ACTIVE" &&
+    !isReservasOrg &&
+    roleFlags.canViewFinance &&
     activeObjective === "analyze" &&
     normalizedSection === "overview";
 
   type TimeSeriesResponse = { ok: boolean; points: TimeSeriesPoint[]; range: { from: string | null; to: string | null } };
   const { data: timeSeries } = useSWR<TimeSeriesResponse>(
-    shouldLoadOverviewSeries ? "/api/organizacao/estatisticas/time-series?range=30d" : null,
+    shouldLoadOverviewSeries
+      ? `/api/organizacao/estatisticas/time-series?range=30d${eventsScopeAmp}`
+      : null,
     fetcher,
     { revalidateOnFocus: false }
   );
 
+  const shouldLoadEvents = organization?.status === "ACTIVE" && !isReservasOrg;
   const {
     data: events,
     error: eventsError,
     mutate: mutateEvents,
   } = useSWR<EventsResponse>(
-    organization?.status === "ACTIVE" ? "/api/organizacao/events/list" : null,
+    shouldLoadEvents ? `/api/organizacao/events/list${eventsScopeSuffix}` : null,
+    fetcher,
+    { revalidateOnFocus: false }
+  );
+  const shouldLoadReservas = organization?.status === "ACTIVE" && isReservasOrg;
+  const { data: servicesData } = useSWR<ServicesResponse>(
+    shouldLoadReservas ? "/api/organizacao/servicos" : null,
+    fetcher,
+    { revalidateOnFocus: false }
+  );
+  const { data: bookingsData } = useSWR<BookingsResponse>(
+    shouldLoadReservas ? "/api/organizacao/reservas" : null,
     fetcher,
     { revalidateOnFocus: false }
   );
@@ -474,6 +837,8 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
 
   const shouldLoadSales =
     organization?.status === "ACTIVE" &&
+    !isReservasOrg &&
+    roleFlags.canViewFinance &&
     activeObjective === "analyze" &&
     normalizedSection === "vendas";
 
@@ -485,13 +850,13 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
   }, [events, salesEventId, shouldLoadSales]);
 
   const { data: payoutSummary } = useSWR<PayoutSummaryResponse>(
-    organization?.status === "ACTIVE" ? "/api/organizacao/payouts/summary" : null,
+    organization?.status === "ACTIVE" && roleFlags.canViewFinance ? "/api/organizacao/payouts/summary" : null,
     fetcher,
     { revalidateOnFocus: false }
   );
   const { data: financeOverview } = useSWR<FinanceOverviewResponse>(
-    organization?.status === "ACTIVE" && activeObjective === "analyze"
-      ? "/api/organizacao/finance/overview"
+    organization?.status === "ACTIVE" && roleFlags.canViewFinance && activeObjective === "analyze"
+      ? `/api/organizacao/finance/overview${eventsScopeSuffix}`
       : null,
     fetcher,
     { revalidateOnFocus: false }
@@ -506,14 +871,15 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
 
   const salesSeriesKey = useMemo(() => {
     if (!shouldLoadSales || !salesEventId) return null;
+    const templateQuery = eventsScopeAmp;
     if (salesRange === "7d" || salesRange === "30d" || salesRange === "90d") {
-      return `/api/organizacao/estatisticas/time-series?range=${salesRange}&eventId=${salesEventId}`;
+      return `/api/organizacao/estatisticas/time-series?range=${salesRange}&eventId=${salesEventId}${templateQuery}`;
     }
     if (salesRange === "365d") {
-      return `/api/organizacao/estatisticas/time-series?eventId=${salesEventId}&from=${oneYearAgoIso}`;
+      return `/api/organizacao/estatisticas/time-series?eventId=${salesEventId}&from=${oneYearAgoIso}${templateQuery}`;
     }
-    return `/api/organizacao/estatisticas/time-series?eventId=${salesEventId}`;
-  }, [salesEventId, salesRange, oneYearAgoIso, shouldLoadSales]);
+    return `/api/organizacao/estatisticas/time-series?eventId=${salesEventId}${templateQuery}`;
+  }, [salesEventId, salesRange, oneYearAgoIso, shouldLoadSales, eventsScopeAmp]);
 
   const { data: salesSeries } = useSWR<TimeSeriesResponse>(
     salesSeriesKey,
@@ -533,6 +899,7 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
       setCtaError(null);
       setCtaSuccess(null);
       const archive = mode === "archive" || mode === "delete";
+      const targetLabel = target.templateType === "PADEL" ? "Torneio" : "Evento";
       try {
         const res = await fetch("/api/organizacao/events/update", {
           method: "POST",
@@ -548,10 +915,10 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
             setCtaSuccess("Rascunho apagado.");
             trackEvent("event_draft_deleted", { eventId: target.id, status: target.status });
           } else if (mode === "archive") {
-            setCtaSuccess("Evento arquivado.");
+            setCtaSuccess(`${targetLabel} arquivado.`);
             trackEvent("event_archived", { eventId: target.id, status: target.status });
           } else {
-            setCtaSuccess("Evento reativado.");
+            setCtaSuccess(`${targetLabel} reativado.`);
             trackEvent("event_unarchived", { eventId: target.id, status: target.status });
           }
           setTimeout(() => setCtaSuccess(null), 3000);
@@ -567,18 +934,24 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
     [mutateEvents],
   );
   const { data: marketingOverview } = useSWR<MarketingOverviewResponse>(
-    organization?.status === "ACTIVE" && activeObjective === "promote"
-      ? "/api/organizacao/marketing/overview"
+    organization?.status === "ACTIVE" &&
+      activeObjective === "promote" &&
+      !roleFlags.isPromoterOnly &&
+      canUseMarketing
+      ? `/api/organizacao/marketing/overview${eventsScopeSuffix}`
       : null,
     fetcher,
     { revalidateOnFocus: false }
   );
 
   const { data: promoData } = useSWR<PromoListResponse>(
-    organization?.status === "ACTIVE" ? "/api/organizacao/promo" : null,
+    organization?.status === "ACTIVE" && canUseMarketing
+      ? "/api/organizacao/promo"
+      : null,
     fetcher,
     { revalidateOnFocus: false }
   );
+  const eventDialogLabel = eventDialog?.ev.templateType === "PADEL" ? "torneio" : "evento";
   const currentQuery = searchParams?.toString() || "";
   async function handleStripeConnect() {
     import("@/lib/analytics").then(({ trackEvent }) =>
@@ -621,17 +994,17 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
           : "—",
       },
       {
-        label: "Eventos com vendas",
+        label: `${managePrimaryLabel} com vendas`,
         value: overview ? overview.eventsWithSalesCount : "—",
-        hint: "Eventos com pelo menos 1 venda",
+        hint: `${managePrimaryLabel} com pelo menos 1 venda`,
       },
       {
-        label: "Eventos publicados",
+        label: `${managePrimaryLabel} publicados`,
         value: overview ? overview.activeEventsCount : "—",
-        hint: "Eventos PUBLISHED ligados a ti",
+        hint: `${managePrimaryLabel} PUBLISHED ligados a ti`,
       },
     ];
-  }, [overview]);
+  }, [overview, managePrimaryLabel]);
 
   const statGradients = [
     "from-[#6BFFFF]/25 via-[#0b1224]/70 to-[#0a0f1c]/90",
@@ -640,8 +1013,8 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
     "from-[#AEE4FF]/18 via-[#0d1623]/70 to-[#0a0f1c]/90",
   ];
 
-  // Usar largura completa do inset para evitar que o conteúdo fique centrado/direita quando a sidebar está aberta
-  const containerClasses = "w-full max-w-none px-4 pb-12 pt-6 md:pt-8 md:px-6 lg:px-8";
+  // Usar largura completa do inset para manter o conteúdo alinhado no dashboard
+  const containerClasses = "w-full max-w-none pb-12 pt-4 md:pt-6";
   const statusLabelMap: Record<EventStatusFilter, string> = {
     all: "Todos",
     active: "Ativos",
@@ -656,7 +1029,13 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
     ongoing: "A decorrer",
     past: "Passados",
   };
-  const eventsList = useMemo(() => events?.items ?? [], [events]);
+  const eventsList = useMemo(() => {
+    const items = events?.items ?? [];
+    if (eventsScope === "PADEL") {
+      return items.filter((ev) => ev.templateType === "PADEL");
+    }
+    return items.filter((ev) => ev.templateType !== "PADEL");
+  }, [events, eventsScope]);
   const eventSummary = useMemo(() => {
     const now = new Date();
     let upcoming = 0;
@@ -678,11 +1057,44 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
     });
     return { upcoming, ongoing, finished, total: eventsList.length };
   }, [eventsList]);
+  const servicesList = useMemo(() => servicesData?.items ?? [], [servicesData]);
+  const bookingsList = useMemo(() => bookingsData?.items ?? [], [bookingsData]);
+  const servicesStats = useMemo(() => {
+    const active = servicesList.filter((service) => service.isActive).length;
+    const availabilityCount = servicesList.reduce(
+      (sum, service) => sum + (service._count?.availabilities ?? 0),
+      0,
+    );
+    return { total: servicesList.length, active, availabilityCount };
+  }, [servicesList]);
+  const bookingsStats = useMemo(() => {
+    const now = new Date();
+    const weekAhead = new Date(now);
+    weekAhead.setDate(weekAhead.getDate() + 7);
+    let upcoming = 0;
+    let confirmed = 0;
+    let pending = 0;
+    let cancelled = 0;
+    let revenueCents = 0;
+    bookingsList.forEach((booking) => {
+      const start = new Date(booking.startsAt);
+      if (start >= now && start <= weekAhead) upcoming += 1;
+      if (booking.status === "CONFIRMED" || booking.status === "COMPLETED") {
+        confirmed += 1;
+        revenueCents += booking.price || 0;
+      } else if (["PENDING_CONFIRMATION", "PENDING"].includes(booking.status)) {
+        pending += 1;
+      } else if (["CANCELLED", "CANCELLED_BY_CLIENT", "CANCELLED_BY_ORG"].includes(booking.status)) {
+        cancelled += 1;
+      }
+    });
+    return { upcoming, confirmed, pending, cancelled, revenueCents };
+  }, [bookingsList]);
   const eventsListLoading =
-    organization?.status === "ACTIVE" &&
+    shouldLoadEvents &&
     activeObjective === "manage" &&
     !events;
-  const overviewLoading = organization?.status === "ACTIVE" && !overview;
+  const overviewLoading = shouldLoadOverview && !overview;
   const partnerClubOptions = useMemo(() => {
     const map = new Map<number, string>();
     eventsList.forEach((ev) => {
@@ -697,6 +1109,13 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
       });
     });
     return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
+  }, [eventsList]);
+  const categoryOptions = useMemo(() => {
+    const set = new Set<string>();
+    eventsList.forEach((ev) => {
+      (ev.categories ?? []).forEach((cat) => set.add(cat));
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [eventsList]);
   const persistFilters = useCallback(
     (params: URLSearchParams) => {
@@ -810,10 +1229,20 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
   const selectedSalesEvent = salesEventId ? eventsList.find((ev) => ev.id === salesEventId) ?? null : null;
   const financeData = financeOverview && financeOverview.ok ? financeOverview : null;
   const financeSummary = payoutSummary && "ok" in payoutSummary && payoutSummary.ok ? payoutSummary : null;
+  const payoutAlerts = financeData?.payoutAlerts ?? financeSummary?.payoutAlerts ?? null;
   const stripeState = useMemo(() => {
     const hasReqs = stripeRequirements.length > 0;
+    const pluralLabel = primaryCreateMeta.plural;
     if (paymentsStatus === "READY") {
-      return { badge: "Ativo", tone: "success", title: "Conta Stripe ligada ✅", desc: "Já podes vender bilhetes pagos e receber os teus payouts normalmente.", cta: "Abrir painel Stripe" };
+      return {
+        badge: "Ativo",
+        tone: "success",
+        title: "Conta Stripe ligada ✅",
+        desc: isReservasOrg
+          ? "Já podes receber pagamentos e gerir os teus payouts normalmente."
+          : "Já podes vender bilhetes pagos e receber os teus payouts normalmente.",
+        cta: "Abrir painel Stripe",
+      };
     }
     if (paymentsStatus === "PENDING") {
       return {
@@ -822,19 +1251,59 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
         title: hasReqs ? "Falta concluir dados no Stripe" : "Conta Stripe em configuração",
         desc: hasReqs
           ? "A tua conta Stripe precisa de dados antes de ativar pagamentos."
-          : "Conclui o onboarding no Stripe para começares a receber os pagamentos dos teus bilhetes.",
+          : isReservasOrg
+            ? "Conclui o onboarding no Stripe para começares a receber pagamentos."
+            : "Conclui o onboarding no Stripe para começares a receber os pagamentos dos teus bilhetes.",
         cta: hasReqs ? "Rever ligação Stripe" : "Continuar configuração no Stripe",
       };
     }
-    return { badge: "Por ligar", tone: "neutral", title: "Ainda não ligaste a tua conta Stripe", desc: "Podes criar eventos gratuitos, mas para vender bilhetes pagos precisas de ligar uma conta Stripe.", cta: "Ligar conta Stripe" };
-  }, [paymentsStatus, stripeRequirements]);
+    return {
+      badge: "Por ligar",
+      tone: "neutral",
+      title: "Ainda não ligaste a tua conta Stripe",
+      desc: isReservasOrg
+        ? `Podes criar ${pluralLabel} gratuitos, mas para receber pagamentos precisas de ligar uma conta Stripe.`
+        : `Podes criar ${pluralLabel} gratuitos, mas para vender bilhetes pagos precisas de ligar uma conta Stripe.`,
+      cta: "Ligar conta Stripe",
+    };
+  }, [paymentsStatus, stripeRequirements, primaryCreateMeta.plural, isReservasOrg]);
 
   const marketingPromos = useMemo(() => promoData?.promoCodes ?? [], [promoData]);
+  const promoEvents = useMemo(() => promoData?.events ?? [], [promoData]);
+  const promoStats = useMemo(() => promoData?.promoStats ?? [], [promoData]);
   const marketingKpis = useMemo(() => {
     const activePromos = marketingPromos.filter((p) => p.active).length;
     const fallbackTop = [...marketingPromos].sort(
       (a, b) => (b.redemptionsCount ?? 0) - (a.redemptionsCount ?? 0)
     )[0];
+    const promoTotals = promoStats.reduce(
+      (acc, stat) => {
+        acc.tickets += stat.tickets ?? 0;
+        acc.grossCents += stat.grossCents ?? 0;
+        acc.netCents += stat.netCents ?? 0;
+        acc.discountCents += stat.discountCents ?? 0;
+        acc.uses += stat.usesTotal ?? 0;
+        return acc;
+      },
+      { tickets: 0, grossCents: 0, netCents: 0, discountCents: 0, uses: 0 },
+    );
+    if (roleFlags.isPromoterOnly) {
+      return {
+        totalTickets: promoTotals.tickets,
+        ticketsWithPromo: promoTotals.tickets,
+        guestTickets: 0,
+        marketingRevenueCents: promoTotals.netCents,
+        activePromos,
+        topPromo: fallbackTop
+          ? {
+              id: fallbackTop.id,
+              code: fallbackTop.code,
+              redemptionsCount: fallbackTop.redemptionsCount ?? 0,
+              revenueCents: 0,
+            }
+          : null,
+      };
+    }
     return {
       totalTickets: marketingOverview?.totalTickets ?? overview?.totalTickets ?? 0,
       ticketsWithPromo: marketingOverview?.ticketsWithPromo ?? marketingPromos.reduce((sum, p) => sum + (p.redemptionsCount ?? 0), 0),
@@ -850,7 +1319,7 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
           }
         : null),
     };
-  }, [marketingOverview, marketingPromos, overview]);
+  }, [marketingOverview, marketingPromos, overview, promoStats, roleFlags.isPromoterOnly]);
   const buyersItems = buyers && buyers.ok !== false ? buyers.items : [];
   const salesLoading = !!salesEventId && !salesSeries;
   const buyersLoading = !!salesEventId && !buyers;
@@ -925,7 +1394,16 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
 
   const exportFinanceCsv = useCallback(() => {
     if (!financeData || !financeData.events.length) return;
-    const header = ["ID", "Evento", "Bilhetes", "Bruto (€)", "Taxas (€)", "Líquido (€)", "Estado", "Data"];
+    const header = [
+      "ID",
+      managePrimaryLabelTitle,
+      "Bilhetes",
+      "Bruto (€)",
+      "Taxas (€)",
+      "Líquido (€)",
+      "Estado",
+      "Data",
+    ];
     const rows = financeData.events.map((ev) => [
       ev.id,
       ev.title,
@@ -941,10 +1419,10 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "vendas-por-evento.csv";
+    a.download = `vendas-por-${managePrimaryLabelLower}.csv`;
     a.click();
     URL.revokeObjectURL(url);
-  }, [financeData]);
+  }, [financeData, managePrimaryLabelLower, managePrimaryLabelTitle]);
 
   const handleExportSalesCsv = useCallback(() => {
     if (!salesSeries?.points?.length || !selectedSalesEvent) return;
@@ -977,8 +1455,12 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
   const fillTheRoomEvents = useMemo(() => {
     const sourceEvents =
       marketingOverview?.events && marketingOverview.events.length > 0 ? marketingOverview.events : eventsList;
+    const scopedEvents =
+      eventsScope === "PADEL"
+        ? sourceEvents.filter((ev) => ev.templateType === "PADEL")
+        : sourceEvents.filter((ev) => ev.templateType !== "PADEL");
     const now = new Date();
-    return sourceEvents
+    return scopedEvents
       .filter((ev) => {
         const start = ev.startsAt ? new Date(ev.startsAt) : null;
         return start && start.getTime() >= now.getTime();
@@ -1020,84 +1502,395 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
 
         return { ...ev, diffDays, capacity, occupancy, tag };
       });
-  }, [eventsList, marketingOverview?.events]);
+  }, [eventsList, eventsScope, marketingOverview?.events]);
 
   const isPlatformStripe = paymentsMode === "PLATFORM";
   const stripeReady = isPlatformStripe || paymentsStatus === "READY";
   const stripeIncomplete = !isPlatformStripe && paymentsStatus === "PENDING";
-  const nextEvent = events?.items?.[0] ?? null;
+  const nextEvent = eventsList[0] ?? null;
   const publicProfileUrl = organization?.username ? `/${organization.username}` : null;
+  const officialEmailVerified = Boolean(organization?.officialEmail && organization?.officialEmailVerifiedAt);
   const profileCoverUrl = useMemo(() => {
     const customCover = organization?.brandingCoverUrl?.trim() || null;
-    const coverEvent = eventsList.find((ev) => ev.coverImageUrl) ?? null;
-    const coverCandidate = customCover ?? coverEvent?.coverImageUrl ?? null;
-    if (!coverCandidate) return null;
-    const suggestions = getEventCoverSuggestionIds({
-      templateType: coverEvent?.templateType ?? null,
-      organizationCategory: organization?.organizationCategory ?? null,
-    });
-    return getEventCoverUrl(coverCandidate, {
-      seed: coverEvent?.slug ?? organization?.username ?? organization?.id ?? "org-cover",
-      suggestedIds: suggestions,
-      width: 1400,
+    if (!customCover) return null;
+    return getProfileCoverUrl(customCover, {
+      width: 1500,
+      height: 500,
       quality: 70,
       format: "webp",
     });
-  }, [eventsList, organization?.brandingCoverUrl, organization?.organizationCategory, organization?.username, organization?.id]);
+  }, [organization?.brandingCoverUrl]);
   const membersCount = membersData?.ok ? membersData.items?.length ?? 0 : 0;
   const hasInvitedStaff = membersCount > 1;
+  const primaryCreatedDone = isReservasOrg ? servicesStats.total > 0 : eventsList.length > 0;
+  const primaryModuleKey =
+    primaryOperation === "RESERVAS" ? "RESERVAS" : primaryOperation === "TORNEIOS" ? "TORNEIOS" : "EVENTOS";
+  const primaryLabel =
+    primaryOperation === "RESERVAS"
+      ? "Primeiro serviço criado"
+      : primaryOperation === "TORNEIOS"
+        ? "Primeiro torneio criado"
+        : "Primeiro evento criado";
+  const primaryDescription =
+    primaryOperation === "RESERVAS"
+      ? "Cria um serviço com disponibilidade."
+      : primaryOperation === "TORNEIOS"
+        ? "Publica o primeiro torneio."
+        : "Publica o primeiro evento.";
   const summarySteps = [
     {
       id: "profile",
       label: "Perfil completo",
+      description: "Atualiza dados base da organização.",
       done: profileStatus === "OK",
       href: "/organizacao/settings",
+      iconKey: "PERFIL_PUBLICO",
+    },
+    {
+      id: "email",
+      label: "Email oficial verificado",
+      description: "Confirma o email oficial da organização.",
+      done: officialEmailVerified,
+      href: "/organizacao/settings",
+      iconKey: "DEFINICOES",
+      required: true,
     },
     {
       id: "stripe",
       label: "Stripe ligado",
+      description: "Liga pagamentos para receber receitas.",
       done: stripeReady,
       href: "/organizacao?tab=analyze&section=financas",
+      iconKey: "FINANCEIRO",
+      required: true,
     },
     {
-      id: "event",
-      label: "Primeiro evento criado",
-      done: eventsList.length > 0,
-      href: "/organizacao/eventos/novo",
+      id: "primary",
+      label: primaryLabel,
+      description: primaryDescription,
+      done: primaryCreatedDone,
+      href: primaryCreateMeta.href,
+      iconKey: primaryModuleKey,
     },
+    ...(isReservasOrg
+      ? [
+          {
+            id: "slots",
+            label: "Horários publicados",
+            description: "Define slots para reservas.",
+            done: servicesStats.availabilityCount > 0,
+            href: "/organizacao/reservas",
+            iconKey: "RESERVAS",
+          },
+        ]
+      : []),
     {
       id: "staff",
       label: "Primeiro staff convidado",
+      description: "Convida alguém para a tua equipa.",
       done: hasInvitedStaff,
       href: "/organizacao/staff",
+      iconKey: "STAFF",
     },
     {
       id: "public",
       label: "Página pública definida",
+      description: "Prepara a presença pública da organização.",
       done: Boolean(publicProfileUrl),
-      href: "/organizacao?tab=overview#perfil-publico",
+      href: "/organizacao?tab=profile",
+      iconKey: "PERFIL_PUBLICO",
     },
   ];
+  const orderedChecklistSteps = summarySteps
+    .map((step, index) => ({ step, index }))
+    .sort((a, b) => {
+      if (a.step.done !== b.step.done) return a.step.done ? 1 : -1;
+      if (!a.step.done) {
+        const aRequired = a.step.required ? 0 : 1;
+        const bRequired = b.step.required ? 0 : 1;
+        if (aRequired !== bRequired) return aRequired - bRequired;
+      }
+      return a.index - b.index;
+    })
+    .map(({ step }) => step);
   const completedSteps = summarySteps.filter((step) => step.done).length;
   const completionPercent = summarySteps.length
     ? Math.round((completedSteps / summarySteps.length) * 100)
     : 0;
+  const progressPercent = Math.max(0, Math.min(100, completionPercent));
+  const requiredSteps = summarySteps.filter((step) => step.required);
+  const requiredIncomplete = requiredSteps.filter((step) => !step.done);
+  const requiredComplete = requiredIncomplete.length === 0;
+  const checklistStorageKey = organization?.id
+    ? `orya_checklist_dismissed_${organization.id}`
+    : null;
+  const checklistCollapseStorageKey = organization?.id
+    ? `orya_checklist_collapsed_${organization.id}`
+    : null;
+  const checklistComplete = completionPercent >= 100;
+  const canDismissChecklist = requiredComplete;
+  const checklistDismissHint = canDismissChecklist
+    ? "Fechar checklist"
+    : "Conclui os passos obrigatórios para fechar.";
+
+  useEffect(() => {
+    if (!checklistStorageKey) return;
+    try {
+      setChecklistDismissed(localStorage.getItem(checklistStorageKey) === "1");
+    } catch {
+      /* ignore */
+    }
+  }, [checklistStorageKey]);
+
+  useEffect(() => {
+    if (!checklistCollapseStorageKey) return;
+    try {
+      const stored = localStorage.getItem(checklistCollapseStorageKey);
+      if (stored === null) return;
+      setChecklistCollapsed(stored === "1");
+    } catch {
+      /* ignore */
+    }
+  }, [checklistCollapseStorageKey]);
+
+  const handleDismissChecklist = useCallback(() => {
+    if (!canDismissChecklist) return;
+    setChecklistDismissed(true);
+    if (!checklistStorageKey) return;
+    try {
+      localStorage.setItem(checklistStorageKey, "1");
+    } catch {
+      /* ignore */
+    }
+  }, [canDismissChecklist, checklistStorageKey]);
+  const handleToggleChecklist = useCallback(() => {
+    setChecklistCollapsed((prev) => {
+      const next = !prev;
+      if (checklistCollapseStorageKey) {
+        try {
+          localStorage.setItem(checklistCollapseStorageKey, next ? "1" : "0");
+        } catch {
+          /* ignore */
+        }
+      }
+      return next;
+    });
+  }, [checklistCollapseStorageKey]);
+  const checklistVisible = activeObjective === "create" && (!checklistDismissed || !canDismissChecklist);
+  const modulesSetupHref = "/organizacao?tab=overview&section=modulos";
+  const isEventosActive = operationSelection.includes("EVENTOS");
+  const isReservasActive = operationSelection.includes("RESERVAS");
+  const isTorneiosActive = operationSelection.includes("TORNEIOS");
+  const isInscricoesActive = optionalSelection.includes("INSCRICOES");
+  const isMensagensActive = optionalSelection.includes("MENSAGENS");
+  const isMarketingActive = activeModules.includes("MARKETING");
+  const dashboardModules = useMemo<DashboardModuleCard[]>(
+    () => [
+      {
+        id: "eventos",
+        moduleKey: "EVENTOS",
+        title: "Eventos",
+        summary: "Festas, sessões especiais, eventos públicos/privados.",
+        bullets: ["Bilhetes e regras", "Participantes + check-in", "Live + chat + anúncios"],
+        status: roleFlags.canManageEvents ? (isEventosActive ? "active" : "optional") : "locked",
+        href: roleFlags.canManageEvents
+          ? isEventosActive
+            ? "/organizacao/eventos"
+            : modulesSetupHref
+          : undefined,
+        eyebrow: primarySelection === "EVENTOS" ? "Operação · Foco" : "Operação",
+      },
+      {
+        id: "reservas",
+        moduleKey: "RESERVAS",
+        title: "Reservas",
+        summary: "Serviços e marcações com chat 1:1.",
+        bullets: ["Serviços + disponibilidade", "Marcações + estados", "Chat 1:1 + check-in"],
+        status: roleFlags.canManageEvents ? (isReservasActive ? "active" : "optional") : "locked",
+        href: roleFlags.canManageEvents
+          ? isReservasActive
+            ? "/organizacao/reservas"
+            : modulesSetupHref
+          : undefined,
+        eyebrow: primarySelection === "RESERVAS" ? "Operação · Foco" : "Operação",
+      },
+      {
+        id: "torneios",
+        moduleKey: "TORNEIOS",
+        title: "Padel",
+        summary: "Torneios e ligas de padel num só lugar.",
+        bullets: ["Inscrições + equipas", "Calendário de jogos", "Live + chat + anúncios"],
+        status: roleFlags.canManageEvents ? (isTorneiosActive ? "active" : "optional") : "locked",
+        href: roleFlags.canManageEvents
+          ? isTorneiosActive
+            ? "/organizacao/torneios"
+            : modulesSetupHref
+          : undefined,
+        eyebrow: primarySelection === "TORNEIOS" ? "Operação · Foco" : "Operação",
+      },
+      {
+        id: "inscricoes",
+        moduleKey: "INSCRICOES",
+        title: "Formulários",
+        summary: "Formulários e listas para inscrições e dados.",
+        bullets: ["Formulários rápidos", "Vagas + listas de espera", "Exportação de dados"],
+        status: roleFlags.canManageEvents
+          ? isInscricoesActive
+            ? "active"
+            : "optional"
+          : "locked",
+        href: roleFlags.canManageEvents
+          ? isInscricoesActive
+            ? "/organizacao/inscricoes"
+            : modulesSetupHref
+          : undefined,
+        eyebrow: "Operação",
+      },
+      {
+        id: "staff",
+        moduleKey: "STAFF",
+        title: "Equipa",
+        summary: "Gestão de equipa, roles e permissões.",
+        bullets: ["Owner / Admin / Staff / Scanner", "Permissões por módulo", "Log de ações"],
+        status: roleFlags.canManageMembers ? "core" : "locked",
+        href: roleFlags.canManageMembers ? "/organizacao/staff" : undefined,
+        eyebrow: "Equipa",
+      },
+      {
+        id: "financeiro",
+        moduleKey: "FINANCEIRO",
+        title: "Finanças",
+        summary: "Receitas, indicadores e payouts num só lugar.",
+        bullets: ["Visão geral + vendas", "Reembolsos + CSV", "Payouts Stripe"],
+        status: roleFlags.canViewFinance ? "core" : "locked",
+        href: roleFlags.canViewFinance ? "/organizacao?tab=analyze&section=financas" : undefined,
+        eyebrow: "Gestão",
+      },
+      {
+        id: "mensagens",
+        moduleKey: "MENSAGENS",
+        title: "Mensagens",
+        summary: "Broadcast e automations sem ruído.",
+        bullets: ["Segmentos por contexto", "Templates e histórico", "Automations essenciais"],
+        status: roleFlags.canManageEvents
+          ? isMensagensActive
+            ? "active"
+            : "optional"
+          : "locked",
+        href: roleFlags.canManageEvents
+          ? isMensagensActive
+            ? "/organizacao/mensagens"
+            : modulesSetupHref
+          : undefined,
+        eyebrow: "Comunicação",
+      },
+      {
+        id: "marketing",
+        moduleKey: "MARKETING",
+        title: "Marketing",
+        summary: "Promoções simples e partilha.",
+        bullets: ["Links + QR", "Destaques manuais", "Códigos promocionais"],
+        status: roleFlags.canPromote ? "core" : "locked",
+        href: roleFlags.canPromote
+          ? "/organizacao?tab=promote&section=marketing&marketing=overview"
+          : undefined,
+        eyebrow: "Promoção",
+      },
+      {
+        id: "perfil-publico",
+        moduleKey: "PERFIL_PUBLICO",
+        title: "Perfil público",
+        summary: "Página e detalhes visíveis ao público.",
+        bullets: ["Nome + bio", "Fotos e links", "Localização"],
+        status: roleFlags.canEditOrg ? "core" : "locked",
+        href: roleFlags.canEditOrg ? "/organizacao?tab=profile" : undefined,
+        eyebrow: "Presença",
+      },
+      {
+        id: "settings",
+        moduleKey: "DEFINICOES",
+        title: "Definições",
+        summary: "Pagamentos, políticas e preferências.",
+        bullets: ["Pagamentos e políticas", "Notificações globais", "Regras de chat"],
+        status: roleFlags.canEditOrg ? "core" : "locked",
+        href: roleFlags.canEditOrg ? "/organizacao/settings" : undefined,
+        eyebrow: "Organização",
+      },
+    ],
+    [
+      primarySelection,
+      roleFlags.canEditOrg,
+      roleFlags.canManageMembers,
+      roleFlags.canManageEvents,
+      roleFlags.canPromote,
+      roleFlags.canViewFinance,
+      isEventosActive,
+      isReservasActive,
+      isTorneiosActive,
+      isInscricoesActive,
+      isMensagensActive,
+      isMarketingActive,
+      modulesSetupHref,
+    ],
+  );
+  const activeDashboardModules = useMemo(
+    () => dashboardModules.filter((module) => module.status === "active" || module.status === "core"),
+    [dashboardModules],
+  );
+  const inactiveDashboardModules = useMemo(
+    () => dashboardModules.filter((module) => module.status === "optional" || module.status === "locked"),
+    [dashboardModules],
+  );
+  const addableModules = useMemo(
+    () => inactiveDashboardModules.filter((module) => module.status === "optional"),
+    [inactiveDashboardModules],
+  );
+  const availableModuleGroups = useMemo(() => {
+    const groups = new Map<string, DashboardModuleCard[]>();
+    inactiveDashboardModules.forEach((module) => {
+      const key = module.eyebrow ?? "Outros";
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)?.push(module);
+    });
+    return Array.from(groups.entries()).map(([label, modules]) => ({ label, modules }));
+  }, [inactiveDashboardModules]);
   const activeSection = useMemo(() => {
-    const manageSections = showPadelHub
-      ? ["eventos", "inscricoes", "padel-hub"]
-      : ["eventos", "inscricoes"];
+    const manageSections = isReservasOrg
+      ? ["reservas"]
+      : [
+          "eventos",
+          ...(hasInscricoesModule ? ["inscricoes"] : []),
+          ...(showPadelHub ? ["padel-hub"] : []),
+        ];
+    const analyzeSections = roleFlags.canViewFinance
+      ? ["overview", "vendas", "financas", "invoices"]
+      : ["financas", "invoices"];
     const baseSections: Record<ObjectiveTab, string[]> = {
       create: ["overview"],
       manage: manageSections,
       promote: ["marketing"],
-      analyze: ["financas", "invoices"],
+      analyze: analyzeSections,
+      profile: ["perfil"],
     };
     const allowed = baseSections[activeObjective] ?? ["overview"];
     const candidate =
       normalizedSection ??
-      (activeObjective === "analyze" ? "financas" : activeObjective === "promote" ? "marketing" : "overview");
+      (activeObjective === "analyze"
+        ? "financas"
+        : activeObjective === "promote"
+          ? "marketing"
+          : activeObjective === "profile"
+            ? "perfil"
+            : "overview");
     return allowed.includes(candidate) ? candidate : allowed[0];
-  }, [activeObjective, normalizedSection, showPadelHub]);
+  }, [
+    activeObjective,
+    normalizedSection,
+    showPadelHub,
+    hasInscricoesModule,
+    isReservasOrg,
+    roleFlags.canViewFinance,
+  ]);
 
   useEffect(() => {
     const params = new URLSearchParams(currentQuery);
@@ -1153,25 +1946,265 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
     return () => cancelAnimationFrame(id);
   }, [activeObjective, activeSection, marketingSection]);
   const fadeClass = cn("transition-opacity duration-300", fadeIn ? "opacity-100" : "opacity-0");
+  const renderChecklistRing = (percent: number) => {
+    const clamped = Math.min(100, Math.max(0, percent));
+    const radius = 16;
+    const circumference = 2 * Math.PI * radius;
+    const dash = (clamped / 100) * circumference;
+    return (
+      <div className="relative flex h-10 w-10 items-center justify-center">
+        <svg
+          viewBox="0 0 36 36"
+          className="absolute inset-0 h-full w-full -rotate-90 origin-center"
+          aria-hidden="true"
+        >
+          <circle cx="18" cy="18" r="16" fill="none" stroke="rgba(255,255,255,0.18)" strokeWidth="3" />
+          <circle
+            cx="18"
+            cy="18"
+            r="16"
+            fill="none"
+            stroke="#6BFFFF"
+            strokeWidth="3"
+            strokeDasharray={`${dash} ${circumference - dash}`}
+            strokeLinecap="round"
+          />
+        </svg>
+        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#050a12]">
+          <span className="text-[9px] font-semibold tabular-nums leading-none text-white/85">{clamped}%</span>
+        </div>
+      </div>
+    );
+  };
+  const renderModuleCard = (module: DashboardModuleCard) => {
+    const iconGradient = MODULE_ICON_GRADIENTS[module.moduleKey] ?? "from-white/15 via-white/5 to-white/10";
+    const isOptional = OPTIONAL_MODULES.includes(module.moduleKey as OptionalModule);
+    const isOperation = OPERATION_MODULES.includes(module.moduleKey as OperationModule);
+    const isActive = module.status === "active" || module.status === "core";
+    const isLocked = module.status === "locked";
+    const canDeactivate =
+      isActive &&
+      canEditModules &&
+      !modulesSaving &&
+      (isOptional || (isOperation && module.moduleKey !== primarySelection));
+    const cardClasses = cn(
+      "group relative flex flex-col items-center gap-3 rounded-2xl border border-white/12 bg-white/5 px-4 py-5 text-center shadow-[0_18px_55px_rgba(0,0,0,0.45)] transition",
+      isActive ? "hover:-translate-y-0.5 hover:border-white/25" : "opacity-85",
+      isLocked && "opacity-45",
+    );
+    const handleDeactivate = (event: any) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (!canDeactivate) return;
+      setPendingModuleRemoval(module);
+    };
+
+    const cardInner = (
+      <div className={cardClasses}>
+        {canDeactivate && (
+          <button
+            type="button"
+            onClick={handleDeactivate}
+            aria-label="Desativar ferramenta"
+            className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full border border-white/20 bg-black/30 text-[14px] text-white/80 opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100 hover:bg-white/10"
+          >
+            ×
+          </button>
+        )}
+        <div
+          className={cn(
+            "flex h-14 w-14 items-center justify-center rounded-2xl border border-white/15 bg-gradient-to-br text-white/85",
+            iconGradient,
+          )}
+        >
+          <ModuleIcon moduleKey={module.moduleKey} className="h-6 w-6" aria-hidden="true" />
+        </div>
+        <span className="text-[12px] font-semibold text-white/90">{module.title}</span>
+      </div>
+    );
+
+    if (isActive && module.href && !isLocked) {
+      return (
+        <Link key={module.id} href={module.href} className="block">
+          {cardInner}
+        </Link>
+      );
+    }
+
+    return (
+      <div key={module.id} className="block">
+        {cardInner}
+      </div>
+    );
+  };
+
+  const renderModulePickerCard = (module: DashboardModuleCard) => {
+    const iconGradient = MODULE_ICON_GRADIENTS[module.moduleKey] ?? "from-white/15 via-white/5 to-white/10";
+    const isLocked = module.status === "locked";
+    const canActivate = module.status === "optional" && canEditModules && !modulesSaving;
+    const actionLabel = isLocked ? "Sem acesso" : canActivate ? "Adicionar" : "Sem permissão";
+    const handleActivate = () => {
+      if (!canActivate) return;
+      activateModule(module.moduleKey);
+    };
+
+    return (
+      <div
+        key={`picker-${module.id}`}
+        className={cn(
+          "rounded-2xl border border-white/12 bg-white/5 p-4 shadow-[0_16px_50px_rgba(0,0,0,0.4)] transition",
+          isLocked && "opacity-60",
+        )}
+      >
+        <div className="flex flex-col gap-3">
+          <div className="flex items-start gap-3">
+            <div
+              className={cn(
+                "flex h-12 w-12 items-center justify-center rounded-2xl border border-white/15 bg-gradient-to-br text-white/85",
+                iconGradient,
+              )}
+            >
+              <ModuleIcon moduleKey={module.moduleKey} className="h-5 w-5" aria-hidden="true" />
+            </div>
+            <div className="flex-1 space-y-2">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <p className="text-sm font-semibold text-white">{module.title}</p>
+                  <p className="text-[12px] text-white/65">{module.summary}</p>
+                </div>
+                <span
+                  className={cn(
+                    "rounded-full border px-2 py-1 text-[10px] uppercase tracking-[0.18em]",
+                    isLocked
+                      ? "border-white/10 bg-white/5 text-white/50"
+                      : "border-emerald-300/40 bg-emerald-400/10 text-emerald-100",
+                  )}
+                >
+                  {isLocked ? "Bloqueado" : "Disponível"}
+                </span>
+              </div>
+              <ul className="space-y-1 text-[11px] text-white/60">
+                {module.bullets.map((bullet) => (
+                  <li key={`${module.id}-${bullet}`} className="flex items-start gap-2">
+                    <span className="mt-1 h-1.5 w-1.5 rounded-full bg-white/40" />
+                    <span>{bullet}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-[11px] uppercase tracking-[0.2em] text-white/40">
+              {module.eyebrow ?? "Ferramenta"}
+            </span>
+            <button
+              type="button"
+              onClick={handleActivate}
+              disabled={!canActivate}
+              className={cn(
+                "rounded-full border border-white/15 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] transition",
+                canActivate
+                  ? "bg-white/10 text-white hover:border-white/40 hover:bg-white/15"
+                  : "cursor-not-allowed text-white/40",
+              )}
+            >
+              {actionLabel}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const toolsModal =
+    toolsModalOpen && typeof document !== "undefined"
+      ? createPortal(
+          <div
+            className="fixed inset-0 z-[120] flex items-center justify-center bg-black/70 backdrop-blur-sm px-4"
+            role="dialog"
+            aria-modal="true"
+            onClick={(event) => {
+              if (event.target === event.currentTarget) setToolsModalOpen(false);
+            }}
+          >
+            <div className="w-full max-w-5xl overflow-hidden rounded-3xl border border-white/12 bg-[#050915]/95 p-5 text-white shadow-[0_28px_80px_rgba(0,0,0,0.75)]">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="space-y-1">
+                  <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Ferramentas disponíveis</p>
+                  <h3 className="text-xl font-semibold text-white">Adicionar ferramentas</h3>
+                  <p className="text-[12px] text-white/65">
+                    Ativa módulos para o teu dashboard. Podes remover quando quiseres.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setToolsModalOpen(false)}
+                  className="self-end rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-[11px] uppercase tracking-[0.2em] text-white/70 hover:border-white/30 hover:bg-white/10"
+                >
+                  Fechar
+                </button>
+              </div>
+
+              <div className="mt-4 max-h-[60vh] space-y-6 overflow-y-auto pr-1">
+                {availableModuleGroups.length > 0 ? (
+                  availableModuleGroups.map((group) => (
+                    <div key={group.label} className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <p className="text-[11px] uppercase tracking-[0.24em] text-white/50">{group.label}</p>
+                        <span className="text-[11px] text-white/40">{group.modules.length} ferramentas</span>
+                      </div>
+                      <div className="grid gap-3 lg:grid-cols-2">
+                        {group.modules.map((module) => renderModulePickerCard(module))}
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4 text-sm text-white/70">
+                    Sem ferramentas disponíveis para adicionar.
+                  </div>
+                )}
+              </div>
+
+            </div>
+          </div>,
+          document.body,
+        )
+      : null;
 
   if (loading) {
     return (
       <div className={`${containerClasses} space-y-6`}>
-        <div className="h-8 w-48 rounded-full bg-white/10 animate-pulse" />
-        <div className="h-24 rounded-3xl bg-white/5 border border-white/10 animate-pulse" />
+        <div className="rounded-3xl border border-white/12 bg-white/5 p-5">
+          <SkeletonLine className="h-3 w-40" />
+          <SkeletonLine className="mt-3 h-8 w-64" />
+          <SkeletonLine className="mt-2 h-4 w-52" />
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          <SkeletonBlock className="h-32" />
+          <SkeletonBlock className="h-32" />
+          <SkeletonBlock className="h-32" />
+        </div>
+        <div className="rounded-3xl border border-white/12 bg-white/5 p-5">
+          <SkeletonLine className="h-3 w-28" />
+          <div className="mt-4 grid gap-3 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6">
+            {Array.from({ length: 6 }).map((_, index) => (
+              <SkeletonBlock key={`module-skel-${index}`} className="h-14 rounded-2xl" />
+            ))}
+          </div>
+        </div>
+        <SkeletonBlock className="h-40" />
       </div>
     );
   }
 
-  if (!hasOrganization || organization?.status !== "ACTIVE") {
+  if (!hasOrganization || !organization) {
     return (
       <div className={`${containerClasses} space-y-6`}>
         <div className="max-w-xl space-y-3 rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-6 backdrop-blur-2xl">
           <p className="text-[11px] uppercase tracking-[0.24em] text-white/70">Sem organização ativa</p>
-          <h1 className="text-2xl font-semibold text-white">Liga-te a uma organização para continuares.</h1>
-          <p className="text-sm text-white/70">
-            Precisas de criar ou escolher uma organização para aceder ao dashboard.
-          </p>
+          <h1 className="text-2xl font-semibold text-white">Liga-te a uma organização.</h1>
+          <p className="text-sm text-white/70">Cria ou escolhe uma organização para entrar.</p>
           <div className="flex flex-wrap gap-2">
             <Link href="/organizacao/become" className={cn(CTA_PRIMARY, "justify-center")}>
               Criar organização
@@ -1184,213 +2217,254 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
       </div>
     );
   }
+  if (isPending) {
+    return (
+      <div className={`${containerClasses} space-y-6`}>
+        <div className="max-w-xl space-y-3 rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-6 backdrop-blur-2xl">
+          <p className="text-[11px] uppercase tracking-[0.24em] text-white/70">Organização pendente</p>
+          <h1 className="text-2xl font-semibold text-white">A tua organização ainda não está ativa.</h1>
+          <p className="text-sm text-white/70">Estamos a rever a tua organização. Vais receber uma notificação.</p>
+        </div>
+      </div>
+    );
+  }
+  if (isSuspended) {
+    return (
+      <div className={`${containerClasses} space-y-6`}>
+        <div className="max-w-xl space-y-3 rounded-3xl border border-amber-400/40 bg-gradient-to-br from-amber-500/15 via-[#0b1124]/75 to-[#050810]/90 p-6 text-amber-50 backdrop-blur-2xl">
+          <p className="text-[11px] uppercase tracking-[0.24em] text-amber-100/80">Organização suspensa</p>
+          <h1 className="text-2xl font-semibold text-white">Acesso apenas de leitura.</h1>
+          <p className="text-sm text-amber-100/80">
+            Se precisares de ajuda, contacta{" "}
+            <a href="mailto:oryapt@gmail.com" className="underline decoration-amber-200/70 underline-offset-4">
+              oryapt@gmail.com
+            </a>
+            .
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={`${containerClasses} space-y-6 text-white`}>
-      {showOfficialEmailWarning && (
-        <div className="rounded-2xl border border-amber-400/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-50">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="space-y-1">
-              <p className="font-semibold">
-                {officialEmail
-                  ? "Email oficial pendente de verificação."
-                  : "Define o email oficial da organização para faturação e alertas críticos."}
-              </p>
-              <p className="text-[12px] text-amber-100/80">
-                Usamos este email para invoices, alertas de vendas/payouts e transferências de Owner.
-              </p>
-            </div>
-            <Link href="/organizacao/settings" className={cn(CTA_SECONDARY, "text-[12px]")}>
-              Atualizar email oficial
-            </Link>
-          </div>
-        </div>
-      )}
       {activeObjective === "create" && (
         <section className="space-y-4">
-          <div
-            id="overview"
-            className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/75 to-[#050912]/95 p-5 backdrop-blur-3xl"
-          >
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <p className="text-[11px] uppercase tracking-[0.26em] text-white/60">Resumo</p>
-                <h1 className="text-3xl font-semibold text-white">Estado atual da organização</h1>
-                <p className="text-sm text-white/70">Tudo o essencial num só olhar, sem distrações.</p>
-              </div>
-              <span className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] text-white/80">
-                {categoryLabel}
-              </span>
-            </div>
-          </div>
-
-          <div className={cn("grid gap-3 md:grid-cols-3", fadeClass)}>
-            <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-[#0f1a2e]/80 via-[#0b1224]/70 to-[#050a12]/90 p-4 shadow-[0_22px_70px_rgba(0,0,0,0.55)]">
-              <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Conta</p>
-              <h3 className="text-lg font-semibold text-white">Estado da conta</h3>
-              <div className="mt-3 space-y-2 text-[12px] text-white/75">
-                <div className="flex items-center justify-between">
-                  <span>Perfil</span>
-                  <span className="rounded-full border border-white/20 bg-white/5 px-2 py-0.5">
-                    {profileStatus === "OK" ? "Completo" : "Incompleto"}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span>Stripe</span>
-                  <span className="rounded-full border border-white/20 bg-white/5 px-2 py-0.5">
-                    {paymentsMode === "PLATFORM" ? "Conta ORYA" : stripeReady ? "Ativo" : "Por ligar"}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span>Publicação</span>
-                  <span className="rounded-full border border-white/20 bg-white/5 px-2 py-0.5">
-                    {organization?.status === "ACTIVE" ? "Ativa" : "Pendente"}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-[#101b39]/80 via-[#0b1124]/70 to-[#050a12]/92 p-4 shadow-[0_22px_70px_rgba(0,0,0,0.55)]">
-              <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Eventos</p>
-              <h3 className="text-lg font-semibold text-white">Resumo de atividade</h3>
-              <div className="mt-3 grid gap-2 text-[12px] text-white/75">
-                <div className="flex items-center justify-between">
-                  <span>Eventos ativos</span>
-                  <span className="font-semibold text-white">{overview?.activeEventsCount ?? eventsList.length}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span>Próximos</span>
-                  <span className="font-semibold text-white">{eventSummary.upcoming}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span>Concluídos</span>
-                  <span className="font-semibold text-white">{eventSummary.finished}</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-[#120b24]/75 via-[#0b1124]/70 to-[#050a12]/92 p-4 shadow-[0_22px_70px_rgba(0,0,0,0.55)]">
-              <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Vendas</p>
-              <h3 className="text-lg font-semibold text-white">Últimos 30 dias</h3>
-              <div className="mt-3 grid gap-2 text-[12px] text-white/75">
-                <div className="flex items-center justify-between">
-                  <span>Bilhetes</span>
-                  <span className="font-semibold text-white">{overview?.totalTickets ?? "—"}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span>Receita líquida</span>
-                  <span className="font-semibold text-white">
-                    {overview ? `${((overview.netRevenueCents ?? overview.totalRevenueCents ?? 0) / 100).toFixed(2)} €` : "—"}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span>Eventos com vendas</span>
-                  <span className="font-semibold text-white">{overview?.eventsWithSalesCount ?? "—"}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className={cn("rounded-3xl border border-white/12 bg-gradient-to-br from-[#0b1226]/80 via-[#0b1124]/70 to-[#050a12]/92 p-4", fadeClass)}>
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Checklist</p>
-                <h3 className="text-lg font-semibold text-white">Próximos passos</h3>
-                <p className="text-[12px] text-white/65">Completa o básico para lançar sem fricção.</p>
-              </div>
-              <div className="text-right text-[11px] text-white/70">
-                <div>{completedSteps}/{summarySteps.length} concluídos</div>
-                <div className="text-white/50">{completionPercent}%</div>
-              </div>
-            </div>
-            <div className="mt-3 h-2 w-full rounded-full bg-white/10">
-              <div
-                className="h-2 rounded-full bg-gradient-to-r from-[#FF7AD1] via-[#7FE0FF] to-[#6A7BFF]"
-                style={{ width: `${completionPercent}%` }}
-              />
-            </div>
-            <div className="mt-3 grid gap-2 sm:grid-cols-2">
-              {summarySteps.map((step) => (
-                <div
-                  key={step.id}
-                  className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/80 shadow-[0_12px_36px_rgba(0,0,0,0.35)]"
-                >
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={cn(
-                        "inline-flex h-6 w-6 items-center justify-center rounded-full border text-[12px] font-semibold",
-                        step.done
-                          ? "border-emerald-300/60 bg-emerald-500/15 text-emerald-50"
-                          : "border-white/20 bg-white/10 text-white/60",
-                      )}
-                    >
-                      {step.done ? "✓" : "•"}
-                    </span>
-                    <span>{step.label}</span>
-                  </div>
-                  {!step.done && (
-                    <Link href={step.href} className="text-[11px] text-[#6BFFFF] hover:underline">
-                      Completar
-                    </Link>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div
-            id="perfil-publico"
-            className={cn(
-              "rounded-3xl border border-white/12 bg-gradient-to-br from-[#0b1226]/80 via-[#0b1124]/70 to-[#050a12]/92 p-5",
-              fadeClass,
-            )}
-          >
+          <div id="overview" className="flex flex-wrap items-center justify-between gap-3">
             <div className="space-y-1">
-              <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Perfil público</p>
-              <h3 className="text-lg font-semibold text-white">Pré-visualização</h3>
-              <p className="text-[12px] text-white/65">Confirma como a tua organização aparece ao público.</p>
+              <p className="text-[11px] uppercase tracking-[0.26em] text-white/60">Dashboard</p>
+              <h1 className="text-2xl sm:text-3xl font-semibold text-white">Visão geral</h1>
+              <p className="text-sm text-white/70">
+                {orgDisplayName} · {operationLabel}
+              </p>
             </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Link href={primaryCreateMeta.href} className={CTA_PRIMARY}>
+                {primaryCreateMeta.label}
+              </Link>
+              <button
+                type="button"
+                onClick={() => setToolsModalOpen(true)}
+                className={CTA_SECONDARY}
+              >
+                Ferramentas
+              </button>
+            </div>
+          </div>
+
+          <div className={cn("space-y-4", fadeClass)}>
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-[#0f1a2e]/80 via-[#0b1224]/70 to-[#050a12]/90 p-4 shadow-[0_22px_70px_rgba(0,0,0,0.55)]">
+                <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Conta</p>
+                <h3 className="text-lg font-semibold text-white">Estado da conta</h3>
+                <div className="mt-3 space-y-2 text-[12px] text-white/75">
+                  <div className="flex items-center justify-between">
+                    <span>Perfil</span>
+                    <span className="rounded-full border border-white/20 bg-white/5 px-2 py-0.5">
+                      {profileStatus === "OK" ? "Completo" : "Incompleto"}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span>Stripe</span>
+                    <span className="rounded-full border border-white/20 bg-white/5 px-2 py-0.5">
+                      {paymentsMode === "PLATFORM" ? "Conta ORYA" : stripeReady ? "Ativo" : "Por ligar"}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span>Publicação</span>
+                    <span className="rounded-full border border-white/20 bg-white/5 px-2 py-0.5">
+                      {organization?.status === "ACTIVE"
+                        ? "Ativa"
+                        : organization?.status === "SUSPENDED"
+                          ? "Suspensa"
+                          : "Pendente"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {isReservasOrg ? (
+                <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-[#101b39]/80 via-[#0b1124]/70 to-[#050a12]/92 p-4 shadow-[0_22px_70px_rgba(0,0,0,0.55)]">
+                  <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Serviços</p>
+                  <h3 className="text-lg font-semibold text-white">Oferta ativa</h3>
+                  <div className="mt-3 grid gap-2 text-[12px] text-white/75">
+                    <div className="flex items-center justify-between">
+                      <span>Serviços ativos</span>
+                      <span className="font-semibold text-white">{servicesStats.active}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span>Serviços totais</span>
+                      <span className="font-semibold text-white">{servicesStats.total}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span>Horários publicados</span>
+                      <span className="font-semibold text-white">{servicesStats.availabilityCount}</span>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-[#101b39]/80 via-[#0b1124]/70 to-[#050a12]/92 p-4 shadow-[0_22px_70px_rgba(0,0,0,0.55)]">
+                  <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">
+                    {primaryOperation === "TORNEIOS" ? "Torneios" : "Eventos"}
+                  </p>
+                  <h3 className="text-lg font-semibold text-white">Atividade recente</h3>
+                  <div className="mt-3 grid gap-2 text-[12px] text-white/75">
+                    <div className="flex items-center justify-between">
+                      <span>{primaryOperation === "TORNEIOS" ? "Torneios ativos" : "Eventos ativos"}</span>
+                      <span className="font-semibold text-white">{overview?.activeEventsCount ?? eventsList.length}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span>Próximos</span>
+                      <span className="font-semibold text-white">{eventSummary.upcoming}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span>Concluídos</span>
+                      <span className="font-semibold text-white">{eventSummary.finished}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {isReservasOrg ? (
+                <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-[#120b24]/75 via-[#0b1124]/70 to-[#050a12]/92 p-4 shadow-[0_22px_70px_rgba(0,0,0,0.55)]">
+                  <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Reservas</p>
+                  <h3 className="text-lg font-semibold text-white">Agenda 7 dias</h3>
+                  <div className="mt-3 grid gap-2 text-[12px] text-white/75">
+                    <div className="flex items-center justify-between">
+                      <span>Agendadas</span>
+                      <span className="font-semibold text-white">{bookingsStats.upcoming}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span>Confirmadas</span>
+                      <span className="font-semibold text-white">{bookingsStats.confirmed}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span>Pendentes</span>
+                      <span className="font-semibold text-white">{bookingsStats.pending}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span>Receita confirmada</span>
+                      <span className="font-semibold text-white">
+                        {(bookingsStats.revenueCents / 100).toFixed(2)} €
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-[#120b24]/75 via-[#0b1124]/70 to-[#050a12]/92 p-4 shadow-[0_22px_70px_rgba(0,0,0,0.55)]">
+                  <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Finanças</p>
+                  <h3 className="text-lg font-semibold text-white">Últimos 30 dias</h3>
+                  <div className="mt-3 grid gap-2 text-[12px] text-white/75">
+                    <div className="flex items-center justify-between">
+                      <span>Bilhetes</span>
+                      <span className="font-semibold text-white">{overview?.totalTickets ?? "—"}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span>Receita líquida</span>
+                      <span className="font-semibold text-white">
+                        {overview ? `${((overview.netRevenueCents ?? overview.totalRevenueCents ?? 0) / 100).toFixed(2)} €` : "—"}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span>{primaryOperation === "TORNEIOS" ? "Torneios com vendas" : "Eventos com vendas"}</span>
+                      <span className="font-semibold text-white">{overview?.eventsWithSalesCount ?? "—"}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div
+              id="modulos"
+              className="rounded-3xl border border-white/12 bg-gradient-to-br from-[#0b1226]/80 via-[#0b1124]/70 to-[#050a12]/92 p-5 shadow-[0_22px_70px_rgba(0,0,0,0.55)]"
+            >
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Ferramentas</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setToolsModalOpen(true)}
+                  disabled={!canEditModules || addableModules.length === 0}
+                  aria-label="Adicionar ferramenta"
+                  className={cn(
+                    "flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-white/5 text-white/80 transition hover:bg-white/10",
+                    (!canEditModules || addableModules.length === 0) && "cursor-not-allowed opacity-50",
+                  )}
+                >
+                  +
+                </button>
+              </div>
+              <div className="mt-4 grid gap-3 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6">
+                {activeDashboardModules.map((module) => renderModuleCard(module))}
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {activeObjective === "profile" && (
+        <section className={cn("space-y-4", fadeClass)} id="perfil">
+          <div className="rounded-3xl border border-white/12 bg-gradient-to-r from-[#0b1226]/80 via-[#101b39]/75 to-[#050811]/90 px-4 py-4 sm:px-6 sm:py-5 backdrop-blur-2xl">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="space-y-1">
+                <h2 className="text-2xl sm:text-3xl font-semibold text-white drop-shadow-[0_12px_45px_rgba(0,0,0,0.6)]">
+                  Perfil público
+                </h2>
+                <p className="text-sm text-white/70">
+                  Edita como a tua organização aparece ao público.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-[#0b1226]/80 via-[#0b1124]/70 to-[#050a12]/92 p-5 shadow-[0_24px_70px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
             <OrganizationPublicProfilePanel
               organization={organization ?? null}
               membershipRole={membershipRole}
-              categoryLabel={categoryLabel}
+              categoryLabel={operationLabel}
               coverUrl={profileCoverUrl}
             />
           </div>
         </section>
       )}
 
-      {activeObjective === "manage" && (
+      {activeObjective === "manage" && !isReservasOrg && activeSection !== "eventos" && activeSection !== "padel-hub" && (
         <section className={cn("space-y-3", fadeClass)} id="gerir">
           <div className="rounded-3xl border border-white/12 bg-gradient-to-r from-[#0b1226]/80 via-[#101b39]/75 to-[#050811]/90 px-4 py-4 sm:px-6 sm:py-5 backdrop-blur-2xl">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="space-y-1">
-                <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] uppercase tracking-[0.28em] text-white/70 shadow-[0_12px_32px_rgba(0,0,0,0.4)]">
-                  Dashboard · Gerir
-                </div>
                 <h2 className="text-2xl sm:text-3xl font-semibold text-white drop-shadow-[0_12px_45px_rgba(0,0,0,0.6)]">
-                  Eventos
+                  {manageTitle}
                 </h2>
-                <p className="text-sm text-white/70">
-                  Entra em cada evento para editar, preparar live, inscrições, página pública e arquivo.
-                </p>
+                <p className="text-sm text-white/70">{manageDescription}</p>
               </div>
-            </div>
-            <div className="mt-4">
-              <ObjectiveSubnav
-                objective="manage"
-                activeId={activeSection}
-                category={orgCategory}
-                modules={organization?.modules ?? []}
-                mode="dashboard"
-                variant="tabs"
-              />
             </div>
           </div>
         </section>
       )}
 
-      {activeObjective === "manage" && activeSection === "eventos" && (
+      {activeObjective === "manage" && activeSection === "eventos" && !isReservasOrg && (
         <section className={cn("space-y-4", fadeClass)} id="eventos">
           <div className="relative overflow-hidden rounded-3xl border border-white/12 bg-gradient-to-r from-[#0b1226]/80 via-[#101b39]/75 to-[#050811]/90 p-5 backdrop-blur-3xl">
             <div className="pointer-events-none absolute inset-0">
@@ -1401,96 +2475,274 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
             </div>
 
             <div className="relative space-y-4">
-              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-start">
-                <div className="space-y-1">
-                  <p className="text-[11px] uppercase tracking-[0.26em] text-white/70">Eventos</p>
-                  <h2 className="text-2xl font-semibold text-white drop-shadow-[0_14px_40px_rgba(0,0,0,0.45)]">Gestão dos teus eventos</h2>
-                  <p className="text-sm text-white/80">Pesquisa focada com estados e períodos claros.</p>
-                </div>
+              <div className="space-y-1">
+                <p className="text-[11px] uppercase tracking-[0.26em] text-white/70">{managePrimaryLabel}</p>
+                <h2 className="text-2xl font-semibold text-white drop-shadow-[0_14px_40px_rgba(0,0,0,0.45)]">
+                  Gestão de {managePrimaryLabel.toLowerCase()}
+                </h2>
+                <p className="text-sm text-white/80">Pesquisa por estado e período.</p>
               </div>
 
-              <div className="grid gap-3 lg:grid-cols-[1.4fr,1fr]">
-                <div className="rounded-2xl border border-white/12 bg-gradient-to-br from-[#0b1226]/85 via-[#0b1124]/70 to-[#050912]/90 backdrop-blur-2xl px-3 py-3 shadow-[0_22px_80px_rgba(0,0,0,0.55)]">
-                  <label className="text-[10px] uppercase tracking-[0.24em] text-white/55">Pesquisa</label>
-                  <div className="mt-1 flex items-center gap-2">
-                    <input
-                      type="search"
-                      placeholder="Procurar por evento..."
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      className="flex-1 bg-transparent text-sm text-white outline-none placeholder:text-white/40"
-                    />
-                    <div className="hidden text-[12px] text-white/50 md:inline">⌘/</div>
-                  </div>
-                </div>
+              <div
+                ref={manageFiltersRef}
+                className="relative z-20 rounded-2xl border border-white/12 bg-gradient-to-br from-[#0b1226]/85 via-[#0b1124]/70 to-[#050912]/90 p-3 shadow-[0_22px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl"
+              >
+                <div className="space-y-3">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+                    <div className="flex-1 rounded-2xl border border-white/12 bg-white/5 px-3 py-3 shadow-[0_16px_50px_rgba(0,0,0,0.35)]">
+                      <label className="text-[10px] uppercase tracking-[0.24em] text-white/55">Pesquisa</label>
+                      <div className="mt-1 flex items-center gap-2">
+                        <input
+                          type="search"
+                          placeholder={`Procurar por ${managePrimaryLabelLower}...`}
+                          value={searchTerm}
+                          onChange={(e) => setSearchTerm(e.target.value)}
+                          className="flex-1 bg-transparent text-sm text-white outline-none placeholder:text-white/40"
+                        />
+                        <div className="hidden text-[12px] text-white/50 md:inline">⌘/</div>
+                      </div>
+                    </div>
 
-                <div className="rounded-2xl border border-white/12 bg-gradient-to-br from-[#0b1226]/85 via-[#0b1124]/70 to-[#050912]/90 backdrop-blur-2xl p-3 shadow-[0_22px_80px_rgba(0,0,0,0.55)]">
-                  <p className="text-[10px] uppercase tracking-[0.24em] text-white/55">Período</p>
-                  <div className="mt-2 inline-flex w-full rounded-2xl border border-white/10 bg-white/5 p-1 shadow-[0_16px_50px_rgba(0,0,0,0.4)]">
-                    {(["all", "upcoming", "ongoing", "past"] as const).map((opt) => (
-                      <button
-                        key={opt}
-                        type="button"
-                        onClick={() => setTimeScope(opt)}
-                        className={cn(
-                          "flex-1 rounded-xl px-3 py-2 text-[12px] font-semibold transition",
-                          timeScope === opt
-                            ? "bg-gradient-to-r from-[#FF7AD1]/60 via-[#7FE0FF]/35 to-[#6A7BFF]/55 text-white shadow-[0_14px_36px_rgba(107,255,255,0.45)]"
-                            : "text-white/80 hover:bg-white/10",
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="relative">
+                        <button
+                          type="button"
+                          onClick={() => setManageFiltersOpen((open) => (open === "status" ? null : "status"))}
+                          className={cn(
+                            "inline-flex items-center gap-2 rounded-2xl border border-white/12 bg-white/5 px-3 py-2 text-[12px] font-semibold text-white/80 shadow-[0_14px_40px_rgba(0,0,0,0.35)] transition hover:bg-white/10",
+                            eventStatusFilter !== "all" &&
+                              "bg-gradient-to-r from-[#FF7AD1]/60 via-[#7FE0FF]/35 to-[#6A7BFF]/55 text-white shadow-[0_14px_36px_rgba(107,255,255,0.45)]",
+                          )}
+                        >
+                          Estado: {statusLabelMap[eventStatusFilter]} <span className="text-white/50">▾</span>
+                        </button>
+                        {manageFiltersOpen === "status" && (
+                          <div className="absolute left-0 z-[var(--z-popover)] mt-2 w-48 rounded-2xl border border-white/12 bg-[#070c16]/95 p-2 shadow-[0_18px_60px_rgba(0,0,0,0.5)] backdrop-blur-2xl animate-popover">
+                            <p className="px-2 pb-1 text-[10px] uppercase tracking-[0.22em] text-white/50">Estado</p>
+                            {(["all", "active", "ongoing", "finished", "draft", "archived"] as const).map((key) => (
+                              <button
+                                key={key}
+                                type="button"
+                                onClick={() => {
+                                  setEventStatusFilter(key);
+                                  setManageFiltersOpen(null);
+                                }}
+                                className={cn(
+                                  "flex w-full items-center justify-between rounded-xl px-2 py-2 text-left text-[12px] text-white/80 hover:bg-white/10",
+                                  eventStatusFilter === key && "bg-white/10 text-white",
+                                )}
+                              >
+                                {statusLabelMap[key]}
+                                {eventStatusFilter === key && <span className="text-white/60">✓</span>}
+                              </button>
+                            ))}
+                          </div>
                         )}
-                      >
-                        {opt === "all" ? "Todos" : opt === "upcoming" ? "Próximos" : opt === "ongoing" ? "A decorrer" : "Passados"}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
+                      </div>
 
-              <div className="flex flex-wrap items-center gap-3">
-                <div className="space-y-1">
-                  <p className="text-[10px] uppercase tracking-[0.22em] text-white/55">Estados</p>
-                  <div className="inline-flex flex-wrap rounded-2xl border border-white/10 bg-white/5 p-1 shadow-[0_14px_40px_rgba(0,0,0,0.4)] backdrop-blur-xl">
-                    {[
-                      { key: "all", label: "Todos" },
-                      { key: "active", label: "Ativos" },
-                      { key: "ongoing", label: "Em curso" },
-                      { key: "finished", label: "Concluídos" },
-                      { key: "archived", label: "Arquivados" },
-                    ].map((opt) => (
-                      <button
-                        key={opt.key}
-                        type="button"
-                        onClick={() => setEventStatusFilter(opt.key as typeof eventStatusFilter)}
-                        className={cn(
-                          "rounded-xl px-3 py-2 text-[12px] font-semibold transition",
-                          eventStatusFilter === opt.key
-                            ? "bg-gradient-to-r from-[#FF7AD1]/60 via-[#7FE0FF]/35 to-[#6A7BFF]/55 text-white shadow-[0_14px_36px_rgba(107,255,255,0.45)]"
-                            : "text-white/80 hover:bg-white/10",
+                      <div className="relative">
+                        <button
+                          type="button"
+                          onClick={() => setManageFiltersOpen((open) => (open === "period" ? null : "period"))}
+                          className={cn(
+                            "inline-flex items-center gap-2 rounded-2xl border border-white/12 bg-white/5 px-3 py-2 text-[12px] font-semibold text-white/80 shadow-[0_14px_40px_rgba(0,0,0,0.35)] transition hover:bg-white/10",
+                            timeScope !== "all" &&
+                              "bg-gradient-to-r from-[#FF7AD1]/60 via-[#7FE0FF]/35 to-[#6A7BFF]/55 text-white shadow-[0_14px_36px_rgba(107,255,255,0.45)]",
+                          )}
+                        >
+                          Período: {timeScopeLabels[timeScope]} <span className="text-white/50">▾</span>
+                        </button>
+                        {manageFiltersOpen === "period" && (
+                          <div className="absolute left-0 z-[var(--z-popover)] mt-2 w-44 rounded-2xl border border-white/12 bg-[#070c16]/95 p-2 shadow-[0_18px_60px_rgba(0,0,0,0.5)] backdrop-blur-2xl animate-popover">
+                            <p className="px-2 pb-1 text-[10px] uppercase tracking-[0.22em] text-white/50">Período</p>
+                            {(["all", "upcoming", "ongoing", "past"] as const).map((key) => (
+                              <button
+                                key={key}
+                                type="button"
+                                onClick={() => {
+                                  setTimeScope(key);
+                                  setManageFiltersOpen(null);
+                                }}
+                                className={cn(
+                                  "flex w-full items-center justify-between rounded-xl px-2 py-2 text-left text-[12px] text-white/80 hover:bg-white/10",
+                                  timeScope === key && "bg-white/10 text-white",
+                                )}
+                              >
+                                {timeScopeLabels[key]}
+                                {timeScope === key && <span className="text-white/60">✓</span>}
+                              </button>
+                            ))}
+                          </div>
                         )}
-                      >
-                        {opt.label}
-                      </button>
-                    ))}
+                      </div>
+
+                      <div className="relative">
+                        <button
+                          type="button"
+                          onClick={() => setManageFiltersOpen((open) => (open === "filters" ? null : "filters"))}
+                          className={cn(
+                            "inline-flex items-center gap-2 rounded-2xl border border-white/12 bg-white/5 px-3 py-2 text-[12px] font-semibold text-white/80 shadow-[0_14px_40px_rgba(0,0,0,0.35)] transition hover:bg-white/10",
+                            activeFilterCount > 0 &&
+                              "bg-gradient-to-r from-[#FF7AD1]/60 via-[#7FE0FF]/35 to-[#6A7BFF]/55 text-white shadow-[0_14px_36px_rgba(107,255,255,0.45)]",
+                          )}
+                        >
+                          Filtros{activeFilterCount > 0 ? ` (${activeFilterCount})` : ""} <span className="text-white/50">▾</span>
+                        </button>
+                        {manageFiltersOpen === "filters" && (
+                          <div className="absolute right-0 z-[var(--z-popover)] mt-2 w-[260px] rounded-2xl border border-white/12 bg-[#070c16]/95 p-3 shadow-[0_18px_60px_rgba(0,0,0,0.5)] backdrop-blur-2xl animate-popover">
+                            <div className="flex items-center justify-between px-1 pb-2 text-[10px] uppercase tracking-[0.22em] text-white/50">
+                              <span>Filtros</span>
+                              {activeFilterCount > 0 && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEventStatusFilter("all");
+                                    setEventCategoryFilter("all");
+                                    setEventPartnerClubFilter("all");
+                                    setSearchTerm("");
+                                    setTimeScope("all");
+                                    setManageFiltersOpen(null);
+                                  }}
+                                  className="text-[10px] font-semibold text-white/70 hover:text-white"
+                                >
+                                  Limpar tudo
+                                </button>
+                              )}
+                            </div>
+
+                            <div className="space-y-2">
+                              <div>
+                                <p className="px-1 pb-1 text-[10px] uppercase tracking-[0.2em] text-white/40">Categoria</p>
+                                <div className="space-y-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setEventCategoryFilter("all");
+                                      setManageFiltersOpen(null);
+                                    }}
+                                    className={cn(
+                                      "flex w-full items-center justify-between rounded-xl px-2 py-2 text-left text-[12px] text-white/80 hover:bg-white/10",
+                                      eventCategoryFilter === "all" && "bg-white/10 text-white",
+                                    )}
+                                  >
+                                    Todas
+                                    {eventCategoryFilter === "all" && <span className="text-white/60">✓</span>}
+                                  </button>
+                                  {categoryOptions.length === 0 && (
+                                    <div className="px-2 py-2 text-[12px] text-white/45">Sem categorias.</div>
+                                  )}
+                                  {categoryOptions.map((cat) => (
+                                    <button
+                                      key={cat}
+                                      type="button"
+                                      onClick={() => {
+                                        setEventCategoryFilter(cat);
+                                        setManageFiltersOpen(null);
+                                      }}
+                                      className={cn(
+                                        "flex w-full items-center justify-between rounded-xl px-2 py-2 text-left text-[12px] text-white/80 hover:bg-white/10",
+                                        eventCategoryFilter === cat && "bg-white/10 text-white",
+                                      )}
+                                    >
+                                      {cat}
+                                      {eventCategoryFilter === cat && <span className="text-white/60">✓</span>}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+
+                              <div>
+                                <p className="px-1 pb-1 text-[10px] uppercase tracking-[0.2em] text-white/40">Clube</p>
+                                <div className="space-y-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setEventPartnerClubFilter("all");
+                                      setManageFiltersOpen(null);
+                                    }}
+                                    className={cn(
+                                      "flex w-full items-center justify-between rounded-xl px-2 py-2 text-left text-[12px] text-white/80 hover:bg-white/10",
+                                      eventPartnerClubFilter === "all" && "bg-white/10 text-white",
+                                    )}
+                                  >
+                                    Todos
+                                    {eventPartnerClubFilter === "all" && <span className="text-white/60">✓</span>}
+                                  </button>
+                                  {partnerClubOptions.length === 0 && (
+                                    <div className="px-2 py-2 text-[12px] text-white/45">Sem clubes.</div>
+                                  )}
+                                  {partnerClubOptions.map((club) => (
+                                    <button
+                                      key={club.id}
+                                      type="button"
+                                      onClick={() => {
+                                        setEventPartnerClubFilter(`${club.id}`);
+                                        setManageFiltersOpen(null);
+                                      }}
+                                      className={cn(
+                                        "flex w-full items-center justify-between rounded-xl px-2 py-2 text-left text-[12px] text-white/80 hover:bg-white/10",
+                                        eventPartnerClubFilter === `${club.id}` && "bg-white/10 text-white",
+                                      )}
+                                    >
+                                      {club.name}
+                                      {eventPartnerClubFilter === `${club.id}` && <span className="text-white/60">✓</span>}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEventStatusFilter("all");
+                                  setEventCategoryFilter("all");
+                                  setEventPartnerClubFilter("all");
+                                  setSearchTerm("");
+                                  setTimeScope("all");
+                                  setManageFiltersOpen(null);
+                                }}
+                                className={cn(CTA_SECONDARY, "w-full text-[12px]")}
+                              >
+                                Limpar filtros
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="inline-flex items-center rounded-2xl border border-white/15 bg-white/5 p-1 text-[12px]">
+                        <button
+                          type="button"
+                          onClick={() => setEventView("list")}
+                          className={cn(
+                            "rounded-xl px-3 py-1.5 font-semibold transition",
+                            eventView === "list"
+                              ? "bg-gradient-to-r from-[#FF7AD1]/60 via-[#7FE0FF]/35 to-[#6A7BFF]/55 text-white shadow-[0_14px_36px_rgba(107,255,255,0.45)]"
+                              : "text-white/70 hover:bg-white/10",
+                          )}
+                        >
+                          Lista
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEventView("grid")}
+                          className={cn(
+                            "rounded-xl px-3 py-1.5 font-semibold transition",
+                            eventView === "grid"
+                              ? "bg-gradient-to-r from-[#FF7AD1]/60 via-[#7FE0FF]/35 to-[#6A7BFF]/55 text-white shadow-[0_14px_36px_rgba(107,255,255,0.45)]"
+                              : "text-white/70 hover:bg-white/10",
+                          )}
+                        >
+                          Galeria
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEventStatusFilter("all");
-                    setEventCategoryFilter("all");
-                    setEventPartnerClubFilter("all");
-                    setSearchTerm("");
-                    setTimeScope("all");
-                  }}
-                  className={CTA_SECONDARY}
-                >
-                  Limpar filtros
-                </button>
               </div>
-
-              <div className="mt-4 space-y-4">
+              <div className="relative z-10 mt-4 space-y-4">
                 {activeFilterCount > 0 && (
-                  <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-white/12 bg-gradient-to-r from-white/8 via-white/6 to-white/4 px-3 py-2 text-[12px] text-white/80 shadow-[0_12px_36px_rgba(0,0,0,0.45)] backdrop-blur-2xl">
+                  <div className="relative z-10 flex flex-wrap items-center gap-2 rounded-2xl border border-white/12 bg-gradient-to-r from-white/8 via-white/6 to-white/4 px-3 py-2 text-[12px] text-white/80 shadow-[0_12px_36px_rgba(0,0,0,0.45)] backdrop-blur-2xl">
                     <span className="font-semibold text-white/75">Filtros ativos ({activeFilterCount})</span>
                     {eventStatusFilter !== "all" && (
                       <button
@@ -1543,34 +2795,8 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
                 <div className="space-y-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="flex items-center gap-2 text-sm text-white/80">
-                      <h3 className="text-lg font-semibold">Eventos</h3>
+                      <h3 className="text-lg font-semibold">{managePrimaryLabel}</h3>
                       <span className="text-[11px] rounded-full bg-white/10 px-2 py-0.5">{filteredEvents.length}</span>
-                    </div>
-                    <div className="inline-flex items-center rounded-2xl border border-white/15 bg-white/5 p-1 text-[12px]">
-                      <button
-                        type="button"
-                        onClick={() => setEventView("list")}
-                        className={cn(
-                          "rounded-xl px-3 py-1.5 font-semibold transition",
-                          eventView === "list"
-                            ? "bg-gradient-to-r from-[#FF7AD1]/60 via-[#7FE0FF]/35 to-[#6A7BFF]/55 text-white shadow-[0_14px_36px_rgba(107,255,255,0.45)]"
-                            : "text-white/70 hover:bg-white/10",
-                        )}
-                      >
-                        Lista
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setEventView("grid")}
-                        className={cn(
-                          "rounded-xl px-3 py-1.5 font-semibold transition",
-                          eventView === "grid"
-                            ? "bg-gradient-to-r from-[#FF7AD1]/60 via-[#7FE0FF]/35 to-[#6A7BFF]/55 text-white shadow-[0_14px_36px_rgba(107,255,255,0.45)]"
-                            : "text-white/70 hover:bg-white/10",
-                        )}
-                      >
-                        Galeria
-                      </button>
                     </div>
                   </div>
 
@@ -1596,8 +2822,8 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
             {eventsError && (
               <div className="rounded-2xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-100 flex items-center justify-between gap-3">
                 <div>
-                  <p className="font-semibold">Não foi possível carregar os eventos.</p>
-                  <p className="text-[12px] text-red-100/80">Verifica a ligação e tenta novamente.</p>
+                  <p className="font-semibold">Não foi possível carregar.</p>
+                  <p className="text-[12px] text-red-100/80">Tenta novamente.</p>
                 </div>
                 <button
                   type="button"
@@ -1609,17 +2835,52 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
               </div>
             )}
 
-            {!eventsListLoading && events?.items?.length === 0 && (
-              <div className="rounded-2xl border border-dashed border-white/15 bg-white/5 px-4 py-6 text-center text-sm text-white/70 space-y-2">
-                <p className="text-base font-semibold text-white">Ainda não tens eventos criados.</p>
-                <p>Começa por criar o teu primeiro evento e acompanha tudo a partir daqui.</p>
+            {!eventsListLoading && eventsList.length === 0 && (
+              <div className="rounded-2xl border border-dashed border-white/15 bg-white/5 px-4 py-8 text-center text-sm text-white/70 space-y-3">
+                <svg
+                  viewBox="0 0 240 160"
+                  role="img"
+                  aria-label={`Sem ${managePrimaryLabelLower}s`}
+                  className="mx-auto h-32 w-32"
+                >
+                  <defs>
+                    <linearGradient id="calendarGlow" x1="0" y1="0" x2="1" y2="1">
+                      <stop offset="0%" stopColor="#6BFFFF" stopOpacity="0.5" />
+                      <stop offset="50%" stopColor="#FF7AD1" stopOpacity="0.45" />
+                      <stop offset="100%" stopColor="#6A7BFF" stopOpacity="0.5" />
+                    </linearGradient>
+                  </defs>
+                  <rect x="32" y="34" width="176" height="104" rx="18" fill="rgba(255,255,255,0.06)" stroke="url(#calendarGlow)" strokeWidth="2" />
+                  <rect x="32" y="34" width="176" height="22" rx="12" fill="rgba(255,255,255,0.12)" />
+                  <circle cx="64" cy="30" r="8" fill="rgba(255,255,255,0.25)" />
+                  <circle cx="176" cy="30" r="8" fill="rgba(255,255,255,0.25)" />
+                  <rect x="70" y="74" width="36" height="28" rx="8" fill="rgba(255,255,255,0.12)" />
+                  <rect x="118" y="74" width="36" height="28" rx="8" fill="rgba(255,255,255,0.12)" />
+                  <rect x="166" y="74" width="28" height="28" rx="8" fill="rgba(255,255,255,0.12)" />
+                  <circle cx="54" cy="120" r="10" fill="rgba(107,255,255,0.4)" />
+                  <circle cx="186" cy="120" r="10" fill="rgba(255,122,209,0.4)" />
+                  <path
+                    d="M120 96c6 0 10-6 10-12h-20c0 6 4 12 10 12Z"
+                    fill="rgba(255,255,255,0.5)"
+                  />
+                  <path
+                    d="M112 96h16v10c0 4-4 8-8 8s-8-4-8-8V96Z"
+                    fill="rgba(255,255,255,0.25)"
+                  />
+                </svg>
+                <p className="text-base font-semibold text-white">
+                  Ainda sem {managePrimaryLabelLower}s.
+                </p>
+                <p className="text-white/65">Cria o primeiro para começar.</p>
               </div>
             )}
 
-            {!eventsListLoading && events?.items && events.items.length > 0 && filteredEvents.length === 0 && (
+            {!eventsListLoading && eventsList.length > 0 && filteredEvents.length === 0 && (
               <div className="rounded-2xl border border-white/15 bg-white/5 px-4 py-6 text-center text-sm text-white/70 space-y-2">
-                <p className="text-base font-semibold text-white">Nenhum evento corresponde a estes filtros.</p>
-                <p className="text-white/65">Troca o período ou limpa os filtros para veres todos.</p>
+                <p className="text-base font-semibold text-white">
+                  Sem resultados.
+                </p>
+                <p className="text-white/65">Troca o período ou limpa filtros.</p>
                 <div className="flex flex-wrap justify-center gap-2 text-[12px]">
                   <button
                     type="button"
@@ -1635,10 +2896,10 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
                     Limpar filtros
                   </button>
                   <Link
-                    href="/organizacao/eventos/novo"
+                    href={manageCreateMeta.href}
                     className={cn(CTA_PRIMARY, "text-[12px]")}
                   >
-                    Criar novo evento
+                    {manageCreateMeta.label}
                   </Link>
                 </div>
               </div>
@@ -1651,7 +2912,9 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
                         <table className="min-w-full text-sm text-white/90">
                           <thead className="bg-white/10 text-left text-[11px] uppercase tracking-wide text-white/75">
                             <tr>
-                              <th className="px-4 py-3 font-semibold">Evento</th>
+                              <th className="px-4 py-3 font-semibold">
+                                {managePrimarySingularLabel.charAt(0).toUpperCase() + managePrimarySingularLabel.slice(1)}
+                              </th>
                               <th className="px-4 py-3 font-semibold">Data</th>
                               <th className="px-4 py-3 font-semibold">Estado</th>
                               <th className="px-4 py-3 font-semibold">Tipo</th>
@@ -1705,7 +2968,7 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
                                 <tr key={ev.id} className="hover:bg-white/10 transition duration-150">
                                   <td className="px-4 py-3">
                                     <Link
-                                      href={`/organizacao/eventos/${ev.id}`}
+                                      href={`${eventRouteBase}/${ev.id}`}
                                       className="text-left text-white hover:underline"
                                     >
                                       {ev.title}
@@ -1730,20 +2993,20 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
                                   <td className="px-4 py-3 text-right text-[11px]">
                                     <div className="flex flex-wrap items-center justify-end gap-2">
                                       <Link
-                                        href={`/organizacao/eventos/${ev.id}/edit`}
+                                        href={`${eventRouteBase}/${ev.id}/edit`}
                                         className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px]")}
                                       >
                                         Editar
                                       </Link>
                                       <Link
-                                        href={`/organizacao/eventos/${ev.id}/live`}
+                                        href={`${eventRouteBase}/${ev.id}/live`}
                                         className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px]")}
                                       >
                                         Preparar Live
                                       </Link>
                                       {ev.status !== "ARCHIVED" && (
                                         <Link
-                                          href={`/organizacao/eventos/${ev.id}`}
+                                          href={`${eventRouteBase}/${ev.id}`}
                                           className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px]")}
                                         >
                                           {salesLabel}
@@ -1824,7 +3087,7 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
                                       : { label: ev.status, classes: "border-white/20 bg-white/5 text-white/70" };
                           const coverSuggestions = getEventCoverSuggestionIds({
                             templateType: normalizedTemplate,
-                            organizationCategory: organization?.organizationCategory ?? null,
+                            primaryModule: organization?.primaryModule ?? null,
                           });
                           const coverUrl = getEventCoverUrl(ev.coverImageUrl, {
                             seed: ev.slug ?? ev.id,
@@ -1855,7 +3118,7 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
                                 <div className="flex items-start justify-between gap-3">
                                   <div className="min-w-0 space-y-1">
                                     <Link
-                                      href={`/organizacao/eventos/${ev.id}`}
+                                      href={`${eventRouteBase}/${ev.id}`}
                                       className="text-lg font-semibold text-white hover:underline"
                                     >
                                       {ev.title}
@@ -1890,20 +3153,20 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
 
                                 <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
                                   <Link
-                                    href={`/organizacao/eventos/${ev.id}/edit`}
+                                    href={`${eventRouteBase}/${ev.id}/edit`}
                                     className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px]")}
                                   >
                                     Editar
                                   </Link>
                                   <Link
-                                    href={`/organizacao/eventos/${ev.id}/live`}
+                                    href={`${eventRouteBase}/${ev.id}/live`}
                                     className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px]")}
                                   >
                                     Preparar Live
                                   </Link>
                                   {ev.status !== "ARCHIVED" && (
                                     <Link
-                                      href={`/organizacao/eventos/${ev.id}`}
+                                      href={`${eventRouteBase}/${ev.id}`}
                                       className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px]")}
                                     >
                                       Inscrições
@@ -1950,7 +3213,7 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
         </section>
       )}
 
-      {activeObjective === "manage" && activeSection === "inscricoes" && (
+      {activeObjective === "manage" && activeSection === "inscricoes" && hasInscricoesModule && (
         <section className={cn("space-y-4", fadeClass)} id="inscricoes">
           <InscricoesPage embedded />
         </section>
@@ -1971,29 +3234,22 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
         </section>
       )}
 
+      {activeObjective === "manage" && activeSection === "reservas" && isReservasOrg && (
+        <section className={cn("space-y-4", fadeClass)} id="reservas">
+          <ReservasDashboardPage />
+        </section>
+      )}
+
       {activeObjective === "analyze" && (
         <section className={cn("space-y-3", fadeClass)} id="analisar">
           <div className="rounded-3xl border border-white/12 bg-gradient-to-r from-[#0b1226]/80 via-[#101b39]/75 to-[#050811]/90 px-4 py-4 sm:px-6 sm:py-5 backdrop-blur-2xl">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="space-y-1">
-                <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] uppercase tracking-[0.28em] text-white/70 shadow-[0_12px_32px_rgba(0,0,0,0.4)]">
-                  Dashboard · Analisar
-                </div>
                 <h2 className="text-2xl sm:text-3xl font-semibold text-white drop-shadow-[0_12px_45px_rgba(0,0,0,0.6)]">
                   Finanças &amp; faturação
                 </h2>
-                <p className="text-sm text-white/70">Receitas, payouts e documentos fiscais num só lugar.</p>
+                <p className="text-sm text-white/70">Receitas, payouts e docs fiscais.</p>
               </div>
-            </div>
-            <div className="mt-4">
-              <ObjectiveSubnav
-                objective="analyze"
-                activeId={activeSection}
-                category={orgCategory}
-                modules={organization?.modules ?? []}
-                mode="dashboard"
-                variant="tabs"
-              />
             </div>
           </div>
         </section>
@@ -2031,7 +3287,7 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
                         href={`/eventos/${nextEvent.slug}`}
                         className="relative mt-2 inline-flex text-[11px] text-[#6BFFFF] hover:underline"
                       >
-                        Ver evento →
+                        Ver {managePrimaryLabelLower} →
                       </Link>
                     )}
                   </div>
@@ -2042,7 +3298,7 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
             <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-[#0b1226]/80 via-[#101c38]/75 to-[#050810]/95 p-4 shadow-[0_22px_70px_rgba(0,0,0,0.55)]">
               <p className="text-[11px] uppercase tracking-[0.26em] text-white/60">Faturação</p>
               <h3 className="text-lg font-semibold text-white">Recibos e documentos</h3>
-              <p className="text-[12px] text-white/65">Consulta invoices emitidas e dados fiscais.</p>
+              <p className="text-[12px] text-white/65">Invoices e dados fiscais.</p>
               <Link
                 href="/organizacao?tab=analyze&section=invoices"
                 className={cn(CTA_SECONDARY, "mt-3 text-[12px]")}
@@ -2053,7 +3309,7 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
             <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-[#0a1120]/85 via-[#0b1428]/80 to-[#05080f]/95 p-4 shadow-[0_22px_70px_rgba(0,0,0,0.55)]">
               <p className="text-[11px] uppercase tracking-[0.26em] text-white/60">Payouts</p>
               <h3 className="text-lg font-semibold text-white">Detalhe de receitas</h3>
-              <p className="text-[12px] text-white/65">Vê o detalhe de reservas e releases.</p>
+              <p className="text-[12px] text-white/65">Detalhe de reservas e releases.</p>
               <Link
                 href="/organizacao?tab=analyze&section=financas"
                 className={cn(CTA_SECONDARY, "mt-3 text-[12px]")}
@@ -2106,8 +3362,8 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
             <div className="relative flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div>
                 <p className="text-[11px] uppercase tracking-[0.3em] text-white/70">Bilhetes &amp; Vendas</p>
-                <h2 className="text-2xl font-semibold text-white">Vendas por evento</h2>
-                <p className="text-sm text-white/70">Escolhe um evento e vê evolução + compradores.</p>
+                <h2 className="text-2xl font-semibold text-white">Vendas por {managePrimaryLabelLower}</h2>
+                <p className="text-sm text-white/70">Escolhe um {managePrimaryLabelLower} para ver evolução.</p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-[11px] text-white/70">Período</span>
@@ -2141,13 +3397,15 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
 
             <div className="relative flex flex-wrap items-center gap-3">
               <div className="w-full max-w-md">
-                <label className="text-xs uppercase tracking-[0.18em] text-white/65 block mb-1">Seleciona o evento</label>
+                <label className="text-xs uppercase tracking-[0.18em] text-white/65 block mb-1">
+                  {managePrimaryLabelTitle}
+                </label>
                 <select
                   value={salesEventId ?? ""}
                   onChange={(e) => setSalesEventId(e.target.value ? Number(e.target.value) : null)}
                   className="w-full rounded-2xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF] focus:ring-2 focus:ring-[rgba(107,255,255,0.35)]"
                 >
-                  <option value="">Escolhe</option>
+                  <option value="">Seleciona</option>
                   {eventsList.map((ev) => (
                     <option key={ev.id} value={ev.id}>
                       {ev.title}
@@ -2155,7 +3413,7 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
                   ))}
                 </select>
               </div>
-              {!eventsList.length && <span className="text-[12px] text-white/65">Sem eventos para analisar.</span>}
+              {!eventsList.length && <span className="text-[12px] text-white/65">Sem {managePrimaryLabelLower}s.</span>}
               {selectedSalesEvent && (
                 <span className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] text-white/75 shadow-[0_10px_30px_rgba(0,0,0,0.35)]">
                   A ver: {selectedSalesEvent.title}
@@ -2167,7 +3425,7 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
           <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
             {!salesEventId && (
               <div className="col-span-full rounded-2xl border border-dashed border-white/20 bg-black/30 p-4 text-white/70 text-sm">
-                Seleciona um evento para ver as métricas de vendas.
+                Seleciona um {managePrimaryLabelLower} para ver métricas.
               </div>
             )}
             {salesLoading && (
@@ -2183,7 +3441,7 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
             )}
             {!salesLoading && salesSeries && salesSeries.points?.length === 0 && (
               <div className="col-span-full rounded-2xl border border-dashed border-white/20 bg-black/30 p-4 text-white/70 text-sm">
-                Sem dados de vendas neste período. Escolhe outro evento ou intervalo.
+                Sem dados neste período.
               </div>
             )}
             {!salesLoading && salesSeries && salesSeries.points?.length !== 0 && (
@@ -2196,19 +3454,19 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
                 <div className="rounded-2xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1226]/70 to-[#050912]/90 p-3 shadow-[0_14px_45px_rgba(0,0,0,0.5)]">
                   <p className="text-[11px] text-white/60">Bilhetes vendidos</p>
                   <p className="text-2xl font-bold text-white mt-1">{salesKpis.tickets}</p>
-                  <p className="text-[11px] text-white/50">No período selecionado</p>
+                  <p className="text-[11px] text-white/50">No período</p>
                 </div>
                 <div className="rounded-2xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1226]/70 to-[#050912]/90 p-3 shadow-[0_14px_45px_rgba(0,0,0,0.5)]">
-                  <p className="text-[11px] text-white/60">Eventos com vendas</p>
+                  <p className="text-[11px] text-white/60">{managePrimaryLabel} com vendas</p>
                   <p className="text-2xl font-bold text-white mt-1">{salesKpis.eventsWithSales}</p>
-                  <p className="text-[11px] text-white/50">Eventos com pelo menos 1 venda</p>
+                  <p className="text-[11px] text-white/50">≥1 venda</p>
                 </div>
                 <div className="rounded-2xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1226]/70 to-[#050912]/90 p-3 shadow-[0_14px_45px_rgba(0,0,0,0.5)]">
                   <p className="text-[11px] text-white/60">Ocupação média</p>
                   <p className="text-2xl font-bold text-white mt-1">
                     {salesKpis.avgOccupancy !== null ? `${salesKpis.avgOccupancy}%` : "—"}
                   </p>
-                  <p className="text-[11px] text-white/50">Calculado nos eventos com capacidade</p>
+                  <p className="text-[11px] text-white/50">Só com capacidade</p>
                 </div>
               </>
             )}
@@ -2238,14 +3496,14 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
                   <div className="hidden h-28 w-20 rounded-xl bg-white/10 animate-pulse md:block" />
                 </div>
                 ) : !salesEventId ? (
-                  <span className="text-white/40 text-xs">Escolhe um evento para ver a evolução.</span>
+                  <span className="text-white/40 text-xs">Escolhe um {managePrimaryLabelLower}.</span>
                 ) : salesSeries?.points?.length ? (
                   <SalesAreaChart
                     data={salesChartPoints}
                     periodLabel={salesRangeLabelLong(salesRange)}
                   />
               ) : (
-                <span className="text-white/40 text-xs">Sem dados de vendas para este evento.</span>
+                <span className="text-white/40 text-xs">Sem dados.</span>
               )}
             </div>
             {salesSeriesBreakdown && (
@@ -2261,18 +3519,20 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
           <div className="relative overflow-hidden rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0a1226]/75 to-[#050912]/90 p-4 space-y-3">
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="text-lg font-semibold">Eventos com mais vendas</h3>
-                <p className="text-[11px] text-white/60">Top por receita total. Usa como atalho para ver o detalhe.</p>
+                <h3 className="text-lg font-semibold">{managePrimaryLabel} com mais vendas</h3>
+                <p className="text-[11px] text-white/60">Top por receita.</p>
               </div>
             </div>
 
-            {topEvents.length === 0 && <p className="text-sm text-white/60">Ainda sem eventos com vendas para ordenar.</p>}
+            {topEvents.length === 0 && (
+              <p className="text-sm text-white/60">Sem {managePrimaryLabelLower}s com vendas.</p>
+            )}
             {topEvents.length > 0 && (
               <div className="overflow-auto">
                 <table className="min-w-full text-sm">
                   <thead className="text-left text-[11px] text-white/60">
                     <tr>
-                      <th className="py-2 pr-3">Evento</th>
+                      <th className="py-2 pr-3">{managePrimaryLabelTitle}</th>
                       <th className="py-2 pr-3">Bilhetes</th>
                       <th className="py-2 pr-3">Receita</th>
                       <th className="py-2 pr-3">Estado</th>
@@ -2301,7 +3561,7 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
                                 href={`/organizacao?tab=analyze&section=vendas&eventId=${ev.id}`}
                                 className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px]")}
                               >
-                                Dashboard de vendas
+                                Ver vendas
                               </Link>
                             </div>
                           </td>
@@ -2318,7 +3578,7 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-lg font-semibold">Compradores</h3>
-                <p className="text-[11px] text-white/60">Lista rápida por bilhete. Exporta para CSV para detalhe.</p>
+                <p className="text-[11px] text-white/60">Lista rápida. Exporta CSV.</p>
               </div>
               <button
                 type="button"
@@ -2372,13 +3632,13 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
               </div>
             )}
             {!buyersLoading && !salesEventId && (
-              <p className="text-sm text-white/60">Escolhe um evento para ver compradores.</p>
+              <p className="text-sm text-white/60">Escolhe um {managePrimaryLabelLower}.</p>
             )}
             {!buyersLoading && salesEventId && buyers && buyers.ok === false && (
               <p className="text-sm text-red-400">Não foi possível carregar os compradores.</p>
             )}
             {!buyersLoading && salesEventId && buyers && buyers.ok !== false && buyersItems.length === 0 && (
-              <p className="text-sm text-white/60">Sem compras registadas para este evento.</p>
+              <p className="text-sm text-white/60">Sem compras.</p>
             )}
             {!buyersLoading && salesEventId && buyers && buyers.ok !== false && buyersItems.length > 0 && (
               <div className="overflow-auto">
@@ -2422,11 +3682,8 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
         <section className={cn("space-y-5", fadeClass)} id="financas">
           <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/10 via-[#0d1530]/75 to-[#050912]/90 px-5 py-4 backdrop-blur-3xl">
             <div className="flex flex-col gap-2">
-              <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] uppercase tracking-[0.24em] text-white/80 shadow-[0_10px_30px_rgba(0,0,0,0.4)]">
-                Finanças & Payouts
-              </div>
-              <h2 className="text-3xl font-semibold text-white drop-shadow-[0_12px_40px_rgba(0,0,0,0.55)]">Receita, liquidez e Stripe.</h2>
-              <p className="text-sm text-white/70">Glassmorphism premium para veres o dinheiro, taxas e o estado da conta Stripe.</p>
+              <h2 className="text-3xl font-semibold text-white drop-shadow-[0_12px_40px_rgba(0,0,0,0.55)]">Receita e Stripe</h2>
+              <p className="text-sm text-white/70">Dinheiro, taxas e estado Stripe.</p>
             </div>
           </div>
 
@@ -2445,10 +3702,10 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
                   </p>
                   <p className="text-[12px] text-amber-100/85">
                     {paymentsStatus === "NO_STRIPE"
-                      ? "Sem ligação Stripe não há payouts. O resto da gestão continua disponível."
+                      ? "Sem Stripe não há payouts."
                       : stripeRequirements.length > 0
-                        ? `Faltam ${stripeRequirements.length} passos no Stripe Connect. Abre o painel para concluir.`
-                        : "Conclui o onboarding no Stripe para ativares payouts."}
+                        ? `Faltam ${stripeRequirements.length} passos.`
+                        : "Conclui o onboarding para payouts."}
                   </p>
                 </div>
                 <button
@@ -2468,7 +3725,7 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
                 <div className="space-y-1">
                   <p className="font-semibold">Conta interna ORYA</p>
                   <p className="text-[12px] text-emerald-50/85">
-                    Pagamentos processados na conta principal da ORYA. Não precisas de ligar Stripe Connect.
+                    Pagamentos na conta ORYA. Sem Stripe Connect.
                   </p>
                 </div>
               </div>
@@ -2490,7 +3747,7 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
                     : financeSummary
                       ? `${(financeSummary.estimatedPayoutCents / 100).toFixed(2)} €`
                       : "—",
-                hint: "Valor que fica para ti (bruto - taxas).",
+                hint: "Bruto - taxas.",
               },
               {
                 label: "Receita últimos 30d",
@@ -2498,7 +3755,7 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
                   financeData?.rolling.last30.netCents !== undefined
                     ? `${(financeData.rolling.last30.netCents / 100).toFixed(2)} €`
                     : "—",
-                hint: "Líquido nos últimos 30 dias.",
+                hint: "Líquido 30 dias.",
               },
               {
                 label: "Taxas",
@@ -2508,12 +3765,12 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
                     : financeSummary
                       ? `${(financeSummary.platformFeesCents / 100).toFixed(2)} €`
                       : "—",
-                hint: "Custos de processamento + eventuais fees.",
+                hint: "Processamento + fees.",
               },
               {
-                label: "Eventos com vendas",
+                label: `${managePrimaryLabel} com vendas`,
                 value: financeData?.totals.eventsWithSales ?? financeSummary?.eventsWithSales ?? "—",
-                hint: "Eventos pagos com pelo menos 1 bilhete.",
+                hint: "≥1 bilhete.",
               },
             ].map((card) => (
               <div
@@ -2577,7 +3834,7 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
                 <p>{stripeState.desc}</p>
                 {stripeRequirements.length > 0 && (
                   <p className="text-white/70">
-                    {stripeRequirements.length} itens pendentes no Stripe. Conclui-os no painel Connect para ativares payouts.
+                    {stripeRequirements.length} itens pendentes.
                   </p>
                 )}
               </div>
@@ -2587,7 +3844,7 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
             <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/10 via-[#0b1124]/70 to-[#050810]/90 backdrop-blur-3xl p-4 space-y-3">
               <div className="flex items-center justify-between">
                 <h3 className="text-lg font-semibold text-white">Payouts</h3>
-                <span className="text-[11px] text-white/70">Informativo</span>
+                <span className="text-[11px] text-white/70">Info</span>
               </div>
               <div className="grid gap-2 sm:grid-cols-2 text-sm">
                 <div className="rounded-2xl border border-white/12 bg-white/8 p-3">
@@ -2595,14 +3852,13 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
                   <p className="text-xl font-semibold text-white">
                     {financeData ? (financeData.upcomingPayoutCents / 100).toFixed(2) : financeSummary ? (financeSummary.estimatedPayoutCents / 100).toFixed(2) : "—"} €
                   </p>
-                  <p className="text-[11px] text-white/60">Baseado em vendas recentes. Funcionalidade de payouts automáticos em breve.</p>
+                  <p className="text-[11px] text-white/60">Estimativa.</p>
                 </div>
                 <div className="rounded-2xl border border-white/12 bg-white/8 p-3">
                   <p className="text-white/70 text-xs">Receita bruta (total)</p>
                   <p className="text-xl font-semibold text-white">
                     {financeData ? (financeData.totals.grossCents / 100).toFixed(2) : financeSummary ? (financeSummary.revenueCents / 100).toFixed(2) : "—"} €
                   </p>
-                  <p className="text-[11px] text-white/60">Inclui todos os eventos.</p>
                 </div>
               </div>
               <div className="grid gap-2 sm:grid-cols-2 text-sm">
@@ -2611,26 +3867,56 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
                   <p className="text-xl font-semibold text-white">
                     {financeData ? (financeData.totals.feesCents / 100).toFixed(2) : financeSummary ? (financeSummary.platformFeesCents / 100).toFixed(2) : "—"} €
                   </p>
-                  <p className="text-[11px] text-white/60">Inclui processamento Stripe e fees aplicadas.</p>
+                  <p className="text-[11px] text-white/60">Stripe + fees.</p>
                 </div>
                 <div className="rounded-2xl border border-white/12 bg-white/8 p-3">
-                  <p className="text-white/70 text-xs">Eventos com vendas</p>
+                  <p className="text-white/70 text-xs">{managePrimaryLabel} com vendas</p>
                   <p className="text-xl font-semibold text-white">
                     {financeData ? financeData.totals.eventsWithSales : financeSummary ? financeSummary.eventsWithSales : "—"}
                   </p>
                 </div>
               </div>
-              <p className="text-[11px] text-white/65">
-                Payouts automáticos e gestão avançada de taxas chegam em breve. Estes valores são informativos.
-              </p>
+              {payoutAlerts && (
+                <div className="flex flex-wrap gap-2 text-[11px]">
+                  {payoutAlerts.holdUntil && (
+                    <span className="rounded-full border border-white/15 bg-white/8 px-3 py-1 text-white/80">
+                      Pendente (hold até{" "}
+                      {formatDateTime(new Date(payoutAlerts.holdUntil), {
+                        day: "2-digit",
+                        month: "short",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                      )
+                    </span>
+                  )}
+                  {payoutAlerts.actionRequired && (
+                    <span className="rounded-full border border-amber-300/40 bg-amber-300/10 px-3 py-1 text-amber-100">
+                      Ação necessária: completar Stripe
+                    </span>
+                  )}
+                  {payoutAlerts.nextAttemptAt && (
+                    <span className="rounded-full border border-sky-300/40 bg-sky-300/10 px-3 py-1 text-sky-100">
+                      A tentar novamente em:{" "}
+                      {formatDateTime(new Date(payoutAlerts.nextAttemptAt), {
+                        day: "2-digit",
+                        month: "short",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </span>
+                  )}
+                </div>
+              )}
+              <p className="text-[11px] text-white/65">Valores informativos.</p>
             </div>
           </div>
 
           <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/92 backdrop-blur-3xl p-4 space-y-3">
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="text-lg font-semibold text-white">Por evento</h3>
-                <p className="text-[12px] text-white/65">Bruto, taxas e líquido por evento.</p>
+                <h3 className="text-lg font-semibold text-white">Por {managePrimaryLabelLower}</h3>
+                <p className="text-[12px] text-white/65">Bruto, taxas e líquido.</p>
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -2644,10 +3930,10 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
               </div>
             </div>
 
-            {!financeData && <p className="text-sm text-white/60">A carregar finanças…</p>}
+            {!financeData && <p className="text-sm text-white/60">A carregar…</p>}
             {financeData && financeData.events.length === 0 && (
               <div className="rounded-2xl border border-dashed border-white/15 bg-white/5 px-4 py-4 text-sm text-white/70">
-                Sem vendas ainda. Assim que venderes bilhetes, verás aqui os totais por evento.
+                Sem vendas ainda.
               </div>
             )}
             {stripeSuccessMessage && (
@@ -2661,7 +3947,7 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
                 <table className="min-w-full text-sm text-white/80">
                   <thead className="text-left text-[11px] uppercase tracking-wide text-white/60">
                     <tr>
-                      <th className="px-4 py-3">Evento</th>
+                      <th className="px-4 py-3">{managePrimaryLabelTitle}</th>
                       <th className="px-4 py-3">Bilhetes</th>
                       <th className="px-4 py-3">Bruto</th>
                       <th className="px-4 py-3">Taxas</th>
@@ -2676,7 +3962,7 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
                           <div className="flex flex-col">
                             <span className="font-semibold text-white">{ev.title}</span>
                             <span className="text-[11px] text-white/60">
-                              {ev.startsAt ? formatDateOnly(new Date(ev.startsAt)) : "Data a definir"}
+                              {ev.startsAt ? formatDateOnly(new Date(ev.startsAt)) : "Data por definir"}
                             </span>
                           </div>
                         </td>
@@ -2703,70 +3989,73 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
         </section>
       )}
 
-  {activeObjective === "promote" && (
-    <section className="space-y-5">
-      <div
-        className={cn(
-          "rounded-3xl border border-white/12 bg-gradient-to-r from-[#0b1226]/80 via-[#101b39]/75 to-[#050811]/90 px-4 py-4 sm:px-6 sm:py-5 backdrop-blur-2xl",
-          fadeClass,
-        )}
-        id="marketing"
-      >
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div className="space-y-1">
-            <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] uppercase tracking-[0.28em] text-white/70 shadow-[0_12px_32px_rgba(0,0,0,0.4)]">
-              Dashboard · Marketing
+      {activeObjective === "promote" && (
+        <section className="space-y-5">
+          <div
+            className={cn(
+              "rounded-3xl border border-white/12 bg-gradient-to-r from-[#0b1226]/80 via-[#101b39]/75 to-[#050811]/90 px-4 py-4 sm:px-6 sm:py-5 backdrop-blur-2xl",
+              fadeClass,
+            )}
+            id="marketing"
+          >
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div className="space-y-1">
+                <h2 className="text-2xl sm:text-3xl font-semibold text-white drop-shadow-[0_12px_45px_rgba(0,0,0,0.6)]">
+                  Marketing
+                </h2>
+                <p className="text-sm text-white/70">Promoções e audiência.</p>
+              </div>
             </div>
-            <h2 className="text-2xl sm:text-3xl font-semibold text-white drop-shadow-[0_12px_45px_rgba(0,0,0,0.6)]">
-              Marketing
-            </h2>
-            <p className="text-sm text-white/70">Promoções, audiência e ações para encher o evento.</p>
           </div>
-        </div>
 
-        {marketingTabs.length > 0 && (
-          <div className="mt-4 flex flex-wrap gap-2 rounded-2xl border border-white/10 bg-white/5 px-2 py-2 text-sm shadow-[0_16px_50px_rgba(0,0,0,0.4)]">
-            {marketingTabs.map((opt) => (
-              <button
-                key={opt.key}
-                type="button"
-                onClick={() => handleMarketingSectionSelect(opt.key)}
-                className={`rounded-xl px-3 py-2 font-semibold transition ${
-                  marketingSection === opt.key
-                    ? "bg-gradient-to-r from-[#FF7AD1]/60 via-[#7FE0FF]/35 to-[#6A7BFF]/55 text-white shadow-[0_14px_36px_rgba(107,255,255,0.45)]"
-                    : "text-white/80 hover:bg-white/10"
-                }`}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
-        )}
+          {!roleFlags.canPromote && (
+            <div className="mt-4 rounded-2xl border border-white/12 bg-white/5 px-4 py-4 text-sm text-white/70">
+              Sem permissões para marketing.
+            </div>
+          )}
 
-        {marketingSection === "overview" && (
-          <div className={cn("mt-4 space-y-4", fadeClass)}>
+          {roleFlags.canPromote && !hasMarketingModule && (
+            <div className="mt-4 rounded-2xl border border-white/12 bg-white/5 px-4 py-4 text-sm text-white/70">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="font-semibold text-white">Módulo de Marketing desativado.</p>
+                  <p className="text-[12px] text-white/60">Ativa a ferramenta para usar promoções e campanhas.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setToolsModalOpen(true)}
+                  className={cn(CTA_SECONDARY, "text-[12px]")}
+                >
+                  Ativar ferramenta
+                </button>
+              </div>
+            </div>
+          )}
+
+          {canUseMarketing && marketingSection === "overview" && (
+            <div className={cn("mt-4 space-y-4", fadeClass)}>
             <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
               {marketingOverview
                 ? [
                     {
                       label: "Receita atribuída a marketing",
                       value: marketingKpis.marketingRevenueCents ? `${(marketingKpis.marketingRevenueCents / 100).toFixed(2)} €` : "—",
-                      hint: "Receita estimada através de códigos.",
+                      hint: "Estimado via códigos.",
                     },
                     {
                       label: "Bilhetes via marketing",
                       value: marketingKpis.ticketsWithPromo,
-                      hint: "Utilizações de códigos.",
+                      hint: "Usos de códigos.",
                     },
                     {
                       label: "Top código",
                       value: marketingKpis.topPromo ? marketingKpis.topPromo.code : "—",
-                      hint: marketingKpis.topPromo ? `${marketingKpis.topPromo.redemptionsCount ?? 0} utilizações` : "Sem dados.",
+                      hint: marketingKpis.topPromo ? `${marketingKpis.topPromo.redemptionsCount ?? 0} usos` : "Sem dados.",
                     },
                     {
                       label: "Promo codes ativos",
                       value: marketingKpis.activePromos,
-                      hint: "Disponíveis para vender agora.",
+                      hint: "Ativos agora.",
                     },
                   ].map((card, idx) => (
                     <div
@@ -2798,7 +4087,7 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="text-lg font-semibold text-white drop-shadow-[0_10px_30px_rgba(0,0,0,0.45)]">Fill the Room</h3>
-                  <p className="text-[12px] text-white/65">Próximos eventos com ocupação e ação sugerida.</p>
+                  <p className="text-[12px] text-white/65">Ações sugeridas.</p>
                 </div>
                 <span className="rounded-full border border-white/20 bg-white/5 px-3 py-1 text-[12px] text-white/70">
                   Ações sugeridas
@@ -2807,7 +4096,7 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
 
               {fillTheRoomEvents.length === 0 && (
                 <div className="rounded-2xl border border-dashed border-white/15 bg-white/5 px-4 py-4 text-sm text-white/70">
-                  Sem eventos futuros para otimizar. Cria um evento ou define datas para ver sugestões.
+                  Sem {managePrimaryLabelLower}s futuros.
                 </div>
               )}
 
@@ -2840,7 +4129,7 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
                                   hour: "2-digit",
                                   minute: "2-digit",
                                 })
-                              : "Data a definir"}
+                              : "Data por definir"}
                           </span>
                           <span>·</span>
                           <span>{ev.locationCity || ev.locationName || "Local a anunciar"}</span>
@@ -2869,10 +4158,10 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
                             {ev.tag.suggestion}
                           </Link>
                           <Link
-                            href={`/organizacao/eventos/${ev.id}/edit`}
+                            href={`${eventRouteBase}/${ev.id}/edit`}
                             className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px]")}
                           >
-                            Editar evento
+                            Editar {managePrimaryLabelTitle.toLowerCase()}
                           </Link>
                           <Link
                             href={`/eventos/${ev.slug}`}
@@ -2892,7 +4181,7 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
               <div className="flex items-center justify-between gap-2">
                 <div>
                   <h4 className="text-lg font-semibold text-white">Funil de marketing (v1)</h4>
-                  <p className="text-[12px] text-white/65">Bilhetes totais vs. com promo vs. convidados.</p>
+                  <p className="text-[12px] text-white/65">Totais vs promo vs convidados.</p>
                 </div>
                 <span className="rounded-full border border-white/15 bg-white/5 px-2 py-1 text-[11px] text-white/70">Baseado em códigos</span>
               </div>
@@ -2909,55 +4198,303 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
                 ))}
               </div>
             </div>
-          </div>
-        )}
+            </div>
+          )}
 
-        {marketingSection === "promos" && (
+        {canUseMarketing && marketingSection === "promos" && (
           <div className={cn("mt-4", fadeClass)}>
             <PromoCodesPage />
           </div>
         )}
 
-        {marketingSection === "promoters" && (
+        {canUseMarketing && marketingSection === "promoters" && (
           <div className={cn("mt-4 space-y-3", fadeClass)}>
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-xl font-semibold text-white">Promotores &amp; Parcerias</h3>
-                <p className="text-[12px] text-white/65">Quem te ajuda a vender (pessoas, grupos, parceiros).</p>
+                <p className="text-[12px] text-white/65">
+                  {roleFlags.isPromoterOnly ? "O teu desempenho por código." : "Pessoas e parceiros."}
+                </p>
               </div>
-              <button
-                type="button"
-                className="rounded-full border border-white/20 px-4 py-2 text-sm font-semibold text-white/70 cursor-not-allowed"
-                disabled
-              >
-                Em breve
-              </button>
+              {!roleFlags.isPromoterOnly && (
+                <button
+                  type="button"
+                  className="rounded-full border border-white/20 px-4 py-2 text-sm font-semibold text-white/70 cursor-not-allowed"
+                  disabled
+                >
+                  Em breve
+                </button>
+              )}
             </div>
-            <div className="rounded-3xl border border-white/10 bg-black/35 p-4 text-sm text-white/70 space-y-3">
-              <p className="text-white/80 font-semibold">Em breve</p>
-              <p className="text-[12px] text-white/65">Dashboard de vendas por promotor e links com comissão estimada.</p>
-            </div>
+            {roleFlags.isPromoterOnly ? (
+              <div className="rounded-3xl border border-white/10 bg-black/35 p-4 text-sm text-white/70 space-y-4">
+                {marketingPromos.length === 0 ? (
+                  <p className="text-[12px] text-white/65">
+                    Ainda não tens códigos atribuídos. Pede à organização para criar um código com o teu nome.
+                  </p>
+                ) : (
+                  <div className="space-y-3">
+                    {marketingPromos.map((promo) => {
+                      const stats = promoStats.find((s) => s.promoCodeId === promo.id);
+                      const event = promo.eventId
+                        ? promoEvents.find((e) => e.id === promo.eventId) ?? null
+                        : null;
+                      const promoLink = event?.slug
+                        ? `${window.location.origin}/eventos/${event.slug}?promo=${encodeURIComponent(promo.code)}&checkout=1`
+                        : null;
+                      return (
+                        <div
+                          key={promo.id}
+                          className="rounded-2xl border border-white/10 bg-white/5 p-4 shadow-[0_16px_45px_rgba(0,0,0,0.35)]"
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div>
+                              <p className="text-[11px] uppercase tracking-[0.2em] text-white/50">Código</p>
+                              <p className="text-lg font-semibold text-white">{promo.code}</p>
+                              <p className="text-[12px] text-white/60">
+                                {event?.title ?? "Código global"}
+                              </p>
+                            </div>
+                            {promoLink && (
+                              <button
+                                type="button"
+                                onClick={() => navigator.clipboard.writeText(promoLink)}
+                                className="rounded-full border border-white/20 bg-white/5 px-4 py-2 text-[11px] uppercase tracking-[0.2em] text-white/70 hover:border-white/40"
+                              >
+                                Copiar link
+                              </button>
+                            )}
+                          </div>
+                          <div className="mt-3 grid gap-2 text-[12px] text-white/70 sm:grid-cols-3">
+                            <div className="rounded-xl border border-white/10 bg-black/30 px-3 py-2">
+                              <p className="text-[10px] uppercase tracking-[0.18em] text-white/50">Usos</p>
+                              <p className="text-sm font-semibold text-white">{stats?.usesTotal ?? promo.redemptionsCount ?? 0}</p>
+                            </div>
+                            <div className="rounded-xl border border-white/10 bg-black/30 px-3 py-2">
+                              <p className="text-[10px] uppercase tracking-[0.18em] text-white/50">Bilhetes</p>
+                              <p className="text-sm font-semibold text-white">{stats?.tickets ?? 0}</p>
+                            </div>
+                            <div className="rounded-xl border border-white/10 bg-black/30 px-3 py-2">
+                              <p className="text-[10px] uppercase tracking-[0.18em] text-white/50">Receita líquida</p>
+                              <p className="text-sm font-semibold text-white">
+                                {stats?.netCents ? `${(stats.netCents / 100).toFixed(2)} €` : "—"}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="rounded-3xl border border-white/10 bg-black/35 p-4 text-sm text-white/70 space-y-3">
+                <p className="text-white/80 font-semibold">Em breve</p>
+                <p className="text-[12px] text-white/65">Dashboard por promotor.</p>
+              </div>
+            )}
           </div>
         )}
 
-        {marketingSection === "content" && (
+        {canUseMarketing && marketingSection === "content" && (
           <div className={cn("mt-4 space-y-3", fadeClass)}>
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-xl font-semibold text-white">Conteúdo &amp; Kits</h3>
-                <p className="text-[12px] text-white/65">Copiar e partilhar: textos rápidos por evento.</p>
+                <p className="text-[12px] text-white/65">Textos rápidos por {managePrimaryLabelLower}.</p>
               </div>
               <span className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[11px] text-white/70">Em breve</span>
             </div>
             <div className="rounded-3xl border border-white/10 bg-black/35 p-4 text-sm text-white/70">
-              Em breve: kits rápidos para Instagram, WhatsApp e email por evento, com botões de copiar.
+              Em breve: kits rápidos com botões de copiar.
             </div>
           </div>
         )}
-      </div>
-    </section>
-  )}
+        </section>
+      )}
 
+      {checklistVisible && (
+        <div className="fixed bottom-4 right-4 z-40 sm:bottom-6 sm:right-6">
+          <div
+            className={cn(
+              "rounded-3xl border border-white/15 bg-[#050a14]/95 text-white shadow-[0_24px_80px_rgba(0,0,0,0.65)] backdrop-blur-2xl",
+              checklistCollapsed ? "p-2" : "p-4 w-[320px] max-w-[calc(100vw-2rem)]",
+            )}
+          >
+            {checklistCollapsed ? (
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleToggleChecklist}
+                  aria-label="Abrir checklist"
+                  className="flex h-11 w-11 items-center justify-center rounded-full border border-white/15 bg-white/5 text-white/80 transition hover:border-white/30 hover:bg-white/10"
+                >
+                  {renderChecklistRing(progressPercent)}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDismissChecklist}
+                  aria-label="Fechar checklist"
+                  disabled={!canDismissChecklist}
+                  title={checklistDismissHint}
+                  className={cn(
+                    "flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-white/5 text-white/70 transition hover:border-white/30 hover:bg-white/10",
+                    !canDismissChecklist && "cursor-not-allowed opacity-50 hover:border-white/15 hover:bg-white/5",
+                  )}
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    className="h-4 w-4"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M6 6l12 12M18 6l-12 12" />
+                  </svg>
+                </button>
+              </div>
+            ) : (
+              <>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    {renderChecklistRing(progressPercent)}
+                    <div>
+                      <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">Checklist</p>
+                      <p className="text-sm font-semibold text-white">
+                        {checklistComplete ? "Tudo pronto" : `Progresso ${progressPercent}%`}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={handleToggleChecklist}
+                      aria-label="Recolher checklist"
+                      className="flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-white/5 text-white/70 transition hover:border-white/30 hover:bg-white/10"
+                    >
+                      <svg
+                        viewBox="0 0 24 24"
+                        className="h-4 w-4"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden="true"
+                      >
+                        <path d="M6 9l6 6 6-6" />
+                      </svg>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleDismissChecklist}
+                      aria-label="Fechar checklist"
+                      disabled={!canDismissChecklist}
+                      title={checklistDismissHint}
+                      className={cn(
+                        "flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-white/5 text-white/70 transition hover:border-white/30 hover:bg-white/10",
+                        !canDismissChecklist && "cursor-not-allowed opacity-50 hover:border-white/15 hover:bg-white/5",
+                      )}
+                    >
+                      <svg
+                        viewBox="0 0 24 24"
+                        className="h-4 w-4"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden="true"
+                      >
+                        <path d="M6 6l12 12M18 6l-12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mt-4 max-h-[50vh] space-y-2 overflow-y-auto pr-1">
+                  {orderedChecklistSteps.map((step) => {
+                    const iconGradient =
+                      MODULE_ICON_GRADIENTS[step.iconKey] ?? "from-white/15 via-white/5 to-white/10";
+                    return (
+                      <Link
+                        key={step.id}
+                        href={step.href}
+                        className="group flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-left transition hover:border-white/25 hover:bg-white/10"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div
+                            className={cn(
+                              "flex h-9 w-9 items-center justify-center rounded-2xl border border-white/15 bg-gradient-to-br text-white/80",
+                              iconGradient,
+                            )}
+                          >
+                            <ModuleIcon moduleKey={step.iconKey} className="h-4 w-4" aria-hidden="true" />
+                          </div>
+                          <div className="space-y-0.5">
+                            <p className="text-[12px] font-semibold text-white/90">{step.label}</p>
+                            <p className="text-[11px] text-white/60">{step.description}</p>
+                          </div>
+                        </div>
+                        <div className="flex flex-col items-end gap-1">
+                          {step.required && (
+                            <span className="rounded-full border border-amber-300/40 bg-amber-400/10 px-2 py-1 text-[9px] uppercase tracking-[0.18em] text-amber-100">
+                              Obrigatório
+                            </span>
+                          )}
+                          <span
+                            className={cn(
+                              "rounded-full border px-2 py-1 text-[10px] uppercase tracking-[0.18em]",
+                              step.done
+                                ? "border-emerald-300/40 bg-emerald-500/15 text-emerald-100"
+                                : "border-white/15 bg-white/5 text-white/70",
+                            )}
+                          >
+                            {step.done ? "Feito" : "Abrir"}
+                          </span>
+                        </div>
+                      </Link>
+                    );
+                  })}
+                  <div className="flex items-center justify-between text-[11px] text-white/60">
+                    <span>
+                      {completedSteps}/{summarySteps.length} concluídos
+                    </span>
+                    {!checklistComplete && (
+                      <span className="text-white/45">
+                        {requiredComplete ? "Passos opcionais pendentes" : "Passos obrigatórios pendentes"}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {toolsModal}
+      {pendingModuleRemoval && (
+        <ConfirmDestructiveActionDialog
+          open
+          title={`Remover ${pendingModuleRemoval.title}?`}
+          description="Esta ferramenta deixa de aparecer no dashboard e as páginas associadas ficam indisponíveis."
+          consequences={[
+            "Podes voltar a ativar a qualquer momento no menu de ferramentas.",
+            "As tuas configurações ficam guardadas.",
+          ]}
+          confirmLabel="Remover ferramenta"
+          dangerLevel="medium"
+          onConfirm={() => {
+            deactivateModule(pendingModuleRemoval.moduleKey);
+            setPendingModuleRemoval(null);
+          }}
+          onClose={() => setPendingModuleRemoval(null)}
+        />
+      )}
       {eventDialog && (
         <ConfirmDestructiveActionDialog
           open
@@ -2965,25 +4502,29 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
             eventDialog.mode === "delete"
               ? "Apagar rascunho?"
               : eventDialog.mode === "unarchive"
-                ? "Reativar evento?"
-                : "Arquivar evento?"
+                ? `Reativar ${eventDialogLabel}?`
+                : `Arquivar ${eventDialogLabel}?`
           }
           description={
             eventDialog.mode === "delete"
               ? "Esta ação remove o rascunho e bilhetes associados."
               : eventDialog.mode === "unarchive"
-                ? "O evento volta a aparecer nas listas e dashboards."
-                : "O evento deixa de estar visível para o público. Vendas e relatórios mantêm-se."
+                ? `O ${eventDialogLabel} volta a aparecer nas listas e dashboards.`
+                : `O ${eventDialogLabel} deixa de estar visível para o público. Vendas e relatórios mantêm-se.`
           }
           consequences={
             eventDialog.mode === "delete"
-              ? ["Podes criar outro evento quando quiseres."]
+              ? [`Podes criar outro ${eventDialogLabel} quando quiseres.`]
               : eventDialog.mode === "unarchive"
                 ? ["Podes sempre voltar a arquivar mais tarde."]
                 : ["Sai de /explorar e das listas do dashboard.", "Mantém histórico para relatórios/finanças."]
           }
           confirmLabel={
-            eventDialog.mode === "delete" ? "Apagar rascunho" : eventDialog.mode === "unarchive" ? "Reativar evento" : "Arquivar evento"
+            eventDialog.mode === "delete"
+              ? "Apagar rascunho"
+              : eventDialog.mode === "unarchive"
+                ? `Reativar ${eventDialogLabel}`
+                : `Arquivar ${eventDialogLabel}`
           }
           dangerLevel={eventDialog.mode === "delete" ? "high" : eventDialog.mode === "archive" ? "high" : "medium"}
           onConfirm={() => archiveEvent(eventDialog.ev, eventDialog.mode)}
@@ -2994,10 +4535,18 @@ function OrganizacaoPageInner({ hasOrganization }: { hasOrganization: boolean })
   );
 }
 
-export default function DashboardClient({ hasOrganization = false }: { hasOrganization?: boolean }) {
+export default function DashboardClient({
+  hasOrganization = false,
+  defaultObjective,
+  defaultSection,
+}: { hasOrganization?: boolean } & DashboardClientDefaults) {
   return (
     <AuthModalProvider>
-      <OrganizacaoPageInner hasOrganization={hasOrganization} />
+      <OrganizacaoPageInner
+        hasOrganization={hasOrganization}
+        defaultObjective={defaultObjective}
+        defaultSection={defaultSection}
+      />
     </AuthModalProvider>
   );
 }

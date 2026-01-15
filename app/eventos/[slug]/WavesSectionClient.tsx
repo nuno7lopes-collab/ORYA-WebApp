@@ -67,8 +67,9 @@ export default function WavesSectionClient({
 
   return (
     <div className="mt-6 w-full">
-      <div className="rounded-2xl border border-white/15 bg-[linear-gradient(140deg,rgba(255,255,255,0.14),rgba(4,8,20,0.85))] px-5 py-4 backdrop-blur-xl flex flex-col gap-3 shadow-[0_0_35px_rgba(0,0,0,0.55)]">
-        <p className="text-white/85 text-sm">
+      <div className="relative flex flex-col gap-3 rounded-2xl border border-white/12 bg-black/55 px-5 py-4 shadow-[0_18px_40px_rgba(0,0,0,0.55)] backdrop-blur-xl">
+        <div className="pointer-events-none absolute inset-x-4 top-0 h-px bg-gradient-to-r from-transparent via-[#7CFFEA]/70 to-transparent" />
+        <p className="text-sm text-white/85">
           {isFreeLabel ? (
             <span className="text-white font-semibold">Entrada gratuita</span>
           ) : minPrice !== null ? (
@@ -122,7 +123,7 @@ export default function WavesSectionClient({
               } catch {}
             }, 10);
           }}
-          className={`${CTA_PRIMARY} w-full justify-center py-3 text-sm active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed`}
+          className={`${CTA_PRIMARY} w-full justify-center py-3 text-sm shadow-[0_12px_30px_rgba(124,255,234,0.18)] active:scale-95 disabled:cursor-not-allowed disabled:opacity-50`}
         >
           {purchasableTickets.length === 0
             ? "Esgotado"

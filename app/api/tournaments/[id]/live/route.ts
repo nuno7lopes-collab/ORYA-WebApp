@@ -6,8 +6,9 @@ import { summarizeMatchStatus, computeStandingsForGroup } from "@/domain/tournam
 import { type TieBreakRule } from "@/domain/tournaments/standings";
 import { readPathParam } from "@/lib/routeParams";
 
-export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
-  const slug = readPathParam(params?.id, req, "tournaments");
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const resolved = await params;
+  const slug = readPathParam(resolved?.id, req, "tournaments");
   if (!slug) return NextResponse.json({ ok: false, error: "INVALID_SLUG" }, { status: 400 });
 
   const supabase = await createSupabaseServer();

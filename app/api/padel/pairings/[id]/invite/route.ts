@@ -9,8 +9,9 @@ import { queuePairingInvite } from "@/domain/notifications/splitPayments";
 import { readNumericParam } from "@/lib/routeParams";
 
 // Regenera token de convite para um pairing (v2). Apenas capitão ou staff OWNER/ADMIN.
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
-  const pairingId = readNumericParam(params?.id, req, "pairings");
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const resolved = await params;
+  const pairingId = readNumericParam(resolved?.id, req, "pairings");
   if (pairingId === null) return NextResponse.json({ ok: false, error: "INVALID_ID" }, { status: 400 });
 
   const supabase = await createSupabaseServer();
@@ -33,6 +34,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
           padelTournamentConfig: { select: { splitDeadlineHours: true } },
         },
       },
+      slots: true,
     },
   });
   if (!pairing) return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
@@ -73,6 +75,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     return NextResponse.json({ ok: false, error: "SPLIT_DEADLINE_PASSED" }, { status: 409 });
   }
 
+  const partnerSlot = pairing.slots.find((slot) => slot.slot_role === "PARTNER");
   const updated = await prisma.padelPairing.update({
     where: { id: pairingId },
     data: {
@@ -82,6 +85,19 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       partnerInvitedAt: now,
       deadlineAt,
       partnerSwapAllowedUntilAt: deadlineAt,
+      ...(targetUserId && partnerSlot
+        ? {
+            slots: {
+              update: {
+                where: { id: partnerSlot.id },
+                data: {
+                  invitedUserId: targetUserId,
+                  invitedContact: null,
+                },
+              },
+            },
+          }
+        : {}),
     },
     select: { id: true, partnerInviteToken: true, partnerLinkExpiresAt: true },
   });

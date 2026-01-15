@@ -7,6 +7,14 @@ import { OrganizationMemberRole, TournamentMatchStatus } from "@prisma/client";
 async function getOrganizationRole(userId: string, eventId: number) {
   const evt = await prisma.event.findUnique({ where: { id: eventId }, select: { organizationId: true } });
   if (!evt?.organizationId) return null;
+  const profile = await prisma.profile.findUnique({
+    where: { id: userId },
+    select: { onboardingDone: true, fullName: true, username: true },
+  });
+  const hasUserOnboarding =
+    profile?.onboardingDone ||
+    (Boolean(profile?.fullName?.trim()) && Boolean(profile?.username?.trim()));
+  if (!hasUserOnboarding) return null;
   const member = await prisma.organizationMember.findFirst({
     where: { organizationId: evt.organizationId, userId },
     select: { role: true },

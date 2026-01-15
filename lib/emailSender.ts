@@ -1,6 +1,7 @@
 "use server";
 
 import { sendEmail, assertResendReady } from "@/lib/resendClient";
+import { getAppBaseUrl } from "@/lib/appBaseUrl";
 import {
   renderPurchaseConfirmationEmail,
   renderTournamentScheduleEmail,
@@ -164,14 +165,6 @@ export async function sendTournamentScheduleEmail(input: TournamentEmailInput) {
     html,
     text,
   });
-}
-
-function getAppBaseUrl() {
-  return (
-    process.env.NEXT_PUBLIC_BASE_URL ??
-    process.env.NEXT_PUBLIC_APP_URL ??
-    "https://orya.pt"
-  );
 }
 
 type OwnerTransferEmailInput = {

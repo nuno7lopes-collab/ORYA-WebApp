@@ -4,9 +4,9 @@ import { OrganizationStatus, OrganizationMemberRole } from "@prisma/client";
 import { normalizeAndValidateUsername, setUsernameForOwner, UsernameTakenError } from "@/lib/globalUsernames";
 import { requireUser } from "@/lib/auth/requireUser";
 import {
-  DEFAULT_ORGANIZATION_CATEGORY,
-  DEFAULT_ORGANIZATION_MODULES,
-  parseOrganizationCategory,
+  DEFAULT_PRIMARY_MODULE,
+  getDefaultOrganizationModules,
+  parsePrimaryModule,
   parseOrganizationModules,
 } from "@/lib/organizationCategories";
 import { isValidWebsite } from "@/lib/validation/organization";
@@ -58,9 +58,9 @@ export async function GET() {
           city: m.organization!.city,
           entityType: m.organization!.entityType,
           status: m.organization!.status,
-          organizationCategory:
-            (m.organization as { organizationCategory?: string | null }).organizationCategory ??
-            DEFAULT_ORGANIZATION_CATEGORY,
+          primaryModule:
+            (m.organization as { primaryModule?: string | null }).primaryModule ??
+            DEFAULT_PRIMARY_MODULE,
           modules: modulesByOrganization.get(m.organizationId) ?? [],
         },
       }));
@@ -88,7 +88,7 @@ export async function POST(req: NextRequest) {
     }
 
     const { businessName, publicName, entityType, city, username } = body as Record<string, unknown>;
-    const organizationCategoryRaw = (body as Record<string, unknown>).organizationCategory;
+    const primaryModuleRaw = (body as Record<string, unknown>).primaryModule;
     const modulesRaw = (body as Record<string, unknown>).modules;
     const publicWebsiteRaw =
       (body as Record<string, unknown>).publicWebsite ?? (body as Record<string, unknown>).website;
@@ -97,8 +97,10 @@ export async function POST(req: NextRequest) {
       typeof publicName === "string" && publicName.trim().length > 0
         ? publicName.trim()
         : bName || "Organização";
-    const eType = typeof entityType === "string" ? entityType.trim() : null;
-    const cityClean = typeof city === "string" ? city.trim() : null;
+    const eTypeRaw = typeof entityType === "string" ? entityType.trim() : "";
+    const cityRaw = typeof city === "string" ? city.trim() : "";
+    const eType = eTypeRaw.length > 0 ? eTypeRaw : null;
+    const cityClean = cityRaw.length > 0 ? cityRaw : null;
 
     const publicWebsite = (() => {
       if (typeof publicWebsiteRaw !== "string") return null;
@@ -122,16 +124,16 @@ export async function POST(req: NextRequest) {
     }
     const validatedUsername = normalizeAndValidateUsername(username);
 
-    const organizationCategoryProvided = Object.prototype.hasOwnProperty.call(body, "organizationCategory");
+    const primaryModuleProvided = Object.prototype.hasOwnProperty.call(body, "primaryModule");
     const modulesProvided = Object.prototype.hasOwnProperty.call(body, "modules");
 
-    const organizationCategory = organizationCategoryProvided
-      ? parseOrganizationCategory(organizationCategoryRaw)
+    const primaryModule = primaryModuleProvided
+      ? parsePrimaryModule(primaryModuleRaw)
       : null;
 
-    if (organizationCategoryProvided && !organizationCategory) {
+    if (primaryModuleProvided && !primaryModule) {
       return NextResponse.json(
-        { ok: false, error: "organizationCategory inválido. Usa EVENTOS, PADEL ou RESERVAS." },
+        { ok: false, error: "primaryModule inválido. Usa EVENTOS, RESERVAS ou TORNEIOS." },
         { status: 400 },
       );
     }
@@ -139,7 +141,7 @@ export async function POST(req: NextRequest) {
     const parsedModules = modulesProvided ? parseOrganizationModules(modulesRaw) : null;
     if (modulesProvided && parsedModules === null) {
       return NextResponse.json(
-        { ok: false, error: "modules inválido. Usa uma lista de módulos válidos (ex.: INSCRICOES)." },
+        { ok: false, error: "modules inválido. Usa uma lista de módulos válidos." },
         { status: 400 },
       );
     }
@@ -151,11 +153,11 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (!bName || !cityClean || !eType) {
+    if (!bName) {
       return NextResponse.json(
         {
           ok: false,
-          error: "Faltam campos obrigatórios: nome, cidade e tipo de entidade.",
+          error: "Indica o nome da tua organização.",
         },
         { status: 400 },
       );
@@ -163,7 +165,10 @@ export async function POST(req: NextRequest) {
 
     const normalizedUsername = validatedUsername.username;
 
-    const modulesToEnable = modulesProvided ? parsedModules ?? [] : DEFAULT_ORGANIZATION_MODULES;
+    const primaryFallback = primaryModule ?? DEFAULT_PRIMARY_MODULE;
+    const modulesToEnable = modulesProvided
+      ? parsedModules ?? []
+      : getDefaultOrganizationModules(primaryFallback);
 
     const organization = await prisma.$transaction(async (tx) => {
       const created = await tx.organization.create({
@@ -174,7 +179,7 @@ export async function POST(req: NextRequest) {
           city: cityClean,
           status: OrganizationStatus.ACTIVE,
           username: normalizedUsername,
-          organizationCategory: organizationCategory ?? DEFAULT_ORGANIZATION_CATEGORY,
+          primaryModule: primaryFallback,
           publicWebsite,
         },
       });
@@ -212,9 +217,9 @@ export async function POST(req: NextRequest) {
           businessName: organization.businessName,
           city: organization.city,
           entityType: organization.entityType,
-          organizationCategory:
-            (organization as { organizationCategory?: string | null }).organizationCategory ??
-            DEFAULT_ORGANIZATION_CATEGORY,
+          primaryModule:
+            (organization as { primaryModule?: string | null }).primaryModule ??
+            DEFAULT_PRIMARY_MODULE,
           publicWebsite: (organization as { publicWebsite?: string | null }).publicWebsite ?? publicWebsite ?? null,
           modules: modulesToEnable,
         },

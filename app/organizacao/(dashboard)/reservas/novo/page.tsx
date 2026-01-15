@@ -1,35 +1,28 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { CTA_PRIMARY, CTA_SECONDARY, DASHBOARD_CARD, DASHBOARD_LABEL, DASHBOARD_MUTED } from "@/app/organizacao/dashboardUi";
-import useSWR from "swr";
+import {
+  CTA_PRIMARY,
+  CTA_SECONDARY,
+  DASHBOARD_CARD,
+  DASHBOARD_LABEL,
+  DASHBOARD_MUTED,
+} from "@/app/organizacao/dashboardUi";
 
-const fetcher = (url: string) => fetch(url).then((res) => res.json());
+type LocationMode = "FIXED" | "CHOOSE_AT_BOOKING";
+const DEFAULT_DURATION_MINUTES = 60;
+const DEFAULT_CURRENCY = "EUR";
+const DEFAULT_LOCATION_MODE: LocationMode = "FIXED";
 
 export default function NovoServicoPage() {
   const router = useRouter();
-  const [name, setName] = useState("");
+  const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [durationMinutes, setDurationMinutes] = useState("60");
-  const [price, setPrice] = useState("20");
-  const [currency, setCurrency] = useState("EUR");
-  const [policyId, setPolicyId] = useState("");
+  const [unitPrice, setUnitPrice] = useState("20");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const { data: policiesData } = useSWR<{ ok: boolean; items: { id: number; name: string }[] }>(
-    "/api/organizacao/policies",
-    fetcher,
-  );
-  const policies = policiesData?.items ?? [];
-
-  useEffect(() => {
-    if (!policyId && policies.length > 0) {
-      setPolicyId(String(policies[0].id));
-    }
-  }, [policies, policyId]);
 
   const handleSubmit = async () => {
     setSaving(true);
@@ -40,12 +33,14 @@ export default function NovoServicoPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name,
+          title,
           description,
-          durationMinutes: Number(durationMinutes),
-          price: Math.round(Number(price) * 100),
-          currency,
-          policyId: policyId ? Number(policyId) : null,
+          durationMinutes: DEFAULT_DURATION_MINUTES,
+          unitPriceCents: Math.round(Number(unitPrice) * 100),
+          currency: DEFAULT_CURRENCY,
+          categoryTag: null,
+          locationMode: DEFAULT_LOCATION_MODE,
+          defaultLocationText: null,
         }),
       });
 
@@ -67,16 +62,16 @@ export default function NovoServicoPage() {
       <div>
         <p className={DASHBOARD_LABEL}>Reservas</p>
         <h1 className="text-2xl font-semibold text-white">Novo serviço</h1>
-        <p className={DASHBOARD_MUTED}>Define o serviço que os clientes vão reservar.</p>
+        <p className={DASHBOARD_MUTED}>Define o serviço.</p>
       </div>
 
-      <section className={cn(DASHBOARD_CARD, "p-5 space-y-4")}> 
+      <section className={cn(DASHBOARD_CARD, "p-5 space-y-4")}>
         <div>
-          <label className="text-sm text-white/80">Nome do serviço</label>
+          <label className="text-sm text-white/80">Título</label>
           <input
             className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
             placeholder="Ex: Corte + barba"
           />
         </div>
@@ -88,59 +83,20 @@ export default function NovoServicoPage() {
             rows={3}
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            placeholder="Resumo rápido do serviço"
+            placeholder="Resumo"
           />
         </div>
 
-        <div className="grid gap-3 md:grid-cols-3">
-          <div>
-            <label className="text-sm text-white/80">Duração (min)</label>
-            <input
-              type="number"
-              min="5"
-              className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
-              value={durationMinutes}
-              onChange={(e) => setDurationMinutes(e.target.value)}
-            />
-          </div>
-          <div>
-            <label className="text-sm text-white/80">Preço</label>
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
-              value={price}
-              onChange={(e) => setPrice(e.target.value)}
-            />
-          </div>
-          <div>
-            <label className="text-sm text-white/80">Moeda</label>
-            <input
-              className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
-              value={currency}
-              onChange={(e) => setCurrency(e.target.value.toUpperCase())}
-            />
-          </div>
-        </div>
-
         <div>
-          <label className="text-sm text-white/80">Política de cancelamento</label>
-          <select
+          <label className="text-sm text-white/80">Preço</label>
+          <input
+            type="number"
+            min="0"
+            step="0.01"
             className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
-            value={policyId}
-            onChange={(e) => setPolicyId(e.target.value)}
-          >
-            {policies.length === 0 && <option value="">Sem políticas disponíveis</option>}
-            {policies.map((policy) => (
-              <option key={policy.id} value={policy.id}>
-                {policy.name}
-              </option>
-            ))}
-          </select>
-          <p className="mt-1 text-[12px] text-white/50">
-            Define a regra que aparece na confirmação da reserva.
-          </p>
+            value={unitPrice}
+            onChange={(e) => setUnitPrice(e.target.value)}
+          />
         </div>
 
         {error && (
@@ -150,19 +106,10 @@ export default function NovoServicoPage() {
         )}
 
         <div className="flex flex-wrap gap-3">
-          <button
-            type="button"
-            className={CTA_PRIMARY}
-            onClick={handleSubmit}
-            disabled={saving}
-          >
+          <button type="button" className={CTA_PRIMARY} onClick={handleSubmit} disabled={saving}>
             {saving ? "A criar..." : "Criar serviço"}
           </button>
-          <button
-            type="button"
-            className={CTA_SECONDARY}
-            onClick={() => router.push("/organizacao/reservas")}
-          >
+          <button type="button" className={CTA_SECONDARY} onClick={() => router.push("/organizacao/reservas")}>
             Cancelar
           </button>
         </div>

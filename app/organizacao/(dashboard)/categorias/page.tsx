@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useMemo } from "react";
 import { useUser } from "@/app/hooks/useUser";
 import { CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
+import { cn } from "@/lib/utils";
 
 type EventsResponse = {
   ok: boolean;
@@ -24,7 +25,7 @@ const CATEGORY_CARDS = [
   {
     key: "padel",
     title: "Torneios de Padel",
-    desc: "Quadros, equipas, rankings. UI dedicada a padel.",
+    desc: "Quadros, equipas e resultados. UI dedicada a padel.",
     template: "PADEL",
     preset: "padel",
   },
@@ -65,7 +66,7 @@ export default function OrganizationCategoriesPage() {
 
   if (userLoading || !user) {
     return (
-      <div className="w-full px-4 py-8 md:px-6 lg:px-8 text-white">
+      <div className={cn("w-full py-8 text-white")}>
         <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-6 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
           {userLoading ? "A carregar…" : "Precisas de iniciar sessão para veres as categorias."}
         </div>
@@ -74,7 +75,7 @@ export default function OrganizationCategoriesPage() {
   }
 
   return (
-    <div className="w-full px-4 py-8 space-y-6 md:px-6 lg:px-8 text-white">
+    <div className={cn("w-full py-8 space-y-6 text-white")}>
       <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-6 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl space-y-2">
         <p className="text-[11px] uppercase tracking-[0.3em] text-white/70">Categorias</p>
         <h1 className="text-3xl font-semibold">Escolhe o modo de trabalho</h1>
@@ -109,13 +110,13 @@ export default function OrganizationCategoriesPage() {
             </div>
             <div className="flex gap-2">
               <Link
-                href={`/organizacao?tab=manage&section=eventos&cat=${cat.template}`}
+                href={`${cat.preset === "padel" ? "/organizacao/torneios" : "/organizacao/eventos"}?cat=${cat.template}`}
                 className="flex-1 rounded-full border border-white/20 px-3 py-1.5 text-[12px] text-white/80 hover:bg-white/10 text-center"
               >
                 Ver eventos
               </Link>
               <Link
-                href={`/organizacao/eventos/novo?preset=${cat.preset}`}
+                href={`${cat.preset === "padel" ? "/organizacao/torneios/novo" : "/organizacao/eventos/novo"}?preset=${cat.preset}`}
                 className={`${CTA_PRIMARY} flex-1 justify-center px-3 py-1.5 text-[12px]`}
               >
                 Criar {cat.preset === "restaurante" ? "jantar" : cat.preset === "padel" ? "torneio" : "evento"}

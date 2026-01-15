@@ -1,4 +1,4 @@
-type FinanceErrorType = "checkout" | "refund" | "dispute" | "auto_charge";
+type FinanceErrorType = "checkout" | "refund" | "dispute" | "auto_charge" | "payout";
 
 export function logFinanceError(type: FinanceErrorType, error: unknown, context?: Record<string, unknown>) {
   const err = error instanceof Error ? error : new Error(String(error));

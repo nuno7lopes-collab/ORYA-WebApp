@@ -2,7 +2,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { createSupabaseServer } from "@/lib/supabaseServer";
+import { requireAdminUser } from "@/lib/admin/auth";
 import { getStripeBaseFees } from "@/lib/platformSettings";
 import type { Prisma, PaymentMode } from "@prisma/client";
 import { resolveOrganizationIdFromParams } from "@/lib/organizationId";
@@ -16,29 +16,6 @@ type Aggregate = {
   tickets: number;
 };
 
-async function ensureAdmin() {
-  const supabase = await createSupabaseServer();
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser();
-
-  if (error || !user) {
-    return { ok: false as const, status: 401 as const, reason: "UNAUTHENTICATED" };
-  }
-
-  const profile = await prisma.profile.findUnique({
-    where: { id: user.id },
-    select: { roles: true },
-  });
-  const roles = profile?.roles ?? [];
-  const isAdmin = Array.isArray(roles) && roles.includes("admin");
-  if (!isAdmin) {
-    return { ok: false as const, status: 403 as const, reason: "FORBIDDEN" };
-  }
-  return { ok: true as const };
-}
-
 const emptyAgg: Aggregate = {
   grossCents: 0,
   discountCents: 0,
@@ -50,9 +27,9 @@ const emptyAgg: Aggregate = {
 
 export async function GET(req: NextRequest) {
   try {
-    const admin = await ensureAdmin();
+    const admin = await requireAdminUser();
     if (!admin.ok) {
-      return NextResponse.json({ ok: false, error: admin.reason }, { status: admin.status });
+      return NextResponse.json({ ok: false, error: admin.error }, { status: admin.status });
     }
 
     const url = new URL(req.url);
@@ -117,6 +94,7 @@ export async function GET(req: NextRequest) {
         subtotalCents: true,
         discountCents: true,
         platformFeeCents: true,
+        cardPlatformFeeCents: true,
         stripeFeeCents: true,
         totalCents: true,
         netCents: true,
@@ -151,7 +129,7 @@ export async function GET(req: NextRequest) {
     for (const s of summaries) {
       const gross = s.subtotalCents ?? 0;
       const discount = s.discountCents ?? 0;
-      const platformFee = s.platformFeeCents ?? 0;
+      const platformFee = (s.platformFeeCents ?? 0) + (s.cardPlatformFeeCents ?? 0);
       const total = s.totalCents ?? gross - discount + platformFee;
       const stripeFee = s.stripeFeeCents != null ? s.stripeFeeCents : estimateStripeFee(total);
       const net =

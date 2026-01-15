@@ -7,9 +7,9 @@ import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { normalizeAndValidateUsername, setUsernameForOwner, UsernameTakenError } from "@/lib/globalUsernames";
 import { AuthRequiredError, requireUser } from "@/lib/auth/requireUser";
 import {
-  DEFAULT_ORGANIZATION_CATEGORY,
-  DEFAULT_ORGANIZATION_MODULES,
-  parseOrganizationCategory,
+  DEFAULT_PRIMARY_MODULE,
+  getDefaultOrganizationModules,
+  parsePrimaryModule,
   parseOrganizationModules,
 } from "@/lib/organizationCategories";
 import { isValidWebsite } from "@/lib/validation/organization";
@@ -20,7 +20,7 @@ type OrganizationPayload = {
   city?: string | null;
   payoutIban?: string | null;
   username?: string | null;
-  organizationCategory?: string | null;
+  primaryModule?: string | null;
   modules?: string[] | null;
   publicWebsite?: string | null;
 };
@@ -69,9 +69,9 @@ export async function GET() {
               businessName: fallbackOrganization.businessName,
               city: fallbackOrganization.city,
               payoutIban: fallbackOrganization.payoutIban,
-              organizationCategory:
-                (fallbackOrganization as { organizationCategory?: string | null }).organizationCategory ??
-                DEFAULT_ORGANIZATION_CATEGORY,
+              primaryModule:
+                (fallbackOrganization as { primaryModule?: string | null }).primaryModule ??
+                DEFAULT_PRIMARY_MODULE,
               modules: organizationModules.map((module) => module.moduleKey),
               publicWebsite: (fallbackOrganization as { publicWebsite?: string | null }).publicWebsite ?? null,
             }
@@ -124,7 +124,7 @@ export async function POST(req: NextRequest) {
           city: form.get("city") as string | null,
           payoutIban: form.get("payoutIban") as string | null,
           username: form.get("username") as string | null,
-          organizationCategory: form.get("organizationCategory") as string | null,
+          primaryModule: form.get("primaryModule") as string | null,
           publicWebsite: form.get("publicWebsite") as string | null,
         };
       }
@@ -137,7 +137,7 @@ export async function POST(req: NextRequest) {
     const city = sanitizeString(payload.city);
     const payoutIban = sanitizeString(payload.payoutIban);
     const usernameRaw = sanitizeString(payload.username);
-    const organizationCategoryRaw = payload.organizationCategory;
+    const primaryModuleRaw = payload.primaryModule;
     const modulesRaw = payload.modules;
     const publicWebsiteRaw = payload.publicWebsite;
 
@@ -155,16 +155,16 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const organizationCategoryProvided = Object.prototype.hasOwnProperty.call(payload, "organizationCategory");
+    const primaryModuleProvided = Object.prototype.hasOwnProperty.call(payload, "primaryModule");
     const modulesProvided = Object.prototype.hasOwnProperty.call(payload, "modules");
 
-    const organizationCategory = organizationCategoryProvided
-      ? parseOrganizationCategory(organizationCategoryRaw)
+    const primaryModule = primaryModuleProvided
+      ? parsePrimaryModule(primaryModuleRaw)
       : null;
 
-    if (organizationCategoryProvided && !organizationCategory) {
+    if (primaryModuleProvided && !primaryModule) {
       return NextResponse.json(
-        { ok: false, error: "organizationCategory inválido. Usa EVENTOS, PADEL ou RESERVAS." },
+        { ok: false, error: "primaryModule inválido. Usa EVENTOS, RESERVAS ou TORNEIOS." },
         { status: 400 },
       );
     }
@@ -172,7 +172,7 @@ export async function POST(req: NextRequest) {
     const parsedModules = modulesProvided ? parseOrganizationModules(modulesRaw) : null;
     if (modulesProvided && parsedModules === null) {
       return NextResponse.json(
-        { ok: false, error: "modules inválido. Usa uma lista de módulos válidos (ex.: INSCRICOES)." },
+        { ok: false, error: "modules inválido. Usa uma lista de módulos válidos." },
         { status: 400 },
       );
     }
@@ -210,13 +210,17 @@ export async function POST(req: NextRequest) {
 
     const username = validatedUsername.username;
 
+    const primaryFallback =
+      primaryModule ??
+      (organization as { primaryModule?: string | null } | null)?.primaryModule ??
+      DEFAULT_PRIMARY_MODULE;
     const modulesToApply = organization
       ? modulesProvided
         ? parsedModules ?? []
         : null
       : modulesProvided
         ? parsedModules ?? []
-        : DEFAULT_ORGANIZATION_MODULES;
+        : getDefaultOrganizationModules(primaryFallback);
 
     organization = await prisma.$transaction(async (tx) => {
       const nextOrganization = organization
@@ -231,8 +235,8 @@ export async function POST(req: NextRequest) {
               payoutIban,
               username,
               ...(publicWebsite ? { publicWebsite } : {}),
-              ...(organizationCategoryProvided && organizationCategory
-                ? { organizationCategory }
+              ...(primaryModuleProvided && primaryModule
+                ? { primaryModule }
                 : {}),
             },
           })
@@ -245,7 +249,7 @@ export async function POST(req: NextRequest) {
               city,
               payoutIban,
               username,
-              organizationCategory: organizationCategory ?? DEFAULT_ORGANIZATION_CATEGORY,
+              primaryModule: primaryFallback,
               publicWebsite,
             },
           });
@@ -323,9 +327,9 @@ export async function POST(req: NextRequest) {
           city: organization.city,
           payoutIban: organization.payoutIban,
           username: organization.username,
-          organizationCategory:
-            (organization as { organizationCategory?: string | null }).organizationCategory ??
-            DEFAULT_ORGANIZATION_CATEGORY,
+          primaryModule:
+            (organization as { primaryModule?: string | null }).primaryModule ??
+            DEFAULT_PRIMARY_MODULE,
           modules: organizationModules,
           publicWebsite: (organization as { publicWebsite?: string | null }).publicWebsite ?? null,
         },

@@ -57,9 +57,28 @@ async function ensureInviteAccess(userId: string, eventId: number) {
 
   const profile = await prisma.profile.findUnique({
     where: { id: userId },
-    select: { roles: true },
+    select: { roles: true, onboardingDone: true, fullName: true, username: true },
   });
-  const isAdmin = Array.isArray(profile?.roles) && profile?.roles.includes("admin");
+  if (!profile) {
+    return {
+      ok: false as const,
+      status: 403,
+      error: "Perfil não encontrado. Completa o onboarding de utilizador.",
+    };
+  }
+  const hasUserOnboarding =
+    profile.onboardingDone ||
+    (Boolean(profile.fullName?.trim()) && Boolean(profile.username?.trim()));
+  if (!hasUserOnboarding) {
+    return {
+      ok: false as const,
+      status: 403,
+      error:
+        "Completa o onboarding de utilizador (nome e username) antes de gerires convites de eventos.",
+    };
+  }
+
+  const isAdmin = Array.isArray(profile.roles) && profile.roles.includes("admin");
   if (isAdmin) return { ok: true as const, isAdmin };
 
   if (!event.organizationId) {
@@ -77,11 +96,12 @@ async function ensureInviteAccess(userId: string, eventId: number) {
   return { ok: true as const, isAdmin: false };
 }
 
-export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
-    const eventId = Number(params.id);
+    const resolved = await params;
+    const eventId = Number(resolved.id);
     if (!Number.isFinite(eventId)) {
       return NextResponse.json({ ok: false, error: "EVENT_ID_INVALID" }, { status: 400 });
     }
@@ -128,11 +148,12 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   }
 }
 
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
-    const eventId = Number(params.id);
+    const resolved = await params;
+    const eventId = Number(resolved.id);
     if (!Number.isFinite(eventId)) {
       return NextResponse.json({ ok: false, error: "EVENT_ID_INVALID" }, { status: 400 });
     }
@@ -220,11 +241,12 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   }
 }
 
-export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
-    const eventId = Number(params.id);
+    const resolved = await params;
+    const eventId = Number(resolved.id);
     if (!Number.isFinite(eventId)) {
       return NextResponse.json({ ok: false, error: "EVENT_ID_INVALID" }, { status: 400 });
     }

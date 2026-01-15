@@ -5,7 +5,7 @@ import { OrganizationMemberRole } from "@prisma/client";
 import { canManageMembers, isOrgOwner } from "@/lib/organizationPermissions";
 import { setSoleOwner } from "@/lib/organizationRoles";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
-import { parseOrganizationId, resolveOrganizationIdFromParams } from "@/lib/organizationId";
+import { parseOrganizationId, resolveOrganizationIdFromParams, resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 
 export async function GET(req: NextRequest) {
   try {
@@ -21,7 +21,9 @@ export async function GET(req: NextRequest) {
 
     const url = new URL(req.url);
     const eventIdRaw = url.searchParams.get("eventId");
-    let organizationId = resolveOrganizationIdFromParams(url.searchParams);
+    let organizationId =
+      resolveOrganizationIdFromParams(url.searchParams) ??
+      resolveOrganizationIdFromRequest(req);
 
     if (!organizationId && eventIdRaw) {
       const eventId = Number(eventIdRaw);
@@ -111,6 +113,9 @@ export async function PATCH(req: NextRequest) {
     }
     if (!Object.values(OrganizationMemberRole).includes(role as OrganizationMemberRole)) {
       return NextResponse.json({ ok: false, error: "INVALID_ROLE" }, { status: 400 });
+    }
+    if (role === "VIEWER") {
+      return NextResponse.json({ ok: false, error: "ROLE_NOT_ALLOWED" }, { status: 400 });
     }
 
     const callerMembership = await prisma.organizationMember.findUnique({

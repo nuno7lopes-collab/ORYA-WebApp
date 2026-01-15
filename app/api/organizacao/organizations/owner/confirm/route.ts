@@ -7,6 +7,7 @@ import { setSoleOwner } from "@/lib/organizationRoles";
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { sendEmail } from "@/lib/resendClient";
+import { getAppBaseUrl } from "@/lib/appBaseUrl";
 
 export async function POST(req: NextRequest) {
   try {
@@ -106,7 +107,7 @@ export async function POST(req: NextRequest) {
     // Notificar o antigo OWNER (best-effort)
     const organizationName = organization?.publicName || organization?.username || "Organização ORYA";
     const toName = toProfile?.fullName || toProfile?.username || "novo OWNER";
-    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? "https://orya.pt";
+    const baseUrl = getAppBaseUrl();
     try {
       const fromUser = await supabaseAdmin.auth.admin.getUserById(transfer.fromUserId);
       const fromEmail = fromUser.data?.user?.email ?? null;

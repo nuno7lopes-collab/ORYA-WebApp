@@ -32,6 +32,16 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "APENAS_OWNER" }, { status: 403 });
     }
 
+    if (organization.orgType === "PLATFORM") {
+      return NextResponse.json({
+        ok: true,
+        status: "PLATFORM",
+        charges_enabled: false,
+        payouts_enabled: false,
+        requirements_due: [],
+      });
+    }
+
     if (!organization.stripeAccountId) {
       console.log("[stripe][status] no account", { organizationId: organization.id });
       return NextResponse.json({

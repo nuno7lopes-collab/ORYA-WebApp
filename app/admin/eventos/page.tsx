@@ -3,8 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { AdminLayout } from "@/app/admin/components/AdminLayout";
-import { AdminTopActions } from "@/app/admin/components/AdminTopActions";
-import { CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
+import { AdminPageHeader } from "@/app/admin/components/AdminPageHeader";
 
 type AdminEventItem = {
   id: number;
@@ -87,6 +86,7 @@ export default function AdminEventosPage() {
   const [cursor, setCursor] = useState<number | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const [initialized, setInitialized] = useState(false);
+  const [purgingIds, setPurgingIds] = useState<Set<number>>(new Set());
 
   async function loadEvents(opts?: {
     search?: string;
@@ -155,197 +155,247 @@ export default function AdminEventosPage() {
     loadEvents({ reset: true });
   }, []);
 
+  async function handlePurgeEvent(ev: AdminEventItem) {
+    const confirmed = window.confirm(
+      `Isto vai apagar TODOS os dados do evento "${ev.title || "Evento sem título"}" (ID ${ev.id}).\n\nQueres mesmo continuar?`,
+    );
+    if (!confirmed) return;
+
+    setPurgingIds((prev) => new Set(prev).add(ev.id));
+    try {
+      const res = await fetch("/api/admin/eventos/purge", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ eventId: ev.id }),
+      });
+
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        console.error("[admin/eventos] purge error:", res.status, text);
+        setErrorMsg("Não foi possível apagar os dados do evento.");
+        return;
+      }
+
+      const json = (await res.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
+      if (!json?.ok) {
+        setErrorMsg(json?.error || "Resposta inesperada ao apagar o evento.");
+        return;
+      }
+
+      setEvents((prev) => prev.filter((item) => item.id !== ev.id));
+    } catch (err) {
+      console.error("[admin/eventos] purge error:", err);
+      setErrorMsg("Erro inesperado ao apagar o evento.");
+    } finally {
+      setPurgingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(ev.id);
+        return next;
+      });
+    }
+  }
+
   const isEmpty = initialized && !loading && events.length === 0 && !errorMsg;
 
   return (
     <AdminLayout title="Eventos" subtitle="Gestão global de eventos com receita e bilhetes.">
       <section className="space-y-6">
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">Eventos</h1>
-            <p className="mt-1 max-w-xl text-sm text-white/70">
-              Lista de eventos com bilhetes vendidos e receita agregada.
-            </p>
-          </div>
-          <AdminTopActions />
-        </div>
+        <AdminPageHeader
+          title="Eventos"
+          subtitle="Lista de eventos com bilhetes vendidos e receita agregada."
+          eyebrow="Admin • Eventos"
+        />
 
         {/* Filtros */}
-        <div className="grid gap-3 md:grid-cols-[1.3fr_1fr_1fr_1fr] text-[11px]">
-          <div className="flex items-center gap-2 rounded-2xl border border-white/15 bg-white/5 px-3 py-2">
-            <span className="text-xs text-white/60">Pesquisar</span>
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") loadEvents({ search: e.currentTarget.value, reset: true });
-              }}
-              placeholder="Nome, slug ou organização"
-              className="w-full bg-transparent text-xs text-white placeholder:text-white/35 focus:outline-none"
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-[10px] text-white/60">Estado</label>
-            <select
-              value={statusFilter}
-              onChange={(e) => {
-                setStatusFilter(e.target.value);
-                loadEvents({ status: e.target.value, reset: true });
-              }}
-              className="w-full rounded-xl border border-white/15 bg-black/50 px-3 py-2 text-xs text-white outline-none focus:border-white/30"
-            >
-              <option value="ALL">Todos</option>
-              <option value="PUBLISHED">Publicado</option>
-              <option value="DRAFT">Rascunho</option>
-              <option value="CANCELLED">Cancelado</option>
-            </select>
-          </div>
-          <div>
-            <label className="mb-1 block text-[10px] text-white/60">Tipo</label>
-            <select
-              value={typeFilter}
-              onChange={(e) => {
-                setTypeFilter(e.target.value);
-                loadEvents({ type: e.target.value, reset: true });
-              }}
-              className="w-full rounded-xl border border-white/15 bg-black/50 px-3 py-2 text-xs text-white outline-none focus:border-white/30"
-            >
-              <option value="ALL">Todos</option>
-              <option value="ORGANIZATION_EVENT">Organização</option>
-            </select>
-          </div>
-          <div>
-            <label className="mb-1 block text-[10px] text-white/60">Organization ID</label>
-            <input
-              type="text"
-              value={organizationFilter}
-              onChange={(e) => setOrganizationFilter(e.target.value)}
-              placeholder="ex.: 3"
-              className="w-full rounded-xl border border-white/15 bg-black/50 px-3 py-2 text-xs text-white outline-none focus:border-white/30"
-            />
-          </div>
-        </div>
-        <div className="flex flex-wrap gap-2 text-[11px]">
-          <button
-            type="button"
-            onClick={() => loadEvents({ search, organizationId: organizationFilter, reset: true })}
-            disabled={loading}
-            className={`${CTA_PRIMARY} px-4 py-1.5 text-xs active:scale-95 disabled:opacity-60`}
-          >
-            {loading ? "A carregar..." : "Aplicar filtros"}
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setSearch("");
-              setStatusFilter("ALL");
-              setTypeFilter("ALL");
-              setOrganizationFilter("");
-              setEvents([]);
-              setCursor(null);
-              setHasMore(false);
-              loadEvents({ search: "", status: "ALL", type: "ALL", organizationId: "", cursor: null, reset: true });
-            }}
-            className="rounded-full border border-white/20 px-3 py-1.5 text-white/75 hover:bg-white/10 transition"
-          >
-            Limpar
-          </button>
-        </div>
-
-        {errorMsg && (
-          <div className="mt-4 rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-xs text-red-100">
-            {errorMsg}
-          </div>
-        )}
-
-        {!errorMsg && isEmpty && (
-          <div className="mt-6 rounded-2xl border border-dashed border-white/20 bg-white/5 px-6 py-8 text-center text-sm text-white/70">
-            <p className="font-medium text-white">Ainda não existem eventos registados na plataforma.</p>
-            <p className="mt-1 text-xs text-white/70">Assim que os organizações começarem a criar eventos, eles vão aparecer aqui.</p>
-          </div>
-        )}
-
-        {!errorMsg && !isEmpty && (
-          <div className="mt-4 overflow-hidden rounded-2xl border border-white/15 bg-white/5">
-            <div className="max-h-[70vh] overflow-auto">
-              <table className="min-w-full border-separate border-spacing-0 text-left text-[11px]">
-                <thead className="bg-white/5 text-white/60">
-                  <tr>
-                    <th className="sticky top-0 z-10 border-b border-white/10 px-4 py-3 font-medium">Evento</th>
-                    <th className="sticky top-0 z-10 border-b border-white/10 px-4 py-3 font-medium">Organização</th>
-                    <th className="sticky top-0 z-10 border-b border-white/10 px-4 py-3 font-medium">Data</th>
-                    <th className="sticky top-0 z-10 border-b border-white/10 px-4 py-3 font-medium">Tipo</th>
-                    <th className="sticky top-0 z-10 border-b border-white/10 px-4 py-3 font-medium">Estado</th>
-                    <th className="sticky top-0 z-10 border-b border-white/10 px-4 py-3 font-medium">Bilhetes</th>
-                    <th className="sticky top-0 z-10 border-b border-white/10 px-4 py-3 font-medium">Receita</th>
-                    <th className="sticky top-0 z-10 border-b border-white/10 px-4 py-3 text-right font-medium">Ações</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {events.map((ev) => (
-                    <tr key={ev.id} className="border-b border-white/10 text-white/80 last:border-0">
-                      <td className="px-4 py-3 align-middle">
-                        <div className="flex flex-col">
-                          <span className="text-[11px] font-semibold text-white">{ev.title || "Evento sem título"}</span>
-                          {ev.slug && <span className="text-[10px] text-white/45">/eventos/{ev.slug}</span>}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 align-middle text-white/80">
-                        {ev.organization?.publicName ?? "-"} {ev.organization ? `(ID ${ev.organization.id})` : ""}
-                      </td>
-                      <td className="px-4 py-3 align-middle text-white/80">{formatDate(ev.startsAt)}</td>
-                      <td className="px-4 py-3 align-middle text-white/80">{ev.type || "-"}</td>
-                      <td className="px-4 py-3 align-middle">
-                        <span
-                          className={`inline-flex items-center rounded-full border px-2 py-[2px] text-[10px] font-medium ${statusClasses(
-                            ev.status
-                          )}`}
-                        >
-                          {statusLabel(ev.status)}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 align-middle text-white/80">{ev.ticketsSold ?? 0}</td>
-                      <td className="px-4 py-3 align-middle text-white/80">
-                        <div className="flex flex-col">
-                          <span>Total: {formatCurrency(ev.revenueTotalCents ?? 0)}</span>
-                          <span className="text-white/60">Fee: {formatCurrency(ev.platformFeeCents ?? 0)}</span>
-                          <span className="text-white/60">Bruto: {formatCurrency(ev.revenueCents ?? 0)}</span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 align-middle text-right">
-                        <div className="flex flex-wrap justify-end gap-2">
-                          {ev.slug && (
-                            <Link
-                              href={`/eventos/${ev.slug}`}
-                              className="rounded-full border border-white/20 px-3 py-1 text-[10px] text-white/80 hover:bg-white/10 transition-colors"
-                            >
-                              Ver público
-                            </Link>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+        <section className="admin-section space-y-4">
+          <div className="grid gap-3 text-[11px] md:grid-cols-[1.3fr_1fr_1fr_1fr]">
+            <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-[rgba(8,12,20,0.6)] px-3 py-2">
+              <span className="text-xs uppercase tracking-[0.2em] text-white/50">Pesquisa</span>
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") loadEvents({ search: e.currentTarget.value, reset: true });
+                }}
+                placeholder="Nome, slug ou organização"
+                className="w-full bg-transparent text-xs text-white placeholder:text-white/35 focus:outline-none"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-[10px] uppercase tracking-[0.2em] text-white/45">Estado</label>
+              <select
+                value={statusFilter}
+                onChange={(e) => {
+                  setStatusFilter(e.target.value);
+                  loadEvents({ status: e.target.value, reset: true });
+                }}
+                className="admin-select"
+              >
+                <option value="ALL">Todos</option>
+                <option value="PUBLISHED">Publicado</option>
+                <option value="DRAFT">Rascunho</option>
+                <option value="CANCELLED">Cancelado</option>
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-[10px] uppercase tracking-[0.2em] text-white/45">Tipo</label>
+              <select
+                value={typeFilter}
+                onChange={(e) => {
+                  setTypeFilter(e.target.value);
+                  loadEvents({ type: e.target.value, reset: true });
+                }}
+                className="admin-select"
+              >
+                <option value="ALL">Todos</option>
+                <option value="ORGANIZATION_EVENT">Organização</option>
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-[10px] uppercase tracking-[0.2em] text-white/45">ID organização</label>
+              <input
+                type="text"
+                value={organizationFilter}
+                onChange={(e) => setOrganizationFilter(e.target.value)}
+                placeholder="ex.: 3"
+                className="admin-input"
+              />
             </div>
           </div>
-        )}
+          <div className="flex flex-wrap gap-2 text-[11px]">
+            <button
+              type="button"
+              onClick={() => loadEvents({ search, organizationId: organizationFilter, reset: true })}
+              disabled={loading}
+              className="admin-button px-4 py-1.5 text-xs active:scale-95 disabled:opacity-60"
+            >
+              {loading ? "A carregar..." : "Aplicar filtros"}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setSearch("");
+                setStatusFilter("ALL");
+                setTypeFilter("ALL");
+                setOrganizationFilter("");
+                setEvents([]);
+                setCursor(null);
+                setHasMore(false);
+                loadEvents({ search: "", status: "ALL", type: "ALL", organizationId: "", cursor: null, reset: true });
+              }}
+              className="admin-button-secondary px-3 py-1.5"
+            >
+              Limpar
+            </button>
+          </div>
+        </section>
 
-        <div className="flex items-center justify-between text-[11px] text-white/70">
-          <span>{events.length} registos</span>
-          <button
-            type="button"
-            disabled={!hasMore}
-            onClick={() => {
-              if (hasMore) loadEvents({ cursor, reset: false });
-            }}
-            className="rounded-full border border-white/20 px-3 py-1.5 disabled:opacity-40"
-          >
-            {hasMore ? "Carregar mais" : "Fim"}
-          </button>
-        </div>
+        <section className="admin-section space-y-4">
+          {errorMsg && (
+            <div className="rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-xs text-red-100">
+              {errorMsg}
+            </div>
+          )}
+
+          {!errorMsg && isEmpty && (
+            <div className="rounded-2xl border border-dashed border-white/20 bg-white/5 px-6 py-8 text-center text-sm text-white/70">
+              <p className="font-medium text-white">Sem eventos registados.</p>
+              <p className="mt-1 text-xs text-white/70">Quando criarem eventos, aparecem aqui.</p>
+            </div>
+          )}
+
+          {!errorMsg && !isEmpty && (
+            <div className="admin-card overflow-hidden">
+              <div className="max-h-[70vh] overflow-auto">
+                <table className="admin-table text-left">
+                  <thead>
+                    <tr>
+                      <th className="px-4 py-3">Evento</th>
+                      <th className="px-4 py-3">Organização</th>
+                      <th className="px-4 py-3">Data</th>
+                      <th className="px-4 py-3">Tipo</th>
+                      <th className="px-4 py-3">Estado</th>
+                      <th className="px-4 py-3">Bilhetes</th>
+                      <th className="px-4 py-3">Receita</th>
+                      <th className="px-4 py-3 text-right">Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {events.map((ev) => (
+                      <tr key={ev.id} className="text-white/80 hover:bg-white/5">
+                        <td className="px-4 py-3 align-middle">
+                          <div className="flex flex-col">
+                            <span className="text-[11px] font-semibold text-white">{ev.title || "Evento sem título"}</span>
+                            {ev.slug && <span className="text-[10px] text-white/45">/eventos/{ev.slug}</span>}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 align-middle text-white/80">
+                          {ev.organization?.publicName ?? "-"} {ev.organization ? `(ID ${ev.organization.id})` : ""}
+                        </td>
+                        <td className="px-4 py-3 align-middle text-white/80">{formatDate(ev.startsAt)}</td>
+                        <td className="px-4 py-3 align-middle text-white/80">{ev.type || "-"}</td>
+                        <td className="px-4 py-3 align-middle">
+                          <span
+                            className={`inline-flex items-center rounded-full border px-2 py-[2px] text-[10px] font-medium ${statusClasses(
+                              ev.status
+                            )}`}
+                          >
+                            {statusLabel(ev.status)}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 align-middle text-white/80">{ev.ticketsSold ?? 0}</td>
+                        <td className="px-4 py-3 align-middle text-white/80">
+                          <div className="flex flex-col">
+                            <span>Total: {formatCurrency(ev.revenueTotalCents ?? 0)}</span>
+                            <span className="text-white/60">Fee: {formatCurrency(ev.platformFeeCents ?? 0)}</span>
+                            <span className="text-white/60">Bruto: {formatCurrency(ev.revenueCents ?? 0)}</span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 align-middle text-right">
+                          <div className="flex flex-wrap justify-end gap-2">
+                            {ev.slug && (
+                              <Link
+                                href={`/eventos/${ev.slug}`}
+                                className="admin-button-secondary px-3 py-1 text-[10px]"
+                              >
+                                Ver público
+                              </Link>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => handlePurgeEvent(ev)}
+                              disabled={purgingIds.has(ev.id)}
+                              className="rounded-full border border-red-400/40 px-3 py-1 text-[10px] text-red-100 hover:bg-red-500/10 transition-colors disabled:opacity-60"
+                            >
+                              {purgingIds.has(ev.id) ? "A apagar..." : "Apagar dados"}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {!errorMsg && (
+            <div className="flex items-center justify-between text-[11px] text-white/70">
+              <span>{events.length} registos</span>
+              <button
+                type="button"
+                disabled={!hasMore}
+                onClick={() => {
+                  if (hasMore) loadEvents({ cursor, reset: false });
+                }}
+                className="admin-button-secondary px-3 py-1.5 disabled:opacity-40"
+              >
+                {hasMore ? "Carregar mais" : "Fim"}
+              </button>
+            </div>
+          )}
+        </section>
       </section>
     </AdminLayout>
   );

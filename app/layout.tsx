@@ -5,6 +5,7 @@ import { AuthModalProvider } from "./components/autenticação/AuthModalContext"
 import AuthModal from "./components/autenticação/AuthModal";
 import { RecoveryRedirector } from "./components/RecoveryRedirector";
 import { BackgroundShell } from "./components/BackgroundShell";
+import { AuthLinkInterceptor } from "./components/autenticação/AuthLinkInterceptor";
 
 export const metadata: Metadata = {
   title: "ORYA",
@@ -21,6 +22,7 @@ export default function RootLayout({
       <body className="antialiased min-h-screen flex flex-col font-sans">
         <BackgroundShell>
           <AuthModalProvider>
+            <AuthLinkInterceptor />
             <Navbar />
             <RecoveryRedirector />
             <main className="main-shell flex-1 transition-[padding] duration-200">

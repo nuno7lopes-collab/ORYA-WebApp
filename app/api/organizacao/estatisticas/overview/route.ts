@@ -44,6 +44,21 @@ export async function GET(req: NextRequest) {
 
     const url = new URL(req.url);
     const range = url.searchParams.get("range") || "30d"; // 7d | 30d | all
+    const templateTypeParam = url.searchParams.get("templateType");
+    const templateType =
+      typeof templateTypeParam === "string" && templateTypeParam.trim()
+        ? templateTypeParam.trim().toUpperCase()
+        : null;
+    const excludeTemplateTypeParam = url.searchParams.get("excludeTemplateType");
+    const excludeTemplateType =
+      typeof excludeTemplateTypeParam === "string" && excludeTemplateTypeParam.trim()
+        ? excludeTemplateTypeParam.trim().toUpperCase()
+        : null;
+    const eventTemplateFilter = templateType
+      ? { templateType }
+      : excludeTemplateType
+        ? { NOT: { templateType: excludeTemplateType } }
+        : {};
 
     const organizationId = resolveOrganizationIdFromRequest(req);
     const { organization, membership } = await getActiveOrganizationForUser(user.id, {
@@ -83,7 +98,10 @@ export async function GET(req: NextRequest) {
         ...(Object.keys(createdAtFilter).length > 0
           ? { createdAt: createdAtFilter }
           : {}),
-        event: { organizationId: organization.id },
+        event: {
+          organizationId: organization.id,
+          ...eventTemplateFilter,
+        },
       },
       select: {
         id: true,
@@ -117,6 +135,7 @@ export async function GET(req: NextRequest) {
       where: {
         organizationId: organization.id,
         status: EventStatus.PUBLISHED,
+        ...eventTemplateFilter,
       },
     });
 

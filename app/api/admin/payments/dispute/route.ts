@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireAdminUser } from "@/lib/admin/auth";
 import { enqueueOperation } from "@/lib/operations/enqueue";
 
 export async function POST(req: NextRequest) {
+  const admin = await requireAdminUser();
+  if (!admin.ok) {
+    return NextResponse.json({ ok: false, error: admin.error }, { status: admin.status });
+  }
+
   const body = await req.json().catch(() => ({}));
   const saleSummaryId = Number(body?.saleSummaryId);
   const reason = typeof body?.reason === "string" ? body.reason : null;

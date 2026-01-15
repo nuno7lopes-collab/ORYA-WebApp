@@ -1,19 +1,40 @@
+export const runtime = "nodejs";
+
 import { redirect } from "next/navigation";
+import { createSupabaseServer } from "@/lib/supabaseServer";
+import { getActiveOrganizationForUser } from "@/lib/organizationContext";
+import { AuthGate } from "@/app/components/autenticação/AuthGate";
+import DashboardClient from "@/app/organizacao/DashboardClient";
+import { getOrganizationActiveModules, hasAnyActiveModule } from "@/lib/organizationModules";
+import { prisma } from "@/lib/prisma";
+import { OrganizationStatus } from "@prisma/client";
 
-type Props = {
-  searchParams?: Record<string, string | string[] | undefined>;
-};
+export default async function OrganizationEventosPage() {
+  const supabase = await createSupabaseServer();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
-export default function OrganizationEventsRedirect({ searchParams }: Props) {
-  const params = new URLSearchParams();
-  if (searchParams) {
-    Object.entries(searchParams).forEach(([key, value]) => {
-      if (key === "tab" || key === "section") return;
-      if (typeof value === "string") params.set(key, value);
-      if (Array.isArray(value) && value[0]) params.set(key, value[0]);
-    });
+  if (!user) {
+    return <AuthGate />;
   }
-  params.set("tab", "manage");
-  params.set("section", "eventos");
-  redirect(`/organizacao?${params.toString()}`);
+
+  const { organization } = await getActiveOrganizationForUser(user.id, {
+    allowedStatuses: [OrganizationStatus.ACTIVE, OrganizationStatus.SUSPENDED],
+  });
+
+  if (!organization) {
+    redirect("/organizacao/organizations");
+  }
+
+  const { activeModules } = await getOrganizationActiveModules(
+    organization.id,
+    (organization as { primaryModule?: string | null }).primaryModule ?? null,
+    prisma,
+  );
+  if (!hasAnyActiveModule(activeModules, ["EVENTOS"])) {
+    redirect("/organizacao?tab=overview&section=modulos");
+  }
+
+  return <DashboardClient hasOrganization defaultObjective="manage" defaultSection="eventos" />;
 }

@@ -2,10 +2,8 @@
 
 // app/admin/page.tsx
 
-import { prisma } from "@/lib/prisma";
-import { createSupabaseServer } from "@/lib/supabaseServer";
-import { redirect } from "next/navigation";
 import Link from "next/link";
+import { prisma } from "@/lib/prisma";
 import { ReactNode } from "react";
 import { AdminLayout } from "./components/AdminLayout";
 
@@ -36,7 +34,7 @@ function formatDateTime(value: Date | string | null | undefined) {
 }
 
 type BadgeTone = "neutral" | "positive" | "warning" | "danger";
-type StatTone = "magenta" | "cyan" | "emerald" | "indigo";
+type StatTone = "slate" | "teal" | "amber" | "indigo";
 
 function Badge({ children, tone = "neutral" }: { children: ReactNode; tone?: BadgeTone }) {
   const tones: Record<BadgeTone, string> = {
@@ -56,7 +54,7 @@ function StatCard({
   label,
   value,
   helper,
-  tone = "magenta",
+  tone = "slate",
 }: {
   label: string;
   value: ReactNode;
@@ -64,21 +62,21 @@ function StatCard({
   tone?: StatTone;
 }) {
   const accents: Record<StatTone, string> = {
-    magenta: "from-[#FF00C8]/16 via-[#8b5cf6]/20 to-[#1b1f32]/60",
-    cyan: "from-[#6BFFFF]/20 via-[#1fb6ff]/18 to-[#0e1729]/70",
-    emerald: "from-emerald-400/14 via-emerald-500/12 to-[#0e1f1a]/80",
-    indigo: "from-indigo-400/14 via-indigo-500/12 to-[#0e1226]/80",
+    slate: "from-white/10 via-white/5 to-transparent",
+    teal: "from-teal-400/20 via-emerald-400/10 to-transparent",
+    amber: "from-amber-400/20 via-orange-400/10 to-transparent",
+    indigo: "from-indigo-400/18 via-sky-400/10 to-transparent",
   };
 
   return (
-    <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-black/70 p-4 shadow-[0_12px_40px_rgba(0,0,0,0.35)]">
+    <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-[rgba(10,14,22,0.9)] p-5 shadow-[0_24px_60px_rgba(2,6,14,0.45)]">
       <div className={`pointer-events-none absolute inset-0 bg-gradient-to-br ${accents[tone]}`} aria-hidden />
-      <div className="relative space-y-1">
-        <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">{label}</p>
+      <div className="relative space-y-2">
+        <p className="text-[11px] uppercase tracking-[0.22em] text-white/55">{label}</p>
         <div className="flex items-end gap-2">
-          <p className="text-3xl font-semibold leading-tight">{value}</p>
+          <p className="text-3xl font-semibold leading-tight text-white/95">{value}</p>
         </div>
-        {helper && <p className="text-[11px] text-white/60">{helper}</p>}
+        {helper && <p className="text-[12px] text-white/60">{helper}</p>}
       </div>
     </div>
   );
@@ -94,9 +92,12 @@ function SectionCard({
   children: ReactNode;
 }) {
   return (
-    <div className="rounded-2xl border border-white/12 bg-black/70 p-5 shadow-[0_12px_40px_rgba(0,0,0,0.35)]">
+    <div className="rounded-2xl border border-white/10 bg-[rgba(9,13,22,0.88)] p-5 shadow-[0_24px_60px_rgba(2,6,14,0.45)]">
       <div className="mb-4 flex items-center justify-between gap-3">
-        <h2 className="text-sm font-semibold text-white/90">{title}</h2>
+        <div className="space-y-1">
+          <p className="text-[11px] uppercase tracking-[0.2em] text-white/55">Admin</p>
+          <h2 className="text-sm font-semibold text-white/90">{title}</h2>
+        </div>
         {action}
       </div>
       {children}
@@ -113,28 +114,6 @@ function toneForStatus(status: string | null | undefined): BadgeTone {
 }
 
 export default async function AdminDashboardPage() {
-  const supabase = await createSupabaseServer();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    // Sem sessão, não há painel de admin
-    redirect("/");
-  }
-
-  const profile = await prisma.profile.findUnique({
-    where: { id: user.id },
-  });
-
-  const roles = Array.isArray(profile?.roles) ? profile?.roles : [];
-  const isAdmin = roles?.includes("admin");
-
-  if (!isAdmin) {
-    // Utilizador autenticado mas sem role de admin
-    redirect("/");
-  }
-
   const paymentEventQuery = prisma.paymentEvent.findMany({
     orderBy: { createdAt: "desc" },
     take: 8,
@@ -151,15 +130,15 @@ export default async function AdminDashboardPage() {
     },
   });
 
-  const [usersCount, organizationsCount, eventsCount, ticketsCount, revenueAgg, recentEvents, recentTickets, recentPaymentEvents] =
+  const [usersCount, organizationsCount, eventsCount, ticketsCount, revenueAgg, recentEvents, recentTickets, recentPaymentEvents, payoutCounts] =
     await Promise.all([
       prisma.profile.count(),
       prisma.organization.count(),
       prisma.event.count(),
       prisma.ticket.count(),
-      prisma.ticket.aggregate({
+      prisma.saleSummary.aggregate({
         _sum: {
-          pricePaid: true,
+          totalCents: true,
         },
       }),
       prisma.event.findMany({
@@ -190,90 +169,113 @@ export default async function AdminDashboardPage() {
         },
       }),
       paymentEventQuery,
+      prisma.pendingPayout.groupBy({
+        by: ["status"],
+        _count: { _all: true },
+      }),
     ]);
 
-  const totalRevenueCents = revenueAgg._sum.pricePaid ?? 0;
-
+  const totalRevenueCents = revenueAgg._sum.totalCents ?? 0;
+  const payoutCountMap = new Map(payoutCounts.map((row) => [row.status, row._count._all]));
+  const heldCount = payoutCountMap.get("HELD") ?? 0;
+  const blockedCount = payoutCountMap.get("BLOCKED") ?? 0;
+  const releasingCount = payoutCountMap.get("RELEASING") ?? 0;
+  const releasedCount = payoutCountMap.get("RELEASED") ?? 0;
   return (
     <AdminLayout
       title="Admin ORYA – visão geral da plataforma"
       subtitle="Monitoriza utilizadores, organizações, eventos, bilhetes e pagamentos num só ecrã."
     >
       <section className="space-y-8">
-        <div className="space-y-3">
-          <div className="space-y-1">
-            <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
-              Painel geral
-            </h1>
-            <p className="max-w-2xl text-sm text-white/70">
-              Estado global da ORYA e atalhos para as áreas críticas. Usa os links rápidos abaixo para abrir listas detalhadas.
+        <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div className="space-y-2">
+            <p className="text-[11px] uppercase tracking-[0.32em] text-white/50">Visão geral</p>
+            <h1 className="text-3xl font-semibold tracking-tight text-white/95 md:text-4xl">Painel geral</h1>
+            <p className="max-w-2xl text-sm text-white/65">
+              Estado global da ORYA, métricas críticas e atividade recente para decisão rápida.
             </p>
           </div>
-          <div className="flex flex-wrap gap-2 text-[11px]">
-            <Link
-              href="/admin/organizacoes"
-              className="inline-flex items-center gap-1 rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-white/80 transition hover:border-white/25 hover:bg-white/10"
-            >
-              Gerir pedidos de organização
-            </Link>
-            <Link
-              href="/admin/eventos"
-              className="inline-flex items-center gap-1 rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-white/80 transition hover:border-white/25 hover:bg-white/10"
-            >
-              Ver eventos
-            </Link>
-            <Link
-              href="/admin/payments"
-              className="inline-flex items-center gap-1 rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-white/80 transition hover:border-white/25 hover:bg-white/10"
-            >
-              Pagamentos / intents
-            </Link>
-            <Link
-              href="/admin/tickets"
-              className="inline-flex items-center gap-1 rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-white/80 transition hover:border-white/25 hover:bg-white/10"
-            >
-              Auditoria de bilhetes
-            </Link>
-            <Link
-              href="/admin/settings"
-              className="inline-flex items-center gap-1 rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-white/80 transition hover:border-white/25 hover:bg-white/10"
-            >
-              Configurações
-            </Link>
-          </div>
+        </header>
+
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <StatCard label="Utilizadores" value={usersCount} helper="Contas com perfil criado." tone="slate" />
+          <StatCard label="Organizações" value={organizationsCount} helper="Entidades com atividade." tone="teal" />
+          <StatCard label="Eventos" value={eventsCount} helper="Eventos registados." tone="indigo" />
+          <StatCard label="Volume total" value={formatCurrencyFromCents(totalRevenueCents)} helper="Receita processada." tone="amber" />
         </div>
 
-        <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-5">
-          <StatCard
-            label="Utilizadores"
-            value={usersCount}
-            helper="Contas com perfil criado."
-            tone="magenta"
-          />
-          <StatCard
-            label="Organizações"
-            value={organizationsCount}
-            helper="Entidades a criar eventos pagos."
-            tone="emerald"
-          />
-          <StatCard
-            label="Eventos"
-            value={eventsCount}
-            helper="Total de eventos registados."
-            tone="indigo"
-          />
-          <StatCard
-            label="Bilhetes"
-            value={ticketsCount}
-            helper="Total de bilhetes emitidos."
-            tone="indigo"
-          />
-          <StatCard
-            label="Volume total"
-            value={formatCurrencyFromCents(totalRevenueCents)}
-            helper="Soma dos pagamentos processados."
-            tone="cyan"
-          />
+        <div className="grid gap-6 lg:grid-cols-[1.1fr_1.6fr]">
+          <SectionCard title="Payouts e bloqueios">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+                <p className="text-[11px] uppercase tracking-[0.2em] text-white/55">HELD</p>
+                <p className="text-2xl font-semibold text-white/90">{heldCount}</p>
+              </div>
+              <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+                <p className="text-[11px] uppercase tracking-[0.2em] text-white/55">BLOCKED</p>
+                <p className="text-2xl font-semibold text-white/90">{blockedCount}</p>
+              </div>
+              <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+                <p className="text-[11px] uppercase tracking-[0.2em] text-white/55">RELEASING</p>
+                <p className="text-2xl font-semibold text-white/90">{releasingCount}</p>
+              </div>
+              <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+                <p className="text-[11px] uppercase tracking-[0.2em] text-white/55">RELEASED</p>
+                <p className="text-2xl font-semibold text-white/90">{releasedCount}</p>
+              </div>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2 text-[12px]">
+              <Badge tone="warning">HELD</Badge>
+              <Badge tone="warning">BLOCKED</Badge>
+              <Badge tone="neutral">RELEASING</Badge>
+              <Badge tone="positive">RELEASED</Badge>
+            </div>
+          </SectionCard>
+
+          <SectionCard
+            title="Pagamentos recentes"
+            action={
+              <Link href="/admin/finance#pagamentos" className="text-[12px] text-white/70 hover:text-white">
+                Ver pagamentos
+              </Link>
+            }
+          >
+            {recentPaymentEvents.length === 0 ? (
+              <p className="text-[12px] text-white/60">Sem eventos de pagamento registados.</p>
+            ) : (
+              <div className="divide-y divide-white/5 text-[13px]">
+                {recentPaymentEvents.map((p) => (
+                  <div
+                    key={p.id}
+                    className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <div className="flex flex-1 items-center gap-3">
+                      <Badge tone={toneForStatus(p.status)}>{p.status ?? "—"}</Badge>
+                      <div className="space-y-0.5">
+                        <p className="font-medium text-white/90">
+                          {p.stripePaymentIntentId ?? "Intent"}
+                        </p>
+                        <p className="text-[12px] text-white/55">
+                          Atualizado {formatDateTime(p.updatedAt)}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-semibold text-white/90">
+                        {formatCurrencyFromCents(p.amountCents ?? 0)}
+                      </p>
+                      <p className="text-[11px] text-white/55">
+                        Fee plataforma {formatCurrencyFromCents(p.platformFeeCents ?? 0)}
+                      </p>
+                    </div>
+                    {p.errorMessage && (
+                      <p className="text-[11px] text-rose-200">Erro: {p.errorMessage}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </SectionCard>
         </div>
 
         <div className="grid gap-6 lg:grid-cols-2">
@@ -333,51 +335,6 @@ export default async function AdminDashboardPage() {
             )}
           </SectionCard>
         </div>
-
-        <SectionCard
-          title="Pagamentos / intents recentes"
-          action={
-            <Link href="/admin/payments" className="text-[12px] text-white/70 hover:text-white">
-              Ver pagamentos
-            </Link>
-          }
-        >
-          {recentPaymentEvents.length === 0 ? (
-            <p className="text-[12px] text-white/60">Sem eventos de pagamento registados.</p>
-          ) : (
-            <div className="divide-y divide-white/5 text-[13px]">
-              {recentPaymentEvents.map((p) => (
-                <div
-                  key={p.id}
-                  className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between"
-                >
-                  <div className="flex flex-1 items-center gap-3">
-                    <Badge tone={toneForStatus(p.status)}>{p.status ?? "—"}</Badge>
-                    <div className="space-y-0.5">
-                      <p className="font-medium text-white/90">
-                        {p.stripePaymentIntentId ?? "Intent"}
-                      </p>
-                      <p className="text-[12px] text-white/55">
-                        Atualizado {formatDateTime(p.updatedAt)}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-sm font-semibold text-white/90">
-                      {formatCurrencyFromCents(p.amountCents ?? 0)}
-                    </p>
-                    <p className="text-[11px] text-white/55">
-                      Fee plataforma {formatCurrencyFromCents(p.platformFeeCents ?? 0)}
-                    </p>
-                  </div>
-                  {p.errorMessage && (
-                    <p className="text-[11px] text-rose-200">Erro: {p.errorMessage}</p>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </SectionCard>
       </section>
     </AdminLayout>
   );

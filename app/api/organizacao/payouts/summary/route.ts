@@ -7,7 +7,7 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { isOrgAdminOrAbove } from "@/lib/organizationPermissions";
-import { TicketStatus } from "@prisma/client";
+import { PendingPayoutStatus, TicketStatus } from "@prisma/client";
 
 export async function GET(req: NextRequest) {
   try {
@@ -52,6 +52,50 @@ export async function GET(req: NextRequest) {
     const revenueCents = ticketsAgg._sum?.pricePaid ?? 0;
     const grossCents = ticketsAgg._sum?.totalPaidCents ?? revenueCents;
     const platformFeesCents = ticketsAgg._sum?.platformFeeCents ?? 0;
+    const recipientConnectAccountId =
+      organization.orgType === "PLATFORM" ? null : organization.stripeAccountId ?? null;
+    const now = new Date();
+    const [pendingAgg, holdMin, nextAttemptMin, actionRequired] = recipientConnectAccountId
+      ? await Promise.all([
+          prisma.pendingPayout.aggregate({
+            where: {
+              recipientConnectAccountId,
+              status: { in: [PendingPayoutStatus.HELD, PendingPayoutStatus.RELEASING] },
+            },
+            _sum: { amountCents: true },
+          }),
+          prisma.pendingPayout.aggregate({
+            where: {
+              recipientConnectAccountId,
+              status: PendingPayoutStatus.HELD,
+              holdUntil: { gt: now },
+            },
+            _min: { holdUntil: true },
+          }),
+          prisma.pendingPayout.aggregate({
+            where: {
+              recipientConnectAccountId,
+              status: PendingPayoutStatus.HELD,
+              nextAttemptAt: { not: null, gte: now },
+            },
+            _min: { nextAttemptAt: true },
+          }),
+          prisma.pendingPayout.findFirst({
+            where: {
+              recipientConnectAccountId,
+              status: PendingPayoutStatus.HELD,
+              blockedReason: { startsWith: "ACTION_REQUIRED" },
+            },
+            select: { id: true },
+          }),
+        ])
+      : [null, null, null, null];
+    const estimatedPayoutCents = pendingAgg?._sum?.amountCents ?? 0;
+    const payoutAlerts = {
+      holdUntil: holdMin?._min?.holdUntil ?? null,
+      nextAttemptAt: nextAttemptMin?._min?.nextAttemptAt ?? null,
+      actionRequired: Boolean(actionRequired),
+    };
 
     return NextResponse.json(
       {
@@ -61,7 +105,8 @@ export async function GET(req: NextRequest) {
         grossCents,
         platformFeesCents,
         eventsWithSales: eventsWithSales.length,
-        estimatedPayoutCents: revenueCents,
+        estimatedPayoutCents,
+        payoutAlerts,
       },
       { status: 200 },
     );

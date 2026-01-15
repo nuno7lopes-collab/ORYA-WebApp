@@ -9,7 +9,7 @@
  *   - Ajusta emails/usernames se necessário.
  */
 
-import { PrismaClient, EventTemplateType, ResaleMode, FeeMode, PayoutMode, OrganizationStatus, OrganizationCategory } from "@prisma/client";
+import { PrismaClient, EventTemplateType, ResaleMode, FeeMode, PayoutMode, OrganizationStatus, OrganizationModule } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
@@ -30,7 +30,7 @@ async function main() {
         city: "Lisboa",
         entityType: "CLUBE",
         status: OrganizationStatus.ACTIVE,
-        organizationCategory: OrganizationCategory.PADEL,
+        primaryModule: OrganizationModule.TORNEIOS,
       },
     }));
 

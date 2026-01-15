@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { parseOrganizationId } from "@/lib/organizationId";
+import { OrganizationStatus } from "@prisma/client";
 
 const COOKIE_NAME = "orya_organization";
 const COOKIE_MAX_AGE = 60 * 60 * 24 * 30; // 30 dias
@@ -33,7 +34,11 @@ export async function POST(req: NextRequest) {
 
     // Validar membership
     const membership = await prisma.organizationMember.findFirst({
-      where: { organizationId: resolvedId, userId: user.id, organization: { status: "ACTIVE" } },
+      where: {
+        organizationId: resolvedId,
+        userId: user.id,
+        organization: { status: { in: [OrganizationStatus.ACTIVE, OrganizationStatus.SUSPENDED] } },
+      },
       include: { organization: true },
     });
 

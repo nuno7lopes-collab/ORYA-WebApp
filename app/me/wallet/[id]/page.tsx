@@ -9,7 +9,7 @@ export default function WalletDetailPage() {
 
   useEffect(() => {
     if (params?.id) {
-      router.replace(`/me/carteira?entitlementId=${params.id}`);
+      router.replace(`/me/bilhetes/${params.id}`);
     } else {
       router.replace("/me/carteira");
     }

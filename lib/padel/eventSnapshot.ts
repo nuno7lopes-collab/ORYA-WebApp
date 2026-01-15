@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { resolvePadelCompetitionState, PadelCompetitionState } from "@/domain/padelCompetitionState";
 
 type CourtLite = { name: string; clubName: string | null; indoor?: boolean | null };
 type PartnerClubLite = { id: number; name: string | null; city: string | null };
@@ -7,6 +8,7 @@ export type PadelEventSnapshot = {
   eventId: number;
   title: string;
   status: string;
+  competitionState: PadelCompetitionState;
   startsAt: string | null;
   endsAt: string | null;
   clubName: string | null;
@@ -16,19 +18,45 @@ export type PadelEventSnapshot = {
   timeline: Array<{ key: string; label: string; state: "done" | "active" | "pending"; cancelled?: boolean; date: string | null }>;
 };
 
-function buildTimeline(params: { status: string; startsAt: Date | null; endsAt: Date | null }) {
-  const { status, startsAt, endsAt } = params;
+function buildTimeline(params: {
+  status: string;
+  competitionState: PadelCompetitionState;
+  startsAt: Date | null;
+  endsAt: Date | null;
+  registrationStartsAt?: Date | null;
+  registrationEndsAt?: Date | null;
+}) {
+  const { status, competitionState, startsAt, endsAt, registrationStartsAt, registrationEndsAt } = params;
   const now = new Date();
   const started = startsAt ? startsAt.getTime() <= now.getTime() : false;
   const finished = status === "FINISHED" || (endsAt ? endsAt.getTime() < now.getTime() : false);
-  const cancelled = status === "CANCELLED";
+  const cancelled = status === "CANCELLED" || competitionState === "CANCELLED";
+  const registrationUpcoming =
+    registrationStartsAt ? now.getTime() < registrationStartsAt.getTime() : false;
+  const registrationClosed =
+    registrationEndsAt ? now.getTime() > registrationEndsAt.getTime() : false;
+
+  let signupState: "done" | "active" | "pending" = "pending";
+  if (cancelled) {
+    signupState = "done";
+  } else if (competitionState === "HIDDEN" || status === "DRAFT") {
+    signupState = "pending";
+  } else if (competitionState === "PUBLIC") {
+    signupState = "done";
+  } else if (registrationUpcoming) {
+    signupState = "pending";
+  } else if (registrationClosed || started) {
+    signupState = "done";
+  } else {
+    signupState = "active";
+  }
 
   const timeline: PadelEventSnapshot["timeline"] = [
     {
       key: "signup",
       label: "Inscrições",
-      state: status === "PUBLISHED" && !started ? "active" : status === "DRAFT" ? "pending" : "done",
-      date: startsAt ? startsAt.toISOString() : null,
+      state: signupState,
+      date: registrationStartsAt?.toISOString() ?? startsAt?.toISOString() ?? null,
     },
     {
       key: "games",
@@ -77,7 +105,19 @@ export async function buildPadelEventSnapshot(eventId: number): Promise<PadelEve
   const config = event.padelTournamentConfig;
   const advanced = (config?.advancedSettings || {}) as {
     courtsFromClubs?: Array<{ name?: string | null; clubName?: string | null; indoor?: boolean | null }>;
+    registrationStartsAt?: string | null;
+    registrationEndsAt?: string | null;
+    competitionState?: string | null;
   };
+
+  const registrationStartsAt =
+    advanced.registrationStartsAt && !Number.isNaN(new Date(advanced.registrationStartsAt).getTime())
+      ? new Date(advanced.registrationStartsAt)
+      : null;
+  const registrationEndsAt =
+    advanced.registrationEndsAt && !Number.isNaN(new Date(advanced.registrationEndsAt).getTime())
+      ? new Date(advanced.registrationEndsAt)
+      : null;
 
   const partnerIds = config?.partnerClubIds ?? [];
   const partnerClubs: PartnerClubLite[] =
@@ -105,16 +145,29 @@ export async function buildPadelEventSnapshot(eventId: number): Promise<PadelEve
           indoor: null,
         }));
 
+  const competitionState = resolvePadelCompetitionState({
+    eventStatus: event.status,
+    competitionState: advanced.competitionState ?? null,
+  });
+
   return {
     eventId: event.id,
     title: event.title,
     status: event.status,
+    competitionState,
     startsAt: event.startsAt?.toISOString() ?? null,
     endsAt: event.endsAt?.toISOString() ?? null,
     clubName: config?.club?.name || event.locationName || null,
     clubCity: config?.club?.city || event.locationCity || null,
     partnerClubs,
     courts,
-    timeline: buildTimeline({ status: event.status, startsAt: event.startsAt, endsAt: event.endsAt ?? event.startsAt }),
+    timeline: buildTimeline({
+      status: event.status,
+      competitionState,
+      startsAt: event.startsAt,
+      endsAt: event.endsAt ?? event.startsAt,
+      registrationStartsAt,
+      registrationEndsAt,
+    }),
   };
 }

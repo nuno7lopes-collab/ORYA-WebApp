@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 type Props = {
   eventId: number;
@@ -23,11 +23,21 @@ export default function PadelSignupInline({
   slug,
 }: Props) {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [loadingFull, setLoadingFull] = useState(false);
   const [loadingSplit, setLoadingSplit] = useState(false);
 
   const isPadelV2 = templateType === "PADEL" && padelV2Enabled;
   const canProceed = isPadelV2 && organizationId && ticketTypeId;
+
+  const redirectToPadelOnboarding = () => {
+    const params = new URLSearchParams();
+    const current =
+      pathname + (searchParams?.toString() ? `?${searchParams.toString()}` : "");
+    params.set("redirectTo", current);
+    router.push(`/onboarding/padel?${params.toString()}`);
+  };
 
   const createPairing = async (mode: "FULL" | "SPLIT") => {
     if (!canProceed) {
@@ -48,7 +58,47 @@ export default function PadelSignupInline({
         }),
       });
       const json = await res.json();
-      if (!res.ok || !json?.ok || !json?.pairing?.id) {
+      const resolvePadelError = (code?: string | null) => {
+        switch (code) {
+          case "CATEGORY_FULL":
+          case "CATEGORY_PLAYERS_FULL":
+            return "Categoria cheia. Tenta outra ou aguarda vaga.";
+          case "ALREADY_IN_CATEGORY":
+            return "Já estás inscrito nesta categoria.";
+          case "MAX_CATEGORIES":
+            return "Já atingiste o limite de categorias neste torneio.";
+          case "EVENT_FULL":
+            return "Torneio cheio. Aguarda vaga na lista de espera.";
+          case "EVENT_NOT_PUBLISHED":
+            return "As inscrições ainda não estão abertas.";
+          case "INSCRIPTIONS_NOT_OPEN":
+            return "As inscrições ainda não abriram.";
+          case "INSCRIPTIONS_CLOSED":
+            return "As inscrições já fecharam.";
+          case "TOURNAMENT_STARTED":
+            return "O torneio já começou. Inscrições encerradas.";
+          case "SPLIT_DEADLINE_PASSED":
+            return "Já passou o prazo para pagamento dividido.";
+          case "CATEGORY_GENDER_MISMATCH":
+            return "Esta categoria exige uma dupla compatível com o género definido.";
+          case "GENDER_REQUIRED_FOR_TOURNAMENT":
+            return "Define o teu género para validar a elegibilidade.";
+          default:
+            return "Não foi possível iniciar inscrição Padel.";
+        }
+      };
+      if (!res.ok || !json?.ok) {
+        if (json?.error === "PADEL_ONBOARDING_REQUIRED") {
+          redirectToPadelOnboarding();
+          return;
+        }
+        throw new Error(resolvePadelError(json?.error));
+      }
+      if (json?.waitlist) {
+        alert("Ficaste na lista de espera. Avisamos assim que houver vaga.");
+        return;
+      }
+      if (!json?.pairing?.id) {
         throw new Error(json?.error || "Não foi possível iniciar inscrição Padel.");
       }
       const pairingId = json.pairing.id as number;
@@ -72,7 +122,7 @@ export default function PadelSignupInline({
       <div className="flex items-center justify-between gap-2">
         <div>
           <p className="text-xs uppercase tracking-[0.14em] text-white/60">Padel (duplas)</p>
-          <h4 className="text-lg font-semibold text-white">Escolhe como queres pagar</h4>
+          <h4 className="text-lg font-semibold text-white">Escolhe pagamento</h4>
         </div>
       </div>
       <div className="space-y-2">
@@ -82,7 +132,7 @@ export default function PadelSignupInline({
           onClick={() => createPairing("FULL")}
           className="w-full rounded-full bg-white text-black px-4 py-2 font-semibold shadow hover:brightness-105 disabled:opacity-60"
         >
-          {loadingFull ? "A preparar…" : "Pagar dupla inteira"}
+          {loadingFull ? "A preparar…" : "Pagar dupla"}
         </button>
         <button
           type="button"
@@ -90,10 +140,10 @@ export default function PadelSignupInline({
           onClick={() => createPairing("SPLIT")}
           className="w-full rounded-full border border-white/20 px-4 py-2 font-semibold text-white hover:bg-white/10 disabled:opacity-60"
         >
-          {loadingSplit ? "A preparar…" : "Pagar só o meu lugar"}
+          {loadingSplit ? "A preparar…" : "Pagar lugar"}
         </button>
         {!canProceed && (
-          <p className="text-[12px] text-amber-200">Bilhetes indisponíveis ou configuração Padel v2 desligada.</p>
+          <p className="text-[12px] text-amber-200">Bilhetes indisponíveis.</p>
         )}
       </div>
     </div>

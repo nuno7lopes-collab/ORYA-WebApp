@@ -12,6 +12,14 @@ async function ensureOrganizationAccess(userId: string, eventId: number) {
     select: { organizationId: true },
   });
   if (!evt?.organizationId) return false;
+  const profile = await prisma.profile.findUnique({
+    where: { id: userId },
+    select: { onboardingDone: true, fullName: true, username: true },
+  });
+  const hasUserOnboarding =
+    profile?.onboardingDone ||
+    (Boolean(profile?.fullName?.trim()) && Boolean(profile?.username?.trim()));
+  if (!hasUserOnboarding) return false;
   const member = await prisma.organizationMember.findFirst({
     where: {
       organizationId: evt.organizationId,
@@ -23,8 +31,9 @@ async function ensureOrganizationAccess(userId: string, eventId: number) {
   return Boolean(member);
 }
 
-export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
-  const id = readNumericParam(params?.id, req, "tournaments");
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const resolved = await params;
+  const id = readNumericParam(resolved?.id, req, "tournaments");
   if (id === null) return NextResponse.json({ ok: false, error: "INVALID_ID" }, { status: 400 });
 
   const supabase = await createSupabaseServer();

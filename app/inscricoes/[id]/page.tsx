@@ -1,7 +1,6 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { FormSubmissionClient } from "./FormSubmissionClient";
-import { getCustomPremiumProfileModules, isCustomPremiumActive } from "@/lib/organizationPremium";
 
 type Params = { id: string };
 
@@ -20,7 +19,6 @@ export default async function PublicFormPage({ params }: { params: Promise<Param
           publicName: true,
           businessName: true,
           username: true,
-          liveHubPremiumEnabled: true,
         },
       },
       fields: { orderBy: { order: "asc" } },
@@ -31,9 +29,6 @@ export default async function PublicFormPage({ params }: { params: Promise<Param
     notFound();
   }
 
-  const premiumActive = isCustomPremiumActive(form.organization);
-  const premiumModules = premiumActive ? getCustomPremiumProfileModules(form.organization) ?? {} : {};
-  const allowInscricoes = Boolean(premiumModules.inscricoes);
   const isPublic = form.status !== "ARCHIVED";
   if (!isPublic) {
     notFound();
@@ -44,7 +39,7 @@ export default async function PublicFormPage({ params }: { params: Promise<Param
     select: { organizationId: true },
   });
 
-  if (!moduleEnabled || !allowInscricoes) {
+  if (!moduleEnabled) {
     notFound();
   }
 

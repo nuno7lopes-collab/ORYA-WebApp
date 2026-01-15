@@ -100,7 +100,11 @@ export async function POST(req: NextRequest) {
     }
 
     const scope = req.nextUrl.searchParams.get("scope");
-    const isPublicScope = scope === "avatar" || scope === "event-cover";
+    const isPublicScope =
+      scope === "avatar" ||
+      scope === "event-cover" ||
+      scope === "profile-cover" ||
+      scope === "service-cover";
 
     const bucketResolution = (() => {
       if (scope === "avatar") {
@@ -111,6 +115,13 @@ export async function POST(req: NextRequest) {
       if (scope === "event-cover") {
         if (env.eventCoversBucket) return { bucket: env.eventCoversBucket, folder: "event-covers" };
         return { bucket: env.uploadsBucket || "uploads", folder: "event-covers" };
+      }
+      if (scope === "service-cover") {
+        if (env.eventCoversBucket) return { bucket: env.eventCoversBucket, folder: "service-covers" };
+        return { bucket: env.uploadsBucket || "uploads", folder: "service-covers" };
+      }
+      if (scope === "profile-cover") {
+        return { bucket: env.uploadsBucket || "uploads", folder: "profile-covers" };
       }
       // default/general uploads
       return { bucket: env.uploadsBucket || "uploads", folder: "uploads" };

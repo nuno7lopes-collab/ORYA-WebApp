@@ -81,7 +81,7 @@ export default function Step3Sucesso() {
 
   useEffect(() => {
     if (dados && !purchaseId && !isFreeScenario) {
-      router.replace("/explorar");
+      router.replace("/explorar/eventos");
     }
   }, [dados, router, purchaseId, isFreeScenario]);
 

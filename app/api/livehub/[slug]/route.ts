@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { OrganizationMemberRole } from "@prisma/client";
-import { DEFAULT_ORGANIZATION_CATEGORY } from "@/lib/organizationCategories";
 import { resolveLiveHubModules } from "@/lib/liveHubConfig";
 import { summarizeMatchStatus, computeStandingsForGroup } from "@/domain/tournaments/structure";
 import { type TieBreakRule } from "@/domain/tournaments/standings";
@@ -11,7 +10,6 @@ import { getWinnerSideFromScore, type MatchScorePayload } from "@/domain/tournam
 import { canScanTickets } from "@/lib/organizationAccess";
 import { normalizeEmail } from "@/lib/utils/email";
 import { sanitizeUsername } from "@/lib/username";
-import { getCustomLiveHubModules, isCustomPremiumActive } from "@/lib/organizationPremium";
 
 function slugify(input: string): string {
   return input
@@ -60,9 +58,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ slu
             id: true,
             publicName: true,
             username: true,
-            organizationCategory: true,
+            primaryModule: true,
             brandingAvatarUrl: true,
-            liveHubPremiumEnabled: true,
           },
         },
         tournament: {
@@ -107,9 +104,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ slu
                 id: true,
                 publicName: true,
                 username: true,
-                organizationCategory: true,
+                primaryModule: true,
                 brandingAvatarUrl: true,
-                liveHubPremiumEnabled: true,
               },
             },
             tournament: {
@@ -149,7 +145,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ slu
     organizationRole = access.membershipRole ?? null;
     const hasMembership = Boolean(organizationRole);
     isOrganization = access.allowed || hasMembership;
-    canEditMatches = organizationRole ? organizationRole !== OrganizationMemberRole.VIEWER : false;
+    canEditMatches =
+      organizationRole !== null &&
+      ["OWNER", "CO_OWNER", "ADMIN", "STAFF"].includes(organizationRole);
   }
 
   const profile = userId
@@ -211,12 +209,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ slu
         ? isOrganization || isParticipant
         : false;
 
-  const category = event.organization?.organizationCategory ?? DEFAULT_ORGANIZATION_CATEGORY;
-  const premiumActive = isCustomPremiumActive(event.organization);
-  const liveHubMode = premiumActive ? "PREMIUM" : "DEFAULT";
-  const modules = resolveLiveHubModules({ category, mode: liveHubMode, premiumActive });
-  const customModules = getCustomLiveHubModules(event.organization);
-  const liveHubModules = premiumActive && customModules?.length ? customModules : modules;
+  const primaryModule = event.organization?.primaryModule ?? null;
+  const liveHubMode = "DEFAULT";
+  const liveHubModules = resolveLiveHubModules({ templateType: event.templateType ?? null, primaryModule });
 
   let tournamentPayload: any = null;
   const pairings: Record<
@@ -469,9 +464,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ slu
               id: event.organization.id,
               publicName: event.organization.publicName,
               username: event.organization.username,
-              organizationCategory: event.organization.organizationCategory,
+              primaryModule: event.organization.primaryModule,
               brandingAvatarUrl: event.organization.brandingAvatarUrl,
-              liveHubPremiumEnabled: event.organization.liveHubPremiumEnabled,
               isFollowed: organizationFollowed,
             }
           : null,
@@ -487,7 +481,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ slu
         },
       liveHub: {
         mode: liveHubMode,
-        category,
+        primaryModule,
         modules: liveHubModules,
       },
         tournament: tournamentPayload,

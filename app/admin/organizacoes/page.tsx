@@ -3,7 +3,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
+import { AdminLayout } from "@/app/admin/components/AdminLayout";
+import { AdminPageHeader } from "@/app/admin/components/AdminPageHeader";
 
 type OrganizationStatus = "PENDING" | "ACTIVE" | "SUSPENDED" | string;
 
@@ -19,6 +20,10 @@ type AdminOrganizationItem = {
   publicName: string;
   status: OrganizationStatus;
   createdAt: string;
+  orgType?: string | null;
+  stripeAccountId?: string | null;
+  stripeChargesEnabled?: boolean | null;
+  stripePayoutsEnabled?: boolean | null;
   owner?: AdminOrganizationOwner | null;
   eventsCount?: number | null;
   totalTickets?: number | null;
@@ -57,6 +62,16 @@ function statusBadgeClasses(status: OrganizationStatus) {
     default:
       return "border-white/20 bg-white/5 text-white/80";
   }
+}
+
+function paymentsModeLabel(orgType?: string | null) {
+  return orgType === "PLATFORM" ? "Pagamentos ORYA" : "Pagamentos Connect";
+}
+
+function paymentsBadgeClasses(orgType?: string | null) {
+  return orgType === "PLATFORM"
+    ? "border-emerald-400/60 bg-emerald-500/10 text-emerald-100"
+    : "border-sky-400/60 bg-sky-500/10 text-sky-100";
 }
 
 function formatDate(value?: string | null) {
@@ -106,6 +121,7 @@ export default function AdminOrganizacoesPage() {
   const [organizations, setOrganizations] = useState<AdminOrganizationItem[]>([]);
   const [filter, setFilter] = useState<"ALL" | OrganizationStatus>("ALL");
   const [updatingId, setUpdatingId] = useState<number | string | null>(null);
+  const [updatingPaymentsId, setUpdatingPaymentsId] = useState<number | string | null>(null);
   const pendingOrganizations = useMemo(
     () => organizations.filter((o) => o.status === "PENDING"),
     [organizations],
@@ -240,74 +256,101 @@ export default function AdminOrganizacoesPage() {
     }
   }
 
+  async function updatePaymentsMode(
+    organizationId: number | string,
+    mode: "PLATFORM" | "CONNECT",
+  ) {
+    if (
+      mode === "PLATFORM" &&
+      !window.confirm(
+        "Confirmas associar esta organização à plataforma ORYA? Todos os payouts pendentes serão cancelados.",
+      )
+    ) {
+      return;
+    }
+
+    try {
+      setUpdatingPaymentsId(organizationId);
+      const res = await fetch("/api/admin/organizacoes/update-payments-mode", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ organizationId, paymentsMode: mode }),
+      });
+
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.ok) {
+        console.error("[admin/organizacoes] Erro ao atualizar pagamentos:", data);
+        alert("Não foi possível atualizar o modo de pagamentos.");
+        return;
+      }
+
+      setOrganizations((prev) =>
+        prev.map((org) =>
+          String(org.id) === String(organizationId)
+            ? {
+                ...org,
+                orgType:
+                  data.organization?.orgType ?? (mode === "PLATFORM" ? "PLATFORM" : "EXTERNAL"),
+              }
+            : org,
+        ),
+      );
+    } catch (err) {
+      console.error("[admin/organizacoes] Erro ao atualizar pagamentos:", err);
+      alert("Ocorreu um erro inesperado ao atualizar o modo de pagamentos.");
+    } finally {
+      setUpdatingPaymentsId(null);
+    }
+  }
+
   const hasOrganizations = filteredOrganizations.length > 0;
 
   return (
-    <main className="min-h-screen w-full text-white pb-16">
-      <header className="border-b border-white/10 bg-black/60 backdrop-blur-xl">
-        <div className="max-w-6xl mx-auto px-5 py-4 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-tr from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] text-[11px] font-extrabold tracking-[0.16em]">
-              AD
-            </span>
-            <div>
-              <p className="text-[11px] uppercase tracking-[0.18em] text-white/55">
-                Admin · Organizações
-              </p>
-              <p className="text-sm text-white/85">
-                Aprova e gere as contas de organização na ORYA.
-              </p>
-            </div>
-          </div>
-        </div>
-      </header>
+    <AdminLayout title="Organizações" subtitle="Aprova e gere as contas de organização na ORYA.">
+      <section className="space-y-6">
+        <AdminPageHeader
+          title="Organizações"
+          subtitle="Vê quem está a organizar eventos na plataforma, aprova pedidos e suspende contas quando necessário."
+          eyebrow="Admin • Organizações"
+          actions={
+            pendingOrganizations.length > 0 ? (
+              <span className="admin-chip">
+                {pendingOrganizations.length} pendente(s)
+              </span>
+            ) : null
+          }
+        />
 
-      <section className="max-w-6xl mx-auto px-5 pt-8 space-y-6">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          <div>
-            <h1 className="text-2xl md:text-3xl font-semibold tracking-tight">
-              Organizações
-            </h1>
-            <p className="mt-1 text-sm text-white/70 max-w-xl">
-              Vê quem está a organizar eventos na plataforma, aprova novos
-              pedidos e suspende contas quando necessário.
+        <div className="grid grid-cols-2 gap-2 text-[11px] sm:flex sm:flex-row">
+          <div className="admin-card-soft px-3 py-2">
+            <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">Total</p>
+            <p className="text-sm font-semibold">{stats.total}</p>
+          </div>
+          <div className="admin-card-soft px-3 py-2">
+            <p className="text-[10px] uppercase tracking-[0.2em] text-amber-100/80">Pendentes</p>
+            <p className="text-sm font-semibold text-amber-100">
+              {stats.pending}
             </p>
-            {pendingOrganizations.length > 0 && (
-              <p className="mt-1 text-[12px] text-amber-100/80">
-                Tens {pendingOrganizations.length} pedido(s) pendente(s) de aprovação.
-              </p>
-            )}
           </div>
-
-          <div className="grid grid-cols-2 sm:flex sm:flex-row gap-2 text-[11px]">
-            <div className="rounded-xl border border-white/15 bg-black/60 px-3 py-2">
-              <p className="text-[10px] text-white/55">Total</p>
-              <p className="text-sm font-semibold">{stats.total}</p>
-            </div>
-            <div className="rounded-xl border border-amber-400/40 bg-amber-500/10 px-3 py-2">
-              <p className="text-[10px] text-amber-100/80">Pendentes</p>
-              <p className="text-sm font-semibold text-amber-100">
-                {stats.pending}
-              </p>
-            </div>
-            <div className="rounded-xl border border-emerald-400/40 bg-emerald-500/10 px-3 py-2">
-              <p className="text-[10px] text-emerald-100/80">Ativos</p>
-              <p className="text-sm font-semibold text-emerald-100">
-                {stats.active}
-              </p>
-            </div>
-            <div className="rounded-xl border border-red-400/40 bg-red-500/10 px-3 py-2">
-              <p className="text-[10px] text-red-100/80">Suspensos</p>
-              <p className="text-sm font-semibold text-red-100">
-                {stats.suspended}
-              </p>
-            </div>
+          <div className="admin-card-soft px-3 py-2">
+            <p className="text-[10px] uppercase tracking-[0.2em] text-emerald-100/80">Ativos</p>
+            <p className="text-sm font-semibold text-emerald-100">
+              {stats.active}
+            </p>
+          </div>
+          <div className="admin-card-soft px-3 py-2">
+            <p className="text-[10px] uppercase tracking-[0.2em] text-rose-100/80">Suspensos</p>
+            <p className="text-sm font-semibold text-rose-100">
+              {stats.suspended}
+            </p>
           </div>
         </div>
 
         {/* Filtros de estado */}
         <div className="flex flex-wrap items-center gap-2 text-[11px]">
-          <span className="text-white/60">Filtrar por estado:</span>
+          <span className="text-white/60 uppercase tracking-[0.18em]">Filtrar por estado</span>
           {FILTERS.map((f) => {
             const isActive = filter === f.id;
             return (
@@ -316,10 +359,10 @@ export default function AdminOrganizacoesPage() {
                 type="button"
                 onClick={() => setFilter(f.id)}
                 className={
-                  "rounded-full border px-3 py-1 transition-colors " +
+                  "rounded-full border px-3 py-1 text-[11px] uppercase tracking-[0.2em] transition-colors " +
                   (isActive
-                    ? "border-[#6BFFFF] bg-[#6BFFFF]/10 text-[#6BFFFF]"
-                    : "border-white/20 bg-white/5 text-white/70 hover:bg-white/10")
+                    ? "border-white/60 bg-white/10 text-white"
+                    : "border-white/20 bg-white/5 text-white/60 hover:bg-white/10")
                 }
               >
                 {f.label}
@@ -382,7 +425,7 @@ export default function AdminOrganizacoesPage() {
                       type="button"
                       disabled={updatingId === org.id}
                       onClick={() => updateStatus(org.id, "ACTIVE")}
-                      className={`${CTA_PRIMARY} px-3 py-1 text-[11px] disabled:opacity-60`}
+                      className="admin-button px-3 py-1 text-[11px] disabled:opacity-60"
                     >
                       {updatingId === org.id ? "A aprovar…" : "Aprovar"}
                     </button>
@@ -390,7 +433,7 @@ export default function AdminOrganizacoesPage() {
                       type="button"
                       disabled={updatingId === org.id}
                       onClick={() => updateStatus(org.id, "SUSPENDED")}
-                      className="px-3 py-1 rounded-full border border-amber-200/60 text-amber-50 hover:bg-amber-200/10 disabled:opacity-60"
+                      className="admin-button-secondary px-3 py-1 text-[11px] disabled:opacity-60"
                     >
                       {updatingId === org.id ? "A atualizar…" : "Reprovar"}
                     </button>
@@ -427,6 +470,7 @@ export default function AdminOrganizacoesPage() {
               const isPending = org.status === "PENDING";
               const isActive = org.status === "ACTIVE";
               const isSuspended = org.status === "SUSPENDED";
+              const isPlatformPayments = org.orgType === "PLATFORM";
 
               return (
                 <div
@@ -445,6 +489,14 @@ export default function AdminOrganizacoesPage() {
                         }
                       >
                         {formatStatusLabel(org.status)}
+                      </span>
+                      <span
+                        className={
+                          "inline-flex items-center rounded-full border px-2 py-[2px] text-[10px] font-medium " +
+                          paymentsBadgeClasses(org.orgType ?? null)
+                        }
+                      >
+                        {paymentsModeLabel(org.orgType ?? null)}
                       </span>
                     </div>
 
@@ -469,13 +521,27 @@ export default function AdminOrganizacoesPage() {
                   </div>
 
                   <div className="flex flex-wrap justify-end gap-2 text-[11px]">
+                    <button
+                      type="button"
+                      disabled={updatingPaymentsId === org.id}
+                      onClick={() =>
+                        updatePaymentsMode(org.id, isPlatformPayments ? "CONNECT" : "PLATFORM")
+                      }
+                      className="admin-button-secondary px-3 py-1.5 text-[11px] disabled:opacity-60"
+                    >
+                      {updatingPaymentsId === org.id
+                        ? "A atualizar…"
+                        : isPlatformPayments
+                          ? "Voltar a Connect"
+                          : "Receber na ORYA"}
+                    </button>
                     {isPending && (
                       <>
                         <button
                           type="button"
                           disabled={updatingId === org.id}
                           onClick={() => updateStatus(org.id, "ACTIVE")}
-                          className={`${CTA_PRIMARY} px-3 py-1.5 text-[11px] active:scale-95 disabled:opacity-60`}
+                          className="admin-button px-3 py-1.5 text-[11px] active:scale-95 disabled:opacity-60"
                         >
                           {updatingId === org.id ? "A aprovar…" : "Aprovar"}
                         </button>
@@ -483,7 +549,7 @@ export default function AdminOrganizacoesPage() {
                           type="button"
                           disabled={updatingId === org.id}
                           onClick={() => updateStatus(org.id, "SUSPENDED")}
-                          className="px-3 py-1.5 rounded-full border border-white/25 text-white/80 hover:bg-white/10 transition-colors disabled:opacity-60"
+                          className="admin-button-secondary px-3 py-1.5 text-[11px] disabled:opacity-60"
                         >
                           {updatingId === org.id ? "A atualizar…" : "Rejeitar"}
                         </button>
@@ -495,7 +561,7 @@ export default function AdminOrganizacoesPage() {
                         type="button"
                         disabled={updatingId === org.id}
                         onClick={() => updateStatus(org.id, "SUSPENDED")}
-                        className="px-3 py-1.5 rounded-full border border-red-400/60 text-red-100 hover:bg-red-500/10 transition-colors disabled:opacity-60"
+                        className="admin-button-secondary px-3 py-1.5 text-[11px] disabled:opacity-60"
                       >
                         {updatingId === org.id ? "A suspender…" : "Suspender"}
                       </button>
@@ -518,6 +584,6 @@ export default function AdminOrganizacoesPage() {
           </div>
         )}
       </section>
-    </main>
+    </AdminLayout>
   );
 }

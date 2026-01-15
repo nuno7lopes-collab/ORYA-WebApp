@@ -22,8 +22,14 @@ async function ensureCheckinAccess(userId: string, eventId: number) {
 
   const profile = await prisma.profile.findUnique({
     where: { id: userId },
-    select: { roles: true },
+    select: { roles: true, onboardingDone: true, fullName: true, username: true },
   });
+  const hasUserOnboarding =
+    profile?.onboardingDone ||
+    (Boolean(profile?.fullName?.trim()) && Boolean(profile?.username?.trim()));
+  if (!hasUserOnboarding) {
+    return { ok: false as const, reason: "FORBIDDEN_CHECKIN_ACCESS" };
+  }
   const roles = profile?.roles ?? [];
   const isAdmin = roles.includes("admin");
   if (isAdmin) return { ok: true as const, isAdmin };

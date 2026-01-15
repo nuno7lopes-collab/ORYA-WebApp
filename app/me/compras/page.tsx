@@ -215,7 +215,7 @@ export default function PurchasesPage() {
                     </div>
                   </div>
 
-                  <div className="rounded-xl border border-white/15 bg-black/40 px-3 py-3 text-xs text-white/85">
+                  <div className="rounded-xl border border-white/15 bg-black/40 px-3 py-3 text-xs text-white/85 space-y-3">
                     <p className="mb-2 text-[11px] uppercase tracking-[0.16em] text-white/60">Linha temporal</p>
                     <div className="flex flex-wrap gap-2">
                       {item.timeline.map((t) => (
@@ -227,6 +227,9 @@ export default function PurchasesPage() {
                           {t.status} • {t.source} • {formatDate(t.createdAt)}
                         </span>
                       ))}
+                    </div>
+                    <div className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-[11px] text-white/70">
+                      Recibo/fatura: disponível quando emitida.
                     </div>
                   </div>
                 </div>
@@ -241,7 +244,7 @@ export default function PurchasesPage() {
                 Quando comprares um bilhete ORYA, ele vai aparecer aqui com o mesmo efeito glassy da plataforma.
               </p>
               <Link
-                href="/explorar"
+                href="/explorar/eventos"
                 className="mt-4 inline-flex items-center justify-center rounded-full bg-white px-5 py-2 text-sm font-semibold text-black shadow-[0_18px_45px_rgba(0,0,0,0.35)] transition hover:shadow-[0_22px_55px_rgba(255,255,255,0.25)]"
               >
                 Explorar eventos

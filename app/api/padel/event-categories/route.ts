@@ -102,6 +102,10 @@ async function cancelCategoryActivity(params: { eventId: number; categoryId: num
       where: { eventId, categoryId },
       data: { status: "CANCELLED" },
     });
+    await tx.tournamentEntry.updateMany({
+      where: { eventId, categoryId },
+      data: { status: "CANCELLED" },
+    });
   });
 }
 

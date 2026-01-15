@@ -4,6 +4,7 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { resolveActions } from "@/lib/entitlements/accessResolver";
 import { buildDefaultCheckinWindow } from "@/lib/checkin/policy";
 import crypto from "crypto";
+import { normalizeEmail } from "@/lib/utils/email";
 
 function hashToken(token: string) {
   return crypto.createHash("sha256").update(token).digest("hex");
@@ -34,13 +35,25 @@ export async function GET(_: Request, context: { params: Params | Promise<Params
 
   const profile = await prisma.profile.findUnique({
     where: { id: userId },
-    select: { roles: true },
+    select: { roles: true, username: true },
   });
   const roles = profile?.roles ?? [];
   const isAdmin = roles.includes("admin");
 
-  if (!isAdmin && ent.ownerUserId !== userId) {
-    return NextResponse.json({ error: "FORBIDDEN_WALLET_ACCESS" }, { status: 403 });
+  if (!isAdmin) {
+    const identities = await prisma.emailIdentity.findMany({
+      where: { userId },
+      select: { id: true },
+    });
+    const identityIds = identities.map((identity) => identity.id);
+    const normalizedEmail = normalizeEmail(data.user.email ?? null);
+    const isOwner =
+      ent.ownerUserId === userId ||
+      (identityIds.length > 0 && ent.ownerIdentityId && identityIds.includes(ent.ownerIdentityId)) ||
+      (normalizedEmail ? ent.ownerKey === `email:${normalizedEmail}` : false);
+    if (!isOwner) {
+      return NextResponse.json({ error: "FORBIDDEN_WALLET_ACCESS" }, { status: 403 });
+    }
   }
 
   const event =
@@ -92,6 +105,114 @@ export async function GET(_: Request, context: { params: Params | Promise<Params
   }
 
   const organizationName = event?.organization?.publicName || event?.organization?.businessName || null;
+  let pairingSummary: null | {
+    id: number;
+    paymentMode: string;
+    pairingStatus: string;
+    lifecycleStatus: string;
+    createdByUserId?: string | null;
+    slots: Array<{ slotRole: string; slotStatus: string; paymentStatus: string }>;
+  } = null;
+  let pairingActions: null | {
+    canAccept: boolean;
+    canDecline: boolean;
+    canPay: boolean;
+    userSlotRole: string | null;
+  } = null;
+
+  if (ent.eventId && ent.purchaseId) {
+    const purchaseFilters = [
+      { purchaseId: ent.purchaseId },
+      { stripePaymentIntentId: ent.purchaseId },
+      { saleSummary: { purchaseId: ent.purchaseId } },
+      { saleSummary: { paymentIntentId: ent.purchaseId } },
+    ];
+    let ticket = await prisma.ticket.findFirst({
+      where: {
+        eventId: ent.eventId,
+        pairingId: { not: null },
+        OR: [{ ownerUserId: userId }, { userId }],
+        AND: [{ OR: purchaseFilters }],
+      },
+      select: { pairingId: true },
+    });
+    if (!ticket) {
+      ticket = await prisma.ticket.findFirst({
+        where: {
+          eventId: ent.eventId,
+          pairingId: { not: null },
+          OR: [{ ownerUserId: userId }, { userId }],
+        },
+        orderBy: { purchasedAt: "desc" },
+        select: { pairingId: true },
+      });
+    }
+    if (ticket?.pairingId) {
+      const pairing = await prisma.padelPairing.findUnique({
+        where: { id: ticket.pairingId },
+        select: {
+          id: true,
+          payment_mode: true,
+          pairingStatus: true,
+          lifecycleStatus: true,
+          createdByUserId: true,
+          slots: {
+            select: {
+              slot_role: true,
+              slotStatus: true,
+              paymentStatus: true,
+              profileId: true,
+              invitedUserId: true,
+              invitedContact: true,
+            },
+          },
+        },
+      });
+      if (pairing) {
+        const inviteContacts = [
+          data.user.email?.trim() ?? null,
+          profile?.username?.trim() ?? null,
+          profile?.username ? `@${profile.username}` : null,
+        ].filter(Boolean) as string[];
+        const userSlot = pairing.slots.find((slot) => {
+          if (slot.profileId === userId || slot.invitedUserId === userId) return true;
+          if (!slot.invitedContact) return false;
+          return inviteContacts.some(
+            (value) => value.toLowerCase() === slot.invitedContact?.toLowerCase(),
+          );
+        });
+        const isPending = userSlot?.slotStatus === "PENDING";
+        const isPaid = userSlot?.paymentStatus === "PAID";
+        const isCaptain = pairing.createdByUserId === userId;
+        const pendingSlot = pairing.slots.find((slot) => slot.slotStatus === "PENDING");
+        const canPay =
+          Boolean(pendingSlot && pendingSlot.paymentStatus !== "PAID") &&
+          (pairing.payment_mode === "SPLIT" ? Boolean(isCaptain || isPending) : Boolean(isCaptain));
+        const canAccept =
+          pairing.payment_mode === "FULL" &&
+          Boolean(isPending && isPaid && !isCaptain);
+
+        pairingSummary = {
+          id: pairing.id,
+          paymentMode: pairing.payment_mode,
+          pairingStatus: pairing.pairingStatus,
+          lifecycleStatus: pairing.lifecycleStatus,
+          createdByUserId: pairing.createdByUserId,
+          slots: pairing.slots.map((slot) => ({
+            slotRole: slot.slot_role,
+            slotStatus: slot.slotStatus,
+            paymentStatus: slot.paymentStatus,
+          })),
+        };
+        pairingActions = {
+          canAccept,
+          canDecline: Boolean(isPending && !isPaid),
+          canPay,
+          userSlotRole: userSlot?.slot_role ?? null,
+        };
+      }
+    }
+  }
 
   return NextResponse.json({
     entitlementId: ent.id,
@@ -107,6 +228,8 @@ export async function GET(_: Request, context: { params: Params | Promise<Params
     },
     actions,
     qrToken,
+    pairing: pairingSummary,
+    pairingActions,
     event: event?.slug
       ? {
           id: event.id,

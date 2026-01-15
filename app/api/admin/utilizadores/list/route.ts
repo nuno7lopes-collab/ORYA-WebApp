@@ -1,45 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createSupabaseServer } from "@/lib/supabaseServer";
+import { requireAdminUser } from "@/lib/admin/auth";
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@prisma/client";
 
-async function getAdminProfile() {
-  const supabase = await createSupabaseServer();
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser();
-
-  if (error || !user) {
-    return { user: null, profile: null, error: "UNAUTHENTICATED" };
-  }
-
-  const profile = await prisma.profile.findUnique({ where: { id: user.id } });
-
-  if (!profile || !Array.isArray(profile.roles) || !profile.roles.includes("admin")) {
-    return { user: null, profile: null, error: "FORBIDDEN" };
-  }
-
-  return { user, profile, error: null };
-}
-
 export async function GET(req: NextRequest) {
   try {
-    // 1) Garantir que é admin
-    const { error } = await getAdminProfile();
-
-    if (error === "UNAUTHENTICATED") {
-      return NextResponse.json(
-        { ok: false, error: "UNAUTHENTICATED" },
-        { status: 401 },
-      );
-    }
-
-    if (error === "FORBIDDEN") {
-      return NextResponse.json(
-        { ok: false, error: "FORBIDDEN" },
-        { status: 403 },
-      );
+    const admin = await requireAdminUser();
+    if (!admin.ok) {
+      return NextResponse.json({ ok: false, error: admin.error }, { status: admin.status });
     }
 
     // 2) Ler query params

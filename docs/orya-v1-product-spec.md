@@ -7,7 +7,7 @@ This document outlines the final structure and behaviour of the ORYA platform fo
 ORYA is a social network for real-world experiences where users discover and book events, services and padel tournaments. It combines aspects of a social feed, ticketing platform and booking engine.
 
 - User-centric: every feature begins with the end user. Organisations and clubs are composed of users; nothing exists outside of a user context.
-- Feed-first: the app opens with a personalised feed showing trending items, upcoming bookings and what friends are doing; a map is deferred to a later phase.
+- Feed-first: the app opens with a personalised feed showing trending items, upcoming bookings and what people you follow are doing; a map is deferred to a later phase.
 - Categories ("Mundos"): discovery is organised into distinct worlds - Events, Padel and Reservations (services), with Nightlife treated as a template within Events rather than a separate world.
 - Privacy: bookings/reservations made by a user are always private unless explicitly shared. Social activity is opt-in and honours the user's privacy settings.
 
@@ -17,8 +17,8 @@ ORYA is a social network for real-world experiences where users discover and boo
 
 - User: base entity. Stores authentication data, display name, username (@), avatar and basic preferences.
 - UserProfile: holds bio, city and optional Padel attributes (level, dominant hand, position). The padel fields are only required when a user participates in a tournament or activates padel mode.
-- Follow: represents a one-way follow relationship. A mutual follow equates to a friendship. Users can control who sees their activity (public / friends / private).
-- UserActivity: stores events such as RSVP, ticket purchases and padel achievements. Activities shown to friends respect privacy settings.
+- Follow: represents a one-way follow relationship. A mutual follow equates to a reciprocal follow. Users can control who sees their activity (public / followers / private).
+- UserActivity: stores events such as RSVP, ticket purchases and padel achievements. Activities shown to followers respect privacy settings.
 - Notifications: alerts for follows, RSVP confirmations, ticket purchases, invitations and other relevant events.
 
 ### Organisations
@@ -112,7 +112,7 @@ The user can exit the workspace via a clear "Sair do modo organização" button 
   - Próximos Eventos: list of purchased or RSVP'd events.
   - Próximas Reservas: upcoming service bookings (visible only to the user).
   - Padel: if the user has a padel profile, show upcoming tournaments or current ranking.
-  - Onde os amigos vão: summarises public activities of followed friends (respecting privacy settings) such as purchased tickets or joined tournaments.
+  - Onde quem segues vai: summarises public activities of followed people (respecting privacy settings) such as purchased tickets or joined tournaments.
   - Sugestões: recommended organisations or events based on interests and interactions.
 - Posts curtos: micro-posts from organisers (announcements, promotions) and user comments. Each includes action buttons: Comprar (for events), Reservar (for services), Inscrever-me (for tournaments) or Juntar-me (for social suggestions).
 
@@ -128,9 +128,9 @@ The discovery page uses a search bar and world tabs. Each world has its own list
 
 Tabs within Social:
 
-- Atividade - chronological feed of social interactions (follows, friends' event RSVPs, tournament wins, etc.). Booking activity remains private.
+- Atividade - chronological feed of social interactions (follows, event RSVPs from people you follow, tournament wins, etc.). Booking activity remains private.
 - Pedidos - follow requests, organisation invites, promoter invites.
-- Sugestões - recommended users based on location, interests and mutual friends. Each suggestion shows the number of mutuals and a follow button.
+- Sugestões - recommended users based on location, interests and mutual followers. Each suggestion shows the number of mutuals and a follow button.
 - Search - search bar to find users. Optionally includes organisation search.
 
 ### 4.4 Perfil (User Profile)

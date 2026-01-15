@@ -5,6 +5,7 @@ import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { isOrgAdminOrAbove } from "@/lib/organizationPermissions";
 import { getStripeBaseFees } from "@/lib/platformSettings";
+import { PendingPayoutStatus } from "@prisma/client";
 
 type Aggregate = {
   grossCents: number;
@@ -25,6 +26,22 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
 
+    const url = new URL(req.url);
+    const templateTypeParam = url.searchParams.get("templateType");
+    const templateType =
+      typeof templateTypeParam === "string" && templateTypeParam.trim()
+        ? templateTypeParam.trim().toUpperCase()
+        : null;
+    const excludeTemplateTypeParam = url.searchParams.get("excludeTemplateType");
+    const excludeTemplateType =
+      typeof excludeTemplateTypeParam === "string" && excludeTemplateTypeParam.trim()
+        ? excludeTemplateTypeParam.trim().toUpperCase()
+        : null;
+    const eventTemplateFilter = templateType
+      ? { templateType }
+      : excludeTemplateType
+        ? { NOT: { templateType: excludeTemplateType } }
+        : {};
     const organizationId = resolveOrganizationIdFromRequest(req);
     const { organization, membership } = await getActiveOrganizationForUser(user.id, {
       organizationId: organizationId ?? undefined,
@@ -35,7 +52,10 @@ export async function GET(req: NextRequest) {
     }
 
     const events = await prisma.event.findMany({
-      where: { organizationId: organization.id },
+      where: {
+        organizationId: organization.id,
+        ...eventTemplateFilter,
+      },
       select: {
         id: true,
         title: true,
@@ -58,6 +78,7 @@ export async function GET(req: NextRequest) {
             last30: { grossCents: 0, netCents: 0, feesCents: 0, tickets: 0 },
           },
           upcomingPayoutCents: 0,
+          payoutAlerts: { holdUntil: null, nextAttemptAt: null, actionRequired: false },
           events: [],
         },
         { status: 200 }
@@ -147,7 +168,49 @@ export async function GET(req: NextRequest) {
     }
 
     const eventsWithSales = Array.from(eventStats.keys()).length;
-    const upcomingPayoutCents = agg7.netCents;
+    const recipientConnectAccountId =
+      organization.orgType === "PLATFORM" ? null : organization.stripeAccountId ?? null;
+    const [pendingAgg, holdMin, nextAttemptMin, actionRequired] = recipientConnectAccountId
+      ? await Promise.all([
+          prisma.pendingPayout.aggregate({
+            where: {
+              recipientConnectAccountId,
+              status: { in: [PendingPayoutStatus.HELD, PendingPayoutStatus.RELEASING] },
+            },
+            _sum: { amountCents: true },
+          }),
+          prisma.pendingPayout.aggregate({
+            where: {
+              recipientConnectAccountId,
+              status: PendingPayoutStatus.HELD,
+              holdUntil: { gt: now },
+            },
+            _min: { holdUntil: true },
+          }),
+          prisma.pendingPayout.aggregate({
+            where: {
+              recipientConnectAccountId,
+              status: PendingPayoutStatus.HELD,
+              nextAttemptAt: { not: null, gte: now },
+            },
+            _min: { nextAttemptAt: true },
+          }),
+          prisma.pendingPayout.findFirst({
+            where: {
+              recipientConnectAccountId,
+              status: PendingPayoutStatus.HELD,
+              blockedReason: { startsWith: "ACTION_REQUIRED" },
+            },
+            select: { id: true },
+          }),
+        ])
+      : [null, null, null, null];
+    const upcomingPayoutCents = pendingAgg?._sum?.amountCents ?? 0;
+    const payoutAlerts = {
+      holdUntil: holdMin?._min?.holdUntil ?? null,
+      nextAttemptAt: nextAttemptMin?._min?.nextAttemptAt ?? null,
+      actionRequired: Boolean(actionRequired),
+    };
 
     return NextResponse.json(
       {
@@ -155,6 +218,7 @@ export async function GET(req: NextRequest) {
         totals: { ...totals, eventsWithSales },
         rolling: { last7: agg7, last30: agg30 },
         upcomingPayoutCents,
+        payoutAlerts,
         events: events.map((ev) => {
           const stats = eventStats.get(ev.id) ?? {
             grossCents: 0,

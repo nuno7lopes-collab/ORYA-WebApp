@@ -1,18 +1,19 @@
 "use client";
 
 import { CheckinScanner } from "@/app/components/checkin/CheckinScanner";
-import ObjectiveSubnav from "@/app/organizacao/ObjectiveSubnav";
+import { cn } from "@/lib/utils";
 
 type OrganizationScanPageProps = {
   embedded?: boolean;
 };
 
 export default function OrganizationScanPage({ embedded }: OrganizationScanPageProps) {
-  const wrapperClass = embedded ? "space-y-6 text-white" : "w-full px-4 py-8 space-y-6 text-white md:px-6 lg:px-8";
+  const wrapperClass = cn(
+    embedded ? "space-y-6 text-white" : "w-full space-y-6 py-8 text-white",
+  );
 
   return (
     <div className={wrapperClass}>
-      {!embedded && <ObjectiveSubnav objective="manage" activeId="checkin" />}
       <CheckinScanner
         backHref="/organizacao?tab=manage"
         backLabel="Ver gestão"

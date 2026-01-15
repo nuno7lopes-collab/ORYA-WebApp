@@ -37,10 +37,10 @@ type ApiAuthMeResponse = {
     visibility: string;
     allowEmailNotifications: boolean;
     allowEventReminders: boolean;
-    allowFriendRequests: boolean;
+    allowFollowRequests: boolean;
     allowSalesAlerts?: boolean;
     allowSystemAnnouncements?: boolean;
-    profileVisibility: "PUBLIC" | "PRIVATE";
+    profileVisibility: "PUBLIC" | "PRIVATE" | "FOLLOWERS";
   } | null;
   needsEmailConfirmation?: boolean;
 };
@@ -126,10 +126,30 @@ export async function GET() {
     if (!profile) {
       throw new Error("PROFILE_MISSING");
     }
-    const resolvedProfile = profile;
+    let resolvedProfile = profile;
 
-    const profileVisibility: "PUBLIC" | "PRIVATE" =
-      resolvedProfile.visibility === "PUBLIC" ? "PUBLIC" : "PRIVATE";
+    const hasUserOnboardingData =
+      Boolean(resolvedProfile.fullName?.trim()) && Boolean(resolvedProfile.username?.trim());
+
+    if (!resolvedProfile.onboardingDone && hasUserOnboardingData) {
+      try {
+        resolvedProfile = await prisma.profile.update({
+          where: { id: userId },
+          data: { onboardingDone: true },
+        });
+      } catch (err) {
+        console.warn("[auth/me] falha ao marcar onboardingDone:", err);
+      }
+    }
+
+    const profileVisibility: "PUBLIC" | "PRIVATE" | "FOLLOWERS" =
+      resolvedProfile.visibility === "PUBLIC"
+        ? "PUBLIC"
+        : resolvedProfile.visibility === "FOLLOWERS"
+          ? "FOLLOWERS"
+          : "PRIVATE";
+
+    const onboardingDone = resolvedProfile.onboardingDone || hasUserOnboardingData;
 
     const safeProfile: ApiAuthMeResponse["profile"] = {
       id: resolvedProfile.id,
@@ -143,12 +163,12 @@ export async function GET() {
       contactPhone: resolvedProfile.contactPhone,
       isVerified: resolvedProfile.is_verified,
       favouriteCategories: resolvedProfile.favouriteCategories,
-      onboardingDone: resolvedProfile.onboardingDone,
+      onboardingDone,
       roles: resolvedProfile.roles,
       visibility: resolvedProfile.visibility,
       allowEmailNotifications: notificationPrefs?.allowEmailNotifications ?? true,
       allowEventReminders: notificationPrefs?.allowEventReminders ?? true,
-      allowFriendRequests: notificationPrefs?.allowFriendRequests ?? true,
+      allowFollowRequests: notificationPrefs?.allowFollowRequests ?? true,
       allowSalesAlerts: notificationPrefs?.allowSalesAlerts ?? true,
       allowSystemAnnouncements: notificationPrefs?.allowSystemAnnouncements ?? true,
       profileVisibility,

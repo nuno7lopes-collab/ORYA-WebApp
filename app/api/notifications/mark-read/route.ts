@@ -6,11 +6,27 @@ export async function POST(req: NextRequest) {
   try {
     const user = await requireUser();
     const body = await req.json().catch(() => ({}));
-    const { notificationId, markAll } = body as { notificationId?: string; markAll?: boolean };
+    const { notificationId, markAll, organizationId } = body as {
+      notificationId?: string;
+      markAll?: boolean;
+      organizationId?: number | null;
+    };
 
     if (markAll) {
+      const orgId = Number.isFinite(organizationId ?? NaN) ? Number(organizationId) : null;
+      const where = {
+        userId: user.id,
+        isRead: false,
+      } as {
+        userId: string;
+        isRead: boolean;
+        AND?: Array<{ OR: Array<{ organizationId?: number; event?: { organizationId: number } }> }>;
+      };
+      if (orgId) {
+        where.AND = [{ OR: [{ organizationId: orgId }, { event: { organizationId: orgId } }] }];
+      }
       await prisma.notification.updateMany({
-        where: { userId: user.id, isRead: false },
+        where,
         data: { isRead: true, readAt: new Date() },
       });
       return NextResponse.json({ ok: true, updated: "all" });

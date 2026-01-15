@@ -7,6 +7,7 @@ import { useUser } from "@/app/hooks/useUser";
 import { trackEvent } from "@/lib/analytics";
 import { ConfirmDestructiveActionDialog } from "@/app/components/ConfirmDestructiveActionDialog";
 import { CTA_DANGER, CTA_PRIMARY, CTA_SECONDARY } from "@/app/organizacao/dashboardUi";
+import { cn } from "@/lib/utils";
 
 type PromoCodeDto = {
   id: number;
@@ -22,6 +23,8 @@ type PromoCodeDto = {
   validUntil: string | null;
   active: boolean;
   eventId: number | null;
+  promoterUserId?: string | null;
+  promoter?: { id: string; fullName: string | null; username: string | null; avatarUrl: string | null } | null;
   minCartValueCents?: number | null;
   createdAt: string;
   updatedAt: string;
@@ -33,6 +36,7 @@ type PromoCodeDto = {
 
 type ListResponse = {
   ok: boolean;
+  viewerRole?: string | null;
   promoCodes: PromoCodeDto[];
   events: { id: number; title: string; slug: string }[];
   promoStats?: {
@@ -46,6 +50,14 @@ type ListResponse = {
     usersUnique?: number;
   }[];
   error?: string;
+};
+
+type MemberLite = {
+  userId: string;
+  role: string;
+  fullName: string | null;
+  username: string | null;
+  avatarUrl: string | null;
 };
 
 type PromoDetailResponse =
@@ -81,7 +93,7 @@ type PromoDetailResponse =
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
 const SUGGESTED_CODES = [
-  { code: "ORYA10", type: "PERCENTAGE" as const, value: "10", hint: "Friends & Family · 10%" },
+  { code: "ORYA10", type: "PERCENTAGE" as const, value: "10", hint: "Rede próxima · 10%" },
   { code: "EARLY15", type: "PERCENTAGE" as const, value: "15", hint: "Early bird limitado" },
   { code: "TEAM5", type: "FIXED" as const, value: "5", hint: "5 € por pessoa para grupos" },
 ];
@@ -97,6 +109,7 @@ const EMPTY_FORM = {
   validFrom: "",
   validUntil: "",
   eventId: "global",
+  promoterUserId: "none",
   active: true,
   autoApply: false,
   minQuantity: "",
@@ -123,6 +136,12 @@ export default function PromoCodesClient() {
   const { user } = useUser();
   const { openModal } = useAuthModal();
   const { data, mutate } = useSWR<ListResponse>(user ? "/api/organizacao/promo" : null, fetcher);
+  const viewerRole = data?.viewerRole ?? null;
+  const isPromoterOnly = viewerRole === "PROMOTER";
+  const { data: membersData } = useSWR<{ ok: boolean; items: MemberLite[] }>(
+    user && !isPromoterOnly ? "/api/organizacao/organizations/members" : null,
+    fetcher,
+  );
 
   const [filters, setFilters] = useState({
     eventId: "all",
@@ -151,6 +170,13 @@ export default function PromoCodesClient() {
   const promos = useMemo(() => data?.promoCodes ?? [], [data]);
   const promoStats = useMemo(() => data?.promoStats ?? [], [data]);
   const promoStatsMap = useMemo(() => new Map(promoStats.map((s) => [s.promoCodeId, s])), [promoStats]);
+  const promoters = useMemo(
+    () =>
+      membersData?.items?.filter((member) => member.role === "PROMOTER") ?? [],
+    [membersData?.items],
+  );
+  const canManagePromos = !isPromoterOnly;
+  const showPromoterColumn = canManagePromos;
 
   const filteredPromos = useMemo(() => {
     return promos.filter((p) => {
@@ -169,6 +195,7 @@ export default function PromoCodesClient() {
   }, [promos, filters]);
 
   const handleSubmit = async () => {
+    if (isPromoterOnly) return;
     setSaving(true);
     setError(null);
     setSuccess(null);
@@ -205,6 +232,7 @@ export default function PromoCodesClient() {
         minQuantity: form.minQuantity ? Number(form.minQuantity) : null,
         minTotalCents: form.minTotal ? Math.round(Number(form.minTotal) * 100) : null,
         minCartValueCents: form.minCart ? Math.round(Number(form.minCart) * 100) : null,
+        promoterUserId: form.promoterUserId === "none" ? null : form.promoterUserId,
       };
       const res = await fetch("/api/organizacao/promo", {
         method: editingId ? "PATCH" : "POST",
@@ -245,6 +273,7 @@ export default function PromoCodesClient() {
       validFrom: promo.validFrom ?? "",
       validUntil: promo.validUntil ?? "",
       eventId: promo.eventId == null ? "global" : String(promo.eventId),
+      promoterUserId: promo.promoterUserId ?? "none",
       active: promo.active,
       autoApply: !!promo.autoApply,
       minQuantity: promo.minQuantity != null ? String(promo.minQuantity) : "",
@@ -387,7 +416,7 @@ export default function PromoCodesClient() {
   };
 
   return (
-    <section className="w-full px-4 py-8 space-y-6 text-white md:px-6 lg:px-8">
+    <section className={cn("w-full py-8 space-y-6 text-white")}>
       <header className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-5 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl space-y-1">
         <p className="text-[11px] uppercase tracking-[0.3em] text-white/70">Marketing</p>
         <h1 className="text-2xl font-semibold">Códigos promocionais</h1>
@@ -422,7 +451,7 @@ export default function PromoCodesClient() {
               <div>
                 <p className="text-[11px] uppercase tracking-[0.18em] text-white/60">Desconto total</p>
                 <p className="text-2xl font-semibold">{formatEuro(stats.totalDiscount)}</p>
-                <p className="text-[11px] text-white/50">Bruto via promo: {formatEuro(stats.totalGross)}</p>
+                <p className="text-[11px] text-white/50">Bruto promo: {formatEuro(stats.totalGross)}</p>
                 <p className="text-[11px] text-white/50">Users únicos: {stats.usersUnique}</p>
               </div>
             </>
@@ -472,25 +501,27 @@ export default function PromoCodesClient() {
         </label>
         </div>
 
-        <div className="rounded-xl border border-white/10 bg-white/5 p-3 space-y-2">
-          <div className="flex items-center justify-between text-sm">
-            <p className="text-white/80 font-semibold">Sugestões de códigos</p>
-            <span className="text-[11px] text-white/60">Preenche o formulário com 1 clique</span>
+        {canManagePromos && (
+          <div className="rounded-xl border border-white/10 bg-white/5 p-3 space-y-2">
+            <div className="flex items-center justify-between text-sm">
+              <p className="text-white/80 font-semibold">Sugestões de códigos</p>
+              <span className="text-[11px] text-white/60">1 clique</span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {SUGGESTED_CODES.map((item) => (
+                <button
+                  key={item.code}
+                  type="button"
+                  onClick={() => applySuggestion(item.code, item.type, item.value)}
+                  className="flex items-center gap-2 rounded-full border border-white/15 bg-black/30 px-3 py-1.5 text-[12px] text-white/80 hover:border-white/30"
+                >
+                  <span className="font-semibold">{item.code}</span>
+                  <span className="text-white/60">{item.hint}</span>
+                </button>
+              ))}
+            </div>
           </div>
-          <div className="flex flex-wrap gap-2">
-            {SUGGESTED_CODES.map((item) => (
-              <button
-                key={item.code}
-                type="button"
-                onClick={() => applySuggestion(item.code, item.type, item.value)}
-                className="flex items-center gap-2 rounded-full border border-white/15 bg-black/30 px-3 py-1.5 text-[12px] text-white/80 hover:border-white/30"
-              >
-                <span className="font-semibold">{item.code}</span>
-                <span className="text-white/60">{item.hint}</span>
-              </button>
-            ))}
-          </div>
-        </div>
+        )}
 
         <div className="overflow-auto rounded-xl border border-white/10">
           {loading ? (
@@ -508,42 +539,49 @@ export default function PromoCodesClient() {
           ) : emptyState ? (
             <div className="flex flex-col gap-3 p-5 text-white">
               <div>
-                <p className="text-lg font-semibold">Ainda não tens códigos promocionais.</p>
-                <p className="text-sm text-white/70">Cria o teu primeiro código para recompensar equipas, amigos ou early birds.</p>
+                <p className="text-lg font-semibold">
+                  {canManagePromos ? "Ainda sem códigos promocionais." : "Ainda não tens códigos atribuídos."}
+                </p>
+                <p className="text-sm text-white/70">
+                  {canManagePromos ? "Cria o primeiro." : "Pede à organização para atribuir um código."}
+                </p>
               </div>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    const el = document?.getElementById("promo-form");
-                    el?.scrollIntoView({ behavior: "smooth", block: "start" });
-                  }}
-                  className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-black shadow hover:scale-[1.01]"
-                >
-                  Criar primeiro código
-                </button>
+              {canManagePromos && (
                 <div className="flex flex-wrap gap-2">
-                  {SUGGESTED_CODES.map((item) => (
-                    <button
-                      key={item.code}
-                      type="button"
-                      onClick={() => applySuggestion(item.code, item.type, item.value)}
-                      className="rounded-full border border-white/15 bg-black/40 px-3 py-1.5 text-[12px] text-white/80 hover:border-white/30"
-                    >
-                      {item.code} · {item.hint}
-                    </button>
-                  ))}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const el = document?.getElementById("promo-form");
+                      el?.scrollIntoView({ behavior: "smooth", block: "start" });
+                    }}
+                    className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-black shadow hover:scale-[1.01]"
+                  >
+                    Criar primeiro código
+                  </button>
+                  <div className="flex flex-wrap gap-2">
+                    {SUGGESTED_CODES.map((item) => (
+                      <button
+                        key={item.code}
+                        type="button"
+                        onClick={() => applySuggestion(item.code, item.type, item.value)}
+                        className="rounded-full border border-white/15 bg-black/40 px-3 py-1.5 text-[12px] text-white/80 hover:border-white/30"
+                      >
+                        {item.code} · {item.hint}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           ) : (
             <table className="min-w-full text-left text-sm text-white/80">
               <thead className="bg-white/5 text-[12px] uppercase tracking-[0.12em] text-white/60">
                 <tr>
-          <th className="px-3 py-2">Código</th>
-          <th className="px-3 py-2">Nome</th>
-          <th className="px-3 py-2">Evento</th>
-          <th className="px-3 py-2">Valor</th>
+                  <th className="px-3 py-2">Código</th>
+                  <th className="px-3 py-2">Nome</th>
+                  {showPromoterColumn && <th className="px-3 py-2">Promoter</th>}
+                  <th className="px-3 py-2">Evento</th>
+                  <th className="px-3 py-2">Valor</th>
                   <th className="px-3 py-2">Usos</th>
                   <th className="px-3 py-2">Utilizadores</th>
                   <th className="px-3 py-2">Bilhetes</th>
@@ -551,7 +589,7 @@ export default function PromoCodesClient() {
                   <th className="px-3 py-2">Desconto</th>
                   <th className="px-3 py-2">Líquido</th>
                   <th className="px-3 py-2">Estado</th>
-                  <th className="px-3 py-2 text-right">Ações</th>
+                  {canManagePromos && <th className="px-3 py-2 text-right">Ações</th>}
                 </tr>
               </thead>
               <tbody>
@@ -570,6 +608,11 @@ export default function PromoCodesClient() {
                         </div>
                       </td>
                       <td className="px-3 py-2 text-white/80">{promo.name ?? "—"}</td>
+                      {showPromoterColumn && (
+                        <td className="px-3 py-2 text-white/70">
+                          {promo.promoter?.fullName || promo.promoter?.username || "—"}
+                        </td>
+                      )}
                       <td className="px-3 py-2">
                         {promo.eventId == null
                           ? "Global"
@@ -597,38 +640,40 @@ export default function PromoCodesClient() {
                       <td className="px-3 py-2">
                         <PromoStatusBadge status={promo.status} active={promo.active} />
                       </td>
-                      <td className="px-3 py-2 text-right">
-                        <div className="flex flex-wrap items-center justify-end gap-2">
-                          <button
-                            type="button"
-                            onClick={() => handleOpenDetail(promo.id)}
-                            className={`${CTA_SECONDARY} px-3 py-1 text-[11px]`}
-                          >
-                            Ver detalhe
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleEdit(promo)}
-                            className={`${CTA_SECONDARY} px-3 py-1 text-[11px]`}
-                          >
-                            Editar
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleToggle(promo.id, !promo.active)}
-                            className={`${CTA_SECONDARY} px-3 py-1 text-[11px]`}
-                          >
-                            {promo.active ? "Desativar" : "Ativar"}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setDeleteId(promo.id)}
-                            className={`${CTA_DANGER} px-3 py-1 text-[11px]`}
-                          >
-                            Apagar
-                          </button>
-                        </div>
-                      </td>
+                      {canManagePromos && (
+                        <td className="px-3 py-2 text-right">
+                          <div className="flex flex-wrap items-center justify-end gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleOpenDetail(promo.id)}
+                              className={`${CTA_SECONDARY} px-3 py-1 text-[11px]`}
+                            >
+                              Ver detalhe
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleEdit(promo)}
+                              className={`${CTA_SECONDARY} px-3 py-1 text-[11px]`}
+                            >
+                              Editar
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleToggle(promo.id, !promo.active)}
+                              className={`${CTA_SECONDARY} px-3 py-1 text-[11px]`}
+                            >
+                              {promo.active ? "Desativar" : "Ativar"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setDeleteId(promo.id)}
+                              className={`${CTA_DANGER} px-3 py-1 text-[11px]`}
+                            >
+                              Apagar
+                            </button>
+                          </div>
+                        </td>
+                      )}
                     </tr>
                   );
                 })}
@@ -640,10 +685,10 @@ export default function PromoCodesClient() {
         <ConfirmDestructiveActionDialog
           open={deleteId !== null}
           title="Apagar código promocional?"
-          description="Esta ação desativa o código e impede novas utilizações. Mantemos o histórico existente."
+          description="Desativa o código e bloqueia novas utilizações. O histórico mantém-se."
           consequences={[
-            "O código deixa de ser aplicável no checkout.",
-            "Mantemos histórico de utilizações anteriores.",
+            "Deixa de aplicar no checkout.",
+            "Histórico mantido.",
           ]}
           confirmLabel="Apagar código"
           cancelLabel="Cancelar"
@@ -654,16 +699,17 @@ export default function PromoCodesClient() {
           }}
         />
 
-        <div
-          id="promo-form"
-          className="rounded-2xl border border-white/10 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-5 shadow-[0_24px_70px_rgba(0,0,0,0.45)] space-y-5"
-        >
+        {canManagePromos && (
+          <div
+            id="promo-form"
+            className="rounded-2xl border border-white/10 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-5 shadow-[0_24px_70px_rgba(0,0,0,0.45)] space-y-5"
+          >
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="space-y-1">
               <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Criar promo</p>
-              <h2 className="text-xl font-semibold text-white">Criar / editar código</h2>
+              <h2 className="text-xl font-semibold text-white">Criar / editar</h2>
               <p className="text-sm text-white/65">
-                Define o desconto, validade e regras de uso. O resumo ajuda a validar antes de guardar.
+                Define desconto, validade e regras. Confirma no resumo.
               </p>
             </div>
             {editingId !== null && (
@@ -678,7 +724,7 @@ export default function PromoCodesClient() {
               <div className={sectionCard}>
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-semibold text-white">Identidade</h3>
-                  <span className="text-[11px] text-white/50">Notas internas</span>
+                  <span className="text-[11px] text-white/50">Interno</span>
                 </div>
                 <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <label className={labelBase}>
@@ -689,7 +735,7 @@ export default function PromoCodesClient() {
                       className={inputBase}
                       placeholder="Ex.: Early bird maio"
                     />
-                    <span className={helperText}>Visível apenas para ti.</span>
+                    <span className={helperText}>Só para ti.</span>
                   </label>
                   <label className={labelBase}>
                     <span>Descrição (opcional)</span>
@@ -699,7 +745,7 @@ export default function PromoCodesClient() {
                       className={inputBase}
                       placeholder="Notas internas ou condições"
                     />
-                    <span className={helperText}>Condições ou notas curtas.</span>
+                    <span className={helperText}>Notas curtas.</span>
                   </label>
                   <label className={`${labelBase} sm:col-span-2`}>
                     <span>Código</span>
@@ -709,8 +755,26 @@ export default function PromoCodesClient() {
                       className={`${inputBase} font-semibold uppercase tracking-[0.2em]`}
                       placeholder="ORYA10"
                     />
-                    <span className={helperText}>Sem espaços. Ex.: ORYA10</span>
+                    <span className={helperText}>Sem espaços.</span>
                   </label>
+                  {promoters.length > 0 && (
+                    <label className={labelBase}>
+                      <span>Promoter</span>
+                      <select
+                        value={form.promoterUserId}
+                        onChange={(e) => setForm((p) => ({ ...p, promoterUserId: e.target.value }))}
+                        className={inputBase}
+                      >
+                        <option value="none">Sem promoter</option>
+                        {promoters.map((promoter) => (
+                          <option key={promoter.userId} value={promoter.userId}>
+                            {promoter.fullName || promoter.username || "Promoter"}
+                          </option>
+                        ))}
+                      </select>
+                      <span className={helperText}>Atribui este código ao promoter.</span>
+                    </label>
+                  )}
                 </div>
               </div>
 
@@ -764,7 +828,7 @@ export default function PromoCodesClient() {
                       </span>
                     </div>
                     <span className={helperText}>
-                      {form.type === "PERCENTAGE" ? "Entre 1% e 100%." : "Valor fixo em euros."}
+                      {form.type === "PERCENTAGE" ? "1%–100%." : "Em euros."}
                     </span>
                   </label>
                 </div>
@@ -790,7 +854,7 @@ export default function PromoCodesClient() {
                         </option>
                       ))}
                     </select>
-                    <span className={helperText}>Global aplica-se a todos os eventos.</span>
+                    <span className={helperText}>Global = todos.</span>
                   </label>
                   <label className={labelBase}>
                     <span>Válido de</span>
@@ -820,7 +884,7 @@ export default function PromoCodesClient() {
                 </div>
                 <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <label className={labelBase}>
-                    <span>Nº máximo de utilizações</span>
+                    <span>Usos máximos</span>
                     <input
                       type="number"
                       min={0}
@@ -831,7 +895,7 @@ export default function PromoCodesClient() {
                     />
                   </label>
                   <label className={labelBase}>
-                    <span>Limite por pessoa</span>
+                    <span>Por pessoa</span>
                     <input
                       type="number"
                       min={0}
@@ -842,7 +906,7 @@ export default function PromoCodesClient() {
                     />
                   </label>
                   <label className={labelBase}>
-                    <span>Mín. quantidade por compra</span>
+                    <span>Mín. por compra</span>
                     <input
                       type="number"
                       min={0}
@@ -853,7 +917,7 @@ export default function PromoCodesClient() {
                     />
                   </label>
                   <label className={labelBase}>
-                    <span>Mín. valor total (€)</span>
+                    <span>Mín. total (€)</span>
                     <input
                       type="number"
                       min={0}
@@ -864,7 +928,7 @@ export default function PromoCodesClient() {
                     />
                   </label>
                   <label className={labelBase}>
-                    <span>Mín. valor carrinho (€)</span>
+                    <span>Mín. carrinho (€)</span>
                     <input
                       type="number"
                       min={0}
@@ -876,7 +940,7 @@ export default function PromoCodesClient() {
                   </label>
                 </div>
                 <p className="mt-2 text-[11px] text-white/55">
-                  Quando definido, o mínimo de carrinho tem prioridade sobre o mínimo total.
+                  Mín. carrinho tem prioridade.
                 </p>
               </div>
             </div>
@@ -922,7 +986,7 @@ export default function PromoCodesClient() {
                   <p className="text-white/80">
                     {form.autoApply ? "Auto-aplicar ligado." : "Auto-aplicar desligado."}
                   </p>
-                  <p className="text-white/50">Aplica-se automaticamente no checkout quando válido.</p>
+                  <p className="text-white/50">Aplica no checkout quando válido.</p>
                 </div>
               </div>
 
@@ -938,7 +1002,7 @@ export default function PromoCodesClient() {
                   </span>
                 </div>
                 <p className="mt-1 text-[12px] text-white/60">
-                  Ativa o código e decide se aplica automaticamente no checkout.
+                  Ativa e escolhe auto-aplicar.
                 </p>
                 <div className="mt-3 space-y-2 text-sm">
                   <label className="flex items-center justify-between rounded-xl border border-white/10 bg-black/30 px-3 py-2">
@@ -951,7 +1015,7 @@ export default function PromoCodesClient() {
                     />
                   </label>
                   <label className="flex items-center justify-between rounded-xl border border-white/10 bg-black/30 px-3 py-2">
-                    <span>Auto-aplicar no checkout</span>
+                    <span>Auto-aplicar</span>
                     <input
                       type="checkbox"
                       checked={form.autoApply}
@@ -963,11 +1027,11 @@ export default function PromoCodesClient() {
               </div>
 
               <div className="rounded-2xl border border-white/10 bg-black/35 p-4 text-[12px] text-white/80">
-                <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Preview rápido</p>
+                <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Preview</p>
                 <p className="mt-2 text-sm">
-                  Exemplo com bilhete de {preview.base.toFixed(2)} € → Cliente paga{" "}
+                  Ex.: {preview.base.toFixed(2)} € → paga{" "}
                   <span className="font-semibold text-white">{preview.total.toFixed(2)} €</span>{" "}
-                  (desconto {preview.discount.toFixed(2)} €)
+                  (desc. {preview.discount.toFixed(2)} €)
                 </p>
               </div>
 
@@ -1002,32 +1066,34 @@ export default function PromoCodesClient() {
               </div>
             </div>
           </div>
+        </div>
+      )}
 
-          {detailId !== null && (
-            <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 px-4 py-6 backdrop-blur-sm">
-              <div className="mx-auto w-full max-w-3xl rounded-2xl border border-white/15 bg-neutral-900 p-5 shadow-2xl">
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <p className="text-[11px] uppercase tracking-[0.18em] text-white/60">Promo</p>
-                    <h3 className="text-xl font-semibold text-white">
-                      {detail?.ok ? detail.promo.code : "Detalhe da promoção"}
-                    </h3>
-                    {detail?.ok && detail.promo.name && (
-                      <p className="text-sm text-white/70">{detail.promo.name}</p>
-                    )}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setDetailId(null);
-                      setDetail(null);
-                      setDetailError(null);
-                    }}
-                    className={`${CTA_SECONDARY} text-[12px]`}
-                  >
-                    Fechar
-                  </button>
-                </div>
+      {detailId !== null && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 px-4 py-6 backdrop-blur-sm">
+          <div className="mx-auto w-full max-w-3xl rounded-2xl border border-white/15 bg-neutral-900 p-5 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.18em] text-white/60">Promo</p>
+                <h3 className="text-xl font-semibold text-white">
+                  {detail?.ok ? detail.promo.code : "Detalhe da promoção"}
+                </h3>
+                {detail?.ok && detail.promo.name && (
+                  <p className="text-sm text-white/70">{detail.promo.name}</p>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setDetailId(null);
+                  setDetail(null);
+                  setDetailError(null);
+                }}
+                className={`${CTA_SECONDARY} text-[12px]`}
+              >
+                Fechar
+              </button>
+            </div>
 
                 {detailLoading && <p className="mt-4 text-sm text-white/70">A carregar detalhe...</p>}
                 {detailError && (
@@ -1135,7 +1201,6 @@ export default function PromoCodesClient() {
               </div>
             </div>
           )}
-      </div>
     </section>
   );
 }

@@ -1,3 +1,4 @@
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap");
 @import "tailwindcss";
 
 /* ================== CORES BASE ================== */
@@ -13,6 +14,24 @@
   --accent-primary: var(--orya-cyan);
   --accent-secondary: var(--orya-purple);
   --accent-glow: 0 0 24px rgba(107, 255, 255, 0.24), 0 0 14px rgba(22, 70, 245, 0.16);
+
+  --orya-neon-pink: var(--orya-pink);
+  --orya-neon-cyan: var(--orya-cyan);
+  --orya-neon-blue: var(--orya-blue);
+  --orya-neon-glow-soft: 0 0 18px rgba(107, 255, 255, 0.2), 0 0 16px rgba(255, 0, 200, 0.18);
+  --orya-neon-glow-strong: 0 0 28px rgba(107, 255, 255, 0.32), 0 0 26px rgba(255, 0, 200, 0.24);
+
+  --orya-surface-1: rgba(9, 13, 22, 0.78);
+  --orya-surface-2: rgba(8, 12, 20, 0.62);
+  --orya-surface-3: rgba(255, 255, 255, 0.04);
+  --orya-surface-border: rgba(255, 255, 255, 0.14);
+  --orya-surface-border-strong: rgba(255, 255, 255, 0.22);
+  --orya-surface-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+
+  --orya-card-bg: linear-gradient(160deg, rgba(255, 255, 255, 0.08), rgba(4, 8, 16, 0.92));
+  --orya-card-bg-soft: linear-gradient(160deg, rgba(255, 255, 255, 0.06), rgba(4, 8, 16, 0.88));
+  --orya-topbar-bg: linear-gradient(120deg, rgba(8, 10, 20, 0.55), rgba(8, 10, 20, 0.8));
+  --org-topbar-height: 64px;
 
   --glass-bg: rgba(255, 255, 255, 0.06);
   --glass-border: rgba(255, 255, 255, 0.1);
@@ -34,6 +53,12 @@
   }
 }
 
+@media (max-width: 768px) {
+  :root {
+    --org-topbar-height: 56px;
+  }
+}
+
 body {
   background-color: var(--background);
   background-image: none;
@@ -41,6 +66,186 @@ body {
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text",
     "SF Pro Display", -apple-system, sans-serif;
   overflow-x: hidden;
+}
+
+.admin-shell {
+  font-family: "Space Grotesk", "IBM Plex Sans", system-ui, sans-serif;
+  background-color: #0b1119;
+  color: #e6edf7;
+}
+
+.admin-shell .admin-mono {
+  font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+}
+
+.admin-shell .admin-card {
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(9, 13, 22, 0.9);
+  box-shadow: 0 24px 60px rgba(2, 6, 14, 0.45);
+}
+
+.admin-shell .admin-card-soft {
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.admin-shell .admin-input,
+.admin-shell .admin-select,
+.admin-shell .admin-textarea {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(8, 12, 20, 0.8);
+  color: #e6edf7;
+  padding: 0.55rem 0.75rem;
+  font-size: 12px;
+  outline: none;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.admin-shell .admin-input::placeholder {
+  color: rgba(230, 237, 247, 0.4);
+}
+
+.admin-shell .admin-input:focus,
+.admin-shell .admin-select:focus,
+.admin-shell .admin-textarea:focus {
+  border-color: rgba(120, 160, 255, 0.55);
+  box-shadow: 0 0 0 3px rgba(120, 160, 255, 0.15);
+}
+
+.admin-shell .admin-button {
+  border-radius: 999px;
+  border: 1px solid rgba(120, 160, 255, 0.4);
+  background: linear-gradient(130deg, rgba(120, 160, 255, 0.32), rgba(120, 160, 255, 0.12));
+  color: #eaf0ff;
+  padding: 0.4rem 1rem;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
+}
+
+.admin-shell .admin-button:hover {
+  border-color: rgba(120, 160, 255, 0.6);
+  box-shadow: 0 12px 24px rgba(26, 46, 92, 0.35);
+}
+
+.admin-shell .admin-button-secondary {
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(230, 237, 247, 0.8);
+  padding: 0.4rem 1rem;
+  font-size: 12px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+
+.admin-shell .admin-button-secondary:hover {
+  border-color: rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.admin-shell .admin-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  padding: 0.25rem 0.65rem;
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(230, 237, 247, 0.75);
+}
+
+.admin-shell .admin-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 12px;
+}
+
+.admin-shell .admin-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: rgba(9, 13, 22, 0.95);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.18);
+  color: rgba(230, 237, 247, 0.6);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-size: 10px;
+}
+
+.admin-shell .admin-table tbody tr {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+  color: rgba(230, 237, 247, 0.8);
+}
+
+.admin-shell .admin-table tbody tr:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.admin-shell .admin-table tbody tr:nth-child(odd) {
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.admin-shell .admin-table tbody td {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.admin-shell .admin-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.admin-section {
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(9, 13, 22, 0.8);
+  box-shadow: 0 30px 80px rgba(2, 6, 14, 0.5);
+  padding: 24px;
+}
+
+@media (max-width: 768px) {
+  .admin-section {
+    padding: 16px;
+  }
+}
+
+.admin-grid {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+  background-size: 48px 48px;
+  background-position: center;
+  mask-image: radial-gradient(circle at 50% 15%, rgba(0, 0, 0, 0.7), transparent 68%);
+}
+
+.admin-menu summary::-webkit-details-marker {
+  display: none;
+}
+
+.admin-menu[open] .admin-menu-card {
+  animation: admin-fade-up 160ms ease-out;
+}
+
+@keyframes admin-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .orya-bg-layer {
@@ -62,6 +267,41 @@ body {
   margin-right: auto;
 }
 
+.orya-mobile-topbar {
+  border-bottom: 1px solid var(--glass-border);
+  background: var(--orya-topbar-bg);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(18px);
+}
+
+.orya-mobile-surface {
+  border-radius: 24px;
+  border: 1px solid var(--orya-surface-border);
+  background: var(--orya-card-bg);
+  box-shadow: var(--orya-surface-shadow);
+}
+
+.orya-mobile-surface-soft {
+  border-radius: 22px;
+  border: 1px solid var(--orya-surface-border);
+  background: var(--orya-card-bg-soft);
+  box-shadow: 0 18px 46px rgba(0, 0, 0, 0.55);
+}
+
+.orya-mobile-kicker {
+  font-size: 10px;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.orya-mobile-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+
 .orya-profile-cover-fallback,
 .orya-avatar-fallback {
   background-color: #0b0f16;
@@ -82,6 +322,21 @@ body {
   box-shadow: inset 0 0 40px rgba(0, 0, 0, 0.7);
 }
 
+:root {
+  --orya-profile-cover-height: clamp(200px, 20vw, 280px);
+  --orya-profile-cover-height-mobile: clamp(160px, 38vw, 210px);
+}
+
+.orya-profile-cover {
+  height: var(--orya-profile-cover-height);
+}
+
+@media (max-width: 768px) {
+  .orya-profile-cover {
+    height: var(--orya-profile-cover-height-mobile);
+  }
+}
+
 /* Remover padding top do main quando a navbar pública está escondida (organização) */
 body[data-nav-hidden="true"] .main-shell {
   padding-top: 0 !important;
@@ -92,6 +347,12 @@ body[data-nav-hidden="true"] .main-shell {
 body:not([data-nav-hidden="true"]) .main-shell {
   padding-top: 4rem;
   padding-bottom: 120px;
+}
+
+@media (max-width: 768px) {
+  body[data-mobile-nav-hidden="true"] .main-shell {
+    padding-top: 0;
+  }
 }
 
 /* Scrollbars discretos (checkout stripe) */
@@ -207,7 +468,8 @@ body:not([data-nav-hidden="true"]) .main-shell {
 
 body.orya-bg-user,
 body.orya-bg-event,
-body.orya-bg-org {
+body.orya-bg-org,
+body.orya-bg-landing {
   min-height: 100vh;
   position: relative;
 }
@@ -239,6 +501,163 @@ body.orya-bg-org {
 
 .animate-fade-slide {
   animation: subtle-fade-slide 0.24s ease;
+}
+
+/* ============ LANDING ORYA ============ */
+
+.landing-shell {
+  --landing-ink: #010103;
+  --landing-cyan: #5ef6ff;
+  --landing-blue: #4c6dff;
+  --landing-pink: #ff5fd7;
+  --landing-violet: #7a4dff;
+  background-color: var(--landing-ink);
+}
+
+.landing-shell[data-landing-mirror="true"] {
+  transform: scaleX(-1);
+  transform-origin: center;
+}
+
+.landing-flow,
+.landing-glow,
+.landing-vignette {
+  pointer-events: none;
+}
+
+.landing-flow {
+  position: absolute;
+  inset: -25% -35%;
+  background-image: linear-gradient(
+    90deg,
+    rgba(255, 95, 215, 0.38) 0%,
+    rgba(122, 77, 255, 0.48) 35%,
+    rgba(76, 109, 255, 0.42) 70%,
+    rgba(255, 95, 215, 0.38) 100%
+  );
+  background-size: 300% 100%;
+  background-position: 0% 50%;
+  filter: blur(22px) saturate(1.4);
+  opacity: 0.9;
+  animation: landing-flow 18s linear infinite;
+}
+
+.landing-glow {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 20% 50%, rgba(255, 95, 215, 0.22), transparent 60%),
+    radial-gradient(circle at 80% 50%, rgba(76, 109, 255, 0.22), transparent 60%),
+    radial-gradient(circle at 50% 20%, rgba(94, 246, 255, 0.16), transparent 55%);
+  opacity: 0.6;
+  filter: blur(30px);
+  mix-blend-mode: screen;
+}
+
+.landing-vignette {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 50% 50%, rgba(0, 0, 0, 0) 0%, rgba(1, 1, 3, 0.82) 60%, rgba(0, 0, 0, 0.98) 100%);
+}
+
+.landing-hero {
+  position: relative;
+  z-index: 2;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.4rem;
+  text-align: center;
+}
+
+.landing-logo-wrap {
+  position: relative;
+  width: clamp(180px, 28vw, 320px);
+  aspect-ratio: 1 / 1;
+  border-radius: 32px;
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.14), rgba(6, 8, 16, 0.96));
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  box-shadow:
+    0 40px 120px rgba(0, 0, 0, 0.8),
+    0 0 90px rgba(255, 95, 215, 0.25),
+    0 0 120px rgba(76, 109, 255, 0.22);
+}
+
+.landing-logo-wrap::before {
+  content: "";
+  position: absolute;
+  inset: -40%;
+  background: conic-gradient(
+    from 180deg,
+    rgba(94, 246, 255, 0.6),
+    rgba(255, 95, 215, 0.65),
+    rgba(76, 109, 255, 0.6),
+    rgba(94, 246, 255, 0.6)
+  );
+  opacity: 0.5;
+  filter: blur(2px);
+  animation: landing-ring 18s linear infinite;
+}
+
+.landing-logo-wrap::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 50% 35%, rgba(255, 255, 255, 0.18), transparent 60%);
+  opacity: 0.5;
+}
+
+.landing-logo {
+  width: 60%;
+  height: auto;
+  position: relative;
+  z-index: 1;
+  filter:
+    drop-shadow(0 22px 40px rgba(0, 0, 0, 0.6))
+    drop-shadow(0 0 28px rgba(94, 246, 255, 0.35))
+    drop-shadow(0 0 22px rgba(255, 95, 215, 0.22));
+}
+
+.landing-name {
+  font-family: "Space Grotesk", system-ui, sans-serif;
+  font-size: clamp(2.2rem, 4.6vw, 4.4rem);
+  letter-spacing: 0.35em;
+  text-transform: uppercase;
+  background: linear-gradient(90deg, #f8f9ff 0%, #9bd9ff 35%, #ff9ae5 65%, #f8f9ff 100%);
+  -webkit-background-clip: text;
+  color: transparent;
+  text-shadow: 0 0 50px rgba(94, 246, 255, 0.35), 0 0 70px rgba(255, 95, 215, 0.18);
+}
+
+@keyframes landing-flow {
+  0% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: 200% 50%;
+  }
+}
+
+@keyframes landing-ring {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing-flow,
+  .landing-logo-wrap::before {
+    animation: none;
+  }
 }
 
 @keyframes step-pop {
@@ -284,6 +703,54 @@ body.orya-bg-org {
 
 .wizard-step-in-left {
   animation: wizardInLeft 230ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes onboardingCardIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.onboarding-card-in {
+  animation: onboardingCardIn 260ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+@keyframes onboardingGlow {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.onboarding-glow {
+  animation: onboardingGlow 420ms ease;
+}
+
+@keyframes typingBlink {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.typing-caret {
+  background: rgba(255, 255, 255, 0.65);
+  box-shadow: 0 0 6px rgba(107, 255, 255, 0.25);
+  animation: typingBlink 1.15s ease-in-out infinite;
+}
+
+.typing-caret-active {
+  box-shadow: 0 0 10px rgba(107, 255, 255, 0.45);
 }
 
 .btn-orya {

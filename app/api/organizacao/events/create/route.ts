@@ -8,14 +8,29 @@ import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { canManageEvents } from "@/lib/organizationPermissions";
+import { clampDeadlineHours } from "@/domain/padelDeadlines";
+import { DEFAULT_PADEL_SCORE_RULES } from "@/domain/padel/score";
+import { formatPaidSalesGateMessage, getPaidSalesGate } from "@/lib/organizationPayments";
+import { resolvePrimaryModule } from "@/lib/organizationCategories";
 import {
   EventParticipantAccessMode,
   EventPublicAccessMode,
   EventTemplateType,
   LiveHubVisibility,
+  PadelEligibilityType,
   PayoutMode,
   ResaleMode,
+  padel_format,
 } from "@prisma/client";
+
+const ALLOWED_PADEL_FORMATS = new Set<padel_format>([
+  padel_format.TODOS_CONTRA_TODOS,
+  padel_format.QUADRO_ELIMINATORIO,
+  padel_format.GRUPOS_ELIMINATORIAS,
+  padel_format.QUADRO_AB,
+  padel_format.NON_STOP,
+  padel_format.CAMPEONATO_LIGA,
+]);
 
 // Tipos esperados no body do pedido
 type TicketTypeInput = {
@@ -24,6 +39,7 @@ type TicketTypeInput = {
   totalQuantity?: number | null;
   publicAccess?: boolean;
   participantAccess?: boolean;
+  padelCategoryId?: number | null;
 };
 
 type CreateOrganizationEventBody = {
@@ -55,6 +71,14 @@ type CreateOrganizationEventBody = {
     numberOfCourts?: number;
     ruleSetId?: number | null;
     defaultCategoryId?: number | null;
+    eligibilityType?: string | null;
+    categoryIds?: number[];
+    categoryConfigs?: Array<{
+      padelCategoryId?: number | null;
+      capacityTeams?: number | null;
+      format?: string | null;
+    }>;
+    splitDeadlineHours?: number | null;
     padelV2Enabled?: boolean;
     padelClubId?: number | null;
     courtIds?: number[];
@@ -69,6 +93,14 @@ type PadelConfigInput = {
   numberOfCourts?: number;
   ruleSetId?: number | null;
   defaultCategoryId?: number | null;
+  eligibilityType?: string | null;
+  categoryIds?: number[];
+  categoryConfigs?: Array<{
+    padelCategoryId?: number | null;
+    capacityTeams?: number | null;
+    format?: string | null;
+  }>;
+  splitDeadlineHours?: number | null;
   advancedSettings?: unknown;
   padelV2Enabled?: boolean;
   courtIds?: number[];
@@ -129,7 +161,7 @@ export async function POST(req: NextRequest) {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
 
-    // Confirmar que o profile existe (caso o user tenha contornado o onboarding)
+    // Confirmar perfil e onboarding do utilizador (caso o user tenha contornado o onboarding)
     const profile = await prisma.profile.findUnique({
       where: { id: user.id },
     });
@@ -139,7 +171,20 @@ export async function POST(req: NextRequest) {
         {
           ok: false,
           error:
-            "Perfil não encontrado. Completa o onboarding antes de criares eventos de organização.",
+            "Perfil não encontrado. Completa o onboarding de utilizador antes de criares eventos de organização.",
+        },
+        { status: 400 }
+      );
+    }
+    const hasUserOnboarding =
+      profile.onboardingDone ||
+      (Boolean(profile.fullName?.trim()) && Boolean(profile.username?.trim()));
+    if (!hasUserOnboarding) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            "Completa o onboarding de utilizador (nome e username) antes de criares eventos de organização.",
         },
         { status: 400 }
       );
@@ -154,6 +199,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
     const isAdmin = Array.isArray(profile.roles) ? profile.roles.includes("admin") : false;
+    const isPlatformAccount = organization?.orgType === "PLATFORM";
 
     const title = body.title?.trim();
     const description = body.description?.trim() ?? "";
@@ -170,8 +216,7 @@ export async function POST(req: NextRequest) {
       | undefined;
     const payoutModeRequested =
       body.payoutMode?.toUpperCase() === "PLATFORM" ? PayoutMode.PLATFORM : PayoutMode.ORGANIZATION;
-    const organizationTrusted = organization?.status === "ACTIVE";
-    const payoutMode: PayoutMode = !isAdmin && !organizationTrusted ? PayoutMode.PLATFORM : payoutModeRequested;
+    const payoutMode: PayoutMode = isPlatformAccount ? PayoutMode.PLATFORM : payoutModeRequested;
 
     if (!title) {
       return NextResponse.json(
@@ -218,8 +263,12 @@ export async function POST(req: NextRequest) {
     const endsAtParsed = parseDate(endsAtRaw);
     const endsAt = endsAtParsed && endsAtParsed >= startsAt ? endsAtParsed : startsAt;
 
-    const isPadelOrganization = organization?.organizationCategory === "PADEL";
-    const padelRequested = Boolean(body.padel) || isPadelOrganization;
+    const primaryModule = resolvePrimaryModule(
+      (organization as { primaryModule?: string | null })?.primaryModule ?? null,
+      null,
+    );
+    const isPadelOrganization = primaryModule === "TORNEIOS";
+    const padelRequested = Boolean(body.padel) || templateTypeRaw === "PADEL" || isPadelOrganization;
     const templateTypeFromBody =
       templateTypeRaw === "PADEL"
         ? EventTemplateType.PADEL
@@ -261,7 +310,7 @@ export async function POST(req: NextRequest) {
         : LiveHubVisibility.PUBLIC;
     // Validar tipos de bilhete
     let ticketPriceError: string | null = null;
-    const ticketTypesData = ticketTypesInput
+    let ticketTypesData = ticketTypesInput
       .map((t) => {
         const name = t.name?.trim();
         if (!name) return null;
@@ -284,6 +333,10 @@ export async function POST(req: NextRequest) {
           typeof t.totalQuantity === "number" && Number.isFinite(t.totalQuantity) && t.totalQuantity > 0
             ? Math.floor(t.totalQuantity)
             : null;
+        const padelCategoryId =
+          typeof t.padelCategoryId === "number" && Number.isFinite(t.padelCategoryId)
+            ? Math.floor(t.padelCategoryId)
+            : null;
 
         return {
           name,
@@ -291,9 +344,10 @@ export async function POST(req: NextRequest) {
           totalQuantity,
           publicAccess: t.publicAccess === true,
           participantAccess: t.participantAccess === true,
+          padelCategoryId,
         };
       })
-      .filter((t): t is { name: string; price: number; totalQuantity: number | null; publicAccess: boolean; participantAccess: boolean } =>
+      .filter((t): t is { name: string; price: number; totalQuantity: number | null; publicAccess: boolean; participantAccess: boolean; padelCategoryId: number | null } =>
         Boolean(t)
       );
 
@@ -301,23 +355,28 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: ticketPriceError }, { status: 400 });
     }
 
-    const paymentsStatus = organization
-      ? organization.stripeAccountId
-        ? organization.stripeChargesEnabled && organization.stripePayoutsEnabled
-          ? "READY"
-          : "PENDING"
-        : "NO_STRIPE"
-      : "NO_STRIPE";
     const hasPaidTickets = ticketTypesData.some((t) => t.price > 0);
-    if (payoutMode === PayoutMode.ORGANIZATION && hasPaidTickets && paymentsStatus !== "READY" && !isAdmin) {
-      return NextResponse.json(
-        {
-          ok: false,
-          code: "PAYMENTS_NOT_READY",
-          error: "Para vender bilhetes pagos, primeiro liga a tua conta Stripe em Finanças & Payouts.",
-        },
-        { status: 403 },
-      );
+    if (hasPaidTickets && !isAdmin) {
+      const gate = getPaidSalesGate({
+        officialEmail: organization?.officialEmail ?? null,
+        officialEmailVerifiedAt: organization?.officialEmailVerifiedAt ?? null,
+        stripeAccountId: organization?.stripeAccountId ?? null,
+        stripeChargesEnabled: organization?.stripeChargesEnabled ?? false,
+        stripePayoutsEnabled: organization?.stripePayoutsEnabled ?? false,
+        requireStripe: payoutMode === PayoutMode.ORGANIZATION && !isPlatformAccount,
+      });
+      if (!gate.ok) {
+        return NextResponse.json(
+          {
+            ok: false,
+            code: "PAYMENTS_NOT_READY",
+            error: formatPaidSalesGateMessage(gate, "Para vender bilhetes pagos,"),
+            missingEmail: gate.missingEmail,
+            missingStripe: gate.missingStripe,
+          },
+          { status: 403 },
+        );
+      }
     }
 
     if (publicAccessMode === "TICKET" && publicTicketScope === "SPECIFIC") {
@@ -351,6 +410,11 @@ export async function POST(req: NextRequest) {
     let padelClubId: number | null = null;
     let partnerClubIds: number[] = [];
     let advancedSettings: unknown = null;
+    let padelCategoryIds: number[] = [];
+    let padelDefaultCategoryId: number | null = null;
+    let padelEligibilityType: PadelEligibilityType = PadelEligibilityType.OPEN;
+    let splitDeadlineHours: number | null = null;
+    const categoryConfigMap = new Map<number, { capacityTeams: number | null; format: padel_format | null }>();
 
     if (padelRequested && organization) {
       padelConfigInput = (body.padel ?? {}) as PadelConfigInput;
@@ -362,6 +426,40 @@ export async function POST(req: NextRequest) {
         ? padelConfigInput.partnerClubIds.filter((id) => typeof id === "number" && Number.isFinite(id))
         : [];
       advancedSettings = padelConfigInput?.advancedSettings ?? null;
+      const eligibilityRaw = typeof padelConfigInput?.eligibilityType === "string" ? padelConfigInput.eligibilityType : null;
+      if (eligibilityRaw && Object.values(PadelEligibilityType).includes(eligibilityRaw as PadelEligibilityType)) {
+        padelEligibilityType = eligibilityRaw as PadelEligibilityType;
+      }
+      if (typeof padelConfigInput?.splitDeadlineHours === "number" && Number.isFinite(padelConfigInput.splitDeadlineHours)) {
+        splitDeadlineHours = clampDeadlineHours(padelConfigInput.splitDeadlineHours);
+      }
+
+      const categoryConfigsRaw = Array.isArray(padelConfigInput?.categoryConfigs)
+        ? padelConfigInput.categoryConfigs
+        : [];
+      categoryConfigsRaw.forEach((cfg) => {
+        const categoryId =
+          typeof cfg?.padelCategoryId === "number" && Number.isFinite(cfg.padelCategoryId) ? cfg.padelCategoryId : null;
+        if (!categoryId) return;
+        const capacityTeams =
+          typeof cfg?.capacityTeams === "number" && Number.isFinite(cfg.capacityTeams) && cfg.capacityTeams > 0
+            ? Math.floor(cfg.capacityTeams)
+            : null;
+        const format =
+          typeof cfg?.format === "string" && ALLOWED_PADEL_FORMATS.has(cfg.format as padel_format)
+            ? (cfg.format as padel_format)
+            : null;
+        categoryConfigMap.set(categoryId, { capacityTeams, format });
+      });
+
+      const requestedCategoryIds = Array.isArray(padelConfigInput?.categoryIds)
+        ? padelConfigInput.categoryIds.filter((id) => typeof id === "number" && Number.isFinite(id))
+        : [];
+      const requestedDefaultCategoryId =
+        typeof padelConfigInput?.defaultCategoryId === "number" && Number.isFinite(padelConfigInput.defaultCategoryId)
+          ? padelConfigInput.defaultCategoryId
+          : null;
+      let allowedCategoryIds: Set<number> | null = null;
 
       if (padelClubId) {
         const club = await prisma.padelClub.findFirst({
@@ -384,6 +482,54 @@ export async function POST(req: NextRequest) {
         const allowed = new Set(activePartners.map((c) => c.id));
         partnerClubIds = partnerClubIds.filter((id) => allowed.has(id));
       }
+
+      const requestedCategoryIdsAll = Array.from(
+        new Set([
+          ...requestedCategoryIds,
+          ...Array.from(categoryConfigMap.keys()),
+          ...(requestedDefaultCategoryId ? [requestedDefaultCategoryId] : []),
+        ]),
+      );
+      if (requestedCategoryIdsAll.length > 0) {
+        const allowedCategories = await prisma.padelCategory.findMany({
+          where: { organizationId: organization.id, isActive: true },
+          select: { id: true },
+        });
+        allowedCategoryIds = new Set(allowedCategories.map((c) => c.id));
+      }
+
+      if (requestedCategoryIdsAll.length > 0 && allowedCategoryIds) {
+        const orderedRequested = [
+          ...requestedCategoryIds,
+          ...Array.from(categoryConfigMap.keys()).filter((id) => !requestedCategoryIds.includes(id)),
+        ];
+        padelCategoryIds = orderedRequested.filter((id) => allowedCategoryIds?.has(id));
+        categoryConfigMap.forEach((value, key) => {
+          if (!allowedCategoryIds?.has(key)) {
+            categoryConfigMap.delete(key);
+          }
+        });
+      }
+
+      if (requestedDefaultCategoryId && (!allowedCategoryIds || allowedCategoryIds.has(requestedDefaultCategoryId))) {
+        const isAllowed =
+          padelCategoryIds.length === 0 || padelCategoryIds.includes(requestedDefaultCategoryId);
+        padelDefaultCategoryId = isAllowed ? requestedDefaultCategoryId : null;
+      } else if (padelCategoryIds.length > 0) {
+        padelDefaultCategoryId = padelCategoryIds[0];
+      }
+    }
+
+    if (templateType === "PADEL" && padelCategoryIds.length > 0) {
+      ticketTypesData = ticketTypesData.map((ticket) => ({
+        ...ticket,
+        padelCategoryId:
+          ticket.padelCategoryId && padelCategoryIds.includes(ticket.padelCategoryId)
+            ? ticket.padelCategoryId
+            : null,
+      }));
+    } else {
+      ticketTypesData = ticketTypesData.map((ticket) => ({ ...ticket, padelCategoryId: null }));
     }
 
     // Criar o evento primeiro
@@ -420,6 +566,19 @@ export async function POST(req: NextRequest) {
       const courtIds = Array.isArray(padelConfigInput?.courtIds) ? padelConfigInput?.courtIds : [];
       const staffIds = Array.isArray(padelConfigInput?.staffIds) ? padelConfigInput?.staffIds : [];
       const computedCourts = Math.max(1, padelConfigInput.numberOfCourts || courtIds.length || 1);
+      const requestedFormat =
+        typeof padelConfigInput.format === "string" ? padelConfigInput.format : null;
+      const padelFormat =
+        requestedFormat && ALLOWED_PADEL_FORMATS.has(requestedFormat as padel_format)
+          ? (requestedFormat as padel_format)
+          : padel_format.TODOS_CONTRA_TODOS;
+      const baseAdvanced = { ...((advancedSettings as Record<string, unknown>) ?? {}) };
+      if (!Object.prototype.hasOwnProperty.call(baseAdvanced, "competitionState")) {
+        baseAdvanced.competitionState = "DEVELOPMENT";
+      }
+      if (!Object.prototype.hasOwnProperty.call(baseAdvanced, "scoreRules")) {
+        baseAdvanced.scoreRules = DEFAULT_PADEL_SCORE_RULES;
+      }
       try {
         await prisma.padelTournamentConfig.upsert({
           where: { eventId: event.id },
@@ -429,26 +588,64 @@ export async function POST(req: NextRequest) {
             padelClubId,
             partnerClubIds,
             numberOfCourts: computedCourts,
-            format: (padelConfigInput.format as any) ?? "TODOS_CONTRA_TODOS",
+            format: padelFormat,
             ruleSetId: padelConfigInput.ruleSetId || undefined,
-            defaultCategoryId: padelConfigInput.defaultCategoryId || undefined,
+            defaultCategoryId: padelDefaultCategoryId || undefined,
+            eligibilityType: padelEligibilityType,
+            splitDeadlineHours: splitDeadlineHours ?? undefined,
             padelV2Enabled,
-            advancedSettings: { ...((advancedSettings as any) ?? {}), courtIds, staffIds },
+            advancedSettings: { ...baseAdvanced, courtIds, staffIds },
           },
           update: {
             padelClubId,
             partnerClubIds,
             numberOfCourts: computedCourts,
-            format: (padelConfigInput.format as any) ?? "TODOS_CONTRA_TODOS",
+            format: padelFormat,
             ruleSetId: padelConfigInput.ruleSetId || undefined,
-            defaultCategoryId: padelConfigInput.defaultCategoryId || undefined,
+            defaultCategoryId: padelDefaultCategoryId || undefined,
+            eligibilityType: padelEligibilityType,
+            splitDeadlineHours: splitDeadlineHours ?? undefined,
             padelV2Enabled,
-            advancedSettings: { ...((advancedSettings as any) ?? {}), courtIds, staffIds },
+            advancedSettings: { ...baseAdvanced, courtIds, staffIds },
           },
         });
       } catch (padelErr) {
         console.warn("[organização/events/create] padel config falhou", padelErr);
       }
+    }
+
+    if (templateType === "PADEL" && padelCategoryIds.length > 0) {
+      const linkFormat =
+        typeof padelConfigInput?.format === "string" && ALLOWED_PADEL_FORMATS.has(padelConfigInput.format as padel_format)
+          ? (padelConfigInput.format as padel_format)
+          : undefined;
+      const linkData = padelCategoryIds.map((categoryId) => {
+        const config = categoryConfigMap.get(categoryId);
+        return {
+          eventId: event.id,
+          padelCategoryId: categoryId,
+          format: config?.format ?? linkFormat,
+          capacityTeams: config?.capacityTeams ?? null,
+          isEnabled: true,
+        };
+      });
+      try {
+        await prisma.padelEventCategoryLink.createMany({
+          data: linkData,
+          skipDuplicates: true,
+        });
+      } catch (padelLinkErr) {
+        console.warn("[organização/events/create] padel categories falhou", padelLinkErr);
+      }
+    }
+
+    let padelCategoryLinkMap = new Map<number, number>();
+    if (templateType === "PADEL" && padelCategoryIds.length > 0) {
+      const links = await prisma.padelEventCategoryLink.findMany({
+        where: { eventId: event.id },
+        select: { id: true, padelCategoryId: true },
+      });
+      padelCategoryLinkMap = new Map(links.map((link) => [link.padelCategoryId, link.id]));
     }
 
     const autoTicketTypes =
@@ -460,6 +657,7 @@ export async function POST(req: NextRequest) {
               totalQuantity: null,
               publicAccess: true,
               participantAccess: false,
+              padelCategoryId: null,
             },
           ]
         : ticketTypesData;
@@ -471,6 +669,10 @@ export async function POST(req: NextRequest) {
     }> = [];
 
     for (const ticket of autoTicketTypes) {
+      const padelEventCategoryLinkId =
+        templateType === "PADEL" && ticket.padelCategoryId
+          ? padelCategoryLinkMap.get(ticket.padelCategoryId) ?? null
+          : null;
       const created = await prisma.ticketType.create({
         data: {
           eventId: event.id,
@@ -478,6 +680,7 @@ export async function POST(req: NextRequest) {
           price: Math.round(ticket.price * 100),
           totalQuantity: ticket.totalQuantity ?? null,
           currency: "EUR",
+          padelEventCategoryLinkId,
         },
         select: { id: true },
       });

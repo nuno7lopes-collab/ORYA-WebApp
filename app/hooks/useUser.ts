@@ -29,8 +29,8 @@ type ApiMeResponse = {
     visibility: string;
     allowEmailNotifications: boolean;
     allowEventReminders: boolean;
-    allowFriendRequests: boolean;
-    profileVisibility: "PUBLIC" | "PRIVATE";
+    allowFollowRequests: boolean;
+    profileVisibility: "PUBLIC" | "PRIVATE" | "FOLLOWERS";
   } | null;
 };
 

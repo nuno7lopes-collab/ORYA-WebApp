@@ -6,6 +6,8 @@ import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { ensureDefaultPolicies } from "@/lib/organizationPolicies";
+import { ensureReservasModuleAccess } from "@/lib/reservas/access";
+import { formatPaidSalesGateMessage, getPaidSalesGate } from "@/lib/organizationPayments";
 import { OrganizationMemberRole } from "@prisma/client";
 
 const ALLOWED_ROLES: OrganizationMemberRole[] = [
@@ -46,9 +48,15 @@ export async function GET(req: NextRequest) {
     if (!organization || !membership) {
       return NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 });
     }
+    const reservasAccess = await ensureReservasModuleAccess(organization);
+    if (!reservasAccess.ok) {
+      return NextResponse.json({ ok: false, error: reservasAccess.error }, { status: 403 });
+    }
 
     const items = await prisma.service.findMany({
-      where: { organizationId: organization.id },
+      where: {
+        organizationId: organization.id,
+      },
       orderBy: { createdAt: "desc" },
       include: {
         policy: {
@@ -59,6 +67,11 @@ export async function GET(req: NextRequest) {
             cancellationWindowMinutes: true,
           },
         },
+        instructor: {
+          select: { id: true, fullName: true, username: true, avatarUrl: true },
+        },
+        professionalLinks: { select: { professionalId: true } },
+        resourceLinks: { select: { resourceId: true } },
         _count: {
           select: { bookings: true, availabilities: true },
         },
@@ -103,19 +116,54 @@ export async function POST(req: NextRequest) {
     if (!organization || !membership) {
       return NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 });
     }
+    const reservasAccess = await ensureReservasModuleAccess(organization);
+    if (!reservasAccess.ok) {
+      return NextResponse.json({ ok: false, error: reservasAccess.error }, { status: 403 });
+    }
 
     await ensureDefaultPolicies(prisma, organization.id);
 
     const payload = await req.json().catch(() => ({}));
-    const name = String(payload?.name ?? "").trim();
+    const title = String(payload?.title ?? payload?.name ?? "").trim();
     const description = String(payload?.description ?? "").trim();
     const durationMinutes = Number(payload?.durationMinutes);
-    const price = Number(payload?.price);
+    const unitPriceCents = Number(payload?.unitPriceCents ?? payload?.price);
     const currency = String(payload?.currency ?? "EUR").trim().toUpperCase();
     const policyIdRaw = Number(payload?.policyId);
+    const categoryTag = typeof payload?.categoryTag === "string" ? payload.categoryTag.trim() : "";
+    const locationModeRaw = typeof payload?.locationMode === "string" ? payload.locationMode.trim().toUpperCase() : "FIXED";
+    const defaultLocationText = typeof payload?.defaultLocationText === "string" ? payload.defaultLocationText.trim() : "";
+    const coverImageUrl = typeof payload?.coverImageUrl === "string" ? payload.coverImageUrl.trim() : "";
 
-    if (!name || !Number.isFinite(durationMinutes) || durationMinutes <= 0 || !Number.isFinite(price) || price < 0) {
+    const allowedDurations = new Set([30, 60, 90, 120]);
+    if (!title || !Number.isFinite(durationMinutes) || !allowedDurations.has(durationMinutes)) {
+      return NextResponse.json({ ok: false, error: "Duração inválida (30/60/90/120 min)." }, { status: 400 });
+    }
+    if (!Number.isFinite(unitPriceCents) || unitPriceCents < 0) {
       return NextResponse.json({ ok: false, error: "Dados inválidos." }, { status: 400 });
+    }
+
+    if (unitPriceCents > 0) {
+      const gate = getPaidSalesGate({
+        officialEmail: organization.officialEmail ?? null,
+        officialEmailVerifiedAt: organization.officialEmailVerifiedAt ?? null,
+        stripeAccountId: organization.stripeAccountId ?? null,
+        stripeChargesEnabled: organization.stripeChargesEnabled ?? false,
+        stripePayoutsEnabled: organization.stripePayoutsEnabled ?? false,
+        requireStripe: organization.orgType !== "PLATFORM",
+      });
+      if (!gate.ok) {
+        return NextResponse.json(
+          {
+            ok: false,
+            code: "PAYMENTS_NOT_READY",
+            error: formatPaidSalesGateMessage(gate, "Para vender serviços pagos,"),
+            missingEmail: gate.missingEmail,
+            missingStripe: gate.missingStripe,
+          },
+          { status: 403 },
+        );
+      }
     }
 
     let policyId: number | null = null;
@@ -136,15 +184,25 @@ export async function POST(req: NextRequest) {
       policyId = defaultPolicy?.id ?? null;
     }
 
+    if (!["FIXED", "CHOOSE_AT_BOOKING"].includes(locationModeRaw)) {
+      return NextResponse.json({ ok: false, error: "Localização inválida." }, { status: 400 });
+    }
+
     const service = await prisma.service.create({
       data: {
         organizationId: organization.id,
         policyId,
-        name,
+        kind: "GENERAL",
+        instructorId: null,
+        title,
         description: description || null,
         durationMinutes,
-        price: Math.round(price),
+        unitPriceCents: Math.round(unitPriceCents),
         currency: currency || "EUR",
+        categoryTag: categoryTag || null,
+        coverImageUrl: coverImageUrl || null,
+        locationMode: locationModeRaw as "FIXED" | "CHOOSE_AT_BOOKING",
+        defaultLocationText: defaultLocationText || null,
       },
     });
 
@@ -155,10 +213,13 @@ export async function POST(req: NextRequest) {
       action: "SERVICE_CREATED",
       metadata: {
         serviceId: service.id,
-        name,
+        title,
         durationMinutes,
-        price: Math.round(price),
+        unitPriceCents: Math.round(unitPriceCents),
         currency: currency || "EUR",
+        categoryTag: categoryTag || null,
+        coverImageUrl: coverImageUrl || null,
+        locationMode: locationModeRaw,
       },
       ip,
       userAgent,

@@ -23,6 +23,23 @@ export async function GET(_req: NextRequest) {
         price: true,
         currency: true,
         createdAt: true,
+        pendingExpiresAt: true,
+        assignmentMode: true,
+        partySize: true,
+        professional: {
+          select: {
+            id: true,
+            name: true,
+            user: { select: { fullName: true, avatarUrl: true } },
+          },
+        },
+        resource: {
+          select: {
+            id: true,
+            label: true,
+            capacity: true,
+          },
+        },
         policyRef: {
           select: {
             policy: {
@@ -38,7 +55,7 @@ export async function GET(_req: NextRequest) {
         service: {
           select: {
             id: true,
-            name: true,
+            title: true,
             policy: {
               select: {
                 id: true,
@@ -58,6 +75,12 @@ export async function GET(_req: NextRequest) {
               },
             },
           },
+        },
+        court: {
+          select: { id: true, name: true },
+        },
+        review: {
+          select: { id: true },
         },
       },
     });
@@ -102,10 +125,13 @@ export async function GET(_req: NextRequest) {
           }
         : null;
 
-      const decision =
-        booking.status === "CONFIRMED" || booking.status === "PENDING"
-          ? decideCancellation(booking.startsAt, policy?.cancellationWindowMinutes ?? null, now)
-          : { allowed: false, reason: null, deadline: null };
+      const isPending = ["PENDING_CONFIRMATION", "PENDING"].includes(booking.status);
+      const cancellationDecision = decideCancellation(
+        booking.startsAt,
+        policy?.cancellationWindowMinutes ?? null,
+        now,
+      );
+      const canCancel = isPending || (booking.status === "CONFIRMED" && cancellationDecision.allowed);
 
       return {
         id: booking.id,
@@ -116,13 +142,24 @@ export async function GET(_req: NextRequest) {
         currency: booking.currency,
         createdAt: booking.createdAt,
         availabilityId: booking.availabilityId,
-        service: booking.service ? { id: booking.service.id, name: booking.service.name } : null,
+        pendingExpiresAt: booking.pendingExpiresAt,
+        assignmentMode: booking.assignmentMode,
+        partySize: booking.partySize ?? null,
+        professional: booking.professional
+          ? { id: booking.professional.id, name: booking.professional.name, avatarUrl: booking.professional.user?.avatarUrl ?? null }
+          : null,
+        resource: booking.resource
+          ? { id: booking.resource.id, label: booking.resource.label, capacity: booking.resource.capacity }
+          : null,
+        reviewId: booking.review?.id ?? null,
+        service: booking.service ? { id: booking.service.id, title: booking.service.title } : null,
+        court: booking.court ? { id: booking.court.id, name: booking.court.name } : null,
         organization: booking.service?.organization ?? null,
         policy,
         cancellation: {
-          allowed: decision.allowed,
-          reason: decision.reason,
-          deadline: decision.deadline,
+          allowed: canCancel,
+          reason: canCancel ? null : cancellationDecision.reason,
+          deadline: cancellationDecision.deadline,
         },
       };
     });

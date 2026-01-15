@@ -11,10 +11,10 @@ const cardClass =
 
 type ServiceItem = {
   id: number;
-  name: string;
+  title: string;
   description: string | null;
   durationMinutes: number;
-  price: number;
+  unitPriceCents: number;
   currency: string;
   organization: {
     id: number;
@@ -125,7 +125,7 @@ export default function ServicosPage() {
         <div className="space-y-2">
           <p className="text-[11px] uppercase tracking-[0.3em] text-white/60">Reservas</p>
           <h1 className="text-3xl font-semibold text-white">Serviços para reservar</h1>
-          <p className="text-sm text-white/65">Agenda cuidados, experiências e serviços locais.</p>
+          <p className="text-sm text-white/65">Serviços locais para reservar.</p>
         </div>
 
         <section className={cardClass}>
@@ -135,7 +135,7 @@ export default function ServicosPage() {
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Ex: manicure, corte, sala de reuniões"
+                placeholder="Ex: manicure, sala"
                 className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/35"
               />
             </div>
@@ -181,14 +181,18 @@ export default function ServicosPage() {
           {items.map((item) => (
             <Link
               key={item.id}
-              href={`/servicos/${item.id}`}
+              href={
+                item.organization.username
+                  ? `/${item.organization.username}?serviceId=${item.id}`
+                  : `/servicos/${item.id}`
+              }
               className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/5 via-[#0b1224]/75 to-[#050a13]/90 p-4 shadow-[0_18px_60px_rgba(0,0,0,0.55)] transition hover:border-white/25 hover:bg-white/10"
             >
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <h3 className="text-lg font-semibold text-white">{item.name}</h3>
+                  <h3 className="text-lg font-semibold text-white">{item.title}</h3>
                   <p className="text-[12px] text-white/65">
-                    {item.durationMinutes} min · {(item.price / 100).toFixed(2)} {item.currency}
+                    {item.durationMinutes} min · {(item.unitPriceCents / 100).toFixed(2)} {item.currency}
                   </p>
                 </div>
                 <span className="rounded-full border border-white/15 bg-white/10 px-2 py-1 text-[11px] text-white/70">

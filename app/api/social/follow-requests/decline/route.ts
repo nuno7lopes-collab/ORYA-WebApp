@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
 
   await prisma.follow_requests.delete({ where: { id: requestId } });
   await prisma.notification.deleteMany({
-    where: { userId: request.target_id, type: "FRIEND_REQUEST", fromUserId: request.requester_id },
+    where: { userId: request.target_id, type: "FOLLOW_REQUEST", fromUserId: request.requester_id },
   });
 
   return NextResponse.json({ ok: true }, { status: 200 });

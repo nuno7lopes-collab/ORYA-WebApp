@@ -30,14 +30,35 @@ async function ensureOrganization(userId: string, eventId: number) {
     where: { id: eventId },
     select: { organizationId: true },
   });
-  if (!event) return { ok: false as const, reason: "EVENT_NOT_FOUND" };
-  if (!event.organizationId) return { ok: false as const, reason: "FORBIDDEN_ATTENDEES_ACCESS" };
+  if (!event) return { ok: false as const, status: 404, error: "EVENT_NOT_FOUND" };
+  if (!event.organizationId) {
+    return { ok: false as const, status: 403, error: "FORBIDDEN_ATTENDEES_ACCESS" };
+  }
 
   const profile = await prisma.profile.findUnique({
     where: { id: userId },
-    select: { roles: true },
+    select: { roles: true, onboardingDone: true, fullName: true, username: true },
   });
-  const roles = profile?.roles ?? [];
+  if (!profile) {
+    return {
+      ok: false as const,
+      status: 403,
+      error: "Perfil não encontrado. Completa o onboarding de utilizador.",
+    };
+  }
+  const hasUserOnboarding =
+    profile.onboardingDone ||
+    (Boolean(profile.fullName?.trim()) && Boolean(profile.username?.trim()));
+  if (!hasUserOnboarding) {
+    return {
+      ok: false as const,
+      status: 403,
+      error:
+        "Completa o onboarding de utilizador (nome e username) antes de gerires eventos de organização.",
+    };
+  }
+
+  const roles = profile.roles ?? [];
   const isAdmin = roles.includes("admin");
   if (isAdmin) return { ok: true as const, isAdmin };
 
@@ -45,7 +66,9 @@ async function ensureOrganization(userId: string, eventId: number) {
     where: { organizationId_userId: { organizationId: event.organizationId, userId } },
     select: { id: true, role: true },
   });
-  if (!membership) return { ok: false as const, reason: "FORBIDDEN_ATTENDEES_ACCESS" };
+  if (!membership) {
+    return { ok: false as const, status: 403, error: "FORBIDDEN_ATTENDEES_ACCESS" };
+  }
   if (
     !membership.role ||
     (membership.role !== OrganizationMemberRole.OWNER &&
@@ -53,26 +76,27 @@ async function ensureOrganization(userId: string, eventId: number) {
       membership.role !== OrganizationMemberRole.ADMIN &&
       membership.role !== OrganizationMemberRole.STAFF)
   ) {
-    return { ok: false as const, reason: "FORBIDDEN_ATTENDEES_ACCESS" };
+    return { ok: false as const, status: 403, error: "FORBIDDEN_ATTENDEES_ACCESS" };
   }
   return { ok: true as const, isAdmin };
 }
 
-export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const supabase = await createSupabaseServer();
   const { data, error } = await supabase.auth.getUser();
   if (error || !data?.user) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
   const userId = data.user.id;
-  const eventId = Number(params.id);
+  const resolved = await params;
+  const eventId = Number(resolved.id);
   if (!Number.isFinite(eventId)) {
     return NextResponse.json({ error: "INVALID_EVENT" }, { status: 400 });
   }
 
   const access = await ensureOrganization(userId, eventId);
   if (!access.ok) {
-    return NextResponse.json({ error: access.reason }, { status: access.reason === "EVENT_NOT_FOUND" ? 404 : 403 });
+    return NextResponse.json({ error: access.error }, { status: access.status });
   }
   const event = await prisma.event.findUnique({
     where: { id: eventId },

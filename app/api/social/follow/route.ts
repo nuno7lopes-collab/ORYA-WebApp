@@ -50,10 +50,10 @@ export async function POST(req: NextRequest) {
         },
       });
 
-      if (await shouldNotify(targetUserId, NotificationType.FRIEND_REQUEST)) {
+      if (await shouldNotify(targetUserId, NotificationType.FOLLOW_REQUEST)) {
         await createNotification({
           userId: targetUserId,
-          type: NotificationType.FRIEND_REQUEST,
+          type: NotificationType.FOLLOW_REQUEST,
           title: "Novo pedido para seguir",
           body: "Tens um novo pedido para seguir o teu perfil.",
           fromUserId: user.id,

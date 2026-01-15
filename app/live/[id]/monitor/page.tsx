@@ -1,10 +1,12 @@
 // app/live/[id]/monitor/page.tsx
 import { notFound } from "next/navigation";
+import { getAppBaseUrl } from "@/lib/appBaseUrl";
 
 type PageProps = { params: Promise<{ id: string }> };
 
 async function getStructure(id: number) {
-  const res = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL || ""}/api/tournaments/${id}/monitor`, {
+  const baseUrl = getAppBaseUrl();
+  const res = await fetch(`${baseUrl}/api/tournaments/${id}/monitor`, {
     cache: "force-cache",
     next: { revalidate: 10 },
   });

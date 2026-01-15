@@ -3,10 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import OrganizationFollowClient from "@/app/components/profile/OrganizationFollowClient";
-import ProfileHeaderLayout, {
-  ProfileStatPill,
-  ProfileVerifiedBadge,
-} from "@/app/components/profile/ProfileHeaderLayout";
+import ProfileHeaderLayout, { ProfileStatPill } from "@/app/components/profile/ProfileHeaderLayout";
 import { Avatar } from "@/components/ui/avatar";
 
 type OrganizationProfileHeaderProps = {
@@ -17,7 +14,6 @@ type OrganizationProfileHeaderProps = {
   bio: string | null;
   city: string | null;
   followersCount?: number | null;
-  followingCount?: number | null;
   organizationId: number;
   initialIsFollowing?: boolean;
   canEdit?: boolean;
@@ -37,12 +33,10 @@ export default function OrganizationProfileHeader({
   bio,
   city,
   followersCount,
-  followingCount,
   organizationId,
   initialIsFollowing = false,
   canEdit,
   isPublic = true,
-  isVerified = false,
   instagramHref,
   youtubeHref,
   websiteHref,
@@ -68,8 +62,14 @@ export default function OrganizationProfileHeader({
   const statsSlot = (
     <>
       <ProfileStatPill label="Seguidores" value={followersDisplay ?? "—"} />
-      <ProfileStatPill label="A seguir" value={followingCount ?? 0} />
     </>
+  );
+
+  const orgBadge = (
+    <span className="inline-flex items-center gap-1 rounded-full border border-amber-300/40 bg-amber-400/10 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-amber-100 shadow-[0_6px_18px_rgba(217,164,60,0.28)]">
+      <span className="h-1.5 w-1.5 rounded-full bg-amber-200" aria-hidden="true" />
+      Organização
+    </span>
   );
 
   const titleSlot = (
@@ -77,7 +77,7 @@ export default function OrganizationProfileHeader({
       <h1 className="text-[22px] sm:text-3xl font-semibold tracking-tight text-white truncate">
         {displayName}
       </h1>
-      {isVerified && <ProfileVerifiedBadge />}
+      {orgBadge}
     </div>
   );
 
@@ -94,7 +94,7 @@ export default function OrganizationProfileHeader({
 
   const bioSlot = (
     <p className="max-w-xl text-sm text-white/85 leading-relaxed">
-      {bio?.trim() || "Sem bio no momento."}
+      {bio?.trim() || "Sem bio."}
     </p>
   );
 
@@ -180,7 +180,7 @@ export default function OrganizationProfileHeader({
 
   const actionsSlot = canEdit ? (
     <Link
-      href="/organizacao#perfil-publico"
+      href="/organizacao?tab=profile"
       className="inline-flex items-center rounded-full border border-white/20 bg-white/8 px-4 py-2 text-[12px] font-semibold text-white/80 hover:bg-white/12"
     >
       Editar perfil

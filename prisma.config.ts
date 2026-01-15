@@ -14,7 +14,6 @@ export default defineConfig({
   datasource: {
     // URL usada pelo Prisma CLI (migrations/introspect). Usar ligação direta para evitar pgbouncer.
     url: env("DIRECT_URL"),
-    // Se quiseres no futuro, podes ter um shadow DB:
     // shadowDatabaseUrl: env("SHADOW_DATABASE_URL"),
   },
 });

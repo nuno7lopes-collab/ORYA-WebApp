@@ -8,6 +8,14 @@ import { readNumericParam } from "@/lib/routeParams";
 async function ensureOrganizationAccess(userId: string, eventId: number) {
   const evt = await prisma.event.findUnique({ where: { id: eventId }, select: { organizationId: true } });
   if (!evt?.organizationId) return false;
+  const profile = await prisma.profile.findUnique({
+    where: { id: userId },
+    select: { onboardingDone: true, fullName: true, username: true },
+  });
+  const hasUserOnboarding =
+    profile?.onboardingDone ||
+    (Boolean(profile?.fullName?.trim()) && Boolean(profile?.username?.trim()));
+  if (!hasUserOnboarding) return false;
   const member = await prisma.organizationMember.findFirst({
     where: { organizationId: evt.organizationId, userId, role: { in: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"] } },
     select: { id: true },
@@ -15,9 +23,10 @@ async function ensureOrganizationAccess(userId: string, eventId: number) {
   return Boolean(member);
 }
 
-export async function POST(req: NextRequest, { params }: { params: { id: string; matchId: string } }) {
-  const tournamentId = readNumericParam(params?.id, req, "tournaments");
-  const matchId = readNumericParam(params?.matchId, req, "matches");
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string; matchId: string }> }) {
+  const resolved = await params;
+  const tournamentId = readNumericParam(resolved?.id, req, "tournaments");
+  const matchId = readNumericParam(resolved?.matchId, req, "matches");
   if (tournamentId === null || matchId === null) {
     return NextResponse.json({ ok: false, error: "INVALID_ID" }, { status: 400 });
   }

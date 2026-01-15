@@ -1,12 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
-import { computeReleaseAt, computeHold } from "@/domain/finance/payoutPolicy";
 import { readNumericParam } from "@/lib/routeParams";
+import { PendingPayoutStatus } from "@prisma/client";
 
 async function ensureOrganizationAccess(userId: string, eventId: number) {
   const evt = await prisma.event.findUnique({ where: { id: eventId }, select: { organizationId: true } });
   if (!evt?.organizationId) return { ok: false };
+  const profile = await prisma.profile.findUnique({
+    where: { id: userId },
+    select: { onboardingDone: true, fullName: true, username: true },
+  });
+  const hasUserOnboarding =
+    profile?.onboardingDone ||
+    (Boolean(profile?.fullName?.trim()) && Boolean(profile?.username?.trim()));
+  if (!hasUserOnboarding) return { ok: false };
   const member = await prisma.organizationMember.findFirst({
     where: { organizationId: evt.organizationId, userId, role: { in: ["OWNER", "CO_OWNER", "ADMIN"] } },
     select: { id: true },
@@ -14,8 +22,9 @@ async function ensureOrganizationAccess(userId: string, eventId: number) {
   return { ok: Boolean(member) };
 }
 
-export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
-  const tournamentId = readNumericParam(params?.id, req, "tournaments");
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const resolved = await params;
+  const tournamentId = readNumericParam(resolved?.id, req, "tournaments");
   if (tournamentId === null) return NextResponse.json({ ok: false, error: "INVALID_ID" }, { status: 400 });
 
   const supabase = await createSupabaseServer();
@@ -58,9 +67,20 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     },
   });
 
-  const event = await prisma.event.findUnique({ where: { id: tournament.eventId }, select: { endsAt: true, payoutMode: true } });
-  const releaseAt = computeReleaseAt(event?.endsAt ?? null);
-  const hold = computeHold(agg._sum.totalCents ?? 0, false); // sem disputes implementadas aqui
+  const event = await prisma.event.findUnique({ where: { id: tournament.eventId }, select: { payoutMode: true } });
+  const pending = await prisma.pendingPayout.findMany({
+    where: {
+      sourceType: "EVENT_TICKET",
+      sourceId: String(tournament.eventId),
+      status: { in: [PendingPayoutStatus.HELD, PendingPayoutStatus.RELEASING, PendingPayoutStatus.BLOCKED] },
+    },
+    select: { amountCents: true, holdUntil: true, status: true },
+  });
+  const holdCents = pending.reduce((acc, p) => acc + p.amountCents, 0);
+  const hasBlocked = pending.some((p) => p.status === PendingPayoutStatus.BLOCKED);
+  const releaseAt = pending
+    .filter((p) => p.status !== PendingPayoutStatus.BLOCKED)
+    .reduce<Date | null>((acc, p) => (!acc || p.holdUntil < acc ? p.holdUntil : acc), null);
 
   // Placeholder refunds/disputes (não temos tabelas dedicadas aqui)
   const refundsCents = 0;
@@ -77,8 +97,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
         refundsCents,
         disputesCents,
         releaseAt,
-        holdCents: hold.holdCents,
-        holdReason: hold.reason,
+        holdCents,
+        holdReason: hasBlocked ? "BLOCKED" : holdCents > 0 ? "HELD" : null,
         payoutMode: event?.payoutMode ?? null,
       },
       recent,

@@ -43,14 +43,14 @@ export async function POST(req: NextRequest) {
     });
     await tx.follow_requests.delete({ where: { id: requestId } });
     await tx.notification.deleteMany({
-      where: { userId: request.target_id, type: "FRIEND_REQUEST", fromUserId: request.requester_id },
+      where: { userId: request.target_id, type: "FOLLOW_REQUEST", fromUserId: request.requester_id },
     });
   });
 
-  if (await shouldNotify(request.requester_id, NotificationType.FRIEND_ACCEPT)) {
+  if (await shouldNotify(request.requester_id, NotificationType.FOLLOW_ACCEPT)) {
     await createNotification({
       userId: request.requester_id,
-      type: NotificationType.FRIEND_ACCEPT,
+      type: NotificationType.FOLLOW_ACCEPT,
       title: "Pedido aceite",
       body: "O teu pedido para seguir foi aceite.",
       fromUserId: user.id,

@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
 import { prisma } from "@/lib/prisma";
 import { env } from "@/lib/env";
+import { getAppBaseUrl } from "@/lib/appBaseUrl";
 import {
   EntitlementStatus,
   EntitlementType,
@@ -40,213 +41,22 @@ import {
   queueDeadlineExpired,
   queueOffsessionActionRequired,
 } from "@/domain/notifications/splitPayments";
+import {
+  blockPendingPayout,
+  cancelPendingPayout,
+  createPendingPayout,
+  parsePendingPayoutMetadata,
+  unblockPendingPayout,
+} from "@/lib/payments/pendingPayout";
 
 const webhookSecret = env.stripeWebhookSecret;
 const FREE_PLACEHOLDER_INTENT_ID = "FREE_CHECKOUT";
-const PREMIUM_PRICE_IDS = new Set(env.stripePremiumPriceIds);
-const PREMIUM_PRODUCT_IDS = new Set(env.stripePremiumProductIds);
-
-type OrganizationPremiumRecord = {
-  id: number;
-  username: string | null;
-  liveHubPremiumEnabled: boolean;
-  stripeCustomerId: string | null;
-  stripeSubscriptionId: string | null;
-};
-
-type OrganizationMatchSource = "metadata" | "customer_metadata" | "customer_id" | "subscription_id";
-
-const normalizeUsername = (value?: string | null) => (typeof value === "string" ? value.trim().toLowerCase() : "");
-
-function parseOrganizationId(raw?: string | null) {
-  if (typeof raw !== "string") return null;
-  const parsed = Number(raw);
-  return Number.isFinite(parsed) ? Math.trunc(parsed) : null;
-}
-
-function parseMetadataFlag(raw?: string | null) {
-  if (!raw) return false;
-  const normalized = raw.trim().toLowerCase();
-  return ["1", "true", "yes", "on"].includes(normalized);
-}
-
-function extractOrganizationHint(metadata?: Stripe.Metadata | null) {
-  if (!metadata) return { organizationId: null, organizationUsername: "" };
-  return {
-    organizationId: parseOrganizationId(metadata.organizationId ?? metadata.organization_id ?? null),
-    organizationUsername: normalizeUsername(metadata.organizationUsername ?? metadata.organization_username ?? null),
-  };
-}
-
-async function findOrganizationByHint(
-  hint: { organizationId: number | null; organizationUsername: string },
-): Promise<OrganizationPremiumRecord | null> {
-  if (hint.organizationId) {
-    return prisma.organization.findUnique({
-      where: { id: hint.organizationId },
-      select: {
-        id: true,
-        username: true,
-        liveHubPremiumEnabled: true,
-        stripeCustomerId: true,
-        stripeSubscriptionId: true,
-      },
-    });
-  }
-  if (hint.organizationUsername) {
-    return prisma.organization.findFirst({
-      where: { username: hint.organizationUsername },
-      select: {
-        id: true,
-        username: true,
-        liveHubPremiumEnabled: true,
-        stripeCustomerId: true,
-        stripeSubscriptionId: true,
-      },
-    });
-  }
-  return null;
-}
-
-function isPremiumSubscription(subscription: Stripe.Subscription) {
-  const metadataFlag =
-    parseMetadataFlag(subscription.metadata?.orya_premium) ||
-    parseMetadataFlag(subscription.metadata?.premium) ||
-    parseMetadataFlag(subscription.metadata?.premium_enabled);
-  if (metadataFlag) return true;
-  if (PREMIUM_PRICE_IDS.size === 0 && PREMIUM_PRODUCT_IDS.size === 0) return false;
-  const items = subscription.items?.data ?? [];
-  return items.some((item) => {
-    const price = item.price;
-    const priceId = price?.id;
-    const productId = typeof price?.product === "string" ? price.product : price?.product?.id;
-    return (
-      (priceId && PREMIUM_PRICE_IDS.has(priceId)) ||
-      (productId && PREMIUM_PRODUCT_IDS.has(productId))
-    );
-  });
-}
-
-function isSubscriptionActive(subscription: Stripe.Subscription) {
-  return ["active", "trialing", "past_due"].includes(subscription.status);
-}
-
-async function resolveOrganizationForSubscription(subscription: Stripe.Subscription) {
-  const subscriptionHint = extractOrganizationHint(subscription.metadata);
-  const subscriptionCustomerId =
-    typeof subscription.customer === "string" ? subscription.customer : subscription.customer?.id ?? null;
-
-  const organizationFromSubscription = await findOrganizationByHint(subscriptionHint);
-  if (organizationFromSubscription) {
-    return {
-      organization: organizationFromSubscription,
-      customerId: subscriptionCustomerId,
-      source: "metadata" as OrganizationMatchSource,
-    };
-  }
-
-  if (subscriptionCustomerId) {
-    try {
-      const customer = await stripe.customers.retrieve(subscriptionCustomerId);
-      if (!("deleted" in customer)) {
-        const customerHint = extractOrganizationHint(customer.metadata ?? null);
-        const organizationFromCustomer = await findOrganizationByHint(customerHint);
-        if (organizationFromCustomer) {
-          return {
-            organization: organizationFromCustomer,
-            customerId: subscriptionCustomerId,
-            source: "customer_metadata" as OrganizationMatchSource,
-          };
-        }
-      }
-    } catch (err) {
-      console.warn("[Webhook] Falha ao obter metadata do cliente Stripe", err);
-    }
-  }
-
-  if (subscriptionCustomerId) {
-    const organizationByCustomer = await prisma.organization.findFirst({
-      where: { stripeCustomerId: subscriptionCustomerId },
-      select: {
-        id: true,
-        username: true,
-        liveHubPremiumEnabled: true,
-        stripeCustomerId: true,
-        stripeSubscriptionId: true,
-      },
-    });
-    if (organizationByCustomer) {
-      return {
-        organization: organizationByCustomer,
-        customerId: subscriptionCustomerId,
-        source: "customer_id" as OrganizationMatchSource,
-      };
-    }
-  }
-
-  const organizationBySubscription = await prisma.organization.findFirst({
-    where: { stripeSubscriptionId: subscription.id },
-    select: {
-      id: true,
-      username: true,
-      liveHubPremiumEnabled: true,
-      stripeCustomerId: true,
-      stripeSubscriptionId: true,
-    },
-  });
-
-  if (organizationBySubscription) {
-    return {
-      organization: organizationBySubscription,
-      customerId: subscriptionCustomerId,
-      source: "subscription_id" as OrganizationMatchSource,
-    };
-  }
-
-  return null;
-}
-
-async function syncOrganizationPremiumFromSubscription(subscription: Stripe.Subscription) {
-  if (!isPremiumSubscription(subscription)) {
-    console.log("[Webhook] Subscrição ignorada (não premium)", { id: subscription.id, status: subscription.status });
-    return;
-  }
-
-  const match = await resolveOrganizationForSubscription(subscription);
-  if (!match) {
-    console.warn("[Webhook] Subscrição premium sem organização associado", {
-      subscriptionId: subscription.id,
-      customerId: typeof subscription.customer === "string" ? subscription.customer : subscription.customer?.id ?? null,
-    });
-    return;
-  }
-
-  const { organization, customerId, source } = match;
-  const premiumActive = isSubscriptionActive(subscription);
-
-  const updateData: Prisma.OrganizationUpdateInput = {
-    liveHubPremiumEnabled: premiumActive,
-    stripeSubscriptionId: subscription.id,
-  };
-
-  if (customerId && (source === "metadata" || source === "customer_metadata" || !organization.stripeCustomerId)) {
-    updateData.stripeCustomerId = customerId;
-  }
-
-  await prisma.organization.update({
-    where: { id: organization.id },
-    data: updateData,
-  });
-
-  console.log("[Webhook] Premium sync", {
-    organizationId: organization.id,
-    premiumActive,
-    subscriptionId: subscription.id,
-    source,
-  });
-}
 
 export async function POST(req: NextRequest) {
+  if (!webhookSecret) {
+    console.error("[Webhook] Missing STRIPE webhook secret");
+    return new Response("Webhook secret not configured", { status: 500 });
+  }
   const sig = req.headers.get("stripe-signature");
   if (!sig) {
     console.error("[Webhook] Missing signature header");
@@ -271,7 +81,17 @@ export async function POST(req: NextRequest) {
   });
 
   try {
-    switch (event.type) {
+    await handleStripeEvent(event);
+  } catch (err) {
+    console.error("[Webhook] Error processing event:", err);
+    // devolvemos 200 na mesma para o Stripe não re-tentar para sempre
+  }
+
+  return NextResponse.json({ received: true });
+}
+
+export async function handleStripeEvent(event: Stripe.Event) {
+  switch (event.type) {
       case "payment_intent.succeeded": {
         const intent = event.data.object as Stripe.PaymentIntent;
         if (intent.id === FREE_PLACEHOLDER_INTENT_ID) {
@@ -288,6 +108,26 @@ export async function POST(req: NextRequest) {
           typeof intent.metadata?.purchaseId === "string" && intent.metadata.purchaseId.trim() !== ""
             ? intent.metadata.purchaseId.trim()
             : intent.id;
+        const chargeId =
+          typeof intent.latest_charge === "string"
+            ? intent.latest_charge
+            : intent.latest_charge?.id ?? null;
+        const chargeCreated =
+          typeof intent.latest_charge === "object" && intent.latest_charge?.created
+            ? intent.latest_charge.created
+            : null;
+        const paidAtUnix =
+          chargeCreated ?? event.created ?? intent.created ?? Math.floor(Date.now() / 1000);
+        const paidAt = new Date(paidAtUnix * 1000);
+        const pendingMeta = parsePendingPayoutMetadata(intent.metadata ?? {}, intent.id, paidAt, chargeId);
+        if (pendingMeta) {
+          await createPendingPayout(pendingMeta);
+        } else if (intent.metadata?.recipientConnectAccountId) {
+          console.warn("[Webhook] PendingPayout metadata em falta", {
+            paymentIntentId: intent.id,
+            purchaseId: purchaseAnchor,
+          });
+        }
         // Registar PaymentEvent ingest-only (tolerante a PI múltiplos para o mesmo purchaseId)
         try {
           const existing =
@@ -348,12 +188,30 @@ export async function POST(req: NextRequest) {
         break;
       }
 
+      case "payment_intent.payment_failed":
+      case "payment_intent.canceled": {
+        const intent = event.data.object as Stripe.PaymentIntent;
+        await cancelPendingPayout(intent.id, event.type);
+        break;
+      }
+
       case "charge.refunded": {
         const charge = event.data.object as Stripe.Charge;
         console.log("[Webhook] charge.refunded", {
           id: charge.id,
           payment_intent: charge.payment_intent,
         });
+        const paymentIntentId =
+          typeof charge.payment_intent === "string"
+            ? charge.payment_intent
+            : charge.payment_intent?.id ?? null;
+        if (paymentIntentId) {
+          if ((charge.amount_refunded ?? 0) >= charge.amount) {
+            await cancelPendingPayout(paymentIntentId, "REFUND_FULL");
+          } else if ((charge.amount_refunded ?? 0) > 0) {
+            await blockPendingPayout(paymentIntentId, "REFUND_PARTIAL");
+          }
+        }
         await enqueueOperation({
           operationType: "PROCESS_STRIPE_EVENT",
           dedupeKey: event.id,
@@ -376,34 +234,40 @@ export async function POST(req: NextRequest) {
         break;
       }
 
-      case "customer.subscription.created":
-      case "customer.subscription.updated":
-      case "customer.subscription.deleted": {
-        const subscription = event.data.object as Stripe.Subscription;
-        console.log("[Webhook] subscription sync", {
-          id: subscription.id,
-          status: subscription.status,
-          customer:
-            typeof subscription.customer === "string"
-              ? subscription.customer
-              : subscription.customer?.id ?? null,
-        });
-        await syncOrganizationPremiumFromSubscription(subscription);
+      case "charge.dispute.created": {
+        const dispute = event.data.object as Stripe.Dispute;
+        const paymentIntentId =
+          typeof dispute.payment_intent === "string"
+            ? dispute.payment_intent
+            : dispute.payment_intent?.id ?? null;
+        if (paymentIntentId) {
+          await blockPendingPayout(paymentIntentId, `DISPUTE_${dispute.reason ?? "UNKNOWN"}`);
+        }
         break;
       }
 
-      default: {
-        // outros eventos, por agora, podem ser ignorados
-        console.log("[Webhook] Evento ignorado:", event.type);
+      case "charge.dispute.closed": {
+        const dispute = event.data.object as Stripe.Dispute;
+        const paymentIntentId =
+          typeof dispute.payment_intent === "string"
+            ? dispute.payment_intent
+            : dispute.payment_intent?.id ?? null;
+        if (paymentIntentId) {
+          if (dispute.status === "lost") {
+            await cancelPendingPayout(paymentIntentId, "DISPUTE_LOST");
+          } else {
+            await unblockPendingPayout(paymentIntentId);
+          }
+        }
         break;
       }
+
+    default: {
+      // outros eventos, por agora, podem ser ignorados
+      console.log("[Webhook] Evento ignorado:", event.type);
+      break;
     }
-  } catch (err) {
-    console.error("[Webhook] Error processing event:", err);
-    // devolvemos 200 na mesma para o Stripe não re-tentar para sempre
   }
-
-  return NextResponse.json({ received: true });
 }
 
 type PromoSnapshot = { code: string; label?: string | null; type: PromoType | null; value: number | null };
@@ -439,6 +303,9 @@ type BreakdownPayload = {
   subtotalCents: number;
   discountCents: number;
   platformFeeCents: number;
+  cardPlatformFeeCents?: number;
+  cardPlatformFeeBps?: number;
+  paymentMethod?: string;
   totalCents: number;
   feeMode?: string;
   currency?: string;
@@ -459,6 +326,9 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent, stripeEventId
           subtotalCents: Number(parsed.subtotalCents ?? 0),
           discountCents: Number(parsed.discountCents ?? 0),
           platformFeeCents: Number(parsed.platformFeeCents ?? 0),
+          cardPlatformFeeCents: Number(parsed.cardPlatformFeeCents ?? 0),
+          cardPlatformFeeBps: Number(parsed.cardPlatformFeeBps ?? 0),
+          paymentMethod: typeof parsed.paymentMethod === "string" ? parsed.paymentMethod : undefined,
           totalCents: Number(parsed.totalCents ?? 0),
           feeMode: parsed.feeMode,
           currency: parsed.currency ?? "EUR",
@@ -774,7 +644,10 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent, stripeEventId
   const ownerUserId = ownerResolved.ownerUserId ?? ownerMeta?.ownerUserId ?? userId ?? null;
   const ownerIdentityId = ownerResolved.ownerIdentityId ?? ownerMeta?.ownerIdentityId ?? null;
 
-  const platformFeeTotal = Number(meta.platformFeeCents ?? 0);
+  const basePlatformFeeCents = Number(meta.platformFeeCents ?? 0);
+  const cardPlatformFeeMetaCents = Number(meta.cardPlatformFeeCents ?? 0);
+  const platformFeeTotal = basePlatformFeeCents;
+  const platformFeeForEvents = basePlatformFeeCents + cardPlatformFeeMetaCents;
   const totalTicketsRequested = items.reduce(
     (sum, item) => sum + Math.max(1, Number(item.quantity ?? 0)),
     0
@@ -880,7 +753,7 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent, stripeEventId
         dedupeKey: purchaseAnchor ?? stripeEventId ?? intent.id,
         attempt: { increment: 1 },
         amountCents: intent.amount ?? null,
-        platformFeeCents: platformFeeTotal ?? null,
+        platformFeeCents: platformFeeForEvents ?? null,
         userId,
         errorMessage: null,
         updatedAt: new Date(),
@@ -901,7 +774,7 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent, stripeEventId
           eventId: eventRecord.id,
           userId,
           amountCents: intent.amount ?? null,
-          platformFeeCents: platformFeeTotal ?? null,
+          platformFeeCents: platformFeeForEvents ?? null,
           mode: intent.livemode ? "LIVE" : "TEST",
           isTest: !intent.livemode,
         },
@@ -929,13 +802,15 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent, stripeEventId
       stripeFeeBps: stripeBaseFees.feeBps ?? 0,
       stripeFeeFixedCents: stripeBaseFees.feeFixedCents ?? 0,
     });
+    const expectedTotal =
+      (combined.totalCents ?? 0) + Math.max(0, parsedBreakdown.cardPlatformFeeCents ?? 0);
 
-    const drift = Math.abs((combined.totalCents ?? 0) - intent.amount_received);
+    const drift = Math.abs(expectedTotal - intent.amount_received);
     if (drift > 2) {
       console.warn("[fulfillPayment] Divergência entre breakdown.totalCents e amount_received", {
         intentId: intent.id,
         breakdownTotal: parsedBreakdown.totalCents,
-        recalculatedTotal: combined.totalCents,
+        recalculatedTotal: expectedTotal,
         amountReceived: intent.amount_received,
       });
     }
@@ -975,9 +850,13 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent, stripeEventId
       try {
         const feeMode = parsedBreakdown.feeMode as FeeMode | undefined;
         const stripeFee = stripeFeeCents ?? estimateStripeFee(parsedBreakdown.totalCents ?? 0);
+        const cardPlatformFeeCents = parsedBreakdown.cardPlatformFeeCents ?? 0;
         const netCents = Math.max(
           0,
-          (parsedBreakdown.totalCents ?? 0) - (parsedBreakdown.platformFeeCents ?? 0) - stripeFee,
+          (parsedBreakdown.totalCents ?? 0) -
+            (parsedBreakdown.platformFeeCents ?? 0) -
+            cardPlatformFeeCents -
+            stripeFee,
         );
         const summary = await tx.saleSummary.upsert({
           where: { paymentIntentId: intent.id },
@@ -995,10 +874,12 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent, stripeEventId
             subtotalCents: parsedBreakdown.subtotalCents,
             discountCents: parsedBreakdown.discountCents,
             platformFeeCents: parsedBreakdown.platformFeeCents,
+            cardPlatformFeeCents: cardPlatformFeeCents,
             stripeFeeCents: stripeFee,
             totalCents: parsedBreakdown.totalCents,
             netCents,
             feeMode: feeMode,
+            paymentMethod: parsedBreakdown.paymentMethod ?? null,
             currency: parsedBreakdown.currency ?? "EUR",
           },
           create: {
@@ -1016,10 +897,12 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent, stripeEventId
             subtotalCents: parsedBreakdown.subtotalCents,
             discountCents: parsedBreakdown.discountCents,
             platformFeeCents: parsedBreakdown.platformFeeCents,
+            cardPlatformFeeCents: cardPlatformFeeCents,
             stripeFeeCents: stripeFee,
             totalCents: parsedBreakdown.totalCents,
             netCents,
             feeMode: feeMode,
+            paymentMethod: parsedBreakdown.paymentMethod ?? null,
             currency: parsedBreakdown.currency ?? "EUR",
           },
         });
@@ -1299,10 +1182,7 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent, stripeEventId
   // Enviar email de confirmação (best-effort)
   const targetEmail = userId ? await fetchUserEmail(userId) : guestEmail || null;
   if (targetEmail) {
-    const baseUrl =
-      process.env.NEXT_PUBLIC_BASE_URL ??
-      process.env.NEXT_PUBLIC_APP_URL ??
-      "https://app.orya.pt";
+    const baseUrl = getAppBaseUrl();
 
     try {
       await sendPurchaseConfirmationEmail({
@@ -1313,7 +1193,7 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent, stripeEventId
         endsAt: eventRecord.endsAt?.toISOString() ?? null,
         locationName: eventRecord.locationName ?? null,
         ticketsCount: createdTicketsCount,
-        ticketUrl: userId ? `${baseUrl}/me/carteira` : `${baseUrl}/`,
+        ticketUrl: userId ? `${baseUrl}/me/carteira?section=wallet` : `${baseUrl}/`,
       });
       console.log("[fulfillPayment] Email de confirmação enviado para", targetEmail);
     } catch (emailErr) {
@@ -1346,7 +1226,12 @@ async function handlePadelSplitPayment(intent: Stripe.PaymentIntent) {
   const slotId = Number(meta.slotId);
   const ticketTypeId = Number(meta.ticketTypeId);
   const eventId = Number(meta.eventId);
-  const userId = typeof meta.userId === "string" ? meta.userId : null;
+  const userId =
+    typeof meta.userId === "string"
+      ? meta.userId
+      : typeof meta.ownerUserId === "string"
+        ? meta.ownerUserId
+        : null;
   const purchaseId =
     typeof meta.purchaseId === "string" && meta.purchaseId.trim() !== ""
       ? meta.purchaseId.trim()
@@ -1594,17 +1479,35 @@ async function handlePadelSplitPayment(intent: Stripe.PaymentIntent) {
       },
     });
 
+    const now = new Date();
+    const shouldSetPartner =
+      slot.slot_role === "PARTNER" &&
+      userId &&
+      pairing.player1UserId !== userId &&
+      (!pairing.player2UserId || pairing.player2UserId === userId);
+    const shouldFillSlot = slot.slot_role === "PARTNER" ? shouldSetPartner : Boolean(userId);
+
     let updated = await tx.padelPairing.update({
       where: { id: pairingId },
       data: {
+        ...(shouldSetPartner
+          ? {
+              player2UserId: userId ?? undefined,
+              partnerInviteToken: null,
+              partnerLinkToken: null,
+              partnerInviteUsedAt: now,
+              partnerAcceptedAt: now,
+              partnerPaidAt: now,
+            }
+          : {}),
         slots: {
           update: {
             where: { id: slotId },
             data: {
               ticketId: ticket.id,
-              profileId: userId ?? undefined,
+              profileId: shouldFillSlot ? userId ?? undefined : undefined,
               paymentStatus: PadelPairingPaymentStatus.PAID,
-              slotStatus: userId ? PadelPairingSlotStatus.FILLED : slot.slotStatus,
+              slotStatus: shouldFillSlot ? PadelPairingSlotStatus.FILLED : slot.slotStatus,
             },
           },
         },
@@ -1689,22 +1592,27 @@ async function handleSecondCharge(intent: Stripe.PaymentIntent) {
         where: { pairingId, slotStatus: { in: ["PENDING", "FILLED"] } },
         data: { paymentStatus: PadelPairingPaymentStatus.PAID },
       });
+      const slots = await tx.padelPairingSlot.findMany({
+        where: { pairingId },
+        select: { slotStatus: true },
+      });
+      const allFilled = slots.length > 0 && slots.every((slot) => slot.slotStatus === "FILLED");
+      const pairingStatus = allFilled ? PadelPairingStatus.COMPLETE : PadelPairingStatus.INCOMPLETE;
       const confirmed = await tx.padelPairing.update({
         where: { id: pairingId },
         data: {
           lifecycleStatus: PadelPairingLifecycleStatus.CONFIRMED_CAPTAIN_FULL,
-          pairingStatus: PadelPairingStatus.COMPLETE,
+          pairingStatus,
           guaranteeStatus: "SUCCEEDED",
           secondChargePaymentIntentId: intent.id,
           captainSecondChargedAt: now,
           partnerPaidAt: now,
           graceUntilAt: null,
-          partnerInviteToken: null,
-          partnerLinkToken: null,
-          partnerLinkExpiresAt: null,
         },
       });
-      await ensureEntriesForConfirmedPairing(confirmed.id);
+      if (allFilled) {
+        await ensureEntriesForConfirmedPairing(confirmed.id);
+      }
       await tx.padelPairingHold.updateMany({
         where: { pairingId, status: "ACTIVE" },
         data: { status: "CANCELLED" },
@@ -1788,7 +1696,12 @@ async function handlePadelFullPayment(intent: Stripe.PaymentIntent) {
   const pairingId = Number(meta.pairingId);
   const ticketTypeId = Number(meta.ticketTypeId);
   const eventId = Number(meta.eventId);
-  const userId = typeof meta.userId === "string" ? meta.userId : null;
+  const userId =
+    typeof meta.userId === "string"
+      ? meta.userId
+      : typeof meta.ownerUserId === "string"
+        ? meta.ownerUserId
+        : null;
   const purchaseId =
     typeof meta.purchaseId === "string" && meta.purchaseId.trim() !== ""
       ? meta.purchaseId.trim()

@@ -5,12 +5,11 @@ import { useRouter } from "next/navigation";
 import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { sanitizeUsername, validateUsername } from "@/lib/username";
-import { Avatar } from "@/components/ui/avatar";
+import { ModuleIcon } from "@/app/organizacao/moduleIcons";
 import {
-  DEFAULT_ORGANIZATION_MODULES,
-  ORGANIZATION_CATEGORIES,
-  ORGANIZATION_MODULES,
-  type OrganizationCategory,
+  DEFAULT_PRIMARY_MODULE,
+  getDefaultOrganizationModules,
+  type OperationModule,
   type OrganizationModule,
 } from "@/lib/organizationCategories";
 import {
@@ -20,18 +19,13 @@ import {
 
 type UsernameStatus = "idle" | "checking" | "available" | "taken" | "error";
 
-const USERNAME_HELPER = "O teu @ é único na ORYA e vai aparecer no teu perfil, eventos e links.";
-
-const gradientByEntity: Record<string, string> = {
-  PROMOTOR_ORGANIZADOR: "from-[#7C3AED]/20 via-[#0B1A38]/70 to-[#0EA5E9]/20",
-  EMPRESA_MARCA: "from-[#0EA5E9]/18 via-[#0B122B]/75 to-[#10B981]/15",
-  OUTRO: "from-[#FF6BCA]/15 via-[#0B132D]/75 to-[#6BFFFF]/18",
-};
+const USERNAME_HELPER =
+  "O teu @ é único na ORYA e vai aparecer no teu perfil, eventos e links. 3-15 caracteres.";
 
 const suggestionSuffixes = ["events", "official", "pt", "live", "club", "hq"];
 
-const CATEGORY_META: Record<
-  OrganizationCategory,
+const OPERATION_META: Record<
+  OperationModule,
   { label: string; headline: string; description: string }
 > = {
   EVENTOS: {
@@ -39,10 +33,10 @@ const CATEGORY_META: Record<
     headline: "Bilhetes, check-in e público num só lugar.",
     description: "Ideal para lançamentos, workshops, encontros e eventos com bilhetes.",
   },
-  PADEL: {
-    label: "PADEL",
-    headline: "Torneios com ranking, pares e categorias.",
-    description: "Perfeito para clubes e ligas que precisam de estruturas competitivas e gestão de equipas.",
+  TORNEIOS: {
+    label: "Padel",
+    headline: "Jogos, pares e categorias num só lugar.",
+    description: "Ideal para clubes e ligas com organização competitiva simples.",
   },
   RESERVAS: {
     label: "Reservas",
@@ -51,22 +45,47 @@ const CATEGORY_META: Record<
   },
 };
 
-const ORGANIZATION_CATEGORY_OPTIONS = ORGANIZATION_CATEGORIES.map((key) => ({
-  key,
-  ...CATEGORY_META[key],
-}));
+const OPERATION_OPTIONS = [
+  {
+    key: "EVENTOS",
+    label: OPERATION_META.EVENTOS.label,
+    headline: OPERATION_META.EVENTOS.headline,
+    description: OPERATION_META.EVENTOS.description,
+  },
+  {
+    key: "TORNEIOS",
+    label: OPERATION_META.TORNEIOS.label,
+    headline: OPERATION_META.TORNEIOS.headline,
+    description: OPERATION_META.TORNEIOS.description,
+  },
+  {
+    key: "RESERVAS",
+    label: OPERATION_META.RESERVAS.label,
+    headline: OPERATION_META.RESERVAS.headline,
+    description: OPERATION_META.RESERVAS.description,
+  },
+] as const;
 
-const MODULE_META: Record<OrganizationModule, { label: string; description: string }> = {
+const OPTIONAL_MODULES = ["INSCRICOES", "MENSAGENS"] as const;
+type OptionalModule = (typeof OPTIONAL_MODULES)[number];
+
+const MODULE_META: Record<OptionalModule, { label: string; description: string }> = {
   INSCRICOES: {
-    label: "Inscrições",
-    description: "Ativa formulários públicos, lugares e pagamentos num só fluxo.",
+    label: "Formulários públicos",
+    description: "Inscrições, lugares e pagamentos num só fluxo.",
+  },
+  MENSAGENS: {
+    label: "Mensagens",
+    description: "Mensagens e automações para participantes.",
   },
 };
 
-const MODULE_OPTIONS = ORGANIZATION_MODULES.map((key) => ({
+const MODULE_OPTIONS = OPTIONAL_MODULES.map((key) => ({
   key,
   ...MODULE_META[key],
 }));
+
+const STORAGE_KEY = "orya_org_onboarding_state_v1";
 
 const InfoTooltip = ({ text }: { text: string }) => (
   <span className="group relative inline-flex items-center">
@@ -79,6 +98,49 @@ const InfoTooltip = ({ text }: { text: string }) => (
   </span>
 );
 
+const TypingText = ({
+  text,
+  speed = 24,
+  className,
+  showCaret = true,
+}: {
+  text: string;
+  speed?: number;
+  className?: string;
+  showCaret?: boolean;
+}) => {
+  const [displayed, setDisplayed] = useState("");
+  const [typing, setTyping] = useState(true);
+
+  useEffect(() => {
+    let index = 0;
+    setDisplayed("");
+    setTyping(true);
+    const interval = setInterval(() => {
+      index += 1;
+      setDisplayed(text.slice(0, index));
+      if (index >= text.length) {
+        clearInterval(interval);
+        setTyping(false);
+      }
+    }, speed);
+    return () => clearInterval(interval);
+  }, [text, speed]);
+
+  return (
+    <div className={className}>
+      <span>{displayed}</span>
+      {showCaret && (
+        <span
+          className={`ml-1 inline-block h-5 w-0.5 align-middle typing-caret ${
+            typing ? "typing-caret-active" : ""
+          }`}
+        />
+      )}
+    </div>
+  );
+};
+
 function buildUsernameSuggestions(base: string) {
   if (!base) return [];
   const cleaned = sanitizeUsername(base);
@@ -88,7 +150,7 @@ function buildUsernameSuggestions(base: string) {
 
   const unique: string[] = [];
   suggestions.forEach((s) => {
-    if (s && !unique.includes(s) && s !== cleaned && s.length <= 30) unique.push(s);
+    if (s && !unique.includes(s) && s !== cleaned && s.length <= 15) unique.push(s);
   });
   return unique.slice(0, 3);
 }
@@ -100,91 +162,167 @@ export default function BecomeOrganizationForm() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [usernameTouched, setUsernameTouched] = useState(false);
   const usernameCheckTimeout = useRef<NodeJS.Timeout | null>(null);
   const lastChecked = useRef<string>("");
   const [isLoaded, setIsLoaded] = useState(false);
   const [activeStep, setActiveStep] = useState(0);
-  const [rankingAnswer, setRankingAnswer] = useState<"yes" | "no" | null>(null);
-  const [reservationAnswer, setReservationAnswer] = useState<"yes" | "no" | null>(null);
-  const [categoryTouched, setCategoryTouched] = useState(false);
+  const [navDirection, setNavDirection] = useState<"forward" | "back">("forward");
+  const [showBuildScreen, setShowBuildScreen] = useState(false);
+  const [selectedOperations, setSelectedOperations] = useState<OperationModule[]>([]);
+  const [optionalSelection, setOptionalSelection] = useState<OptionalModule[]>([]);
+  const buildTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const isRestoringRef = useRef(true);
 
   const form = useForm<BecomeOrganizationFormValues>({
     resolver: zodResolver(becomeOrganizationSchema),
     mode: "onChange",
     defaultValues: {
-      organizationCategory: "",
-      modules: [...DEFAULT_ORGANIZATION_MODULES],
-      entityType: "",
+      primaryModule: DEFAULT_PRIMARY_MODULE,
+      modules: getDefaultOrganizationModules(DEFAULT_PRIMARY_MODULE),
       businessName: "",
-      city: "",
-      website: "",
-      iban: "",
-      taxId: "",
       username: "",
     },
   });
 
-  const watchOrganizationCategory = form.watch("organizationCategory");
-  const watchModules = form.watch("modules");
-  const watchEntityType = form.watch("entityType");
   const watchBusinessName = form.watch("businessName");
-  const watchCity = form.watch("city");
   const watchUsername = form.watch("username");
-  const cityOptions = useMemo(
-    () => [
-      "Lisboa",
-      "Porto",
-      "Braga",
-      "Coimbra",
-      "Faro",
-      "Aveiro",
-      "Setúbal",
-      "Guimarães",
-      "Viseu",
-      "Funchal",
-      "Ponta Delgada",
-      "Évora",
-      "Viana do Castelo",
-      "Leiria",
-      "Santarém",
-    ],
-    [],
-  );
 
   useEffect(() => {
     const t = setTimeout(() => setIsLoaded(true), 200);
     return () => clearTimeout(t);
   }, []);
 
-  const stepLabels = ["Categoria", "Módulos", "Dados"];
-  const suggestedCategory = useMemo<OrganizationCategory | null>(() => {
-    if (rankingAnswer === "yes") return "PADEL";
-    if (rankingAnswer === "no" && reservationAnswer === "yes") return "RESERVAS";
-    if (rankingAnswer === "no" && reservationAnswer === "no") return "EVENTOS";
-    return null;
-  }, [rankingAnswer, reservationAnswer]);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const stored = window.localStorage.getItem(STORAGE_KEY);
+    if (!stored) {
+      isRestoringRef.current = false;
+      return;
+    }
+    try {
+      const parsed = JSON.parse(stored) as {
+        step?: number;
+        selectedOperations?: string[];
+        optionalSelection?: string[];
+        businessName?: string;
+        username?: string;
+        usernameTouched?: boolean;
+      };
+      const step =
+        typeof parsed.step === "number" && Number.isFinite(parsed.step)
+          ? Math.min(3, Math.max(0, parsed.step))
+          : null;
+      const allowedOperations = new Set(OPERATION_OPTIONS.map((option) => option.key));
+      const allowedOptional = new Set(OPTIONAL_MODULES);
+      const storedOperations = Array.isArray(parsed.selectedOperations)
+        ? parsed.selectedOperations.filter((item) => allowedOperations.has(item as OperationModule))
+        : [];
+      const storedOptional = Array.isArray(parsed.optionalSelection)
+        ? parsed.optionalSelection.filter((item) => allowedOptional.has(item as OptionalModule))
+        : [];
+
+      if (step !== null) setActiveStep(step);
+      if (storedOperations.length > 0) {
+        setSelectedOperations([storedOperations[0] as OperationModule]);
+      }
+      if (storedOptional.length > 0) {
+        setOptionalSelection(storedOptional as OptionalModule[]);
+      }
+      if (typeof parsed.businessName === "string" && parsed.businessName.length > 0) {
+        form.setValue("businessName", parsed.businessName, { shouldValidate: false });
+      }
+      if (typeof parsed.username === "string" && parsed.username.length > 0) {
+        form.setValue("username", parsed.username, { shouldValidate: false });
+        if (parsed.usernameTouched || parsed.username.length > 0) {
+          setUsernameTouched(true);
+        }
+      }
+    } catch {
+      // Ignorar estado inválido
+    } finally {
+      isRestoringRef.current = false;
+    }
+  }, [form]);
 
   useEffect(() => {
-    if (suggestedCategory && !categoryTouched) {
-      form.setValue("organizationCategory", suggestedCategory, { shouldValidate: true, shouldDirty: true });
+    if (typeof window === "undefined") return;
+    if (isRestoringRef.current) return;
+    const payload = {
+      step: activeStep,
+      selectedOperations,
+      optionalSelection,
+      businessName: watchBusinessName,
+      username: watchUsername,
+      usernameTouched,
+    };
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+  }, [activeStep, selectedOperations, optionalSelection, watchBusinessName, watchUsername, usernameTouched]);
+
+  useEffect(() => {
+    if (isRestoringRef.current) return;
+    if (usernameTouched) return;
+    const suggestion = sanitizeUsername(watchBusinessName);
+    if (suggestion !== watchUsername) {
+      form.setValue("username", suggestion, { shouldValidate: true, shouldDirty: true });
+      setUsernameHelper(USERNAME_HELPER);
+      setUsernameStatus("idle");
     }
-  }, [suggestedCategory, categoryTouched, form]);
+  }, [watchBusinessName, watchUsername, usernameTouched, form]);
+
+  useEffect(() => {
+    return () => {
+      if (buildTimerRef.current) clearTimeout(buildTimerRef.current);
+    };
+  }, []);
+
+  const startBuildTransition = () => {
+    setShowBuildScreen(true);
+    if (buildTimerRef.current) clearTimeout(buildTimerRef.current);
+    if (typeof window !== "undefined") {
+      window.localStorage.removeItem(STORAGE_KEY);
+    }
+    buildTimerRef.current = setTimeout(() => {
+      router.replace("/organizacao?tab=overview&section=modulos");
+    }, 7000);
+  };
+
+  const derivedPrimaryModule = useMemo<OperationModule>(
+    () => selectedOperations[0] ?? DEFAULT_PRIMARY_MODULE,
+    [selectedOperations],
+  );
+
+  useEffect(() => {
+    form.setValue("primaryModule", derivedPrimaryModule, { shouldValidate: true });
+  }, [form, derivedPrimaryModule]);
+
+  useEffect(() => {
+    const baseModules = getDefaultOrganizationModules(derivedPrimaryModule);
+    const nextModules = Array.from(
+      new Set<OrganizationModule>([...baseModules, ...selectedOperations, ...optionalSelection]),
+    );
+    form.setValue("modules", nextModules, { shouldValidate: true, shouldDirty: true });
+  }, [form, derivedPrimaryModule, selectedOperations, optionalSelection]);
 
   const usernameClean = sanitizeUsername(watchUsername);
-  const modulesEnabled = Array.isArray(watchModules) && watchModules.includes("INSCRICOES");
-  const selectedCategoryMeta = ORGANIZATION_CATEGORY_OPTIONS.find(
-    (category) => category.key === watchOrganizationCategory,
-  );
-  const selectedCategoryLabel = selectedCategoryMeta?.label ?? "Por escolher";
-  const modulesLabel = modulesEnabled ? "Inscrições ativas" : "Inscrições desligadas";
+  const nextStepLabel = activeStep === 0 ? "Começar" : "Continuar";
+  const stepAnimationClass =
+    navDirection === "back" ? "wizard-step-in-left" : "wizard-step-in-right";
 
   const isFormValid =
-    !saving && form.formState.isValid && validateUsername(usernameClean).valid;
+    !saving &&
+    form.formState.isValid &&
+    validateUsername(usernameClean).valid &&
+    selectedOperations.length > 0;
 
-  const gradientOverlay = useMemo(() => {
-    if (watchEntityType && gradientByEntity[watchEntityType]) return gradientByEntity[watchEntityType];
-    return "from-white/6 via-transparent to-[#6BFFFF]/8";
-  }, [watchEntityType]);
+  const gradientOverlay = "from-white/6 via-transparent to-[#6BFFFF]/8";
+  const stepGlowClass =
+    [
+      "bg-[radial-gradient(circle_at_15%_15%,rgba(255,255,255,0.12),transparent_48%)]",
+      "bg-[radial-gradient(circle_at_10%_20%,rgba(107,255,255,0.18),transparent_52%)]",
+      "bg-[radial-gradient(circle_at_90%_18%,rgba(255,0,200,0.18),transparent_52%)]",
+      "bg-[radial-gradient(circle_at_70%_20%,rgba(107,255,255,0.16),transparent_52%)]",
+    ][activeStep] ?? "bg-[radial-gradient(circle_at_15%_15%,rgba(255,255,255,0.12),transparent_48%)]";
 
   const checkUsername = async (value: string) => {
     const cleaned = sanitizeUsername(value);
@@ -257,16 +395,17 @@ export default function BecomeOrganizationForm() {
       setError("Este @ já está a ser usado — escolhe outro.");
       return;
     }
-
-    const normalizedWebsite = (() => {
-      if (!values.website) return null;
-      const trimmed = values.website.trim();
-      if (!trimmed) return null;
-      if (trimmed.startsWith("@")) {
-        return `https://instagram.com/${trimmed.slice(1)}`;
-      }
-      return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
-    })();
+    if (selectedOperations.length === 0) {
+      setError("Escolhe pelo menos um foco para a tua organização.");
+      return;
+    }
+    const modulesPayload = Array.from(
+      new Set<OrganizationModule>([
+        ...getDefaultOrganizationModules(derivedPrimaryModule),
+        ...selectedOperations,
+        ...optionalSelection,
+      ]),
+    );
 
     setSaving(true);
     try {
@@ -274,14 +413,9 @@ export default function BecomeOrganizationForm() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          organizationCategory: values.organizationCategory,
-          modules: values.modules ?? [],
-          entityType: values.entityType.trim(),
+          primaryModule: derivedPrimaryModule,
+          modules: modulesPayload,
           businessName: values.businessName.trim(),
-          city: values.city.trim(),
-          website: normalizedWebsite,
-          payoutIban: values.iban ? values.iban.replace(/\s+/g, "") : null,
-          nif: values.taxId || null,
           publicName: values.businessName.trim(),
           username: cleanedUsername,
         }),
@@ -300,17 +434,25 @@ export default function BecomeOrganizationForm() {
           body: JSON.stringify({ organizationId: data.organization.id }),
         });
       }
-
-      setSuccess("Organização criada com sucesso. Bem-vindo ao painel da ORYA.");
-      setTimeout(() => {
-        router.replace("/organizacao");
-      }, 320);
+      setSaving(false);
+      startBuildTransition();
     } catch (err) {
       console.error("[organização/become] erro:", err);
       setError("Erro inesperado ao criar organização.");
       setSaving(false);
     }
   });
+
+  const showBusinessNameError = Boolean(
+    form.formState.errors.businessName &&
+      (form.formState.touchedFields.businessName ||
+        form.formState.dirtyFields.businessName ||
+        form.formState.isSubmitted),
+  );
+  const showUsernameError = Boolean(
+    form.formState.errors.username &&
+      (form.formState.touchedFields.username || usernameTouched || form.formState.isSubmitted),
+  );
 
   const usernameMessageClass = (() => {
     if (usernameStatus === "available") return "text-emerald-300";
@@ -322,369 +464,279 @@ export default function BecomeOrganizationForm() {
   const usernameBorderClass =
     usernameStatus === "available"
       ? "border-emerald-300/60 focus:border-emerald-300/80 shadow-[0_0_0_1px_rgba(16,185,129,0.35)]"
-      : usernameStatus === "taken" || form.formState.errors.username
+      : usernameStatus === "taken" || showUsernameError
       ? "border-red-400/70 focus:border-red-300 shadow-[0_0_0_1px_rgba(248,113,113,0.4)]"
       : "border-white/15 focus:border-[#6BFFFF]";
 
   const usernameSuggestions =
     usernameStatus === "taken" ? buildUsernameSuggestions(usernameClean || watchBusinessName) : [];
 
-  const handleRankingAnswer = (value: "yes" | "no") => {
-    setRankingAnswer(value);
-    if (value === "yes") setReservationAnswer(null);
-  };
-
   const handleNextStep = async () => {
+    setNavDirection("forward");
     if (activeStep === 0) {
-      const valid = await form.trigger("organizationCategory");
-      if (valid) setActiveStep(1);
+      setActiveStep(1);
       return;
     }
     if (activeStep === 1) {
+      if (selectedOperations.length === 0) {
+        form.setError("primaryModule", { message: "Escolhe pelo menos uma operação." });
+        return;
+      }
       setActiveStep(2);
+      return;
+    }
+    if (activeStep === 2) {
+      setActiveStep(3);
     }
   };
 
   const handleBackStep = () => {
+    setNavDirection("back");
     setActiveStep((prev) => Math.max(0, prev - 1));
   };
 
   if (!isLoaded) {
     return (
-      <div className="relative mx-auto max-w-[1160px] overflow-hidden rounded-3xl border border-white/8 bg-white/[0.04] p-8 md:p-9 lg:p-10 shadow-[0_25px_80px_rgba(0,0,0,0.45)]">
+      <div className="relative mx-auto max-w-[880px] overflow-hidden rounded-3xl border border-white/8 bg-white/[0.04] p-8 md:p-9 lg:p-10 shadow-[0_25px_80px_rgba(0,0,0,0.45)]">
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-white/6 via-transparent to-[#6BFFFF]/8" />
-        <div className="relative grid gap-8 md:grid-cols-2">
-          <div className="space-y-4 animate-pulse">
-            <div className="h-4 w-32 rounded bg-white/10" />
-            <div className="h-6 w-3/4 rounded bg-white/10" />
-            <div className="space-y-3 pt-2">
-              <div className="h-20 rounded-2xl bg-white/5" />
-              <div className="h-20 rounded-2xl bg-white/5" />
-              <div className="h-20 rounded-2xl bg-white/5" />
-            </div>
+        <div className="relative space-y-4 animate-pulse">
+          <div className="h-4 w-32 rounded bg-white/10" />
+          <div className="h-8 w-3/4 rounded bg-white/10" />
+          <div className="space-y-3 pt-2">
             <div className="h-16 rounded-2xl bg-white/5" />
-            <div className="h-10 w-1/2 rounded-full bg-white/5" />
+            <div className="h-16 rounded-2xl bg-white/5" />
           </div>
-          <div className="space-y-4 animate-pulse">
-            <div className="h-4 w-40 rounded bg-white/10" />
-            <div className="space-y-3">
-              {[...Array(6)].map((_, i) => (
-                <div key={i} className="h-10 rounded-xl bg-white/5" />
-              ))}
-            </div>
-            <div className="h-24 rounded-2xl bg-white/5" />
-            <div className="h-12 rounded-full bg-white/10" />
-          </div>
+          <div className="h-20 rounded-2xl bg-white/5" />
+          <div className="h-11 w-40 rounded-full bg-white/5" />
         </div>
         <p className="mt-4 text-center text-[12px] text-white/55">A preparar o teu espaço na ORYA…</p>
       </div>
     );
   }
 
-  return (
-    <div className="relative mx-auto max-w-[1160px] overflow-hidden rounded-3xl border border-white/8 bg-white/[0.04] p-8 md:p-9 lg:p-10 shadow-[0_25px_80px_rgba(0,0,0,0.45)]">
-      <div className={`pointer-events-none absolute inset-0 bg-gradient-to-br ${gradientOverlay}`} />
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(255,255,255,0.06),transparent_35%),radial-gradient(circle_at_80%_0%,rgba(107,255,255,0.04),transparent_40%)]" />
-
-      <div className="relative grid items-start gap-10 lg:grid-cols-[minmax(0,1fr)_360px]">
-        <form
-          onSubmit={handleSubmit}
-          className="space-y-8 rounded-2xl border border-white/10 bg-black/30 p-6 md:p-7 lg:p-8 backdrop-blur"
-        >
-          {error && (
-            <div className="rounded-2xl border border-red-400/40 bg-red-900/30 px-4 py-3 text-sm text-red-100">
-              {error}
-            </div>
-          )}
-          {success && (
-            <div className="rounded-2xl border border-emerald-400/40 bg-emerald-900/30 px-4 py-3 text-sm text-emerald-100">
-              {success}
-            </div>
-          )}
-
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-3 text-[11px] uppercase tracking-[0.2em] text-white/60">
-              <span className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[10px] text-white/70">
-                Onboarding
-              </span>
-              <span>
-                Passo {activeStep + 1} de {stepLabels.length}
-              </span>
-            </div>
-            <div className="flex items-center gap-1">
-              {stepLabels.map((label, idx) => (
-                <span
-                  key={label}
-                  className={`h-1.5 w-8 rounded-full ${idx <= activeStep ? "bg-white" : "bg-white/20"}`}
-                />
-              ))}
-            </div>
+  if (showBuildScreen) {
+    return (
+      <div className="relative mx-auto max-w-[880px] overflow-hidden rounded-3xl border border-white/10 bg-black/40 p-10 text-center shadow-[0_25px_80px_rgba(0,0,0,0.45)]">
+        <div className={`pointer-events-none absolute inset-0 bg-gradient-to-br ${gradientOverlay}`} />
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(255,255,255,0.08),transparent_40%),radial-gradient(circle_at_80%_0%,rgba(107,255,255,0.08),transparent_40%)]" />
+        <div className="relative flex min-h-[320px] flex-col items-center justify-center gap-4">
+          <TypingText
+            key="build-typing"
+            text="Está tudo pronto."
+            className="text-2xl font-semibold text-white md:text-3xl"
+          />
+          <p className="max-w-md text-sm text-white/70">
+            Bem-vindo à ORYA. Entramos no teu painel dentro de alguns segundos.
+          </p>
+          <div className="mt-2 flex items-center gap-2">
+            <span className="h-2 w-2 rounded-full bg-[#6BFFFF] animate-pulse" />
+            <span className="h-2 w-2 rounded-full bg-[#FF7AD1] animate-pulse [animation-delay:150ms]" />
+            <span className="h-2 w-2 rounded-full bg-[#6A7BFF] animate-pulse [animation-delay:300ms]" />
           </div>
+          <p className="text-[12px] text-white/55">A preparar o painel…</p>
+        </div>
+      </div>
+    );
+  }
 
+  return (
+    <div className="relative mx-auto max-w-[880px] overflow-hidden rounded-3xl border border-white/10 bg-black/40 p-6 md:p-8 shadow-[0_25px_80px_rgba(0,0,0,0.45)]">
+      <div className={`pointer-events-none absolute inset-0 bg-gradient-to-br ${gradientOverlay}`} />
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(255,255,255,0.06),transparent_40%),radial-gradient(circle_at_80%_0%,rgba(107,255,255,0.05),transparent_45%)]" />
+      <div key={`glow-${activeStep}`} className={`pointer-events-none absolute inset-0 onboarding-glow ${stepGlowClass}`} />
+
+      <form onSubmit={handleSubmit} className="relative space-y-8">
+        {error && (
+          <div className="rounded-2xl border border-red-400/40 bg-red-900/30 px-4 py-3 text-sm text-red-100">
+            {error}
+          </div>
+        )}
+        {success && (
+          <div className="rounded-2xl border border-emerald-400/40 bg-emerald-900/30 px-4 py-3 text-sm text-emerald-100">
+            {success}
+          </div>
+        )}
+
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={handleBackStep}
+            disabled={activeStep === 0}
+            className={`flex h-10 w-10 items-center justify-center rounded-full border text-lg transition ${
+              activeStep === 0
+                ? "border-white/10 text-white/30"
+                : "border-white/20 text-white/80 hover:bg-white/10"
+            }`}
+            aria-label="Voltar"
+          >
+            ←
+          </button>
+          <span className="text-[11px] uppercase tracking-[0.26em] text-white/50">Onboarding</span>
+        </div>
+
+        <div key={`step-${activeStep}`} className={stepAnimationClass}>
           {activeStep === 0 && (
-            <div className="space-y-6">
-              <div className="space-y-2">
-                <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">Categoria</p>
-                <h3 className="text-xl font-semibold">Onde a tua organização brilha</h3>
-                <p className="text-sm text-white/70">
-                  Duas perguntas rápidas para sugerir a categoria certa para ti.
-                </p>
-              </div>
-
-              <div className="space-y-4">
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                  <p className="text-sm font-semibold text-white">Organizas torneios com ranking?</p>
-                  <p className="text-[12px] text-white/60">Ideal para ligas, clubes e circuitos oficiais.</p>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={() => handleRankingAnswer("yes")}
-                      className={`rounded-full border px-4 py-1.5 text-xs font-semibold transition ${
-                        rankingAnswer === "yes"
-                          ? "border-[#6BFFFF] bg-[#6BFFFF]/15 text-white"
-                          : "border-white/15 bg-black/30 text-white/70 hover:border-white/30"
-                      }`}
-                    >
-                      Sim, com ranking
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleRankingAnswer("no")}
-                      className={`rounded-full border px-4 py-1.5 text-xs font-semibold transition ${
-                        rankingAnswer === "no"
-                          ? "border-[#6BFFFF] bg-[#6BFFFF]/15 text-white"
-                          : "border-white/15 bg-black/30 text-white/70 hover:border-white/30"
-                      }`}
-                    >
-                      Não
-                    </button>
+            <div className="space-y-5">
+              <TypingText
+                key={`welcome-${activeStep}`}
+                text="Bem-vindo à ORYA"
+                className="text-2xl font-semibold text-white md:text-3xl"
+              />
+              <p className="text-sm text-white/70">Aqui montas o teu painel em minutos.</p>
+              <div className="space-y-3 text-sm text-white/80">
+                {[
+                  "Gestão inteligente de bilhetes, inscrições e comunicação num só lugar.",
+                  "Equipa alinhada: atribui acessos e mantém a equipa alinhada.",
+                  "Vendas em tempo real num painel claro.",
+                ].map((item) => (
+                  <div key={item} className="flex items-start gap-3">
+                    <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[#6BFFFF]" />
+                    <span>{item}</span>
                   </div>
-                </div>
-
-                {rankingAnswer === "no" && (
-                  <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                    <p className="text-sm font-semibold text-white">Geris reservas ou horários?</p>
-                    <p className="text-[12px] text-white/60">
-                      Ex.: espaços, aulas ou serviços com marcação.
-                    </p>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setReservationAnswer("yes")}
-                        className={`rounded-full border px-4 py-1.5 text-xs font-semibold transition ${
-                          reservationAnswer === "yes"
-                            ? "border-[#6BFFFF] bg-[#6BFFFF]/15 text-white"
-                            : "border-white/15 bg-black/30 text-white/70 hover:border-white/30"
-                        }`}
-                      >
-                        Sim
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setReservationAnswer("no")}
-                        className={`rounded-full border px-4 py-1.5 text-xs font-semibold transition ${
-                          reservationAnswer === "no"
-                            ? "border-[#6BFFFF] bg-[#6BFFFF]/15 text-white"
-                            : "border-white/15 bg-black/30 text-white/70 hover:border-white/30"
-                        }`}
-                      >
-                        Não
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div className="space-y-3">
-                <div className="flex items-center justify-between text-[11px] uppercase tracking-[0.2em] text-white/60">
-                  <span>Categoria principal</span>
-                  {suggestedCategory && <span className="normal-case text-white/60">Sugestão pronta</span>}
-                </div>
-                <Controller
-                  name="organizationCategory"
-                  control={form.control}
-                  render={({ field }) => (
-                    <div className="grid gap-3 md:grid-cols-3">
-                      {ORGANIZATION_CATEGORY_OPTIONS.map((category) => {
-                        const isSelected = field.value === category.key;
-                        const isSuggested = suggestedCategory === category.key;
-                        return (
-                          <button
-                            key={category.key}
-                            type="button"
-                            onClick={() => {
-                              setCategoryTouched(true);
-                              field.onChange(category.key);
-                            }}
-                            aria-pressed={isSelected}
-                            className={`group rounded-2xl border p-4 text-left transition ${
-                              isSelected
-                                ? "border-[#6BFFFF]/70 bg-[#6BFFFF]/10 shadow-[0_12px_35px_rgba(107,255,255,0.12)]"
-                                : "border-white/12 bg-black/30 hover:border-white/30"
-                            }`}
-                          >
-                            <div className="flex items-start justify-between gap-2">
-                              <div className="space-y-1">
-                                <p className="text-sm font-semibold text-white">{category.label}</p>
-                                <p className="text-[12px] text-white/65">{category.headline}</p>
-                              </div>
-                              {isSuggested && (
-                                <span className="rounded-full border border-[#6BFFFF]/40 bg-[#6BFFFF]/15 px-2 py-0.5 text-[10px] uppercase tracking-[0.16em] text-white/85">
-                                  Sugerido
-                                </span>
-                              )}
-                            </div>
-                            <p className="mt-2 text-[12px] text-white/55">{category.description}</p>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-                />
-                {form.formState.errors.organizationCategory && (
-                  <p className="text-[12px] text-red-300">
-                    {form.formState.errors.organizationCategory.message}
-                  </p>
-                )}
+                ))}
               </div>
             </div>
           )}
 
           {activeStep === 1 && (
             <div className="space-y-6">
-              <div className="space-y-2">
-                <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">Módulos</p>
-                <h3 className="text-xl font-semibold">Ativa o que precisas agora</h3>
-                <p className="text-sm text-white/70">
-                  Começa com inscrições e ajusta quando a tua equipa estiver pronta.
-                </p>
-              </div>
-
-              <Controller
-                name="modules"
-                control={form.control}
-                render={({ field }) => {
-                  const currentModules = Array.isArray(field.value) ? field.value : [];
-                  return (
-                    <div className="space-y-4">
-                      {MODULE_OPTIONS.map((module) => {
-                        const isEnabled = currentModules.includes(module.key);
-                        const moduleLabel = module.label.toLowerCase();
-                        const nextModules = isEnabled
-                          ? currentModules.filter((item) => item !== module.key)
-                          : [...currentModules, module.key];
-                        return (
-                          <div key={module.key} className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                            <div className="flex items-start justify-between gap-4">
-                              <div className="space-y-1">
-                                <p className="text-sm font-semibold text-white">{module.label}</p>
-                                <p className="text-[12px] text-white/65">{module.description}</p>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() => field.onChange(nextModules)}
-                                aria-pressed={isEnabled}
-                                className={`relative inline-flex h-7 w-14 items-center rounded-full border transition ${
-                                  isEnabled
-                                    ? "border-emerald-300/60 bg-emerald-400/20"
-                                    : "border-white/15 bg-white/5"
-                                }`}
-                              >
-                                <span
-                                  className={`absolute left-1 top-1 h-5 w-5 rounded-full bg-white shadow transition ${
-                                    isEnabled ? "translate-x-6" : ""
-                                  }`}
-                                />
-                                <span className="sr-only">
-                                  {isEnabled ? `Desativar ${moduleLabel}` : `Ativar ${moduleLabel}`}
-                                </span>
-                              </button>
-                            </div>
-                            <div className="mt-4 flex items-center gap-2 text-[11px] text-white/60">
-                              <span className={`h-2 w-2 rounded-full ${isEnabled ? "bg-emerald-300" : "bg-white/30"}`} />
-                              <span>
-                                {isEnabled
-                                  ? `Módulo ${moduleLabel} ativo no teu painel.`
-                                  : `Módulo ${moduleLabel} desligado, podes ativar depois.`}
-                              </span>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  );
-                }}
+              <TypingText
+                key={`focus-${activeStep}`}
+                text="Qual é o foco da tua organização?"
+                className="text-2xl font-semibold text-white md:text-3xl"
               />
-
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-[12px] text-white/70">
-                O módulo de inscrições controla páginas públicas, formulários e pagamentos. Podes mudar isto mais
-                tarde, sem impacto nos teus dados.
+              <div className="grid gap-3 sm:grid-cols-3">
+                {OPERATION_OPTIONS.map((option, index) => {
+                  const isSelected = selectedOperations.includes(option.key);
+                  return (
+                    <button
+                      key={option.key}
+                      type="button"
+                      onClick={() => {
+                        setSelectedOperations([option.key]);
+                        form.clearErrors("primaryModule");
+                      }}
+                      aria-pressed={isSelected}
+                      style={{ animationDelay: `${index * 70}ms` }}
+                      className={`onboarding-card-in rounded-2xl border p-4 text-left transition-transform duration-150 active:scale-[0.98] hover:-translate-y-[1px] ${
+                        isSelected
+                          ? "border-[#6BFFFF]/70 bg-[#6BFFFF]/10 shadow-[0_18px_40px_rgba(107,255,255,0.14)] ring-1 ring-[#6BFFFF]/30"
+                          : "border-white/12 bg-white/5 hover:border-white/30"
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <span
+                          className={`flex h-10 w-10 items-center justify-center rounded-xl border ${
+                            isSelected ? "border-[#6BFFFF]/50 bg-[#6BFFFF]/15" : "border-white/15 bg-white/5"
+                          }`}
+                        >
+                          <ModuleIcon moduleKey={option.key} className="h-5 w-5" aria-hidden="true" />
+                        </span>
+                        <div>
+                          <p className="text-sm font-semibold text-white">{option.label}</p>
+                          <p className="text-[12px] text-white/65">{option.headline}</p>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
+              {form.formState.errors.primaryModule && (
+                <p className="text-[12px] text-red-300">
+                  {form.formState.errors.primaryModule.message}
+                </p>
+              )}
             </div>
           )}
 
           {activeStep === 2 && (
             <div className="space-y-6">
-              <div className="space-y-2">
-                <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">Dados</p>
-                <h3 className="text-xl font-semibold">Detalhes da tua organização</h3>
-                <p className="text-sm text-white/70">
-                  Estes dados alimentam o teu perfil público e o painel de organização.
-                </p>
-              </div>
-
-              <div className="space-y-5">
-                <div className="space-y-2">
-                  <div className="flex items-center gap-1 text-[12px] text-white/70">
-                    <span>Tipo de entidade *</span>
-                    <InfoTooltip text="Escolhe se és promotor de eventos, empresa/marca ou outro tipo de organização que cria eventos." />
-                  </div>
-                  <Controller
-                    name="entityType"
-                    control={form.control}
-                    render={({ field }) => (
-                      <select
-                        {...field}
-                        className={`w-full rounded-xl border bg-black/40 px-3 py-2 text-sm outline-none transition focus:border-[#6BFFFF] ${
-                          form.formState.errors.entityType ? "border-red-400/60" : "border-white/15"
+              <TypingText
+                key={`modules-${activeStep}`}
+                text="Queres ativar formulários públicos e mensagens?"
+                className="text-2xl font-semibold text-white md:text-3xl"
+              />
+              <p className="text-sm text-white/65">Podes alterar isto mais tarde.</p>
+            <div className="space-y-3">
+              {MODULE_OPTIONS.map((module, index) => {
+                const isEnabled = optionalSelection.includes(module.key);
+                return (
+                  <div
+                    key={module.key}
+                    style={{ animationDelay: `${index * 70}ms` }}
+                    className={`onboarding-card-in flex flex-col gap-4 rounded-2xl border p-4 transition-transform duration-150 hover:-translate-y-[1px] sm:flex-row sm:items-center sm:justify-between ${
+                      isEnabled
+                        ? "border-[#6BFFFF]/50 bg-[#6BFFFF]/10 shadow-[0_16px_36px_rgba(107,255,255,0.12)] ring-1 ring-[#6BFFFF]/20"
+                        : "border-white/10 bg-white/5"
+                    }`}
+                  >
+                    <div className="space-y-1">
+                      <p className="text-sm font-semibold text-white">{module.label}</p>
+                      <p className="text-[12px] text-white/65">{module.description}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setOptionalSelection((prev) =>
+                            prev.includes(module.key) ? prev : [...prev, module.key],
+                          )
+                        }
+                        className={`btn-orya px-3 py-1 text-[11px] font-semibold ${
+                          isEnabled ? "" : "opacity-75"
                         }`}
                       >
-                        <option value="">Seleciona</option>
-                        <option value="PROMOTOR_ORGANIZADOR">Promotor / Organização</option>
-                        <option value="EMPRESA_MARCA">Empresa ou marca</option>
-                        <option value="OUTRO">Outro tipo de organização</option>
-                      </select>
-                    )}
-                  />
-                  {form.formState.errors.entityType && (
-                    <p className="text-[12px] text-red-300">{form.formState.errors.entityType.message}</p>
-                  )}
-                </div>
+                        Ativar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setOptionalSelection((prev) => prev.filter((item) => item !== module.key))
+                        }
+                        className="btn-ghost px-3 py-1 text-[11px] font-semibold"
+                      >
+                        Agora não
+                      </button>
+                    </div>
+                  </div>
+                );
+                })}
+              </div>
+            </div>
+          )}
 
+          {activeStep === 3 && (
+            <div className="space-y-6">
+              <TypingText
+                key={`identity-${activeStep}`}
+                text="Qual é o nome da tua organização?"
+                className="text-2xl font-semibold text-white md:text-3xl"
+              />
+              <div className="space-y-5">
                 <div className="space-y-2">
                   <label className="text-[12px] text-white/70">Nome da organização *</label>
                   <Controller
                     name="businessName"
                     control={form.control}
-                    render={({ field }) => (
-                      <input
-                        {...field}
-                        className={`w-full rounded-xl border bg-black/40 px-3 py-2 text-sm outline-none transition focus:border-[#6BFFFF] ${
-                          form.formState.errors.businessName ? "border-red-400/60" : "border-white/15"
-                        }`}
-                        placeholder="Nome da organização"
-                      />
-                    )}
-                  />
-                  {form.formState.errors.businessName && (
-                    <p className="text-[12px] text-red-300">{form.formState.errors.businessName.message}</p>
+                  render={({ field }) => (
+                    <input
+                      {...field}
+                      className={`w-full rounded-xl border bg-black/40 px-3 py-2 text-sm outline-none transition focus:border-[#6BFFFF] ${
+                        showBusinessNameError ? "border-red-400/60" : "border-white/15"
+                      }`}
+                      placeholder="Nome da organização"
+                    />
                   )}
-                </div>
+                />
+                {showBusinessNameError && (
+                  <p className="text-[12px] text-red-300">{form.formState.errors.businessName.message}</p>
+                )}
+              </div>
 
                 <div className="space-y-2">
                   <div className="flex items-center gap-1 text-[12px] text-white/75">
                     <span>Username ORYA *</span>
-                    <InfoTooltip text="Este será o @ da tua marca na ORYA. Vai aparecer no teu perfil, nos eventos e nos links públicos." />
+                    <InfoTooltip text="Este é o teu @ público e aparece nos links." />
                   </div>
                   <Controller
                     name="username"
@@ -698,6 +750,7 @@ export default function BecomeOrganizationForm() {
                           {...field}
                           value={field.value || ""}
                           onChange={(e) => {
+                            setUsernameTouched(true);
                             const cleaned = sanitizeUsername(e.target.value);
                             field.onChange(cleaned);
                             const validation = validateUsername(cleaned);
@@ -706,7 +759,7 @@ export default function BecomeOrganizationForm() {
                           }}
                           onBlur={(e) => checkUsername(e.target.value)}
                           className={`w-full rounded-xl border bg-black/40 px-3 py-2 pl-7 text-sm outline-none transition ${usernameBorderClass}`}
-                          maxLength={30}
+                          maxLength={15}
                           placeholder="O teu username"
                         />
                       </div>
@@ -720,7 +773,10 @@ export default function BecomeOrganizationForm() {
                         <button
                           key={sug}
                           type="button"
-                          onClick={() => form.setValue("username", sanitizeUsername(sug), { shouldValidate: true })}
+                          onClick={() => {
+                            setUsernameTouched(true);
+                            form.setValue("username", sanitizeUsername(sug), { shouldValidate: true });
+                          }}
                           className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[11px] text-white/80 transition hover:border-white/25 hover:bg-white/10"
                         >
                           @{sug}
@@ -729,255 +785,35 @@ export default function BecomeOrganizationForm() {
                       ))}
                     </div>
                   )}
-                  {form.formState.errors.username && (
-                    <p className="text-[12px] text-red-300">{form.formState.errors.username.message}</p>
-                  )}
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-[12px] text-white/70">Cidade base *</label>
-                  <Controller
-                    name="city"
-                    control={form.control}
-                    render={({ field }) => (
-                      <div className="relative">
-                        <select
-                          {...field}
-                          className={`w-full rounded-xl border bg-black/40 px-3 py-2 text-sm outline-none transition focus:border-[#6BFFFF] ${
-                            form.formState.errors.city ? "border-red-400/60" : "border-white/15"
-                          }`}
-                        >
-                          <option value="">Seleciona uma cidade</option>
-                          {cityOptions.map((c) => (
-                            <option key={c} value={c}>
-                              {c}
-                            </option>
-                          ))}
-                        </select>
-                        {!field.value && (
-                          <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] uppercase tracking-[0.18em] text-white/40">
-                            PT
-                          </span>
-                        )}
-                      </div>
-                    )}
-                  />
-                  {form.formState.errors.city && (
-                    <p className="text-[12px] text-red-300">{form.formState.errors.city.message}</p>
-                  )}
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-[12px] text-white/70">Website (opcional)</label>
-                  <Controller
-                    name="website"
-                    control={form.control}
-                    render={({ field }) => (
-                      <input
-                        {...field}
-                        value={field.value ?? ""}
-                        className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none transition focus:border-[#6BFFFF]"
-                        placeholder="ex: https://orya.pt"
-                        autoCapitalize="none"
-                        onChange={(e) => field.onChange(e.target.value)}
-                      />
-                    )}
-                  />
-                  {form.formState.errors.website && (
-                    <p className="text-[12px] text-red-300">{form.formState.errors.website.message}</p>
-                  )}
-                </div>
+                {showUsernameError && (
+                  <p className="text-[12px] text-red-300">{form.formState.errors.username.message}</p>
+                )}
               </div>
-
-              <div className="space-y-4 rounded-2xl border border-white/10 bg-white/5 p-5">
-                <div className="space-y-2">
-                  <div className="flex items-center gap-1">
-                    <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Payouts (opcional)</p>
-                    <InfoTooltip text="Usamos este IBAN para enviar os pagamentos dos teus eventos. Podes adicionar ou alterar mais tarde nas Definições." />
-                  </div>
-                  <h3 className="text-lg font-medium">Prepara os pagamentos</h3>
-                  <p className="text-[12px] text-white/65">
-                    Liga os teus dados de pagamento para receberes o dinheiro dos teus eventos. Se preferires, podes
-                    completar esta parte mais tarde nas Definições.
-                  </p>
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-[12px] text-white/70">IBAN para pagamentos (opcional)</label>
-                  <Controller
-                    name="iban"
-                    control={form.control}
-                    render={({ field }) => (
-                      <input
-                        {...field}
-                        value={field.value || ""}
-                        onChange={(e) => {
-                          const raw = e.target.value.replace(/\s+/g, "").toUpperCase();
-                          const withSpaces = raw.replace(/(.{4})/g, "$1 ").trim();
-                          field.onChange(withSpaces);
-                        }}
-                        className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none transition focus:border-[#6BFFFF] uppercase"
-                        placeholder="PT50 0000 0000 0000 0000 0000 0"
-                      />
-                    )}
-                  />
-                  {form.formState.errors.iban && (
-                    <p className="text-[12px] text-red-300">{form.formState.errors.iban.message}</p>
-                  )}
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-[12px] text-white/70">NIF para faturação (opcional)</label>
-                  <Controller
-                    name="taxId"
-                    control={form.control}
-                    render={({ field }) => (
-                      <input
-                        {...field}
-                        value={field.value || ""}
-                        inputMode="numeric"
-                        maxLength={9}
-                        onChange={(e) => {
-                          const digits = e.target.value.replace(/\D/g, "").slice(0, 9);
-                          field.onChange(digits);
-                        }}
-                        className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none transition focus:border-[#6BFFFF]"
-                        placeholder="123456789"
-                      />
-                    )}
-                  />
-                  {form.formState.errors.taxId && (
-                    <p className="text-[12px] text-red-300">{form.formState.errors.taxId.message}</p>
-                  )}
-                </div>
               </div>
             </div>
           )}
+        </div>
 
-          <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:items-center sm:justify-between">
-            {activeStep > 0 ? (
-              <button
-                type="button"
-                onClick={handleBackStep}
-                className="text-sm text-white/60 underline-offset-4 transition hover:text-white hover:underline"
-              >
-                Voltar
-              </button>
-            ) : (
-              <span />
-            )}
-            {activeStep < stepLabels.length - 1 ? (
-              <button
-                type="button"
-                onClick={handleNextStep}
-                className="w-full rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-5 py-2.5 text-sm font-semibold text-black shadow transition focus:outline-none focus:ring-2 focus:ring-[#6BFFFF]/50 sm:w-auto"
-              >
-                Continuar
-              </button>
-            ) : (
-              <button
-                type="submit"
-                disabled={!isFormValid}
-                className={`w-full rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] px-5 py-2.5 text-sm font-semibold text-black shadow transition focus:outline-none focus:ring-2 focus:ring-[#6BFFFF]/50 sm:w-auto ${
-                  isFormValid
-                    ? "hover:brightness-110 shadow-[0_0_30px_rgba(107,255,255,0.22)] animate-[pulse_2.8s_ease-in-out_infinite]"
-                    : "opacity-60"
-                }`}
-              >
-                {saving ? "A criar organização…" : "Criar organização"}
-              </button>
-            )}
-          </div>
-        </form>
-
-        <aside className="space-y-6">
-          <div className="rounded-2xl border border-white/8 bg-white/5 p-5 text-sm text-white/85 shadow-[0_14px_45px_rgba(0,0,0,0.35)]">
-            <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Resumo</p>
-            <div className="mt-4 flex items-center gap-3">
-              <Avatar
-                src={null}
-                name={watchBusinessName || "Organização"}
-                className="h-11 w-11 border border-white/10"
-                textClassName="text-[11px] font-semibold uppercase tracking-[0.2em] text-white/80"
-                fallbackText="OR"
-              />
-              <div className="space-y-0.5">
-                <p className="text-base font-semibold text-white">
-                  {watchBusinessName || "Nome da tua organização"}
-                </p>
-                <p className="text-[12px] text-white/70">@{usernameClean || "teuusername"}</p>
-                <p className="text-[12px] text-white/60">{watchCity || "Cidade"}</p>
-              </div>
-            </div>
-            <div className="mt-4 space-y-2 text-[12px] text-white/70">
-              <div className="flex items-center justify-between">
-                <span>Categoria</span>
-                <span className="font-semibold text-white">{selectedCategoryLabel}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span>Módulos</span>
-                <span className="font-semibold text-white">{modulesLabel}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span>Tipo de entidade</span>
-                <span className="font-semibold text-white">
-                  {watchEntityType
-                    ? watchEntityType === "PROMOTOR_ORGANIZADOR"
-                      ? "Promotor / Organização"
-                      : watchEntityType === "EMPRESA_MARCA"
-                      ? "Empresa ou marca"
-                      : "Outro tipo de organização"
-                    : "Por definir"}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <div className="space-y-4 text-sm text-white/80">
-            <div className="space-y-1.5">
-              <p className="text-[12px] uppercase tracking-[0.22em] text-white/60">O que desbloqueias</p>
-              <h3 className="text-lg font-semibold text-white">Painel pronto para crescer contigo</h3>
-            </div>
-
-            <div className="space-y-3">
-              {[
-                {
-                  title: "Gestão inteligente",
-                  desc: "Bilhetes, inscrições e comunicação num só lugar, com menos fricção.",
-                  icon: "✨",
-                },
-                {
-                  title: "Equipa alinhada",
-                  desc: "Atribui acessos, acompanha tarefas e mantém toda a equipa sincronizada.",
-                  icon: "🧭",
-                },
-                {
-                  title: "Visão em tempo real",
-                  desc: "Vendas, inscrições e impacto com dashboards claros e acionáveis.",
-                  icon: "📈",
-                },
-              ].map((item) => (
-                <div
-                  key={item.title}
-                  className="group flex gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-4 transition-all duration-200 hover:-translate-y-[1px] hover:border-white/20 hover:shadow-[0_14px_45px_rgba(0,0,0,0.45)]"
-                >
-                  <div className="mt-0.5 text-lg transition-transform duration-150 group-hover:scale-105">
-                    {item.icon}
-                  </div>
-                  <div className="space-y-1">
-                    <p className="font-semibold text-white">{item.title}</p>
-                    <p className="leading-relaxed text-white/70">{item.desc}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-[12px] text-white/70 shadow-[0_12px_40px_rgba(0,0,0,0.35)]">
-              Podes ajustar categoria e módulos sempre que precisares, sem perder histórico.
-            </div>
-          </div>
-        </aside>
-      </div>
+        <div className="flex items-center justify-end pt-2">
+          {activeStep < 3 ? (
+            <button
+              type="button"
+              onClick={handleNextStep}
+              className="btn-orya px-6 py-2.5 text-sm font-semibold"
+            >
+              {nextStepLabel}
+            </button>
+          ) : (
+            <button
+              type="submit"
+              disabled={!isFormValid}
+              className="btn-orya px-6 py-2.5 text-sm font-semibold"
+            >
+              {saving ? "A criar organização…" : "Criar organização"}
+            </button>
+          )}
+        </div>
+      </form>
     </div>
   );
 }

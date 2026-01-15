@@ -1,13 +1,12 @@
 export const runtime = "nodejs";
 
 import type { ReactNode, CSSProperties } from "react";
-import { AppSidebar } from "@/components/app-sidebar";
-import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
+import OrganizationDashboardShell from "../OrganizationDashboardShell";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { prisma } from "@/lib/prisma";
 import { OrganizationLangSetter } from "../OrganizationLangSetter";
-import { OrganizationBreadcrumb } from "../OrganizationBreadcrumb";
+import { OrganizationStatus } from "@prisma/client";
 
 type OrganizationSwitcherOption = {
   organizationId: number;
@@ -20,7 +19,7 @@ type OrganizationSwitcherOption = {
     city: string | null;
     entityType: string | null;
     organizationKind?: string | null;
-    organizationCategory?: string | null;
+    primaryModule?: string | null;
     status: string | null;
     brandingAvatarUrl?: string | null;
     brandingPrimaryColor?: string | null;
@@ -30,7 +29,7 @@ type OrganizationSwitcherOption = {
 };
 
 /**
- * Layout do dashboard do organização (sidebar + topbar com shadcn-like shell).
+ * Layout do dashboard da organização com shell principal.
  * Não contém lógica de autenticação; isso é tratado no layout pai /organizacao.
  * Busca o organization ativo no server para alimentar o switcher e reduzir fetches client.
  */
@@ -42,6 +41,8 @@ export default async function OrganizationDashboardLayout({ children }: { childr
 
   let orgOptions: OrganizationSwitcherOption[] = [];
   let activeOrganization: OrganizationSwitcherOption["organization"] | null = null;
+  let activeRole: string | null = null;
+  let activeModules: string[] = [];
   let profile:
     | { fullName: string | null; username: string | null; avatarUrl: string | null; updatedAt: Date | null }
     | null = null;
@@ -57,7 +58,9 @@ export default async function OrganizationDashboardLayout({ children }: { childr
     }
 
     try {
-      const { organization, membership } = await getActiveOrganizationForUser(user.id);
+      const { organization, membership } = await getActiveOrganizationForUser(user.id, {
+        allowedStatuses: [OrganizationStatus.ACTIVE, OrganizationStatus.SUSPENDED],
+      });
       if (organization && membership) {
         activeOrganization = {
           id: organization.id,
@@ -68,14 +71,28 @@ export default async function OrganizationDashboardLayout({ children }: { childr
           brandingPrimaryColor: (organization as { brandingPrimaryColor?: string | null }).brandingPrimaryColor ?? null,
           brandingSecondaryColor: (organization as { brandingSecondaryColor?: string | null }).brandingSecondaryColor ?? null,
           organizationKind: (organization as { organizationKind?: string | null }).organizationKind ?? null,
-          organizationCategory: (organization as { organizationCategory?: string | null }).organizationCategory ?? null,
+          primaryModule: (organization as { primaryModule?: string | null }).primaryModule ?? null,
           city: (organization as { city?: string | null }).city ?? null,
           entityType: (organization as { entityType?: string | null }).entityType ?? null,
           status: organization.status ?? null,
           language: (organization as { language?: string | null }).language ?? null,
         };
+        activeRole = membership.role ?? null;
       }
     } catch {
+    }
+
+    if (activeOrganization) {
+      try {
+        const modulesRows = await prisma.organizationModuleEntry.findMany({
+          where: { organizationId: activeOrganization.id, enabled: true },
+          select: { moduleKey: true },
+          orderBy: { moduleKey: "asc" },
+        });
+        activeModules = modulesRows.map((row) => row.moduleKey);
+      } catch {
+        activeModules = [];
+      }
     }
 
     try {
@@ -98,7 +115,7 @@ export default async function OrganizationDashboardLayout({ children }: { childr
             city: m.organization!.city,
             entityType: m.organization!.entityType,
             organizationKind: (m.organization as { organizationKind?: string | null }).organizationKind ?? null,
-            organizationCategory: (m.organization as { organizationCategory?: string | null }).organizationCategory ?? null,
+            primaryModule: (m.organization as { primaryModule?: string | null }).primaryModule ?? null,
             status: m.organization!.status,
             brandingAvatarUrl: (m.organization as { brandingAvatarUrl?: string | null }).brandingAvatarUrl ?? null,
             brandingPrimaryColor: (m.organization as { brandingPrimaryColor?: string | null }).brandingPrimaryColor ?? null,
@@ -122,6 +139,7 @@ export default async function OrganizationDashboardLayout({ children }: { childr
   const brandPrimary = activeOrganization?.brandingPrimaryColor ?? undefined;
   const brandSecondary = activeOrganization?.brandingSecondaryColor ?? undefined;
   const organizationLanguage = activeOrganization?.language ?? "pt";
+  const isSuspended = activeOrganization?.status === OrganizationStatus.SUSPENDED;
 
   const userInfo = user
     ? {
@@ -140,51 +158,38 @@ export default async function OrganizationDashboardLayout({ children }: { childr
         username: organizationUsername,
         avatarUrl: organizationAvatarUrl,
         organizationKind: activeOrganization.organizationKind ?? null,
-        organizationCategory: activeOrganization.organizationCategory ?? null,
+        primaryModule: activeOrganization.primaryModule ?? null,
+        modules: activeModules,
       }
     : null;
 
   return (
-    <SidebarProvider defaultOpen>
-      <div
-        className="text-white flex min-h-screen items-stretch"
-        style={
-          {
-            "--brand-primary": brandPrimary,
-            "--brand-secondary": brandSecondary,
-          } as CSSProperties
-        }
+    <div
+      className="flex min-h-screen w-full flex-col text-white"
+      style={
+        {
+          "--brand-primary": brandPrimary,
+          "--brand-secondary": brandSecondary,
+        } as CSSProperties
+      }
+    >
+      <OrganizationLangSetter language={organizationLanguage} />
+      {organizationUsername ? (
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `try{sessionStorage.setItem("orya_last_organization_username","${organizationUsername}");}catch(e){}`,
+          }}
+        />
+      ) : null}
+      <OrganizationDashboardShell
+        activeOrg={activeOrgLite}
+        orgOptions={orgOptions}
+        user={userInfo}
+        role={activeRole}
+        isSuspended={isSuspended}
       >
-        <OrganizationLangSetter language={organizationLanguage} />
-        {organizationUsername ? (
-          <script
-            dangerouslySetInnerHTML={{
-              __html: `try{sessionStorage.setItem("orya_last_organization_username","${organizationUsername}");}catch(e){}`,
-            }}
-          />
-        ) : null}
-
-        <AppSidebar activeOrg={activeOrgLite} orgOptions={orgOptions} user={userInfo} />
-
-        <SidebarInset>
-          {/* Header mobile (trigger + breadcrumb) */}
-          <div className="sticky top-0 z-40 flex items-center gap-3 bg-[rgba(5,9,21,0.85)] px-4 py-3 backdrop-blur md:hidden">
-            <SidebarTrigger />
-            <OrganizationBreadcrumb />
-          </div>
-          {/* Header desktop (breadcrumb only) */}
-          <div className="hidden lg:block mb-4">
-            <div className="rounded-3xl border border-white/5 bg-[rgba(6,10,20,0.75)] backdrop-blur-xl px-4 py-3 md:px-6 md:py-4">
-              <OrganizationBreadcrumb />
-            </div>
-          </div>
-          <main className="relative min-h-0 flex-1 overflow-y-auto pb-0 pt-0">
-            <div className="px-4 py-4 md:px-6 lg:px-8 lg:py-6">
-              <div className="relative isolate overflow-hidden">{children}</div>
-            </div>
-          </main>
-        </SidebarInset>
-      </div>
-    </SidebarProvider>
+        {children}
+      </OrganizationDashboardShell>
+    </div>
   );
 }

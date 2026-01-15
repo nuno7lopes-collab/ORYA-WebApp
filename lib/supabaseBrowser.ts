@@ -26,9 +26,29 @@ function cleanupAuthStorage() {
   // Mantemos cookies sb- intactas; não apagamos base64 para não destruir sessões válidas
 }
 
+function resolveCookieDomainFromHost(hostname?: string | null) {
+  if (!hostname) return "";
+  const safeHost = hostname.split(":")[0]?.toLowerCase();
+  if (!safeHost) return "";
+  if (safeHost === "localhost" || safeHost.endsWith(".localhost")) return "";
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(safeHost) || safeHost.includes(":")) return "";
+  const parts = safeHost.split(".").filter(Boolean);
+  if (parts.length >= 2) return `.${parts.slice(-2).join(".")}`;
+  return "";
+}
+
 function getBrowserSupabaseClient() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const envCookieDomain = process.env.NEXT_PUBLIC_SUPABASE_COOKIE_DOMAIN?.trim() || "";
+  const inferredDomain =
+    typeof window !== "undefined"
+      ? resolveCookieDomainFromHost(window.location.hostname)
+      : "";
+  const cookieDomain = envCookieDomain || inferredDomain;
+  const isLocalhostDomain =
+    typeof cookieDomain === "string" &&
+    (cookieDomain === "localhost" || cookieDomain.endsWith(".localhost"));
 
   if (!supabaseUrl || !supabaseAnonKey) {
     throw new Error(
@@ -37,7 +57,16 @@ function getBrowserSupabaseClient() {
   }
 
   cleanupAuthStorage();
-  return createBrowserClient(supabaseUrl, supabaseAnonKey);
+  return createBrowserClient(supabaseUrl, supabaseAnonKey, {
+    cookieOptions: cookieDomain
+      ? {
+          domain: cookieDomain,
+          path: "/",
+          sameSite: "lax",
+          ...(isLocalhostDomain ? {} : { secure: true }),
+        }
+      : undefined,
+  });
 }
 
 export const supabaseBrowser = getBrowserSupabaseClient();

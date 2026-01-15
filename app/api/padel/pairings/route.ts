@@ -25,7 +25,15 @@ import {
 } from "@/domain/padelDeadlines";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { checkPadelCategoryLimit } from "@/domain/padelCategoryLimit";
+import { checkPadelCategoryCapacity } from "@/domain/padelCategoryCapacity";
+import { checkPadelRegistrationWindow } from "@/domain/padelRegistration";
+import { upsertPadelWaitlistEntry } from "@/domain/padelWaitlist";
+import { checkPadelEventCapacity } from "@/domain/padelEventCapacity";
 import { parseOrganizationId } from "@/lib/organizationId";
+import { getPadelOnboardingMissing, isPadelOnboardingComplete } from "@/domain/padelOnboarding";
+import { validatePadelCategoryGender } from "@/domain/padelCategoryGender";
+import { resolveUserIdentifier } from "@/lib/userResolver";
+import { queuePairingInvite } from "@/domain/notifications/splitPayments";
 
 const allowedRoles: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
 
@@ -37,10 +45,15 @@ async function syncPlayersFromSlots({
   slots: Array<{
     profileId: string | null;
     invitedContact: string | null;
+    invitedUserId: string | null;
   }>;
 }) {
   const profileIds = Array.from(
-    new Set(slots.map((s) => s.profileId).filter(Boolean) as string[]),
+    new Set(
+      slots
+        .flatMap((s) => [s.profileId, s.invitedUserId])
+        .filter(Boolean) as string[],
+    ),
   );
 
   // 1) Jogadores ligados a perfis existentes
@@ -125,6 +138,10 @@ export async function POST(req: NextRequest) {
     typeof body?.invitedContact === "string" && body.invitedContact.trim().length > 0
       ? body.invitedContact.trim()
       : null;
+  const targetUserId =
+    typeof body?.targetUserId === "string" && body.targetUserId.trim().length > 0
+      ? body.targetUserId.trim()
+      : null;
 
   if (!eventId || !paymentMode || !["FULL", "SPLIT"].includes(paymentMode)) {
     return NextResponse.json({ ok: false, error: "INVALID_INPUT" }, { status: 400 });
@@ -136,6 +153,7 @@ export async function POST(req: NextRequest) {
     select: {
       organizationId: true,
       startsAt: true,
+      status: true,
       padelTournamentConfig: { select: { padelV2Enabled: true } },
     },
   });
@@ -156,16 +174,67 @@ export async function POST(req: NextRequest) {
       eligibilityType: true,
       splitDeadlineHours: true,
       defaultCategoryId: true,
+      advancedSettings: true,
     },
   });
   if (!config?.padelV2Enabled || config.organizationId !== organizationId) {
     return NextResponse.json({ ok: false, error: "PADEL_V2_DISABLED" }, { status: 400 });
   }
 
-  const profile = await prisma.profile.findUnique({
-    where: { id: user.id },
-    select: { gender: true },
+  const advancedSettings = (config.advancedSettings || {}) as {
+    waitlistEnabled?: boolean;
+    registrationStartsAt?: string | null;
+    registrationEndsAt?: string | null;
+    maxEntriesTotal?: number | null;
+    competitionState?: string | null;
+  };
+  const registrationStartsAt =
+    advancedSettings.registrationStartsAt && !Number.isNaN(new Date(advancedSettings.registrationStartsAt).getTime())
+      ? new Date(advancedSettings.registrationStartsAt)
+      : null;
+  const registrationEndsAt =
+    advancedSettings.registrationEndsAt && !Number.isNaN(new Date(advancedSettings.registrationEndsAt).getTime())
+      ? new Date(advancedSettings.registrationEndsAt)
+      : null;
+  const registrationCheck = checkPadelRegistrationWindow({
+    eventStatus: event.status,
+    eventStartsAt: event.startsAt ?? null,
+    registrationStartsAt,
+    registrationEndsAt,
+    competitionState: advancedSettings.competitionState ?? null,
   });
+  if (!registrationCheck.ok) {
+    return NextResponse.json({ ok: false, error: registrationCheck.code }, { status: 409 });
+  }
+
+  const [profile] = await Promise.all([
+    prisma.profile.findUnique({
+      where: { id: user.id },
+      select: {
+        gender: true,
+        contactPhone: true,
+        fullName: true,
+        username: true,
+        padelLevel: true,
+        padelPreferredSide: true,
+      },
+    }),
+  ]);
+
+  const missing = getPadelOnboardingMissing({
+    profile,
+    email: user.email ?? null,
+  });
+  if (!isPadelOnboardingComplete(missing)) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "PADEL_ONBOARDING_REQUIRED",
+        missing,
+      },
+      { status: 409 },
+    );
+  }
 
   const eligibility = validateEligibility(
     (config.eligibilityType as PadelEligibilityType) ?? PadelEligibilityType.OPEN,
@@ -204,7 +273,35 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "CATEGORY_REQUIRED" }, { status: 400 });
   }
 
+  const category = await prisma.padelCategory.findUnique({
+    where: { id: effectiveCategoryId },
+    select: { genderRestriction: true, minLevel: true, maxLevel: true },
+  });
+  const categoryGender = validatePadelCategoryGender(
+    category?.genderRestriction ?? null,
+    profile?.gender as Gender | null,
+    null,
+  );
+  if (!categoryGender.ok) {
+    if (categoryGender.code === "GENDER_REQUIRED_FOR_CATEGORY") {
+      return NextResponse.json(
+        { ok: false, error: "PADEL_ONBOARDING_REQUIRED", missing: { gender: true } },
+        { status: 409 },
+      );
+    }
+    return NextResponse.json({ ok: false, error: categoryGender.code }, { status: 409 });
+  }
+
   // Invariante: 1 pairing ativo por evento+categoria+user
+  const resolvedTarget =
+    pairingJoinModeRaw === "INVITE_PARTNER"
+      ? targetUserId ||
+        (invitedContactNormalized
+          ? (await resolveUserIdentifier(invitedContactNormalized).catch(() => null))?.userId ?? null
+          : null)
+      : null;
+  const hasInviteTarget = Boolean(targetUserId || invitedContactNormalized);
+
   const existingActive = await prisma.padelPairing.findFirst({
     where: {
       eventId,
@@ -218,10 +315,19 @@ export async function POST(req: NextRequest) {
     const updates: Record<string, unknown> = {};
     const slotUpdates: Record<string, unknown> = {};
     const partnerSlot = existingActive.slots.find((s) => s.slot_role === "PARTNER");
-    const canUpdatePartner = partnerSlot && !partnerSlot.profileId;
+    const partnerLocked =
+      Boolean(partnerSlot?.paymentStatus === "PAID" || partnerSlot?.ticketId);
+    const canUpdatePartner = partnerSlot && !partnerSlot.profileId && !partnerLocked;
 
     if (paymentMode && existingActive.payment_mode !== paymentMode) {
+      if (partnerLocked) {
+        return NextResponse.json({ ok: false, error: "PARTNER_LOCKED" }, { status: 409 });
+      }
       updates.payment_mode = paymentMode;
+    }
+
+    if (partnerLocked && (pairingJoinModeRaw !== existingActive.pairingJoinMode || hasInviteTarget)) {
+      return NextResponse.json({ ok: false, error: "PARTNER_LOCKED" }, { status: 409 });
     }
 
     if (canUpdatePartner) {
@@ -237,6 +343,9 @@ export async function POST(req: NextRequest) {
         updates.partnerInvitedAt = null;
         if (partnerSlot?.invitedContact) {
           slotUpdates.invitedContact = null;
+        }
+        if (partnerSlot?.invitedUserId) {
+          slotUpdates.invitedUserId = null;
         }
       } else {
         const now = new Date();
@@ -258,8 +367,15 @@ export async function POST(req: NextRequest) {
         } else if (!existingActive.partnerLinkExpiresAt) {
           updates.partnerLinkExpiresAt = computePartnerLinkExpiresAt(now, undefined);
         }
-        if (invitedContactNormalized && partnerSlot?.invitedContact !== invitedContactNormalized) {
-          slotUpdates.invitedContact = invitedContactNormalized;
+        if (hasInviteTarget) {
+          if (invitedContactNormalized && partnerSlot?.invitedContact !== invitedContactNormalized) {
+            slotUpdates.invitedContact = invitedContactNormalized;
+          } else if (targetUserId && !invitedContactNormalized && partnerSlot?.invitedContact) {
+            slotUpdates.invitedContact = null;
+          }
+          if ((partnerSlot?.invitedUserId ?? null) !== resolvedTarget) {
+            slotUpdates.invitedUserId = resolvedTarget;
+          }
         }
       }
     }
@@ -287,7 +403,115 @@ export async function POST(req: NextRequest) {
       : existingActive;
 
     await upsertActiveHold(prisma, { pairingId: pairingReturn.id, eventId, ttlMinutes: 30 });
-    return NextResponse.json({ ok: true, pairing: pairingReturn }, { status: 200 });
+    let inviteSent = false;
+    if (
+      pairingJoinModeRaw === "INVITE_PARTNER" &&
+      resolvedTarget &&
+      resolvedTarget !== user.id &&
+      pairingReturn.partnerInviteToken
+    ) {
+      await queuePairingInvite({
+        pairingId: pairingReturn.id,
+        targetUserId: resolvedTarget,
+        inviterUserId: user.id,
+        token: pairingReturn.partnerInviteToken,
+      });
+      inviteSent = true;
+    }
+    const slotForUser =
+      pairingReturn.slots.find((s) => s.profileId === user.id || s.invitedUserId === user.id) ??
+      pairingReturn.slots.find((s) => s.slot_role === "CAPTAIN") ??
+      pairingReturn.slots[0] ??
+      null;
+    return NextResponse.json(
+      { ok: true, pairing: pairingReturn, inviteSent, slotId: slotForUser?.id ?? null },
+      { status: 200 },
+    );
+  }
+
+  if (
+    pairingJoinModeRaw === "LOOKING_FOR_PARTNER" &&
+    paymentMode === "SPLIT" &&
+    !hasInviteTarget
+  ) {
+    const now = new Date();
+    const openPairings = await prisma.padelPairing.findMany({
+      where: {
+        eventId,
+        categoryId: effectiveCategoryId,
+        payment_mode: PadelPaymentMode.SPLIT,
+        pairingStatus: { not: "CANCELLED" },
+        lifecycleStatus: { not: "CANCELLED_INCOMPLETE" },
+        player2UserId: null,
+        OR: [{ pairingJoinMode: "LOOKING_FOR_PARTNER" }, { isPublicOpen: true }],
+      },
+      select: {
+        id: true,
+        eventId: true,
+        deadlineAt: true,
+        player1UserId: true,
+        pairingJoinMode: true,
+        isPublicOpen: true,
+        category: { select: { genderRestriction: true, minLevel: true, maxLevel: true } },
+        slots: {
+          select: {
+            id: true,
+            slot_role: true,
+            slotStatus: true,
+            paymentStatus: true,
+            profileId: true,
+            invitedUserId: true,
+          },
+        },
+        player1: { select: { gender: true } },
+      },
+      orderBy: { createdAt: "asc" },
+      take: 8,
+    });
+
+    let matched: (typeof openPairings)[number] | null = null;
+    let partnerSlotId: number | null = null;
+
+    for (const pairing of openPairings) {
+      if (pairing.player1UserId === user.id) continue;
+      const partnerSlot = pairing.slots.find((slot) => slot.slot_role === "PARTNER");
+      if (!partnerSlot || partnerSlot.slotStatus !== "PENDING") continue;
+      if (
+        pairing.deadlineAt &&
+        pairing.deadlineAt.getTime() < now.getTime() &&
+        partnerSlot.paymentStatus !== PadelPairingPaymentStatus.PAID
+      ) {
+        continue;
+      }
+      const eligibility = validateEligibility(
+        (config.eligibilityType as PadelEligibilityType) ?? PadelEligibilityType.OPEN,
+        pairing.player1?.gender as Gender | null,
+        profile?.gender as Gender | null,
+      );
+      if (!eligibility.ok) continue;
+      const categoryGenderCheck = validatePadelCategoryGender(
+        pairing.category?.genderRestriction ?? null,
+        pairing.player1?.gender as Gender | null,
+        profile?.gender as Gender | null,
+      );
+      if (!categoryGenderCheck.ok) continue;
+      matched = pairing;
+      partnerSlotId = partnerSlot.id;
+      break;
+    }
+
+    if (matched && partnerSlotId) {
+      const pairingReturn = await prisma.padelPairing.findUnique({
+        where: { id: matched.id },
+        include: { slots: true },
+      });
+      if (pairingReturn) {
+        return NextResponse.json(
+          { ok: true, pairing: pairingReturn, slotId: partnerSlotId, matched: true },
+          { status: 200 },
+        );
+      }
+    }
   }
 
   let validatedTicketId: string | null = null;
@@ -337,6 +561,7 @@ export async function POST(req: NextRequest) {
     ticketId?: unknown;
     profileId?: unknown;
     invitedContact?: unknown;
+    invitedUserId?: unknown;
     isPublicOpen?: unknown;
     slotRole?: unknown;
     slotStatus?: unknown;
@@ -359,6 +584,7 @@ export async function POST(req: NextRequest) {
       ticketId: typeof s.ticketId === "string" ? s.ticketId : null,
       profileId: typeof s.profileId === "string" ? s.profileId : null,
       invitedContact: typeof s.invitedContact === "string" ? s.invitedContact : null,
+      invitedUserId: typeof s.invitedUserId === "string" ? s.invitedUserId : null,
       isPublicOpen: Boolean(s.isPublicOpen),
       slot_role: roleRaw === "CAPTAIN" ? PadelPairingSlotRole.CAPTAIN : PadelPairingSlotRole.PARTNER,
       slotStatus:
@@ -400,6 +626,7 @@ export async function POST(req: NextRequest) {
           ticketId: string | null;
           profileId: string | null;
           invitedContact: string | null;
+          invitedUserId: string | null;
           isPublicOpen: boolean;
           slot_role: PadelPairingSlotRole;
           slotStatus: PadelPairingSlotStatus;
@@ -410,6 +637,7 @@ export async function POST(req: NextRequest) {
             ticketId: validatedTicketId,
             profileId: user.id,
             invitedContact: null,
+            invitedUserId: null,
             isPublicOpen,
             slot_role: PadelPairingSlotRole.CAPTAIN,
             slotStatus: captainPaid ? PadelPairingSlotStatus.FILLED : PadelPairingSlotStatus.PENDING,
@@ -422,6 +650,7 @@ export async function POST(req: NextRequest) {
               pairingJoinModeRaw === "INVITE_PARTNER" && invitedContactNormalized
                 ? invitedContactNormalized
                 : null,
+            invitedUserId: pairingJoinModeRaw === "INVITE_PARTNER" ? resolvedTarget : null,
             isPublicOpen,
             slot_role: PadelPairingSlotRole.PARTNER,
             slotStatus: PadelPairingSlotStatus.PENDING,
@@ -454,7 +683,55 @@ export async function POST(req: NextRequest) {
         : PadelPairingLifecycleStatus.PENDING_PARTNER_PAYMENT
       : PadelPairingLifecycleStatus.PENDING_ONE_PAID;
 
-    const pairing = await prisma.$transaction(async (tx) => {
+    const waitlistEnabled = advancedSettings.waitlistEnabled === true;
+    const maxEntriesTotal =
+      typeof advancedSettings.maxEntriesTotal === "number" && Number.isFinite(advancedSettings.maxEntriesTotal)
+        ? Math.floor(advancedSettings.maxEntriesTotal)
+        : null;
+    const result = await prisma.$transaction(async (tx) => {
+      const eventCapacity = await checkPadelEventCapacity({
+        tx,
+        eventId,
+        maxEntriesTotal,
+      });
+      if (!eventCapacity.ok) {
+        if (!waitlistEnabled) {
+          throw new Error(eventCapacity.code);
+        }
+        const entry = await upsertPadelWaitlistEntry({
+          tx,
+          eventId,
+          organizationId,
+          categoryId: effectiveCategoryId,
+          userId: user.id,
+          paymentMode,
+          pairingJoinMode: pairingJoinModeRaw ?? PadelPairingJoinMode.INVITE_PARTNER,
+          invitedContact: invitedContactNormalized,
+        });
+        return { kind: "WAITLIST" as const, entry };
+      }
+      const capacityCheck = await checkPadelCategoryCapacity({
+        tx,
+        eventId,
+        categoryId: effectiveCategoryId,
+      });
+      if (!capacityCheck.ok) {
+        if (!waitlistEnabled) {
+          throw new Error(capacityCheck.code);
+        }
+        const entry = await upsertPadelWaitlistEntry({
+          tx,
+          eventId,
+          organizationId,
+          categoryId: effectiveCategoryId,
+          userId: user.id,
+          paymentMode,
+          pairingJoinMode: pairingJoinModeRaw ?? PadelPairingJoinMode.INVITE_PARTNER,
+          invitedContact: invitedContactNormalized,
+        });
+        return { kind: "WAITLIST" as const, entry };
+      }
+
       const created = await tx.padelPairing.create({
         data: {
           eventId,
@@ -483,20 +760,59 @@ export async function POST(req: NextRequest) {
       });
 
       await upsertActiveHold(tx, { pairingId: created.id, eventId, ttlMinutes: 30 });
-      return created;
+      return { kind: "PAIRING" as const, pairing: created };
     });
+
+    if (result.kind === "WAITLIST") {
+      return NextResponse.json(
+        { ok: true, waitlist: true, entry: { id: result.entry.id, status: result.entry.status } },
+        { status: 200 },
+      );
+    }
 
     // Auto-criar perfis de jogador para o organização (roster)
     await syncPlayersFromSlots({
       organizationId,
-      slots: pairing.slots.map((s) => ({
+      slots: result.pairing.slots.map((s) => ({
         profileId: (s as { profileId?: string | null }).profileId ?? null,
         invitedContact: (s as { invitedContact?: string | null }).invitedContact ?? null,
+        invitedUserId: (s as { invitedUserId?: string | null }).invitedUserId ?? null,
       })),
     });
 
-    return NextResponse.json({ ok: true, pairing }, { status: 200 });
+    let inviteSent = false;
+    if (
+      pairingJoinModeRaw === "INVITE_PARTNER" &&
+      resolvedTarget &&
+      resolvedTarget !== user.id &&
+      result.pairing.partnerInviteToken
+    ) {
+      await queuePairingInvite({
+        pairingId: result.pairing.id,
+        targetUserId: resolvedTarget,
+        inviterUserId: user.id,
+        token: result.pairing.partnerInviteToken,
+      });
+      inviteSent = true;
+    }
+
+    const slotForUser =
+      result.pairing.slots.find((s) => s.profileId === user.id) ??
+      result.pairing.slots.find((s) => s.slot_role === "CAPTAIN") ??
+      result.pairing.slots[0] ??
+      null;
+
+    return NextResponse.json(
+      { ok: true, pairing: result.pairing, inviteSent, slotId: slotForUser?.id ?? null },
+      { status: 200 },
+    );
   } catch (err) {
+    if (
+      err instanceof Error &&
+      (err.message === "CATEGORY_FULL" || err.message === "CATEGORY_PLAYERS_FULL" || err.message === "EVENT_FULL")
+    ) {
+      return NextResponse.json({ ok: false, error: err.message }, { status: 409 });
+    }
     console.error("[padel/pairings][POST]", err);
     return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }

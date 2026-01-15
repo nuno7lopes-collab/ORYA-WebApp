@@ -23,13 +23,15 @@ export async function shouldNotify(userId: string, type: NotificationType) {
   switch (type) {
     case "EVENT_SALE":
       return prefs.allowSalesAlerts;
-    case "FRIEND_REQUEST":
-    case "FRIEND_ACCEPT":
-      return prefs.allowFriendRequests;
+    case "FOLLOW_REQUEST":
+    case "FOLLOW_ACCEPT":
+      return prefs.allowFollowRequests;
     case "FOLLOWED_YOU":
-      return prefs.allowFriendRequests;
+      return prefs.allowFollowRequests;
     case "SYSTEM_ANNOUNCE":
     case "STRIPE_STATUS":
+    case "CHAT_OPEN":
+    case "CHAT_ANNOUNCEMENT":
       return prefs.allowSystemAnnouncements;
     case "EVENT_REMINDER":
     case "NEW_EVENT_FROM_FOLLOWED_ORGANIZATION":
@@ -104,7 +106,7 @@ export async function getNotificationPrefs(userId: string) {
     userId,
     allowEmailNotifications: true,
     allowEventReminders: true,
-    allowFriendRequests: true,
+    allowFollowRequests: true,
     allowSalesAlerts: true,
     allowSystemAnnouncements: true,
   };

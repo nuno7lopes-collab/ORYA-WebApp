@@ -2,10 +2,12 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { createSupabaseServer } from "@/lib/supabaseServer";
+import { requireAdminUser } from "@/lib/admin/auth";
 import type { EventStatus } from "@prisma/client";
 import { enqueueOperation } from "@/lib/operations/enqueue";
 import { refundKey } from "@/lib/stripe/idempotency";
+import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
+import { getClientIp } from "@/lib/auth/requestValidation";
 
 /**
  * 6.14 – Update de estado de evento (admin)
@@ -23,38 +25,12 @@ import { refundKey } from "@/lib/stripe/idempotency";
  */
 export async function POST(req: NextRequest) {
   try {
-    const supabase = await createSupabaseServer();
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
-
-    if (authError) {
-      console.error("[admin/eventos/update-status] authError:", authError);
+    const admin = await requireAdminUser();
+    if (!admin.ok) {
+      return NextResponse.json({ ok: false, error: admin.error }, { status: admin.status });
     }
-
-    if (!user) {
-      return NextResponse.json(
-        { ok: false, error: "UNAUTHENTICATED" },
-        { status: 401 }
-      );
-    }
-
-    // Confirmar se é admin
-    const profile = await prisma.profile.findUnique({
-      where: { id: user.id },
-      select: { roles: true },
-    });
-
-    const roles = profile?.roles ?? [];
-    const isAdmin = Array.isArray(roles) && roles.includes("admin");
-
-    if (!isAdmin) {
-      return NextResponse.json(
-        { ok: false, error: "FORBIDDEN_NOT_ADMIN" },
-        { status: 403 }
-      );
-    }
+    const ip = getClientIp(req);
+    const userAgent = req.headers.get("user-agent");
 
     const body = (await req.json().catch(() => null)) as
       | {
@@ -110,8 +86,27 @@ export async function POST(req: NextRequest) {
 
     // Atualizar evento
     try {
+      const existing = await prisma.event.findUnique({
+        where: "id" in whereClause ? { id: whereClause.id } : { slug: whereClause.slug },
+        select: {
+          id: true,
+          slug: true,
+          title: true,
+          status: true,
+          type: true,
+          organizationId: true,
+          startsAt: true,
+        },
+      });
+      if (!existing) {
+        return NextResponse.json(
+          { ok: false, error: "EVENT_NOT_FOUND" },
+          { status: 404 }
+        );
+      }
+
       const updated = await prisma.event.update({
-        where: whereClause,
+        where: { id: existing.id },
         data: {
           // Cast para EventStatus para corresponder ao enum do Prisma
           status: status as EventStatus,
@@ -127,6 +122,23 @@ export async function POST(req: NextRequest) {
           updatedAt: true,
         },
       });
+
+      if (existing.status !== updated.status) {
+        await recordOrganizationAuditSafe({
+          organizationId: updated.organizationId,
+          actorUserId: admin.userId,
+          action: "admin_event_status_change",
+          metadata: {
+            eventId: updated.id,
+            slug: updated.slug,
+            title: updated.title,
+            fromStatus: existing.status,
+            toStatus: updated.status,
+          },
+          ip,
+          userAgent,
+        });
+      }
 
       const now = new Date();
       const shouldAutoRefund =
@@ -149,7 +161,7 @@ export async function POST(req: NextRequest) {
                 purchaseId: s.purchaseId ?? s.paymentIntentId ?? null,
                 paymentIntentId: s.paymentIntentId ?? null,
                 reason: "CANCELLED",
-                refundedBy: user.id,
+                refundedBy: admin.userId,
               },
             }),
           ),

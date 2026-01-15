@@ -5,6 +5,8 @@ import Link from "next/link";
 import useSWR from "swr";
 import { useUser } from "@/app/hooks/useUser";
 import { Avatar } from "@/components/ui/avatar";
+import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
+import PairingInviteCard from "@/app/components/notifications/PairingInviteCard";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -19,6 +21,7 @@ type NotificationItem = {
   isRead?: boolean;
   readAt?: string | null;
   meta?: { isMutual?: boolean };
+  payload?: Record<string, unknown> | null;
 };
 
 type SuggestionsResponse = {
@@ -73,29 +76,30 @@ type NotificationFilter = "all" | "sales" | "invites" | "system" | "social";
 
 const SOCIAL_TYPES = new Set([
   "FOLLOWED_YOU",
-  "FRIEND_ACCEPT",
+  "FOLLOW_ACCEPT",
   "NEW_EVENT_FROM_FOLLOWED_ORGANIZATION",
 ]);
 
-const REQUEST_TYPES = new Set(["ORGANIZATION_INVITE", "CLUB_INVITE"]);
+const REQUEST_TYPES = new Set(["ORGANIZATION_INVITE", "CLUB_INVITE", "PAIRING_INVITE"]);
 
 const NOTIFICATION_FILTERS: Record<NotificationFilter, string[]> = {
   all: [],
   sales: ["EVENT_SALE", "EVENT_PAYOUT_STATUS"],
-  invites: ["ORGANIZATION_INVITE", "CLUB_INVITE", "ORGANIZATION_TRANSFER"],
+  invites: ["ORGANIZATION_INVITE", "CLUB_INVITE", "ORGANIZATION_TRANSFER", "PAIRING_INVITE"],
   system: ["STRIPE_STATUS", "MARKETING_PROMO_ALERT", "SYSTEM_ANNOUNCE"],
-  social: ["FOLLOWED_YOU", "FRIEND_REQUEST", "FRIEND_ACCEPT"],
+  social: ["FOLLOWED_YOU", "FOLLOW_REQUEST", "FOLLOW_ACCEPT"],
 };
 
 const NOTIFICATION_LABELS: Record<string, string> = {
   ORGANIZATION_INVITE: "Convite",
-  ORGANIZATION_TRANSFER: "Transferencia",
+  ORGANIZATION_TRANSFER: "Transferência",
+  PAIRING_INVITE: "Dupla",
   CLUB_INVITE: "Clube",
   EVENT_SALE: "Venda",
   EVENT_PAYOUT_STATUS: "Pagamento",
   STRIPE_STATUS: "Stripe",
-  FRIEND_REQUEST: "Pedido",
-  FRIEND_ACCEPT: "Aceite",
+  FOLLOW_REQUEST: "Pedido para seguir",
+  FOLLOW_ACCEPT: "Pedido aceite",
   EVENT_REMINDER: "Lembrete",
   CHECKIN_READY: "Check-in",
   TICKET_SHARED: "Bilhete",
@@ -120,6 +124,7 @@ function buildUserLabel(item: { fullName: string | null; username: string | null
 
 export default function SocialHubPage() {
   const { user, isLoggedIn } = useUser();
+  const { openModal: openAuthModal, isOpen: isAuthOpen } = useAuthModal();
   const [activeTab, setActiveTab] = useState<HubTab>("social");
   const [notificationFilter, setNotificationFilter] = useState<NotificationFilter>("all");
   const [searchQuery, setSearchQuery] = useState("");
@@ -350,8 +355,8 @@ export default function SocialHubPage() {
     <div className="orya-page-width px-4 md:px-8 py-10 space-y-6">
       <div className="flex flex-col gap-2">
         <p className="text-[11px] uppercase tracking-[0.28em] text-white/60">Social Hub</p>
-        <h1 className="text-3xl font-semibold text-white">Social e notificacoes num so lugar</h1>
-        <p className="text-sm text-white/65">Tudo o que importa sobre pessoas, convites e alertas.</p>
+        <h1 className="text-3xl font-semibold text-white">Social e notificacoes</h1>
+        <p className="text-sm text-white/65">Pessoas, convites e alertas.</p>
       </div>
 
       <div className="flex flex-wrap items-center gap-2 rounded-full border border-white/12 bg-white/5 p-1 text-[11px] text-white/70">
@@ -388,29 +393,34 @@ export default function SocialHubPage() {
 
       {!isLoggedIn && (
         <div className="rounded-3xl border border-white/15 bg-white/5 p-6 text-sm text-white/70 shadow-[0_24px_70px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
-          <p>Entra para veres a tua atividade social e notificacoes.</p>
-          <Link
-            href="/login?redirectTo=/social"
+          <p>Entra para ver tudo.</p>
+          <button
+            type="button"
+            onClick={() => {
+              if (!isAuthOpen) {
+                openAuthModal({ mode: "login", redirectTo: "/social", showGoogle: true });
+              }
+            }}
             className="mt-3 inline-flex items-center rounded-full bg-white px-4 py-2 text-[12px] font-semibold text-black"
           >
-            Iniciar sessao
-          </Link>
+            Entrar
+          </button>
         </div>
       )}
 
       {isLoggedIn && activeTab === "social" && (
         <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
           <div className="space-y-4">
-            <SectionCard title="Atividade" subtitle="Movimentos recentes na tua rede.">
-              {activityItems.length === 0 && <EmptyLabel label="Sem atividade por agora." />}
+            <SectionCard title="Atividade" subtitle="Atividade recente.">
+              {activityItems.length === 0 && <EmptyLabel label="Sem atividade." />}
             {activityItems.map((item) => (
               <NotificationRow key={item.id} item={item} onDelete={deleteNotification} />
             ))}
             </SectionCard>
 
-            <SectionCard title="Pedidos" subtitle="Convites e pedidos pendentes.">
+            <SectionCard title="Pedidos" subtitle="Convites pendentes.">
               {followRequests.length === 0 && requestItems.length === 0 && (
-                <EmptyLabel label="Sem pedidos pendentes." />
+                <EmptyLabel label="Sem pedidos." />
               )}
               {followRequests.map((request) => {
                 const label = request.fullName || request.username || "Utilizador ORYA";
@@ -496,7 +506,7 @@ export default function SocialHubPage() {
                         </p>
                         <p className="text-[11px] text-white/50">
                           {item.mutualsCount > 0
-                            ? `${item.mutualsCount} amigo${item.mutualsCount === 1 ? "" : "s"} em comum`
+                            ? `${item.mutualsCount} seguidor${item.mutualsCount === 1 ? "" : "es"} em comum`
                             : "Novo na tua zona"}
                         </p>
                       </div>
@@ -700,7 +710,7 @@ export default function SocialHubPage() {
                   <div>
                     <p className="text-[11px] uppercase tracking-[0.2em] text-white/55">
                       {item.type === "FOLLOWED_YOU" && item.meta?.isMutual
-                        ? "Teu amigo"
+                        ? "Segue-te de volta"
                         : NOTIFICATION_LABELS[item.type] ?? "Atualizacao"}
                     </p>
                     <p className="text-sm font-semibold text-white">{item.title || "Atualizacao"}</p>
@@ -726,14 +736,28 @@ export default function SocialHubPage() {
                     </button>
                   </div>
                 </div>
-                {item.body && <p className="mt-1 text-[12px] text-white/70">{item.body}</p>}
-                {item.ctaUrl && item.ctaLabel && (
-                  <Link
-                    href={item.ctaUrl}
-                    className="mt-2 inline-flex text-[12px] text-[#6BFFFF] hover:underline"
-                  >
-                    {item.ctaLabel}
-                  </Link>
+                {item.type === "PAIRING_INVITE" ? (
+                  <div className="mt-3">
+                    <PairingInviteCard
+                      title={item.title || "Convite para dupla"}
+                      body={item.body}
+                      payload={item.payload}
+                      fallbackUrl={item.ctaUrl ?? null}
+                      fallbackLabel={item.ctaLabel ?? null}
+                    />
+                  </div>
+                ) : (
+                  <>
+                    {item.body && <p className="mt-1 text-[12px] text-white/70">{item.body}</p>}
+                    {item.ctaUrl && item.ctaLabel && (
+                      <Link
+                        href={item.ctaUrl}
+                        className="mt-2 inline-flex text-[12px] text-[#6BFFFF] hover:underline"
+                      >
+                        {item.ctaLabel}
+                      </Link>
+                    )}
+                  </>
                 )}
               </div>
             ))}

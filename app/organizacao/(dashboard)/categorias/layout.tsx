@@ -1,0 +1,12 @@
+export const runtime = "nodejs";
+
+import type { ReactNode } from "react";
+import ModuleGuardLayout from "@/app/organizacao/(dashboard)/_components/ModuleGuardLayout";
+
+export default async function CategoriasLayout({ children }: { children: ReactNode }) {
+  return (
+    <ModuleGuardLayout requiredModules={["EVENTOS", "TORNEIOS"]} mode="any">
+      {children}
+    </ModuleGuardLayout>
+  );
+}

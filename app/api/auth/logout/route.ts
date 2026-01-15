@@ -1,9 +1,14 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { cookies } from "next/headers";
+import { isSameOriginOrApp } from "@/lib/auth/requestValidation";
 
-export async function POST() {
+export async function POST(req: NextRequest) {
   try {
+    if (!isSameOriginOrApp(req)) {
+      return NextResponse.json({ success: false, error: "FORBIDDEN" }, { status: 403 });
+    }
+
     const supabase = await createSupabaseServer();
     const { error } = await supabase.auth.signOut();
 

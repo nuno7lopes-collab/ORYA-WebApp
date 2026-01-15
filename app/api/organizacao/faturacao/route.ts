@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
-import { computeReleaseAt, computeHold } from "@/domain/finance/payoutPolicy";
 import { resolveConnectStatus } from "@/domain/finance/stripeConnectStatus";
+import { PendingPayoutStatus } from "@prisma/client";
 
 export async function GET(_req: NextRequest) {
   const supabase = await createSupabaseServer();
@@ -33,11 +33,35 @@ export async function GET(_req: NextRequest) {
     _count: { _all: true },
   });
 
+  const pending = await prisma.pendingPayout.findMany({
+    where: {
+      sourceType: "EVENT_TICKET",
+      sourceId: { in: events.map((e) => String(e.id)) },
+      status: { in: [PendingPayoutStatus.HELD, PendingPayoutStatus.RELEASING, PendingPayoutStatus.BLOCKED] },
+    },
+    select: { sourceId: true, amountCents: true, holdUntil: true, status: true },
+  });
+
+  const pendingByEvent = new Map<
+    string,
+    { holdCents: number; releaseAt: Date | null; hasBlocked: boolean }
+  >();
+  for (const p of pending) {
+    const key = p.sourceId;
+    const current = pendingByEvent.get(key) ?? { holdCents: 0, releaseAt: null, hasBlocked: false };
+    current.holdCents += p.amountCents;
+    if (p.status === PendingPayoutStatus.BLOCKED) {
+      current.hasBlocked = true;
+    } else if (!current.releaseAt || p.holdUntil < current.releaseAt) {
+      current.releaseAt = p.holdUntil;
+    }
+    pendingByEvent.set(key, current);
+  }
+
   const summaryPerEvent = events.map((evt) => {
     const agg = sales.find((s) => s.eventId === evt.id);
     const total = agg?._sum.totalCents ?? 0;
-    const hold = computeHold(total, false);
-    const releaseAt = computeReleaseAt(evt.endsAt);
+    const pendingStats = pendingByEvent.get(String(evt.id)) ?? { holdCents: 0, releaseAt: null, hasBlocked: false };
     const connectStatus = resolveConnectStatus(
       evt.organization?.stripeAccountId ?? null,
       evt.organization?.stripeChargesEnabled ?? false,
@@ -50,9 +74,9 @@ export async function GET(_req: NextRequest) {
       netCents: agg?._sum.netCents ?? 0,
       platformFeeCents: agg?._sum.platformFeeCents ?? 0,
       countSales: agg?._count._all ?? 0,
-      releaseAt,
-      holdCents: hold.holdCents,
-      holdReason: hold.reason,
+      releaseAt: pendingStats.releaseAt,
+      holdCents: pendingStats.holdCents,
+      holdReason: pendingStats.hasBlocked ? "BLOCKED" : pendingStats.holdCents > 0 ? "HELD" : null,
       connectStatus,
     };
   });

@@ -6,6 +6,8 @@ import DashboardClient from "../DashboardClient";
 import { OrganizationTour } from "../OrganizationTour";
 import { cookies } from "next/headers";
 import { AuthModalProvider } from "@/app/components/autenticação/AuthModalContext";
+import { AuthGate } from "@/app/components/autenticação/AuthGate";
+import { OrganizationStatus, Prisma } from "@prisma/client";
 
 export const runtime = "nodejs";
 
@@ -21,7 +23,7 @@ export default async function OrganizationRouterPage() {
   } = await supabase.auth.getUser();
 
   if (!user) {
-    redirect("/login?next=/organizacao");
+    return <AuthGate />;
   }
 
   // 1) Contar memberships
@@ -29,6 +31,32 @@ export default async function OrganizationRouterPage() {
 
   // Sem organizações → onboarding
   if (membershipCount === 0) {
+    const profile = await prisma.profile.findUnique({
+      where: { id: user.id },
+      select: { username: true },
+    });
+    const viewerEmail = user.email?.toLowerCase() ?? null;
+    const viewerUsername = profile?.username ?? null;
+    const pendingInvite = await prisma.organizationMemberInvite.findFirst({
+      where: {
+        cancelledAt: null,
+        acceptedAt: null,
+        declinedAt: null,
+        expiresAt: { gt: new Date() },
+        OR: [
+          { targetUserId: user.id },
+          ...(viewerEmail
+            ? [{ targetIdentifier: { equals: viewerEmail, mode: Prisma.QueryMode.insensitive } }]
+            : []),
+          ...(viewerUsername
+            ? [{ targetIdentifier: { equals: viewerUsername, mode: Prisma.QueryMode.insensitive } }]
+            : []),
+        ],
+      },
+    });
+    if (pendingInvite) {
+      redirect("/convites/organizacoes");
+    }
     redirect("/organizacao/become");
   }
 
@@ -39,8 +67,10 @@ export default async function OrganizationRouterPage() {
   const { organization } = await getActiveOrganizationForUser(user.id, {
     organizationId: Number.isFinite(forcedOrgId) ? forcedOrgId : undefined,
     allowFallback: true,
+    allowedStatuses: [OrganizationStatus.ACTIVE, OrganizationStatus.SUSPENDED],
   });
   const activeOrganizationId = organization?.id ?? null;
+  const isSuspended = organization?.status === OrganizationStatus.SUSPENDED;
 
   // Tem orgs mas nenhuma ativa → hub
   if (!activeOrganizationId) {
@@ -51,7 +81,7 @@ export default async function OrganizationRouterPage() {
   return (
     <AuthModalProvider>
       <DashboardClient hasOrganization />
-      <OrganizationTour organizationId={activeOrganizationId} />
+      {!isSuspended ? <OrganizationTour organizationId={activeOrganizationId} /> : null}
     </AuthModalProvider>
   );
 }

@@ -4,16 +4,10 @@ import { OrganizationFormFieldType } from "@prisma/client";
 import { requireUser } from "@/lib/auth/requireUser";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
-import { getCustomPremiumProfileModules, isCustomPremiumActive } from "@/lib/organizationPremium";
-
 async function ensureInscricoesEnabled(organization: {
   id: number;
   username?: string | null;
-  liveHubPremiumEnabled?: boolean | null;
 }) {
-  const premiumActive = isCustomPremiumActive(organization);
-  const premiumModules = premiumActive ? getCustomPremiumProfileModules(organization) ?? {} : {};
-  if (!premiumModules.inscricoes) return false;
   const enabled = await prisma.organizationModuleEntry.findFirst({
     where: { organizationId: organization.id, moduleKey: "INSCRICOES", enabled: true },
     select: { organizationId: true },
@@ -60,7 +54,7 @@ export async function GET(req: NextRequest, context: { params: Promise<{ id: str
       return NextResponse.json({ ok: false, error: "Sem organização ativa." }, { status: 403 });
     }
     if (!(await ensureInscricoesEnabled(organization))) {
-      return NextResponse.json({ ok: false, error: "Módulo de inscrições desativado." }, { status: 403 });
+      return NextResponse.json({ ok: false, error: "Módulo de formulários desativado." }, { status: 403 });
     }
 
     const { id } = await context.params;
@@ -129,7 +123,7 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
       return NextResponse.json({ ok: false, error: "Sem organização ativa." }, { status: 403 });
     }
     if (!(await ensureInscricoesEnabled(organization))) {
-      return NextResponse.json({ ok: false, error: "Módulo de inscrições desativado." }, { status: 403 });
+      return NextResponse.json({ ok: false, error: "Módulo de formulários desativado." }, { status: 403 });
     }
 
     const { id } = await context.params;
@@ -247,7 +241,7 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
       });
       if (submissionsCount > 0) {
         return NextResponse.json(
-          { ok: false, error: "Não podes alterar campos quando já existem inscrições." },
+          { ok: false, error: "Não podes alterar campos quando já existem respostas." },
           { status: 409 },
         );
       }
@@ -280,6 +274,50 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
     return NextResponse.json({ ok: true }, { status: 200 });
   } catch (err) {
     console.error("[organização/inscricoes][PATCH:id]", err);
+    return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+  }
+}
+
+export async function DELETE(req: NextRequest, context: { params: Promise<{ id: string }> }) {
+  try {
+    const user = await requireUser();
+    const organizationId = resolveOrganizationIdFromRequest(req);
+    const { organization } = await getActiveOrganizationForUser(user.id, {
+      organizationId: organizationId ?? undefined,
+      roles: ["OWNER", "CO_OWNER", "ADMIN"],
+    });
+    if (!organization) {
+      return NextResponse.json({ ok: false, error: "Sem organização ativa." }, { status: 403 });
+    }
+    if (!(await ensureInscricoesEnabled(organization))) {
+      return NextResponse.json({ ok: false, error: "Módulo de formulários desativado." }, { status: 403 });
+    }
+
+    const { id } = await context.params;
+    const formId = Number(id);
+    if (!formId || Number.isNaN(formId)) {
+      return NextResponse.json({ ok: false, error: "FORM_ID_INVALIDO" }, { status: 400 });
+    }
+
+    const existing = await prisma.organizationForm.findFirst({
+      where: { id: formId, organizationId: organization.id },
+      include: { _count: { select: { submissions: true } } },
+    });
+    if (!existing) {
+      return NextResponse.json({ ok: false, error: "FORMULARIO_NAO_ENCONTRADO" }, { status: 404 });
+    }
+    if (existing._count.submissions > 0) {
+      return NextResponse.json(
+        { ok: false, error: "Não é possível apagar um formulário com respostas." },
+        { status: 409 },
+      );
+    }
+
+    await prisma.organizationForm.delete({ where: { id: formId } });
+
+    return NextResponse.json({ ok: true }, { status: 200 });
+  } catch (err) {
+    console.error("[organização/inscricoes][DELETE:id]", err);
     return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }

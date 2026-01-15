@@ -14,6 +14,7 @@ type InvoiceItem = {
   subtotalCents: number;
   discountCents: number;
   platformFeeCents: number;
+  cardPlatformFeeCents?: number | null;
   totalCents: number;
   netCents: number;
   event?: InvoiceEvent | null;
@@ -83,6 +84,8 @@ export default function InvoicesClient({
     () => (data?.ok ? data.items.reduce((acc, sale) => acc + (sale.lines?.reduce((s, l) => s + l.quantity, 0) ?? 0), 0) : 0),
     [data],
   );
+  const formatPayoutMode = (mode?: string | null) =>
+    mode === "PLATFORM" ? "Conta ORYA" : mode === "ORGANIZATION" ? "Conta do clube" : "N/D";
 
   const withQuery = (path: string, params: Record<string, string | number | null | undefined>) => {
     const query = toQuery(params);
@@ -193,7 +196,7 @@ export default function InvoicesClient({
     if (items.length === 0) {
       return (
         <div className="rounded-3xl border border-white/10 bg-white/5 p-6 text-white/70 shadow-[0_18px_60px_rgba(0,0,0,0.55)]">
-          Ainda não existem vendas neste intervalo. Ajusta as datas ou volta mais tarde.
+          Sem vendas neste intervalo. Ajusta as datas.
         </div>
       );
     }
@@ -206,10 +209,10 @@ export default function InvoicesClient({
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div className="space-y-2">
             <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] uppercase tracking-[0.24em] text-white/80 shadow-[0_10px_30px_rgba(0,0,0,0.4)]">
-              Faturação premium
+              Faturação
             </div>
-            <h1 className="text-3xl font-semibold drop-shadow-[0_12px_40px_rgba(0,0,0,0.55)]">Receitas, taxas e liquidez.</h1>
-            <p className="text-sm text-white/70">Bruto, descontos, Stripe/ORYA e líquido por evento. Exporta tudo em CSV num clique.</p>
+            <h1 className="text-3xl font-semibold drop-shadow-[0_12px_40px_rgba(0,0,0,0.55)]">Receitas e taxas.</h1>
+            <p className="text-sm text-white/70">Bruto, descontos e líquido. CSV num clique.</p>
           </div>
           <div className="flex flex-wrap items-center gap-2 text-[12px]">
             {[
@@ -288,7 +291,7 @@ export default function InvoicesClient({
                   <th className="py-2 pr-3">Descontos</th>
                   <th className="py-2 pr-3">Taxas</th>
                   <th className="py-2 pr-3">Líquido</th>
-                  <th className="py-2 pr-3">Modo</th>
+                  <th className="py-2 pr-3">Conta</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/10">
@@ -304,11 +307,13 @@ export default function InvoicesClient({
                       <td className="py-3 pr-3 text-[12px]">{tickets}</td>
                       <td className="py-3 pr-3">{formatEuro(sale.subtotalCents / 100)}</td>
                       <td className="py-3 pr-3">{formatEuro(sale.discountCents / 100)}</td>
-                      <td className="py-3 pr-3">{formatEuro(sale.platformFeeCents / 100)}</td>
+                      <td className="py-3 pr-3">
+                        {formatEuro(sale.platformFeeCents / 100)}
+                      </td>
                       <td className="py-3 pr-3 font-semibold text-white">{formatEuro(sale.netCents / 100)}</td>
                       <td className="py-3 pr-3 text-[11px]">
                         <span className="rounded-full border border-white/25 bg-white/10 px-2.5 py-0.5 text-white shadow-[0_8px_18px_rgba(0,0,0,0.35)]">
-                          {sale.event?.payoutMode ?? "STANDARD"}
+                          {formatPayoutMode(sale.event?.payoutMode)}
                         </span>
                       </td>
                     </tr>

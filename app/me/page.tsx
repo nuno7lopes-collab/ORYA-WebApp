@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, type ReactElement } from "react";
+import { useEffect, useMemo, useState, type ReactElement } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import ProfileHeader from "@/app/components/profile/ProfileHeader";
@@ -8,6 +8,7 @@ import { useUser } from "@/app/hooks/useUser";
 import { useWallet } from "@/app/components/wallet/useWallet";
 import { WalletCard } from "@/app/components/wallet/WalletCard";
 import useSWR from "swr";
+import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
 
 function parseDate(value?: string | null): Date | null {
   if (!value) return null;
@@ -28,6 +29,8 @@ function formatAgendaDate(value?: string | null) {
 export default function MePage() {
   const { user, profile, isLoading: meLoading } = useUser();
   const router = useRouter();
+  const { openModal: openAuthModal, isOpen: isAuthOpen } = useAuthModal();
+  const [padelStatus, setPadelStatus] = useState<{ complete: boolean; missingCount: number } | null>(null);
   const {
     items: tickets,
     loading: ticketsLoading,
@@ -49,7 +52,7 @@ export default function MePage() {
     agendaUrl,
     fetcher,
   );
-  const { data: orgsData } = useSWR<{ ok: boolean; items?: Array<{ organizationId: number; role: string; organization: { publicName: string | null; businessName: string | null; username: string | null; organizationCategory: string | null } }> }>(
+  const { data: orgsData } = useSWR<{ ok: boolean; items?: Array<{ organizationId: number; role: string; organization: { publicName: string | null; businessName: string | null; username: string | null; primaryModule: string | null } }> }>(
     user ? "/api/organizacao/organizations" : null,
     fetcher,
   );
@@ -57,10 +60,6 @@ export default function MePage() {
   // Redireciona quando já tem username ou força login
   useEffect(() => {
     if (meLoading) return;
-    if (!user) {
-      router.replace("/login?redirectTo=/me");
-      return;
-    }
     if (profile?.username) {
       router.replace(`/${profile.username}`);
     }
@@ -75,11 +74,55 @@ export default function MePage() {
     return () => window.removeEventListener("focus", onFocus);
   }, [user, refetchWallet]);
 
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const res = await fetch("/api/padel/onboarding");
+        const data = (await res.json().catch(() => null)) as { ok?: boolean; missing?: Record<string, boolean> } | null;
+        if (!res.ok || !data?.ok || !data?.missing) return;
+        const missingCount = Object.keys(data.missing || {}).length;
+        if (!cancelled) {
+          setPadelStatus({ complete: missingCount === 0, missingCount });
+        }
+      } catch {
+        if (!cancelled) setPadelStatus(null);
+      }
+    };
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+
   const displayName =
     profile?.fullName ||
     profile?.username ||
     user?.email?.split("@")[0] ||
     "Utilizador ORYA";
+
+  const padelProfileHref = profile?.username
+    ? `/${profile.username}/padel`
+    : "/onboarding/padel";
+  const padelAction =
+    padelStatus?.complete
+      ? { href: padelProfileHref, label: "Padel", tone: "emerald" as const }
+      : padelStatus
+        ? {
+            href: `/onboarding/padel?redirectTo=${encodeURIComponent(padelProfileHref)}`,
+            label: "Concluir Padel",
+            tone: "amber" as const,
+          }
+        : null;
+  const padelStatusPill = padelStatus
+    ? {
+        label: padelStatus.complete
+          ? "Padel completo"
+          : `Padel incompleto${padelStatus.missingCount ? ` · ${padelStatus.missingCount}` : ""}`,
+        tone: padelStatus.complete ? ("emerald" as const) : ("amber" as const),
+      }
+    : null;
 
   const now = new Date();
   const agendaItems = agendaData?.items ?? [];
@@ -130,11 +173,13 @@ export default function MePage() {
         avatarUrl={profile?.avatarUrl}
         avatarUpdatedAt={profile?.updatedAt ?? null}
         city={profile?.city}
-        visibility={profile?.visibility === "PUBLIC" ? "PUBLIC" : "PRIVATE"}
+        visibility={profile?.visibility ?? "PUBLIC"}
         followers={null}
         following={null}
         isVerified={profile?.isVerified ?? false}
         isOwner
+        padelAction={padelAction ?? undefined}
+        padelStatus={padelStatusPill ?? undefined}
       />
 
       {/* STATUS */}
@@ -213,15 +258,20 @@ export default function MePage() {
                 </button>
               )}
               {authRequired ? (
-                <Link
-                  href="/login?redirectTo=/me"
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!isAuthOpen) {
+                      openAuthModal({ mode: "login", redirectTo: "/me", showGoogle: true });
+                    }
+                  }}
                   className="px-3 py-1.5 rounded-lg bg-white text-black text-[11px] font-semibold shadow"
                 >
                   Iniciar sessão
-                </Link>
+                </button>
               ) : (
                 <Link
-                  href="/explorar"
+                  href="/explorar/eventos"
                   className="px-3 py-1.5 rounded-lg border border-white/30 text-[11px] text-white hover:bg-white/10"
                 >
                   Explorar eventos
@@ -248,7 +298,7 @@ export default function MePage() {
             </div>
             <div className="relative flex gap-2 flex-wrap justify-center">
               <Link
-                href="/explorar"
+                href="/explorar/eventos"
                 className="inline-flex mt-2 px-4 py-2.5 rounded-full bg-white text-black text-xs font-semibold shadow-[0_10px_35px_rgba(255,255,255,0.2)] hover:scale-[1.03] active:scale-95 transition-transform"
               >
                 Explorar eventos
@@ -336,7 +386,7 @@ export default function MePage() {
               {padelItems.map((item) => (
                 <Link
                   key={item.id}
-                  href={item.ctaHref ?? "/padel/duplas"}
+                  href={item.ctaHref ?? "/me/carteira"}
                   className="block rounded-xl border border-white/10 bg-black/30 px-3 py-2 hover:bg-white/10"
                 >
                   <p className="text-sm font-semibold text-white">{item.title}</p>
@@ -356,19 +406,21 @@ export default function MePage() {
           <div>
             <h2 className="text-sm font-semibold text-white/95 tracking-[0.08em]">Reservas</h2>
             <p className="text-[11px] text-white/68">
-              Consulta horários marcados e gere cancelamentos.
+              Consulta horários marcados e cancelamentos.
             </p>
           </div>
-          <Link
-            href="/me/reservas"
-            className="inline-flex items-center gap-2 rounded-full border border-white/30 bg-white/10 text-white text-[11px] font-semibold px-4 py-1.5 shadow-[0_10px_26px_rgba(255,255,255,0.15)] hover:border-white/45 hover:bg-white/20 hover:scale-[1.02] active:scale-95 transition-transform backdrop-blur"
-          >
-            Ver reservas
-            <span className="text-[12px]">↗</span>
-          </Link>
+          <div className="flex flex-wrap items-center gap-2">
+            <Link
+              href="/me/reservas"
+              className="inline-flex items-center gap-2 rounded-full border border-white/30 bg-white/10 text-white text-[11px] font-semibold px-4 py-1.5 shadow-[0_10px_26px_rgba(255,255,255,0.15)] hover:border-white/45 hover:bg-white/20 hover:scale-[1.02] active:scale-95 transition-transform backdrop-blur"
+            >
+              Ver reservas
+              <span className="text-[12px]">↗</span>
+            </Link>
+          </div>
         </div>
         <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-4 text-[12px] text-white/70">
-          Todas as reservas confirmadas ou pendentes aparecem na tua área pessoal.
+          Todas as reservas aparecem na tua área pessoal.
         </div>
       </section>
 
@@ -459,18 +511,28 @@ export default function MePage() {
             Autentica-te para veres a tua carteira, histórico e bilhetes. O QR e ações só aparecem depois de iniciares sessão.
           </p>
           <div className="flex flex-col sm:flex-row justify-center gap-3">
-            <Link
-              href="/login?redirectTo=/me"
+            <button
+              type="button"
+              onClick={() => {
+                if (!isAuthOpen) {
+                  openAuthModal({ mode: "login", redirectTo: "/me", showGoogle: true });
+                }
+              }}
               className="px-4 py-2.5 rounded-xl bg-white text-black text-sm font-semibold shadow-[0_18px_45px_rgba(0,0,0,0.35)] transition hover:shadow-[0_22px_55px_rgba(255,255,255,0.25)]"
             >
               Entrar
-            </Link>
-            <Link
-              href="/login?mode=signup&redirectTo=/me"
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (!isAuthOpen) {
+                  openAuthModal({ mode: "signup", redirectTo: "/me", showGoogle: true });
+                }
+              }}
               className="px-4 py-2.5 rounded-xl border border-white/30 bg-white/10 text-sm font-semibold text-white hover:border-white/45 hover:bg-white/20"
             >
               Criar conta
-            </Link>
+            </button>
           </div>
         </div>
       </div>

@@ -476,7 +476,7 @@ export function TournamentLiveManager({ tournamentId }: TournamentLiveManagerPro
           <div>
             <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Preparação</p>
             <h2 className="text-lg font-semibold text-white">Bracket & participantes</h2>
-            <p className="text-sm text-white/60">Define o tamanho e prepara a lista de jogadores.</p>
+            <p className="text-sm text-white/60">Define tamanho e lista de jogadores.</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <span className="rounded-full border border-white/15 px-3 py-1 text-xs text-white/60">
@@ -502,7 +502,7 @@ export function TournamentLiveManager({ tournamentId }: TournamentLiveManagerPro
                 onChange={(e) => {
                   const nextSize = Number(e.target.value);
                   if (filledCount > nextSize) {
-                    const ok = window.confirm("A bracket vai ficar menor do que o numero de jogadores. Continuar?");
+                    const ok = window.confirm("Bracket menor que jogadores. Continuar?");
                     if (!ok) return;
                   }
                   setBracketSize(nextSize);
@@ -516,7 +516,7 @@ export function TournamentLiveManager({ tournamentId }: TournamentLiveManagerPro
                 ))}
               </select>
               <p className="text-[11px] text-white/50">
-                {filledCount} participantes · ordem top-down/left-right
+                {filledCount} participantes · ordem top-down
               </p>
             </div>
             <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-[11px] text-white/60">
@@ -727,10 +727,10 @@ export function TournamentLiveManager({ tournamentId }: TournamentLiveManagerPro
 
                         {slotMode === "guest" ? (
                           <div className="space-y-2">
-                            <p className="text-sm text-white/70">Avatar (upload)</p>
+                            <p className="text-sm text-white/70">Avatar</p>
                             <div className="flex flex-wrap items-center gap-3 text-[11px] text-white/60">
                               <label className="cursor-pointer rounded-full border border-white/15 px-3 py-1 hover:border-white/40">
-                                {uploadingAvatar ? "A carregar..." : "Upload imagem"}
+                                {uploadingAvatar ? "A carregar..." : "Carregar"}
                                 <input
                                   type="file"
                                   accept="image/*"
@@ -745,26 +745,26 @@ export function TournamentLiveManager({ tournamentId }: TournamentLiveManagerPro
                                   onClick={() => setSlotDraft((prev) => ({ ...prev, avatarUrl: null }))}
                                   className="rounded-full border border-white/10 px-3 py-1 text-[11px] text-white/50 hover:border-white/30"
                                 >
-                                  Remover imagem
+                                  Remover
                                 </button>
                               )}
                               {!slotDraft.avatarUrl && (
-                                <span className="text-white/50">Se não fizer upload, usamos as iniciais.</span>
+                                <span className="text-white/50">Sem upload: iniciais.</span>
                               )}
                             </div>
                           </div>
                         ) : (
-                          <p className="text-[11px] text-white/50">Usa o avatar do utilizador ORYA ou as iniciais.</p>
+                          <p className="text-[11px] text-white/50">Avatar ORYA ou iniciais.</p>
                         )}
 
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-[11px] text-white/50">Guarda automaticamente.</span>
+                          <span className="text-[11px] text-white/50">Auto-guardado.</span>
                           <button
                             type="button"
                             onClick={clearSlot}
                             className="rounded-full border border-white/10 px-4 py-2 text-sm text-white/60 hover:border-white/30"
                           >
-                            Limpar slot
+                            Limpar
                           </button>
                         </div>
                       </div>
@@ -787,7 +787,7 @@ export function TournamentLiveManager({ tournamentId }: TournamentLiveManagerPro
         <div className="space-y-4 rounded-2xl border border-white/10 bg-black/40 p-4">
           <div className="flex items-center justify-between gap-2">
             <div>
-              <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Live Torneio</p>
+              <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Live</p>
               <h1 className="text-xl font-semibold text-white">{tournament?.event?.title ?? "Torneio"}</h1>
               <p className="text-white/70 text-sm">Formato: {tournament.format}</p>
             </div>
@@ -902,11 +902,13 @@ export default function OrganizationTournamentLivePage({ params }: PageProps) {
   );
 
   useEffect(() => {
-    const eventId = data?.tournament?.event?.id;
+    const event = data?.tournament?.event ?? null;
+    const eventId = event?.id;
     if (Number.isFinite(eventId)) {
-      router.replace(`/organizacao/eventos/${eventId}/live?tab=bracket`);
+      const basePath = event?.templateType === "PADEL" ? "/organizacao/torneios" : "/organizacao/eventos";
+      router.replace(`${basePath}/${eventId}/live?tab=bracket`);
     }
-  }, [data?.tournament?.event?.id, router]);
+  }, [data?.tournament?.event, router]);
 
   return (
     <div className="p-4 text-white/70">

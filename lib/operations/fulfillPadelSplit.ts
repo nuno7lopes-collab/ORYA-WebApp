@@ -7,6 +7,7 @@ import {
   PadelPairingSlotStatus,
   PadelPaymentMode,
   PaymentEventSource,
+  Prisma,
 } from "@prisma/client";
 import crypto from "crypto";
 import { ensureEntriesForConfirmedPairing } from "@/domain/tournaments/ensureEntriesForConfirmedPairing";
@@ -29,6 +30,50 @@ function extractPaymentMethodId(intent: IntentLike) {
     return intent.payment_method.id;
   }
   return null;
+}
+
+async function ensurePadelPlayerProfileId(
+  tx: Prisma.TransactionClient,
+  params: { organizationId: number; userId: string },
+) {
+  const { organizationId, userId } = params;
+  const existing = await tx.padelPlayerProfile.findFirst({
+    where: { organizationId, userId },
+    select: { id: true },
+  });
+  if (existing) return existing.id;
+  const [profile, authUser] = await Promise.all([
+    tx.profile.findUnique({
+      where: { id: userId },
+      select: {
+        fullName: true,
+        contactPhone: true,
+        gender: true,
+        padelLevel: true,
+        padelPreferredSide: true,
+        padelClubName: true,
+      },
+    }),
+    tx.users.findUnique({ where: { id: userId }, select: { email: true } }),
+  ]);
+  const name = profile?.fullName?.trim() || "Jogador Padel";
+  const email = authUser?.email ?? null;
+  const created = await tx.padelPlayerProfile.create({
+    data: {
+      organizationId,
+      userId,
+      fullName: name,
+      displayName: name,
+      email: email ?? undefined,
+      phone: profile?.contactPhone ?? undefined,
+      gender: profile?.gender ?? undefined,
+      level: profile?.padelLevel ?? undefined,
+      preferredSide: profile?.padelPreferredSide ?? undefined,
+      clubName: profile?.padelClubName ?? undefined,
+    },
+    select: { id: true },
+  });
+  return created.id;
 }
 
 export async function fulfillPadelSplitIntent(intent: IntentLike, stripeFeeForIntentValue: number | null): Promise<boolean> {
@@ -145,6 +190,7 @@ export async function fulfillPadelSplitIntent(intent: IntentLike, stripeFeeForIn
           totalPaidCents: intent.amount ?? ticketType.price,
           currency: ticketType.currency || intent.currency.toUpperCase(),
           stripePaymentIntentId: intent.id,
+          purchaseId: purchaseId ?? intent.id,
           status: "ACTIVE",
           qrSecret,
           rotatingSeed,
@@ -269,6 +315,24 @@ export async function fulfillPadelSplitIntent(intent: IntentLike, stripeFeeForIn
       },
     });
 
+    const shouldSetPartner =
+      slot.slot_role === "PARTNER" &&
+      userId &&
+      pairing.player1UserId !== userId &&
+      (!pairing.player2UserId || pairing.player2UserId === userId);
+    const shouldFillSlot = slot.slot_role === "PARTNER" ? shouldSetPartner : Boolean(userId);
+    const partnerProfileId =
+      shouldSetPartner && userId
+        ? await ensurePadelPlayerProfileId(tx, { organizationId: pairing.organizationId, userId })
+        : null;
+    const nextSlotStatus =
+      slot.slotStatus === PadelPairingSlotStatus.FILLED
+        ? PadelPairingSlotStatus.FILLED
+        : shouldFillSlot
+          ? PadelPairingSlotStatus.FILLED
+          : slot.slotStatus;
+
+    const partnerPaidAt = shouldSetPartner ? new Date() : null;
     let updated = await tx.padelPairing.update({
       where: { id: pairingId },
       data: {
@@ -277,14 +341,26 @@ export async function fulfillPadelSplitIntent(intent: IntentLike, stripeFeeForIn
             where: { id: slotId },
             data: {
               ticketId: ticketId ?? undefined,
-              profileId: userId ?? undefined,
+              profileId: shouldFillSlot ? userId ?? undefined : undefined,
+              playerProfileId: partnerProfileId ?? undefined,
               paymentStatus: PadelPairingPaymentStatus.PAID,
-              slotStatus: userId ? PadelPairingSlotStatus.FILLED : slot.slotStatus,
+              slotStatus: userId ? nextSlotStatus : slot.slotStatus,
             },
           },
         },
         ...(slot.slot_role === "CAPTAIN" && paymentMethodId
           ? { paymentMethodId }
+          : {}),
+        ...(shouldSetPartner
+          ? {
+              player2UserId: userId,
+              partnerInviteToken: null,
+              partnerLinkToken: null,
+              partnerLinkExpiresAt: null,
+              partnerInviteUsedAt: partnerPaidAt,
+              partnerAcceptedAt: partnerPaidAt,
+              partnerPaidAt,
+            }
           : {}),
       },
       include: { slots: true },

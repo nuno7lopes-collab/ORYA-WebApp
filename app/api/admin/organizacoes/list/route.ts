@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { createSupabaseServer } from "@/lib/supabaseServer";
-import { OrganizationStatus, Prisma } from "@prisma/client";
+import { requireAdminUser } from "@/lib/admin/auth";
+import { OrganizationStatus, Prisma, TicketStatus } from "@prisma/client";
 
 /**
  * 6.11 – Listar organizações (admin)
@@ -24,60 +24,13 @@ function parsePositiveInt(value: string | null, defaultValue: number): number {
   return Math.floor(n);
 }
 
-type AdminAuthError = "UNAUTHENTICATED" | "FORBIDDEN" | null;
-
-async function getAdminUserId(): Promise<{
-  userId: string | null;
-  error: AdminAuthError;
-}> {
-  const supabase = await createSupabaseServer();
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser();
-
-  if (error || !user) {
-    return { userId: null, error: "UNAUTHENTICATED" };
-  }
-
-  // Verificar se este user tem role "admin" no profile
-  const profile = await prisma.profile.findUnique({
-    where: { id: user.id },
-    select: { roles: true },
-  });
-
-  const rolesArray = Array.isArray(profile?.roles) ? profile?.roles : [];
-
-  if (!rolesArray.includes("admin")) {
-    return { userId: null, error: "FORBIDDEN" };
-  }
-
-  return { userId: user.id, error: null };
-}
-
 export async function GET(req: NextRequest) {
   try {
-    // 1) Guard de admin
-    const { userId, error } = await getAdminUserId();
-
-    if (error === "UNAUTHENTICATED") {
-      return NextResponse.json(
-        { ok: false, error: "UNAUTHENTICATED" },
-        { status: 401 }
-      );
+    const admin = await requireAdminUser();
+    if (!admin.ok) {
+      return NextResponse.json({ ok: false, error: admin.error }, { status: admin.status });
     }
 
-    if (error === "FORBIDDEN") {
-      return NextResponse.json(
-        { ok: false, error: "FORBIDDEN" },
-        { status: 403 }
-      );
-    }
-
-    // userId neste momento não é usado na query, mas pode ser útil no futuro
-    void userId;
-
-    // 2) Ler query params
     const url = new URL(req.url);
     const searchParam = url.searchParams.get("search");
     const statusParam = url.searchParams.get("status");
@@ -85,66 +38,133 @@ export async function GET(req: NextRequest) {
     const pageSizeParam = url.searchParams.get("pageSize");
 
     const page = parsePositiveInt(pageParam, 1);
-    const pageSizeRaw = parsePositiveInt(pageSizeParam, 20);
+    const pageSizeRaw = parsePositiveInt(pageSizeParam, 50);
     const pageSize = Math.min(pageSizeRaw, 100);
-
     const skip = (page - 1) * pageSize;
 
-    // 3) Construir filtros
     let statusFilter: OrganizationStatus | undefined;
-
-    if (
-      statusParam &&
-      (Object.values(OrganizationStatus) as string[]).includes(statusParam)
-    ) {
+    if (statusParam && (Object.values(OrganizationStatus) as string[]).includes(statusParam)) {
       statusFilter = statusParam as OrganizationStatus;
     }
 
     const where: Prisma.OrganizationWhereInput = {};
-
-    if (statusFilter) {
-      where.status = statusFilter;
-    }
-
+    if (statusFilter) where.status = statusFilter;
     if (searchParam && searchParam.trim() !== "") {
       const search = searchParam.trim();
-      where.publicName = {
-        contains: search,
-        mode: "insensitive",
-      };
+      where.publicName = { contains: search, mode: "insensitive" };
     }
 
-    // 4) Query com paginação
-    const [items, total] = await Promise.all([
+    const [orgs, total, eventCounts] = await Promise.all([
       prisma.organization.findMany({
         where,
         orderBy: { createdAt: "desc" },
         skip,
         take: pageSize,
+        select: {
+          id: true,
+          publicName: true,
+          status: true,
+          createdAt: true,
+          orgType: true,
+          stripeAccountId: true,
+          stripeChargesEnabled: true,
+          stripePayoutsEnabled: true,
+          members: {
+            where: { role: { in: ["OWNER", "CO_OWNER"] } },
+            select: {
+              role: true,
+              user: {
+                select: {
+                  id: true,
+                  username: true,
+                  fullName: true,
+                  users: { select: { email: true } },
+                },
+              },
+            },
+          },
+        },
       }),
       prisma.organization.count({ where }),
+      prisma.event.groupBy({
+        by: ["organizationId"],
+        _count: { _all: true },
+      }),
     ]);
+
+    const orgIds = orgs.map((org) => org.id);
+
+    const ticketTotals = orgIds.length
+      ? await prisma.$queryRaw<
+          Array<{ organization_id: number; tickets: number }>
+        >(
+          Prisma.sql`
+            SELECT e.organization_id, COUNT(*)::int AS tickets
+            FROM app_v3.tickets t
+            JOIN app_v3.events e ON e.id = t.event_id
+            WHERE e.organization_id IN (${Prisma.join(orgIds)})
+              AND t.status IN (${Prisma.join([TicketStatus.ACTIVE, TicketStatus.USED, TicketStatus.REFUNDED])})
+            GROUP BY e.organization_id
+          `,
+        )
+      : [];
+
+    const revenueTotals = orgIds.length
+      ? await prisma.$queryRaw<
+          Array<{ organization_id: number; total_revenue_cents: number }>
+        >(
+          Prisma.sql`
+            SELECT e.organization_id, COALESCE(SUM(s.total_cents), 0)::int AS total_revenue_cents
+            FROM app_v3.sale_summaries s
+            JOIN app_v3.events e ON e.id = s.event_id
+            WHERE e.organization_id IN (${Prisma.join(orgIds)})
+            GROUP BY e.organization_id
+          `,
+        )
+      : [];
+
+    const eventsMap = new Map(eventCounts.map((row) => [row.organizationId, row._count._all]));
+    const ticketsMap = new Map(ticketTotals.map((row) => [row.organization_id, row.tickets]));
+    const revenueMap = new Map(revenueTotals.map((row) => [row.organization_id, row.total_revenue_cents]));
+
+    const organizations = orgs.map((org) => {
+      const ownerMember = org.members[0];
+      return {
+        id: org.id,
+        publicName: org.publicName,
+        status: org.status,
+        createdAt: org.createdAt,
+        orgType: org.orgType,
+        stripeAccountId: org.stripeAccountId,
+        stripeChargesEnabled: org.stripeChargesEnabled,
+        stripePayoutsEnabled: org.stripePayoutsEnabled,
+        owner: ownerMember?.user
+          ? {
+              id: ownerMember.user.id,
+              username: ownerMember.user.username,
+              fullName: ownerMember.user.fullName,
+              email: ownerMember.user.users?.email ?? null,
+            }
+          : null,
+        eventsCount: eventsMap.get(org.id) ?? 0,
+        totalTickets: ticketsMap.get(org.id) ?? 0,
+        totalRevenueCents: revenueMap.get(org.id) ?? 0,
+      };
+    });
 
     const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
     return NextResponse.json(
       {
         ok: true,
-        items,
-        pagination: {
-          page,
-          pageSize,
-          total,
-          totalPages,
-        },
+        organizations,
+        items: organizations,
+        pagination: { page, pageSize, total, totalPages },
       },
-      { status: 200 }
+      { status: 200 },
     );
   } catch (err) {
     console.error("[/api/admin/organizacoes/list] Erro inesperado:", err);
-    return NextResponse.json(
-      { ok: false, error: "INTERNAL_ERROR" },
-      { status: 500 }
-    );
+    return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }

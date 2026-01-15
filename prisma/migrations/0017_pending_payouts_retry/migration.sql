@@ -1,0 +1,3 @@
+ALTER TABLE app_v3.pending_payouts
+  ADD COLUMN IF NOT EXISTS retry_count INTEGER NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS next_attempt_at TIMESTAMPTZ;

@@ -4,6 +4,8 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import OrganizationsHubClient from "../../organizations/OrganizationsHubClient";
 import { cookies } from "next/headers";
+import { AuthGate } from "@/app/components/autenticação/AuthGate";
+import { Prisma } from "@prisma/client";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -30,7 +32,7 @@ export default async function OrganizationsHubPage() {
   } = await supabase.auth.getUser();
 
   if (!user) {
-    redirect("/login?next=/organizacao/organizations");
+    return <AuthGate />;
   }
 
   let orgs: OrgPayload[] = [];
@@ -60,6 +62,32 @@ export default async function OrganizationsHubPage() {
 
   // Se não houver nenhuma organização, envia para o onboarding
   if (orgs.length === 0) {
+    const profile = await prisma.profile.findUnique({
+      where: { id: user.id },
+      select: { username: true },
+    });
+    const viewerEmail = user.email?.toLowerCase() ?? null;
+    const viewerUsername = profile?.username ?? null;
+    const pendingInvite = await prisma.organizationMemberInvite.findFirst({
+      where: {
+        cancelledAt: null,
+        acceptedAt: null,
+        declinedAt: null,
+        expiresAt: { gt: new Date() },
+        OR: [
+          { targetUserId: user.id },
+          ...(viewerEmail
+            ? [{ targetIdentifier: { equals: viewerEmail, mode: Prisma.QueryMode.insensitive } }]
+            : []),
+          ...(viewerUsername
+            ? [{ targetIdentifier: { equals: viewerUsername, mode: Prisma.QueryMode.insensitive } }]
+            : []),
+        ],
+      },
+    });
+    if (pendingInvite) {
+      redirect("/convites/organizacoes");
+    }
     redirect("/organizacao/become");
   }
 

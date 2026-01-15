@@ -7,6 +7,7 @@ import { CTA_PRIMARY, CTA_SECONDARY, CTA_NEUTRAL } from "@/app/organizacao/dashb
 import { useUser } from "@/app/hooks/useUser";
 import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
 import { Avatar } from "@/components/ui/avatar";
+import { getProfileCoverUrl, sanitizeProfileCoverUrl } from "@/lib/profileCover";
 
 const BIO_LIMIT = 280;
 
@@ -27,7 +28,6 @@ type OrganizationProfileInfo = {
   address?: string | null;
   showAddressPublicly?: boolean | null;
   city?: string | null;
-  liveHubPremiumEnabled?: boolean | null;
 };
 
 type OrganizationPublicProfilePanelProps = {
@@ -74,7 +74,9 @@ export default function OrganizationPublicProfilePanel({
     setAvatarUrl(organization.brandingAvatarUrl ?? null);
     setCity(organization.city ?? "");
     if (!coverDirty) {
-      setCoverImageUrl(organization.brandingCoverUrl ?? coverUrl ?? null);
+      setCoverImageUrl(
+        sanitizeProfileCoverUrl(organization.brandingCoverUrl ?? coverUrl ?? null),
+      );
     }
   }, [organization, coverUrl, coverDirty]);
 
@@ -113,7 +115,7 @@ export default function OrganizationPublicProfilePanel({
     try {
       const formData = new FormData();
       formData.append("file", file);
-      const res = await fetch("/api/upload?scope=event-cover", { method: "POST", body: formData });
+      const res = await fetch("/api/upload?scope=profile-cover", { method: "POST", body: formData });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.url) {
         setMessage(json?.error || "Não foi possível carregar a capa.");
@@ -132,7 +134,7 @@ export default function OrganizationPublicProfilePanel({
 
   const handleSaveProfile = async () => {
     if (!user) {
-      openModal({ mode: "login", redirectTo: "/organizacao?tab=overview" });
+      openModal({ mode: "login", redirectTo: "/organizacao?tab=profile" });
       return;
     }
     if (!canEdit) return;
@@ -179,7 +181,7 @@ export default function OrganizationPublicProfilePanel({
 
   const handleSaveUsername = async () => {
     if (!user) {
-      openModal({ mode: "login", redirectTo: "/organizacao?tab=overview" });
+      openModal({ mode: "login", redirectTo: "/organizacao?tab=profile" });
       return;
     }
     if (!canEdit) return;
@@ -218,7 +220,12 @@ export default function OrganizationPublicProfilePanel({
   const displayBio = bio.trim() || organization?.publicDescription?.trim() || "";
   const displayCity = city.trim() || organization?.city?.trim() || "";
   const avatarPreviewUrl = avatarUrl ?? organization?.brandingAvatarUrl ?? null;
-  const coverPreviewUrl = coverImageUrl ?? coverUrl ?? null;
+  const coverPreviewUrl = getProfileCoverUrl(coverImageUrl ?? coverUrl ?? null, {
+    width: 1500,
+    height: 500,
+    quality: 70,
+    format: "webp",
+  });
   const publicProfileUrl = displayUsername ? `/${displayUsername}` : null;
 
   if (!organization) {
@@ -250,8 +257,8 @@ export default function OrganizationPublicProfilePanel({
 
       <section className="relative overflow-hidden rounded-3xl border border-white/12 bg-gradient-to-br from-white/7 via-[#060914]/92 to-[#05070f]/96 shadow-[0_26px_80px_rgba(0,0,0,0.85)] backdrop-blur-2xl">
         <div className="px-5 pt-5 sm:px-8">
-          <div className="mx-auto w-full max-w-5xl">
-            <div className="relative h-36 w-full overflow-hidden rounded-2xl border border-white/10">
+          <div className="w-full">
+            <div className="relative orya-profile-cover w-full overflow-hidden rounded-2xl border border-white/10">
               <div
                 className="absolute inset-0 bg-cover bg-center"
                 style={coverPreviewUrl ? { backgroundImage: `url(${coverPreviewUrl})` } : undefined}
@@ -298,8 +305,8 @@ export default function OrganizationPublicProfilePanel({
           </div>
         </div>
 
-        <div className="relative -mt-10 px-5 pb-6 sm:px-8">
-          <div className="mx-auto flex w-full max-w-5xl flex-col gap-4 md:flex-row md:items-end md:justify-between">
+        <div className="relative -mt-12 px-5 pb-6 sm:-mt-14 sm:px-8">
+          <div className="flex w-full flex-col gap-4 md:flex-row md:items-end md:justify-between">
             <div className="flex items-start gap-4">
               <div className="relative shrink-0">
                 <button
@@ -440,22 +447,11 @@ export default function OrganizationPublicProfilePanel({
                     </button>
                   )}
                 </div>
-                {categoryLabel && <span className="text-[11px] text-white/50">Categoria: {categoryLabel}</span>}
+                {categoryLabel && <span className="text-[11px] text-white/50">Operação: {categoryLabel}</span>}
                 {usernameMessage && <p className="text-[11px] text-white/60">{usernameMessage}</p>}
                 {message && <p className="text-[12px] text-white/70">{message}</p>}
               </div>
             </div>
-
-            {organization && (
-              <div className="rounded-2xl border border-white/12 bg-white/5 px-3 py-3 text-sm text-white/75">
-                <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">
-                  Premium da organização
-                </p>
-                <p className="text-sm text-white/80">
-                  {organization.liveHubPremiumEnabled ? "Ativo" : "Inativo"} · Gerido automaticamente pela subscrição.
-                </p>
-              </div>
-            )}
 
             <div className="flex flex-wrap items-center gap-2">
               {publicProfileUrl && (

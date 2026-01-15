@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useCheckout } from "./contextoCheckout";
+import { useRouter } from "next/navigation";
+import { useCheckout, type DadosCheckout } from "./contextoCheckout";
 import { Avatar } from "@/components/ui/avatar";
 import { CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
 
@@ -18,29 +19,23 @@ type Wave = {
   padelCategoryLinkId?: number | null;
 };
 
-type CheckoutData = {
-  waves?: Wave[];
-  additional?: Record<string, unknown>;
-  paymentScenario?: string | null;
-};
-
 export default function Step1Bilhete() {
+  const router = useRouter();
   const { dados, irParaPasso, fecharCheckout, atualizarDados } = useCheckout();
 
-  const safeDados: CheckoutData =
-    dados && typeof dados === "object"
-      ? (dados as CheckoutData)
-      : { waves: [], additional: {} };
+  const safeDados: DadosCheckout | null =
+    dados && typeof dados === "object" ? (dados as DadosCheckout) : null;
 
   const normalizeStatus = (status?: string) =>
     (status || "on_sale").toLowerCase();
 
-  const stableWaves: Wave[] = Array.isArray(safeDados.waves)
-    ? [...safeDados.waves].map((w) => ({
-        ...w,
-        status: normalizeStatus(w.status),
-      }))
+  const safeWaves: Wave[] = Array.isArray(safeDados?.waves)
+    ? (safeDados?.waves as Wave[])
     : [];
+  const stableWaves: Wave[] = safeWaves.map((w) => ({
+    ...w,
+    status: normalizeStatus(w.status),
+  }));
   const cheapestAvailable = [...stableWaves]
     .filter((w) => {
       const st = normalizeStatus(w.status);
@@ -48,27 +43,41 @@ export default function Step1Bilhete() {
     })
     .sort((a, b) => (a.price ?? 0) - (b.price ?? 0))[0];
   const hasWaves = stableWaves.length > 0;
+  const isFreeEvent =
+    hasWaves &&
+    stableWaves.every((w) => typeof w.price === "number" && w.price <= 0);
+  const storedQuantidades =
+    safeDados?.additional && typeof safeDados.additional === "object"
+      ? (safeDados.additional as Record<string, unknown>).quantidades
+      : null;
+  const storedQuantidadesMap =
+    storedQuantidades && typeof storedQuantidades === "object"
+      ? (storedQuantidades as Record<string, number>)
+      : {};
 
   // 🧮 Quantidades iniciais por wave (memoizado para não recriar em cada render)
   const initialQuantidades: Record<string, number> = {};
   for (const w of stableWaves) {
+    const storedQty = storedQuantidadesMap[w.id];
     const rawQty =
-      typeof w.quantity === "number" && w.quantity > 0 ? w.quantity : 0;
+      typeof storedQty === "number" && storedQty > 0 ? storedQty : 0;
     const remaining =
       typeof w.remaining === "number" && w.remaining >= 0
         ? w.remaining
         : null;
-    const maxForWave =
+    const baseMax =
       remaining === null ? Number.MAX_SAFE_INTEGER : Math.max(0, remaining);
+    const maxForWave =
+      typeof w.price === "number" && w.price <= 0 ? Math.min(baseMax, 1) : baseMax;
     initialQuantidades[w.id] = Math.min(rawQty, maxForWave);
   }
   const variant = (
-    typeof safeDados.additional?.checkoutUiVariant === "string"
+    typeof safeDados?.additional?.checkoutUiVariant === "string"
       ? safeDados.additional.checkoutUiVariant
       : "DEFAULT"
   ).toUpperCase();
   const isPadelVariant = variant === "PADEL";
-  const padelMeta = (safeDados.additional?.padelMeta as
+  const padelMeta = (safeDados?.additional?.padelMeta as
     | { eventId: number; organizationId: number | null; categoryId?: number | null; categoryLinkId?: number | null }
     | undefined) ?? null;
 
@@ -112,6 +121,8 @@ export default function Step1Bilhete() {
   const [partnerContact, setPartnerContact] = useState("");
   const [partnerError, setPartnerError] = useState<string | null>(null);
   const [padelStockError, setPadelStockError] = useState<string | null>(null);
+  const [inviteSentMessage, setInviteSentMessage] = useState<string | null>(null);
+  const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [partnerResults, setPartnerResults] = useState<
     { id: string; username: string | null; fullName: string | null; avatarUrl: string | null }[]
   >([]);
@@ -168,6 +179,15 @@ export default function Step1Bilhete() {
       setSelectedPadelCategoryKey(padelCategoryOptions[0].key);
     }
   }, [isPadelVariant, padelCategoryOptions, padelMeta?.categoryId, padelMeta?.categoryLinkId, selectedPadelCategoryKey]);
+
+  useEffect(() => {
+    if (padelJoinMode !== "INVITE_PARTNER" && inviteSentMessage) {
+      setInviteSentMessage(null);
+    }
+    if (padelJoinMode !== "INVITE_PARTNER" && inviteLink) {
+      setInviteLink(null);
+    }
+  }, [padelJoinMode, inviteSentMessage, inviteLink]);
 
   const selectedPadelCategory =
     padelCategoryOptions.find((opt) => opt.key === selectedPadelCategoryKey) ?? null;
@@ -250,18 +270,24 @@ export default function Step1Bilhete() {
   function getMaxForWave(waveId: string) {
     const wave = stableWaves.find((w) => w.id === waveId);
     if (!wave) return Number.MAX_SAFE_INTEGER;
+    const isFreeWave = typeof wave.price === "number" && wave.price <= 0;
     const remaining =
       typeof wave.remaining === "number" && wave.remaining >= 0
         ? wave.remaining
         : null;
-    return remaining === null ? Number.MAX_SAFE_INTEGER : Math.max(0, remaining);
+    const baseMax = remaining === null ? Number.MAX_SAFE_INTEGER : Math.max(0, remaining);
+    return isFreeWave ? Math.min(baseMax, 1) : baseMax;
   }
 
   function handleIncrement(id: string) {
-    const maxAllowed = getMaxForWave(id);
     setQuantidades((prev) => {
       const current = prev[id] ?? 0;
+      const maxAllowed = getMaxForWave(id);
       if (current >= maxAllowed) return prev;
+      if (isFreeEvent) {
+        const totalSelected = Object.values(prev).reduce((sum, qty) => sum + qty, 0);
+        if (totalSelected >= 1) return prev;
+      }
       return {
         ...prev,
         [id]: current + 1,
@@ -305,6 +331,18 @@ export default function Step1Bilhete() {
       // Criar (ou reusar) pairing antes de avançar
       const paymentMode = scenario === "GROUP_FULL" ? "FULL" : "SPLIT";
 
+      const redirectToPadelOnboarding = () => {
+        if (!resolvedPadelMeta?.eventId) return;
+        const currentPath =
+          typeof window !== "undefined"
+            ? `${window.location.pathname}${window.location.search}`
+            : `/eventos/${safeDados?.additional?.slug ?? ""}`;
+        const params = new URLSearchParams();
+        params.set("redirectTo", currentPath);
+        fecharCheckout();
+        router.push(`/onboarding/padel?${params.toString()}`);
+      };
+
       const createPairing = async () => {
         if (!resolvedPadelMeta?.eventId) return null;
         try {
@@ -318,22 +356,91 @@ export default function Step1Bilhete() {
               paymentMode,
               pairingJoinMode: padelJoinMode,
               invitedContact:
-                padelJoinMode === "INVITE_PARTNER" && partnerContact.trim() ? partnerContact.trim() : undefined,
+                padelJoinMode === "INVITE_PARTNER"
+                  ? partnerSelected?.username
+                    ? `@${partnerSelected.username}`
+                    : partnerSelected
+                      ? undefined
+                      : partnerContact.trim() || undefined
+                  : undefined,
+              targetUserId: partnerSelected?.id ?? undefined,
             }),
           });
           const json = await res.json().catch(() => null);
-          if (!res.ok || !json?.ok || !json?.pairing?.id) {
+          const resolvePadelError = (code?: string | null) => {
+            switch (code) {
+              case "CATEGORY_FULL":
+              case "CATEGORY_PLAYERS_FULL":
+                return "Categoria cheia. Tenta outra ou aguarda vaga.";
+              case "ALREADY_IN_CATEGORY":
+                return "Já estás inscrito nesta categoria.";
+              case "MAX_CATEGORIES":
+                return "Já atingiste o limite de categorias neste torneio.";
+              case "EVENT_FULL":
+                return "Torneio cheio. Aguarda vaga na lista de espera.";
+              case "EVENT_NOT_PUBLISHED":
+                return "As inscrições ainda não estão abertas.";
+              case "INSCRIPTIONS_NOT_OPEN":
+                return "As inscrições ainda não abriram.";
+              case "INSCRIPTIONS_CLOSED":
+                return "As inscrições já fecharam.";
+              case "TOURNAMENT_STARTED":
+                return "O torneio já começou. Inscrições encerradas.";
+              case "SPLIT_DEADLINE_PASSED":
+                return "Já passou o prazo para pagamento dividido.";
+              case "CATEGORY_GENDER_MISMATCH":
+                return "Esta categoria exige uma dupla compatível com o género definido.";
+              case "GENDER_REQUIRED_FOR_TOURNAMENT":
+                return "Define o teu género para validar a elegibilidade.";
+              default:
+                return "Falha ao preparar inscrição Padel.";
+            }
+          };
+          if (!res.ok || !json?.ok) {
+            if (json?.error === "PADEL_ONBOARDING_REQUIRED") {
+              redirectToPadelOnboarding();
+              return null;
+            }
+            setPadelStockError(resolvePadelError(json?.error));
+            return null;
+          }
+          if (json?.waitlist) {
+            setPadelStockError("Ficaste na lista de espera. Avisamos assim que houver vaga.");
+            return null;
+          }
+          if (!json?.pairing?.id) {
             throw new Error(json?.error || "Falha ao preparar inscrição Padel.");
           }
+          const inviteToken = typeof json?.pairing?.partnerInviteToken === "string" ? json.pairing.partnerInviteToken : null;
+          const slug = typeof safeDados?.slug === "string" ? safeDados.slug : safeDados?.additional?.slug;
+          const linkValue =
+            inviteToken && slug && typeof window !== "undefined"
+              ? `${window.location.origin}/eventos/${slug}?inviteToken=${inviteToken}`
+              : null;
+          setInviteLink(linkValue);
+          if (json?.inviteSent) {
+            const targetLabel =
+              partnerSelected?.username
+                ? `@${partnerSelected.username}`
+                : partnerSelected?.fullName || partnerContact.trim();
+            setInviteSentMessage(
+              targetLabel ? `Convite enviado para ${targetLabel}.` : "Convite enviado para o parceiro.",
+            );
+          } else if (padelJoinMode === "INVITE_PARTNER" && partnerContact.trim()) {
+            setInviteSentMessage(
+              linkValue ? "Convite criado. Partilha o link com o parceiro." : "Convite criado. Encontra o link em Duplas.",
+            );
+          }
           const pairing = json.pairing as { id: number; slots?: Array<{ id: number; slot_role?: string; slotRole?: string }> };
+          const slotIdFromResponse = typeof json?.slotId === "number" ? json.slotId : null;
           const slot =
             pairing.slots?.find((s) => (s.slot_role ?? s.slotRole) === "CAPTAIN") ??
             pairing.slots?.[0] ??
             null;
-          return { pairingId: pairing.id, slotId: slot?.id ?? null };
+          return { pairingId: pairing.id, slotId: slotIdFromResponse ?? slot?.id ?? null };
         } catch (err) {
           console.error("[Step1Bilhete] pairing padel", err);
-          alert(err instanceof Error ? err.message : "Erro ao preparar inscrição Padel.");
+          setPadelStockError(err instanceof Error ? err.message : "Erro ao preparar inscrição Padel.");
           return null;
         }
       };
@@ -351,7 +458,7 @@ export default function Step1Bilhete() {
         atualizarDados({
           paymentScenario: scenario,
           additional: {
-            ...(safeDados.additional && typeof safeDados.additional === "object" ? safeDados.additional : {}),
+            ...(safeDados?.additional && typeof safeDados.additional === "object" ? safeDados.additional : {}),
             quantidades: nextQuantidades,
             total: totalCalc,
             padelJoinMode,
@@ -370,12 +477,13 @@ export default function Step1Bilhete() {
 
     // Permitir avançar mesmo que aparente 0€ — backend decide se é FREE/PAID.
     if (selectedQty <= 0) return;
+    const nextScenario = total === 0 ? "FREE_CHECKOUT" : "SINGLE";
 
     // Guardar info deste step no contexto (quantidades + total)
     atualizarDados({
-      paymentScenario: "SINGLE",
+      paymentScenario: nextScenario,
       additional: {
-        ...(safeDados.additional && typeof safeDados.additional === "object" ? safeDados.additional : {}),
+        ...(safeDados?.additional && typeof safeDados.additional === "object" ? safeDados.additional : {}),
         quantidades,
         total,
         checkoutUiVariant: variant,
@@ -457,6 +565,8 @@ export default function Step1Bilhete() {
               setPadelSelection("INDIVIDUAL");
               setPadelJoinMode("LOOKING_FOR_PARTNER");
               if (padelStockError) setPadelStockError(null);
+              if (inviteSentMessage) setInviteSentMessage(null);
+              if (inviteLink) setInviteLink(null);
             }}
             disabled={!hasPairSlotsAvailable}
             className={`rounded-2xl border px-4 py-4 text-left transition shadow-lg ${
@@ -479,6 +589,8 @@ export default function Step1Bilhete() {
               setPadelSelection("DUO_SPLIT");
               setPadelJoinMode("INVITE_PARTNER");
               if (padelStockError) setPadelStockError(null);
+              if (inviteSentMessage) setInviteSentMessage(null);
+              if (inviteLink) setInviteLink(null);
             }}
             disabled={!hasPairSlotsAvailable}
             className={`rounded-2xl border px-4 py-4 text-left transition shadow-lg ${
@@ -498,6 +610,8 @@ export default function Step1Bilhete() {
               setPadelSelection("DUO_FULL");
               setPadelJoinMode("INVITE_PARTNER");
               if (padelStockError) setPadelStockError(null);
+              if (inviteSentMessage) setInviteSentMessage(null);
+              if (inviteLink) setInviteLink(null);
             }}
             disabled={!hasPairSlotsAvailable}
             className={`rounded-2xl border px-4 py-4 text-left transition shadow-lg ${
@@ -539,6 +653,8 @@ export default function Step1Bilhete() {
                     onClick={() => {
                       setPartnerSelected(null);
                       setPartnerContact("");
+                      if (inviteSentMessage) setInviteSentMessage(null);
+                      if (inviteLink) setInviteLink(null);
                     }}
                     className="ml-1 inline-flex h-6 w-6 items-center justify-center rounded-full border border-white/20 bg-white/10 text-[11px] text-white/80 hover:bg-white/20"
                   >
@@ -553,6 +669,8 @@ export default function Step1Bilhete() {
                     setPartnerContact(e.target.value);
                     setPartnerSelected(null);
                     if (partnerError) setPartnerError(null);
+                    if (inviteSentMessage) setInviteSentMessage(null);
+                    if (inviteLink) setInviteLink(null);
                   }}
                   placeholder="Email / telefone / @username"
                   className={`w-full rounded-xl border bg-white/5 backdrop-blur-sm px-3 py-2 text-sm text-white placeholder:text-white/35 focus:outline-none ${
@@ -574,7 +692,7 @@ export default function Step1Bilhete() {
                     <button
                       key={user.id}
                       type="button"
-                    onClick={() => {
+                      onClick={() => {
                       const username = user.username ? `@${user.username}` : user.fullName ?? "";
                         setPartnerContact(username);
                         setPartnerSelected({
@@ -583,6 +701,8 @@ export default function Step1Bilhete() {
                         });
                         setPartnerResults([]);
                         setPartnerError(null);
+                        if (inviteSentMessage) setInviteSentMessage(null);
+                        if (inviteLink) setInviteLink(null);
                       }}
                       className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-white/5 transition-colors"
                     >
@@ -604,12 +724,33 @@ export default function Step1Bilhete() {
                 </div>
               )}
             </div>
+            {inviteSentMessage && (
+              <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-emerald-200">
+                <span>{inviteSentMessage}</span>
+                {inviteLink && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(inviteLink);
+                        setInviteSentMessage("Link copiado. Partilha com o parceiro.");
+                      } catch {
+                        setInviteSentMessage("Copia o link manualmente.");
+                      }
+                    }}
+                    className="rounded-full border border-emerald-200/40 px-3 py-1 text-[10px] text-emerald-100 hover:border-emerald-200/70"
+                  >
+                    Copiar link
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         )}
 
         <div className="flex items-center justify-between gap-3 border-t border-white/10 pt-3">
           <div className="text-[11px] text-white/70">
-            Seleciona uma opção para avançar.
+            Seleciona uma opção.
           </div>
           <button
             type="button"
@@ -624,10 +765,10 @@ export default function Step1Bilhete() {
           <p className="text-[11px] text-amber-200">{padelStockError}</p>
         )}
         {!padelStockError && !padelCategorySelected && padelCategoryRequired && (
-          <p className="text-[11px] text-amber-200">Seleciona uma categoria para continuar.</p>
+          <p className="text-[11px] text-amber-200">Seleciona uma categoria.</p>
         )}
         {!padelStockError && !hasPairSlotsAvailable && (
-          <p className="text-[11px] text-amber-200">Sem vagas suficientes para criar uma dupla.</p>
+          <p className="text-[11px] text-amber-200">Sem vagas suficientes.</p>
         )}
       </div>
     );
@@ -645,8 +786,13 @@ export default function Step1Bilhete() {
             Escolhe o teu bilhete
           </h2>
           <p className="text-[11px] text-white/60 max-w-xs">
-            Seleciona a wave, ajusta quantidades e revê antes de pagar.
+            Escolhe a wave e quantidades.
           </p>
+          {isFreeEvent && (
+            <p className="text-[11px] text-emerald-100/80">
+              Limite de 1 entrada por utilizador.
+            </p>
+          )}
         </div>
         <button
           type="button"
@@ -670,6 +816,7 @@ export default function Step1Bilhete() {
           const status = normalizeStatus(wave.status);
           const isSoldOut = status === "sold_out" || status === "closed";
           const maxForWave = getMaxForWave(wave.id);
+          const freeLimitReached = isFreeEvent && selectedQty >= 1 && q === 0;
 
           return (
             <div
@@ -746,7 +893,9 @@ export default function Step1Bilhete() {
                       onClick={() => handleIncrement(wave.id)}
                       className="flex h-7 w-7 items-center justify-center rounded-full bg-white text-black hover:bg-zinc-100 disabled:opacity-50"
                       disabled={
-                        isSoldOut || (quantidades[wave.id] ?? 0) >= maxForWave
+                        isSoldOut ||
+                        (quantidades[wave.id] ?? 0) >= maxForWave ||
+                        freeLimitReached
                       }
                     >
                       +
@@ -769,7 +918,7 @@ export default function Step1Bilhete() {
         </p>
         <button
           type="button"
-          disabled={total === 0}
+          disabled={selectedQty <= 0}
           onClick={handleContinuar}
           className={`${CTA_PRIMARY} mt-3 px-5 py-2.5 text-xs active:scale-95 disabled:opacity-50 sm:mt-0`}
         >

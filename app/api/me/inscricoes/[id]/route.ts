@@ -3,14 +3,15 @@ import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { readNumericParam } from "@/lib/routeParams";
 
-export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const supabase = await createSupabaseServer();
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
-  const entryId = readNumericParam(params?.id, req, "inscricoes");
+  const resolved = await params;
+  const entryId = readNumericParam(resolved?.id, req, "inscricoes");
   if (entryId === null) return NextResponse.json({ ok: false, error: "INVALID_ID" }, { status: 400 });
 
   const entry = await prisma.tournamentEntry.findFirst({

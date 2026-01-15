@@ -5,6 +5,14 @@ import { prisma } from "@/lib/prisma";
 import { TournamentFormat } from "@prisma/client";
 
 async function isOrganizationUser(userId: string, organizationId: number) {
+  const profile = await prisma.profile.findUnique({
+    where: { id: userId },
+    select: { onboardingDone: true, fullName: true, username: true },
+  });
+  const hasUserOnboarding =
+    profile?.onboardingDone ||
+    (Boolean(profile?.fullName?.trim()) && Boolean(profile?.username?.trim()));
+  if (!hasUserOnboarding) return false;
   const member = await prisma.organizationMember.findFirst({
     where: {
       organizationId,

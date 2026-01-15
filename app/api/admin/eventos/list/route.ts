@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { createSupabaseServer } from "@/lib/supabaseServer";
-import { Prisma, EventStatus, EventType } from "@prisma/client";
+import { requireAdminUser } from "@/lib/admin/auth";
+import { Prisma, EventStatus, EventType, TicketStatus } from "@prisma/client";
 
 // Fase 6.13 – Listar eventos (admin)
 // GET /api/admin/eventos/list
@@ -9,109 +9,125 @@ import { Prisma, EventStatus, EventType } from "@prisma/client";
 
 export async function GET(req: NextRequest) {
   try {
-    const supabase = await createSupabaseServer();
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
-
-    if (authError) {
-      console.error("[admin eventos list] erro auth:", authError);
-    }
-
-    if (!user) {
-      return NextResponse.json(
-        { ok: false, error: "UNAUTHENTICATED" },
-        { status: 401 },
-      );
-    }
-
-    // Confirmar se é admin via profile.roles
-    const profile = await prisma.profile.findUnique({
-      where: { id: user.id },
-      select: { id: true, roles: true },
-    });
-
-    const roles = profile?.roles ?? [];
-    const isAdmin = Array.isArray(roles) && roles.includes("admin");
-
-    if (!isAdmin) {
-      return NextResponse.json(
-        { ok: false, error: "FORBIDDEN" },
-        { status: 403 },
-      );
+    const admin = await requireAdminUser();
+    if (!admin.ok) {
+      return NextResponse.json({ ok: false, error: admin.error }, { status: admin.status });
     }
 
     const { searchParams } = new URL(req.url);
-
     const search = searchParams.get("search")?.trim() || "";
     const statusFilter = searchParams.get("status")?.trim() || "";
     const typeFilter = searchParams.get("type")?.trim() || "";
+    const organizationIdParam = searchParams.get("organizationId")?.trim() || "";
+    const cursorRaw = searchParams.get("cursor");
+    const cursor = cursorRaw ? Number(cursorRaw) : null;
 
     const takeRaw = searchParams.get("take");
-    const take = Math.min(Math.max(Number(takeRaw) || 50, 1), 200); // entre 1 e 200
+    const take = Math.min(Math.max(Number(takeRaw) || 50, 1), 200);
 
     const where: Prisma.EventWhereInput = {};
-
     if (search) {
       where.OR = [
         { title: { contains: search, mode: "insensitive" } },
         { slug: { contains: search, mode: "insensitive" } },
-        {
-          organization: {
-            publicName: { contains: search, mode: "insensitive" },
-          },
-        },
+        { organization: { publicName: { contains: search, mode: "insensitive" } } },
       ];
     }
-
     if (statusFilter) {
-      where.status = statusFilter as EventStatus; // mapeado para o enum EventStatus do Prisma
+      where.status = statusFilter as EventStatus;
     }
-
     if (typeFilter) {
-      where.type = typeFilter as EventType; // mapeado para o enum EventType do Prisma
+      where.type = typeFilter as EventType;
+    }
+    if (organizationIdParam && Number.isFinite(Number(organizationIdParam))) {
+      where.organizationId = Number(organizationIdParam);
     }
 
     const events = await prisma.event.findMany({
       where,
       include: {
         organization: {
-          select: {
-            id: true,
-            publicName: true,
-          },
+          select: { id: true, publicName: true },
         },
       },
-      orderBy: {
-        createdAt: "desc",
-      },
-      take,
+      orderBy: { id: "desc" },
+      take: take + 1,
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
     });
 
-    const items = events.map((evt) => ({
-      id: evt.id,
-      slug: evt.slug,
-      title: evt.title,
-      status: evt.status,
-      type: evt.type,
-      startsAt: evt.startsAt,
-      endsAt: evt.endsAt,
-      createdAt: evt.createdAt,
-      organization: evt.organization
-        ? {
-            id: evt.organization.id,
-            publicName: evt.organization.publicName,
-          }
-        : null,
-    }));
+    const hasMore = events.length > take;
+    const trimmed = hasMore ? events.slice(0, take) : events;
+    const nextCursor = hasMore ? trimmed[trimmed.length - 1]?.id ?? null : null;
+    const eventIds = trimmed.map((evt) => evt.id);
 
-    return NextResponse.json({ ok: true, items });
+    const [ticketStats, summaryStats] = await Promise.all([
+      eventIds.length
+        ? prisma.ticket.groupBy({
+            by: ["eventId"],
+            where: {
+              eventId: { in: eventIds },
+              status: { in: [TicketStatus.ACTIVE, TicketStatus.USED, TicketStatus.REFUNDED] },
+            },
+            _count: { _all: true },
+          })
+        : [],
+      eventIds.length
+        ? prisma.saleSummary.groupBy({
+            by: ["eventId"],
+            where: { eventId: { in: eventIds } },
+            _sum: {
+              subtotalCents: true,
+              totalCents: true,
+              platformFeeCents: true,
+              cardPlatformFeeCents: true,
+            },
+          })
+        : [],
+    ]);
+
+    const ticketMap = new Map(ticketStats.map((row) => [row.eventId, row._count._all]));
+    const summaryMap = new Map(
+      summaryStats.map((row) => [
+        row.eventId,
+        {
+          revenueCents: row._sum.subtotalCents ?? 0,
+          revenueTotalCents: row._sum.totalCents ?? 0,
+          platformFeeCents: (row._sum.platformFeeCents ?? 0) + (row._sum.cardPlatformFeeCents ?? 0),
+        },
+      ]),
+    );
+
+    const items = trimmed.map((evt) => {
+      const summary = summaryMap.get(evt.id) ?? {
+        revenueCents: 0,
+        revenueTotalCents: 0,
+        platformFeeCents: 0,
+      };
+      return {
+        id: evt.id,
+        slug: evt.slug,
+        title: evt.title,
+        status: evt.status,
+        type: evt.type,
+        startsAt: evt.startsAt,
+        endsAt: evt.endsAt,
+        createdAt: evt.createdAt,
+        organization: evt.organization
+          ? { id: evt.organization.id, publicName: evt.organization.publicName }
+          : null,
+        ticketsSold: ticketMap.get(evt.id) ?? 0,
+        revenueCents: summary.revenueCents,
+        revenueTotalCents: summary.revenueTotalCents,
+        platformFeeCents: summary.platformFeeCents,
+      };
+    });
+
+    return NextResponse.json(
+      { ok: true, items, pagination: { nextCursor, hasMore } },
+      { status: 200 },
+    );
   } catch (error) {
     console.error("[admin eventos list] erro inesperado:", error);
-    return NextResponse.json(
-      { ok: false, error: "INTERNAL_ERROR" },
-      { status: 500 },
-    );
+    return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }

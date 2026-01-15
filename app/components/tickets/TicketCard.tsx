@@ -188,7 +188,7 @@ export function TicketCard(props: TicketCardProps) {
             type="button"
             className="inline-flex items-center gap-1 rounded-full border border-white/25 px-3 py-1 text-white/80 hover:bg-white/10 transition-colors"
           >
-            <Link href={event.slug ? `/eventos/${event.slug}` : "/explorar"}>
+            <Link href={event.slug ? `/eventos/${event.slug}` : "/explorar/eventos"}>
               Ver evento
             </Link>
           </button>

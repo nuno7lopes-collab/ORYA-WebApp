@@ -67,7 +67,7 @@ export function ProfileVerifiedBadge() {
 export default function ProfileHeaderLayout({
   coverUrl,
   coverActionsSlot,
-  coverHeightClassName = "h-44 sm:h-52",
+  coverHeightClassName = "orya-profile-cover",
   contentWidthClassName = "orya-page-width",
   avatarSlot,
   statsSlot,
@@ -112,7 +112,7 @@ export default function ProfileHeaderLayout({
         </div>
       </div>
 
-      <div className="relative -mt-10 px-5 pb-6 sm:px-8">
+      <div className="relative -mt-12 px-5 pb-6 sm:-mt-14 sm:px-8">
         <div className={`${contentWidthClassName} flex flex-col gap-4 md:flex-row md:items-end md:justify-between`}>
           <div className="flex items-start gap-4">
             <div className="relative shrink-0">{avatarSlot}</div>

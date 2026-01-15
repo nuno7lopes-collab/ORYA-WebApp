@@ -34,9 +34,10 @@ function normalizeIdentifier(raw: string): CheckResult {
   return { ok: true, normalized: validation.normalized, type: "username" };
 }
 
-export async function POST(req: NextRequest, { params }: { params: { slug: string } }) {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ slug: string }> }) {
   try {
-    const slug = params.slug;
+    const resolved = await params;
+    const slug = resolved.slug;
     if (!slug) {
       return NextResponse.json({ ok: false, error: "SLUG_REQUIRED" }, { status: 400 });
     }

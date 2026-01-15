@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { resend } from "@/lib/resend";
 import { env } from "@/lib/env";
+import { isSameOriginOrApp } from "@/lib/auth/requestValidation";
+import { rateLimit } from "@/lib/auth/rateLimit";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -18,12 +20,12 @@ function buildEmailHtml(link: string) {
             </tr>
             <tr>
               <td style="padding:28px 30px;color:#e5e7eb;font-size:14px;line-height:1.65;">
-                <p style="margin:0 0 14px 0;">Recebemos um pedido para redefinir a tua password.</p>
-                <p style="margin:0 0 22px 0;">Clica no botão abaixo para escolher uma nova.</p>
+                <p style="margin:0 0 14px 0;">Pedido de redefinição de password.</p>
+                <p style="margin:0 0 22px 0;">Clica para escolher nova.</p>
                 <div style="text-align:center;margin:22px 0;">
-                  <a href="${link}" style="display:inline-block;padding:12px 18px;border-radius:999px;background:linear-gradient(90deg,#7cf2ff,#7b7bff,#ff7ddb);color:#0b0f1c;text-decoration:none;font-weight:800;letter-spacing:0.2px;">Escolher nova password</a>
+                  <a href="${link}" style="display:inline-block;padding:12px 18px;border-radius:999px;background:linear-gradient(90deg,#7cf2ff,#7b7bff,#ff7ddb);color:#0b0f1c;text-decoration:none;font-weight:800;letter-spacing:0.2px;">Nova password</a>
                 </div>
-                <p style="margin:0 0 18px 0;color:#aeb7c6;font-size:13px;">Se não foste tu, podes ignorar este email.</p>
+                <p style="margin:0 0 18px 0;color:#aeb7c6;font-size:13px;">Se não foste tu, ignora.</p>
                 <p style="margin:0;color:#7f8aa3;font-size:12px;">Link direto: <a href="${link}" style="color:#8fd6ff;">${link}</a></p>
               </td>
             </tr>
@@ -41,11 +43,28 @@ function buildEmailHtml(link: string) {
 
 export async function POST(req: NextRequest) {
   try {
+    if (!isSameOriginOrApp(req)) {
+      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    }
+
     const body = (await req.json().catch(() => null)) as { email?: string } | null;
     const rawEmail = body?.email?.toLowerCase().trim() ?? "";
 
     if (!rawEmail || !EMAIL_REGEX.test(rawEmail)) {
       return NextResponse.json({ ok: false, error: "Email inválido." }, { status: 400 });
+    }
+
+    const limiter = await rateLimit(req, {
+      windowMs: 10 * 60 * 1000,
+      max: 5,
+      keyPrefix: "auth:reset-password",
+      identifier: rawEmail,
+    });
+    if (!limiter.allowed) {
+      return NextResponse.json(
+        { ok: false, error: "RATE_LIMITED" },
+        { status: 429, headers: { "Retry-After": String(limiter.retryAfter) } }
+      );
     }
 
     const originRaw =

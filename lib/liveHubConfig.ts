@@ -1,5 +1,3 @@
-import { normalizeOrganizationCategory, type OrganizationCategory } from "@/lib/organizationCategories";
-
 export type LiveHubModule =
   | "HERO"
   | "VIDEO"
@@ -14,7 +12,6 @@ export type LiveHubModule =
   | "SPONSORS";
 
 export type LiveHubViewerRole = "PUBLIC" | "PARTICIPANT" | "ORGANIZATION";
-export type LiveHubMode = "DEFAULT" | "PREMIUM";
 
 const EVENT_MODULES: LiveHubModule[] = [
   "HERO",
@@ -26,24 +23,13 @@ const EVENT_MODULES: LiveHubModule[] = [
   "SPONSORS",
 ];
 
-const DEFAULT_MODULES: Record<OrganizationCategory, LiveHubModule[]> = {
-  PADEL: ["HERO", "VIDEO", "NEXT_MATCHES", "RESULTS", "BRACKET"],
-  EVENTOS: EVENT_MODULES,
-  RESERVAS: EVENT_MODULES,
-};
+const PADEL_MODULES: LiveHubModule[] = ["HERO", "VIDEO", "NEXT_MATCHES", "RESULTS", "BRACKET"];
 
-const PREMIUM_MODULES: Partial<Record<OrganizationCategory, LiveHubModule[]>> = {};
-
-export function resolveLiveHubModules(params: {
-  category?: string | null;
-  mode: LiveHubMode;
-  premiumActive: boolean;
-}) {
-  const { category, mode, premiumActive } = params;
-  const normalizedCategory = normalizeOrganizationCategory(category);
-  const usePremium = mode === "PREMIUM" && premiumActive;
-  if (usePremium) {
-    return PREMIUM_MODULES[normalizedCategory] ?? DEFAULT_MODULES[normalizedCategory];
+export function resolveLiveHubModules(input: { templateType?: string | null; primaryModule?: string | null } = {}) {
+  const templateType = typeof input.templateType === "string" ? input.templateType.trim().toUpperCase() : null;
+  const primaryModule = typeof input.primaryModule === "string" ? input.primaryModule.trim().toUpperCase() : null;
+  if (templateType === "PADEL" || primaryModule === "TORNEIOS") {
+    return PADEL_MODULES;
   }
-  return DEFAULT_MODULES[normalizedCategory];
+  return EVENT_MODULES;
 }

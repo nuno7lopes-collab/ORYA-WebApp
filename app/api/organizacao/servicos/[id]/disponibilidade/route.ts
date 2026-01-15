@@ -5,6 +5,8 @@ import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
+import { normalizeIntervals } from "@/lib/reservas/availability";
+import { ensureReservasModuleAccess } from "@/lib/reservas/access";
 import { OrganizationMemberRole } from "@prisma/client";
 
 const ALLOWED_ROLES: OrganizationMemberRole[] = [
@@ -14,10 +16,18 @@ const ALLOWED_ROLES: OrganizationMemberRole[] = [
   OrganizationMemberRole.STAFF,
 ];
 
-function getRequestMeta(req: NextRequest) {
-  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
-  const userAgent = req.headers.get("user-agent") ?? null;
-  return { ip, userAgent };
+const VALID_SCOPE_TYPES = ["ORGANIZATION", "PROFESSIONAL", "RESOURCE"] as const;
+type ScopeType = (typeof VALID_SCOPE_TYPES)[number];
+
+function parseScopeType(raw: unknown): ScopeType | null {
+  if (typeof raw !== "string") return null;
+  const value = raw.trim().toUpperCase();
+  return VALID_SCOPE_TYPES.includes(value as ScopeType) ? (value as ScopeType) : null;
+}
+
+function parseScopeId(raw: unknown) {
+  const parsed = typeof raw === "string" || typeof raw === "number" ? Number(raw) : NaN;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
 function parseServiceId(idParam: string) {
@@ -25,8 +35,61 @@ function parseServiceId(idParam: string) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
-  const serviceId = parseServiceId(params.id);
+function getRequestMeta(req: NextRequest) {
+  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
+  const userAgent = req.headers.get("user-agent") ?? null;
+  return { ip, userAgent };
+}
+
+async function resolveScope(params: {
+  scopeTypeRaw: unknown;
+  scopeIdRaw: unknown;
+  organizationId: number;
+  userId: string;
+  role: OrganizationMemberRole;
+}) {
+  const scopeType = parseScopeType(params.scopeTypeRaw) ?? "ORGANIZATION";
+  const scopeId = parseScopeId(params.scopeIdRaw);
+
+  if (scopeType === "ORGANIZATION") {
+    if (params.role === OrganizationMemberRole.STAFF) {
+      return { ok: false as const, error: "Sem permissões." };
+    }
+    return { ok: true as const, scopeType, scopeId: 0 };
+  }
+
+  if (!scopeId) {
+    return { ok: false as const, error: "Scope inválido." };
+  }
+
+  if (scopeType === "PROFESSIONAL") {
+    const professional = await prisma.reservationProfessional.findFirst({
+      where: { id: scopeId, organizationId: params.organizationId },
+      select: { id: true, userId: true },
+    });
+    if (!professional) return { ok: false as const, error: "Profissional inválido." };
+    if (params.role === OrganizationMemberRole.STAFF && professional.userId !== params.userId) {
+      return { ok: false as const, error: "Sem permissões." };
+    }
+    return { ok: true as const, scopeType, scopeId: professional.id };
+  }
+
+  if (params.role === OrganizationMemberRole.STAFF) {
+    return { ok: false as const, error: "Sem permissões." };
+  }
+
+  const resource = await prisma.reservationResource.findFirst({
+    where: { id: scopeId, organizationId: params.organizationId },
+    select: { id: true },
+  });
+  if (!resource) return { ok: false as const, error: "Recurso inválido." };
+
+  return { ok: true as const, scopeType, scopeId: resource.id };
+}
+
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const resolved = await params;
+  const serviceId = parseServiceId(resolved.id);
   if (!serviceId) {
     return NextResponse.json({ ok: false, error: "Serviço inválido." }, { status: 400 });
   }
@@ -48,6 +111,10 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
     if (!organization || !membership) {
       return NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 });
+    }
+    const reservasAccess = await ensureReservasModuleAccess(organization);
+    if (!reservasAccess.ok) {
+      return NextResponse.json({ ok: false, error: reservasAccess.error }, { status: 403 });
     }
 
     const service = await prisma.service.findFirst({
@@ -59,17 +126,41 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       return NextResponse.json({ ok: false, error: "Serviço não encontrado." }, { status: 404 });
     }
 
-    const items = await prisma.availability.findMany({
-      where: { serviceId },
-      orderBy: { startsAt: "asc" },
-      include: {
-        _count: {
-          select: { bookings: true },
-        },
-      },
+    const scopeResolution = await resolveScope({
+      scopeTypeRaw: req.nextUrl.searchParams.get("scopeType"),
+      scopeIdRaw: req.nextUrl.searchParams.get("scopeId"),
+      organizationId: organization.id,
+      userId: profile.id,
+      role: membership.role,
     });
 
-    return NextResponse.json({ ok: true, items });
+    if (!scopeResolution.ok) {
+      return NextResponse.json({ ok: false, error: scopeResolution.error }, { status: 403 });
+    }
+
+    const { scopeType, scopeId } = scopeResolution;
+    const [templates, overrides] = await Promise.all([
+      prisma.weeklyAvailabilityTemplate.findMany({
+        where: { organizationId: organization.id, scopeType, scopeId },
+        orderBy: { dayOfWeek: "asc" },
+        select: { id: true, dayOfWeek: true, intervals: true },
+      }),
+      prisma.availabilityOverride.findMany({
+        where: { organizationId: organization.id, scopeType, scopeId },
+        orderBy: [{ date: "asc" }, { createdAt: "asc" }],
+        select: { id: true, date: true, kind: true, intervals: true },
+      }),
+    ]);
+
+    const hasCustomTemplates = templates.some((template) => normalizeIntervals(template.intervals ?? []).length > 0);
+
+    return NextResponse.json({
+      ok: true,
+      scope: { scopeType, scopeId },
+      templates,
+      overrides,
+      inheritsOrganization: scopeType !== "ORGANIZATION" && !hasCustomTemplates,
+    });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
       return NextResponse.json({ ok: false, error: "Não autenticado." }, { status: 401 });
@@ -79,8 +170,9 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   }
 }
 
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
-  const serviceId = parseServiceId(params.id);
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const resolved = await params;
+  const serviceId = parseServiceId(resolved.id);
   if (!serviceId) {
     return NextResponse.json({ ok: false, error: "Serviço inválido." }, { status: 400 });
   }
@@ -103,10 +195,14 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     if (!organization || !membership) {
       return NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 });
     }
+    const reservasAccess = await ensureReservasModuleAccess(organization);
+    if (!reservasAccess.ok) {
+      return NextResponse.json({ ok: false, error: reservasAccess.error }, { status: 403 });
+    }
 
     const service = await prisma.service.findFirst({
       where: { id: serviceId, organizationId: organization.id },
-      select: { id: true, durationMinutes: true },
+      select: { id: true },
     });
 
     if (!service) {
@@ -114,52 +210,98 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     }
 
     const payload = await req.json().catch(() => ({}));
-    const startsAtRaw = payload?.startsAt;
-    const parsedStart = startsAtRaw ? new Date(startsAtRaw) : null;
-    if (!parsedStart || Number.isNaN(parsedStart.getTime())) {
-      return NextResponse.json({ ok: false, error: "Data inválida." }, { status: 400 });
-    }
-
-    const durationMinutes = Number(payload?.durationMinutes ?? service.durationMinutes);
-    const capacityRaw = Number(payload?.capacity ?? 1);
-    const capacity = Number.isFinite(capacityRaw) ? Math.floor(capacityRaw) : capacityRaw;
-
-    if (!Number.isFinite(durationMinutes) || durationMinutes <= 0 || !Number.isFinite(capacity) || capacity <= 0) {
-      return NextResponse.json({ ok: false, error: "Valores inválidos." }, { status: 400 });
-    }
-
-    const availability = await prisma.availability.create({
-      data: {
-        serviceId,
-        startsAt: parsedStart,
-        durationMinutes,
-        capacity,
-        status: "OPEN",
-      },
-    });
-
-    const { ip, userAgent } = getRequestMeta(req);
-    await recordOrganizationAudit(prisma, {
+    const scopeResolution = await resolveScope({
+      scopeTypeRaw: payload?.scopeType,
+      scopeIdRaw: payload?.scopeId,
       organizationId: organization.id,
-      actorUserId: profile.id,
-      action: "AVAILABILITY_CREATED",
-      metadata: {
-        serviceId,
-        availabilityId: availability.id,
-        startsAt: parsedStart.toISOString(),
-        durationMinutes,
-        capacity,
-      },
-      ip,
-      userAgent,
+      userId: profile.id,
+      role: membership.role,
     });
 
-    return NextResponse.json({ ok: true, availability }, { status: 201 });
+    if (!scopeResolution.ok) {
+      return NextResponse.json({ ok: false, error: scopeResolution.error }, { status: 403 });
+    }
+
+    const { scopeType, scopeId } = scopeResolution;
+    const mode = typeof payload?.mode === "string" ? payload.mode.trim().toUpperCase() : "";
+    const { ip, userAgent } = getRequestMeta(req);
+
+    if (mode === "TEMPLATE") {
+      const dayOfWeek = Number(payload?.dayOfWeek);
+      if (!Number.isFinite(dayOfWeek) || dayOfWeek < 0 || dayOfWeek > 6) {
+        return NextResponse.json({ ok: false, error: "Dia inválido." }, { status: 400 });
+      }
+      const intervals = normalizeIntervals(payload?.intervals);
+      const template = await prisma.weeklyAvailabilityTemplate.upsert({
+        where: {
+          organizationId_scopeType_scopeId_dayOfWeek: {
+            organizationId: organization.id,
+            scopeType,
+            scopeId,
+            dayOfWeek,
+          },
+        },
+        update: { intervals },
+        create: { organizationId: organization.id, scopeType, scopeId, dayOfWeek, intervals },
+      });
+
+      await recordOrganizationAudit(prisma, {
+        organizationId: organization.id,
+        actorUserId: profile.id,
+        action: "AVAILABILITY_TEMPLATE_UPDATED",
+        metadata: { dayOfWeek, intervals, scopeType, scopeId },
+        ip,
+        userAgent,
+      });
+
+      return NextResponse.json({ ok: true, template });
+    }
+
+    if (mode === "OVERRIDE") {
+      const dateRaw = typeof payload?.date === "string" ? payload.date.trim() : "";
+      const kindRaw = typeof payload?.kind === "string" ? payload.kind.trim().toUpperCase() : "";
+      const match = dateRaw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (!match) {
+        return NextResponse.json({ ok: false, error: "Data inválida." }, { status: 400 });
+      }
+      if (!["CLOSED", "OPEN", "BLOCK"].includes(kindRaw)) {
+        return NextResponse.json({ ok: false, error: "Tipo de override inválido." }, { status: 400 });
+      }
+      const year = Number(match[1]);
+      const month = Number(match[2]);
+      const day = Number(match[3]);
+      const date = new Date(Date.UTC(year, month - 1, day));
+      const intervals = kindRaw === "CLOSED" ? [] : normalizeIntervals(payload?.intervals);
+
+      const override = await prisma.availabilityOverride.create({
+        data: {
+          organizationId: organization.id,
+          scopeType,
+          scopeId,
+          date,
+          kind: kindRaw as "CLOSED" | "OPEN" | "BLOCK",
+          intervals,
+        },
+      });
+
+      await recordOrganizationAudit(prisma, {
+        organizationId: organization.id,
+        actorUserId: profile.id,
+        action: "AVAILABILITY_OVERRIDE_CREATED",
+        metadata: { date: dateRaw, kind: kindRaw, intervals, scopeType, scopeId },
+        ip,
+        userAgent,
+      });
+
+      return NextResponse.json({ ok: true, override }, { status: 201 });
+    }
+
+    return NextResponse.json({ ok: false, error: "Pedido inválido." }, { status: 400 });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
       return NextResponse.json({ ok: false, error: "Não autenticado." }, { status: 401 });
     }
     console.error("POST /api/organizacao/servicos/[id]/disponibilidade error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao criar disponibilidade." }, { status: 500 });
+    return NextResponse.json({ ok: false, error: "Erro ao guardar disponibilidade." }, { status: 500 });
   }
 }

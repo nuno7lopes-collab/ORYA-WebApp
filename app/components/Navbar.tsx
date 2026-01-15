@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type SVGProps } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import Image from "next/image";
 import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
 import { useUser } from "@/app/hooks/useUser";
 import Link from "next/link";
@@ -30,7 +31,6 @@ type SearchOrganization = {
   publicName: string | null;
   businessName: string | null;
   brandingAvatarUrl: string | null;
-  organizationCategory: string | null;
   city: string | null;
   isFollowing?: boolean;
 };
@@ -47,9 +47,49 @@ type SearchTab = "all" | "events" | "organizations" | "users";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
+const RESERVED_ROOT_ROUTES = new Set([
+  "admin",
+  "api",
+  "auth",
+  "atividade",
+  "agora",
+  "descobrir",
+  "em-breve",
+  "eventos",
+  "explorar",
+  "inscricoes",
+  "live",
+  "login",
+  "mapa",
+  "me",
+  "onboarding",
+  "organizacao",
+  "organização",
+  "perfil",
+  "procurar",
+  "padel",
+  "rede",
+  "resale",
+  "reset-password",
+  "servicos",
+  "signup",
+  "social",
+  "staff",
+]);
+
+const isRootProfileHandle = (path?: string | null) => {
+  if (!path || path === "/") return false;
+  const segment = path.startsWith("/") ? path.slice(1) : path;
+  if (!segment || segment.includes("/")) return false;
+  return !RESERVED_ROOT_ROUTES.has(segment);
+};
+
 export function Navbar() {
   const router = useRouter();
   const rawPathname = usePathname();
+  if (rawPathname?.startsWith("/admin")) {
+    return null;
+  }
 
   const { openModal: openAuthModal, isOpen: isAuthOpen } = useAuthModal();
   const { user, profile, isLoading } = useUser();
@@ -72,28 +112,34 @@ export function Navbar() {
   const [activeSearchTab, setActiveSearchTab] = useState<SearchTab>("all");
   const [followPending, setFollowPending] = useState<Record<string, boolean>>({});
   const [hydratedPathname, setHydratedPathname] = useState<string | null>(null);
-  const [lastOrganizationUsername, setLastOrganizationUsername] = useState<string | null>(null);
   const profileMenuRef = useRef<HTMLDivElement | null>(null);
   const searchPanelRef = useRef<HTMLDivElement | null>(null);
   const lastScrollYRef = useRef(0);
   const pathname = hydratedPathname ?? "";
-  const shouldHide = rawPathname?.startsWith("/organizacao");
-
+  const shouldHide =
+    rawPathname?.startsWith("/organizacao") || rawPathname?.startsWith("/landing");
+  const isMobileHubRoute =
+    rawPathname?.startsWith("/descobrir") ||
+    rawPathname?.startsWith("/rede") ||
+    rawPathname?.startsWith("/agora") ||
+    rawPathname?.startsWith("/procurar") ||
+    rawPathname?.startsWith("/explorar") ||
+    rawPathname?.startsWith("/perfil") ||
+    isRootProfileHandle(rawPathname);
   const Logo = () => (
     <button
       type="button"
-      onClick={() => router.push("/")}
+      onClick={() => router.push("/descobrir")}
       className="group flex items-center gap-2 transition hover:opacity-90 sm:gap-3"
       aria-label="Voltar à homepage ORYA"
     >
-      <img
-        src="/brand/orya-logo-56.png"
-        srcSet="/brand/orya-logo-56.png 1x, /brand/orya-logo-112.png 2x"
+      <Image
+        src="/brand/orya-logo-112.png"
         alt="Logo ORYA"
         width={56}
         height={56}
-        loading="eager"
-        decoding="async"
+        priority
+        sizes="56px"
         className="h-14 w-14 shrink-0 rounded-full object-cover"
       />
       <span className="text-base font-semibold leading-none tracking-[0.18em] text-white sm:text-lg sm:tracking-[0.24em]">
@@ -117,6 +163,15 @@ export function Navbar() {
       delete document.body.dataset.navHidden;
     }
   }, [shouldHide]);
+
+  useLayoutEffect(() => {
+    if (typeof document === "undefined") return;
+    if (isMobileHubRoute) {
+      document.body.dataset.mobileNavHidden = "true";
+    } else {
+      delete document.body.dataset.mobileNavHidden;
+    }
+  }, [isMobileHubRoute]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -224,12 +279,13 @@ export function Navbar() {
     if (!query) return;
 
     setIsSearchOpen(false);
-    router.push(`/explorar?query=${encodeURIComponent(query)}`);
+    router.push(`/procurar?query=${encodeURIComponent(query)}`);
   };
 
   const handleLogout = async () => {
     try {
       await supabaseBrowser.auth.signOut();
+      await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
     } catch (err) {
       console.warn("[navbar] signOut falhou", err);
     } finally {
@@ -453,21 +509,30 @@ export function Navbar() {
     { key: "users", label: "Utilizadores" },
   ];
 
-  useEffect(() => {
-    try {
-      const stored = sessionStorage.getItem("orya_last_organization_username");
-      if (stored) setLastOrganizationUsername(stored);
-    } catch {
-      // ignore storage issues
-    }
-  }, []);
+  const mainNavItems = [
+    {
+      label: "Inicio",
+      href: "/descobrir",
+      active: (path: string) => path === "/" || path.startsWith("/descobrir"),
+    },
+    {
+      label: "Descobrir",
+      href: "/explorar",
+      active: (path: string) =>
+        path.startsWith("/explorar") || path.startsWith("/procurar"),
+    },
+  ];
+
+  if (shouldHide) {
+    return null;
+  }
 
   return (
     <>
       <header
         className={`fixed inset-x-0 top-0 z-50 transition-transform duration-300 ease-out ${
           isVisible ? "translate-y-0" : "-translate-y-full"
-        } ${shouldHide ? "hidden" : ""}`}
+        } ${shouldHide ? "hidden" : ""} ${isMobileHubRoute ? "hidden md:block" : ""}`}
       >
         <div
           className={`relative flex w-full items-center gap-4 rounded-b-[28px] border-b px-4 py-4 transition-all duration-300 md:px-6 md:py-5 lg:px-8 ${
@@ -476,51 +541,32 @@ export function Navbar() {
               : "border-white/10 bg-[linear-gradient(120deg,rgba(8,10,20,0.38),rgba(8,10,20,0.52))] shadow-[0_16px_40px_rgba(0,0,0,0.45)] backdrop-blur-[18px]"
           }`}
         >
-          {/* Logo + link explorar */}
-          <div className="flex flex-1 items-center gap-3">
-            <Logo />
+            {/* Logo + navegação principal */}
+            <div className="flex flex-1 items-center gap-3">
+              <Logo />
 
-            <nav className="hidden items-center gap-3 text-xs text-zinc-300 md:flex">
-              <button
-                type="button"
-                onClick={() => router.push("/explorar")}
-                className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
-                  pathname?.startsWith("/explorar")
-                    ? "bg-[linear-gradient(120deg,rgba(255,0,200,0.22),rgba(107,255,255,0.18))] text-white border border-white/30 shadow-[0_0_18px_rgba(107,255,255,0.35)]"
-                    : "text-white/85 hover:text-white bg-white/5 border border-white/16 hover:border-white/26"
-                }`}
-              >
-                Explorar
-              </button>
-              <button
-                type="button"
-                onClick={() => router.push("/social")}
-                className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
-                  pathname?.startsWith("/social")
-                    ? "bg-[linear-gradient(120deg,rgba(107,255,255,0.2),rgba(34,197,94,0.2))] text-white border border-white/30 shadow-[0_0_18px_rgba(107,255,255,0.35)]"
-                    : "text-white/85 hover:text-white bg-white/5 border border-white/16 hover:border-white/26"
-                }`}
-              >
-                <span className="flex items-center gap-2">
-                  Social
-                  {isAuthenticated && unreadCount > 0 && (
-                    <span className="inline-flex min-w-[18px] items-center justify-center rounded-full bg-emerald-400 px-1 text-[10px] font-semibold text-black">
-                      {unreadCount > 9 ? "9+" : unreadCount}
-                    </span>
-                  )}
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={() => router.push("/organizacao")}
-                className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
-                  pathname?.startsWith("/organizacao")
-                    ? "bg-[linear-gradient(120deg,rgba(107,255,255,0.18),rgba(22,70,245,0.22))] text-white border border-white/28 shadow-[0_0_18px_rgba(22,70,245,0.28)]"
-                    : "text-white/85 hover:text-white bg-white/5 border border-white/16 hover:border-white/26"
-                }`}
-              >
-                Organizar
-              </button>
+              <nav className="hidden items-center gap-3 text-xs text-zinc-300 md:flex">
+                {mainNavItems.map((item) => {
+                  const isActive = item.active(pathname);
+                  const handleClick = () => {
+                    router.push(item.href);
+                  };
+
+                return (
+                  <button
+                    key={item.label}
+                    type="button"
+                    onClick={handleClick}
+                    className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
+                      isActive
+                        ? "bg-[linear-gradient(120deg,rgba(255,0,200,0.22),rgba(107,255,255,0.18))] text-white border border-white/30 shadow-[0_0_18px_rgba(107,255,255,0.35)]"
+                        : "text-white/85 hover:text-white bg-white/5 border border-white/16 hover:border-white/26"
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                );
+              })}
             </nav>
           </div>
 
@@ -543,15 +589,39 @@ export function Navbar() {
             </button>
           </div>
 
-          {/* Lado direito: auth/profile */}
+          {/* Lado direito: notificações, auth/profile */}
           <div className="flex flex-1 items-center justify-end gap-2 md:gap-3">
-            {/* Acesso rápido a Organizar no mobile */}
             <button
               type="button"
-              onClick={() => router.push("/organizacao")}
-              className="inline-flex md:hidden items-center rounded-full border border-white/16 bg-white/10 px-3 py-1.5 text-[11px] font-semibold text-white/90 hover:border-white/28 hover:bg-white/16 transition"
+              onClick={() => {
+                if (!isAuthenticated) {
+                  const redirect = pathname && pathname !== "/" ? pathname : "/";
+                  openAuthModal({ mode: "login", redirectTo: redirect });
+                  return;
+                }
+                router.push("/organizacao");
+              }}
+              className="hidden md:inline-flex items-center gap-2 rounded-full border border-white/18 bg-white/5 px-3 py-1.5 text-[11px] font-semibold text-white/85 shadow-[0_0_18px_rgba(0,0,0,0.25)] hover:border-white/30 hover:bg-white/10 transition"
             >
               Organizar
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (!isAuthenticated) {
+                  const redirect = pathname && pathname !== "/" ? pathname : "/";
+                  openAuthModal({ mode: "login", redirectTo: redirect });
+                  return;
+                }
+                router.push("/social?tab=notifications");
+              }}
+              className="relative flex h-9 w-9 items-center justify-center rounded-full border border-amber-400/60 bg-amber-500/15 text-amber-100 hover:bg-amber-500/20 transition"
+              aria-label="Notificações"
+            >
+              <BellIcon className="h-4 w-4 text-amber-100" />
+              {isAuthenticated && unreadCount > 0 && (
+                <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-[#ff5bd6] shadow-[0_0_10px_rgba(255,91,214,0.7)]" />
+              )}
             </button>
             {isLoading ? (
               <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[11px] text-white/60 animate-pulse">
@@ -606,7 +676,7 @@ export function Navbar() {
                       onClick={() => setIsProfileMenuOpen(false)}
                       className="flex w-full items-center justify-between rounded-xl px-2.5 py-2 text-left hover:bg-white/8"
                     >
-                      <span className="font-semibold text-white">Minha conta</span>
+                      <span className="font-semibold text-white">Perfil</span>
                     </Link>
                     <Link
                       href="/me/carteira"
@@ -636,15 +706,6 @@ export function Navbar() {
                     >
                       <span>Organizar (modo empresa)</span>
                     </Link>
-                    {lastOrganizationUsername && (
-                      <Link
-                        href={`/${lastOrganizationUsername}`}
-                        onClick={() => setIsProfileMenuOpen(false)}
-                        className="flex w-full items-center justify-between rounded-xl px-2.5 py-2 text-left hover:bg-white/8"
-                      >
-                        <span>Ver página pública</span>
-                      </Link>
-                    )}
                     {pathname?.startsWith("/organizacao") && (
                       <Link
                         href="/me"
@@ -1141,5 +1202,25 @@ export function Navbar() {
       )}
       {!shouldHide && <MobileBottomNav pathname={pathname} socialBadgeCount={unreadCount} />}
     </>
+  );
+}
+
+type IconProps = SVGProps<SVGSVGElement>;
+
+function BellIcon(props: IconProps) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      fillOpacity="0.4"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      {...props}
+    >
+      <path d="M6.8 9.5a5.2 5.2 0 0 1 10.4 0v3.7c0 .8.3 1.6.8 2.2l.7.9H5.3l.7-.9c.5-.6.8-1.4.8-2.2V9.5Z" />
+      <path d="M9.5 18.5a2.5 2.5 0 0 0 5 0" />
+    </svg>
   );
 }

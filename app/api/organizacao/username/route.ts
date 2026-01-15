@@ -29,11 +29,11 @@ export async function PATCH(req: NextRequest) {
     const organizationId = resolveOrganizationIdFromRequest(req);
     const { organization, membership } = await getActiveOrganizationForUser(user.id, {
       organizationId: organizationId ?? undefined,
-      roles: ["OWNER", "ADMIN"],
+      roles: ["OWNER", "CO_OWNER"],
     });
-    if (!organization || !membership || !["OWNER", "ADMIN"].includes(membership.role)) {
+    if (!organization || !membership || !["OWNER", "CO_OWNER"].includes(membership.role)) {
       return NextResponse.json(
-        { ok: false, error: "Apenas Owner ou Admin podem alterar o username." },
+        { ok: false, error: "Apenas Owner ou Co-owner podem alterar o username." },
         { status: 403 },
       );
     }

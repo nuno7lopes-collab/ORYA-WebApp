@@ -8,20 +8,7 @@ import { stripe } from "@/lib/stripeClient";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { isOrgOwner } from "@/lib/organizationPermissions";
-
-const DEFAULT_BASE_URL = "http://localhost:3000";
-
-function getBaseUrl() {
-  if (process.env.NEXT_PUBLIC_BASE_URL) {
-    return process.env.NEXT_PUBLIC_BASE_URL;
-  }
-
-  const vercelUrl = process.env.VERCEL_URL;
-  if (vercelUrl?.startsWith("http")) return vercelUrl;
-  if (vercelUrl) return `https://${vercelUrl}`;
-
-  return DEFAULT_BASE_URL;
-}
+import { getAppBaseUrl } from "@/lib/appBaseUrl";
 
 export async function POST(req: NextRequest) {
   try {
@@ -73,6 +60,17 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    if (organization.orgType === "PLATFORM") {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "PLATFORM_ACCOUNT",
+          message: "Esta organização recebe pagamentos na conta ORYA, sem Stripe Connect.",
+        },
+        { status: 409 },
+      );
+    }
+
     let accountId = organization.stripeAccountId;
 
     if (!accountId) {
@@ -103,7 +101,7 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    const baseUrl = getBaseUrl();
+    const baseUrl = getAppBaseUrl();
     const link = await stripe.accountLinks.create({
       account: accountId,
       refresh_url: `${baseUrl}/organizacao?tab=analyze&section=financas&onboarding=refresh`,

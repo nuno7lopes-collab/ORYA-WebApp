@@ -235,12 +235,12 @@ export function listEventCoverFallbacks() {
 
 type CoverSuggestionInput = {
   templateType?: string | null;
-  organizationCategory?: string | null;
+  primaryModule?: string | null;
 };
 
 export function getEventCoverSuggestionIds(input: CoverSuggestionInput = {}) {
   const templateType = input.templateType ?? null;
-  const orgCategory = input.organizationCategory ?? null;
+  const primaryModule = typeof input.primaryModule === "string" ? input.primaryModule.trim().toUpperCase() : null;
 
   const pickTop = (items: CoverLibraryItem[]) =>
     items.slice(0, 4).map((item) => item.id);
@@ -248,10 +248,10 @@ export function getEventCoverSuggestionIds(input: CoverSuggestionInput = {}) {
     pickTop(COVER_LIBRARY.filter((item) => item.category === category));
   const fallback = pickTop(COVER_LIBRARY);
 
-  if (templateType === "PADEL" || orgCategory === "PADEL") {
+  if (templateType === "PADEL" || primaryModule === "TORNEIOS") {
     return byCategory("PADEL").length > 0 ? byCategory("PADEL") : fallback;
   }
-  if (orgCategory === "RESERVAS") {
+  if (primaryModule === "RESERVAS") {
     return byCategory("RESERVAS").length > 0 ? byCategory("RESERVAS") : fallback;
   }
   return byCategory("EVENTOS").length > 0 ? byCategory("EVENTOS") : fallback;

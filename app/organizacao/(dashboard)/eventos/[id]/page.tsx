@@ -7,6 +7,7 @@ import { notFound, redirect } from "next/navigation";
 import PadelTournamentTabs from "./PadelTournamentTabs";
 import { CTA_PRIMARY, CTA_SECONDARY } from "@/app/organizacao/dashboardUi";
 import { getEventCoverSuggestionIds, getEventCoverUrl } from "@/lib/eventCover";
+import { cn } from "@/lib/utils";
 
 type PageProps = {
   params: Promise<{
@@ -106,6 +107,11 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
     notFound();
   }
 
+  const isPadelEvent = event.templateType === "PADEL";
+  const eventRouteBase = isPadelEvent ? "/organizacao/torneios" : "/organizacao/eventos";
+  const primaryLabel = isPadelEvent ? "torneio" : "evento";
+  const fallbackHref = eventRouteBase;
+
   const { organization, membership } = await getActiveOrganizationForUser(userId, {
     organizationId: event.organizationId,
   });
@@ -114,7 +120,7 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
     redirect("/organizacao");
   }
   if (!canManageEvents(membership.role)) {
-    redirect("/organizacao?tab=manage");
+    redirect(fallbackHref);
   }
 
   const now = new Date();
@@ -211,7 +217,8 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
           registrationType: undefined,
         }))
       : advancedSettings?.categoriesMeta ?? [];
-  const backAnchor = "eventos";
+  const backHref = eventRouteBase;
+  const liveHref = `${eventRouteBase}/${event.id}/live`;
 
   const timeline = [
     { key: "OCULTO", label: "Oculto", active: ["DRAFT"].includes(event.status), done: event.status !== "DRAFT" },
@@ -221,32 +228,23 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
   ];
 
   return (
-    <div className="w-full space-y-7 px-4 py-8 text-white md:px-6 lg:px-8">
+    <div className={cn("w-full space-y-7 py-8 text-white")}>
       <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-5 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div className="space-y-1">
-            <p className="text-[11px] uppercase tracking-[0.3em] text-white/70">Gestão de evento</p>
+            <p className="text-[11px] uppercase tracking-[0.3em] text-white/70">Gestão de {primaryLabel}</p>
             <h1 className="text-2xl font-semibold tracking-tight">Detalhes &amp; waves</h1>
             <p className="line-clamp-2 text-sm text-white/70">{event.title}</p>
           </div>
           <div className="flex flex-wrap gap-2 text-[11px]">
-            <a
-              href={`/organizacao?tab=manage&section=${backAnchor}`}
-              className={CTA_SECONDARY}
-            >
+            <a href={backHref} className={CTA_SECONDARY}>
               ← Voltar à lista
             </a>
-            <a
-              href={`/organizacao/eventos/${event.id}/live`}
-              className={CTA_SECONDARY}
-            >
+            <a href={liveHref} className={CTA_SECONDARY}>
               Preparar Live
             </a>
             {event.tournament?.id && (
-              <a
-                href={`/organizacao/eventos/${event.id}/live?tab=preview&edit=1`}
-                className={CTA_SECONDARY}
-              >
+              <a href={`${liveHref}?tab=preview&edit=1`} className={CTA_SECONDARY}>
                 Live Ops
               </a>
             )}
@@ -445,8 +443,8 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
 
         {event.ticketTypes.length === 0 && (
           <div className="mt-2 rounded-xl border border-dashed border-white/20 bg-white/5 px-4 py-4 text-[11px] text-white/70">
-            Este evento ainda não tem waves configuradas. Usa o criador de
-            eventos para adicionar bilhetes.
+            Este {primaryLabel} ainda não tem waves configuradas. Usa o criador de{" "}
+            {primaryLabel}s para adicionar bilhetes.
           </div>
         )}
 
@@ -600,8 +598,7 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
                   <p className="mt-1 text-[10px] text-white/40">
                     Funcionalidades avançadas como lista de compras por
                     utilizador, links de promotores e tracking detalhado por
-                    wave podem ser geridas na área de gestão avançada do
-                    evento.
+                    wave podem ser geridas na área de gestão avançada do {primaryLabel}.
                   </p>
                 </article>
               );
@@ -611,7 +608,7 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
       </section>
 
       {event.templateType === "PADEL" && (
-        <PadelTournamentTabs eventId={event.id} categoriesMeta={categoriesMeta} />
+        <PadelTournamentTabs eventId={event.id} eventSlug={event.slug} categoriesMeta={categoriesMeta} />
       )}
     </div>
   );

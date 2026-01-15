@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { cn } from "@/lib/utils";
 
 type State = "idle" | "loading" | "ok" | "error";
 
@@ -44,7 +45,7 @@ export default function VerifyOfficialEmailPage() {
   }, [token, router]);
 
   return (
-    <div className="w-full px-4 py-8 text-white md:px-6 lg:px-8">
+    <div className={cn("w-full py-8 text-white")}>
       <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-6 text-center shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl space-y-3">
         <div className="inline-flex items-center justify-center rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] uppercase tracking-[0.24em] text-white/70 shadow-[0_10px_30px_rgba(0,0,0,0.35)]">
           Definições

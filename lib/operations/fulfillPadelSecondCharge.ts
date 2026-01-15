@@ -27,22 +27,27 @@ export async function fulfillPadelSecondCharge(intent: IntentLike): Promise<bool
         where: { pairingId, slotStatus: { in: ["PENDING", "FILLED"] } },
         data: { paymentStatus: PadelPairingPaymentStatus.PAID },
       });
+      const slots = await tx.padelPairingSlot.findMany({
+        where: { pairingId },
+        select: { slotStatus: true },
+      });
+      const allFilled = slots.length > 0 && slots.every((slot) => slot.slotStatus === "FILLED");
+      const pairingStatus = allFilled ? PadelPairingStatus.COMPLETE : PadelPairingStatus.INCOMPLETE;
       const confirmed = await tx.padelPairing.update({
         where: { id: pairingId },
         data: {
           lifecycleStatus: PadelPairingLifecycleStatus.CONFIRMED_CAPTAIN_FULL,
-          pairingStatus: PadelPairingStatus.COMPLETE,
+          pairingStatus,
           guaranteeStatus: "SUCCEEDED",
           secondChargePaymentIntentId: intent.id,
           captainSecondChargedAt: now,
           partnerPaidAt: now,
           graceUntilAt: null,
-          partnerInviteToken: null,
-          partnerLinkToken: null,
-          partnerLinkExpiresAt: null,
         },
       });
-      await ensureEntriesForConfirmedPairing(confirmed.id);
+      if (allFilled) {
+        await ensureEntriesForConfirmedPairing(confirmed.id);
+      }
       await tx.padelPairingHold.updateMany({
         where: { pairingId, status: "ACTIVE" },
         data: { status: "CANCELLED" },

@@ -33,16 +33,19 @@ export default function EventLiveDashboardClient({ event, tournamentId, canManag
   const requestedTab = searchParams?.get("tab") || (canManageLiveConfig ? "setup" : "preview");
   const tab = tabs.find((item) => item.id === requestedTab)?.id ?? tabs[0]?.id ?? "preview";
 
-  const basePath = `/organizacao/eventos/${event.id}/live`;
+  const basePath =
+    event.templateType === "PADEL"
+      ? `/organizacao/torneios/${event.id}/live`
+      : `/organizacao/eventos/${event.id}/live`;
 
   return (
     <div className="space-y-6">
       <header className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/10 via-[#0b1226]/70 to-[#050912]/90 p-5 shadow-[0_26px_90px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Gerir · Preparar live</p>
+            <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Live</p>
             <h1 className="text-2xl font-semibold text-white">{event.title}</h1>
-            <p className="text-sm text-white/60">Configura LiveHub, bracket e preview no mesmo lugar.</p>
+            <p className="text-sm text-white/60">LiveHub, bracket e preview.</p>
           </div>
         </div>
         <div className="mt-4 flex flex-wrap gap-2">
@@ -89,7 +92,7 @@ export default function EventLiveDashboardClient({ event, tournamentId, canManag
         <>
           {!tournamentId && (
             <div className="rounded-2xl border border-amber-400/40 bg-amber-400/10 p-4 text-sm text-amber-100">
-              Ainda não existe um torneio associado. Cria o torneio no separador LiveHub para começar a preparar a bracket.
+              Sem torneio associado. Cria no separador LiveHub.
             </div>
           )}
           {tournamentId && <TournamentLiveManager tournamentId={tournamentId} />}
@@ -99,8 +102,7 @@ export default function EventLiveDashboardClient({ event, tournamentId, canManag
       {tab === "preview" && (
         <div className="space-y-4">
           <div className="rounded-2xl border border-white/10 bg-white/5 p-3 text-sm text-white/70">
-            Preview do LiveHub com overlay do organização. Usa <span className="text-white">Editar</span> nos jogos
-            para atualizar resultados.
+            Preview do LiveHub. Usa <span className="text-white">Editar</span> para resultados.
           </div>
           <EventLiveClient slug={event.slug} />
         </div>

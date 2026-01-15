@@ -3,7 +3,6 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth/requireUser";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
-import { getCustomPremiumProfileModules, isCustomPremiumActive } from "@/lib/organizationPremium";
 
 const SUBMISSION_STATUSES = new Set([
   "SUBMITTED",
@@ -17,11 +16,7 @@ const SUBMISSION_STATUSES = new Set([
 async function ensureInscricoesEnabled(organization: {
   id: number;
   username?: string | null;
-  liveHubPremiumEnabled?: boolean | null;
 }) {
-  const premiumActive = isCustomPremiumActive(organization);
-  const premiumModules = premiumActive ? getCustomPremiumProfileModules(organization) ?? {} : {};
-  if (!premiumModules.inscricoes) return false;
   const enabled = await prisma.organizationModuleEntry.findFirst({
     where: { organizationId: organization.id, moduleKey: "INSCRICOES", enabled: true },
     select: { organizationId: true },
@@ -42,7 +37,7 @@ export async function GET(req: NextRequest, context: { params: Promise<{ id: str
     }
 
     if (!(await ensureInscricoesEnabled(organization))) {
-      return NextResponse.json({ ok: false, error: "Módulo de inscrições desativado." }, { status: 403 });
+      return NextResponse.json({ ok: false, error: "Módulo de formulários desativado." }, { status: 403 });
     }
 
     const { id } = await context.params;
@@ -61,10 +56,8 @@ export async function GET(req: NextRequest, context: { params: Promise<{ id: str
 
     const takeRaw = req.nextUrl.searchParams.get("take");
     const skipRaw = req.nextUrl.searchParams.get("skip");
-    const take = Math.min(
-      200,
-      Math.max(1, Number.isFinite(Number(takeRaw)) ? Number(takeRaw) : 50),
-    );
+    const takeValue = takeRaw ? Number(takeRaw) : NaN;
+    const take = Math.min(200, Math.max(1, Number.isFinite(takeValue) ? takeValue : 50));
     const skip = Math.max(0, Number.isFinite(Number(skipRaw)) ? Number(skipRaw) : 0);
 
     const submissions = await prisma.organizationFormSubmission.findMany({
@@ -112,7 +105,7 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
     }
 
     if (!(await ensureInscricoesEnabled(organization))) {
-      return NextResponse.json({ ok: false, error: "Módulo de inscrições desativado." }, { status: 403 });
+      return NextResponse.json({ ok: false, error: "Módulo de formulários desativado." }, { status: 403 });
     }
 
     const { id } = await context.params;

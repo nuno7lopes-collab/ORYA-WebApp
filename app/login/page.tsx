@@ -4,17 +4,24 @@ import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
 import { useSearchParams, useRouter } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabaseBrowser";
 import { PendingDeleteBanner } from "./pending-delete-banner";
+import { sanitizeRedirectPath } from "@/lib/auth/redirects";
 
 function LoginContent() {
   const { openModal, isOpen } = useAuthModal();
   const searchParams = useSearchParams();
   const router = useRouter();
-  const redirectTo = searchParams.get("redirectTo") ?? "/";
+  const redirectTo = sanitizeRedirectPath(
+    searchParams.get("redirectTo") ??
+      searchParams.get("redirect") ??
+      searchParams.get("next"),
+    "/"
+  );
   const [checked, setChecked] = useState(false);
   const [openedOnce, setOpenedOnce] = useState(false);
   const [fallback, setFallback] = useState<string>("/");
   const [mounted, setMounted] = useState(false);
   const [pendingEmail, setPendingEmail] = useState<string | null>(null);
+  const [showFallback, setShowFallback] = useState(false);
 
   useEffect(() => {
     setMounted(true);
@@ -32,7 +39,8 @@ function LoginContent() {
         ref && new URL(ref).origin === window.location.origin
           ? new URL(ref).pathname + new URL(ref).search
           : null;
-      setFallback(redirectTo || sameOriginRef || "/");
+      const safeRef = sanitizeRedirectPath(sameOriginRef, "/");
+      setFallback(redirectTo || safeRef || "/");
     }
   }, [redirectTo]);
 
@@ -61,6 +69,12 @@ function LoginContent() {
     };
   }, [openModal, redirectTo, router, isOpen, openedOnce, pendingEmail]);
 
+  useEffect(() => {
+    setShowFallback(false);
+    const timer = setTimeout(() => setShowFallback(true), 1500);
+    return () => clearTimeout(timer);
+  }, [redirectTo]);
+
   // Se o modal foi aberto e entretanto está fechado, redireciona para o fallback
   useEffect(() => {
     if (openedOnce && !isOpen) {
@@ -73,25 +87,30 @@ function LoginContent() {
   }
 
   return (
-    <main className="orya-page-width min-h-screen flex items-center justify-center text-white">
-      <div className="w-full max-w-md text-center space-y-4 px-4">
+    <main className="min-h-screen flex items-center justify-center px-4 text-white bg-[radial-gradient(circle_at_top,#1d2335,#0a0b12_55%,#05060a_100%)]">
+      <div className="w-full max-w-sm rounded-3xl border border-white/10 bg-white/5 p-6 text-center backdrop-blur-2xl shadow-[0_30px_90px_rgba(0,0,0,0.55)]">
         <PendingDeleteBanner />
-        <p>{checked ? "Se o modal não abriu," : "A preparar sessão..."}</p>
-        {checked && (
-          <div className="flex items-center justify-center gap-3">
+        <div className="mx-auto mb-4 h-10 w-10 rounded-full border border-white/20 bg-white/10 grid place-items-center">
+          <div className="h-3 w-3 rounded-full bg-white/70 animate-pulse" />
+        </div>
+        <h1 className="text-lg font-semibold">A abrir sessão</h1>
+        <p className="mt-2 text-sm text-white/60">{checked ? "Só um instante." : "A preparar..."}</p>
+
+        {checked && showFallback && !isOpen && (
+          <div className="mt-5 flex items-center justify-center gap-3 text-sm">
             <button
               onClick={() =>
                 openModal({ mode: "login", redirectTo, showGoogle: true })
               }
-              className="underline"
+              className="rounded-full border border-white/20 px-4 py-2 text-white/80 hover:bg-white/10"
             >
-              abrir modal
+              Abrir
             </button>
             <button
               onClick={() => router.replace(redirectTo)}
-              className="underline"
+              className="rounded-full border border-white/10 px-4 py-2 text-white/60 hover:bg-white/5"
             >
-              sair e voltar
+              Voltar
             </button>
           </div>
         )}

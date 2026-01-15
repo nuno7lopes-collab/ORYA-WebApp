@@ -1,30 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { createSupabaseServer } from "@/lib/supabaseServer";
+import { requireAdminUser } from "@/lib/admin/auth";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
-
-type AdminProfileResult =
-  | { user: { id: string } | null; error: "UNAUTHENTICATED" | "FORBIDDEN" }
-  | { user: { id: string }; error: null };
-
-async function getAdminProfile(): Promise<AdminProfileResult> {
-  const supabase = await createSupabaseServer();
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser();
-
-  if (error || !user) {
-    return { user: null, error: "UNAUTHENTICATED" };
-  }
-
-  const profile = await prisma.profile.findUnique({ where: { id: user.id } });
-  if (!profile || !Array.isArray(profile.roles) || !profile.roles.includes("admin")) {
-    return { user: null, error: "FORBIDDEN" };
-  }
-
-  return { user, error: null };
-}
+import { logAccountEvent } from "@/lib/accountEvents";
+import { getClientIp } from "@/lib/auth/requestValidation";
 
 type Action = "ban" | "unban" | "hard_delete";
 
@@ -46,13 +25,12 @@ async function hardDeleteAuthUser(userId: string) {
 
 export async function POST(req: NextRequest) {
   // 1) Auth check
-  const { error } = await getAdminProfile();
-  if (error === "UNAUTHENTICATED") {
-    return NextResponse.json({ ok: false, error }, { status: 401 });
+  const admin = await requireAdminUser();
+  if (!admin.ok) {
+    return NextResponse.json({ ok: false, error: admin.error }, { status: admin.status });
   }
-  if (error === "FORBIDDEN") {
-    return NextResponse.json({ ok: false, error }, { status: 403 });
-  }
+  const ip = getClientIp(req);
+  const userAgent = req.headers.get("user-agent");
 
   // 2) Body parsing (JSON ou form)
   let userId: string | undefined;
@@ -87,6 +65,11 @@ export async function POST(req: NextRequest) {
       if (!authResult.ok) throw authResult.error;
 
       await prisma.profile.deleteMany({ where: { id: userId } });
+      await logAccountEvent({
+        userId,
+        type: "admin_user_hard_delete",
+        metadata: { actorUserId: admin.userId, ip, userAgent, note: authResult.note },
+      });
       return NextResponse.json({
         ok: true,
         message: "Utilizador removido em definitivo.",
@@ -104,6 +87,11 @@ export async function POST(req: NextRequest) {
         where: { id: userId },
         data: { isDeleted: true, deletedAt: new Date() },
       });
+      await logAccountEvent({
+        userId,
+        type: "admin_user_ban",
+        metadata: { actorUserId: admin.userId, ip, userAgent },
+      });
       return NextResponse.json({ ok: true, message: "Utilizador banido." });
     }
 
@@ -115,6 +103,11 @@ export async function POST(req: NextRequest) {
       await prisma.profile.updateMany({
         where: { id: userId },
         data: { isDeleted: false, deletedAt: null },
+      });
+      await logAccountEvent({
+        userId,
+        type: "admin_user_unban",
+        metadata: { actorUserId: admin.userId, ip, userAgent },
       });
       return NextResponse.json({ ok: true, message: "Utilizador reativado." });
     }

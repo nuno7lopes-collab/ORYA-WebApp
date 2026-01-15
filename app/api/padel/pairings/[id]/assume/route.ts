@@ -7,8 +7,9 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { readNumericParam } from "@/lib/routeParams";
 
 // Capitão assume o resto (SPLIT): apenas validação; checkout deve ser iniciado no cliente.
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
-  const pairingId = readNumericParam(params?.id, req, "pairings");
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const resolved = await params;
+  const pairingId = readNumericParam(resolved?.id, req, "pairings");
   if (pairingId === null) return NextResponse.json({ ok: false, error: "INVALID_ID" }, { status: 400 });
 
   const supabase = await createSupabaseServer();

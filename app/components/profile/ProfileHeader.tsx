@@ -5,11 +5,9 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { sanitizeUsername, validateUsername } from "@/lib/username";
 import FollowClient from "@/app/[username]/FollowClient";
-import ProfileHeaderLayout, {
-  ProfileStatPill,
-  ProfileVerifiedBadge,
-} from "@/app/components/profile/ProfileHeaderLayout";
+import ProfileHeaderLayout, { ProfileStatPill } from "@/app/components/profile/ProfileHeaderLayout";
 import { Avatar } from "@/components/ui/avatar";
+import { getProfileCoverUrl, sanitizeProfileCoverUrl } from "@/lib/profileCover";
 
 export type ProfileHeaderProps = {
   /** Se é o próprio utilizador a ver o seu perfil */
@@ -42,9 +40,20 @@ export type ProfileHeaderProps = {
   isVerified?: boolean;
   /** Se pode abrir listas de seguidores */
   canOpenLists?: boolean;
-  /** Se o viewer é amigo (follow mútuo) */
-  isMutual?: boolean;
+  /** Estado do perfil Padel (opcional) */
+  padelStatus?: { label: string; tone?: "emerald" | "amber" | "slate" };
+  /** Ação para abrir/concluir perfil Padel (opcional) */
+  padelAction?: { href: string; label: string; tone?: "emerald" | "amber" | "ghost" };
 };
+
+type ProfileListItem = {
+  userId: string;
+  username: string | null;
+  fullName: string | null;
+  avatarUrl: string | null;
+};
+
+type ListMode = "followers" | "following";
 
 export default function ProfileHeader({
   isOwner,
@@ -60,9 +69,9 @@ export default function ProfileHeader({
   following,
   targetUserId,
   initialIsFollowing,
-  isVerified = false,
   canOpenLists = true,
-  isMutual = false,
+  padelStatus,
+  padelAction,
 }: ProfileHeaderProps) {
   const router = useRouter();
   const displayName = name?.trim() || "Utilizador ORYA";
@@ -71,7 +80,7 @@ export default function ProfileHeader({
   const safeAvatarUrl = avatarUrl && avatarUrl.trim().length > 0
     ? avatarUrl
     : undefined;
-  const safeCoverUrl = coverUrl && coverUrl.trim().length > 0 ? coverUrl : null;
+  const safeCoverUrl = sanitizeProfileCoverUrl(coverUrl);
 
 
   const [nameInput, setNameInput] = useState(displayName);
@@ -79,6 +88,9 @@ export default function ProfileHeader({
   const [bioInput, setBioInput] = useState(bio ?? "");
   const [avatar, setAvatar] = useState<string | null | undefined>(safeAvatarUrl);
   const [cover, setCover] = useState<string | null>(safeCoverUrl);
+  const coverDisplayUrl = cover
+    ? getProfileCoverUrl(cover, { width: 1500, height: 500, quality: 72, format: "webp" })
+    : null;
   const [editingField, setEditingField] = useState<"name" | "username" | "bio" | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -99,8 +111,7 @@ export default function ProfileHeader({
     setAvatar(safeAvatarUrl);
     setCover(safeCoverUrl);
     setAvatarVersion(avatarUpdatedAt ?? null);
-    setMutualBadge(isMutual);
-  }, [displayName, handle, bio, safeAvatarUrl, safeCoverUrl, avatarUpdatedAt, isMutual]);
+  }, [displayName, handle, bio, safeAvatarUrl, safeCoverUrl, avatarUpdatedAt]);
 
   useEffect(() => {
     if (!showEditControls) {
@@ -195,7 +206,7 @@ export default function ProfileHeader({
     setSuccess(null);
     const formData = new FormData();
     formData.append("file", file);
-    const res = await fetch("/api/upload?scope=event-cover", { method: "POST", body: formData });
+    const res = await fetch("/api/upload?scope=profile-cover", { method: "POST", body: formData });
     const json = await res.json().catch(() => null);
     if (!res.ok || !json?.url) {
       setError(json?.error || "Falha no upload da capa.");
@@ -219,38 +230,29 @@ export default function ProfileHeader({
   };
 
   const showPrivateBadge = visibility ? visibility !== "PUBLIC" : false;
-  const [mutualBadge, setMutualBadge] = useState(isMutual);
-  const showMutualBadge = !isOwner && mutualBadge;
   const followersCount = followers ?? null;
   const followingCount = following ?? null;
   const [followersDisplay, setFollowersDisplay] = useState(followersCount ?? 0);
-  const [showFollowersModal, setShowFollowersModal] = useState(false);
-  const [showFollowingModal, setShowFollowingModal] = useState(false);
+  const [isListModalOpen, setIsListModalOpen] = useState(false);
+  const [activeList, setActiveList] = useState<ListMode>("followers");
   const [listLoading, setListLoading] = useState(false);
-  const [listItems, setListItems] = useState<
-    Array<{
-      userId: string;
-      username: string | null;
-      fullName: string | null;
-      avatarUrl: string | null;
-      isMutual?: boolean;
-    }>
-  >([]);
+  const [listItems, setListItems] = useState<ProfileListItem[]>([]);
   const handleFollowChange = (next: boolean) => {
     setFollowersDisplay((prev) => Math.max(0, (prev ?? 0) + (next ? 1 : -1)));
   };
 
-  const loadList = async (mode: "followers" | "following") => {
+  const fetchList = async (mode: "followers" | "following") => {
+    const res = await fetch(`/api/social/${mode}?userId=${targetUserId}&limit=50`);
+    const json = await res.json().catch(() => null);
+    if (!res.ok || !json?.ok || !Array.isArray(json.items)) return [];
+    return json.items as ProfileListItem[];
+  };
+
+  const loadList = async (mode: ListMode) => {
     if (!targetUserId) return;
     setListLoading(true);
     try {
-      const res = await fetch(`/api/social/${mode}?userId=${targetUserId}`);
-      const json = await res.json().catch(() => null);
-      if (res.ok && json?.ok) {
-        setListItems(Array.isArray(json.items) ? json.items : []);
-      } else {
-        setListItems([]);
-      }
+      setListItems(await fetchList(mode));
     } catch {
       setListItems([]);
     } finally {
@@ -258,31 +260,24 @@ export default function ProfileHeader({
     }
   };
 
+  const openListModal = (mode: ListMode) => {
+    if (!targetUserId) return;
+    setActiveList(mode);
+    setIsListModalOpen(true);
+    loadList(mode);
+  };
+
   const statsSlot = (
     <>
       <ProfileStatPill
         label="Seguidores"
         value={followersDisplay ?? "—"}
-        onClick={
-          canOpenLists
-            ? () => {
-                setShowFollowersModal(true);
-                loadList("followers");
-              }
-            : undefined
-        }
+        onClick={canOpenLists ? () => openListModal("followers") : undefined}
       />
       <ProfileStatPill
         label="A seguir"
         value={followingCount ?? "—"}
-        onClick={
-          canOpenLists
-            ? () => {
-                setShowFollowingModal(true);
-                loadList("following");
-              }
-            : undefined
-        }
+        onClick={canOpenLists ? () => openListModal("following") : undefined}
       />
     </>
   );
@@ -318,7 +313,6 @@ export default function ProfileHeader({
       <h1 className="text-[22px] sm:text-3xl font-semibold tracking-tight text-white truncate">
         {nameInput}
       </h1>
-      {isVerified && <ProfileVerifiedBadge />}
       {showEditControls && (
         <button
           className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[11px] text-white/75 hover:bg-white/12"
@@ -369,7 +363,7 @@ export default function ProfileHeader({
           )}
           {!handle && showEditControls && (
             <span className="rounded-full border border-dashed border-white/25 px-2 py-0.5 text-[11px] text-white/70">
-              Define um @username para ativares o teu perfil público
+              Define um @username para ativar o perfil
             </span>
           )}
           {showEditControls && (
@@ -401,7 +395,7 @@ export default function ProfileHeader({
           className="rounded-full bg-white text-black px-3 py-1 text-[11px] font-semibold shadow"
           disabled={saving}
         >
-          Guardar bio
+          Guardar
         </button>
         <button
           onClick={() => {
@@ -418,7 +412,7 @@ export default function ProfileHeader({
   ) : (
     <div className="flex flex-wrap items-start gap-2">
       <p className="max-w-xl text-sm text-white/85 leading-relaxed">
-        {bioInput || (isOwner ? "Adiciona uma bio curta para o teu perfil." : "Sem bio no momento.")}
+        {bioInput || (isOwner ? "Adiciona uma bio." : "Sem bio.")}
       </p>
       {showEditControls && (
         <button
@@ -432,36 +426,67 @@ export default function ProfileHeader({
     </div>
   );
 
-  const linksSlot = showPrivateBadge || showMutualBadge ? (
+  const padelStatusPill = padelStatus ? (
+    <span
+      className={`rounded-full border px-2.5 py-1 text-[11px] ${
+        padelStatus.tone === "emerald"
+          ? "border-emerald-400/40 bg-emerald-500/15 text-emerald-50"
+          : padelStatus.tone === "amber"
+          ? "border-amber-400/40 bg-amber-500/15 text-amber-50"
+          : "border-white/25 bg-white/10 text-white/75"
+      }`}
+    >
+      {padelStatus.label}
+    </span>
+  ) : null;
+
+  const linksSlot = showPrivateBadge || padelStatusPill ? (
     <div className="flex flex-wrap items-center gap-2 text-[11px] text-white/75">
       {showPrivateBadge && (
         <span className="rounded-full border border-white/25 bg-white/10 px-2.5 py-1 text-[11px] text-white/75">
           Perfil privado
         </span>
       )}
-      {showMutualBadge && (
-        <span className="rounded-full border border-emerald-400/40 bg-emerald-500/15 px-2.5 py-1 text-[11px] text-emerald-50">
-          Teu amigo
-        </span>
-      )}
+      {padelStatusPill}
     </div>
   ) : null;
 
-  const actionsSlot = isOwner ? (
+  const padelActionButton = padelAction ? (
+    <Link
+      href={padelAction.href}
+      className={`inline-flex items-center rounded-full border px-4 py-2 text-[12px] font-semibold ${
+        padelAction.tone === "emerald"
+          ? "border-emerald-400/40 bg-emerald-500/20 text-emerald-50 shadow-[0_10px_26px_rgba(16,185,129,0.22)]"
+          : padelAction.tone === "amber"
+          ? "border-amber-400/40 bg-amber-500/20 text-amber-50 shadow-[0_10px_26px_rgba(251,191,36,0.2)]"
+          : "border-white/20 bg-white/8 text-white/85"
+      }`}
+    >
+      {padelAction.label}
+    </Link>
+  ) : null;
+
+  const baseAction = isOwner ? (
     <button
       type="button"
       onClick={() => setIsEditing((prev) => !prev)}
       className="inline-flex items-center rounded-full border border-white/20 bg-white/8 px-4 py-2 text-[12px] font-semibold text-white/80 hover:bg-white/12"
     >
-      {isEditing ? "Fechar edição" : "Editar perfil"}
+      {isEditing ? "Fechar" : "Editar perfil"}
     </button>
   ) : targetUserId ? (
     <FollowClient
       targetUserId={targetUserId}
       initialIsFollowing={initialIsFollowing ?? false}
       onChange={handleFollowChange}
-      onMutualChange={setMutualBadge}
     />
+  ) : null;
+
+  const actionsSlot = padelActionButton || baseAction ? (
+    <>
+      {padelActionButton}
+      {baseAction}
+    </>
   ) : null;
 
   const coverActionsSlot = showEditControls ? (
@@ -511,8 +536,7 @@ export default function ProfileHeader({
               className="w-full rounded-xl px-3 py-2 text-left hover:bg-white/10"
               onClick={() => {
                 setAvatarMenu(false);
-                setShowFollowersModal(false);
-                setShowFollowingModal(false);
+                setIsListModalOpen(false);
                 const overlay = document.createElement("div");
                 overlay.style.position = "fixed";
                 overlay.style.inset = "0";
@@ -569,10 +593,20 @@ export default function ProfileHeader({
       </div>
     ) : null;
 
+  const listTitle = activeList === "following" ? "A seguir" : "Seguidores";
+  const listTabs: Array<{ value: ListMode; label: string; count: number }> = [
+    { value: "followers", label: "Seguidores", count: followersDisplay ?? 0 },
+    { value: "following", label: "A seguir", count: followingCount ?? 0 },
+  ];
+  const emptyLabel =
+    activeList === "following"
+      ? "Ainda não segues ninguém."
+      : "Sem seguidores por agora.";
+
   return (
     <>
       <ProfileHeaderLayout
-        coverUrl={cover}
+        coverUrl={coverDisplayUrl}
         coverActionsSlot={coverActionsSlot}
         avatarSlot={avatarSlot}
         statsSlot={statsSlot}
@@ -597,30 +631,44 @@ export default function ProfileHeader({
         className="hidden"
         onChange={(e) => handleAvatarUpload(e.target.files?.[0] ?? null)}
       />
-      {(showFollowersModal || showFollowingModal) && (
+      {isListModalOpen && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm px-4"
           onClick={(e) => {
             if (e.target === e.currentTarget) {
-              setShowFollowersModal(false);
-              setShowFollowingModal(false);
+              setIsListModalOpen(false);
             }
           }}
         >
           <div className="w-full max-w-md rounded-3xl border border-white/12 bg-[rgba(8,10,18,0.92)] p-4 shadow-[0_30px_80px_rgba(0,0,0,0.8)] backdrop-blur-2xl">
             <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-white">
-                {showFollowersModal ? "Seguidores" : "A seguir"}
-              </h3>
+              <h3 className="text-sm font-semibold text-white">{listTitle}</h3>
               <button
-                onClick={() => {
-                  setShowFollowersModal(false);
-                  setShowFollowingModal(false);
-                }}
+                onClick={() => setIsListModalOpen(false)}
                 className="rounded-full border border-white/15 bg-white/10 px-2 py-1 text-[11px] text-white/80 hover:bg-white/15"
               >
                 Fechar
               </button>
+            </div>
+            <div className="mb-3 flex items-center gap-2 rounded-full border border-white/10 bg-white/5 p-1">
+              {listTabs.map((tab) => {
+                const isActive = tab.value === activeList;
+                return (
+                  <button
+                    key={tab.value}
+                    type="button"
+                    onClick={() => {
+                      setActiveList(tab.value);
+                      loadList(tab.value);
+                    }}
+                    className={`flex-1 rounded-full px-2 py-1 text-[11px] font-semibold transition ${
+                      isActive ? "bg-white/15 text-white" : "text-white/60 hover:text-white/80"
+                    }`}
+                  >
+                    {tab.label} · {tab.count}
+                  </button>
+                );
+              })}
             </div>
             {listLoading ? (
               <div className="space-y-2">
@@ -628,7 +676,7 @@ export default function ProfileHeader({
                 <div className="h-12 rounded-xl orya-skeleton-surface animate-pulse" />
               </div>
             ) : listItems.length === 0 ? (
-              <p className="text-[12px] text-white/70">Nada para mostrar.</p>
+              <p className="text-[12px] text-white/70">{emptyLabel}</p>
             ) : (
               <div className="max-h-[60vh] space-y-2 overflow-y-auto pr-1">
                 {listItems.map((item) => {
@@ -638,10 +686,7 @@ export default function ProfileHeader({
                       key={item.userId}
                       href={item.username ? `/${item.username}` : `/me`}
                       className="flex items-center gap-3 rounded-xl border border-white/8 bg-white/5 px-3 py-2 hover:border-white/20 hover:bg-white/8 transition-colors"
-                      onClick={() => {
-                        setShowFollowersModal(false);
-                        setShowFollowingModal(false);
-                      }}
+                      onClick={() => setIsListModalOpen(false)}
                     >
                       <Avatar
                         src={item.avatarUrl}
@@ -656,11 +701,6 @@ export default function ProfileHeader({
                         </p>
                         {item.username && (
                           <p className="text-[11px] text-white/65 truncate">@{item.username}</p>
-                        )}
-                        {item.isMutual && (
-                          <span className="mt-1 inline-flex rounded-full border border-emerald-400/40 bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-50">
-                            Teu amigo
-                          </span>
                         )}
                       </div>
                     </Link>

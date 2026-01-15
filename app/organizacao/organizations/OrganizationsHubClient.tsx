@@ -4,11 +4,12 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { sanitizeUsername, validateUsername, USERNAME_RULES_HINT } from "@/lib/username";
 import {
-  DEFAULT_ORGANIZATION_CATEGORY,
-  DEFAULT_ORGANIZATION_MODULES,
+  DEFAULT_PRIMARY_MODULE,
+  getDefaultOrganizationModules,
 } from "@/lib/organizationCategories";
 import { Avatar } from "@/components/ui/avatar";
 import { CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
+import { cn } from "@/lib/utils";
 
 const ORG_COOKIE_MAX_AGE = 60 * 60 * 24 * 30;
 
@@ -158,8 +159,8 @@ export default function OrganizationsHubClient({ initialOrgs, activeId }: Props)
           city: city.trim(),
           publicName: businessName.trim(),
           username: usernameValid.normalized,
-          organizationCategory: DEFAULT_ORGANIZATION_CATEGORY,
-          modules: [...DEFAULT_ORGANIZATION_MODULES],
+          primaryModule: DEFAULT_PRIMARY_MODULE,
+          modules: getDefaultOrganizationModules(DEFAULT_PRIMARY_MODULE),
         }),
       });
       const json = await res.json().catch(() => null);
@@ -309,7 +310,7 @@ export default function OrganizationsHubClient({ initialOrgs, activeId }: Props)
   const hasError = false; // como não há fetch client, não há erro aqui
 
   return (
-    <div className="w-full px-4 py-8 text-white md:px-6 lg:px-8">
+    <div className={cn("w-full py-8 text-white")}>
       <div className="space-y-8">
         {hasError && (
           <div className="rounded-2xl border border-red-400/40 bg-red-900/30 p-4 text-sm text-red-100">
@@ -333,7 +334,7 @@ export default function OrganizationsHubClient({ initialOrgs, activeId }: Props)
             <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-5 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
               <p className="text-[11px] uppercase tracking-[0.3em] text-white/70">Organizações</p>
               <h2 className="text-2xl font-semibold">As tuas organizações</h2>
-              <p className="text-[12px] text-white/65">Escolhe em que organização estás a trabalhar.</p>
+              <p className="text-[12px] text-white/65">Escolhe onde queres entrar.</p>
             </div>
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
               {orgs.map(renderOrgCard)}
@@ -347,7 +348,7 @@ export default function OrganizationsHubClient({ initialOrgs, activeId }: Props)
                     <div className="flex h-12 w-12 items-center justify-center rounded-full border border-white/20 bg-white/10 text-xl font-bold">
                       +
                     </div>
-                    <h3 className="text-lg font-semibold">Adicionar nova organização</h3>
+                    <h3 className="text-lg font-semibold">Nova organização</h3>
                   </div>
                 </div>
               </button>
@@ -360,12 +361,12 @@ export default function OrganizationsHubClient({ initialOrgs, activeId }: Props)
             <div className="space-y-2">
               <h2 className="text-2xl font-semibold">Ainda não tens nenhuma organização</h2>
               <p className="text-sm text-white/65">
-                Cria a primeira para vender bilhetes, gerir equipa e pagamentos.
+                Cria a primeira para vender bilhetes e gerir equipa.
               </p>
               <ul className="list-disc space-y-1 pl-5 text-sm text-white/70">
                 <li>Cria o teu clube, bar, espaço ou marca.</li>
-                <li>Vende bilhetes e recebe os pagamentos diretamente na tua conta.</li>
-                <li>Adiciona staff com acesso a check-in e relatórios.</li>
+                <li>Vende bilhetes e recebe pagamentos.</li>
+                <li>Adiciona staff e controla acessos.</li>
               </ul>
             </div>
             <button
@@ -387,7 +388,7 @@ export default function OrganizationsHubClient({ initialOrgs, activeId }: Props)
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="text-lg font-semibold">Criar nova organização</h3>
-                  <p className="text-[12px] text-white/65">Define nome, tipo de entidade e cidade base para começares.</p>
+                  <p className="text-[12px] text-white/65">Nome, tipo e cidade.</p>
                 </div>
                 <div className="flex items-center gap-3">
                   {actionMessage && <p className="text-[12px] text-emerald-200">{actionMessage}</p>}
@@ -453,7 +454,7 @@ export default function OrganizationsHubClient({ initialOrgs, activeId }: Props)
                       placeholder="casaguedes"
                     />
                   </div>
-                  <p className="text-[11px] text-white/55">@ é único na ORYA (3-30 chars, letras/números/_ ou .)</p>
+                  <p className="text-[11px] text-white/55">@ é único (3-30 chars).</p>
                   {usernameHint && <p className="text-[11px] text-amber-300">{usernameHint}</p>}
                   {checkingUsername && <p className="text-[11px] text-white/60">A verificar disponibilidade…</p>}
                   {usernameStatus === "taken" && !checkingUsername && (

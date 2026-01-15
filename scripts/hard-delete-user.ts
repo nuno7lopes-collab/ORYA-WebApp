@@ -5,12 +5,12 @@ import { createClient } from "@supabase/supabase-js";
 config({ path: ".env.local" });
 config();
 
-const url = process.env.SUPABASE_URL;
+const url = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceRole = process.env.SUPABASE_SERVICE_ROLE;
 const email = process.argv[2];
 
 if (!url || !serviceRole) {
-  console.error("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE env.");
+  console.error("Missing SUPABASE_URL/NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE env.");
   process.exit(1);
 }
 if (!email) {

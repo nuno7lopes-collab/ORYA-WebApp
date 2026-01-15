@@ -3,16 +3,10 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth/requireUser";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
-import { getCustomPremiumProfileModules, isCustomPremiumActive } from "@/lib/organizationPremium";
-
 async function ensureInscricoesEnabled(organization: {
   id: number;
   username?: string | null;
-  liveHubPremiumEnabled?: boolean | null;
 }) {
-  const premiumActive = isCustomPremiumActive(organization);
-  const premiumModules = premiumActive ? getCustomPremiumProfileModules(organization) ?? {} : {};
-  if (!premiumModules.inscricoes) return false;
   const enabled = await prisma.organizationModuleEntry.findFirst({
     where: { organizationId: organization.id, moduleKey: "INSCRICOES", enabled: true },
     select: { organizationId: true },
@@ -38,7 +32,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "Sem organização ativa." }, { status: 403 });
     }
     if (!(await ensureInscricoesEnabled(organization))) {
-      return NextResponse.json({ ok: false, error: "Módulo de inscrições desativado." }, { status: 403 });
+      return NextResponse.json({ ok: false, error: "Módulo de formulários desativado." }, { status: 403 });
     }
 
     const forms = await prisma.organizationForm.findMany({
@@ -85,7 +79,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "Sem organização ativa." }, { status: 403 });
     }
     if (!(await ensureInscricoesEnabled(organization))) {
-      return NextResponse.json({ ok: false, error: "Módulo de inscrições desativado." }, { status: 403 });
+      return NextResponse.json({ ok: false, error: "Módulo de formulários desativado." }, { status: 403 });
     }
 
     const body = await req.json().catch(() => null);

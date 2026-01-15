@@ -7,6 +7,25 @@ import { supabaseBrowser } from "@/lib/supabaseBrowser";
 import { mutate as swrMutate } from "swr";
 import type { User } from "@supabase/supabase-js";
 import { CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
+import { sanitizeRedirectPath } from "@/lib/auth/redirects";
+import { useUser } from "@/app/hooks/useUser";
+import { sanitizeUsername, validateUsername, USERNAME_RULES_HINT } from "@/lib/username";
+import { INTEREST_MAX_SELECTION, INTEREST_OPTIONS, normalizeInterestSelection, type InterestId } from "@/lib/interests";
+import InterestIcon from "@/app/components/interests/InterestIcon";
+
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const mapAuthErrorMessage = (message: string | null | undefined) => {
+  if (!message) return message;
+  const normalized = message.toLowerCase();
+  if (
+    normalized.includes("password is known to be weak") ||
+    normalized.includes("weak and easy to guess") ||
+    normalized.includes("weak_password")
+  ) {
+    return "A password não foi aceite pelo sistema de autenticação.";
+  }
+  return message;
+};
 
 export default function AuthModal() {
   const modal = useAuthModal();
@@ -30,6 +49,7 @@ function AuthModalContent({
   showGoogle,
 }: AuthModalContentProps) {
   const router = useRouter();
+  const { profile } = useUser();
 
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -37,19 +57,26 @@ function AuthModalContent({
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [otp, setOtp] = useState("");
   const [loginOtpSending, setLoginOtpSending] = useState(false);
+  const [resetPasswordSending, setResetPasswordSending] = useState(false);
   const [loginOtpSent, setLoginOtpSent] = useState(false);
+  const [resetEmailSent, setResetEmailSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [fullName, setFullName] = useState("");
   const [username, setUsername] = useState("");
+  const [onboardingInterests, setOnboardingInterests] = useState<InterestId[]>([]);
   const [signupCooldown, setSignupCooldown] = useState(0);
   const [otpCooldown, setOtpCooldown] = useState(0);
   const [otpResending, setOtpResending] = useState(false);
   const [usernameHint, setUsernameHint] = useState<string | null>(null);
+  const [usernameStatus, setUsernameStatus] = useState<
+    "idle" | "checking" | "available" | "taken" | "error"
+  >("idle");
 
   const RESEND_COOLDOWN = 30;
   const isSignupBlocked = signupCooldown > 0;
   const isOnboarding = mode === "onboarding";
+  const isEmailLike = (value: string) => EMAIL_REGEX.test(value.trim().toLowerCase());
 
   const modalRef = useRef<HTMLDivElement | null>(null);
 
@@ -75,21 +102,12 @@ function AuthModalContent({
     setOtp("");
     setLoginOtpSent(false);
     setLoginOtpSending(false);
+    setResetPasswordSending(false);
+    setResetEmailSent(false);
     setOtpResending(false);
+    setOnboardingInterests([]);
     setError(null);
     setMode("login");
-  }
-
-  function isUnconfirmedError(err: unknown) {
-    if (!err) return false;
-    const anyErr = err as { message?: string; status?: number; error_description?: string };
-    const msg = (anyErr.message || anyErr.error_description || "").toLowerCase();
-    if (!msg) return false;
-    return (
-      msg.includes("not confirmed") ||
-      msg.includes("confirm your email") ||
-      msg.includes("email_not_confirmed")
-    );
   }
 
   useEffect(() => {
@@ -109,6 +127,23 @@ function AuthModalContent({
     };
   }, [closeModal, isOnboarding]);
 
+  useEffect(() => {
+    if (mode !== "reset") {
+      setResetEmailSent(false);
+    }
+    if (mode === "reset") {
+      setLoginOtpSent(false);
+    }
+  }, [mode]);
+
+  useEffect(() => {
+    if (mode === "onboarding") {
+      setOnboardingInterests(
+        normalizeInterestSelection(profile?.favouriteCategories ?? []),
+      );
+    }
+  }, [mode, profile?.favouriteCategories]);
+
   // Recupera email pendente após reload
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -127,6 +162,20 @@ function AuthModalContent({
       /* ignore */
     }
   }, [email, setEmail, setMode]);
+
+  useEffect(() => {
+    if (!isOnboarding || !profile) return;
+    if (!fullName.trim() && profile.fullName) {
+      setFullName(profile.fullName);
+    }
+    if (!username && profile.username) {
+      const cleaned = sanitizeUsername(profile.username);
+      setUsername(cleaned);
+      const validation = validateUsername(cleaned);
+      setUsernameHint(validation.valid ? null : validation.error);
+      setUsernameStatus("idle");
+    }
+  }, [isOnboarding, profile, fullName, username]);
 
   // Se estivermos no modo verify mas o user já estiver confirmado (sessão existente),
   // limpamos o estado pendente e fechamos o modal para não bloquear o fluxo.
@@ -179,8 +228,8 @@ function AuthModalContent({
   }
 
   async function handleLoginOtp() {
-    if (!email) {
-      setError("Indica o email para receber o link de entrada.");
+    if (!email || !isEmailLike(email)) {
+      setError("Indica um email válido para receber o link de entrada.");
       return;
     }
     setLoginOtpSending(true);
@@ -189,7 +238,16 @@ function AuthModalContent({
     try {
       const redirect =
         typeof window !== "undefined"
-          ? `${window.location.origin}/auth/callback`
+          ? (() => {
+              const currentPath = `${window.location.pathname}${window.location.search}`;
+              const safeRedirect = sanitizeRedirectPath(redirectTo ?? currentPath, "/");
+              try {
+                window.localStorage.setItem("orya_post_auth_redirect", safeRedirect);
+              } catch {}
+              return `${window.location.origin}/auth/callback?redirectTo=${encodeURIComponent(
+                safeRedirect
+              )}`;
+            })()
           : undefined;
       const { error: otpErr } = await supabaseBrowser.auth.signInWithOtp({
         email,
@@ -210,13 +268,14 @@ function AuthModalContent({
   }
 
   async function handleResetPassword() {
-    if (!email) {
-      setError("Indica o email para recuperar a password.");
+    if (!email || !isEmailLike(email)) {
+      setError("Indica um email válido para recuperar a password.");
       return;
     }
-    setLoginOtpSending(true);
+    setResetPasswordSending(true);
     setError(null);
     setLoginOtpSent(false);
+    setResetEmailSent(false);
     try {
       const res = await fetch("/api/auth/password/reset-request", {
         method: "POST",
@@ -225,20 +284,27 @@ function AuthModalContent({
       });
       const data = await res.json().catch(() => null);
       if (!res.ok || data?.ok === false) {
-        setError(data?.error ?? "Não foi possível enviar recuperação de password.");
-        setLoginOtpSending(false);
+        setError(mapAuthErrorMessage(data?.error) ?? "Não foi possível enviar recuperação de password.");
+        setResetPasswordSending(false);
         return;
       }
-      setLoginOtpSent(true);
+      setResetEmailSent(true);
     } catch (err) {
       console.error("[AuthModal] reset password error:", err);
       setError("Não foi possível enviar recuperação de password.");
     } finally {
-      setLoginOtpSending(false);
+      setResetPasswordSending(false);
     }
   }
 
   async function triggerResendOtp(emailToUse: string) {
+    const cleanEmail = emailToUse.trim().toLowerCase();
+    if (!cleanEmail || !isEmailLike(cleanEmail)) {
+      setError("Indica um email válido para reenviar o código.");
+      setOtpResending(false);
+      setOtpCooldown(0);
+      return;
+    }
     setError(null);
     setOtpResending(true);
 
@@ -246,7 +312,7 @@ function AuthModalContent({
       const res = await fetch("/api/auth/resend-otp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: emailToUse }),
+        body: JSON.stringify({ email: cleanEmail }),
       });
       const data = await res.json().catch(() => null);
       if (!res.ok) {
@@ -257,7 +323,7 @@ function AuthModalContent({
         setOtpCooldown(RESEND_COOLDOWN);
         if (typeof window !== "undefined") {
           window.localStorage.setItem("orya_otp_last_sent_at", String(Date.now()));
-          window.localStorage.setItem("orya_pending_email", emailToUse);
+          window.localStorage.setItem("orya_pending_email", cleanEmail);
           window.localStorage.setItem("orya_pending_step", "verify");
         }
       }
@@ -271,6 +337,7 @@ function AuthModalContent({
   }
 
   async function finishAuthAndMaybeOnboard() {
+    const safeRedirect = sanitizeRedirectPath(redirectTo, "/me");
     try {
       // Garantir que o servidor tem a sessão atualizada antes de pedir /api/auth/me
       await syncSessionWithServer();
@@ -285,19 +352,19 @@ function AuthModalContent({
         const data = await res.json().catch(() => null);
         const needsEmailConfirmation = data?.needsEmailConfirmation;
         if (needsEmailConfirmation) {
-          if (typeof window !== "undefined" && email) {
+          if (typeof window !== "undefined" && email && isEmailLike(email)) {
             window.localStorage.setItem("orya_pending_email", email);
             window.localStorage.setItem("orya_pending_step", "verify");
           }
           setMode("verify");
-          if (email) {
+          if (email && isEmailLike(email)) {
             await triggerResendOtp(email);
           }
           setLoading(false);
           return;
         }
         closeModal();
-        router.push(redirectTo ?? "/me");
+        router.push(safeRedirect);
         return;
       }
 
@@ -311,14 +378,14 @@ function AuthModalContent({
 
       if (onboardingDone) {
         closeModal();
-        router.push(redirectTo ?? "/me");
+        router.push(safeRedirect);
       } else {
         setMode("onboarding");
       }
     } catch (err) {
       console.error("finishAuthAndMaybeOnboard error", err);
       closeModal();
-      router.push(redirectTo ?? "/me");
+      router.push(sanitizeRedirectPath(redirectTo, "/me"));
     }
   }
 
@@ -334,46 +401,48 @@ function AuthModalContent({
       return;
     }
 
-    let emailToUse = identifier;
-    if (!identifier.includes("@")) {
-      const res = await fetch("/api/auth/resolve-identifier", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ identifier }),
-      });
-      const data = await res.json().catch(() => null);
-      if (!res.ok || !data?.ok || !data?.email) {
-        setError("Credenciais inválidas. Confirma username/email e password.");
-        setLoading(false);
-        return;
-      }
-      emailToUse = data.email;
-    }
-
-    const { error: loginError } = await supabaseBrowser.auth.signInWithPassword({
-      email: emailToUse,
-      password,
+    const res = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ identifier, password }),
+      credentials: "include",
     });
+    const data = await res.json().catch(() => null);
 
-    if (loginError) {
-      const message = loginError.message || "";
-      if (isUnconfirmedError(loginError)) {
-        if (typeof window !== "undefined") {
-          window.localStorage.setItem("orya_pending_email", emailToUse);
+    if (!res.ok || !data?.ok) {
+      if (data?.error === "EMAIL_NOT_CONFIRMED") {
+        const emailValue = isEmailLike(identifier) ? identifier : "";
+        if (typeof window !== "undefined" && emailValue) {
+          window.localStorage.setItem("orya_pending_email", emailValue);
           window.localStorage.setItem("orya_pending_step", "verify");
         }
         setMode("verify");
-        setEmail(emailToUse);
-        setError("Email ainda não confirmado. Reenviei-te um novo código.");
-        await triggerResendOtp(emailToUse);
+        setEmail(emailValue);
+        setError(
+          emailValue
+            ? "Email ainda não confirmado. Reenviei-te um novo código."
+            : "Email ainda não confirmado. Indica o teu email para receberes o código."
+        );
+        if (emailValue) {
+          await triggerResendOtp(emailValue);
+        }
+      } else if (data?.error === "RATE_LIMITED") {
+        setError("Muitas tentativas. Tenta novamente dentro de minutos.");
       } else {
-        setError(message || "Não foi possível iniciar sessão.");
+        setError("Credenciais inválidas. Confirma username/email e password.");
       }
       setLoading(false);
       return;
     }
 
-    await syncSessionWithServer();
+    const session = data?.session;
+    if (session?.access_token && session?.refresh_token) {
+      await supabaseBrowser.auth.setSession({
+        access_token: session.access_token,
+        refresh_token: session.refresh_token,
+      });
+    }
+
     clearPendingVerification();
     await finishAuthAndMaybeOnboard();
     setLoading(false);
@@ -408,6 +477,12 @@ function AuthModalContent({
       return;
     }
 
+    if (password.length < 6) {
+      setError("A password deve ter pelo menos 6 caracteres.");
+      setLoading(false);
+      return;
+    }
+
     if (password !== confirmPassword) {
       setError("As passwords não coincidem.");
       setLoading(false);
@@ -422,7 +497,16 @@ function AuthModalContent({
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
-        setError(json?.error ?? "Não foi possível enviar o código.");
+        if (res.status === 429 || json?.error === "RATE_LIMITED") {
+          const retryAfterHeader = res.headers.get("Retry-After");
+          const retryAfter = retryAfterHeader ? Number(retryAfterHeader) : NaN;
+          const cooldownSeconds =
+            Number.isFinite(retryAfter) && retryAfter > 0 ? Math.round(retryAfter) : 60;
+          setSignupCooldown(cooldownSeconds);
+          setError("Muitas tentativas. Tenta novamente dentro de alguns minutos.");
+        } else {
+          setError(mapAuthErrorMessage(json?.error) ?? "Não foi possível enviar o código.");
+        }
         setLoading(false);
         return;
       }
@@ -451,8 +535,8 @@ function AuthModalContent({
 
     const emailToUse = (email || "").trim().toLowerCase();
 
-    if (!emailToUse) {
-      setError("Email em falta. Volta atrás e inicia sessão novamente.");
+    if (!emailToUse || !isEmailLike(emailToUse)) {
+      setError("Indica o teu email para validares o código.");
       setLoading(false);
       return;
     }
@@ -487,19 +571,68 @@ function AuthModalContent({
     setLoading(false);
   }
 
+  async function checkUsernameAvailability(currentUsername: string) {
+    const trimmed = sanitizeUsername(currentUsername);
+    if (!trimmed) {
+      setUsernameHint(USERNAME_RULES_HINT);
+      setUsernameStatus("idle");
+      return null;
+    }
+
+    const validation = validateUsername(trimmed);
+    if (!validation.valid) {
+      setUsernameHint(validation.error);
+      setUsernameStatus("error");
+      return null;
+    }
+
+    setUsernameHint(null);
+    setUsernameStatus("checking");
+    try {
+      const res = await fetch(`/api/username/check?username=${encodeURIComponent(trimmed)}`);
+
+      if (!res.ok) {
+        setUsernameStatus("error");
+        setUsernameHint("Não foi possível verificar o username.");
+        return null;
+      }
+
+      const data = (await res.json()) as { available?: boolean };
+      const available = Boolean(data?.available);
+      setUsernameStatus(available ? "available" : "taken");
+      return available;
+    } catch (e) {
+      console.error("Erro a verificar username:", e);
+      setUsernameStatus("error");
+      setUsernameHint("Não foi possível verificar o username.");
+      return null;
+    }
+  }
+
   async function handleOnboardingSave() {
     setError(null);
     setLoading(true);
 
     try {
-      const usernameClean = username.replace(/[^A-Za-z]/g, "").slice(0, 16).trim();
-      if (!usernameClean) {
-        setError("O username só pode ter letras (sem espaços, números ou símbolos).");
+      const interestSelection = normalizeInterestSelection(onboardingInterests);
+      const trimmedName = fullName.trim();
+      const usernameClean = sanitizeUsername(username);
+      const validation = validateUsername(usernameClean);
+
+      if (!trimmedName || !validation.valid) {
+        setError(validation.valid ? "Preenche o nome e o username." : validation.error);
         setLoading(false);
         return;
       }
-      if (usernameClean.length > 16) {
-        setError("O username pode ter no máximo 16 letras.");
+
+      const available = await checkUsernameAvailability(usernameClean);
+      if (available === null) {
+        setError("Não foi possível verificar o username.");
+        setLoading(false);
+        return;
+      }
+      if (!available) {
+        setError("Este @ já está a ser usado — escolhe outro.");
         setLoading(false);
         return;
       }
@@ -510,8 +643,9 @@ function AuthModalContent({
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          fullName: fullName.trim() || null,
-          username: usernameClean,
+          fullName: trimmedName,
+          username: validation.normalized,
+          favouriteCategories: interestSelection,
         }),
       });
 
@@ -532,13 +666,17 @@ function AuthModalContent({
         if (prev?.profile) {
           return {
             ...prev,
-            profile: { ...prev.profile, onboardingDone: true },
+            profile: {
+              ...prev.profile,
+              onboardingDone: true,
+              favouriteCategories: interestSelection,
+            },
           };
         }
         return prev;
       }, false);
       closeModal();
-      router.push(redirectTo ?? "/me");
+      router.push(sanitizeRedirectPath(redirectTo, "/me"));
       setLoading(false);
     } catch (err) {
       console.error("handleOnboardingSave error", err);
@@ -549,6 +687,13 @@ function AuthModalContent({
 
   const isLogin = mode === "login";
   const isSignup = mode === "signup";
+  const isAuthEmailSending = loginOtpSending || resetPasswordSending;
+  const onboardingUsername = sanitizeUsername(username);
+  const onboardingValidation = validateUsername(onboardingUsername);
+  const isOnboardingReady =
+    Boolean(fullName.trim()) &&
+    onboardingValidation.valid &&
+    onboardingInterests.length > 0;
 
   const title =
     mode === "login"
@@ -557,6 +702,8 @@ function AuthModalContent({
       ? "Criar conta na ORYA"
       : mode === "verify"
       ? "Confirmar email"
+      : mode === "reset"
+      ? "Recuperar acesso"
       : "Completar perfil";
 
   const subtitle =
@@ -566,23 +713,25 @@ function AuthModalContent({
       ? "Demora segundos. Depois é só viver eventos."
       : mode === "verify"
       ? "Valida o código que enviámos para o teu email."
+      : mode === "reset"
+      ? "Enviaremos um link seguro para redefinires a palavra-passe."
       : "Só falta isto para ficares pronto.";
 
 
   const isPrimaryDisabled =
     loading ||
     ((mode === "login" || mode === "signup") && (!email || !password)) ||
+    (mode === "signup" && password.length < 6) ||
     (mode === "signup" && (password !== confirmPassword || !confirmPassword)) ||
     (mode === "signup" && isSignupBlocked) ||
-    (mode === "verify" && (!email || otp.trim().length < 6)) ||
-    (mode === "onboarding" &&
-      (!username.replace(/[^A-Za-z]/g, "").trim() ||
-        username.replace(/[^A-Za-z]/g, "").length > 16));
+    (mode === "verify" && (!email || !isEmailLike(email) || otp.trim().length < 6)) ||
+    (mode === "reset" && (!email || !email.trim())) ||
+    (mode === "onboarding" && !isOnboardingReady);
 
   const handleClose = () => {
     hardResetAuthState();
     closeModal();
-    router.push(redirectTo ?? "/");
+    router.push(sanitizeRedirectPath(redirectTo, "/"));
   };
 
   return (
@@ -625,18 +774,22 @@ function AuthModalContent({
           )}
         </div>
 
-        {(mode === "login" || mode === "signup") && (
-          <>
-            <label className="block text-xs text-white/70 mb-1">Email ou username</label>
+          {(mode === "login" || mode === "signup") && (
+            <>
+            <label className="block text-xs text-white/70 mb-1">
+              {mode === "login" ? "Email ou username" : "Email"}
+            </label>
             <input
-              type="text"
+              type={mode === "login" ? "text" : "email"}
               value={email ?? ""}
               onChange={(e) => {
                 setEmail(e.target.value);
                 setError(null);
+                setLoginOtpSent(false);
+                setSignupCooldown(0);
               }}
               className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]"
-              placeholder="nome@exemplo.com ou @username"
+              placeholder={mode === "login" ? "nome@exemplo.com ou @username" : "nome@exemplo.com"}
             />
 
             <label className="mt-3 block text-xs text-white/70 mb-1">
@@ -663,18 +816,30 @@ function AuthModalContent({
             </div>
 
             {mode === "login" && (
-              <div className="mt-2 flex items-center justify-between text-[11px] text-white/65">
+              <div className="mt-3 space-y-3">
                 <button
                   type="button"
-                  onClick={handleResetPassword}
-                  disabled={loginOtpSending}
-                  className="text-[11px] text-white/70 hover:text-white disabled:opacity-60"
+                  disabled={isPrimaryDisabled}
+                  onClick={handleLogin}
+                  className={`${CTA_PRIMARY} w-full justify-center px-4 py-2.5 text-[13px] disabled:opacity-50`}
                 >
-                  {loginOtpSending ? "A enviar recuperação…" : "Esqueceste a password?"}
+                  {loading ? "A processar…" : "Entrar"}
                 </button>
-                {loginOtpSent && (
-                  <span className="text-emerald-300 text-[11px]">Email enviado.</span>
-                )}
+                <div className="flex items-center justify-between text-[11px] text-white/70">
+                  <button
+                    type="button"
+                    onClick={() => setMode("reset")}
+                    disabled={isAuthEmailSending}
+                    className="text-left text-[11px] text-white/70 hover:text-white disabled:opacity-60"
+                  >
+                    Esqueceste a palavra-passe?
+                  </button>
+                </div>
+                <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.35em] text-white/35">
+                  <span className="h-px flex-1 bg-white/10" />
+                  ou
+                  <span className="h-px flex-1 bg-white/10" />
+                </div>
               </div>
             )}
 
@@ -705,7 +870,7 @@ function AuthModalContent({
               </>
             )}
 
-            {showGoogle && (
+            {(mode === "login" || mode === "signup") && showGoogle && (
               <button
                 type="button"
                 disabled={loading}
@@ -715,15 +880,27 @@ function AuthModalContent({
                   try {
                     const redirect =
                       typeof window !== "undefined"
-                        ? `${window.location.origin}/auth/callback?redirect=${encodeURIComponent(
-                            redirectTo ?? window.location.href,
-                          )}`
+                        ? (() => {
+                            const currentPath = `${window.location.pathname}${window.location.search}`;
+                            const safeRedirect = sanitizeRedirectPath(
+                              redirectTo ?? currentPath,
+                              "/"
+                            );
+                            return `${window.location.origin}/auth/callback?redirectTo=${encodeURIComponent(
+                              safeRedirect
+                            )}`;
+                          })()
                         : undefined;
                     if (typeof window !== "undefined") {
                       try {
+                        const currentPath = `${window.location.pathname}${window.location.search}`;
+                        const safeRedirect = sanitizeRedirectPath(
+                          redirectTo ?? currentPath,
+                          "/"
+                        );
                         window.localStorage.setItem(
                           "orya_post_auth_redirect",
-                          redirectTo ?? window.location.href,
+                          safeRedirect,
                         );
                       } catch {}
                     }
@@ -747,14 +924,21 @@ function AuthModalContent({
                     setLoading(false);
                   }
                 }}
-                className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-full border border-white/20 bg-white/5 px-4 py-2 text-sm font-semibold text-white shadow hover:border-white/40 hover:bg-white/10 transition-colors disabled:opacity-50"
+                className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-full border border-white/20 bg-white/5 px-4 py-2 text-sm font-semibold text-white shadow hover:border-white/40 hover:bg-white/10 transition-colors disabled:opacity-50"
               >
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white/90 text-[11px] font-bold text-black">
+                  G
+                </span>
                 Continuar com Google
               </button>
             )}
 
-            <p className="mt-2 text-[10px] text-white/50 leading-snug">
-              Ao continuar, aceitas os termos da ORYA.
+            {mode === "login" && loginOtpSent && (
+              <span className="mt-2 block text-emerald-300 text-[11px]">Email enviado.</span>
+            )}
+
+            <p className="mt-3 text-[10px] text-white/50 leading-snug">
+              Ao continuar, aceitas os termos.
             </p>
           </>
         )}
@@ -762,8 +946,21 @@ function AuthModalContent({
         {mode === "verify" && (
           <>
             <p className="text-sm text-white/80 mb-2">
-              Enviámos um código de confirmação para <strong>{email}</strong>.
+              Código enviado para{" "}
+              <strong>{isEmailLike(email) ? email : "teu email"}</strong>.
             </p>
+            <label className="block text-xs text-white/70 mb-1">Email</label>
+            <input
+              type="email"
+              value={email ?? ""}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                setError(null);
+                setLoginOtpSent(false);
+              }}
+              className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]"
+              placeholder="nome@exemplo.com"
+            />
             <label className="block text-xs text-white/70 mb-1">Código</label>
             <input
               type="text"
@@ -771,20 +968,20 @@ function AuthModalContent({
               value={otp}
               onChange={(e) => setOtp(e.target.value)}
               className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]"
-              placeholder="Insere o código de 6 dígitos"
+              placeholder="Código de 6 dígitos"
             />
             <div className="mt-2 flex items-center justify-between text-[12px] text-white/65">
               <span>
                 Não chegou?{" "}
                 {otpCooldown > 0 ? (
                   <span className="text-white/75">Podes reenviar em {otpCooldown}s.</span>
-                ) : (
+                    ) : (
                   <button
                     type="button"
                     onClick={() => {
-                      if (email) triggerResendOtp(email);
+                      if (email && isEmailLike(email)) triggerResendOtp(email);
                     }}
-                    disabled={!email || otpResending}
+                    disabled={!email || !isEmailLike(email) || otpResending}
                     className="text-[#6BFFFF] hover:text-white transition disabled:opacity-50"
                   >
                     Reenviar código
@@ -808,10 +1005,57 @@ function AuthModalContent({
           </>
         )}
 
+        {mode === "reset" && (
+          <>
+            <div className="mt-1 flex items-center justify-center">
+              <div className="flex h-16 w-16 items-center justify-center rounded-full border border-white/15 bg-white/5 text-white/80">
+                <svg viewBox="0 0 24 24" className="h-7 w-7" aria-hidden>
+                  <path
+                    fill="currentColor"
+                    d="M12 2a5 5 0 0 0-5 5v2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-1V7a5 5 0 0 0-5-5m-3 7V7a3 3 0 0 1 6 0v2z"
+                  />
+                </svg>
+              </div>
+            </div>
+            <p className="mt-3 text-center text-sm text-white/75">
+              Indica o teu email para enviarmos o link de recuperação.
+            </p>
+            <label className="mt-4 block text-xs text-white/70 mb-1">Email</label>
+            <input
+              type="email"
+              value={email ?? ""}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                setError(null);
+              }}
+              className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]"
+              placeholder="nome@exemplo.com"
+            />
+            <button
+              type="button"
+              onClick={handleLoginOtp}
+              disabled={isAuthEmailSending || !email}
+              className="mt-3 text-[11px] text-white/65 hover:text-white disabled:opacity-60"
+            >
+              {loginOtpSending ? "A enviar link…" : "Entrar com link por email"}
+            </button>
+            {resetEmailSent && (
+              <p className="mt-3 text-center text-[11px] text-emerald-300">
+                Se existir uma conta, enviámos o link de recuperação.
+              </p>
+            )}
+            {loginOtpSent && (
+              <p className="mt-3 text-center text-[11px] text-emerald-300">
+                Se existir uma conta, enviámos o link de login.
+              </p>
+            )}
+          </>
+        )}
+
         {mode === "onboarding" && (
           <>
             <p className="text-sm text-white/75 mb-3">
-              Bem-vindo(a)! Só faltam estes dados para concluíres o teu perfil.
+              Bem-vindo! Só faltam estes dados para concluíres o teu perfil.
             </p>
 
             <label className="block text-xs text-white/70 mb-1">
@@ -833,31 +1077,86 @@ function AuthModalContent({
                 <input
                   type="text"
                   inputMode="text"
-                  pattern="[A-Za-z]{0,16}"
+                  pattern="[A-Za-z0-9._]{0,30}"
                   value={username}
-                  maxLength={16}
-                  onChange={(e) =>
-                    {
-                      const raw = e.target.value;
-                      const cleaned = raw.replace(/[^A-Za-z]/g, "").slice(0, 16);
-                      if (raw !== cleaned) {
-                        e.target.value = cleaned;
-                      }
-                      setUsername(cleaned);
-                      setUsernameHint(raw !== cleaned ? "Só letras A-Z, sem espaços, máximo 16." : null);
-                    }
-                  }
+                  maxLength={30}
+                  onChange={(e) => {
+                    const raw = e.target.value;
+                    const cleaned = sanitizeUsername(raw);
+                    setUsername(cleaned);
+                    const validation = validateUsername(cleaned);
+                    setUsernameHint(validation.valid ? null : validation.error);
+                    setUsernameStatus("idle");
+                  }}
+                  onBlur={() => checkUsernameAvailability(username)}
                   className="flex-1 bg-transparent outline-none"
-                  placeholder="inesmartins"
+                  placeholder="ines.martins"
                 />
               </div>
               {usernameHint && (
                 <p className="mt-1 text-[10px] text-amber-300/90">{usernameHint}</p>
               )}
+              {usernameStatus === "checking" && (
+                <p className="mt-1 text-[10px] text-white/60">A verificar disponibilidade...</p>
+              )}
+              {usernameStatus === "available" && username && (
+                <p className="mt-1 text-[10px] text-emerald-300">Este username está disponível.</p>
+              )}
+              {usernameStatus === "taken" && (
+                <p className="mt-1 text-[10px] text-red-300">Este username já existe, escolhe outro.</p>
+              )}
+              {usernameStatus === "error" && !usernameHint && (
+                <p className="mt-1 text-[10px] text-red-300">Não foi possível verificar o username.</p>
+              )}
 
             <p className="mt-1 text-[10px] text-white/45 leading-snug">
-              Podes alterar estes dados depois nas definições.
+              Podes alterar estes dados nas definições.
             </p>
+
+            <div className="mt-4 space-y-2">
+              <div className="flex items-center justify-between text-xs text-white/70">
+                <span>Interesses</span>
+                <span className="text-[10px] text-white/50">
+                  {onboardingInterests.length}/{INTEREST_MAX_SELECTION}
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {INTEREST_OPTIONS.map((interest) => {
+                  const isActive = onboardingInterests.includes(interest.id);
+                  const isLimitReached =
+                    !isActive && onboardingInterests.length >= INTEREST_MAX_SELECTION;
+                  return (
+                    <button
+                      key={interest.id}
+                      type="button"
+                      disabled={isLimitReached}
+                      onClick={() => {
+                        setOnboardingInterests((prev) => {
+                          if (prev.includes(interest.id)) {
+                            return prev.filter((item) => item !== interest.id);
+                          }
+                          if (prev.length >= INTEREST_MAX_SELECTION) return prev;
+                          return [...prev, interest.id];
+                        });
+                      }}
+                      className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[11px] font-semibold transition ${
+                        isActive
+                          ? "border-[#6BFFFF]/50 bg-[#6BFFFF]/15 text-[#d9ffff]"
+                          : "border-white/15 bg-white/5 text-white/70 hover:bg-white/10"
+                      } ${isLimitReached ? "opacity-50 cursor-not-allowed" : ""}`}
+                    >
+                      <InterestIcon id={interest.id} className="h-3 w-3" />
+                      {interest.label}
+                    </button>
+                  );
+                })}
+              </div>
+              {onboardingInterests.length === 0 && (
+                <p className="text-[10px] text-white/45">
+                  Escolhe pelo menos um interesse para personalizarmos a tua experiência.
+                </p>
+              )}
+            </div>
           </>
         )}
 
@@ -875,7 +1174,7 @@ function AuthModalContent({
                 </button>
                 <button
                   type="button"
-                  disabled={loginOtpSending}
+                  disabled={isAuthEmailSending}
                   onClick={handleLoginOtp}
                   className="w-full rounded-full border border-white/15 bg-white/5 px-3 py-2 text-white hover:bg-white/10 transition disabled:opacity-50"
                 >
@@ -883,15 +1182,15 @@ function AuthModalContent({
                 </button>
                 <button
                   type="button"
-                  disabled={loginOtpSending}
+                  disabled={isAuthEmailSending}
                   onClick={handleResetPassword}
                   className="w-full rounded-full border border-white/15 bg-white/5 px-3 py-2 text-white hover:bg-white/10 transition disabled:opacity-50"
                 >
-                  {loginOtpSending ? "A enviar recuperação…" : "Recuperar password"}
+                  {resetPasswordSending ? "A enviar recuperação…" : "Recuperar password"}
                 </button>
                 {loginOtpSent && (
                   <p className="text-emerald-300 text-[11px]">
-                    Verifica o teu email para redefinir a password.
+                    Verifica o teu email.
                   </p>
                 )}
               </div>
@@ -906,17 +1205,15 @@ function AuthModalContent({
         )}
 
         <div className="mt-5 flex flex-col gap-2">
-          {(mode === "login" || mode === "signup") && (
+          {mode === "signup" && (
             <button
               type="button"
               disabled={isPrimaryDisabled}
-              onClick={mode === "login" ? handleLogin : handleSignup}
+              onClick={handleSignup}
               className={`${CTA_PRIMARY} w-full justify-center px-4 py-2.5 text-[13px] disabled:opacity-50`}
             >
               {loading
                 ? "A processar…"
-                : mode === "login"
-                ? "Entrar"
                 : "Criar conta"}
             </button>
           )}
@@ -932,6 +1229,17 @@ function AuthModalContent({
             </button>
           )}
 
+          {mode === "reset" && (
+            <button
+              type="button"
+              disabled={isPrimaryDisabled || isAuthEmailSending}
+              onClick={handleResetPassword}
+              className={`${CTA_PRIMARY} w-full justify-center px-4 py-2.5 text-[13px] disabled:opacity-50`}
+            >
+              {resetPasswordSending ? "A enviar recuperação…" : "Enviar link de recuperação"}
+            </button>
+          )}
+
           {mode === "onboarding" && (
             <button
               type="button"
@@ -940,6 +1248,16 @@ function AuthModalContent({
               className={`${CTA_PRIMARY} w-full justify-center px-4 py-2.5 text-[13px] disabled:opacity-50`}
             >
               {loading ? "A guardar…" : "Guardar e continuar"}
+            </button>
+          )}
+
+          {mode === "reset" && (
+            <button
+              type="button"
+              onClick={() => setMode("login")}
+              className="text-[11px] text-white/60 hover:text-white"
+            >
+              Voltar ao login
             </button>
           )}
 

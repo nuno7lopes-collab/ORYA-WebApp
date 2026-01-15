@@ -42,6 +42,26 @@ export async function notifyPairingInvite(params: {
       tournamentId: params.tournamentId,
       inviterUserId: params.inviterUserId,
       token: params.token,
+      viewerRole: "INVITED",
+    },
+  });
+}
+
+export async function notifyPairingInviteSent(params: {
+  pairingId: number;
+  targetUserId: string;
+  inviterUserId: string;
+  token?: string;
+}) {
+  const dedupeKey = buildDedupe("PAIRING_INVITE_SENT", [params.pairingId, params.inviterUserId]);
+  return queue("PAIRING_INVITE", dedupeKey, {
+    userId: params.inviterUserId,
+    payload: {
+      pairingId: params.pairingId,
+      targetUserId: params.targetUserId,
+      inviterUserId: params.inviterUserId,
+      token: params.token,
+      viewerRole: "CAPTAIN",
     },
   });
 }

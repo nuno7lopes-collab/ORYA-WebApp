@@ -86,7 +86,7 @@ export default function EventLivePrepClient({
       <section className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1226]/75 to-[#050912]/90 p-5 space-y-4 shadow-[0_26px_90px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
         <div className="space-y-1">
           <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">LiveHub</p>
-          <p className="text-sm text-white/70">Define visibilidade e a livestream antes de começares.</p>
+          <p className="text-sm text-white/70">Define visibilidade e livestream.</p>
         </div>
 
         <div className="grid gap-3 md:grid-cols-2">
@@ -102,7 +102,7 @@ export default function EventLivePrepClient({
               <option value="DISABLED">Desativado</option>
             </select>
             <p className="text-[11px] text-white/55">
-              Público é sempre visível; privado mostra apenas a participantes; desativado oculta o LiveHub.
+              Público = visível. Privado = participantes. Desativado = oculto.
             </p>
           </div>
 
@@ -115,7 +115,7 @@ export default function EventLivePrepClient({
               className="w-full rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-white/60"
             />
             <p className="text-[11px] text-white/55">
-              Se vazio, o LiveHub mostra o módulo de vídeo como indisponível.
+              Vazio = sem vídeo.
             </p>
           </div>
         </div>
@@ -127,7 +127,7 @@ export default function EventLivePrepClient({
             disabled={saving}
             className={`${CTA_PRIMARY} disabled:opacity-60`}
           >
-            {saving ? "A guardar…" : "Guardar LiveHub"}
+            {saving ? "A guardar…" : "Guardar"}
           </button>
           {message && <span className="text-[12px] text-white/70">{message}</span>}
         </div>
@@ -136,7 +136,7 @@ export default function EventLivePrepClient({
       <section className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1226]/75 to-[#050912]/90 p-5 space-y-4 shadow-[0_26px_90px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
         <div className="space-y-1">
           <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Torneio</p>
-          <p className="text-sm text-white/70">Cria a bracket quando estiveres pronto para gerir jogos.</p>
+          <p className="text-sm text-white/70">Cria a bracket quando quiseres.</p>
         </div>
 
         {!currentTournamentId ? (
@@ -169,7 +169,7 @@ export default function EventLivePrepClient({
           </div>
         ) : (
           <p className="text-[12px] text-white/60">
-            Torneio pronto. Usa o separador Bracket para gerir participantes, jogos e resultados.
+            Torneio pronto. Gere participantes e jogos no separador Bracket.
           </p>
         )}
       </section>

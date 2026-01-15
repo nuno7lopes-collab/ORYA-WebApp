@@ -6,6 +6,9 @@ import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { OrganizationMemberRole } from "@prisma/client";
+import { refundBookingPayment } from "@/lib/reservas/bookingRefund";
+import { ensureReservasModuleAccess } from "@/lib/reservas/access";
+import { decideCancellation } from "@/lib/bookingCancellation";
 
 const ALLOWED_ROLES: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -27,9 +30,10 @@ function getRequestMeta(req: NextRequest) {
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: { id: string } },
+  { params }: { params: Promise<{ id: string }> },
 ) {
-  const bookingId = parseId(params.id);
+  const resolved = await params;
+  const bookingId = parseId(resolved.id);
   if (!bookingId) {
     return NextResponse.json({ ok: false, error: "ID inválido." }, { status: 400 });
   }
@@ -52,6 +56,10 @@ export async function POST(
     if (!organization || !membership) {
       return NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 });
     }
+    const reservasAccess = await ensureReservasModuleAccess(organization);
+    if (!reservasAccess.ok) {
+      return NextResponse.json({ ok: false, error: reservasAccess.error }, { status: 403 });
+    }
 
     const payload = await req.json().catch(() => ({}));
     const reason = typeof payload?.reason === "string" ? payload.reason.trim().slice(0, 200) : null;
@@ -61,17 +69,17 @@ export async function POST(
       const booking = await tx.booking.findFirst({
         where: { id: bookingId, organizationId: organization.id },
         include: {
-          availability: true,
+          service: {
+            select: {
+              id: true,
+              policyId: true,
+              policy: { select: { id: true, cancellationWindowMinutes: true } },
+            },
+          },
+          professional: { select: { userId: true } },
           policyRef: {
             select: {
-              policy: {
-                select: {
-                  id: true,
-                  name: true,
-                  policyType: true,
-                  cancellationWindowMinutes: true,
-                },
-              },
+              policy: { select: { id: true, cancellationWindowMinutes: true } },
             },
           },
         },
@@ -80,27 +88,50 @@ export async function POST(
       if (!booking) {
         return { error: NextResponse.json({ ok: false, error: "Reserva não encontrada." }, { status: 404 }) };
       }
-
-      if (booking.status === "CANCELLED") {
+      if (
+        membership.role === OrganizationMemberRole.STAFF &&
+        (!booking.professional?.userId || booking.professional.userId !== profile.id)
+      ) {
+        return { error: NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 }) };
+      }
+      if (["CANCELLED_BY_CLIENT", "CANCELLED_BY_ORG", "CANCELLED"].includes(booking.status)) {
         return { booking, already: true };
       }
 
+      const isPending = ["PENDING_CONFIRMATION", "PENDING"].includes(booking.status);
+      const fallbackPolicy =
+        booking.service?.policyId &&
+        (await tx.organizationPolicy.findFirst({
+          where: { id: booking.service.policyId, organizationId: booking.organizationId },
+          select: { id: true, cancellationWindowMinutes: true },
+        }));
+      const policy =
+        booking.policyRef?.policy ??
+        booking.service?.policy ??
+        fallbackPolicy ??
+        (await tx.organizationPolicy.findFirst({
+          where: { organizationId: booking.organizationId, policyType: "MODERATE" },
+          select: { id: true, cancellationWindowMinutes: true },
+        })) ??
+        (await tx.organizationPolicy.findFirst({
+          where: { organizationId: booking.organizationId },
+          orderBy: { createdAt: "asc" },
+          select: { id: true, cancellationWindowMinutes: true },
+        }));
+
+      const decision = decideCancellation(
+        booking.startsAt,
+        policy?.cancellationWindowMinutes ?? null,
+        new Date(),
+      );
+
       const updated = await tx.booking.update({
         where: { id: booking.id },
-        data: { status: "CANCELLED" },
+        data: { status: "CANCELLED_BY_ORG" },
       });
-
-      if (booking.availability && booking.availability.status !== "CANCELLED") {
-        const activeCount = await tx.booking.count({
-          where: { availabilityId: booking.availability.id, status: { not: "CANCELLED" } },
-        });
-        if (activeCount < booking.availability.capacity && booking.availability.status === "FULL") {
-          await tx.availability.update({
-            where: { id: booking.availability.id },
-            data: { status: "OPEN" },
-          });
-        }
-      }
+      const refundRequired =
+        !!booking.paymentIntentId &&
+        (isPending || (booking.status === "CONFIRMED" && decision.allowed));
 
       await recordOrganizationAudit(tx, {
         organizationId: organization.id,
@@ -112,17 +143,31 @@ export async function POST(
           availabilityId: booking.availabilityId,
           source: "ORG",
           actorRole: membership.role,
-          policyId: booking.policyRef?.policy?.id ?? null,
           reason,
+          refundRequired,
+          deadline: decision.deadline?.toISOString() ?? null,
         },
         ip,
         userAgent,
       });
 
-      return { booking: updated, already: false };
+      return { booking: updated, already: false, refundRequired, paymentIntentId: booking.paymentIntentId };
     });
 
     if ("error" in result) return result.error;
+
+    if (result.refundRequired && result.paymentIntentId) {
+      try {
+        await refundBookingPayment({
+          bookingId: result.booking.id,
+          paymentIntentId: result.paymentIntentId,
+          reason: "ORG_CANCEL",
+        });
+      } catch (refundErr) {
+        console.error("[organizacao/cancel] refund failed", refundErr);
+        return NextResponse.json({ ok: false, error: "Reserva cancelada, mas o reembolso falhou." }, { status: 502 });
+      }
+    }
 
     return NextResponse.json({
       ok: true,

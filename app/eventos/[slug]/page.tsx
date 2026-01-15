@@ -7,6 +7,7 @@ import WavesSectionClient, { type WaveTicket, type WaveStatus } from "./WavesSec
 import Link from "next/link";
 import EventPageClient from "./EventPageClient";
 import EventLiveClient from "./EventLiveClient";
+import PadelPublicTablesClient from "./PadelPublicTablesClient";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import type { Metadata } from "next";
 import type { Prisma } from "@prisma/client";
@@ -14,6 +15,8 @@ import Image from "next/image";
 import { defaultBlurDataURL, optimizeImageUrl } from "@/lib/image";
 import { getEventCoverSuggestionIds, getEventCoverUrl } from "@/lib/eventCover";
 import { buildPadelEventSnapshot } from "@/lib/padel/eventSnapshot";
+import { checkPadelRegistrationWindow } from "@/domain/padelRegistration";
+import { resolvePadelCompetitionState } from "@/domain/padelCompetitionState";
 import type { CSSProperties } from "react";
 import EventBackgroundTuner from "./EventBackgroundTuner";
 import { normalizeEmail } from "@/lib/utils/email";
@@ -102,6 +105,14 @@ type EventResale = {
     fullName: string | null;
   } | null;
   ticketTypeName?: string | null;
+};
+type PadelStandingRow = {
+  pairingId: number;
+  points: number;
+  wins: number;
+  losses: number;
+  setsFor: number;
+  setsAgainst: number;
 };
 
 const EVENT_BG_MASK = `linear-gradient(
@@ -256,13 +267,24 @@ export default async function EventPage({
     }
     notFound();
   }
+  const ticketTypesWithVisibility = event.ticketTypes as TicketTypeWithVisibility[];
+  const visibleTicketTypes = ticketTypesWithVisibility.filter((t) => t.isVisible ?? true);
   const publicAccessMode = event.publicAccessMode ?? (event.inviteOnly ? "INVITE" : "OPEN");
   const inviteOnly = publicAccessMode === "INVITE";
+  const publicTicketTypeIds = event.publicTicketTypeIds ?? [];
+  const hasPerTicketAccess = publicAccessMode === "TICKET" && publicTicketTypeIds.length > 0;
+  const hasInviteOnlyTickets =
+    hasPerTicketAccess && publicTicketTypeIds.length < visibleTicketTypes.length;
+  const isPublicEvent =
+    publicAccessMode !== "INVITE" &&
+    !event.inviteOnly &&
+    ["PUBLISHED", "DATE_CHANGED", "FINISHED", "CANCELLED"].includes(event.status);
   const userEmailNormalized = user ? normalizeEmail(user.email ?? null) : null;
   const usernameNormalized = profile?.username ? sanitizeUsername(profile.username) : null;
   const hasUsername = Boolean(usernameNormalized);
-  let isInvited = !inviteOnly;
-  if (inviteOnly && !isAdmin && user) {
+  const needsInviteCheck = inviteOnly || hasInviteOnlyTickets;
+  let isInvited = !needsInviteCheck;
+  if (needsInviteCheck && !isAdmin && user) {
     const identifiers: string[] = [];
     if (userEmailNormalized) identifiers.push(userEmailNormalized);
     if (usernameNormalized) identifiers.push(usernameNormalized);
@@ -275,12 +297,12 @@ export default async function EventPage({
         isInvited = true;
       }
     }
-  } else if (inviteOnly && isAdmin) {
+  } else if (needsInviteCheck && isAdmin) {
     isInvited = true;
   }
   const showInviteGate = inviteOnly && !isInvited;
   const canFreeCheckout = Boolean(user) && hasUsername && (!inviteOnly || isInvited);
-  const allowCheckout = !showInviteGate && (event.isFree ? canFreeCheckout : true);
+  const allowCheckoutBase = !showInviteGate && (event.isFree ? canFreeCheckout : true);
   const freeUsernameGateMessage = event.isFree
     ? user
       ? hasUsername
@@ -291,7 +313,54 @@ export default async function EventPage({
   const isPadel = event.templateType === "PADEL";
   const checkoutVariant =
     isPadel && event.padelTournamentConfig?.padelV2Enabled ? "PADEL" : "DEFAULT";
+  const padelAdvanced = (event.padelTournamentConfig?.advancedSettings || {}) as {
+    registrationStartsAt?: string | null;
+    registrationEndsAt?: string | null;
+    competitionState?: string | null;
+  };
+  const padelCompetitionState = resolvePadelCompetitionState({
+    eventStatus: event.status,
+    competitionState: padelAdvanced.competitionState ?? null,
+  });
+  const padelRegistrationStartsAt =
+    padelAdvanced.registrationStartsAt && !Number.isNaN(new Date(padelAdvanced.registrationStartsAt).getTime())
+      ? new Date(padelAdvanced.registrationStartsAt)
+      : null;
+  const padelRegistrationEndsAt =
+    padelAdvanced.registrationEndsAt && !Number.isNaN(new Date(padelAdvanced.registrationEndsAt).getTime())
+      ? new Date(padelAdvanced.registrationEndsAt)
+      : null;
+  const padelRegistrationCheck =
+    checkoutVariant === "PADEL"
+      ? checkPadelRegistrationWindow({
+          eventStatus: event.status,
+          eventStartsAt: event.startsAt ?? null,
+          registrationStartsAt: padelRegistrationStartsAt,
+          registrationEndsAt: padelRegistrationEndsAt,
+          competitionState: padelCompetitionState,
+        })
+      : { ok: true as const };
+  const padelRegistrationMessage = !padelRegistrationCheck.ok
+    ? padelRegistrationCheck.code === "EVENT_NOT_PUBLISHED"
+      ? "As inscrições ainda não estão abertas."
+      : padelRegistrationCheck.code === "INSCRIPTIONS_NOT_OPEN"
+        ? "As inscrições ainda não abriram."
+        : padelRegistrationCheck.code === "INSCRIPTIONS_CLOSED"
+          ? "As inscrições já fecharam."
+          : padelRegistrationCheck.code === "TOURNAMENT_STARTED"
+            ? "O torneio já começou. Inscrições encerradas."
+            : "Inscrições indisponíveis."
+    : null;
   const padelSnapshot = isPadel ? await buildPadelEventSnapshot(event.id) : null;
+  const padelCompetitionLabel = padelSnapshot
+    ? padelSnapshot.competitionState === "HIDDEN"
+      ? "Oculto"
+      : padelSnapshot.competitionState === "DEVELOPMENT"
+        ? "Desenvolvimento"
+        : padelSnapshot.competitionState === "PUBLIC"
+          ? "Público"
+          : "Cancelado"
+    : null;
   const viewParam =
     typeof resolvedSearchParams?.view === "string" ? resolvedSearchParams.view : null;
   const showLiveInline = viewParam === "live";
@@ -344,7 +413,6 @@ export default async function EventPage({
       ? event.description.trim()
       : "A descrição deste evento será atualizada em breve.";
 
-  const hasCover = Boolean(event.coverImageUrl && event.coverImageUrl.trim().length > 0);
   const cover = getEventCoverUrl(event.coverImageUrl, {
     seed: event.slug ?? event.title ?? String(event.id),
     suggestedIds: getEventCoverSuggestionIds({ templateType: event.templateType ?? null }),
@@ -352,17 +420,24 @@ export default async function EventPage({
     quality: 72,
     format: "webp",
   });
+  const coverSource = cover?.trim() ? cover : null;
   // versão ultra-leve apenas para o blur de fundo (mantém o efeito mas evita puxar MBs)
-  const blurredCover = hasCover
-    ? optimizeImageUrl(event.coverImageUrl, 120, 20, "webp", 120, "cover")
-    : null;
+  const blurredCover = coverSource ? optimizeImageUrl(coverSource, 120, 20, "webp", 120, "cover") : null;
+  const backgroundCover = blurredCover || coverSource;
+  const hasCover = Boolean(backgroundCover);
 
   const nowDate = new Date();
   const eventEnded = endDateObj < nowDate;
-  const ticketTypesWithVisibility = event.ticketTypes as TicketTypeWithVisibility[];
+  const publicTicketTypeIdSet = new Set(publicTicketTypeIds);
+  const canSeeInviteTickets = isInvited || isAdmin;
 
-  const orderedTickets = ticketTypesWithVisibility
-    .filter((t) => t.isVisible ?? true)
+  const orderedTickets = visibleTicketTypes
+    .filter((t) => {
+      if (inviteOnly) return canSeeInviteTickets;
+      if (!hasPerTicketAccess) return true;
+      const isPublicTicket = publicTicketTypeIdSet.has(t.id);
+      return isPublicTicket || canSeeInviteTickets;
+    })
     .sort((a, b) => {
       const ao = a.sortOrder ?? 0;
       const bo = b.sortOrder ?? 0;
@@ -455,15 +530,15 @@ export default async function EventPage({
         ? "border-emerald-400/40 bg-emerald-500/15 text-emerald-100"
         : "border-yellow-400/40 bg-yellow-500/15 text-yellow-100";
 
+  const headersList = await headers();
+  const protocol = headersList.get("x-forwarded-proto") ?? "http";
+  const host = headersList.get("host");
+  const baseUrl = host ? `${protocol}://${host}` : null;
+
   // Carregar revendas deste evento via API F5-9
   let resales: EventResale[] = [];
   try {
-    const headersList = await headers();
-    const protocol = headersList.get("x-forwarded-proto") ?? "http";
-    const host = headersList.get("host");
-
-    if (host) {
-      const baseUrl = `${protocol}://${host}`;
+    if (baseUrl) {
       const res = await fetch(
         `${baseUrl}/api/eventos/${encodeURIComponent(slug)}/resales`,
         { cache: "no-store" }
@@ -519,6 +594,41 @@ export default async function EventPage({
     const cheapest = filtered.reduce((min, cur) => (cur.price < min.price ? cur : min), filtered[0]);
     return cheapest.id ?? null;
   })();
+
+  let padelStandings: Record<string, PadelStandingRow[]> = {};
+
+  const canShowPadelTables = isPadel && padelV2Enabled && isPublicEvent && padelCompetitionState === "PUBLIC";
+  if (canShowPadelTables) {
+    if (baseUrl) {
+      try {
+        const standingsRes = await fetch(
+          `${baseUrl}/api/padel/standings?eventId=${event.id}`,
+          { cache: "no-store" },
+        );
+        if (standingsRes.ok) {
+          const data = (await standingsRes.json().catch(() => null)) as
+            | { ok?: boolean; standings?: Record<string, PadelStandingRow[]> }
+            | null;
+          if (data?.ok && data.standings) {
+            padelStandings = Object.fromEntries(
+              Object.entries(data.standings).map(([group, rows]) => [
+                group,
+                rows.map((row) => ({
+                  ...row,
+                  setsFor: row.setsFor ?? 0,
+                  setsAgainst: row.setsAgainst ?? 0,
+                })),
+              ]),
+            );
+          }
+        }
+      } catch (err) {
+        console.error("Erro ao carregar standings padel", slug, err);
+      }
+    }
+
+  }
+  const shouldShowPadelTables = canShowPadelTables;
 
   const backgroundDefaults = {
     blur: 56,
@@ -579,7 +689,7 @@ export default async function EventPage({
             <div
               className="h-full w-full"
               style={{
-                backgroundImage: `url(${blurredCover})`,
+                backgroundImage: `url(${backgroundCover})`,
                 backgroundSize: "cover",
                 backgroundPosition: "center",
                 filter:
@@ -608,13 +718,13 @@ export default async function EventPage({
         <section className="relative z-10 w-full pb-16 pt-20 md:pb-20 md:pt-28">
           <div className="orya-page-width flex items-center justify-between px-4 md:px-8">
             <Link
-              href="/explorar"
+              href="/explorar/eventos"
               className="inline-flex items-center gap-2 text-xs font-medium text-white/75 transition hover:text-white"
             >
               <span className="text-lg leading-none">←</span>
               <span>Voltar a explorar</span>
             </Link>
-            <div className="hidden items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[10px] uppercase tracking-[0.2em] text-white/70 sm:flex">
+            <div className="hidden items-center gap-2 rounded-full border border-white/12 bg-black/40 px-3 py-1 text-[10px] uppercase tracking-[0.2em] text-white/70 sm:flex">
               <span>Evento ORYA</span>
               <span className="h-1 w-1 rounded-full bg-white/40" />
               {organizationUsername ? (
@@ -629,15 +739,13 @@ export default async function EventPage({
 
           <div className="orya-page-width mt-6 grid grid-cols-1 gap-6 px-4 md:px-8 lg:grid-cols-[1.1fr_0.9fr]">
             <div className="relative">
-              <div className="pointer-events-none absolute -inset-[1px] rounded-[32px] bg-[linear-gradient(135deg,rgba(255,0,200,0.35),rgba(107,255,255,0.35),rgba(22,70,245,0.35))] opacity-70 blur-[2px]" />
-              <div className="relative rounded-[30px] border border-white/15 bg-[linear-gradient(140deg,rgba(255,255,255,0.16),rgba(2,6,16,0.78))] p-6 shadow-[0_28px_70px_rgba(0,0,0,0.75)] backdrop-blur-2xl md:p-8 animate-fade-slide">
-                <div className="pointer-events-none absolute inset-0 rounded-[30px] bg-[radial-gradient(circle_at_18%_20%,rgba(255,255,255,0.18),transparent_55%)] opacity-80" />
-                <div className="pointer-events-none absolute inset-0 rounded-[30px] bg-[linear-gradient(180deg,rgba(0,0,0,0.08),rgba(0,0,0,0.35))] opacity-70" />
+              <div className="pointer-events-none absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-[#7CFFEA]/70 to-transparent" />
+              <div className="relative rounded-3xl border border-white/10 bg-black/55 p-6 shadow-[0_24px_60px_rgba(0,0,0,0.6)] backdrop-blur-2xl md:p-8 animate-fade-slide">
                 <div className="relative">
                   <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.25em] text-white/60">
                     <span>{safeLocationName}</span>
                     <span className="h-1 w-1 rounded-full bg-white/30" />
-                    <span>{event.locationCity || "Cidade a anunciar"}</span>
+                    <span>{event.locationCity || "Cidade por anunciar"}</span>
                   </div>
 
                   <div className="mt-4 flex flex-wrap gap-2 text-white/85">
@@ -664,9 +772,10 @@ export default async function EventPage({
                     )}
                   </div>
 
-                  <h1 className="mt-4 bg-gradient-to-r from-[#FF72D0] via-[#6BFFFF] to-[#5B7CFF] bg-clip-text text-4xl font-extrabold leading-tight text-transparent md:text-5xl lg:text-6xl">
+                  <h1 className="mt-4 text-4xl font-semibold leading-tight text-white md:text-5xl lg:text-6xl">
                     {event.title}
                   </h1>
+                  <div className="mt-3 h-px w-24 bg-gradient-to-r from-[#7CFFEA] via-[#9F8CFF] to-transparent" />
 
                   <div className="mt-4">
                     <p className="text-[10px] uppercase tracking-[0.2em] text-white/60">
@@ -675,7 +784,7 @@ export default async function EventPage({
                     {organizationUsername ? (
                       <Link
                         href={`/${organizationUsername}`}
-                        className="mt-2 inline-flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-3 py-2 transition hover:border-white/20 hover:bg-white/10"
+                        className="mt-2 inline-flex items-center gap-3 rounded-2xl border border-white/10 bg-black/40 px-3 py-2 transition hover:border-white/20 hover:bg-white/10"
                       >
                         <Avatar
                           src={organizationAvatarUrl}
@@ -697,7 +806,7 @@ export default async function EventPage({
                         </div>
                       </Link>
                     ) : (
-                      <div className="mt-2 inline-flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-3 py-2">
+                      <div className="mt-2 inline-flex items-center gap-3 rounded-2xl border border-white/10 bg-black/40 px-3 py-2">
                         <Avatar
                           src={organizationAvatarUrl}
                           name={safeOrganization}
@@ -746,8 +855,8 @@ export default async function EventPage({
             </div>
 
             <div className="relative">
-              <div className="pointer-events-none absolute -inset-[1px] rounded-[34px] bg-[conic-gradient(from_120deg,rgba(107,255,255,0.5),rgba(255,0,200,0.4),rgba(22,70,245,0.5),rgba(107,255,255,0.5))] opacity-60 blur-[2px]" />
-              <div className="relative aspect-square w-full overflow-hidden rounded-[32px] border border-white/15 bg-white/5 shadow-[0_28px_70px_rgba(0,0,0,0.85)]">
+              <div className="pointer-events-none absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-[#FF7AD9]/60 to-transparent" />
+              <div className="relative aspect-square w-full overflow-hidden rounded-3xl border border-white/12 bg-black/40 shadow-[0_24px_60px_rgba(0,0,0,0.75)]">
                 <Image
                   src={cover}
                   alt={`Capa do evento ${event.title}`}
@@ -766,7 +875,7 @@ export default async function EventPage({
 
           <div className="orya-page-width mt-6 px-4 md:px-8">
             <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-              <div className="rounded-2xl border border-white/15 bg-white/5 px-4 py-3 backdrop-blur">
+              <div className="rounded-2xl border border-white/10 bg-black/45 px-4 py-3 shadow-[0_12px_30px_rgba(0,0,0,0.4)] backdrop-blur">
                 <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">
                   Data &amp; hora
                 </p>
@@ -777,7 +886,7 @@ export default async function EventPage({
                   {time} – {endTime}
                 </p>
               </div>
-              <div className="rounded-2xl border border-white/15 bg-white/5 px-4 py-3 backdrop-blur">
+              <div className="rounded-2xl border border-white/10 bg-black/45 px-4 py-3 shadow-[0_12px_30px_rgba(0,0,0,0.4)] backdrop-blur">
                 <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">
                   Local
                 </p>
@@ -788,7 +897,7 @@ export default async function EventPage({
                   {event.locationCity || "Cidade a anunciar"}
                 </p>
               </div>
-              <div className="rounded-2xl border border-white/15 bg-white/5 px-4 py-3 backdrop-blur">
+              <div className="rounded-2xl border border-white/10 bg-black/45 px-4 py-3 shadow-[0_12px_30px_rgba(0,0,0,0.4)] backdrop-blur">
                 <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">
                   Preço
                 </p>
@@ -827,7 +936,7 @@ export default async function EventPage({
           <div className="space-y-12 md:col-span-2">
             <section
               id="resumo"
-              className="rounded-3xl border border-white/15 bg-white/5 p-6 shadow-[0_24px_60px_rgba(0,0,0,0.5)] backdrop-blur-2xl md:p-8 animate-fade-slide"
+              className="rounded-3xl border border-white/10 bg-black/45 p-6 shadow-[0_20px_50px_rgba(0,0,0,0.55)] backdrop-blur-2xl md:p-8 animate-fade-slide"
             >
               <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.2em] text-white/60">
                 <span>O que precisas de saber</span>
@@ -840,13 +949,13 @@ export default async function EventPage({
               </p>
             </section>
 
-            <section className="rounded-3xl border border-white/15 bg-white/5 p-6 shadow-[0_24px_60px_rgba(0,0,0,0.5)] backdrop-blur-2xl md:p-8" id="live">
+            <section className="rounded-3xl border border-white/10 bg-black/45 p-6 shadow-[0_20px_50px_rgba(0,0,0,0.55)] backdrop-blur-2xl md:p-8" id="live">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.2em] text-white/60">
                     <span>Live</span>
                     <span className="h-1 w-1 rounded-full bg-white/30" />
-                    <span>{isPadel ? "Jogos e resultados" : "Atualizações em tempo real"}</span>
+                    <span>{isPadel ? "Jogos e resultados" : "Atualizações ao vivo"}</span>
                     {liveHubVisibility !== "PUBLIC" && (
                       <>
                         <span className="h-1 w-1 rounded-full bg-white/30" />
@@ -854,11 +963,11 @@ export default async function EventPage({
                       </>
                     )}
                   </div>
-                  <h3 className="mt-3 text-xl font-semibold">{isPadel ? "Acompanhamento ao vivo" : "Live do evento"}</h3>
+                  <h3 className="mt-3 text-xl font-semibold">{isPadel ? "Ao vivo" : "Live"}</h3>
                   <p className="mt-2 text-xs text-white/60">
                     {isPadel
-                      ? "Acompanha jogos, brackets e ranking em tempo real."
-                      : "Acompanha o evento com destaques, horários e informação atualizada."}
+                      ? "Jogos, brackets e ranking ao vivo."
+                      : "Destaques e horários ao vivo."}
                   </p>
                 </div>
                 {liveHubVisibility !== "DISABLED" && (
@@ -875,6 +984,14 @@ export default async function EventPage({
                     >
                       Ver aqui
                     </Link>
+                    {isPadel && (
+                      <Link
+                        href={`/eventos/${slug}/score`}
+                        className="rounded-full border border-white/20 bg-white/5 px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-white/10"
+                      >
+                        Placar ao vivo
+                      </Link>
+                    )}
                   </div>
                 )}
               </div>
@@ -896,15 +1013,36 @@ export default async function EventPage({
               )}
             </section>
 
+            {shouldShowPadelTables && (
+              <section
+                id="padel-classificacoes"
+                className="rounded-3xl border border-white/10 bg-black/45 p-6 shadow-[0_20px_50px_rgba(0,0,0,0.55)] backdrop-blur-2xl md:p-8 animate-fade-slide"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.2em] text-white/60">
+                      <span>Padel</span>
+                      <span className="h-1 w-1 rounded-full bg-white/30" />
+                      <span>Classificações</span>
+                    </div>
+                    <h3 className="mt-3 text-xl font-semibold">Classificações</h3>
+                  </div>
+                </div>
+
+                <PadelPublicTablesClient
+                  eventId={event.id}
+                  initialStandings={padelStandings}
+                />
+              </section>
+            )}
+
           </div>
 
           {/* RIGHT SIDE — CARD DE INFORMAÇÕES / TICKETS */}
           <aside className="space-y-8 md:sticky md:top-28 md:self-start">
             <div className="relative">
-              <div className="pointer-events-none absolute -inset-[1px] rounded-[32px] bg-[linear-gradient(135deg,rgba(255,0,200,0.35),rgba(107,255,255,0.35),rgba(22,70,245,0.35))] opacity-60 blur-[2px]" />
-              <div className="relative rounded-[30px] border border-white/15 bg-[linear-gradient(140deg,rgba(255,255,255,0.16),rgba(2,6,16,0.78))] p-7 shadow-[0_28px_70px_rgba(0,0,0,0.75)] backdrop-blur-2xl">
-                <div className="pointer-events-none absolute inset-0 rounded-[30px] bg-[radial-gradient(circle_at_18%_20%,rgba(255,255,255,0.18),transparent_55%)] opacity-80" />
-                <div className="pointer-events-none absolute inset-0 rounded-[30px] bg-[linear-gradient(180deg,rgba(0,0,0,0.08),rgba(0,0,0,0.35))] opacity-70" />
+              <div className="pointer-events-none absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-[#7CFFEA]/60 to-transparent" />
+              <div className="relative rounded-3xl border border-white/12 bg-black/55 p-7 shadow-[0_24px_60px_rgba(0,0,0,0.65)] backdrop-blur-2xl">
                 <div className="relative">
                   <div className="flex items-start justify-between gap-3">
                     <div>
@@ -921,7 +1059,7 @@ export default async function EventPage({
                   </div>
 
                   <div className="mt-4 grid gap-4 sm:grid-cols-2 md:grid-cols-1">
-                    <div className="rounded-xl border border-white/15 bg-black/45 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
+                    <div className="rounded-xl border border-white/12 bg-black/50 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
                       <p className="text-[11px] uppercase tracking-[0.18em] text-white/60">
                         Data
                       </p>
@@ -932,7 +1070,7 @@ export default async function EventPage({
                         {time} – {endTime}
                       </p>
                     </div>
-                    <div className="rounded-xl border border-white/15 bg-black/45 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
+                    <div className="rounded-xl border border-white/12 bg-black/50 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
                       <p className="text-[11px] uppercase tracking-[0.18em] text-white/60">
                         Local
                       </p>
@@ -1004,8 +1142,15 @@ export default async function EventPage({
                               </>
                             )}
 
-                            {allowCheckout ? (
-                              uiTickets.length === 0 ? (
+                            {allowCheckoutBase ? (
+                              padelRegistrationMessage ? (
+                                <div className="rounded-xl border border-amber-400/40 bg-amber-500/15 px-3.5 py-2.5 text-sm text-amber-100">
+                                  <div>
+                                    <p className="font-semibold">Inscrições indisponíveis</p>
+                                    <p className="text-[11px] text-amber-100/85">{padelRegistrationMessage}</p>
+                                  </div>
+                                </div>
+                              ) : uiTickets.length === 0 ? (
                                 <div className="rounded-xl border border-white/12 bg-black/45 px-3.5 py-2.5 text-sm text-white/80">
                                   Ainda não há waves configuradas para este evento.
                                 </div>
@@ -1059,7 +1204,7 @@ export default async function EventPage({
                         )}
 
                         {resales.length > 0 && (
-                          <div className="mt-7 space-y-4 border-t border-white/15 pt-5">
+                          <div className="mt-7 space-y-4 border-t border-white/12 pt-5">
                             <div className="flex items-center justify-between gap-2">
                               <h3 className="text-base font-semibold">
                                 Bilhetes entre utilizadores
@@ -1079,7 +1224,7 @@ export default async function EventPage({
                               {resales.map((r) => (
                                 <div
                                   key={r.id}
-                                  className="flex items-center justify-between rounded-xl border border-white/15 bg-black/40 px-3.5 py-2.5 text-sm"
+                                  className="flex items-center justify-between rounded-xl border border-white/12 bg-black/50 px-3.5 py-2.5 text-sm"
                                 >
                                   <div className="flex flex-col gap-0.5">
                                     <div className="flex flex-wrap items-center gap-2">
@@ -1127,7 +1272,7 @@ export default async function EventPage({
             </div>
 
             {padelSnapshot && (
-              <div className="rounded-3xl border border-white/15 bg-white/5 p-6 shadow-[0_24px_50px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
+              <div className="rounded-3xl border border-white/10 bg-black/45 p-6 shadow-[0_20px_45px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">
@@ -1140,7 +1285,7 @@ export default async function EventPage({
                     </p>
                   </div>
                   <span className="rounded-full border border-white/20 bg-white/10 px-2 py-1 text-[11px] text-white/75">
-                    Estado: {padelSnapshot.status}
+                    Estado: {padelCompetitionLabel ?? padelSnapshot.status}
                   </span>
                 </div>
                 {padelSnapshot.timeline && (

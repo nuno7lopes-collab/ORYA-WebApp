@@ -108,7 +108,7 @@ async function main() {
         businessName: "ORYA Demo Studio",
         city: "Lisboa",
         status: "ACTIVE",
-        organizationCategory: "EVENTOS",
+        primaryModule: "EVENTOS",
       },
     }));
 
@@ -120,7 +120,7 @@ async function main() {
         businessName: "ORYA Demo Studio",
         city: "Lisboa",
         status: "ACTIVE",
-        organizationCategory: "EVENTOS",
+        primaryModule: "EVENTOS",
       },
     });
   }

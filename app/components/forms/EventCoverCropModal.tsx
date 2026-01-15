@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import Image from "next/image";
 
 type CropOffset = { x: number; y: number };
 
@@ -20,6 +22,7 @@ export function EventCoverCropModal({ open, file, onCancel, onConfirm }: EventCo
   const [zoom, setZoom] = useState(1);
   const [offset, setOffset] = useState<CropOffset>({ x: 0, y: 0 });
   const [processing, setProcessing] = useState(false);
+  const [portalRoot, setPortalRoot] = useState<HTMLElement | null>(null);
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
@@ -51,6 +54,10 @@ export function EventCoverCropModal({ open, file, onCancel, onConfirm }: EventCo
     setZoom(1);
     setOffset({ x: 0, y: 0 });
   }, [open, file]);
+
+  useEffect(() => {
+    setPortalRoot(document.body);
+  }, []);
 
   const baseScale = useMemo(() => {
     if (!containerSize || !imageSize.width || !imageSize.height) return 1;
@@ -128,14 +135,14 @@ export function EventCoverCropModal({ open, file, onCancel, onConfirm }: EventCo
     );
   };
 
-  if (!open || !file) return null;
+  if (!open || !file || !portalRoot) return null;
 
   const scale = baseScale * zoom;
 
-  return (
-    <div className="fixed inset-0 z-[70] flex items-start justify-center px-4 py-6">
-      <div className="absolute inset-0 bg-black/75" onClick={onCancel} aria-hidden />
-      <div className="relative z-10 w-full max-w-3xl">
+  return createPortal(
+    <div className="fixed inset-0 z-[210] flex items-start justify-center overflow-y-auto overscroll-contain px-4 py-6">
+      <div className="fixed inset-0 bg-black/75" onClick={onCancel} aria-hidden />
+      <div className="relative z-10 w-full max-w-3xl" role="dialog" aria-modal="true" aria-label="Cortar capa">
         <div className="mb-3 flex items-center justify-between rounded-2xl border border-white/15 bg-[#0a0f1d]/90 px-4 py-3 text-white shadow-[0_24px_70px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
           <div>
             <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Capa</p>
@@ -173,13 +180,15 @@ export function EventCoverCropModal({ open, file, onCancel, onConfirm }: EventCo
                 role="presentation"
               >
                 {imageUrl && (
-                  <img
-                    ref={imageRef}
+                  <Image
                     src={imageUrl}
                     alt="Pre-visualizacao da capa"
-                    onLoad={(event) => {
-                      const target = event.currentTarget;
-                      setImageSize({ width: target.naturalWidth, height: target.naturalHeight });
+                    width={imageSize.width || 1}
+                    height={imageSize.height || 1}
+                    unoptimized
+                    onLoadingComplete={(img) => {
+                      imageRef.current = img;
+                      setImageSize({ width: img.naturalWidth, height: img.naturalHeight });
                     }}
                     className="absolute left-1/2 top-1/2 select-none"
                     style={{
@@ -218,6 +227,7 @@ export function EventCoverCropModal({ open, file, onCancel, onConfirm }: EventCo
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    portalRoot,
   );
 }

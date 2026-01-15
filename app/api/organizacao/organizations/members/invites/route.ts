@@ -84,12 +84,19 @@ const serializeInvite = (
   };
 };
 
-async function sendInviteEmail(invite: { id: string; organizationId: number; targetIdentifier: string; role: string; organization?: { publicName: string | null } | null }) {
+async function sendInviteEmail(invite: {
+  id: string;
+  organizationId: number;
+  targetIdentifier: string;
+  role: string;
+  token: string;
+  organization?: { publicName: string | null } | null;
+}) {
   const normalized = invite.targetIdentifier.toLowerCase();
   if (!normalized.includes("@")) return;
 
   const origin = "https://orya.pt";
-  const acceptUrl = `${origin}/organizacao/organizations?organizationId=${invite.organizationId}&invite=${invite.id}`;
+  const acceptUrl = `${origin}/convites/organizacoes?invite=${invite.id}&token=${invite.token}`;
   const roleLabel =
     invite.role === "OWNER" ? "Owner" : invite.role === "CO_OWNER" ? "Co-owner" : invite.role.toUpperCase();
   const orgName = invite.organization?.publicName ?? "ORYA";
@@ -100,9 +107,9 @@ async function sendInviteEmail(invite: { id: string; organizationId: number; tar
       subject: `Convite para a organização ${orgName}`,
       html: `
         <div style="font-family: Inter, system-ui, -apple-system, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px; background: #050915; color: #f6f8ff; border-radius: 18px; border: 1px solid rgba(255,255,255,0.08);">
-          <h2 style="margin: 0 0 12px; font-size: 22px;">Foste convidado(a) para a organização ${orgName}</h2>
-          <p style="margin: 0 0 12px;">Papél: <strong>${roleLabel}</strong></p>
-          <p style="margin: 0 0 16px;">Entra com a tua conta ORYA e aceita o convite. Se ainda não tens conta, cria-a no mesmo link.</p>
+          <h2 style="margin: 0 0 12px; font-size: 22px;">Convite para ${orgName}</h2>
+          <p style="margin: 0 0 12px;">Papel: <strong>${roleLabel}</strong></p>
+          <p style="margin: 0 0 16px;">Entra e aceita o convite.</p>
           <a href="${acceptUrl}" style="display: inline-block; margin-top: 8px; padding: 12px 18px; background: linear-gradient(90deg,#7cf2ff,#7b7bff,#ff7ddb); color: #0b0f1c; text-decoration: none; font-weight: 700; border-radius: 999px;">Abrir convite</a>
           <p style="margin: 16px 0 0; font-size: 12px; color: rgba(255,255,255,0.7);">Link direto: <a href="${acceptUrl}" style="color: #8fd6ff;">${acceptUrl}</a></p>
         </div>
@@ -254,6 +261,9 @@ export async function POST(req: NextRequest) {
     if (!Object.values(OrganizationMemberRole).includes(roleRaw as OrganizationMemberRole)) {
       return NextResponse.json({ ok: false, error: "INVALID_ROLE" }, { status: 400 });
     }
+    if (roleRaw === "VIEWER") {
+      return NextResponse.json({ ok: false, error: "ROLE_NOT_ALLOWED" }, { status: 400 });
+    }
 
     const membership = await prisma.organizationMember.findUnique({
       where: { organizationId_userId: { organizationId, userId: user.id } },
@@ -340,7 +350,7 @@ export async function POST(req: NextRequest) {
         type: NotificationType.ORGANIZATION_INVITE,
         title: "Convite para organização",
         body: `Foste convidado para a organização ${invite.organization?.publicName ?? "ORYA"}.`,
-        ctaUrl: `/organizacao/organizations`,
+        ctaUrl: "/convites/organizacoes",
         ctaLabel: "Ver convites",
         senderVisibility: "PUBLIC",
         fromUserId: user.id,
@@ -360,6 +370,7 @@ export async function POST(req: NextRequest) {
         organizationId: invite.organizationId,
         targetIdentifier: invite.targetIdentifier,
         role: invite.role,
+        token: invite.token,
         organization: invite.organization,
       },
     );
@@ -384,27 +395,26 @@ export async function PATCH(req: NextRequest) {
     }
 
     const body = await req.json().catch(() => null);
-    const organizationId = parseOrganizationId(body?.organizationId);
+    let organizationId = parseOrganizationId(body?.organizationId);
     const inviteId = typeof body?.inviteId === "string" ? body.inviteId : null;
     const tokenFromBody = typeof body?.token === "string" ? body.token : null;
     const action = typeof body?.action === "string" ? body.action.toUpperCase() : null;
 
-    if (!organizationId || !action) {
+    if (!action) {
       return NextResponse.json({ ok: false, error: "INVALID_PAYLOAD" }, { status: 400 });
     }
-
-    const membership = await prisma.organizationMember.findUnique({
-      where: { organizationId_userId: { organizationId, userId: user.id } },
-    });
-    const isManager = membership ? isOrgAdminOrAbove(membership.role) : false;
 
     if (!inviteId && !tokenFromBody) {
       return NextResponse.json({ ok: false, error: "NEED_INVITE_ID_OR_TOKEN" }, { status: 400 });
     }
 
+    if (!organizationId && action !== "ACCEPT" && action !== "DECLINE") {
+      return NextResponse.json({ ok: false, error: "INVALID_ORGANIZATION_ID" }, { status: 400 });
+    }
+
     const invite = await prisma.organizationMemberInvite.findFirst({
       where: {
-        organizationId,
+        ...(organizationId ? { organizationId } : {}),
         ...(inviteId ? { id: inviteId } : {}),
         ...(tokenFromBody ? { token: tokenFromBody } : {}),
       },
@@ -425,6 +435,15 @@ export async function PATCH(req: NextRequest) {
     if (!invite) {
       return NextResponse.json({ ok: false, error: "INVITE_NOT_FOUND" }, { status: 404 });
     }
+
+    if (!organizationId) {
+      organizationId = invite.organizationId;
+    }
+
+    const membership = await prisma.organizationMember.findUnique({
+      where: { organizationId_userId: { organizationId, userId: user.id } },
+    });
+    const isManager = membership ? isOrgAdminOrAbove(membership.role) : false;
 
     const viewerProfile = await prisma.profile.findUnique({
       where: { id: user.id },
@@ -502,6 +521,29 @@ export async function PATCH(req: NextRequest) {
               targetUserId: user.id,
             },
           });
+          const normalizedIdentifiers = [
+            invite.targetIdentifier.toLowerCase(),
+            viewerEmail,
+            viewerUsername?.toLowerCase() ?? null,
+          ].filter(Boolean) as string[];
+          if (normalizedIdentifiers.length > 0) {
+            await tx.organizationMemberInvite.updateMany({
+              where: {
+                organizationId,
+                id: { not: invite.id },
+                acceptedAt: null,
+                declinedAt: null,
+                cancelledAt: null,
+                OR: [
+                  { targetUserId: user.id },
+                  ...normalizedIdentifiers.map((identifier) => ({
+                    targetIdentifier: { equals: identifier, mode: Prisma.QueryMode.insensitive },
+                  })),
+                ],
+              },
+              data: { cancelledAt: new Date() },
+            });
+          }
           await ensureUserIsOrganization(tx, user.id);
           return;
         }
@@ -532,6 +574,31 @@ export async function PATCH(req: NextRequest) {
         });
 
         await ensureUserIsOrganization(tx, user.id);
+
+        const normalizedIdentifiers = [
+          invite.targetIdentifier.toLowerCase(),
+          viewerEmail,
+          viewerUsername?.toLowerCase() ?? null,
+        ].filter(Boolean) as string[];
+
+        if (normalizedIdentifiers.length > 0) {
+          await tx.organizationMemberInvite.updateMany({
+            where: {
+              organizationId,
+              id: { not: invite.id },
+              acceptedAt: null,
+              declinedAt: null,
+              cancelledAt: null,
+              OR: [
+                { targetUserId: user.id },
+                ...normalizedIdentifiers.map((identifier) => ({
+                  targetIdentifier: { equals: identifier, mode: Prisma.QueryMode.insensitive },
+                })),
+              ],
+            },
+            data: { cancelledAt: new Date() },
+          });
+        }
       }).catch((err: unknown) => {
         if (err instanceof Error && err.message === "LAST_OWNER_BLOCK") {
           throw err;
@@ -586,6 +653,7 @@ export async function PATCH(req: NextRequest) {
           organizationId,
           targetIdentifier: updated.targetIdentifier,
           role: updated.role,
+          token: updated.token,
           organization: updated.organization,
         },
       );

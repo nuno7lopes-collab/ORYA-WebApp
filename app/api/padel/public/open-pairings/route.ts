@@ -4,6 +4,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { PORTUGAL_CITIES } from "@/config/cities";
 import { Prisma } from "@prisma/client";
+import { checkPadelRegistrationWindow } from "@/domain/padelRegistration";
+import { enforcePublicRateLimit } from "@/lib/padel/publicRateLimit";
 
 const DEFAULT_LIMIT = 12;
 
@@ -15,6 +17,12 @@ function clampLimit(raw: string | null) {
 
 export async function GET(req: NextRequest) {
   try {
+    const rateLimited = await enforcePublicRateLimit(req, {
+      keyPrefix: "padel_public_pairings",
+      max: 120,
+    });
+    if (rateLimited) return rateLimited;
+
     const params = req.nextUrl.searchParams;
     const city = params.get("city")?.trim() ?? "";
     const q = params.get("q")?.trim() ?? "";
@@ -57,9 +65,11 @@ export async function GET(req: NextRequest) {
             slug: true,
             title: true,
             startsAt: true,
+            status: true,
             locationName: true,
             locationCity: true,
             coverImageUrl: true,
+            padelTournamentConfig: { select: { advancedSettings: true } },
           },
         },
       },
@@ -67,10 +77,35 @@ export async function GET(req: NextRequest) {
       take: limit,
     });
 
+    const filtered = pairings.filter((pairing) => {
+      const advanced = (pairing.event.padelTournamentConfig?.advancedSettings || {}) as {
+        registrationStartsAt?: string | null;
+        registrationEndsAt?: string | null;
+        competitionState?: string | null;
+      };
+      const registrationStartsAt =
+        advanced.registrationStartsAt && !Number.isNaN(new Date(advanced.registrationStartsAt).getTime())
+          ? new Date(advanced.registrationStartsAt)
+          : null;
+      const registrationEndsAt =
+        advanced.registrationEndsAt && !Number.isNaN(new Date(advanced.registrationEndsAt).getTime())
+          ? new Date(advanced.registrationEndsAt)
+          : null;
+      const check = checkPadelRegistrationWindow({
+        eventStatus: pairing.event.status,
+        eventStartsAt: pairing.event.startsAt ?? null,
+        registrationStartsAt,
+        registrationEndsAt,
+        competitionState: advanced.competitionState ?? null,
+      });
+      return check.ok;
+    });
+
     return NextResponse.json(
       {
         ok: true,
-        items: pairings.map((pairing) => ({
+        items: filtered.map((pairing) => ({
+          isExpired: pairing.deadlineAt ? pairing.deadlineAt.getTime() < now.getTime() : false,
           id: pairing.id,
           paymentMode: pairing.payment_mode,
           deadlineAt: pairing.deadlineAt?.toISOString() ?? null,

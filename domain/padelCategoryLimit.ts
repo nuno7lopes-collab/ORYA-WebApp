@@ -15,6 +15,13 @@ export async function checkPadelCategoryLimit(params: LimitParams): Promise<Limi
 
   if (!categoryId) return { ok: true };
 
+  const config = await tx.padelTournamentConfig.findUnique({
+    where: { eventId },
+    select: { advancedSettings: true },
+  });
+  const advanced = (config?.advancedSettings || {}) as { allowSecondCategory?: boolean };
+  const maxCategories = advanced.allowSecondCategory === false ? 1 : 2;
+
   const slots = await tx.padelPairingSlot.findMany({
     where: {
       profileId: userId,
@@ -42,7 +49,7 @@ export async function checkPadelCategoryLimit(params: LimitParams): Promise<Limi
     return { ok: false, code: "ALREADY_IN_CATEGORY" };
   }
 
-  if (categories.size >= 2) {
+  if (categories.size >= maxCategories) {
     return { ok: false, code: "MAX_CATEGORIES" };
   }
 

@@ -32,7 +32,7 @@ export default function NotFound() {
 
         <div className="space-y-3">
           <Link
-            href="/explorar"
+            href="/explorar/eventos"
             className={`${CTA_PRIMARY} w-full justify-center px-4 py-2.5 text-xs active:scale-95`}
           >
             Voltar a explorar eventos

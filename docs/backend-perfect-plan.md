@@ -12,7 +12,7 @@
   - Ticketing + templates for talks/experiences/volunteer (template types, not categories).
 - RESERVAS
   - Services/activities with schedule and policies (cancel/refund/deposit).
-- CLUBS (Community/Memberships)
+- CLUBS (Community/Memberships) (pos-MVP)
   - Memberships, tiers, perks, access control, posts/announcements.
 
 ## Core domain (shared)
@@ -62,7 +62,7 @@
 
 ## Known gaps (to build)
 - RESERVAS module: services, availability, resources, bookings, policies, refunds.
-- CLUBS module: membership plans, tiers, perks, access control, community posts/announcements.
+- CLUBS module: membership plans, tiers, perks, access control, community posts/announcements (pos-MVP).
 - Category-driven onboarding: schema for required fields + profile tabs + dashboard blocks.
 
 ## Cleanup candidates (needs confirmation before delete)
@@ -74,6 +74,6 @@
 1) Define category blueprint (required fields, tabs, dashboard blocks).
 2) Enforce category gating in organization dashboard and routes.
 3) Build RESERVAS schema + APIs.
-4) Build CLUBS schema + APIs (memberships).
+4) Build CLUBS schema + APIs (memberships) (pos-MVP).
 5) Remove confirmed dead code and legacy endpoints.
 6) Final pass on UI to match new categories.

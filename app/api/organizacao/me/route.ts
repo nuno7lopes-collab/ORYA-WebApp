@@ -12,10 +12,11 @@ import { Resend } from "resend";
 import { cookies } from "next/headers";
 import { resolveOrganizationIdFromParams } from "@/lib/organizationId";
 import {
-  DEFAULT_ORGANIZATION_CATEGORY,
-  parseOrganizationCategory,
+  DEFAULT_PRIMARY_MODULE,
+  parsePrimaryModule,
   parseOrganizationModules,
 } from "@/lib/organizationCategories";
+import { OrganizationStatus } from "@prisma/client";
 
 const resendApiKey = process.env.RESEND_API_KEY;
 const resendFromEmail = process.env.RESEND_FROM_EMAIL;
@@ -59,6 +60,7 @@ export async function GET(req: NextRequest) {
     const { organization, membership } = await getActiveOrganizationForUser(profile.id, {
       organizationId: Number.isFinite(forcedOrgId) ? forcedOrgId : undefined,
       allowFallback: !urlOrg,
+      allowedStatuses: [OrganizationStatus.ACTIVE, OrganizationStatus.SUSPENDED],
     });
     const [platformFees, orgTransferEnabled, organizationModules] = await Promise.all([
       getPlatformFees(),
@@ -102,6 +104,7 @@ export async function GET(req: NextRequest) {
           city: organization.city,
           payoutIban: organization.payoutIban,
           language: (organization as { language?: string | null }).language ?? "pt",
+          timezone: (organization as { timezone?: string | null }).timezone ?? "Europe/Lisbon",
           alertsEmail: (organization as { alertsEmail?: string | null }).alertsEmail ?? null,
           alertsSalesEnabled: (organization as { alertsSalesEnabled?: boolean | null }).alertsSalesEnabled ?? true,
           alertsPayoutEnabled: (organization as { alertsPayoutEnabled?: boolean | null }).alertsPayoutEnabled ?? false,
@@ -112,11 +115,12 @@ export async function GET(req: NextRequest) {
           brandingPrimaryColor: (organization as { brandingPrimaryColor?: string | null }).brandingPrimaryColor ?? null,
           brandingSecondaryColor: (organization as { brandingSecondaryColor?: string | null }).brandingSecondaryColor ?? null,
           organizationKind: (organization as any).organizationKind ?? "PESSOA_SINGULAR",
-          organizationCategory:
-            (organization as { organizationCategory?: string | null }).organizationCategory ??
-            DEFAULT_ORGANIZATION_CATEGORY,
+          primaryModule:
+            (organization as { primaryModule?: string | null }).primaryModule ??
+            DEFAULT_PRIMARY_MODULE,
+          reservationAssignmentMode:
+            (organization as { reservationAssignmentMode?: string | null }).reservationAssignmentMode ?? "PROFESSIONAL",
           modules: organizationModules.map((module) => module.moduleKey),
-          liveHubPremiumEnabled: organization.liveHubPremiumEnabled,
           publicName: organization.publicName,
           address: (organization as { address?: string | null }).address ?? null,
           showAddressPublicly: (organization as { showAddressPublicly?: boolean | null }).showAddressPublicly ?? false,
@@ -145,19 +149,12 @@ export async function GET(req: NextRequest) {
     const profileStatus =
       organization &&
       organization.businessName &&
-      organization.entityType &&
       organization.city &&
       user.email
         ? "OK"
         : "MISSING_CONTACT";
 
-    const lowerName = (organization?.publicName ?? organization?.username ?? "").toLowerCase();
-    const isPlatformAccount =
-      isAdmin ||
-      (organization as { payoutMode?: string | null })?.payoutMode === "PLATFORM" ||
-      organization?.organizationKind === "EMPRESA_EVENTOS" ||
-      lowerName === "orya" ||
-      lowerName.startsWith("orya ");
+    const isPlatformAccount = organization?.orgType === "PLATFORM";
     const paymentsStatus = organization
       ? isPlatformAccount
         ? "READY"
@@ -222,6 +219,7 @@ export async function PATCH(req: NextRequest) {
       fullName,
       contactPhone,
       language,
+      timezone,
       alertsEmail,
       alertsSalesEnabled,
       alertsPayoutEnabled,
@@ -251,19 +249,37 @@ export async function PATCH(req: NextRequest) {
       padelDefaultRuleSetId,
       padelFavoriteCategories,
     } = body as Record<string, unknown>;
-    const organizationCategoryRaw = (body as Record<string, unknown>).organizationCategory;
+    const primaryModuleRaw = (body as Record<string, unknown>).primaryModule;
+    const reservationAssignmentModeRaw = (body as Record<string, unknown>).reservationAssignmentMode;
     const modulesRaw = (body as Record<string, unknown>).modules;
 
-    const organizationCategoryProvided = Object.prototype.hasOwnProperty.call(body, "organizationCategory");
+    const primaryModuleProvided = Object.prototype.hasOwnProperty.call(body, "primaryModule");
+    const reservationAssignmentModeProvided = Object.prototype.hasOwnProperty.call(body, "reservationAssignmentMode");
     const modulesProvided = Object.prototype.hasOwnProperty.call(body, "modules");
-    const premiumProvided = Object.prototype.hasOwnProperty.call(body, "liveHubPremiumEnabled");
+    const alertsSalesProvided = Object.prototype.hasOwnProperty.call(body, "alertsSalesEnabled");
 
-    const organizationCategory = organizationCategoryProvided
-      ? parseOrganizationCategory(organizationCategoryRaw)
+    const primaryModule = primaryModuleProvided
+      ? parsePrimaryModule(primaryModuleRaw)
       : null;
-    if (organizationCategoryProvided && !organizationCategory) {
+    if (primaryModuleProvided && !primaryModule) {
       return NextResponse.json(
-        { ok: false, error: "organizationCategory inválido. Usa EVENTOS, PADEL ou RESERVAS." },
+        { ok: false, error: "primaryModule inválido. Usa EVENTOS, RESERVAS ou TORNEIOS." },
+        { status: 400 },
+      );
+    }
+
+    const reservationAssignmentMode = reservationAssignmentModeProvided
+      ? typeof reservationAssignmentModeRaw === "string"
+        ? reservationAssignmentModeRaw.trim().toUpperCase()
+        : null
+      : null;
+    if (
+      reservationAssignmentModeProvided &&
+      reservationAssignmentMode &&
+      !["PROFESSIONAL", "RESOURCE"].includes(reservationAssignmentMode)
+    ) {
+      return NextResponse.json(
+        { ok: false, error: "reservationAssignmentMode inválido. Usa PROFESSIONAL ou RESOURCE." },
         { status: 400 },
       );
     }
@@ -271,13 +287,7 @@ export async function PATCH(req: NextRequest) {
     const parsedModules = modulesProvided ? parseOrganizationModules(modulesRaw) : null;
     if (modulesProvided && parsedModules === null) {
       return NextResponse.json(
-        { ok: false, error: "modules inválido. Usa uma lista de módulos válidos (ex.: INSCRICOES)." },
-        { status: 400 },
-      );
-    }
-    if (premiumProvided) {
-      return NextResponse.json(
-        { ok: false, error: "O premium é gerido automaticamente pela subscrição." },
+        { ok: false, error: "modules inválido. Usa uma lista de módulos válidos." },
         { status: 400 },
       );
     }
@@ -300,18 +310,49 @@ export async function PATCH(req: NextRequest) {
 
     const { organization, membership } = await getActiveOrganizationForUser(user.id, {
       organizationId: Number.isFinite(forcedOrgId) ? forcedOrgId : undefined,
-      roles: ["OWNER", "ADMIN"],
+      roles: ["OWNER", "CO_OWNER", "ADMIN"],
       allowFallback: !urlOrg,
     });
 
     if (!organization) {
       return NextResponse.json({ ok: false, error: "Ainda não és organização." }, { status: 403 });
     }
-    if (!membership || !["OWNER", "ADMIN"].includes(membership.role)) {
+    if (!membership || !["OWNER", "CO_OWNER", "ADMIN"].includes(membership.role)) {
       return NextResponse.json(
         { ok: false, error: "Apenas Owner ou Admin podem alterar estas definições." },
         { status: 403 },
       );
+    }
+
+    const isOwner = membership.role === "OWNER";
+    const isCoOwner = membership.role === "CO_OWNER";
+    const isAdmin = membership.role === "ADMIN";
+
+    if (isAdmin) {
+      const adminAllowed = new Set([
+        "contactPhone",
+        "address",
+        "showAddressPublicly",
+        "publicWebsite",
+        "publicInstagram",
+        "publicYoutube",
+        "publicDescription",
+        "publicHours",
+        "infoRules",
+        "infoFaq",
+        "infoRequirements",
+        "infoPolicies",
+        "infoLocationNotes",
+        "timezone",
+        "reservationAssignmentMode",
+      ]);
+      const disallowed = Object.keys(body).filter((key) => !adminAllowed.has(key));
+      if (disallowed.length > 0) {
+        return NextResponse.json(
+          { ok: false, error: "Admins apenas podem alterar dados operacionais." },
+          { status: 403 },
+        );
+      }
     }
 
     const profileUpdates: Record<string, unknown> = {};
@@ -423,6 +464,7 @@ export async function PATCH(req: NextRequest) {
     if (typeof alertsEmail === "string") organizationUpdates.alertsEmail = alertsEmail.trim() || null;
     if (typeof alertsSalesEnabled === "boolean") organizationUpdates.alertsSalesEnabled = alertsSalesEnabled;
     if (typeof alertsPayoutEnabled === "boolean") organizationUpdates.alertsPayoutEnabled = alertsPayoutEnabled;
+    if (typeof timezone === "string") organizationUpdates.timezone = timezone.trim() || "Europe/Lisbon";
     if (brandingAvatarUrl === null) organizationUpdates.brandingAvatarUrl = null;
     if (typeof brandingAvatarUrl === "string") {
       organizationUpdates.brandingAvatarUrl = normalizeOrganizationAvatarUrl(brandingAvatarUrl);
@@ -434,8 +476,11 @@ export async function PATCH(req: NextRequest) {
     if (typeof brandingPrimaryColor === "string") organizationUpdates.brandingPrimaryColor = brandingPrimaryColor.trim() || null;
     if (typeof brandingSecondaryColor === "string")
       organizationUpdates.brandingSecondaryColor = brandingSecondaryColor.trim() || null;
-    if (organizationCategoryProvided && organizationCategory) {
-      organizationUpdates.organizationCategory = organizationCategory;
+    if (primaryModuleProvided && primaryModule) {
+      organizationUpdates.primaryModule = primaryModule;
+    }
+    if (reservationAssignmentModeProvided && reservationAssignmentMode) {
+      organizationUpdates.reservationAssignmentMode = reservationAssignmentMode;
     }
     if (typeof organizationKind === "string") {
       const kind = organizationKind.toUpperCase();
@@ -502,7 +547,7 @@ export async function PATCH(req: NextRequest) {
       }
     }
 
-    const nextModules = modulesProvided
+    const nextModulesRaw = modulesProvided
       ? parsedModules ?? []
       : (
           await prisma.organizationModuleEntry.findMany({
@@ -511,6 +556,13 @@ export async function PATCH(req: NextRequest) {
             orderBy: { moduleKey: "asc" },
           })
         ).map((module) => module.moduleKey);
+    const nextModules = Array.from(
+      new Set(
+        nextModulesRaw
+          .map((module) => (module === "ANALYTICS" ? "FINANCEIRO" : module))
+          .filter((module): module is string => typeof module === "string" && module.length > 0),
+      ),
+    );
 
     const verifiedOfficialEmail =
       organization && (organization as { officialEmailVerifiedAt?: Date | null })?.officialEmailVerifiedAt
@@ -520,7 +572,9 @@ export async function PATCH(req: NextRequest) {
       verifiedOfficialEmail ??
       (typeof alertsEmail === "string" && alertsEmail.trim().length > 0 ? alertsEmail.trim() : organization.alertsEmail);
     const alertsSales = typeof alertsSalesEnabled === "boolean" ? alertsSalesEnabled : organization.alertsSalesEnabled;
-    if (alertsTarget && alertsSales && resendClient && resendFromEmail) {
+    const shouldNotifyAlertsEnabled =
+      alertsSalesProvided && alertsSalesEnabled === true && organization.alertsSalesEnabled !== true;
+    if (alertsTarget && alertsSales && shouldNotifyAlertsEnabled && resendClient && resendFromEmail) {
       try {
         await resendClient.emails.send({
           from: resendFromEmail,
@@ -537,10 +591,10 @@ export async function PATCH(req: NextRequest) {
       {
         ok: true,
         organization: {
-          organizationCategory:
-            organizationCategory ??
-            (organization as { organizationCategory?: string | null }).organizationCategory ??
-            DEFAULT_ORGANIZATION_CATEGORY,
+          primaryModule:
+            primaryModule ??
+            (organization as { primaryModule?: string | null }).primaryModule ??
+            DEFAULT_PRIMARY_MODULE,
           modules: nextModules,
         },
       },

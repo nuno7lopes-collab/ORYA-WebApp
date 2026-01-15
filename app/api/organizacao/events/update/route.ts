@@ -14,6 +14,7 @@ import {
   OrganizationMemberRole,
 } from "@prisma/client";
 import { canManageEvents } from "@/lib/organizationPermissions";
+import { formatPaidSalesGateMessage, getPaidSalesGate } from "@/lib/organizationPayments";
 
 type TicketTypeUpdate = {
   id: number;
@@ -128,12 +129,18 @@ export async function POST(req: NextRequest) {
         stripeAccountId: string | null;
         stripeChargesEnabled: boolean;
         stripePayoutsEnabled: boolean;
+        orgType?: string | null;
+        officialEmail?: string | null;
+        officialEmailVerifiedAt?: Date | null;
       } | null;
       _count: { tickets: number; reservations: number; saleLines: number };
     } | null = null;
 
     const [profile, eventResult] = await Promise.all([
-      prisma.profile.findUnique({ where: { id: user.id }, select: { roles: true } }),
+      prisma.profile.findUnique({
+        where: { id: user.id },
+        select: { roles: true, onboardingDone: true, fullName: true, username: true },
+      }),
       (async () => {
         try {
           return await prisma.event.findUnique({
@@ -154,18 +161,21 @@ export async function POST(req: NextRequest) {
                   currency: true,
                 },
               },
-      organization: {
-        select: {
-          id: true,
-          username: true,
-          stripeAccountId: true,
-          stripeChargesEnabled: true,
-          stripePayoutsEnabled: true,
-        },
-      },
-      _count: {
-        select: {
-          tickets: true,
+              organization: {
+                select: {
+                  id: true,
+                  username: true,
+                  orgType: true,
+                  stripeAccountId: true,
+                  stripeChargesEnabled: true,
+                  stripePayoutsEnabled: true,
+                  officialEmail: true,
+                  officialEmailVerifiedAt: true,
+                },
+              },
+              _count: {
+                select: {
+                  tickets: true,
                   reservations: true,
                   saleLines: true,
                 },
@@ -185,8 +195,20 @@ export async function POST(req: NextRequest) {
               >(Prisma.sql`SELECT id, sold_quantity, price, status, currency FROM app_v3.ticket_types WHERE event_id = ${eventId}`),
               row.organization_id
                 ? prisma.$queryRaw<
-                    { stripe_account_id: string | null; stripe_charges_enabled: boolean; stripe_payouts_enabled: boolean }[]
-                  >(Prisma.sql`SELECT stripe_account_id, stripe_charges_enabled, stripe_payouts_enabled FROM app_v3.organizations WHERE id = ${row.organization_id} LIMIT 1`)
+                    {
+                      stripe_account_id: string | null;
+                      stripe_charges_enabled: boolean;
+                      stripe_payouts_enabled: boolean;
+                      org_type: string | null;
+                      official_email: string | null;
+                      official_email_verified_at: Date | null;
+                    }[]
+                  >(Prisma.sql`
+                    SELECT stripe_account_id, stripe_charges_enabled, stripe_payouts_enabled, org_type, official_email, official_email_verified_at
+                    FROM app_v3.organizations
+                    WHERE id = ${row.organization_id}
+                    LIMIT 1
+                  `)
                 : Promise.resolve([]),
               prisma.$queryRaw<{ tickets: number; reservations: number; sale_lines: number }[]>(Prisma.sql`
                 SELECT
@@ -213,9 +235,12 @@ export async function POST(req: NextRequest) {
                 ? {
                     id: row.organization_id as number,
                     username: null,
+                    orgType: organizationRows[0].org_type ?? null,
                     stripeAccountId: organizationRows[0].stripe_account_id,
                     stripeChargesEnabled: organizationRows[0].stripe_charges_enabled,
                     stripePayoutsEnabled: organizationRows[0].stripe_payouts_enabled,
+                    officialEmail: organizationRows[0].official_email,
+                    officialEmailVerifiedAt: organizationRows[0].official_email_verified_at,
                   }
                 : null,
               _count: {
@@ -232,7 +257,20 @@ export async function POST(req: NextRequest) {
 
     if (!profile) {
       return NextResponse.json(
-        { ok: false, error: "Perfil não encontrado. Completa o onboarding." },
+        { ok: false, error: "Perfil não encontrado. Completa o onboarding de utilizador." },
+        { status: 400 },
+      );
+    }
+    const hasUserOnboarding =
+      profile.onboardingDone ||
+      (Boolean(profile.fullName?.trim()) && Boolean(profile.username?.trim()));
+    if (!hasUserOnboarding) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            "Completa o onboarding de utilizador (nome e username) antes de editares eventos.",
+        },
         { status: 400 },
       );
     }
@@ -272,13 +310,6 @@ export async function POST(req: NextRequest) {
     }
 
     const organization = event.organization;
-    const paymentsStatus = organization
-      ? organization.stripeAccountId
-        ? organization.stripeChargesEnabled && organization.stripePayoutsEnabled
-          ? "READY"
-          : "PENDING"
-        : "NO_STRIPE"
-      : "NO_STRIPE";
 
     const dataUpdate: Partial<Prisma.EventUncheckedUpdateInput> = {};
     if (body.archive === true) {
@@ -435,21 +466,27 @@ export async function POST(req: NextRequest) {
     const payoutMode = event.payoutMode ?? PayoutMode.ORGANIZATION;
     const hasExistingPaid = event.ticketTypes.some((t) => (t.price ?? 0) > 0);
     const hasNewPaid = newTicketTypes.some((nt) => Number(nt.price ?? 0) > 0);
-    if (
-      event.organizationId &&
-      payoutMode === PayoutMode.ORGANIZATION &&
-      (hasExistingPaid || hasNewPaid) &&
-      paymentsStatus !== "READY" &&
-      !isAdmin
-    ) {
-      return NextResponse.json(
-        {
-          ok: false,
-          code: "PAYMENTS_NOT_READY",
-          error: "Para vender bilhetes pagos, primeiro liga a tua conta Stripe em Finanças & Payouts.",
-        },
-        { status: 403 },
-      );
+    if (event.organizationId && (hasExistingPaid || hasNewPaid) && !isAdmin) {
+      const gate = getPaidSalesGate({
+        officialEmail: organization?.officialEmail ?? null,
+        officialEmailVerifiedAt: organization?.officialEmailVerifiedAt ?? null,
+        stripeAccountId: organization?.stripeAccountId ?? null,
+        stripeChargesEnabled: organization?.stripeChargesEnabled ?? false,
+        stripePayoutsEnabled: organization?.stripePayoutsEnabled ?? false,
+        requireStripe: payoutMode === PayoutMode.ORGANIZATION && organization?.orgType !== "PLATFORM",
+      });
+      if (!gate.ok) {
+        return NextResponse.json(
+          {
+            ok: false,
+            code: "PAYMENTS_NOT_READY",
+            error: formatPaidSalesGateMessage(gate, "Para vender bilhetes pagos,"),
+            missingEmail: gate.missingEmail,
+            missingStripe: gate.missingStripe,
+          },
+          { status: 403 },
+        );
+      }
     }
 
     const transactions: Prisma.PrismaPromise<unknown>[] = [];

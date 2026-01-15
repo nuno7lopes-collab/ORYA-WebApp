@@ -6,8 +6,9 @@ import { usePathname } from "next/navigation";
 
 const ORG_PREFIXES = ["/organizacao"];
 const EVENT_PREFIXES = ["/eventos/", "/resale/", "/inscricoes/"];
+const LANDING_PREFIXES = ["/landing"];
 
-type BackgroundKey = "orya-bg-user" | "orya-bg-event" | "orya-bg-org";
+type BackgroundKey = "orya-bg-user" | "orya-bg-event" | "orya-bg-org" | "orya-bg-landing";
 
 type BackgroundPreset = {
   color: string;
@@ -31,10 +32,22 @@ const USER_BG_PRESET: BackgroundPreset = {
     "radial-gradient(circle at 20% 18%, rgba(107, 255, 255, 0.12), transparent 55%), radial-gradient(circle at 86% 16%, rgba(255, 0, 200, 0.1), transparent 60%), linear-gradient(160deg, rgba(10, 18, 32, 0.9) 0%, rgba(6, 10, 18, 0.97) 60%, rgba(4, 6, 12, 1) 100%)",
 };
 
+const LANDING_BG_PRESET: BackgroundPreset = {
+  color: "#010103",
+  image: "none",
+  overlay: "none",
+  overlayOpacity: 0,
+  skeletonSurface:
+    "linear-gradient(160deg, rgba(6, 6, 10, 0.96) 0%, rgba(3, 3, 6, 0.99) 100%)",
+  skeletonSurfaceStrong:
+    "linear-gradient(160deg, rgba(4, 4, 8, 0.98) 0%, rgba(2, 2, 5, 1) 100%)",
+};
+
 const BG_PRESETS: Record<BackgroundKey, BackgroundPreset> = {
   "orya-bg-user": USER_BG_PRESET,
   "orya-bg-event": USER_BG_PRESET,
   "orya-bg-org": USER_BG_PRESET,
+  "orya-bg-landing": LANDING_BG_PRESET,
 };
 
 const getBackgroundClass = (pathname: string | null): BackgroundKey => {
@@ -50,6 +63,10 @@ const getBackgroundClass = (pathname: string | null): BackgroundKey => {
 
   if (EVENT_PREFIXES.some((route) => current.startsWith(route))) {
     return "orya-bg-event";
+  }
+
+  if (LANDING_PREFIXES.some((route) => current.startsWith(route))) {
+    return "orya-bg-landing";
   }
 
   return "orya-bg-user";
@@ -77,7 +94,7 @@ export function BackgroundShell({ children }: { children: ReactNode }) {
     if (typeof document === "undefined") return;
     const body = document.body;
     const classList = body.classList;
-    classList.remove("orya-bg-user", "orya-bg-event", "orya-bg-org");
+    classList.remove("orya-bg-user", "orya-bg-event", "orya-bg-org", "orya-bg-landing");
     classList.add(bgClass);
     body.dataset.oryaBg = bgClass;
     return () => {

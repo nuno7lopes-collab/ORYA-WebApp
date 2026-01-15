@@ -85,6 +85,21 @@ export async function GET(req: NextRequest) {
     const url = new URL(req.url);
     const eventIdParam = url.searchParams.get("eventId");
     const { from, to } = parseRangeParams(url);
+    const templateTypeParam = url.searchParams.get("templateType");
+    const templateType =
+      typeof templateTypeParam === "string" && templateTypeParam.trim()
+        ? templateTypeParam.trim().toUpperCase()
+        : null;
+    const excludeTemplateTypeParam = url.searchParams.get("excludeTemplateType");
+    const excludeTemplateType =
+      typeof excludeTemplateTypeParam === "string" && excludeTemplateTypeParam.trim()
+        ? excludeTemplateTypeParam.trim().toUpperCase()
+        : null;
+    const eventTemplateFilter = templateType
+      ? { templateType }
+      : excludeTemplateType
+        ? { NOT: { templateType: excludeTemplateType } }
+        : {};
 
     let eventId: number | null = null;
     if (eventIdParam) {
@@ -121,6 +136,7 @@ export async function GET(req: NextRequest) {
           : {}),
         event: {
           organizationId: organization.id,
+          ...eventTemplateFilter,
         },
         eventId: eventId ?? undefined,
       },

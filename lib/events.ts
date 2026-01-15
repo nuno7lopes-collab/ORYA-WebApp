@@ -71,11 +71,8 @@ export type EventCardDTO = {
   id: number;
   slug: string;
   title: string;
-  description: string;
-  type: Event["type"];
   startsAt: Date | null;
   endsAt: Date | null;
-  locationName: string | null;
   locationCity: string | null;
   isFree: boolean;
   priceFrom: number | null;
@@ -95,9 +92,7 @@ export function mapEventToCardDTO(
   if (
     typeof event.id !== "number" ||
     typeof event.slug !== "string" ||
-    typeof event.title !== "string" ||
-    typeof event.description !== "string" ||
-    typeof event.type !== "string"
+    typeof event.title !== "string"
   ) {
     return null;
   }
@@ -118,14 +113,11 @@ export function mapEventToCardDTO(
     id: event.id,
     slug: event.slug,
     title: event.title,
-    description: event.description,
     startsAt: event.startsAt ?? null,
     endsAt: event.endsAt ?? null,
-    locationName: event.locationName ?? null,
     locationCity: event.locationCity ?? null,
     isFree: Boolean(event.isFree),
     priceFrom: priceFrom !== null ? priceFrom / 100 : null,
-    type: event.type,
     coverImageUrl: event.coverImageUrl ?? null,
   };
 }

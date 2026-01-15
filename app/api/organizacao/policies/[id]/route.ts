@@ -25,8 +25,9 @@ function parsePolicyId(raw: string) {
   return Number.isFinite(parsed) ? Math.trunc(parsed) : null;
 }
 
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
-  const policyId = parsePolicyId(params.id);
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const resolved = await params;
+  const policyId = parsePolicyId(resolved.id);
   if (!policyId) {
     return NextResponse.json({ ok: false, error: "Política inválida." }, { status: 400 });
   }
@@ -110,8 +111,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   }
 }
 
-export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
-  const policyId = parsePolicyId(params.id);
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const resolved = await params;
+  const policyId = parsePolicyId(resolved.id);
   if (!policyId) {
     return NextResponse.json({ ok: false, error: "Política inválida." }, { status: 400 });
   }
