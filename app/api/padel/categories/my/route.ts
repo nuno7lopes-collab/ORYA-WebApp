@@ -218,3 +218,71 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "Erro ao atualizar categoria." }, { status: 500 });
   }
 }
+
+export async function DELETE(req: NextRequest) {
+  try {
+    const supabase = await createSupabaseServer();
+    const user = await ensureAuthenticated(supabase);
+
+    let categoryId = Number(req.nextUrl.searchParams.get("id"));
+    if (!Number.isFinite(categoryId)) {
+      const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
+      const bodyId = typeof body?.id === "number" ? body.id : Number(body?.id);
+      if (!Number.isFinite(bodyId)) {
+        return NextResponse.json({ ok: false, error: "ID inválido." }, { status: 400 });
+      }
+      categoryId = bodyId;
+    }
+
+    const organizationId = resolveOrganizationIdFromRequest(req);
+    const { organization } = await getActiveOrganizationForUser(user.id, {
+      organizationId: organizationId ?? undefined,
+      roles: allowedRoles,
+    });
+    if (!organization) {
+      return NextResponse.json({ ok: false, error: "Organização não encontrado." }, { status: 403 });
+    }
+
+    const existing = await prisma.padelCategory.findFirst({
+      where: { id: categoryId, organizationId: organization.id },
+      select: {
+        id: true,
+        isDefault: true,
+        _count: {
+          select: {
+            matches: true,
+            pairings: true,
+            tournamentEntries: true,
+            tournamentConfigs: true,
+            eventLinks: true,
+            waitlistEntries: true,
+          },
+        },
+      },
+    });
+    if (!existing) {
+      return NextResponse.json({ ok: false, error: "Categoria não encontrada." }, { status: 404 });
+    }
+    if (existing.isDefault) {
+      return NextResponse.json({ ok: false, error: "Não podes apagar uma categoria base." }, { status: 409 });
+    }
+
+    const usageCount = Object.values(existing._count).reduce((sum, value) => sum + value, 0);
+    if (usageCount > 0) {
+      return NextResponse.json(
+        { ok: false, error: "Categoria em uso. Remove-a dos torneios ou desativa em vez de apagar." },
+        { status: 409 },
+      );
+    }
+
+    await prisma.padelCategory.delete({ where: { id: categoryId } });
+
+    return NextResponse.json({ ok: true }, { status: 200 });
+  } catch (err) {
+    if (isUnauthenticatedError(err)) {
+      return NextResponse.json({ ok: false, error: "Não autenticado." }, { status: 401 });
+    }
+    console.error("[padel/categories/my][DELETE] error", err);
+    return NextResponse.json({ ok: false, error: "Erro ao apagar categoria." }, { status: 500 });
+  }
+}

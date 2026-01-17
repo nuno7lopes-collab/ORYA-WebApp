@@ -5,6 +5,7 @@ import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
+import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { OrganizationMemberRole, OrganizationPolicyType } from "@prisma/client";
 
 const ALLOWED_ROLES: OrganizationMemberRole[] = [
@@ -48,6 +49,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     });
     if (!organization || !membership) {
       return NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 });
+    }
+    const emailGate = ensureOrganizationEmailVerified(organization);
+    if (!emailGate.ok) {
+      return NextResponse.json({ ok: false, error: emailGate.error }, { status: 403 });
     }
 
     const existing = await prisma.organizationPolicy.findFirst({
@@ -134,6 +139,10 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     });
     if (!organization || !membership) {
       return NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 });
+    }
+    const emailGate = ensureOrganizationEmailVerified(organization);
+    if (!emailGate.ok) {
+      return NextResponse.json({ ok: false, error: emailGate.error }, { status: 403 });
     }
 
     const policy = await prisma.organizationPolicy.findFirst({

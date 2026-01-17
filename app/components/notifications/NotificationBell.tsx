@@ -153,7 +153,7 @@ export function NotificationBell({ organizationId }: { organizationId?: number |
                 onClick={() => setFilter(item.key as typeof filter)}
                 className={`rounded-full border px-2.5 py-1 ${
                   filter === item.key
-                    ? "border-emerald-400/50 bg-emerald-500/15 text-emerald-100"
+                    ? "border-sky-400/60 bg-sky-500/15 text-sky-100"
                     : "border-white/15 bg-white/5 text-white/70 hover:border-white/30"
                 }`}
               >
@@ -178,7 +178,7 @@ export function NotificationBell({ organizationId }: { organizationId?: number |
                     className={`rounded-xl border px-3 py-2 text-xs ${
                       n.readAt
                         ? "border-white/10 bg-white/3"
-                        : "border-emerald-400/30 bg-emerald-500/8"
+                        : "border-sky-400/30 bg-sky-500/10"
                     }`}
                   >
                     {(() => {
@@ -193,7 +193,7 @@ export function NotificationBell({ organizationId }: { organizationId?: number |
                           {typeLabel}
                         </span>
                         {(n.isRead === false || (!n.isRead && !n.readAt)) && (
-                          <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                          <span className="h-2 w-2 rounded-full bg-sky-400" />
                         )}
                       </div>
                       <span className="text-[11px] text-white/45">

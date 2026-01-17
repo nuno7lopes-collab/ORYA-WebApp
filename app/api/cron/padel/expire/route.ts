@@ -20,7 +20,7 @@ import { autoChargeKey } from "@/lib/stripe/idempotency";
 // Pode ser executado via cron. Não expõe dados sensíveis, mas requer permissão server-side.
 export async function POST() {
   const now = new Date();
-  await prisma.$transaction((tx) => expireHolds(tx, now));
+  await expireHolds(prisma, now);
 
   // Tentativa de cobrança off-session do capitão (Modelo A) quando deadline expirou e parceiro não pagou
   const chargeable = await prisma.padelPairing.findMany({

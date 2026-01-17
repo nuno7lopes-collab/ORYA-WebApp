@@ -18,10 +18,6 @@ export default async function ServicoRedirectPage({ params }: PageProps) {
       isActive: true,
       organization: {
         status: "ACTIVE",
-        OR: [
-          { primaryModule: "RESERVAS" },
-          { organizationModules: { some: { moduleKey: "RESERVAS", enabled: true } } },
-        ],
       },
     },
     select: {

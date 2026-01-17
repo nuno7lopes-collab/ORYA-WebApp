@@ -18,6 +18,9 @@ import { sanitizeRedirectPath } from "@/lib/auth/redirects";
 import { isValidPhone, sanitizePhone } from "@/lib/phone";
 import { sanitizeUsername, validateUsername } from "@/lib/username";
 import { CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
+import { getTicketCopy } from "./checkoutCopy";
+
+type TicketCopy = ReturnType<typeof getTicketCopy>;
 
 function isValidEmail(email: string) {
   return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email);
@@ -70,12 +73,6 @@ type CheckoutItem = {
   ticketId: number;
   quantity: number;
 };
-const scenarioCopy: Record<string, string> = {
-  GROUP_SPLIT: "Estás a pagar apenas a tua parte desta dupla.",
-  GROUP_FULL: "Estás a comprar 2 lugares (tu + parceiro).",
-  RESALE: "Estás a comprar um bilhete em revenda.",
-  FREE_CHECKOUT: "Evento gratuito — só para utilizadores com conta e username.",
-};
 
 type CheckoutWave = {
   id: number | string;
@@ -120,6 +117,33 @@ const FREE_PLACEHOLDER_INTENT_ID = "FREE_CHECKOUT";
 
 export default function Step2Pagamento() {
   const { dados, irParaPasso, atualizarDados, breakdown, setBreakdown } = useCheckout();
+  const checkoutVariant =
+    typeof dados?.additional?.checkoutUiVariant === "string"
+      ? dados.additional.checkoutUiVariant
+      : "DEFAULT";
+  const ticketCopy = getTicketCopy(checkoutVariant);
+  const ticketPluralWithArticle = `${ticketCopy.articlePlural} ${ticketCopy.plural}`;
+  const ticketOneOf = ticketCopy.isPadel ? "uma das inscrições" : "um dos bilhetes";
+  const ticketAllPlural = ticketCopy.isPadel ? "todas as inscrições" : "todos os bilhetes";
+  const ticketNameLabel = ticketCopy.isPadel ? "Nome na inscrição" : "Nome no bilhete";
+  const ticketEmailLabel = ticketCopy.isPadel ? "Email para inscrições e recibo." : "Email para bilhetes e recibo.";
+  const freeHeaderLabel = ticketCopy.freeLabel;
+  const freeLabelLower = freeHeaderLabel.toLowerCase();
+  const freeDescription = ticketCopy.isPadel
+    ? "Confirma a tua inscrição. Requer sessão iniciada e username definido."
+    : "Confirma a tua entrada gratuita. Requer sessão iniciada e username definido.";
+  const freePrepLabel = ticketCopy.isPadel
+    ? "A preparar a tua inscrição…"
+    : "A preparar a tua entrada gratuita…";
+  const freeConfirmLabel = ticketCopy.isPadel
+    ? "Estamos a confirmar a tua inscrição gratuita."
+    : "Estamos a confirmar a tua entrada gratuita.";
+  const scenarioCopy: Record<string, string> = {
+    GROUP_SPLIT: "Estás a pagar apenas a tua parte desta dupla.",
+    GROUP_FULL: "Estás a comprar 2 lugares (tu + parceiro).",
+    RESALE: `Estás a comprar ${ticketCopy.articleSingular} ${ticketCopy.singular} em revenda.`,
+    FREE_CHECKOUT: `${ticketCopy.freeLabel} — só para utilizadores com conta e username.`,
+  };
 
   const [clientSecret, setClientSecret] = useState<string | null>(null);
   const [serverAmount, setServerAmount] = useState<number | null>(null);
@@ -934,9 +958,7 @@ export default function Step2Pagamento() {
             if (!cancelled) {
               setError("Este evento gratuito requer sessão com username definido.");
               setPurchaseMode("auth");
-              setAuthInfo(
-                "Inicia sessão e define um username para concluir a inscrição gratuita.",
-              );
+              setAuthInfo(`Inicia sessão e define um username para concluir a ${freeLabelLower}.`);
             }
             return;
           }
@@ -956,7 +978,7 @@ export default function Step2Pagamento() {
             respCode === "PRICE_CHANGED"
               ? "Os preços foram atualizados. Revê a seleção e tenta novamente."
               : respCode === "INSUFFICIENT_STOCK"
-                ? "Stock insuficiente para um dos bilhetes."
+                ? `Stock insuficiente para ${ticketOneOf}.`
                 : typeof data?.error === "string"
                   ? data.error
                   : "Não foi possível preparar o pagamento.";
@@ -1332,10 +1354,10 @@ export default function Step2Pagamento() {
     setError(null);
     const localErrors: { name?: string; email?: string; phone?: string } = {};
     if (!guestName.trim()) {
-      localErrors.name = "Nome é obrigatório para emitir o bilhete.";
+      localErrors.name = `Nome é obrigatório para emitir ${ticketCopy.articleSingular} ${ticketCopy.singular}.`;
     }
     if (!guestEmail.trim()) {
-      localErrors.email = "Email é obrigatório para enviar os bilhetes.";
+      localErrors.email = `Email é obrigatório para enviar ${ticketPluralWithArticle}.`;
     } else if (!isValidEmail(guestEmail.trim())) {
       localErrors.email = "Email inválido. Confirma o formato (ex: nome@dominio.com).";
     } else if (guestEmailConfirm.trim() && guestEmailConfirm.trim() !== guestEmail.trim()) {
@@ -1422,11 +1444,11 @@ export default function Step2Pagamento() {
             Passo 2 de 3
           </p>
           <h2 className="text-2xl font-semibold leading-tight">
-            {isFreeScenario ? "Inscrição gratuita" : "Pagamento"}
+            {isFreeScenario ? freeHeaderLabel : "Pagamento"}
           </h2>
           <p className="text-[11px] text-white/60 max-w-xs">
             {isFreeScenario
-              ? "Confirma a tua inscrição. Requer sessão iniciada e username definido."
+              ? freeDescription
               : "Pagamento seguro processado pela Stripe."}
           </p>
           {scenario && scenarioCopy[scenario] && (
@@ -1481,11 +1503,11 @@ export default function Step2Pagamento() {
                 <div className="absolute inset-0 h-14 w-14 animate-pulse rounded-full border border-[#6BFFFF]/20" />
               </div>
               <h3 className="text-sm font-semibold mb-1 animate-pulse">
-                {isFreeScenario ? "A preparar a tua inscrição…" : "A preparar o teu pagamento…"}
+                {isFreeScenario ? freePrepLabel : "A preparar o teu pagamento…"}
               </h3>
               <p className="text-[11px] text-white/65 max-w-xs leading-relaxed">
                 {isFreeScenario
-                  ? "Estamos a confirmar a tua inscrição gratuita."
+                  ? freeConfirmLabel
                   : "Estamos a ligar-te à Stripe para criar uma transação segura."}
               </p>
             </div>
@@ -1694,7 +1716,10 @@ export default function Step2Pagamento() {
               <div className="rounded-xl border border-emerald-400/30 bg-emerald-500/10 px-3 py-2 text-[11px] text-emerald-50">
                 Este checkout exige conta. Para eventos gratuitos precisas de iniciar sessão e ter um username definido.
               </div>
-              <AuthWall onAuthenticated={handleAuthenticated} />
+              <AuthWall
+                onAuthenticated={handleAuthenticated}
+                ticketPluralWithArticle={ticketPluralWithArticle}
+              />
             </div>
           ) : purchaseMode === "guest" ? (
             <GuestCheckoutCard
@@ -1708,9 +1733,16 @@ export default function Step2Pagamento() {
               onChangeEmailConfirm={setGuestEmailConfirm}
               onChangePhone={setGuestPhone}
               onContinue={handleGuestContinue}
+              ticketNameLabel={ticketNameLabel}
+              ticketEmailLabel={ticketEmailLabel}
+              ticketPluralWithArticle={ticketPluralWithArticle}
+              ticketAllPlural={ticketAllPlural}
             />
           ) : (
-            <AuthWall onAuthenticated={handleAuthenticated} />
+            <AuthWall
+              onAuthenticated={handleAuthenticated}
+              ticketPluralWithArticle={ticketPluralWithArticle}
+            />
           )}
         </div>
       )}
@@ -2033,13 +2065,14 @@ function PaymentForm({ total, discount = 0, breakdown, clientSecret, onLoadError
 
 type AuthWallProps = {
   onAuthenticated?: (userId: string) => void;
+  ticketPluralWithArticle: string;
 };
 
 function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function AuthWall({ onAuthenticated }: AuthWallProps) {
+function AuthWall({ onAuthenticated, ticketPluralWithArticle }: AuthWallProps) {
   const [mode, setMode] = useState<"login" | "signup" | "verify">("login");
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
@@ -2290,7 +2323,7 @@ function AuthWall({ onAuthenticated }: AuthWallProps) {
             Inicia sessão para continuar
           </h3>
           <p className="text-[11px] text-white/60 max-w-sm leading-relaxed">
-            Para associar os bilhetes à tua conta ORYA e evitar problemas no
+            Para associar {ticketPluralWithArticle} à tua conta ORYA e evitar problemas no
             check-in, tens de estar com a sessão iniciada antes de pagar.
           </p>
         </div>
@@ -2475,6 +2508,10 @@ type GuestCheckoutCardProps = {
   onChangeEmailConfirm: (v: string) => void;
   onChangePhone: (v: string) => void;
   onContinue: () => void;
+  ticketNameLabel: string;
+  ticketEmailLabel: string;
+  ticketPluralWithArticle: string;
+  ticketAllPlural: string;
 };
 
 function GuestCheckoutCard({
@@ -2488,6 +2525,10 @@ function GuestCheckoutCard({
   onChangeEmailConfirm,
   onChangePhone,
   onContinue,
+  ticketNameLabel,
+  ticketEmailLabel,
+  ticketPluralWithArticle,
+  ticketAllPlural,
 }: GuestCheckoutCardProps) {
   return (
     <div className="flex-1 rounded-2xl border border-white/12 bg-white/[0.06] px-6 py-6 shadow-[0_20px_60px_rgba(0,0,0,0.55)] backdrop-blur-xl flex flex-col gap-4">
@@ -2495,10 +2536,10 @@ function GuestCheckoutCard({
         <div>
           <h3 className="text-sm font-semibold mb-1">Continuar como convidado</h3>
           <p className="text-[11px] text-white/60 max-w-sm leading-relaxed">
-            Compra rápida. Guardamos bilhetes no email.
+            Compra rápida. Guardamos {ticketPluralWithArticle} no email.
           </p>
           <div className="mt-2 space-y-1 text-[11px] text-white/55">
-            <p>• Email para bilhetes e recibo.</p>
+            <p>• {ticketEmailLabel}</p>
             <p>• Telefone ajuda no dia (opcional).</p>
           </div>
         </div>
@@ -2513,7 +2554,7 @@ function GuestCheckoutCard({
             className={`w-full rounded-xl bg-white/[0.05] border px-3 py-2 text-[12px] outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF] ${
               guestErrors.name ? "border-red-400/70" : "border-white/15"
             }`}
-            placeholder="Nome no bilhete"
+            placeholder={ticketNameLabel}
             value={guestName}
             onChange={(e) => onChangeName(e.target.value)}
             autoComplete="name"
@@ -2582,8 +2623,8 @@ function GuestCheckoutCard({
       </button>
 
       <p className="mt-1 text-[10px] text-white/40 leading-snug">
-        Vamos enviar os bilhetes para este email. Depois podes criar conta e
-        migrar todos os bilhetes para o teu perfil.
+        Vamos enviar {ticketPluralWithArticle} para este email. Depois podes criar conta e
+        migrar {ticketAllPlural} para o teu perfil.
       </p>
     </div>
   );

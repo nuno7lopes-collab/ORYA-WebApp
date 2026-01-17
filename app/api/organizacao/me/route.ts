@@ -11,6 +11,8 @@ import { normalizeOrganizationAvatarUrl, normalizeOrganizationCoverUrl } from "@
 import { Resend } from "resend";
 import { cookies } from "next/headers";
 import { resolveOrganizationIdFromParams } from "@/lib/organizationId";
+import { mergeLayoutWithDefaults, sanitizePublicProfileLayout } from "@/lib/publicProfileLayout";
+import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import {
   DEFAULT_PRIMARY_MODULE,
   parsePrimaryModule,
@@ -129,6 +131,7 @@ export async function GET(req: NextRequest) {
           publicYoutube: (organization as { publicYoutube?: string | null }).publicYoutube ?? null,
           publicDescription: (organization as { publicDescription?: string | null }).publicDescription ?? null,
           publicHours: (organization as { publicHours?: string | null }).publicHours ?? null,
+          publicProfileLayout: (organization as { publicProfileLayout?: unknown }).publicProfileLayout ?? null,
           infoRules: (organization as { infoRules?: string | null }).infoRules ?? null,
           infoFaq: (organization as { infoFaq?: string | null }).infoFaq ?? null,
           infoRequirements: (organization as { infoRequirements?: string | null }).infoRequirements ?? null,
@@ -234,6 +237,7 @@ export async function PATCH(req: NextRequest) {
       publicYoutube,
       publicDescription,
       publicHours,
+      publicProfileLayout,
       infoRules,
       infoFaq,
       infoRequirements,
@@ -256,6 +260,7 @@ export async function PATCH(req: NextRequest) {
     const primaryModuleProvided = Object.prototype.hasOwnProperty.call(body, "primaryModule");
     const reservationAssignmentModeProvided = Object.prototype.hasOwnProperty.call(body, "reservationAssignmentMode");
     const modulesProvided = Object.prototype.hasOwnProperty.call(body, "modules");
+    const publicProfileLayoutProvided = Object.prototype.hasOwnProperty.call(body, "publicProfileLayout");
     const alertsSalesProvided = Object.prototype.hasOwnProperty.call(body, "alertsSalesEnabled");
 
     const primaryModule = primaryModuleProvided
@@ -323,6 +328,10 @@ export async function PATCH(req: NextRequest) {
         { status: 403 },
       );
     }
+    const emailGate = ensureOrganizationEmailVerified(organization);
+    if (!emailGate.ok) {
+      return NextResponse.json({ ok: false, error: emailGate.error }, { status: 403 });
+    }
 
     const isOwner = membership.role === "OWNER";
     const isCoOwner = membership.role === "CO_OWNER";
@@ -338,6 +347,7 @@ export async function PATCH(req: NextRequest) {
         "publicYoutube",
         "publicDescription",
         "publicHours",
+        "publicProfileLayout",
         "infoRules",
         "infoFaq",
         "infoRequirements",
@@ -438,6 +448,17 @@ export async function PATCH(req: NextRequest) {
     }
     if (typeof publicHours === "string") {
       organizationUpdates.publicHours = publicHours.trim() || null;
+    }
+    if (publicProfileLayoutProvided) {
+      if (publicProfileLayout === null) {
+        organizationUpdates.publicProfileLayout = null;
+      } else {
+        const sanitizedLayout = sanitizePublicProfileLayout(publicProfileLayout);
+        if (!sanitizedLayout) {
+          return NextResponse.json({ ok: false, error: "Layout do perfil inválido." }, { status: 400 });
+        }
+        organizationUpdates.publicProfileLayout = mergeLayoutWithDefaults(sanitizedLayout);
+      }
     }
     if (typeof infoRules === "string") {
       organizationUpdates.infoRules = infoRules.trim() || null;

@@ -28,12 +28,13 @@ type MobileProfileOverviewProps = {
   avatarUpdatedAt?: string | number | null;
   coverUrl?: string | null;
   city?: string | null;
+  bio?: string | null;
   isOwner: boolean;
   targetUserId?: string | null;
   initialIsFollowing?: boolean;
   followersCount?: number | null;
   followingCount?: number | null;
-  eventsCount?: number | null;
+  padelAction?: { href: string; label: string; tone?: "emerald" | "amber" | "ghost" } | null;
   interests?: string[];
   recentEvents?: RecentEvent[];
 };
@@ -52,12 +53,13 @@ export default function MobileProfileOverview({
   avatarUpdatedAt,
   coverUrl,
   city,
+  bio,
   isOwner,
   targetUserId,
   initialIsFollowing,
   followersCount,
   followingCount,
-  eventsCount,
+  padelAction,
   interests,
   recentEvents,
 }: MobileProfileOverviewProps) {
@@ -70,8 +72,16 @@ export default function MobileProfileOverview({
   const followers = followersCount ?? 0;
   const following = followingCount ?? 0;
   const interestsList = normalizeInterestSelection(interests ?? []);
-  const interestsTotal = interestsList.length;
-  const eventTotal = eventsCount ?? 0;
+  const bioText = bio?.trim() || (isOwner ? "Adiciona uma bio." : "Sem bio.");
+  const padelActionClass = (() => {
+    if (padelAction?.tone === "emerald") {
+      return "border-emerald-400/40 bg-emerald-500/20 text-emerald-50 shadow-[0_10px_26px_rgba(16,185,129,0.22)]";
+    }
+    if (padelAction?.tone === "amber") {
+      return "border-amber-400/40 bg-amber-500/20 text-amber-50 shadow-[0_10px_26px_rgba(251,191,36,0.2)]";
+    }
+    return "border-white/20 bg-white/8 text-white/85";
+  })();
 
   const fetchList = async (mode: "followers" | "following") => {
     if (!targetUserId) return [];
@@ -121,7 +131,7 @@ export default function MobileProfileOverview({
           )}
           <div className="absolute inset-0 bg-gradient-to-b from-black/10 via-black/40 to-black/90" />
         </div>
-        <div className="absolute left-1/2 bottom-[-40px] -translate-x-1/2">
+        <div className="absolute bottom-[-40px] left-4">
           <div className="rounded-full p-[3px] bg-[linear-gradient(135deg,var(--orya-neon-pink),var(--orya-neon-cyan))] shadow-[0_0_26px_rgba(107,255,255,0.25),0_0_26px_rgba(255,0,200,0.18)]">
             <Avatar
               src={avatarUrl}
@@ -135,58 +145,67 @@ export default function MobileProfileOverview({
         </div>
       </div>
 
-      <div className="mt-14 flex flex-col items-center text-center space-y-2">
-        <h1 className="text-[20px] font-semibold text-white">{name}</h1>
-        {username && <p className="text-[12px] text-white/60">@{username}</p>}
-        {city && <p className="text-[11px] text-white/55">{city}</p>}
-      </div>
-
-      <div className="flex items-center justify-center gap-3">
-        {isOwner ? (
-          <Link
-            href="/me/settings"
-            className="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-[11px] font-semibold text-white/80"
-          >
-            Editar perfil
-          </Link>
-        ) : targetUserId ? (
-          <>
-            <FollowClient targetUserId={targetUserId} initialIsFollowing={Boolean(initialIsFollowing)} />
+      <div className="mt-14 space-y-4 px-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h1 className="text-[20px] font-semibold text-white">{name}</h1>
+            {username && <p className="text-[12px] text-white/60">@{username}</p>}
+            {city && <p className="text-[11px] text-white/55">{city}</p>}
+          </div>
+          <div className="flex flex-wrap items-center justify-end gap-2">
             <button
               type="button"
-              className="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-[11px] font-semibold text-white/70"
-              disabled
+              onClick={() => openList("followers")}
+              className="inline-flex items-center gap-2 rounded-full border border-white/16 bg-white/8 px-3 py-1.5 text-white"
             >
-              Mensagem
+              <span className="text-sm font-semibold leading-none">{followers}</span>
+              <span className="text-[10px] uppercase tracking-[0.12em] text-white/70 leading-none">
+                Seguidores
+              </span>
             </button>
-          </>
-        ) : null}
-      </div>
-
-      <div className="grid grid-cols-2 gap-3 px-4">
-        <button
-          type="button"
-          onClick={() => openList("followers")}
-          className="rounded-2xl border border-white/12 bg-white/5 py-3 text-center"
-        >
-          <p className="text-[15px] font-semibold text-white">{followers}</p>
-          <p className="text-[10px] text-white/60">Seguidores</p>
-        </button>
-        <button
-          type="button"
-          onClick={() => openList("following")}
-          className="rounded-2xl border border-white/12 bg-white/5 py-3 text-center"
-        >
-          <p className="text-[15px] font-semibold text-white">{following}</p>
-          <p className="text-[10px] text-white/60">A seguir</p>
-        </button>
-        <div className="rounded-2xl border border-white/12 bg-white/5 py-3 text-center">
-          <p className="text-[15px] font-semibold text-white">{eventTotal}</p>
-          <p className="text-[10px] text-white/60">Eventos</p>
+            <button
+              type="button"
+              onClick={() => openList("following")}
+              className="inline-flex items-center gap-2 rounded-full border border-white/16 bg-white/8 px-3 py-1.5 text-white"
+            >
+              <span className="text-sm font-semibold leading-none">{following}</span>
+              <span className="text-[10px] uppercase tracking-[0.12em] text-white/70 leading-none">
+                A seguir
+              </span>
+            </button>
+          </div>
         </div>
-        <div className="rounded-2xl border border-white/12 bg-white/5 py-3 text-center">
-          <p className="text-[15px] font-semibold text-white">{interestsTotal}</p>
-          <p className="text-[10px] text-white/60">Interesses</p>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <p className="text-sm text-white/85 leading-relaxed">{bioText}</p>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {padelAction && (
+              <Link
+                href={padelAction.href}
+                className={`inline-flex items-center rounded-full border px-4 py-2 text-[11px] font-semibold ${padelActionClass}`}
+              >
+                {padelAction.label}
+              </Link>
+            )}
+            {isOwner ? (
+              <Link
+                href="/me/settings"
+                className="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-[11px] font-semibold text-white/80"
+              >
+                Editar perfil
+              </Link>
+            ) : targetUserId ? (
+              <>
+                <FollowClient targetUserId={targetUserId} initialIsFollowing={Boolean(initialIsFollowing)} />
+                <button
+                  type="button"
+                  className="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-[11px] font-semibold text-white/70"
+                  disabled
+                >
+                  Mensagem
+                </button>
+              </>
+            ) : null}
+          </div>
         </div>
       </div>
 
@@ -196,7 +215,7 @@ export default function MobileProfileOverview({
           <p className="text-[11px] text-white/60">O que te inspira.</p>
         </div>
         {interestsList.length === 0 ? (
-          <div className="orya-mobile-surface-soft p-4 text-[12px] text-white/60 space-y-3">
+          <div className="space-y-2 text-[12px] text-white/60">
             <p>Interesses por definir.</p>
             {isOwner && (
               <Link
@@ -291,8 +310,15 @@ export default function MobileProfileOverview({
       </section>
 
       {isFollowListOpen && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-4">
-          <div className="w-full max-w-md rounded-3xl border border-white/12 bg-[#0b0f18] p-4 shadow-[0_20px_60px_rgba(0,0,0,0.6)]">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm px-4 py-6"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) {
+              setIsFollowListOpen(false);
+            }
+          }}
+        >
+          <div className="w-full max-w-md max-h-[85vh] rounded-3xl border border-white/12 bg-[rgba(8,10,18,0.92)] p-4 shadow-[0_30px_80px_rgba(0,0,0,0.8)] backdrop-blur-2xl">
             <div className="flex items-center justify-between">
               <p className="text-[13px] font-semibold text-white">
                 {activeList === "followers" ? "Seguidores" : "A seguir"}

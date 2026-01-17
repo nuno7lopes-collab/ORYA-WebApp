@@ -260,6 +260,7 @@ type OrganizationLite = {
   publicHours?: string | null;
   address?: string | null;
   showAddressPublicly?: boolean | null;
+  publicProfileLayout?: unknown | null;
 };
 
 type ObjectiveTab = "create" | "manage" | "promote" | "analyze" | "profile";
@@ -294,7 +295,7 @@ const OPERATION_LABELS: Record<OperationModule, string> = {
   TORNEIOS: "Padel",
 };
 
-const OPTIONAL_MODULES = ["INSCRICOES", "MENSAGENS"] as const;
+const OPTIONAL_MODULES = ["INSCRICOES", "MENSAGENS", "LOJA"] as const;
 type OptionalModule = (typeof OPTIONAL_MODULES)[number];
 const MODULE_ICON_GRADIENTS: Record<string, string> = {
   EVENTOS: "from-[#FF7AD1]/45 via-[#7FE0FF]/35 to-[#6A7BFF]/45",
@@ -302,6 +303,7 @@ const MODULE_ICON_GRADIENTS: Record<string, string> = {
   TORNEIOS: "from-[#F59E0B]/35 via-[#FF7AD1]/35 to-[#6A7BFF]/35",
   INSCRICOES: "from-[#34D399]/35 via-[#6BFFFF]/30 to-[#7FE0FF]/35",
   MENSAGENS: "from-[#A78BFA]/35 via-[#7FE0FF]/30 to-[#34D399]/35",
+  LOJA: "from-[#F97316]/35 via-[#FB7185]/30 to-[#F59E0B]/35",
   STAFF: "from-[#60A5FA]/35 via-[#7FE0FF]/30 to-[#F59E0B]/35",
   FINANCEIRO: "from-[#F97316]/35 via-[#F59E0B]/30 to-[#FF7AD1]/35",
   MARKETING: "from-[#FF7AD1]/35 via-[#FB7185]/30 to-[#F59E0B]/35",
@@ -502,8 +504,13 @@ function OrganizacaoPageInner({
     () => resolvePrimaryModule(primaryModule, rawModules) as OperationModule,
     [primaryModule, rawModules],
   );
+  const hasReservasModule = useMemo(() => rawModules.includes("RESERVAS"), [rawModules]);
   const activeModules = useMemo(() => {
-    const base = new Set<string>([...rawModules, ...CORE_ORGANIZATION_MODULES]);
+    const base = new Set<string>([
+      ...rawModules,
+      ...CORE_ORGANIZATION_MODULES,
+      ...OPERATION_MODULES,
+    ]);
     base.add(primaryOperation);
     return Array.from(base);
   }, [rawModules, primaryOperation]);
@@ -522,6 +529,7 @@ function OrganizacaoPageInner({
   const isEventosRoute = pathname?.startsWith("/organizacao/eventos");
   const isPadelContext =
     hasTorneiosModule &&
+    !isEventosRoute &&
     (isTorneiosOrg ||
       pathname?.startsWith("/organizacao/torneios") ||
       pathname?.startsWith("/organizacao/padel") ||
@@ -544,17 +552,17 @@ function OrganizacaoPageInner({
       : primaryOperation === "TORNEIOS"
         ? { label: "Criar torneio", href: "/organizacao/torneios/novo", singular: "torneio", plural: "torneios" }
         : { label: "Criar evento", href: "/organizacao/eventos/novo", singular: "evento", plural: "eventos" };
-  const manageCreateMeta = isPadelContext
-    ? { label: "Criar torneio", href: "/organizacao/torneios/novo", singular: "torneio", plural: "torneios" }
-    : primaryCreateMeta;
+  const manageCreateMeta = isEventosRoute
+    ? { label: "Criar evento", href: "/organizacao/eventos/novo", singular: "evento", plural: "eventos" }
+    : isPadelContext
+      ? { label: "Criar torneio", href: "/organizacao/torneios/novo", singular: "torneio", plural: "torneios" }
+      : primaryCreateMeta;
   const managePrimaryLabel = isPadelContext ? "Padel" : "Eventos";
   const managePrimaryLabelLower = isPadelContext ? "torneio" : "evento";
   const managePrimaryLabelTitle = isPadelContext ? "Torneio" : "Evento";
   const managePrimarySingularLabel = manageCreateMeta.singular;
-  const manageTitle = isReservasOrg ? "Reservas" : managePrimaryLabel;
-  const manageDescription = isReservasOrg
-    ? "Calendário, serviços e marcações num só painel."
-    : `Entra em cada ${managePrimaryLabelLower} para editar, preparar live, inscrições, página pública e arquivo.`;
+  const salesUnitLabel = isPadelContext ? "Inscrições" : "Bilhetes";
+  const salesCountLabel = isPadelContext ? "Inscrições registadas" : "Bilhetes vendidos";
   const eventRouteBase = isPadelContext ? "/organizacao/torneios" : "/organizacao/eventos";
   const loading = userLoading || organizationLoading || (Boolean(user) && !organizationData);
   const paymentsStatus = organizationData?.paymentsStatus ?? "NO_STRIPE";
@@ -583,6 +591,9 @@ function OrganizacaoPageInner({
     useState<OperationModule[]>(activeOperationModules);
   const [optionalSelection, setOptionalSelection] = useState<OptionalModule[]>(activeOptionalModules);
   const [modulesSaving, setModulesSaving] = useState(false);
+  const salesUnitHint = isPadelContext
+    ? "Inscrições registadas nos últimos 30 dias"
+    : "Bilhetes vendidos nos últimos 30 dias";
   const activeOperationKey = useMemo(
     () => [...activeOperationModules].sort().join("|"),
     [activeOperationModules],
@@ -664,11 +675,6 @@ function OrganizacaoPageInner({
     (moduleKey: string) => {
       if (!canEditModules || modulesSaving) return;
       if (OPERATION_MODULES.includes(moduleKey as OperationModule)) {
-        const nextKey = moduleKey as OperationModule;
-        if (operationSelection.includes(nextKey)) return;
-        const nextOperations = [...operationSelection, nextKey];
-        setOperationSelection(nextOperations);
-        saveModules(primarySelection, nextOperations, optionalSelection);
         return;
       }
       if (OPTIONAL_MODULES.includes(moduleKey as OptionalModule)) {
@@ -684,12 +690,6 @@ function OrganizacaoPageInner({
     (moduleKey: string) => {
       if (!canEditModules || modulesSaving) return;
       if (OPERATION_MODULES.includes(moduleKey as OperationModule)) {
-        const nextKey = moduleKey as OperationModule;
-        if (nextKey === primarySelection) return;
-        if (!operationSelection.includes(nextKey)) return;
-        const nextOperations = operationSelection.filter((module) => module !== nextKey);
-        setOperationSelection(nextOperations);
-        saveModules(primarySelection, nextOperations, optionalSelection);
         return;
       }
       if (!OPTIONAL_MODULES.includes(moduleKey as OptionalModule)) return;
@@ -712,9 +712,12 @@ function OrganizacaoPageInner({
 
     const scrollTargets: Record<ObjectiveTab, string[]> = {
       create: ["overview", "modulos"],
-      manage: isReservasOrg
-        ? ["reservas"]
-        : ["eventos", ...(hasInscricoesModule ? ["inscricoes"] : []), ...(showPadelHub ? ["padel-hub"] : [])],
+      manage: [
+        "eventos",
+        "reservas",
+        ...(showPadelHub ? ["padel-hub"] : []),
+        ...(hasInscricoesModule ? ["inscricoes"] : []),
+      ],
       promote: ["marketing"],
       analyze: roleFlags.canViewFinance
         ? ["overview", "vendas", "financas", "invoices"]
@@ -728,7 +731,7 @@ function OrganizacaoPageInner({
     if (target) {
       target.scrollIntoView({ behavior: "smooth", block: "start" });
     }
-  }, [scrollSection, activeObjective, hasInscricoesModule, isReservasOrg, roleFlags.canViewFinance, showPadelHub]);
+  }, [scrollSection, activeObjective, hasInscricoesModule, roleFlags.canViewFinance, showPadelHub]);
 
   useEffect(() => {
     if (scrollSection) return;
@@ -781,7 +784,7 @@ function OrganizacaoPageInner({
     }
   }, [organization, profile, businessName, city, entityType, payoutIban]);
 
-  const shouldLoadOverview = organization?.status === "ACTIVE" && !isReservasOrg && roleFlags.canViewFinance;
+  const shouldLoadOverview = organization?.status === "ACTIVE" && roleFlags.canViewFinance;
   const { data: overview } = useSWR<OverviewResponse>(
     shouldLoadOverview
       ? `/api/organizacao/estatisticas/overview?range=30d${eventsScopeAmp}`
@@ -792,7 +795,6 @@ function OrganizacaoPageInner({
 
   const shouldLoadOverviewSeries =
     organization?.status === "ACTIVE" &&
-    !isReservasOrg &&
     roleFlags.canViewFinance &&
     activeObjective === "analyze" &&
     normalizedSection === "overview";
@@ -806,7 +808,7 @@ function OrganizacaoPageInner({
     { revalidateOnFocus: false }
   );
 
-  const shouldLoadEvents = organization?.status === "ACTIVE" && !isReservasOrg;
+  const shouldLoadEvents = organization?.status === "ACTIVE";
   const {
     data: events,
     error: eventsError,
@@ -816,7 +818,7 @@ function OrganizacaoPageInner({
     fetcher,
     { revalidateOnFocus: false }
   );
-  const shouldLoadReservas = organization?.status === "ACTIVE" && isReservasOrg;
+  const shouldLoadReservas = organization?.status === "ACTIVE" && (isReservasOrg || hasReservasModule);
   const { data: servicesData } = useSWR<ServicesResponse>(
     shouldLoadReservas ? "/api/organizacao/servicos" : null,
     fetcher,
@@ -837,7 +839,6 @@ function OrganizacaoPageInner({
 
   const shouldLoadSales =
     organization?.status === "ACTIVE" &&
-    !isReservasOrg &&
     roleFlags.canViewFinance &&
     activeObjective === "analyze" &&
     normalizedSection === "vendas";
@@ -982,9 +983,9 @@ function OrganizacaoPageInner({
     const feeEuros = (overview?.platformFeeCents ?? 0) / 100;
     return [
       {
-        label: "Bilhetes 30d",
+        label: `${salesUnitLabel} 30d`,
         value: overview ? overview.totalTickets : "—",
-        hint: "Bilhetes vendidos nos últimos 30 dias",
+        hint: salesUnitHint,
       },
       {
         label: "Receita líquida 30d",
@@ -1004,7 +1005,7 @@ function OrganizacaoPageInner({
         hint: `${managePrimaryLabel} PUBLISHED ligados a ti`,
       },
     ];
-  }, [overview, managePrimaryLabel]);
+  }, [overview, managePrimaryLabel, salesUnitHint, salesUnitLabel]);
 
   const statGradients = [
     "from-[#6BFFFF]/25 via-[#0b1224]/70 to-[#0a0f1c]/90",
@@ -1397,7 +1398,7 @@ function OrganizacaoPageInner({
     const header = [
       "ID",
       managePrimaryLabelTitle,
-      "Bilhetes",
+      salesUnitLabel,
       "Bruto (€)",
       "Taxas (€)",
       "Líquido (€)",
@@ -1422,11 +1423,11 @@ function OrganizacaoPageInner({
     a.download = `vendas-por-${managePrimaryLabelLower}.csv`;
     a.click();
     URL.revokeObjectURL(url);
-  }, [financeData, managePrimaryLabelLower, managePrimaryLabelTitle]);
+  }, [financeData, managePrimaryLabelLower, managePrimaryLabelTitle, salesUnitLabel]);
 
   const handleExportSalesCsv = useCallback(() => {
     if (!salesSeries?.points?.length || !selectedSalesEvent) return;
-    const header = ["Data", "Bilhetes", "Bruto (€)", "Desconto (€)", "Taxas (€)", "Líquido (€)"];
+    const header = ["Data", salesUnitLabel, "Bruto (€)", "Desconto (€)", "Taxas (€)", "Líquido (€)"];
     const rows = salesSeries.points.map((p) => {
       const date = formatDateOnly(new Date(p.date));
       const gross = (p.grossCents ?? p.revenueCents ?? 0) / 100;
@@ -1451,7 +1452,7 @@ function OrganizacaoPageInner({
     a.download = `vendas-${selectedSalesEvent.title}-${rangeLabel}.csv`;
     a.click();
     URL.revokeObjectURL(url);
-  }, [salesRange, salesSeries?.points, selectedSalesEvent]);
+  }, [salesRange, salesSeries?.points, selectedSalesEvent, salesUnitLabel]);
   const fillTheRoomEvents = useMemo(() => {
     const sourceEvents =
       marketingOverview?.events && marketingOverview.events.length > 0 ? marketingOverview.events : eventsList;
@@ -1683,6 +1684,7 @@ function OrganizacaoPageInner({
   const isTorneiosActive = operationSelection.includes("TORNEIOS");
   const isInscricoesActive = optionalSelection.includes("INSCRICOES");
   const isMensagensActive = optionalSelection.includes("MENSAGENS");
+  const isLojaActive = optionalSelection.includes("LOJA");
   const isMarketingActive = activeModules.includes("MARKETING");
   const dashboardModules = useMemo<DashboardModuleCard[]>(
     () => [
@@ -1797,6 +1799,24 @@ function OrganizacaoPageInner({
         eyebrow: "Promoção",
       },
       {
+        id: "loja",
+        moduleKey: "LOJA",
+        title: "Loja",
+        summary: "Produtos físicos e digitais num só checkout.",
+        bullets: ["Catálogo + imagens", "Portes + descontos", "Encomendas + envio"],
+        status: roleFlags.canManageEvents
+          ? isLojaActive
+            ? "active"
+            : "optional"
+          : "locked",
+        href: roleFlags.canManageEvents
+          ? isLojaActive
+            ? "/organizacao/loja"
+            : modulesSetupHref
+          : undefined,
+        eyebrow: "Vendas",
+      },
+      {
         id: "perfil-publico",
         moduleKey: "PERFIL_PUBLICO",
         title: "Perfil público",
@@ -1829,6 +1849,7 @@ function OrganizacaoPageInner({
       isTorneiosActive,
       isInscricoesActive,
       isMensagensActive,
+      isLojaActive,
       isMarketingActive,
       modulesSetupHref,
     ],
@@ -1855,13 +1876,12 @@ function OrganizacaoPageInner({
     return Array.from(groups.entries()).map(([label, modules]) => ({ label, modules }));
   }, [inactiveDashboardModules]);
   const activeSection = useMemo(() => {
-    const manageSections = isReservasOrg
-      ? ["reservas"]
-      : [
-          "eventos",
-          ...(hasInscricoesModule ? ["inscricoes"] : []),
-          ...(showPadelHub ? ["padel-hub"] : []),
-        ];
+    const manageSections = [
+      "eventos",
+      "reservas",
+      ...(showPadelHub ? ["padel-hub"] : []),
+      ...(hasInscricoesModule ? ["inscricoes"] : []),
+    ];
     const analyzeSections = roleFlags.canViewFinance
       ? ["overview", "vendas", "financas", "invoices"]
       : ["financas", "invoices"];
@@ -1888,7 +1908,6 @@ function OrganizacaoPageInner({
     normalizedSection,
     showPadelHub,
     hasInscricoesModule,
-    isReservasOrg,
     roleFlags.canViewFinance,
   ]);
 
@@ -1979,14 +1998,9 @@ function OrganizacaoPageInner({
   const renderModuleCard = (module: DashboardModuleCard) => {
     const iconGradient = MODULE_ICON_GRADIENTS[module.moduleKey] ?? "from-white/15 via-white/5 to-white/10";
     const isOptional = OPTIONAL_MODULES.includes(module.moduleKey as OptionalModule);
-    const isOperation = OPERATION_MODULES.includes(module.moduleKey as OperationModule);
     const isActive = module.status === "active" || module.status === "core";
     const isLocked = module.status === "locked";
-    const canDeactivate =
-      isActive &&
-      canEditModules &&
-      !modulesSaving &&
-      (isOptional || (isOperation && module.moduleKey !== primarySelection));
+    const canDeactivate = isActive && canEditModules && !modulesSaving && isOptional;
     const cardClasses = cn(
       "group relative flex flex-col items-center gap-3 rounded-2xl border border-white/12 bg-white/5 px-4 py-5 text-center shadow-[0_18px_55px_rgba(0,0,0,0.45)] transition",
       isActive ? "hover:-translate-y-0.5 hover:border-white/25" : "opacity-85",
@@ -2376,7 +2390,7 @@ function OrganizacaoPageInner({
                   <h3 className="text-lg font-semibold text-white">Últimos 30 dias</h3>
                   <div className="mt-3 grid gap-2 text-[12px] text-white/75">
                     <div className="flex items-center justify-between">
-                      <span>Bilhetes</span>
+                      <span>{salesUnitLabel}</span>
                       <span className="font-semibold text-white">{overview?.totalTickets ?? "—"}</span>
                     </div>
                     <div className="flex items-center justify-between">
@@ -2444,27 +2458,15 @@ function OrganizacaoPageInner({
               membershipRole={membershipRole}
               categoryLabel={operationLabel}
               coverUrl={profileCoverUrl}
+              services={servicesData?.items ?? []}
+              events={eventsList}
+              activeModules={activeModules}
             />
           </div>
         </section>
       )}
 
-      {activeObjective === "manage" && !isReservasOrg && activeSection !== "eventos" && activeSection !== "padel-hub" && (
-        <section className={cn("space-y-3", fadeClass)} id="gerir">
-          <div className="rounded-3xl border border-white/12 bg-gradient-to-r from-[#0b1226]/80 via-[#101b39]/75 to-[#050811]/90 px-4 py-4 sm:px-6 sm:py-5 backdrop-blur-2xl">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="space-y-1">
-                <h2 className="text-2xl sm:text-3xl font-semibold text-white drop-shadow-[0_12px_45px_rgba(0,0,0,0.6)]">
-                  {manageTitle}
-                </h2>
-                <p className="text-sm text-white/70">{manageDescription}</p>
-              </div>
-            </div>
-          </div>
-        </section>
-      )}
-
-      {activeObjective === "manage" && activeSection === "eventos" && !isReservasOrg && (
+      {activeObjective === "manage" && activeSection === "eventos" && (
         <section className={cn("space-y-4", fadeClass)} id="eventos">
           <div className="relative overflow-hidden rounded-3xl border border-white/12 bg-gradient-to-r from-[#0b1226]/80 via-[#101b39]/75 to-[#050811]/90 p-5 backdrop-blur-3xl">
             <div className="pointer-events-none absolute inset-0">
@@ -2475,12 +2477,20 @@ function OrganizacaoPageInner({
             </div>
 
             <div className="relative space-y-4">
-              <div className="space-y-1">
-                <p className="text-[11px] uppercase tracking-[0.26em] text-white/70">{managePrimaryLabel}</p>
-                <h2 className="text-2xl font-semibold text-white drop-shadow-[0_14px_40px_rgba(0,0,0,0.45)]">
-                  Gestão de {managePrimaryLabel.toLowerCase()}
-                </h2>
-                <p className="text-sm text-white/80">Pesquisa por estado e período.</p>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="space-y-1">
+                  <p className="text-[11px] uppercase tracking-[0.26em] text-white/70">{managePrimaryLabel}</p>
+                  <h2 className="text-2xl font-semibold text-white drop-shadow-[0_14px_40px_rgba(0,0,0,0.45)]">
+                    Gestão de {managePrimaryLabel.toLowerCase()}
+                  </h2>
+                  <p className="text-sm text-white/80">Pesquisa por estado e período.</p>
+                </div>
+                <Link
+                  href={manageCreateMeta.href}
+                  className={cn(CTA_PRIMARY, "text-[12px]")}
+                >
+                  {manageCreateMeta.label}
+                </Link>
               </div>
 
               <div
@@ -2918,7 +2928,7 @@ function OrganizacaoPageInner({
                               <th className="px-4 py-3 font-semibold">Data</th>
                               <th className="px-4 py-3 font-semibold">Estado</th>
                               <th className="px-4 py-3 font-semibold">Tipo</th>
-                              <th className="px-4 py-3 font-semibold">Bilhetes</th>
+                              <th className="px-4 py-3 font-semibold">{salesUnitLabel}</th>
                               <th className="px-4 py-3 font-semibold">Receita</th>
                               <th className="px-4 py-3 text-right font-semibold">Ações</th>
                             </tr>
@@ -2962,7 +2972,7 @@ function OrganizacaoPageInner({
                                           : isFinished
                                             ? { label: "Concluído", classes: "border-purple-400/60 bg-purple-500/10 text-purple-100" }
                                             : { label: ev.status, classes: "border-white/20 bg-white/5 text-white/70" };
-                              const salesLabel = "Inscrições";
+                              const salesLabel = normalizedTemplate === "PADEL" ? "Inscrições" : "Bilhetes";
 
                               return (
                                 <tr key={ev.id} className="hover:bg-white/10 transition duration-150">
@@ -3066,6 +3076,7 @@ function OrganizacaoPageInner({
                           const capacity = ev.capacity ?? null;
                           const revenue = ((ev.revenueCents ?? 0) / 100).toFixed(2);
                           const normalizedTemplate = ev.templateType ?? "OTHER";
+                          const cardSalesLabel = normalizedTemplate === "PADEL" ? "Inscrições" : "Bilhetes";
                           const typeLabel = normalizedTemplate === "PADEL" ? "Padel" : "Evento padrão";
                           const typeTone =
                             normalizedTemplate === "PADEL"
@@ -3140,7 +3151,7 @@ function OrganizacaoPageInner({
 
                                 <div className="mt-3 grid gap-2 sm:grid-cols-2 text-[12px] text-white/75">
                                   <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2">
-                                    <p className="text-[11px] text-white/50">Bilhetes</p>
+                                    <p className="text-[11px] text-white/50">{cardSalesLabel}</p>
                                     <p className="text-sm font-semibold text-white">
                                       {ticketsSold} <span className="text-white/50">/ {capacity ?? "—"}</span>
                                     </p>
@@ -3234,7 +3245,7 @@ function OrganizacaoPageInner({
         </section>
       )}
 
-      {activeObjective === "manage" && activeSection === "reservas" && isReservasOrg && (
+      {activeObjective === "manage" && activeSection === "reservas" && (
         <section className={cn("space-y-4", fadeClass)} id="reservas">
           <ReservasDashboardPage />
         </section>
@@ -3361,7 +3372,9 @@ function OrganizacaoPageInner({
             <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.12),transparent_35%),linear-gradient(225deg,rgba(255,255,255,0.08),transparent_40%)]" />
             <div className="relative flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div>
-                <p className="text-[11px] uppercase tracking-[0.3em] text-white/70">Bilhetes &amp; Vendas</p>
+                <p className="text-[11px] uppercase tracking-[0.3em] text-white/70">
+                  {salesUnitLabel} &amp; Vendas
+                </p>
                 <h2 className="text-2xl font-semibold text-white">Vendas por {managePrimaryLabelLower}</h2>
                 <p className="text-sm text-white/70">Escolhe um {managePrimaryLabelLower} para ver evolução.</p>
               </div>
@@ -3452,7 +3465,7 @@ function OrganizacaoPageInner({
                   <p className="text-[11px] text-white/50">{salesRangeLabelLong(salesRange)}</p>
                 </div>
                 <div className="rounded-2xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1226]/70 to-[#050912]/90 p-3 shadow-[0_14px_45px_rgba(0,0,0,0.5)]">
-                  <p className="text-[11px] text-white/60">Bilhetes vendidos</p>
+                  <p className="text-[11px] text-white/60">{salesCountLabel}</p>
                   <p className="text-2xl font-bold text-white mt-1">{salesKpis.tickets}</p>
                   <p className="text-[11px] text-white/50">No período</p>
                 </div>
@@ -3533,7 +3546,7 @@ function OrganizacaoPageInner({
                   <thead className="text-left text-[11px] text-white/60">
                     <tr>
                       <th className="py-2 pr-3">{managePrimaryLabelTitle}</th>
-                      <th className="py-2 pr-3">Bilhetes</th>
+                      <th className="py-2 pr-3">{salesUnitLabel}</th>
                       <th className="py-2 pr-3">Receita</th>
                       <th className="py-2 pr-3">Estado</th>
                       <th className="py-2 pr-3 text-right">Ações</th>
@@ -3948,7 +3961,7 @@ function OrganizacaoPageInner({
                   <thead className="text-left text-[11px] uppercase tracking-wide text-white/60">
                     <tr>
                       <th className="px-4 py-3">{managePrimaryLabelTitle}</th>
-                      <th className="px-4 py-3">Bilhetes</th>
+                      <th className="px-4 py-3">{salesUnitLabel}</th>
                       <th className="px-4 py-3">Bruto</th>
                       <th className="px-4 py-3">Taxas</th>
                       <th className="px-4 py-3">Líquido</th>
@@ -4043,7 +4056,7 @@ function OrganizacaoPageInner({
                       hint: "Estimado via códigos.",
                     },
                     {
-                      label: "Bilhetes via marketing",
+                      label: `${salesUnitLabel} via marketing`,
                       value: marketingKpis.ticketsWithPromo,
                       hint: "Usos de códigos.",
                     },
@@ -4187,8 +4200,8 @@ function OrganizacaoPageInner({
               </div>
               <div className="mt-3 grid gap-3 md:grid-cols-3">
                 {[
-                  { label: "Bilhetes totais", value: marketingKpis.totalTickets ?? "—" },
-                  { label: "Bilhetes com promo", value: marketingKpis.ticketsWithPromo ?? 0 },
+                  { label: `${salesUnitLabel} totais`, value: marketingKpis.totalTickets ?? "—" },
+                  { label: `${salesUnitLabel} com promo`, value: marketingKpis.ticketsWithPromo ?? 0 },
                   { label: "Guest / convidados", value: marketingKpis.guestTickets ?? 0 },
                 ].map((item) => (
                   <div key={item.label} className="rounded-2xl border border-white/10 bg-white/5/80 bg-black/20 p-3 shadow-[0_14px_45px_rgba(0,0,0,0.4)]">
@@ -4271,7 +4284,7 @@ function OrganizacaoPageInner({
                               <p className="text-sm font-semibold text-white">{stats?.usesTotal ?? promo.redemptionsCount ?? 0}</p>
                             </div>
                             <div className="rounded-xl border border-white/10 bg-black/30 px-3 py-2">
-                              <p className="text-[10px] uppercase tracking-[0.18em] text-white/50">Bilhetes</p>
+                              <p className="text-[10px] uppercase tracking-[0.18em] text-white/50">{salesUnitLabel}</p>
                               <p className="text-sm font-semibold text-white">{stats?.tickets ?? 0}</p>
                             </div>
                             <div className="rounded-xl border border-white/10 bg-black/30 px-3 py-2">

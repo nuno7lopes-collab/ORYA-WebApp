@@ -15,6 +15,22 @@ const ipHits = new Map<string, number[]>();
 
 type DetectedImage = { ext: string; mime: string };
 
+async function ensureBucketExists(bucket: string, isPublic: boolean) {
+  const list = await supabaseAdmin.storage.listBuckets();
+  if (list.error) {
+    return { ok: false as const, error: list.error };
+  }
+  const exists = list.data?.some((entry) => entry.name === bucket);
+  if (exists) {
+    return { ok: true as const };
+  }
+  const created = await supabaseAdmin.storage.createBucket(bucket, { public: isPublic });
+  if (created.error && created.error.statusCode !== 409) {
+    return { ok: false as const, error: created.error };
+  }
+  return { ok: true as const };
+}
+
 function detectImageType(buffer: Buffer): DetectedImage | null {
   if (buffer.length < 12) return null;
 
@@ -104,7 +120,8 @@ export async function POST(req: NextRequest) {
       scope === "avatar" ||
       scope === "event-cover" ||
       scope === "profile-cover" ||
-      scope === "service-cover";
+      scope === "service-cover" ||
+      scope === "store-product";
 
     const bucketResolution = (() => {
       if (scope === "avatar") {
@@ -123,6 +140,9 @@ export async function POST(req: NextRequest) {
       if (scope === "profile-cover") {
         return { bucket: env.uploadsBucket || "uploads", folder: "profile-covers" };
       }
+      if (scope === "store-product") {
+        return { bucket: env.uploadsBucket || "uploads", folder: "store-products" };
+      }
       // default/general uploads
       return { bucket: env.uploadsBucket || "uploads", folder: "uploads" };
     })();
@@ -131,17 +151,34 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Bucket de storage não configurado." }, { status: 500 });
     }
 
+    const ensured = await ensureBucketExists(bucketResolution.bucket, isPublicScope);
+    if (!ensured.ok) {
+      console.error("[POST /api/upload] ensure bucket error", ensured.error);
+      return NextResponse.json({ error: "Erro ao preparar storage." }, { status: 500 });
+    }
+
     const randomName = crypto.randomBytes(16).toString("hex");
     const filename = `${Date.now()}-${randomName}.${detected.ext}`;
     const objectPath = `${bucketResolution.folder}/${filename}`;
 
-    const uploadRes = await supabaseAdmin.storage
-      .from(bucketResolution.bucket)
-      .upload(objectPath, buffer, {
+    const performUpload = () =>
+      supabaseAdmin.storage.from(bucketResolution.bucket).upload(objectPath, buffer, {
         contentType: detected.mime,
         cacheControl: "3600",
         upsert: false,
       });
+
+    let uploadRes = await performUpload();
+
+    if (uploadRes.error) {
+      const statusCode = Number(uploadRes.error.statusCode || uploadRes.error.status);
+      if (statusCode === 404) {
+        const retryEnsure = await ensureBucketExists(bucketResolution.bucket, isPublicScope);
+        if (retryEnsure.ok) {
+          uploadRes = await performUpload();
+        }
+      }
+    }
 
     if (uploadRes.error) {
       console.error("[POST /api/upload] supabase upload error", uploadRes.error);

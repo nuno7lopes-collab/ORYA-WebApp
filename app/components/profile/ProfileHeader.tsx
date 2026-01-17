@@ -40,8 +40,6 @@ export type ProfileHeaderProps = {
   isVerified?: boolean;
   /** Se pode abrir listas de seguidores */
   canOpenLists?: boolean;
-  /** Estado do perfil Padel (opcional) */
-  padelStatus?: { label: string; tone?: "emerald" | "amber" | "slate" };
   /** Ação para abrir/concluir perfil Padel (opcional) */
   padelAction?: { href: string; label: string; tone?: "emerald" | "amber" | "ghost" };
 };
@@ -70,7 +68,6 @@ export default function ProfileHeader({
   targetUserId,
   initialIsFollowing,
   canOpenLists = true,
-  padelStatus,
   padelAction,
 }: ProfileHeaderProps) {
   const router = useRouter();
@@ -309,7 +306,7 @@ export default function ProfileHeader({
       </button>
     </div>
   ) : (
-    <div className="flex items-center gap-2">
+    <div className="flex flex-wrap items-center gap-2">
       <h1 className="text-[22px] sm:text-3xl font-semibold tracking-tight text-white truncate">
         {nameInput}
       </h1>
@@ -426,28 +423,13 @@ export default function ProfileHeader({
     </div>
   );
 
-  const padelStatusPill = padelStatus ? (
-    <span
-      className={`rounded-full border px-2.5 py-1 text-[11px] ${
-        padelStatus.tone === "emerald"
-          ? "border-emerald-400/40 bg-emerald-500/15 text-emerald-50"
-          : padelStatus.tone === "amber"
-          ? "border-amber-400/40 bg-amber-500/15 text-amber-50"
-          : "border-white/25 bg-white/10 text-white/75"
-      }`}
-    >
-      {padelStatus.label}
-    </span>
-  ) : null;
-
-  const linksSlot = showPrivateBadge || padelStatusPill ? (
+  const linksSlot = showPrivateBadge ? (
     <div className="flex flex-wrap items-center gap-2 text-[11px] text-white/75">
       {showPrivateBadge && (
         <span className="rounded-full border border-white/25 bg-white/10 px-2.5 py-1 text-[11px] text-white/75">
           Perfil privado
         </span>
       )}
-      {padelStatusPill}
     </div>
   ) : null;
 

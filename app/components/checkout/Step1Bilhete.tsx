@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useCheckout, type DadosCheckout } from "./contextoCheckout";
 import { Avatar } from "@/components/ui/avatar";
 import { CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
+import { getTicketCopy } from "./checkoutCopy";
 
 type Wave = {
   id: string;
@@ -76,6 +77,7 @@ export default function Step1Bilhete() {
       ? safeDados.additional.checkoutUiVariant
       : "DEFAULT"
   ).toUpperCase();
+  const ticketCopy = getTicketCopy(variant);
   const isPadelVariant = variant === "PADEL";
   const padelMeta = (safeDados?.additional?.padelMeta as
     | { eventId: number; organizationId: number | null; categoryId?: number | null; categoryLinkId?: number | null }
@@ -496,15 +498,15 @@ export default function Step1Bilhete() {
   if (!hasWaves) {
     return (
       <div className="p-6 text-sm text-white/70">
-        A carregar bilhetes... Se isto persistir, volta atrás e tenta novamente.
+        A carregar {ticketCopy.plural}... Se isto persistir, volta atrás e tenta novamente.
       </div>
     );
   }
 
-    if (variant === "PADEL") {
-      const baseWave = padelCandidateWave;
-      const basePrice = baseWave?.price ?? 0;
-      const hasPairSlotsAvailable = padelHasPairSlots;
+  if (isPadelVariant) {
+    const baseWave = padelCandidateWave;
+    const basePrice = baseWave?.price ?? 0;
+    const hasPairSlotsAvailable = padelHasPairSlots;
     return (
       <div className="flex flex-col gap-6 text-white">
         <header className="flex items-start justify-between gap-3">
@@ -783,7 +785,7 @@ export default function Step1Bilhete() {
             Passo 1 de 3
           </p>
           <h2 className="text-2xl font-semibold leading-tight">
-            Escolhe o teu bilhete
+            {isFreeEvent ? "Escolhe a tua entrada" : "Escolhe o teu bilhete"}
           </h2>
           <p className="text-[11px] text-white/60 max-w-xs">
             Escolhe a wave e quantidades.

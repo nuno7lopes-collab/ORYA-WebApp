@@ -19,10 +19,19 @@ export async function refundBookingPayment(params: RefundBookingParams) {
     expand: ["charges"],
   });
   const charges = Array.isArray(paymentIntent.charges?.data) ? paymentIntent.charges.data : [];
-  const hasSuccessfulCharge = charges.some((charge) => charge.status === "succeeded");
+  const isSucceeded = paymentIntent.status === "succeeded";
+  const hasSuccessfulCharge = charges.some((charge) => charge.status === "succeeded") || isSucceeded;
+  const cancelableStatuses = new Set([
+    "requires_payment_method",
+    "requires_capture",
+    "requires_reauthorization",
+    "requires_confirmation",
+    "requires_action",
+    "processing",
+  ]);
 
   if (!hasSuccessfulCharge) {
-    if (paymentIntent.status !== "canceled") {
+    if (cancelableStatuses.has(paymentIntent.status)) {
       try {
         await stripe.paymentIntents.cancel(params.paymentIntentId);
       } catch (err) {

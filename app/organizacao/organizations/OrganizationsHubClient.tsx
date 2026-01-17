@@ -209,11 +209,17 @@ export default function OrganizationsHubClient({ initialOrgs, activeId }: Props)
   const renderOrgCard = (item: OrgItem) => {
     const isActive = currentActive === item.organizationId;
     const normalizedRole = item.role.toUpperCase();
-    const isOwnerOrAdmin = ["OWNER", "CO_OWNER", "ADMIN"].includes(normalizedRole);
     const typeLine = item.organization.entityType || "Tipo não definido";
     const handle = item.organization.username ? `@${item.organization.username}` : "Sem username";
-      const roleLabel = normalizedRole;
+    const roleLabel = normalizedRole;
     const statusLabel = (item.organization.status || "—").toUpperCase();
+    const handleCardClick = () => {
+      if (isActive) {
+        router.push(`/organizacao?tab=overview&organizationId=${item.organizationId}`);
+        return;
+      }
+      handleSwitch(item.organizationId, true);
+    };
 
     const badgeClass = (kind: "status" | "role", value: string) => {
       if (kind === "status" && value === "ACTIVE") {
@@ -237,69 +243,43 @@ export default function OrganizationsHubClient({ initialOrgs, activeId }: Props)
     return (
       <div
         key={item.organizationId}
-        className={`rounded-2xl border p-4 shadow-[0_16px_50px_rgba(0,0,0,0.45)] transition hover:-translate-y-[3px] hover:border-[#6BFFFF]/50 hover:bg-white/8 ${
+        role="button"
+        tabIndex={0}
+        onClick={handleCardClick}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            handleCardClick();
+          }
+        }}
+        className={`cursor-pointer rounded-2xl border p-5 shadow-[0_16px_50px_rgba(0,0,0,0.45)] transition hover:-translate-y-[3px] hover:border-[#6BFFFF]/50 hover:bg-white/8 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/60 ${
           isActive ? "border-[#6BFFFF]/60 bg-[#0b152d]/50" : "border-white/10 bg-white/5"
         }`}
       >
-        <div className="flex items-start justify-between gap-2">
-          <div className="flex items-start gap-3">
-            <Avatar
-              src={item.organization.brandingAvatarUrl ?? null}
-              name={item.organization.publicName || item.organization.businessName || "Organização"}
-              className="h-10 w-10 border border-white/15"
-              textClassName="text-sm font-semibold uppercase tracking-[0.16em] text-white/80"
-              fallbackText="OR"
-            />
-            <div className="space-y-1">
-              <h3 className="text-lg font-semibold">
-                {item.organization.publicName || item.organization.businessName || "Organização"}
-              </h3>
-              <p className="text-[12px] text-white/60">
-                {handle} · {typeLine}
-              </p>
-            </div>
+        <div className="flex flex-col items-center text-center gap-3">
+          <Avatar
+            src={item.organization.brandingAvatarUrl ?? null}
+            name={item.organization.publicName || item.organization.businessName || "Organização"}
+            className="h-12 w-12 border border-white/15"
+            textClassName="text-sm font-semibold uppercase tracking-[0.16em] text-white/80"
+            fallbackText="OR"
+          />
+          <div className="space-y-1">
+            <h3 className="text-lg font-semibold">
+              {item.organization.publicName || item.organization.businessName || "Organização"}
+            </h3>
+            <p className="text-[12px] text-white/60">
+              {handle} · {typeLine}
+            </p>
           </div>
-          <div className="flex flex-col items-end gap-1 text-[11px]">
-            <span
-              className={`rounded-full border px-3 py-[5px] uppercase tracking-[0.2em] text-[10px] ${badgeClass("status", statusLabel)}`}
-            >
+          <div className="flex flex-wrap items-center justify-center gap-2 text-[10px] uppercase tracking-[0.2em]">
+            <span className={`rounded-full border px-3 py-[5px] ${badgeClass("status", statusLabel)}`}>
               {statusLabel}
             </span>
-            <span
-              className={`rounded-full border px-3 py-[5px] uppercase tracking-[0.2em] text-[10px] ${badgeClass("role", roleLabel)}`}
-            >
+            <span className={`rounded-full border px-3 py-[5px] ${badgeClass("role", roleLabel)}`}>
               {roleLabel}
             </span>
           </div>
-        </div>
-
-        <div className="mt-4 flex flex-wrap items-center gap-2 text-[12px] text-white/80">
-          {isActive ? (
-            <button
-              type="button"
-              disabled
-              className="rounded-full border border-emerald-400/50 bg-emerald-400/15 px-5 py-2 text-sm font-semibold text-emerald-50"
-            >
-              Já estás neste dashboard
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={() => handleSwitch(item.organizationId, true)}
-              className="rounded-full border border-white/25 bg-white/10 px-5 py-2 text-sm font-semibold text-white hover:bg-white/15 transition"
-            >
-              Entrar no dashboard de {item.organization.publicName || "organização"}
-            </button>
-          )}
-          {isOwnerOrAdmin && (
-            <button
-              type="button"
-              onClick={() => router.push(`/organizacao?tab=manage&section=staff&organizationId=${item.organizationId}`)}
-              className="rounded-full border border-white/20 bg-white/5 px-5 py-2 text-sm text-white hover:bg-white/10 transition"
-            >
-              Gerir equipa
-            </button>
-          )}
         </div>
       </div>
     );

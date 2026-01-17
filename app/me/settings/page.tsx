@@ -20,9 +20,10 @@ function Card({ children }: { children: React.ReactNode }) {
 }
 
 export default function SettingsPage() {
-  const { user, profile, isLoading, error, mutate } = useUser();
+  const { user, profile, isLoading, error, mutate, roles } = useUser();
   const router = useRouter();
   const { openModal: openAuthModal, isOpen: isAuthOpen } = useAuthModal();
+  const isOrganizer = roles.includes("organization");
 
   const [email, setEmail] = useState("");
   const [visibility, setVisibility] = useState<Visibility>("PUBLIC");
@@ -241,7 +242,7 @@ export default function SettingsPage() {
       <main className="relative min-h-screen w-full overflow-hidden text-white">
         <div className="relative orya-page-width px-5 py-10 space-y-4">
           <h1 className="text-xl font-semibold">Definições</h1>
-          <p className="text-sm text-white/70">Inicia sessão para definições.</p>
+          <p className="text-sm text-white/70">Inicia sessão para acederes às definições.</p>
           <button
             type="button"
             onClick={() => {
@@ -399,9 +400,11 @@ export default function SettingsPage() {
             {[
               { value: allowEmailNotifications, setter: setAllowEmailNotifications, label: "Email de novidades e segurança" },
               { value: allowEventReminders, setter: setAllowEventReminders, label: "Lembretes de eventos" },
-              { value: allowFollowRequests, setter: setAllowFollowRequests, label: "Pedidos para seguir / convites" },
-              { value: allowSalesAlerts, setter: setAllowSalesAlerts, label: "Alertas de vendas / estado Stripe" },
-              { value: allowSystemAnnouncements, setter: setAllowSystemAnnouncements, label: "Anúncios do sistema / updates críticos" },
+              { value: allowFollowRequests, setter: setAllowFollowRequests, label: "Pedidos para seguir e convites" },
+              ...(isOrganizer
+                ? [{ value: allowSalesAlerts, setter: setAllowSalesAlerts, label: "Alertas de vendas e estado Stripe" }]
+                : []),
+              { value: allowSystemAnnouncements, setter: setAllowSystemAnnouncements, label: "Anúncios do sistema e atualizações críticas" },
             ].map((opt) => (
               <label
                 key={opt.label}

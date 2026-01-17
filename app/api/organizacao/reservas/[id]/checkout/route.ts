@@ -83,7 +83,9 @@ export async function POST(
       return NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 });
     }
 
-    const reservasAccess = await ensureReservasModuleAccess(organization);
+    const reservasAccess = await ensureReservasModuleAccess(organization, undefined, {
+      requireVerifiedEmail: true,
+    });
     if (!booking.service.isActive || !reservasAccess.ok) {
       return NextResponse.json({ ok: false, error: "SERVICO_INATIVO" }, { status: 409 });
     }

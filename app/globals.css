@@ -323,8 +323,8 @@ body {
 }
 
 :root {
-  --orya-profile-cover-height: clamp(200px, 20vw, 280px);
-  --orya-profile-cover-height-mobile: clamp(160px, 38vw, 210px);
+  --orya-profile-cover-height: clamp(220px, 26vw, 360px);
+  --orya-profile-cover-height-mobile: clamp(180px, 46vw, 240px);
 }
 
 .orya-profile-cover {
@@ -372,6 +372,15 @@ body:not([data-nav-hidden="true"]) .main-shell {
 }
 .payment-scroll::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.28);
+}
+
+/* Scroll horizontal discreto (sem barras visiveis) */
+.orya-scrollbar-hide {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.orya-scrollbar-hide::-webkit-scrollbar {
+  display: none;
 }
 
 /* ============ ORYA – React DatePicker dark neon theme ============ */

@@ -16,19 +16,8 @@ type AgendaItem = {
   title: string;
   startAt: string;
   label?: string | null;
-  type: string;
+  type: "EVENTO" | "JOGO" | "INSCRICAO" | "RESERVA";
   ctaHref?: string | null;
-};
-
-type PurchaseItem = {
-  id: number;
-  purchaseId: string | null;
-  totalCents: number;
-  currency: string;
-  createdAt: string;
-  badge: string;
-  status: string;
-  lines: { id: number; eventTitle: string; eventSlug: string; ticketTypeName: string }[];
 };
 
 function formatDateTime(iso?: string | null) {
@@ -37,15 +26,6 @@ function formatDateTime(iso?: string | null) {
   if (Number.isNaN(date.getTime())) return "";
   return date.toLocaleString("pt-PT", { dateStyle: "medium", timeStyle: "short" });
 }
-
-function formatMoney(cents: number, currency: string) {
-  return (cents / 100).toLocaleString("pt-PT", {
-    style: "currency",
-    currency,
-    minimumFractionDigits: 2,
-  });
-}
-
 
 export default function WalletHubClient() {
   const searchParams = useSearchParams();
@@ -66,11 +46,13 @@ export default function WalletHubClient() {
   const agendaUrl = user ? `/api/me/agenda?start=${encodeURIComponent(startIso)}&end=${encodeURIComponent(endIso)}` : null;
   const { data: agendaData } = useSWR<{ ok: boolean; items?: AgendaItem[] }>(agendaUrl, fetcher);
 
-  const purchasesUrl = user ? "/api/me/purchases?limit=6" : null;
-  const { data: purchasesData } = useSWR<{ items?: PurchaseItem[] }>(purchasesUrl, fetcher);
-
-  const upcomingItems = useMemo(() => (agendaData?.items ?? []).slice(0, 6), [agendaData?.items]);
+  const agendaItems = useMemo(() => agendaData?.items ?? [], [agendaData?.items]);
+  const upcomingItems = useMemo(() => agendaItems.slice(0, 6), [agendaItems]);
   const passes = useMemo(() => walletItems.filter((item) => item.status === "ACTIVE"), [walletItems]);
+  const plannedReservations = useMemo(
+    () => agendaItems.filter((item) => item.type === "RESERVA").length,
+    [agendaItems],
+  );
 
   useEffect(() => {
     if (section !== "wallet") return;
@@ -85,7 +67,7 @@ export default function WalletHubClient() {
           <p className="text-[11px] uppercase tracking-[0.4em] text-white/55">Carteira ORYA</p>
           <h1 className="mt-4 text-3xl font-semibold">Entra para veres a tua carteira</h1>
           <p className="mt-3 text-sm text-white/70">
-            Passes, bilhetes, proximos eventos e reservas num so lugar.
+            Passes, bilhetes, próximos eventos e reservas num só lugar.
           </p>
           <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
             <button
@@ -115,31 +97,58 @@ export default function WalletHubClient() {
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
               <p className="text-[11px] uppercase tracking-[0.4em] text-white/50">Carteira</p>
-              <h1 className="text-2xl font-semibold text-white/95">Passes, bilhetes e proximos momentos</h1>
-              <p className="text-sm text-white/65">Tudo o que precisas, sem distracoes.</p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Link
-                href="/me/compras"
-                className="rounded-full border border-white/20 px-4 py-2 text-xs text-white/75 hover:bg-white/10"
-              >
-                Historico de compras
-              </Link>
-              <Link
-                href="/me/settings"
-                className="rounded-full border border-white/20 px-4 py-2 text-xs text-white/75 hover:bg-white/10"
-              >
-                Definicoes
-              </Link>
+              <h1 className="text-2xl font-semibold text-white/95">Passes, bilhetes e reservas planeadas</h1>
+              <p className="text-sm text-white/65">Tudo o que precisas, sem distrações.</p>
             </div>
           </div>
         </header>
 
-        <section className="mt-8 rounded-3xl border border-white/10 bg-white/5 p-5">
+        <section className="mt-6 grid gap-4 md:grid-cols-3">
+          {[
+            {
+              id: "passes",
+              title: "Passes e bilhetes",
+              value: walletItems.length,
+              description: "Tudo o que tens guardado na carteira.",
+              href: "/me/carteira#wallet",
+            },
+            {
+              id: "ativos",
+              title: "Acessos ativos",
+              value: passes.length,
+              description: "Bilhetes prontos a usar.",
+              href: "/me/carteira#wallet",
+            },
+            {
+              id: "reservas",
+              title: "Reservas planeadas",
+              value: plannedReservations,
+              description: "Reservas confirmadas nos próximos 30 dias.",
+              href: "/me/carteira#agenda",
+            },
+          ].map((card) => (
+            <Link
+              key={card.id}
+              href={card.href}
+              className="group rounded-2xl border border-white/12 bg-white/5 p-4 shadow-[0_18px_45px_rgba(0,0,0,0.45)] backdrop-blur-2xl transition hover:border-white/25 hover:bg-white/10"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-[10px] uppercase tracking-[0.2em] text-white/50">Resumo</p>
+                  <p className="text-sm font-semibold text-white/90">{card.title}</p>
+                </div>
+                <div className="text-2xl font-semibold text-white">{card.value}</div>
+              </div>
+              <p className="mt-2 text-[11px] text-white/60">{card.description}</p>
+            </Link>
+          ))}
+        </section>
+
+        <section id="agenda" className="mt-6 rounded-3xl border border-white/10 bg-white/5 p-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <p className="text-[11px] uppercase tracking-[0.28em] text-white/60">Proximos</p>
-              <h2 className="text-lg font-semibold">Eventos e reservas nos proximos 30 dias</h2>
+              <p className="text-[11px] uppercase tracking-[0.28em] text-white/60">Próximos</p>
+              <h2 className="text-lg font-semibold">Eventos e reservas nos próximos 30 dias</h2>
             </div>
             <Link href="/me" className="rounded-full border border-white/20 px-4 py-2 text-[12px] text-white/70">
               Ver perfil
@@ -169,7 +178,7 @@ export default function WalletHubClient() {
           </div>
         </section>
 
-        <section id="wallet" className="mt-8 rounded-3xl border border-white/10 bg-white/5 p-5">
+        <section id="wallet" className="mt-6 rounded-3xl border border-white/10 bg-white/5 p-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <p className="text-[11px] uppercase tracking-[0.28em] text-white/60">Passes e bilhetes</p>
@@ -187,43 +196,15 @@ export default function WalletHubClient() {
           </div>
         </section>
 
-        <section className="mt-8 rounded-3xl border border-white/10 bg-white/5 p-5">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="text-[11px] uppercase tracking-[0.28em] text-white/60">Historico</p>
-              <h2 className="text-lg font-semibold">Compras recentes</h2>
-              <p className="text-sm text-white/60">Consulta o detalhe completo e faturas quando existirem.</p>
-            </div>
-            <Link
-              href="/me/compras"
-              className="rounded-full border border-white/20 px-4 py-2 text-[12px] text-white/70"
-            >
-              Ver historico
-            </Link>
-          </div>
-          <div className="mt-4 space-y-3">
-            {(purchasesData?.items ?? []).length === 0 && (
-              <p className="text-sm text-white/70">Sem compras recentes.</p>
-            )}
-            {(purchasesData?.items ?? []).map((item) => (
-              <div
-                key={item.id}
-                className="rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white/80"
-              >
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-semibold text-white">{item.lines[0]?.eventTitle ?? "Compra"}</p>
-                    <p className="text-[12px] text-white/60">{formatDateTime(item.createdAt)}</p>
-                  </div>
-                  <div className="text-sm font-semibold text-white">
-                    {formatMoney(item.totalCents, item.currency)}
-                  </div>
-                </div>
-                <p className="mt-2 text-[12px] text-white/60">{item.status}</p>
-              </div>
-            ))}
-          </div>
-        </section>
+        <div className="mt-6 flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/70">
+          <span>Movimentos e faturas estão nas Compras.</span>
+          <Link
+            href="/me/compras"
+            className="rounded-full border border-white/20 px-3 py-1.5 text-[11px] text-white/85 hover:bg-white/10"
+          >
+            Ver movimentos
+          </Link>
+        </div>
       </div>
     </main>
   );

@@ -154,6 +154,12 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
   const [address, setAddress] = useState(event.address ?? "");
   const [templateType] = useState(event.templateType ?? "OTHER");
   const isPadel = templateType === "PADEL";
+  const ticketLabel = isPadel ? "inscrição" : "bilhete";
+  const ticketLabelPlural = isPadel ? "inscrições" : "bilhetes";
+  const ticketLabelPluralCap = isPadel ? "Inscrições" : "Bilhetes";
+  const ticketLabelArticle = isPadel ? "da" : "do";
+  const ticketLabelThis = isPadel ? "esta inscrição" : "este bilhete";
+  const ticketLabelNew = isPadel ? "nova inscrição" : "novo bilhete";
   const eventRouteBase = isPadel ? "/organizacao/torneios" : "/organizacao/eventos";
   const organizationPrimaryModule =
     (organizationStatus as { organization?: { primaryModule?: string | null } } | null)?.organization
@@ -233,9 +239,9 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
         : [
             { key: "base", label: "Essenciais", desc: "Imagem e localização" },
             { key: "dates", label: "Datas & Local", desc: "Início e fim" },
-            { key: "tickets", label: "Bilhetes / Inscrições", desc: "Gestão e vendas" },
+            { key: "tickets", label: ticketLabelPluralCap, desc: "Gestão e vendas" },
           ],
-    [isFree],
+    [isFree, ticketLabelPluralCap],
   );
   const freeCapacity = useMemo(() => {
     if (!isFree) return null;
@@ -416,7 +422,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
       scope: "PUBLIC" as const,
       enabled: hasInviteOnlyTickets,
       title: "Convites do público",
-      description: "Quem pode ver bilhetes por convite.",
+      description: `Quem pode ver ${ticketLabelPlural} por convite.`,
       footer: `Convites por email permitem checkout como convidado. ${primaryLabelPlural} grátis continuam a exigir conta e username.`,
       input: publicInviteInput,
       setInput: setPublicInviteInput,
@@ -680,9 +686,9 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
 
     if (hasPaidTicket && paymentsStatus !== "READY") {
       setStripeAlert(
-        `Podes gerir o ${primaryLabel}, mas só vender bilhetes pagos depois de ligares o Stripe.`,
+        `Podes gerir o ${primaryLabel}, mas só vender ${ticketLabelPlural} pagos depois de ligares o Stripe.`,
       );
-      setError("Liga o Stripe em Finanças & Payouts para vender bilhetes pagos.");
+      setError(`Liga o Stripe em Finanças & Payouts para vender ${ticketLabelPlural} pagos.`);
       ctaRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
       return;
     }
@@ -697,8 +703,8 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
       activePadelCategoryLinks.length > 0 &&
       !newTicket.padelEventCategoryLinkId
     ) {
-      setValidationAlert("Seleciona uma categoria Padel para o novo bilhete.");
-      pushToast("Seleciona a categoria do bilhete.");
+      setValidationAlert(`Seleciona uma categoria Padel para ${ticketLabelNew}.`);
+      pushToast(`Seleciona a categoria ${ticketLabelArticle} ${ticketLabel}.`);
       return;
     }
 
@@ -849,8 +855,8 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
       setTicketList((prev) =>
         prev.map((t) => (t.id === confirmId ? { ...t, status: TicketTypeStatus.CLOSED } : t)),
       );
-      setMessage("Venda terminada para este bilhete.");
-      pushToast("Venda terminada para este bilhete.", "success");
+      setMessage(`Venda terminada para ${ticketLabelThis}.`);
+      pushToast(`Venda terminada para ${ticketLabelThis}.`, "success");
     } catch (err) {
       console.error("Erro ao terminar venda", err);
       setError(err instanceof Error ? err.message : "Erro ao terminar venda.");
@@ -1053,7 +1059,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
           <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-3 text-sm text-white/75 space-y-4">
             <div>
               <p className="font-semibold text-white">Convites</p>
-              <p className="text-[12px] text-white/65">Lista de convidados para bilhetes por convite.</p>
+              <p className="text-[12px] text-white/65">Lista de convidados para {ticketLabelPlural} por convite.</p>
             </div>
 
             <div className="grid gap-4 md:grid-cols-2">
@@ -1376,10 +1382,10 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
         </div>
 
         <div className="rounded-xl border border-white/12 bg-black/25 p-3 space-y-2">
-          <p className="text-[12px] font-semibold">Adicionar novo bilhete</p>
+          <p className="text-[12px] font-semibold">Adicionar {ticketLabelNew}</p>
           {isPadel && activePadelCategoryLinks.length === 0 && (
             <p className="text-[11px] text-amber-200">
-              Cria categorias Padel no hub e associa-as ao {primaryLabel} antes de adicionar bilhetes.
+              Cria categorias Padel no hub e associa-as ao {primaryLabel} antes de adicionar {ticketLabelPlural}.
             </p>
           )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
@@ -1448,7 +1454,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
             </div>
           </div>
           <p className="text-[11px] text-white/50">
-            Novo bilhete fica ON_SALE por padrão. Não removemos bilhetes antigos para manter histórico.
+            Nova {ticketLabel} fica ON_SALE por padrão. Não removemos {ticketLabelPlural} antigos para manter histórico.
           </p>
         </div>
       </div>
@@ -1510,9 +1516,9 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
         {confirmId && (
           <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/70 backdrop-blur">
             <div className="w-full max-w-sm rounded-2xl border border-white/15 bg-black/90 p-5 shadow-[0_20px_60px_rgba(0,0,0,0.85)] space-y-3">
-              <h3 className="text-lg font-semibold">Terminar venda do bilhete?</h3>
+              <h3 className="text-lg font-semibold">Terminar venda {ticketLabelArticle} {ticketLabel}?</h3>
               <p className="text-sm text-white/70">
-                Esta ação é definitiva para este tipo de bilhete. Escreve{" "}
+                Esta ação é definitiva para este tipo de {ticketLabel}. Escreve{" "}
                 <span className="font-semibold">TERMINAR VENDA</span> para confirmar.
               </p>
               <input

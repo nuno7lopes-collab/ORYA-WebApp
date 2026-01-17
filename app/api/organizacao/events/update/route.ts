@@ -15,6 +15,7 @@ import {
 } from "@prisma/client";
 import { canManageEvents } from "@/lib/organizationPermissions";
 import { formatPaidSalesGateMessage, getPaidSalesGate } from "@/lib/organizationPayments";
+import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 
 type TicketTypeUpdate = {
   id: number;
@@ -295,6 +296,13 @@ export async function POST(req: NextRequest) {
       });
       if (!membership || !canManageEvents(membership.role)) {
         return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      }
+    }
+
+    if (event.organization) {
+      const emailGate = ensureOrganizationEmailVerified(event.organization);
+      if (!emailGate.ok) {
+        return NextResponse.json({ ok: false, error: emailGate.error }, { status: 403 });
       }
     }
 

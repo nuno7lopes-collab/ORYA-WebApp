@@ -1,6 +1,6 @@
-import { Prisma, PadelPairingHoldStatus } from "@prisma/client";
+import { Prisma, PrismaClient, PadelPairingHoldStatus } from "@prisma/client";
 
-type TxClient = Prisma.TransactionClient;
+type TxClient = Prisma.TransactionClient | PrismaClient;
 
 const DEFAULT_HOLD_MINUTES = 30;
 

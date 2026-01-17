@@ -2,13 +2,19 @@ import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { TournamentFormat } from "@prisma/client";
+import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 
 async function ensureOrganizationAccess(userId: string, eventId: number) {
   const evt = await prisma.event.findUnique({
     where: { id: eventId },
-    select: { organizationId: true },
+    select: {
+      organizationId: true,
+      organization: { select: { officialEmail: true, officialEmailVerifiedAt: true } },
+    },
   });
   if (!evt?.organizationId) return false;
+  const emailGate = ensureOrganizationEmailVerified(evt.organization ?? {});
+  if (!emailGate.ok) return false;
   const profile = await prisma.profile.findUnique({
     where: { id: userId },
     select: { onboardingDone: true, fullName: true, username: true },

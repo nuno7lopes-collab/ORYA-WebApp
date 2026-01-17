@@ -1,6 +1,7 @@
 "use client";
 import { useCheckout } from "@/app/components/checkout/contextoCheckout";
 import { CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
+import { getTicketCopy } from "@/app/components/checkout/checkoutCopy";
 
 export type WaveStatus = "on_sale" | "upcoming" | "closed" | "sold_out";
 
@@ -48,6 +49,8 @@ export default function WavesSectionClient({
 }: WavesSectionClientProps) {
   const { abrirCheckout, atualizarDados } = useCheckout();
   const tickets = initialTickets;
+  const ticketCopy = getTicketCopy(checkoutUiVariant);
+  const freeCtaLabel = ticketCopy.isPadel ? ticketCopy.buyLabel : "Garantir lugar";
   const inviteAdditional =
     inviteEmail && inviteEmail.trim()
       ? { guestEmail: inviteEmail.trim(), guestEmailConfirm: inviteEmail.trim() }
@@ -71,7 +74,7 @@ export default function WavesSectionClient({
         <div className="pointer-events-none absolute inset-x-4 top-0 h-px bg-gradient-to-r from-transparent via-[#7CFFEA]/70 to-transparent" />
         <p className="text-sm text-white/85">
           {isFreeLabel ? (
-            <span className="text-white font-semibold">Entrada gratuita</span>
+            <span className="text-white font-semibold">{ticketCopy.freeLabel}</span>
           ) : minPrice !== null ? (
             <>
               A partir de{" "}
@@ -80,7 +83,7 @@ export default function WavesSectionClient({
               </span>
             </>
           ) : (
-            <span className="text-white/60">Sem bilhetes disponíveis</span>
+            <span className="text-white/60">Sem {ticketCopy.plural} disponíveis</span>
           )}
         </p>
 
@@ -128,8 +131,8 @@ export default function WavesSectionClient({
           {purchasableTickets.length === 0
             ? "Esgotado"
             : isFreeLabel
-              ? "Garantir lugar"
-              : "Comprar agora"}
+              ? freeCtaLabel
+              : ticketCopy.buyLabel}
         </button>
       </div>
     </div>

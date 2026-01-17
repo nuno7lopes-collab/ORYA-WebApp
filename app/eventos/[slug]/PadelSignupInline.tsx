@@ -143,7 +143,7 @@ export default function PadelSignupInline({
           {loadingSplit ? "A preparar…" : "Pagar lugar"}
         </button>
         {!canProceed && (
-          <p className="text-[12px] text-amber-200">Bilhetes indisponíveis.</p>
+          <p className="text-[12px] text-amber-200">Inscrições indisponíveis.</p>
         )}
       </div>
     </div>

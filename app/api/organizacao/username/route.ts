@@ -6,6 +6,7 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { normalizeAndValidateUsername, setUsernameForOwner, UsernameTakenError } from "@/lib/globalUsernames";
+import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 
 export async function PATCH(req: NextRequest) {
   try {
@@ -36,6 +37,10 @@ export async function PATCH(req: NextRequest) {
         { ok: false, error: "Apenas Owner ou Co-owner podem alterar o username." },
         { status: 403 },
       );
+    }
+    const emailGate = ensureOrganizationEmailVerified(organization);
+    if (!emailGate.ok) {
+      return NextResponse.json({ ok: false, error: emailGate.error }, { status: 403 });
     }
 
     await prisma.$transaction(async (tx) => {

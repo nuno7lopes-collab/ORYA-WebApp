@@ -24,6 +24,7 @@ import { sanitizeUsername } from "@/lib/username";
 import InviteGateClient from "./InviteGateClient";
 import { Avatar } from "@/components/ui/avatar";
 import { CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
+import { getTicketCopy } from "@/app/components/checkout/checkoutCopy";
 
 type EventPageParams = { slug: string };
 type EventPageParamsInput = EventPageParams | Promise<EventPageParams>;
@@ -303,14 +304,51 @@ export default async function EventPage({
   const showInviteGate = inviteOnly && !isInvited;
   const canFreeCheckout = Boolean(user) && hasUsername && (!inviteOnly || isInvited);
   const allowCheckoutBase = !showInviteGate && (event.isFree ? canFreeCheckout : true);
+  const isPadel = event.templateType === "PADEL";
+  const ticketCopy = getTicketCopy(isPadel ? "PADEL" : "DEFAULT");
+  const ticketSectionLabel = ticketCopy.pluralCap;
+  const freeBadgeLabel = ticketCopy.freeLabel;
+  const ctaFreeLabel = ticketCopy.isPadel ? ticketCopy.buyLabel : "Garantir lugar";
+  const ctaPaidLabel = ticketCopy.viewLabel;
+  const hasTicketLabel = `Já tens ${ticketCopy.articleSingular} ${ticketCopy.singular} para este ${
+    isPadel ? "torneio" : "evento"
+  }`;
+  const ticketSelectLabel = ticketCopy.isPadel ? "Seleciona a tua inscrição" : "Seleciona o teu bilhete";
+  const freeInfoDescription = ticketCopy.isPadel
+    ? "Basta garantir a tua inscrição — não há custo."
+    : "Basta garantir o teu lugar — não há custo de bilhete.";
+  const freeGateTitle = ticketCopy.freeLabel;
+  const salesNotOpenTitle = ticketCopy.isPadel ? "Inscrições ainda não abriram" : "Vendas ainda não abriram";
+  const salesNotOpenDescription = ticketCopy.isPadel
+    ? "As inscrições para este torneio ainda não abriram. Volta mais tarde!"
+    : "As vendas de bilhetes para este evento ainda não abriram. Volta mais tarde!";
+  const salesClosedTitle = ticketCopy.isPadel ? "Inscrições encerradas" : "Vendas encerradas";
+  const salesClosedDescription = ticketCopy.isPadel
+    ? "As inscrições para este torneio já encerraram."
+    : "As vendas para este evento já encerraram.";
+  const soldOutDescription = `Não há mais ${ticketCopy.plural} disponíveis para este ${
+    isPadel ? "torneio" : "evento"
+  }.`;
+  const resalesTitle = ticketCopy.isPadel ? "Inscrições entre utilizadores" : "Bilhetes entre utilizadores";
+  const resalesDescription = ticketCopy.isPadel
+    ? "Estas inscrições são vendidas por outros utilizadores da ORYA."
+    : "Estes bilhetes são vendidos por outros utilizadores da ORYA.";
+  const resalesFallbackLabel = ticketCopy.isPadel ? "Inscrição ORYA" : "Bilhete ORYA";
+  const resalesCtaLabel = ticketCopy.isPadel ? ticketCopy.buyLabel : "Comprar agora";
+  const eventEndedCopy = `Este ${isPadel ? "torneio" : "evento"} já terminou. ${
+    ticketCopy.isPadel ? "As inscrições" : "Os bilhetes"
+  } deixaram de estar disponíveis.`;
   const freeUsernameGateMessage = event.isFree
     ? user
       ? hasUsername
         ? null
-        : "Define um username na tua conta para concluíres a inscrição gratuita."
-      : "Inicia sessão e define um username para garantires o lugar."
+        : ticketCopy.isPadel
+          ? "Define um username na tua conta para concluíres a inscrição gratuita."
+          : "Define um username na tua conta para garantires a entrada gratuita."
+      : ticketCopy.isPadel
+        ? "Inicia sessão e define um username para garantires a inscrição."
+        : "Inicia sessão e define um username para garantires o lugar."
     : null;
-  const isPadel = event.templateType === "PADEL";
   const checkoutVariant =
     isPadel && event.padelTournamentConfig?.padelV2Enabled ? "PADEL" : "DEFAULT";
   const padelAdvanced = (event.padelTournamentConfig?.advancedSettings || {}) as {
@@ -516,12 +554,18 @@ export default async function EventPage({
     : allSoldOut
       ? "Esgotado"
       : anyOnSale
-        ? "Bilhetes à venda"
+        ? isPadel
+          ? "Inscrições abertas"
+          : "Bilhetes à venda"
         : anyUpcoming
-          ? "Vendas em breve"
+          ? isPadel
+            ? "Inscrições em breve"
+            : "Vendas em breve"
           : allClosed
-            ? "Vendas encerradas"
-            : "Bilhetes";
+            ? isPadel
+              ? "Inscrições encerradas"
+              : "Vendas encerradas"
+            : ticketCopy.pluralCap;
   const availabilityTone = eventEnded || allClosed
     ? "border-white/25 bg-white/10 text-white/70"
     : allSoldOut
@@ -759,7 +803,7 @@ export default async function EventPage({
                     )}
                     {event.isFree ? (
                       <span className="rounded-full border border-emerald-400/50 bg-emerald-500/15 px-3 py-1.5 text-[11px] font-semibold text-emerald-100">
-                        Entrada gratuita
+                        {freeBadgeLabel}
                       </span>
                     ) : showPriceFrom ? (
                       <span className="rounded-full border border-fuchsia-400/40 bg-fuchsia-500/15 px-3 py-1.5 text-[11px] font-semibold text-fuchsia-100">
@@ -829,7 +873,7 @@ export default async function EventPage({
                   {currentUserHasTicket && (
                     <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-emerald-400/60 bg-emerald-500/15 px-3 py-1 text-xs text-emerald-100">
                       <span className="text-sm">🎟️</span>
-                      <span>Já tens bilhete para este evento</span>
+                      <span>{hasTicketLabel}</span>
                     </div>
                   )}
 
@@ -839,7 +883,7 @@ export default async function EventPage({
                         href="#bilhetes"
                         className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-xs font-semibold text-black shadow-[0_0_30px_rgba(255,255,255,0.3)] transition-transform hover:scale-105 active:scale-95 md:text-sm"
                       >
-                        {event.isFree ? "Garantir lugar" : "Ver bilhetes"}
+                        {event.isFree ? ctaFreeLabel : ctaPaidLabel}
                         <span className="text-xs">↓</span>
                       </a>
                     )}
@@ -903,14 +947,16 @@ export default async function EventPage({
                 </p>
                 <p className="mt-2 text-sm font-semibold text-white/90">
                   {event.isFree
-                    ? "Entrada gratuita"
+                    ? freeBadgeLabel
                     : showPriceFrom
                       ? `${(displayPriceFrom ?? 0).toFixed(2)} €`
                       : "A anunciar"}
                 </p>
                 <p className="text-xs text-white/60">
                   {event.isFree
-                    ? "Reserva o teu lugar agora."
+                    ? ticketCopy.isPadel
+                      ? "Inscreve-te agora."
+                      : "Reserva o teu lugar agora."
                     : "Preço final confirmado no checkout."}
                 </p>
               </div>
@@ -1046,7 +1092,7 @@ export default async function EventPage({
                 <div className="relative">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <h3 className="text-xl font-semibold">Bilhetes</h3>
+                      <h3 className="text-xl font-semibold">{ticketSectionLabel}</h3>
                       <p className="text-xs text-white/60">
                         Compra segura com confirmação imediata.
                       </p>
@@ -1088,7 +1134,7 @@ export default async function EventPage({
                       <div className="space-y-5 border-t border-white/12 pt-5">
                         <div className="flex items-center justify-between gap-2">
                           <h3 className="text-base font-semibold">
-                            Seleciona o teu bilhete
+                            {ticketSelectLabel}
                           </h3>
                           {!event.isFree && showPriceFrom && (
                             <span className="text-xs text-white/75">
@@ -1127,15 +1173,15 @@ export default async function EventPage({
                               <>
                                 <div className="flex items-center justify-between gap-3 rounded-xl border border-emerald-500/40 bg-emerald-500/15 px-3.5 py-2.5 text-sm text-emerald-100">
                                   <div>
-                                    <p className="font-semibold">Entrada gratuita</p>
+                                    <p className="font-semibold">{freeBadgeLabel}</p>
                                     <p className="text-[11px] text-emerald-100/85">
-                                      Basta garantir o teu lugar — não há custo de bilhete.
+                                      {freeInfoDescription}
                                     </p>
                                   </div>
                                 </div>
                                 {freeUsernameGateMessage && (
                                   <div className="rounded-xl border border-white/12 bg-black/50 px-3.5 py-2.5 text-sm text-white/85">
-                                    <p className="font-semibold">Inscrição gratuita</p>
+                                    <p className="font-semibold">{freeGateTitle}</p>
                                     <p className="text-[11px] text-white/70">{freeUsernameGateMessage}</p>
                                   </div>
                                 )}
@@ -1159,25 +1205,25 @@ export default async function EventPage({
                                   <div>
                                     <p className="font-semibold">Evento esgotado</p>
                                     <p className="text-[11px] text-orange-100/85">
-                                      Não há mais bilhetes disponíveis para este evento.
+                                      {soldOutDescription}
                                     </p>
                                   </div>
                                 </div>
                               ) : !anyOnSale && anyUpcoming ? (
                                 <div className="rounded-xl border border-yellow-400/40 bg-yellow-500/15 px-3.5 py-2.5 text-sm text-yellow-100">
                                   <div>
-                                    <p className="font-semibold">Vendas ainda não abriram</p>
+                                    <p className="font-semibold">{salesNotOpenTitle}</p>
                                     <p className="text-[11px] text-yellow-100/85">
-                                      As vendas de bilhetes para este evento ainda não abriram. Volta mais tarde!
+                                      {salesNotOpenDescription}
                                     </p>
                                   </div>
                                 </div>
                               ) : allClosed ? (
                                 <div className="rounded-xl border border-white/12 bg-black/45 px-3.5 py-2.5 text-sm text-white/80">
                                   <div>
-                                    <p className="font-semibold">Vendas encerradas</p>
+                                    <p className="font-semibold">{salesClosedTitle}</p>
                                     <p className="text-[11px] text-white/70">
-                                      As vendas para este evento já encerraram.
+                                      {salesClosedDescription}
                                     </p>
                                   </div>
                                 </div>
@@ -1204,21 +1250,20 @@ export default async function EventPage({
                         )}
 
                         {resales.length > 0 && (
-                          <div className="mt-7 space-y-4 border-t border-white/12 pt-5">
-                            <div className="flex items-center justify-between gap-2">
-                              <h3 className="text-base font-semibold">
-                                Bilhetes entre utilizadores
-                              </h3>
-                              <span className="text-xs text-white/70">
-                                {resales.length} oferta
-                                {resales.length === 1 ? "" : "s"} de revenda
-                              </span>
-                            </div>
+                            <div className="mt-7 space-y-4 border-t border-white/12 pt-5">
+                              <div className="flex items-center justify-between gap-2">
+                                <h3 className="text-base font-semibold">
+                                  {resalesTitle}
+                                </h3>
+                                <span className="text-xs text-white/70">
+                                  {resales.length} oferta
+                                  {resales.length === 1 ? "" : "s"} de revenda
+                                </span>
+                              </div>
 
-                            <p className="text-xs text-white/65">
-                              Estes bilhetes são vendidos por outros utilizadores da ORYA.
-                              O pagamento é feito de forma segura através da plataforma.
-                            </p>
+                              <p className="text-xs text-white/65">
+                                {resalesDescription} O pagamento é feito de forma segura através da plataforma.
+                              </p>
 
                             <div className="space-y-4">
                               {resales.map((r) => (
@@ -1229,7 +1274,7 @@ export default async function EventPage({
                                   <div className="flex flex-col gap-0.5">
                                     <div className="flex flex-wrap items-center gap-2">
                                       <span className="font-medium">
-                                        {r.ticketTypeName ?? "Bilhete ORYA"}
+                                        {r.ticketTypeName ?? resalesFallbackLabel}
                                       </span>
                                       {r.seller && (
                                         <span className="text-xs text-white/60">
@@ -1252,7 +1297,7 @@ export default async function EventPage({
                                     href={`/resale/${r.id}`}
                                     className={`${CTA_PRIMARY} px-3 py-1.5 text-xs active:scale-95`}
                                   >
-                                    Comprar agora
+                                    {resalesCtaLabel}
                                   </Link>
                                 </div>
                               ))}
@@ -1262,8 +1307,7 @@ export default async function EventPage({
                       </div>
                     ) : (
                       <div className="rounded-xl border border-white/15 bg-black/60 px-4 py-3 text-sm text-white/85">
-                        Este evento já terminou. Bilhetes e inscrições deixaram de estar
-                        disponíveis.
+                        {eventEndedCopy}
                       </div>
                     )}
                   </div>

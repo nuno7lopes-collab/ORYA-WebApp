@@ -15,16 +15,33 @@ type LocationMode = "FIXED" | "CHOOSE_AT_BOOKING";
 const DEFAULT_DURATION_MINUTES = 60;
 const DEFAULT_CURRENCY = "EUR";
 const DEFAULT_LOCATION_MODE: LocationMode = "FIXED";
+const DURATION_OPTIONS = [30, 60, 90, 120];
 
 export default function NovoServicoPage() {
   const router = useRouter();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [unitPrice, setUnitPrice] = useState("20");
+  const [durationMinutes, setDurationMinutes] = useState(String(DEFAULT_DURATION_MINUTES));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async () => {
+    const trimmedTitle = title.trim();
+    if (!trimmedTitle) {
+      setError("Indica o título do serviço.");
+      return;
+    }
+    const durationValue = Number(durationMinutes);
+    if (!DURATION_OPTIONS.includes(durationValue)) {
+      setError("Seleciona a duração.");
+      return;
+    }
+    const unitPriceValue = Number(unitPrice.replace(",", "."));
+    if (!Number.isFinite(unitPriceValue) || unitPriceValue < 0) {
+      setError("Preço inválido.");
+      return;
+    }
     setSaving(true);
     setError(null);
 
@@ -33,10 +50,10 @@ export default function NovoServicoPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          title,
+          title: trimmedTitle,
           description,
-          durationMinutes: DEFAULT_DURATION_MINUTES,
-          unitPriceCents: Math.round(Number(unitPrice) * 100),
+          durationMinutes: durationValue,
+          unitPriceCents: Math.round(unitPriceValue * 100),
           currency: DEFAULT_CURRENCY,
           categoryTag: null,
           locationMode: DEFAULT_LOCATION_MODE,
@@ -77,14 +94,18 @@ export default function NovoServicoPage() {
         </div>
 
         <div>
-          <label className="text-sm text-white/80">Descrição</label>
-          <textarea
+          <label className="text-sm text-white/80">Duração</label>
+          <select
             className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
-            rows={3}
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="Resumo"
-          />
+            value={durationMinutes}
+            onChange={(e) => setDurationMinutes(e.target.value)}
+          >
+            {DURATION_OPTIONS.map((option) => (
+              <option key={option} value={String(option)}>
+                {option} min
+              </option>
+            ))}
+          </select>
         </div>
 
         <div>
@@ -93,9 +114,22 @@ export default function NovoServicoPage() {
             type="number"
             min="0"
             step="0.01"
+            inputMode="decimal"
             className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
             value={unitPrice}
             onChange={(e) => setUnitPrice(e.target.value)}
+          />
+          <p className="text-[11px] text-white/50">Usa 0 para gratuito.</p>
+        </div>
+
+        <div>
+          <label className="text-sm text-white/80">Descrição</label>
+          <textarea
+            className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+            rows={3}
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="Resumo (opcional)"
           />
         </div>
 
@@ -106,7 +140,7 @@ export default function NovoServicoPage() {
         )}
 
         <div className="flex flex-wrap gap-3">
-          <button type="button" className={CTA_PRIMARY} onClick={handleSubmit} disabled={saving}>
+          <button type="button" className={CTA_PRIMARY} onClick={handleSubmit} disabled={saving || !title.trim()}>
             {saving ? "A criar..." : "Criar serviço"}
           </button>
           <button type="button" className={CTA_SECONDARY} onClick={() => router.push("/organizacao/reservas")}>

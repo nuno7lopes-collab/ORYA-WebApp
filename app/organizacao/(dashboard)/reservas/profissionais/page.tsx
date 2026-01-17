@@ -43,9 +43,12 @@ export default function ProfissionaisPage() {
   );
   const [name, setName] = useState("");
   const [roleTitle, setRoleTitle] = useState("");
-  const [userId, setUserId] = useState("");
   const [memberUserId, setMemberUserId] = useState("");
   const [priority, setPriority] = useState("0");
+  const [createMode, setCreateMode] = useState<"member" | "external">("member");
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [editing, setEditing] = useState<{ id: number; name: string; roleTitle: string } | null>(null);
+  const [editSavingId, setEditSavingId] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -58,6 +61,11 @@ export default function ProfissionaisPage() {
 
   const handleCreate = async () => {
     if (saving) return;
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      setError("Indica o nome do profissional.");
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -65,9 +73,9 @@ export default function ProfissionaisPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name,
-          roleTitle,
-          userId: userId.trim() || null,
+          name: trimmedName,
+          roleTitle: roleTitle.trim(),
+          userId: null,
           priority: Number(priority) || 0,
         }),
       });
@@ -77,7 +85,6 @@ export default function ProfissionaisPage() {
       }
       setName("");
       setRoleTitle("");
-      setUserId("");
       setPriority("0");
       mutate();
     } catch (err) {
@@ -134,23 +141,36 @@ export default function ProfissionaisPage() {
     }
   };
 
-  const handleEdit = async (item: ProfessionalItem) => {
-    const nextName = window.prompt("Nome do profissional", item.name);
-    if (!nextName) return;
-    const nextRole = window.prompt("Titulo/funcao (opcional)", item.roleTitle ?? "");
+  const handleEdit = (item: ProfessionalItem) => {
+    setError(null);
+    setEditing({ id: item.id, name: item.name, roleTitle: item.roleTitle ?? "" });
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editing || editSavingId) return;
+    const trimmedName = editing.name.trim();
+    if (!trimmedName) {
+      setError("Indica o nome do profissional.");
+      return;
+    }
+    setEditSavingId(editing.id);
+    setError(null);
     try {
-      const res = await fetch(`/api/organizacao/reservas/profissionais/${item.id}`, {
+      const res = await fetch(`/api/organizacao/reservas/profissionais/${editing.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: nextName, roleTitle: nextRole ?? "" }),
+        body: JSON.stringify({ name: trimmedName, roleTitle: editing.roleTitle.trim() }),
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
         throw new Error(json?.error || "Erro ao atualizar profissional.");
       }
+      setEditing(null);
       mutate();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao atualizar profissional.");
+    } finally {
+      setEditSavingId(null);
     }
   };
 
@@ -167,67 +187,105 @@ export default function ProfissionaisPage() {
         </Link>
       </div>
 
-      <section className={cn(DASHBOARD_CARD, "p-5 space-y-3")}>
+      <section className={cn(DASHBOARD_CARD, "p-5 space-y-4")}>
         <div>
           <h2 className="text-base font-semibold text-white">Novo profissional</h2>
-          <p className={DASHBOARD_MUTED}>Opcional: associar a um utilizador da organizacao.</p>
+          <p className={DASHBOARD_MUTED}>Escolhe entre equipa existente ou profissional externo.</p>
         </div>
-        <div className="grid gap-3 md:grid-cols-4">
-          <input
-            className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
-            placeholder="Nome"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
-          <input
-            className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
-            placeholder="Titulo (opcional)"
-            value={roleTitle}
-            onChange={(e) => setRoleTitle(e.target.value)}
-          />
-          <input
-            className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
-            placeholder="User ID (opcional)"
-            value={userId}
-            onChange={(e) => setUserId(e.target.value)}
-          />
-          <div className="flex gap-2">
-            <input
-              className="w-24 rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
-              placeholder="Prior."
-              value={priority}
-              onChange={(e) => setPriority(e.target.value)}
-            />
-            <button type="button" className={CTA_PRIMARY} onClick={handleCreate} disabled={saving}>
-              {saving ? "A guardar..." : "Criar"}
+
+        <div className="inline-flex rounded-full border border-white/15 bg-white/5 p-1 text-[12px]">
+          {[
+            { key: "member", label: "Da equipa" },
+            { key: "external", label: "Externo" },
+          ].map((option) => (
+            <button
+              key={option.key}
+              type="button"
+              onClick={() => setCreateMode(option.key as "member" | "external")}
+              className={`rounded-full px-4 py-1.5 transition ${
+                createMode === option.key
+                  ? "bg-white text-black font-semibold shadow"
+                  : "text-white/70 hover:bg-white/10"
+              }`}
+            >
+              {option.label}
             </button>
+          ))}
+        </div>
+
+        {createMode === "member" ? (
+          <div className="flex flex-wrap items-end gap-3">
+            <label className="flex min-w-[220px] flex-1 flex-col gap-1 text-xs text-white/70">
+              Membro da equipa
+              <select
+                className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+                value={memberUserId}
+                onChange={(event) => setMemberUserId(event.target.value)}
+              >
+                <option value="">Seleciona um membro</option>
+                {availableMembers.map((member) => (
+                  <option key={member.userId} value={member.userId}>
+                    {member.fullName || member.username || "Sem nome"} · {member.role}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              className={CTA_PRIMARY}
+              onClick={handleAddMember}
+              disabled={!memberUserId || saving}
+            >
+              Adicionar
+            </button>
+            {membersReady && availableMembers.length === 0 && (
+              <span className="text-[12px] text-white/50">Todos os membros já estão na equipa.</span>
+            )}
           </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <select
-            className="min-w-[220px] rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
-            value={memberUserId}
-            onChange={(event) => setMemberUserId(event.target.value)}
-          >
-            <option value="">Adicionar da equipa</option>
-            {availableMembers.map((member) => (
-              <option key={member.userId} value={member.userId}>
-                {member.fullName || member.username || "Sem nome"} · {member.role}
-              </option>
-            ))}
-          </select>
-          <button
-            type="button"
-            className={CTA_SECONDARY}
-            onClick={handleAddMember}
-            disabled={!memberUserId || saving}
-          >
-            Adicionar
-          </button>
-          {membersReady && availableMembers.length === 0 && (
-            <span className="text-[12px] text-white/50">Todos os membros já estão na equipa.</span>
-          )}
-        </div>
+        ) : (
+          <div className="space-y-3">
+            <div className="grid gap-3 md:grid-cols-4">
+              <input
+                className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+                placeholder="Nome"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+              />
+              <input
+                className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+                placeholder="Função (opcional)"
+                value={roleTitle}
+                onChange={(e) => setRoleTitle(e.target.value)}
+              />
+              {showAdvanced ? (
+                <input
+                  className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+                  placeholder="Prioridade"
+                  value={priority}
+                  onChange={(e) => setPriority(e.target.value)}
+                />
+              ) : (
+                <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[12px] text-white/60">
+                  Prioridade: normal
+                </div>
+              )}
+              <button type="button" className={CTA_PRIMARY} onClick={handleCreate} disabled={saving || !name.trim()}>
+                {saving ? "A guardar..." : "Criar"}
+              </button>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 text-[11px] text-white/60">
+              <button
+                type="button"
+                onClick={() => setShowAdvanced((prev) => !prev)}
+                className="rounded-full border border-white/20 px-3 py-1 text-white/70 hover:border-white/40"
+              >
+                {showAdvanced ? "Ocultar opções avançadas" : "Mostrar opções avançadas"}
+              </button>
+              <span>Define prioridade se precisares de dar preferência nas marcações.</span>
+            </div>
+          </div>
+        )}
+
         {error && (
           <div className="rounded-xl border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-100">
             {error}
@@ -244,30 +302,71 @@ export default function ProfissionaisPage() {
           <p className="text-sm text-white/60">Sem profissionais.</p>
         ) : (
           <div className="space-y-2">
-            {items.map((item) => (
-              <div key={item.id} className="rounded-xl border border-white/10 bg-white/5 p-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <p className="text-sm font-semibold text-white">{item.name}</p>
-                    <p className="text-[12px] text-white/60">
-                      {item.roleTitle || "Sem titulo"}
-                      {item.user?.fullName ? ` · ${item.user.fullName}` : ""}
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <button type="button" className={CTA_SECONDARY} onClick={() => handleEdit(item)}>
-                      Editar
-                    </button>
-                    <button type="button" className={CTA_SECONDARY} onClick={() => handleToggle(item)}>
-                      {item.isActive ? "Desativar" : "Ativar"}
-                    </button>
-                    <Link href={`/organizacao/reservas/profissionais/${item.id}`} className={CTA_PRIMARY}>
-                      Disponibilidade
-                    </Link>
-                  </div>
+            {items.map((item) => {
+              const editingEntry = editing?.id === item.id ? editing : null;
+              return (
+                <div key={item.id} className="rounded-xl border border-white/10 bg-white/5 p-3">
+                  {editingEntry ? (
+                    <div className="grid gap-3 md:grid-cols-3">
+                      <input
+                        className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+                        value={editingEntry.name}
+                        onChange={(e) =>
+                          setEditing((prev) => (prev ? { ...prev, name: e.target.value } : prev))
+                        }
+                      />
+                      <input
+                        className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+                        value={editingEntry.roleTitle}
+                        onChange={(e) =>
+                          setEditing((prev) => (prev ? { ...prev, roleTitle: e.target.value } : prev))
+                        }
+                        placeholder="Função (opcional)"
+                      />
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          className={CTA_PRIMARY}
+                          onClick={handleSaveEdit}
+                          disabled={editSavingId === item.id}
+                        >
+                          {editSavingId === item.id ? "A guardar..." : "Guardar"}
+                        </button>
+                        <button
+                          type="button"
+                          className={CTA_SECONDARY}
+                          onClick={() => setEditing(null)}
+                          disabled={editSavingId === item.id}
+                        >
+                          Cancelar
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <p className="text-sm font-semibold text-white">{item.name}</p>
+                        <p className="text-[12px] text-white/60">
+                          {item.roleTitle || "Sem titulo"}
+                          {item.user?.fullName ? ` · ${item.user.fullName}` : ""}
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <button type="button" className={CTA_SECONDARY} onClick={() => handleEdit(item)}>
+                          Editar
+                        </button>
+                        <button type="button" className={CTA_SECONDARY} onClick={() => handleToggle(item)}>
+                          {item.isActive ? "Desativar" : "Ativar"}
+                        </button>
+                        <Link href={`/organizacao/reservas/profissionais/${item.id}`} className={CTA_PRIMARY}>
+                          Disponibilidade
+                        </Link>
+                      </div>
+                    </div>
+                  )}
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </section>

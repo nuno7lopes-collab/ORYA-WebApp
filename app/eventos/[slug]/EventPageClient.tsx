@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import ModalCheckout from "@/app/components/checkout/ModalCheckout";
 import { useCheckout } from "@/app/components/checkout/contextoCheckout";
+import { getTicketCopy } from "@/app/components/checkout/checkoutCopy";
 
 type WaveTicket = {
   id: string;
@@ -60,6 +61,9 @@ export default function EventPageClient({
   const router = useRouter();
   const searchParams = useSearchParams();
   const { abrirCheckout, atualizarDados, irParaPasso } = useCheckout();
+  const ticketCopy = getTicketCopy(checkoutUiVariant);
+  const fallbackTicketLabel = ticketCopy.isPadel ? "Inscrição Padel" : "Bilhete ORYA";
+  const invalidTicketLabel = ticketCopy.isPadel ? "Inscrição inválida" : "Bilhete inválido";
   const inviteHandledRef = useRef<string | null>(null);
   const checkoutHandledRef = useRef(false);
   const pairingHandledRef = useRef<string | null>(null);
@@ -232,7 +236,7 @@ export default function EventPageClient({
           : fallbackTicket?.id ?? null;
 
         if (!ticketId) {
-          throw new Error("Bilhete inválido para este convite.");
+          throw new Error(`${invalidTicketLabel} para este convite.`);
         }
 
         const unitPrice =
@@ -241,14 +245,14 @@ export default function EventPageClient({
 
         const ticketName =
           ticketFromWaves?.name ??
-          (fallbackTicket?.name || "Bilhete Padel");
+          (fallbackTicket?.name || fallbackTicketLabel);
 
         const waves =
           fallbackWaves.length > 0
             ? fallbackWaves
             : ticketTypes.map((t) => ({
                 id: String(t.id),
-                name: t.name ?? "Bilhete",
+                name: t.name ?? ticketCopy.singularCap,
                 price: t.price ?? 0,
                 currency: t.currency ?? "EUR",
                 remaining: null,
@@ -376,18 +380,18 @@ export default function EventPageClient({
 
         const ticketId = fallbackTicket?.id ?? null;
         if (!ticketId) {
-          throw new Error("Bilhete inválido para este checkout.");
+          throw new Error(`${invalidTicketLabel} para este checkout.`);
         }
 
         const unitPrice =
           typeof fallbackTicket?.price === "number" ? fallbackTicket.price : 0;
-        const ticketName = fallbackTicket?.name || "Bilhete Padel";
+        const ticketName = fallbackTicket?.name || fallbackTicketLabel;
         const waves =
           fallbackWaves.length > 0
             ? fallbackWaves
             : ticketTypes.map((t) => ({
                 id: String(t.id),
-                name: t.name ?? "Bilhete",
+                name: t.name ?? ticketCopy.singularCap,
                 price: t.price ?? 0,
                 currency: t.currency ?? "EUR",
                 remaining: null,

@@ -10,6 +10,7 @@ import { ensureUserIsOrganization, setSoleOwner } from "@/lib/organizationRoles"
 import { sanitizeProfileVisibility } from "@/lib/profileVisibility";
 import { sendEmail } from "@/lib/resendClient";
 import { parseOrganizationId, resolveOrganizationIdFromParams } from "@/lib/organizationId";
+import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 
 const INVITE_EXPIRY_DAYS = 14;
 
@@ -274,6 +275,14 @@ export async function POST(req: NextRequest) {
     if (roleRaw === "OWNER" && !isOrgOwner(membership.role)) {
       return NextResponse.json({ ok: false, error: "ONLY_OWNER_CAN_SET_OWNER" }, { status: 403 });
     }
+    const organization = await prisma.organization.findUnique({
+      where: { id: organizationId },
+      select: { officialEmail: true, officialEmailVerifiedAt: true },
+    });
+    const emailGate = ensureOrganizationEmailVerified(organization ?? {});
+    if (!emailGate.ok) {
+      return NextResponse.json({ ok: false, error: emailGate.error }, { status: 403 });
+    }
 
     const resolved = await resolveUserIdentifier(identifier);
     const viewerProfile = await prisma.profile.findUnique({
@@ -444,6 +453,14 @@ export async function PATCH(req: NextRequest) {
       where: { organizationId_userId: { organizationId, userId: user.id } },
     });
     const isManager = membership ? isOrgAdminOrAbove(membership.role) : false;
+    const organization = await prisma.organization.findUnique({
+      where: { id: organizationId },
+      select: { officialEmail: true, officialEmailVerifiedAt: true },
+    });
+    const emailGate = ensureOrganizationEmailVerified(organization ?? {});
+    if (!emailGate.ok) {
+      return NextResponse.json({ ok: false, error: emailGate.error }, { status: 403 });
+    }
 
     const viewerProfile = await prisma.profile.findUnique({
       where: { id: user.id },

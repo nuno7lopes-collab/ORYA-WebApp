@@ -12,7 +12,6 @@ import InterestIcon from "@/app/components/interests/InterestIcon";
 import { getEventCoverUrl } from "@/lib/eventCover";
 import { getProfileCoverUrl } from "@/lib/profileCover";
 import { getPadelOnboardingMissing, isPadelOnboardingComplete } from "@/domain/padelOnboarding";
-import { resolvePadelMatchStats } from "@/domain/padel/score";
 import {
   CORE_ORGANIZATION_MODULES,
   parseOrganizationModules,
@@ -22,6 +21,7 @@ import { normalizeInterestSelection, resolveInterestLabel } from "@/lib/interest
 import { getPaidSalesGate } from "@/lib/organizationPayments";
 import { OrganizationFormStatus } from "@prisma/client";
 import ReservasBookingSection from "@/app/[username]/_components/ReservasBookingSection";
+import { ensurePublicProfileLayout, type PublicProfileModuleType } from "@/lib/publicProfileLayout";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -71,44 +71,6 @@ function formatTimeLabel(date: Date | null, timezone: string) {
   }).format(date);
 }
 
-function buildPairingLabel(pairing?: {
-  slots: Array<{ playerProfile?: { displayName?: string | null; fullName?: string | null } | null }>;
-} | null) {
-  if (!pairing) return "—";
-  const names = pairing.slots
-    .map((slot) => slot.playerProfile?.displayName || slot.playerProfile?.fullName)
-    .filter(Boolean) as string[];
-  return names.length ? names.join(" / ") : "Dupla";
-}
-
-function formatScoreSummary(match: {
-  scoreSets: Array<{ teamA: number; teamB: number }> | null;
-  score: Record<string, unknown> | null;
-}) {
-  const score = match.score || {};
-  const sets =
-    match.scoreSets?.length
-      ? match.scoreSets
-      : Array.isArray((score as { sets?: unknown }).sets)
-        ? ((score as { sets?: Array<{ teamA: number; teamB: number }> }).sets ?? null)
-        : null;
-  if (sets?.length) {
-    return sets.map((set) => `${set.teamA}-${set.teamB}`).join(", ");
-  }
-  const resultType =
-    score.resultType === "WALKOVER" || score.walkover === true
-      ? "WALKOVER"
-      : score.resultType === "RETIREMENT"
-        ? "RETIREMENT"
-        : score.resultType === "INJURY"
-          ? "INJURY"
-          : null;
-  if (resultType === "WALKOVER") return "WO";
-  if (resultType === "RETIREMENT") return "Desistência";
-  if (resultType === "INJURY") return "Lesão";
-  return "—";
-}
-
 type OrganizationEvent = {
   id: number;
   slug: string;
@@ -142,37 +104,13 @@ type AgendaItem = {
   locationLabel: string;
   isPast: boolean;
   isFree: boolean;
+  templateType?: string | null;
 };
 
 type AgendaGroup = {
   key: string;
   label: string;
   items: AgendaItem[];
-};
-
-type PadelMatchPreview = {
-  id: number;
-  status: string;
-  roundLabel: string | null;
-  groupLabel: string | null;
-  startAt: Date | null;
-  scoreSets: Array<{ teamA: number; teamB: number }> | null;
-  score: Record<string, unknown> | null;
-  winnerSide: "A" | "B" | null;
-  mySide: "A" | "B" | null;
-  event: { title: string; slug: string };
-  pairingA: {
-    slots: Array<{
-      profileId?: string | null;
-      playerProfile?: { displayName?: string | null; fullName?: string | null } | null;
-    }>;
-  } | null;
-  pairingB: {
-    slots: Array<{
-      profileId?: string | null;
-      playerProfile?: { displayName?: string | null; fullName?: string | null } | null;
-    }>;
-  } | null;
 };
 
 type OperationModule = "EVENTOS" | "RESERVAS" | "TORNEIOS";
@@ -253,6 +191,7 @@ function buildAgendaGroups(events: OrganizationEvent[], pastEventIds?: Set<numbe
       locationLabel,
       isPast: pastEventIds?.has(event.id) ?? false,
       isFree: event.isFree,
+      templateType: event.templateType ?? null,
     };
 
     if (!groupMap.has(key)) {
@@ -326,6 +265,7 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
         publicYoutube: true,
         publicDescription: true,
         publicHours: true,
+        publicProfileLayout: true,
         infoRules: true,
         infoFaq: true,
         infoRequirements: true,
@@ -599,8 +539,13 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
     const publicForms = forms.filter((form) => form.status !== "ARCHIVED");
     const featuredForm =
       publicForms.find((form) => /guarda[-\s]?redes/i.test(form.title)) ?? publicForms[0] ?? null;
-    const showInscricoes = hasInscricoes;
-    const spotlightCtaLabel = spotlightEvent?.isFree ? "Garantir lugar" : "Comprar bilhete";
+    const spotlightCtaLabel = spotlightEvent
+      ? spotlightEvent.templateType === "PADEL"
+        ? "Inscrever agora"
+        : spotlightEvent.isFree
+          ? "Garantir lugar"
+          : "Comprar bilhete"
+      : "Comprar bilhete";
     const spotlightCtaHref = spotlightEvent ? buildTicketHref(spotlightEvent.slug) : null;
     const inscriptionsCoverUrl = getEventCoverUrl(spotlightEvent?.coverImageUrl ?? null, {
       seed:
@@ -619,6 +564,45 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
       ? `${featuredForm.capacity} vagas`
       : null;
     const agendaTotal = upcomingEvents.length + pastEvents.length;
+    const profileLayout = ensurePublicProfileLayout(organizationProfile.publicProfileLayout ?? null);
+    const showServicesModule = hasReservasModule && services.length > 0;
+    const showAgendaModule = showAgenda && agendaTotal > 0;
+    const showFormsModule = hasInscricoes && publicForms.length > 0;
+    const showReviewsModule = reviews.length > 0;
+    const showAboutModule = Boolean(publicDescription?.trim());
+    const servicesLayoutModule = profileLayout.modules.find((module) => module.type === "SERVICOS");
+    const servicesSettings = servicesLayoutModule?.settings ?? {};
+    const featuredServiceIds = Array.isArray(servicesSettings.featuredServiceIds)
+      ? servicesSettings.featuredServiceIds
+          .map((id) => Number(id))
+          .filter((id) => Number.isFinite(id))
+      : [];
+    const servicesCarouselEnabled = servicesSettings.carouselEnabled !== false;
+    const servicesCtaLabel =
+      typeof servicesSettings.ctaLabel === "string" && servicesSettings.ctaLabel.trim().length > 0
+        ? servicesSettings.ctaLabel.trim()
+        : "Agendar";
+    const servicesCtaHref =
+      typeof servicesSettings.ctaHref === "string" && servicesSettings.ctaHref.trim().length > 0
+        ? servicesSettings.ctaHref.trim()
+        : "#reservar";
+    const servicesShowStats = servicesSettings.showStats !== false;
+    const agendaLayoutModule = profileLayout.modules.find((module) => module.type === "AGENDA");
+    const agendaSettings = agendaLayoutModule?.settings ?? {};
+    const agendaShowSpotlight = agendaSettings.showSpotlight !== false;
+    const formsLayoutModule = profileLayout.modules.find((module) => module.type === "FORMULARIOS");
+    const formsSettings = formsLayoutModule?.settings ?? {};
+    const formsCtaLabel =
+      typeof formsSettings.ctaLabel === "string" && formsSettings.ctaLabel.trim().length > 0
+        ? formsSettings.ctaLabel.trim()
+        : "Responder";
+    const reviewsLayoutModule = profileLayout.modules.find((module) => module.type === "AVALIACOES");
+    const reviewsSettings = reviewsLayoutModule?.settings ?? {};
+    const reviewsMaxItems =
+      typeof reviewsSettings.maxItems === "number" && Number.isFinite(reviewsSettings.maxItems)
+        ? Math.max(1, Math.min(12, Math.floor(reviewsSettings.maxItems)))
+        : 8;
+    const displayReviews = reviews.slice(0, reviewsMaxItems);
 
     const padelPlayersCount =
       hasTorneiosModule
@@ -675,6 +659,181 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
       trainerServicesByUser.set(service.instructorId, [...current, service]);
     });
 
+    const servicesModuleContent = showServicesModule ? (
+      <section className="space-y-5 sm:space-y-6">
+        <div className="rounded-3xl border border-white/12 bg-white/5 p-4 sm:p-5 shadow-[0_24px_70px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">Reservas</p>
+              <h2 className="text-xl font-semibold text-white sm:text-2xl">{orgDisplayName}</h2>
+              {servicesShowStats && (
+                <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-white/65 sm:gap-2 sm:text-[12px]">
+                  <span className="rounded-full border border-white/15 bg-white/10 px-2 py-1">
+                    {reviewsAverage ? `${reviewsAverage.toFixed(1)} ★` : "Novo"}
+                  </span>
+                  <span className="rounded-full border border-white/15 bg-white/10 px-2 py-1">
+                    {reviewsCount} avaliações
+                  </span>
+                  <span className="rounded-full border border-white/15 bg-white/10 px-2 py-1">
+                    {organizationProfile.city ?? "Localização"}
+                  </span>
+                </div>
+              )}
+            </div>
+            <a
+              href={servicesCtaHref}
+              className="w-full rounded-full bg-white px-5 py-2 text-center text-[12px] font-semibold text-black shadow-[0_10px_30px_rgba(255,255,255,0.25)] sm:w-auto"
+            >
+              {servicesCtaLabel}
+            </a>
+          </div>
+        </div>
+
+        <div id="reservar">
+          <ReservasBookingSection
+            organization={{
+              id: organizationProfile.id,
+              publicName: organizationProfile.publicName,
+              businessName: organizationProfile.businessName,
+              city: organizationProfile.city,
+              username: organizationProfile.username ?? null,
+              timezone: organizationProfile.timezone ?? "Europe/Lisbon",
+              address: organizationProfile.address ?? null,
+              reservationAssignmentMode:
+                organizationProfile.reservationAssignmentMode ?? "PROFESSIONAL",
+            }}
+            services={services.map((service) => ({
+              ...service,
+              coverImageUrl: service.coverImageUrl ?? null,
+              locationMode: (service.locationMode ?? "FIXED") as "FIXED" | "CHOOSE_AT_BOOKING",
+            }))}
+            professionals={professionalsList}
+            resources={resourcesList}
+            initialServiceId={initialServiceId}
+            featuredServiceIds={featuredServiceIds}
+            servicesLayout={servicesCarouselEnabled ? "carousel" : "grid"}
+          />
+        </div>
+      </section>
+    ) : null;
+
+    const aboutModuleContent = showAboutModule ? (
+      <div className="rounded-3xl border border-white/12 bg-white/5 p-4 sm:p-5 shadow-[0_20px_60px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
+        <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">Sobre</p>
+        <p className="mt-2 text-[13px] text-white/70 sm:text-sm">
+          {publicDescription || "Descrição indisponível."}
+        </p>
+      </div>
+    ) : null;
+
+    const reviewsModuleContent = showReviewsModule ? (
+      <div className="rounded-3xl border border-white/12 bg-white/5 p-4 sm:p-5 shadow-[0_20px_60px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
+        <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">Avaliações</p>
+        <div className="mt-3 grid gap-3 md:grid-cols-2">
+          {displayReviews.map((review) => (
+            <div key={review.id} className="rounded-2xl border border-white/10 bg-white/5 p-4">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-sm font-semibold text-white">{review.user?.fullName || "Cliente"}</p>
+                <span className="text-[12px] text-white/70">{review.rating} ★</span>
+              </div>
+              {review.comment && <p className="mt-2 text-[12px] text-white/70">{review.comment}</p>}
+            </div>
+          ))}
+        </div>
+      </div>
+    ) : null;
+
+    const agendaModuleContent = showAgendaModule ? (
+      <div className="rounded-3xl border border-white/12 bg-white/5 p-4 sm:p-5 shadow-[0_24px_70px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
+        <OrganizationAgendaTabs
+          title="Agenda pública"
+          anchorId="agenda"
+          layout="stack"
+          upcomingGroups={upcomingGroups}
+          pastGroups={pastGroups}
+          allGroups={allGroups}
+          upcomingCount={upcomingEvents.length}
+          pastCount={pastEvents.length}
+          totalCount={agendaTotal}
+          prelude={
+            agendaShowSpotlight ? (
+              <EventSpotlightCard
+                event={spotlightEvent}
+                label={`Próximo ${operationMeta.noun}`}
+                emptyLabel={`Sem ${operationMeta.noun} anunciado`}
+                ctaLabel={spotlightCtaLabel}
+                ctaHref={spotlightCtaHref}
+                variant="embedded"
+              />
+            ) : null
+          }
+        />
+      </div>
+    ) : null;
+
+    const formsModuleContent = showFormsModule ? (
+      <section className="relative overflow-hidden rounded-3xl border border-white/12 bg-[#05070f]/80 p-4 shadow-[0_20px_70px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
+        <div className="absolute inset-0" aria-hidden="true">
+          <div className="absolute inset-0 bg-gradient-to-r from-[#05070f]/95 via-[#0b1124]/85 to-transparent" />
+          <div className="absolute inset-y-0 right-0 w-2/3">
+            <div
+              className="absolute inset-0 bg-cover bg-center opacity-80"
+              style={{ backgroundImage: `url(${inscriptionsCoverUrl})` }}
+            />
+            <div className="absolute inset-0 bg-gradient-to-l from-transparent via-black/40 to-[#05070f]/95" />
+          </div>
+        </div>
+
+        <div className="relative z-10 space-y-2">
+          <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">Formulários</p>
+          <h3 className="text-lg font-semibold text-white">
+            {featuredForm?.title || "Formulário em preparação"}
+          </h3>
+          {featuredFormDateLabel || featuredFormCapacityLabel ? (
+            <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-white/70">
+              {featuredFormDateLabel && (
+                <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1">
+                  {featuredFormDateLabel}
+                </span>
+              )}
+              {featuredFormCapacityLabel && (
+                <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1">
+                  {featuredFormCapacityLabel}
+                </span>
+              )}
+            </div>
+          ) : null}
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            {featuredForm ? (
+              <Link
+                href={`/inscricoes/${featuredForm.id}`}
+                className="rounded-full bg-white px-4 py-2 text-[12px] font-semibold text-black shadow-[0_10px_30px_rgba(255,255,255,0.25)]"
+              >
+                {formsCtaLabel}
+              </Link>
+            ) : (
+              <span className="rounded-full border border-white/15 bg-white/10 px-4 py-2 text-[12px] font-semibold text-white/70">
+                Em breve
+              </span>
+            )}
+          </div>
+        </div>
+      </section>
+    ) : null;
+
+    const moduleContentByType: Record<PublicProfileModuleType, JSX.Element | null> = {
+      SERVICOS: servicesModuleContent,
+      AGENDA: agendaModuleContent,
+      FORMULARIOS: formsModuleContent,
+      AVALIACOES: reviewsModuleContent,
+      SOBRE: aboutModuleContent,
+      LOJA: null,
+    };
+
+    const modulesToRender = profileLayout.modules.filter(
+      (module) => module.enabled && moduleContentByType[module.type],
+    );
+
     return (
       <main className="relative min-h-screen w-full overflow-hidden text-white">
         <section className="relative flex flex-col gap-8 py-10">
@@ -698,169 +857,25 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
 
           <div className="px-5 sm:px-8">
             <div className="orya-page-width flex flex-col gap-8">
-              {hasReservasModule && (
-                <section className="space-y-5 sm:space-y-6">
-                  <div className="rounded-3xl border border-white/12 bg-white/5 p-4 sm:p-5 shadow-[0_24px_70px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
-                    <div className="flex flex-wrap items-center justify-between gap-4">
-                      <div>
-                        <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">Reservas</p>
-                        <h2 className="text-xl font-semibold text-white sm:text-2xl">{orgDisplayName}</h2>
-                        <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-white/65 sm:gap-2 sm:text-[12px]">
-                          <span className="rounded-full border border-white/15 bg-white/10 px-2 py-1">
-                            {reviewsAverage ? `${reviewsAverage.toFixed(1)} ★` : "Novo"}
-                          </span>
-                          <span className="rounded-full border border-white/15 bg-white/10 px-2 py-1">
-                            {reviewsCount} avaliações
-                          </span>
-                          <span className="rounded-full border border-white/15 bg-white/10 px-2 py-1">
-                            {organizationProfile.city ?? "Localização"}
-                          </span>
-                        </div>
-                      </div>
-                      <a
-                        href="#reservar"
-                        className="w-full rounded-full bg-white px-5 py-2 text-center text-[12px] font-semibold text-black shadow-[0_10px_30px_rgba(255,255,255,0.25)] sm:w-auto"
+              {modulesToRender.length > 0 ? (
+                <div className="grid gap-6 md:grid-cols-2">
+                  {modulesToRender.map((module) => {
+                    const content = moduleContentByType[module.type];
+                    if (!content) return null;
+                    return (
+                      <div
+                        key={module.id}
+                        className={module.width === "full" ? "md:col-span-2" : ""}
                       >
-                        Agendar
-                      </a>
-                    </div>
-                  </div>
-
-                  <div className="rounded-3xl border border-white/12 bg-white/5 p-4 sm:p-5 shadow-[0_20px_60px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
-                    <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">Sobre</p>
-                    <p className="mt-2 text-[13px] text-white/70 sm:text-sm">
-                      {publicDescription || "Descrição indisponível."}
-                    </p>
-                  </div>
-
-                  <div id="reservar">
-                    <ReservasBookingSection
-                      organization={{
-                        id: organizationProfile.id,
-                        publicName: organizationProfile.publicName,
-                        businessName: organizationProfile.businessName,
-                        city: organizationProfile.city,
-                        username: organizationProfile.username ?? null,
-                        timezone: organizationProfile.timezone ?? "Europe/Lisbon",
-                        address: organizationProfile.address ?? null,
-                        reservationAssignmentMode:
-                          organizationProfile.reservationAssignmentMode ?? "PROFESSIONAL",
-                      }}
-                      services={services.map((service) => ({
-                        ...service,
-                        coverImageUrl: service.coverImageUrl ?? null,
-                        locationMode: (service.locationMode ?? "FIXED") as "FIXED" | "CHOOSE_AT_BOOKING",
-                      }))}
-                      professionals={professionalsList}
-                      resources={resourcesList}
-                      initialServiceId={initialServiceId}
-                    />
-                  </div>
-
-                  <div className="rounded-3xl border border-white/12 bg-white/5 p-4 sm:p-5 shadow-[0_20px_60px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
-                    <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">Avaliações</p>
-                    {reviews.length === 0 ? (
-                      <p className="mt-2 text-[13px] text-white/70 sm:text-sm">Ainda sem avaliações verificadas.</p>
-                    ) : (
-                      <div className="mt-3 grid gap-3 md:grid-cols-2">
-                        {reviews.map((review) => (
-                          <div key={review.id} className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                            <div className="flex items-center justify-between gap-2">
-                              <p className="text-sm font-semibold text-white">
-                                {review.user?.fullName || "Cliente"}
-                              </p>
-                              <span className="text-[12px] text-white/70">{review.rating} ★</span>
-                            </div>
-                            {review.comment && (
-                              <p className="mt-2 text-[12px] text-white/70">{review.comment}</p>
-                            )}
-                          </div>
-                        ))}
+                        {content}
                       </div>
-                    )}
-                  </div>
-                </section>
-              )}
-              {showAgenda && (
-                <section className="grid gap-6 md:grid-cols-3 md:grid-rows-[auto_1fr] md:items-start">
-                  <OrganizationAgendaTabs
-                    title="Agenda pública"
-                    anchorId="agenda"
-                    layout="grid"
-                    upcomingGroups={upcomingGroups}
-                    pastGroups={pastGroups}
-                    allGroups={allGroups}
-                    upcomingCount={upcomingEvents.length}
-                    pastCount={pastEvents.length}
-                    totalCount={agendaTotal}
-                    prelude={
-                      <EventSpotlightCard
-                        event={spotlightEvent}
-                        label={`Próximo ${operationMeta.noun}`}
-                        emptyLabel={`Sem ${operationMeta.noun} anunciado`}
-                        ctaLabel={spotlightCtaLabel}
-                        ctaHref={spotlightCtaHref}
-                        variant="embedded"
-                      />
-                    }
-                  />
-
-                  <aside className="space-y-4 md:col-span-1 md:row-start-2 min-w-0">
-                    {showInscricoes && (
-                      <section className="relative overflow-hidden rounded-3xl border border-white/12 bg-[#05070f]/80 p-4 shadow-[0_20px_70px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
-                        <div className="absolute inset-0" aria-hidden="true">
-                          <div className="absolute inset-0 bg-gradient-to-r from-[#05070f]/95 via-[#0b1124]/85 to-transparent" />
-                          <div className="absolute inset-y-0 right-0 w-2/3">
-                            <div
-                              className="absolute inset-0 bg-cover bg-center opacity-80"
-                              style={{ backgroundImage: `url(${inscriptionsCoverUrl})` }}
-                            />
-                            <div className="absolute inset-0 bg-gradient-to-l from-transparent via-black/40 to-[#05070f]/95" />
-                          </div>
-                        </div>
-
-                        <div className="relative z-10 space-y-2">
-                          <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">
-                            Formulários
-                          </p>
-                          <h3 className="text-lg font-semibold text-white">
-                            {featuredForm?.title ||
-                              "Formulário em preparação"}
-                          </h3>
-                          {featuredFormDateLabel || featuredFormCapacityLabel ? (
-                            <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-white/70">
-                              {featuredFormDateLabel && (
-                                <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1">
-                                  {featuredFormDateLabel}
-                                </span>
-                              )}
-                              {featuredFormCapacityLabel && (
-                                <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1">
-                                  {featuredFormCapacityLabel}
-                                </span>
-                              )}
-                            </div>
-                          ) : null}
-                          <div className="mt-4 flex flex-wrap items-center gap-2">
-                            {featuredForm ? (
-                              <Link
-                                href={`/inscricoes/${featuredForm.id}`}
-                                className="rounded-full bg-white px-4 py-2 text-[12px] font-semibold text-black shadow-[0_10px_30px_rgba(255,255,255,0.25)]"
-                              >
-                                Responder
-                              </Link>
-                            ) : (
-                              <span className="rounded-full border border-white/15 bg-white/10 px-4 py-2 text-[12px] font-semibold text-white/70">
-                                Em breve
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </section>
-                    )}
-
-                  </aside>
-                </section>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="rounded-3xl border border-white/12 bg-white/5 p-5 text-sm text-white/70 shadow-[0_20px_60px_rgba(0,0,0,0.45)] backdrop-blur-2xl">
+                  Sem módulos disponíveis neste momento.
+                </div>
               )}
 
               {hasTorneiosModule && (
@@ -1012,16 +1027,6 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
     isUpcoming: boolean;
     slug: string | null;
   }> = [];
-  let padelMatches: PadelMatchPreview[] = [];
-  let padelUpcoming: PadelMatchPreview[] = [];
-  let padelRecent: PadelMatchPreview[] = [];
-  let padelSummary = {
-    total: 0,
-    wins: 0,
-    losses: 0,
-    upcoming: 0,
-    winRate: "—",
-  };
 
   if (prisma.follows) {
     const [followers, following] = await Promise.all([
@@ -1061,11 +1066,7 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
     email: padelUser?.email ?? null,
   });
   const padelComplete = isPadelOnboardingComplete(padelMissing);
-  const padelMissingCount = Object.keys(padelMissing).length;
-
   type PadelActionTone = "emerald" | "amber" | "ghost";
-  type PadelStatusTone = "emerald" | "amber" | "slate";
-
   const padelAction: { href: string; label: string; tone?: PadelActionTone } | null = canSeePrivateTimeline
     ? isOwner
       ? {
@@ -1079,18 +1080,6 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
         ? { href: `/${profileHandle}/padel`, label: "Padel", tone: "ghost" }
         : null
     : null;
-  const padelStatus: { label: string; tone?: PadelStatusTone } | null = isOwner
-    ? {
-        label: padelComplete
-          ? "Padel completo"
-          : `Padel incompleto${padelMissingCount ? ` · ${padelMissingCount}` : ""}`,
-        tone: padelComplete ? "emerald" : "amber",
-      }
-    : padelComplete
-      ? { label: "Padel ativo", tone: "emerald" }
-      : null;
-  const padelHubHref = padelAction?.href ?? (padelComplete ? `/${profileHandle}/padel` : null);
-  const padelHubLabel = padelAction?.label ?? "Ver Padel";
 
   if (canSeePrivateTimeline && (prisma as any).entitlement) {
     try {
@@ -1153,91 +1142,6 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
     }
   }
 
-  if (canSeePrivateTimeline) {
-    try {
-      const matchRows = await prisma.padelMatch.findMany({
-        where: {
-          OR: [
-            { pairingA: { slots: { some: { profileId: resolvedProfile.id } } } },
-            { pairingB: { slots: { some: { profileId: resolvedProfile.id } } } },
-          ],
-        },
-        include: {
-          event: { select: { title: true, slug: true } },
-          pairingA: {
-            include: {
-              slots: { select: { profileId: true, playerProfile: { select: { displayName: true, fullName: true } } } },
-            },
-          },
-          pairingB: {
-            include: {
-              slots: { select: { profileId: true, playerProfile: { select: { displayName: true, fullName: true } } } },
-            },
-          },
-        },
-        orderBy: [{ startTime: "desc" }, { plannedStartAt: "desc" }, { id: "desc" }],
-        take: 12,
-      });
-
-      padelMatches = matchRows.map((match) => {
-        const scoreObj = match.score && typeof match.score === "object" ? (match.score as Record<string, unknown>) : null;
-        const stats = resolvePadelMatchStats(match.scoreSets, scoreObj);
-        const winnerSide =
-          stats?.winner ??
-          (scoreObj?.winnerSide === "A" || scoreObj?.winnerSide === "B"
-            ? (scoreObj.winnerSide as "A" | "B")
-            : null);
-        const isInA = match.pairingA?.slots?.some((slot) => slot.profileId === resolvedProfile.id);
-        const isInB = match.pairingB?.slots?.some((slot) => slot.profileId === resolvedProfile.id);
-        const mySide = isInA ? "A" : isInB ? "B" : null;
-
-        return {
-          id: match.id,
-          status: match.status,
-          roundLabel: match.roundLabel ?? null,
-          groupLabel: match.groupLabel ?? null,
-          startAt: match.startTime ?? match.plannedStartAt ?? match.actualStartAt ?? null,
-          scoreSets: Array.isArray(match.scoreSets)
-            ? (match.scoreSets as Array<{ teamA: number; teamB: number }>)
-            : null,
-          score: scoreObj,
-          winnerSide,
-          mySide,
-          event: { title: match.event.title, slug: match.event.slug },
-          pairingA: match.pairingA,
-          pairingB: match.pairingB,
-        };
-      });
-
-      padelUpcoming = padelMatches
-        .filter((match) => match.startAt && match.startAt >= now)
-        .sort((a, b) => (a.startAt?.getTime() ?? 0) - (b.startAt?.getTime() ?? 0))
-        .slice(0, 3);
-      padelRecent = padelMatches
-        .filter((match) => !match.startAt || match.startAt < now)
-        .sort((a, b) => (b.startAt?.getTime() ?? 0) - (a.startAt?.getTime() ?? 0))
-        .slice(0, 3);
-    } catch (err) {
-      console.warn("[profile] falha ao carregar jogos padel", err);
-    }
-  }
-
-  if (canSeePrivateTimeline) {
-    const completed = padelMatches.filter(
-      (match) => match.status === "DONE" && match.winnerSide && match.mySide,
-    );
-    const wins = completed.filter((match) => match.winnerSide === match.mySide).length;
-    const losses = completed.filter((match) => match.winnerSide !== match.mySide).length;
-    const total = wins + losses;
-    padelSummary = {
-      total,
-      wins,
-      losses,
-      upcoming: padelUpcoming.length,
-      winRate: total > 0 ? `${Math.round((wins / total) * 100)}% vitórias` : "Sem resultados",
-    };
-  }
-
   const displayName =
     organizationProfile?.publicName?.trim() ||
     resolvedProfile.fullName?.trim() ||
@@ -1269,12 +1173,13 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
           avatarUpdatedAt={resolvedProfile.updatedAt ? resolvedProfile.updatedAt.getTime() : null}
           coverUrl={headerCoverUrl}
           city={resolvedProfile.city}
+          bio={resolvedProfile.bio}
           isOwner={isOwner}
           targetUserId={resolvedProfile.id}
           initialIsFollowing={initialIsFollowing}
           followersCount={followersCount}
           followingCount={followingCount}
-          eventsCount={stats.total}
+          padelAction={padelAction ?? undefined}
           interests={resolvedProfile.favouriteCategories ?? []}
           recentEvents={recentMobile}
         />
@@ -1298,13 +1203,12 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
           isVerified={resolvedProfile.is_verified}
           canOpenLists={canSeePrivateTimeline}
           padelAction={padelAction ?? undefined}
-          padelStatus={padelStatus ?? undefined}
         />
 
         <div className="px-5 sm:px-8">
           <div className="orya-page-width flex flex-col gap-6">
             {(desktopInterests.length > 0 || isOwner) && (
-              <section className="rounded-3xl border border-white/15 bg-white/5 p-5 shadow-[0_24px_60px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
+              <section className="space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Interesses</p>
@@ -1324,7 +1228,7 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
                   )}
                 </div>
                 {desktopInterests.length > 0 && (
-                  <div className="mt-4 flex flex-wrap gap-2">
+                  <div className="flex flex-wrap gap-2">
                     {desktopInterests.map((interest) => (
                       <FilterChip
                         key={interest}
@@ -1358,7 +1262,7 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
                       title="Passados"
                       value={stats.past}
                       subtitle="Memórias."
-                      tone="cyan"
+                      tone="rose"
                     />
                     <StatCard
                       title="Total investido"
@@ -1369,87 +1273,9 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
                   </div>
                 </section>
 
-                <section className="rounded-3xl border border-white/15 bg-white/5 p-5 shadow-[0_24px_60px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Padel</p>
-                      <h2 className="mt-2 text-sm font-semibold text-white/95">Jogos e resultados</h2>
-                      <p className="text-[12px] text-white/70">Próximos jogos, histórico e forma recente.</p>
-                    </div>
-                    {padelHubHref && (
-                      <Link
-                        href={padelHubHref}
-                        className="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-[11px] font-semibold text-white/80 shadow-[0_10px_30px_rgba(0,0,0,0.25)] hover:border-white/40 hover:bg-white/15 transition-colors"
-                      >
-                        {padelHubLabel}
-                      </Link>
-                    )}
-                  </div>
-                  <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                    <PadelSummaryCard label="Jogos" value={padelSummary.total} subtitle={padelSummary.winRate} />
-                    <PadelSummaryCard label="Vitórias" value={padelSummary.wins} tone="emerald" />
-                    <PadelSummaryCard label="Derrotas" value={padelSummary.losses} tone="rose" />
-                    <PadelSummaryCard label="Próximos" value={padelSummary.upcoming} tone="sky" />
-                  </div>
-                  <div className="mt-5 grid gap-4 md:grid-cols-2">
-                    <div className="space-y-3">
-                      <p className="text-[11px] uppercase tracking-[0.18em] text-white/60">Próximos</p>
-                      {padelUpcoming.length === 0 && (
-                        <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[12px] text-white/70">
-                          Sem jogos agendados.
-                        </div>
-                      )}
-                      {padelUpcoming.map((match) => (
-                        <div
-                          key={`padel-up-${match.id}`}
-                          className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/80"
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <p className="text-[11px] text-white/60">{match.event.title}</p>
-                            <PadelOutcomeBadge outcome={resolvePadelOutcome(match)} />
-                          </div>
-                          <p className="text-sm text-white/90">
-                            {buildPairingLabel(match.pairingA)} vs {buildPairingLabel(match.pairingB)}
-                          </p>
-                          <p className="text-[11px] text-white/60">
-                            {match.roundLabel || match.groupLabel || "Jogo"} · {formatDate(match.startAt) || "Data a anunciar"}
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="space-y-3">
-                      <p className="text-[11px] uppercase tracking-[0.18em] text-white/60">Últimos</p>
-                      {padelRecent.length === 0 && (
-                        <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[12px] text-white/70">
-                          Sem histórico recente.
-                        </div>
-                      )}
-                      {padelRecent.map((match) => (
-                        <div
-                          key={`padel-recent-${match.id}`}
-                          className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/80"
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <p className="text-[11px] text-white/60">{match.event.title}</p>
-                            <PadelOutcomeBadge outcome={resolvePadelOutcome(match)} />
-                          </div>
-                          <p className="text-sm text-white/90">
-                            {buildPairingLabel(match.pairingA)} vs {buildPairingLabel(match.pairingB)}
-                          </p>
-                          <p className="text-[11px] text-white/60">
-                            {match.roundLabel || match.groupLabel || "Jogo"} · {formatDate(match.startAt) || "Data a anunciar"}
-                          </p>
-                          <p className="text-[11px] text-white/70">Resultado: {formatScoreSummary(match)}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </section>
-
                 {isOwner ? (
-                  <section className="rounded-3xl border border-white/15 bg-white/5 backdrop-blur-2xl p-5 space-y-4 shadow-[0_24px_60px_rgba(0,0,0,0.6)] min-h-[280px] relative overflow-hidden">
-                    <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_15%_20%,rgba(255,255,255,0.04),transparent_38%),radial-gradient(circle_at_85%_18%,rgba(255,255,255,0.03),transparent_34%),radial-gradient(circle_at_50%_85%,rgba(255,255,255,0.03),transparent_40%)]" />
-                    <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <section className="space-y-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
                       <div>
                         <h2 className="text-sm font-semibold text-white/95 tracking-[0.08em]">
                           Carteira ORYA
@@ -1468,7 +1294,7 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
                     </div>
 
                     {recent.length === 0 ? (
-                      <div className="flex h-48 items-center justify-center rounded-2xl border border-white/15 bg-white/5 text-sm text-white/80">
+                      <div className="rounded-2xl border border-white/15 bg-white/5 px-4 py-6 text-sm text-white/80">
                         Ainda não tens bilhetes ORYA.
                       </div>
                     ) : (
@@ -1598,18 +1424,18 @@ function EventSpotlightCard({
   );
 }
 
-type StatTone = "default" | "emerald" | "cyan" | "purple";
+type StatTone = "default" | "emerald" | "rose" | "purple";
 
 function toneClasses(tone: StatTone) {
   switch (tone) {
     case "emerald":
-      return "border-emerald-300/30 from-emerald-500/16 via-emerald-500/9 to-[#0c1a14] shadow-[0_12px_26px_rgba(16,185,129,0.18)] text-emerald-50";
-    case "cyan":
-      return "border-cyan-300/30 from-cyan-500/16 via-cyan-500/9 to-[#08171c] shadow-[0_12px_26px_rgba(34,211,238,0.18)] text-cyan-50";
+      return "border-emerald-300/30 bg-emerald-400/12 text-emerald-50";
+    case "rose":
+      return "border-rose-300/30 bg-rose-400/12 text-rose-50";
     case "purple":
-      return "border-purple-300/30 from-purple-500/16 via-purple-500/9 to-[#120d1f] shadow-[0_12px_26px_rgba(168,85,247,0.18)] text-purple-50";
+      return "border-purple-300/30 bg-purple-400/12 text-purple-50";
     default:
-      return "border-white/15 from-white/12 via-[#0b1224]/78 to-[#0a0f1d] shadow-[0_12px_26px_rgba(0,0,0,0.45)] text-white";
+      return "border-white/12 bg-white/5 text-white";
   }
 }
 
@@ -1626,97 +1452,14 @@ function StatCard({
 }) {
   return (
     <div
-      className={`relative overflow-hidden rounded-2xl border bg-gradient-to-br p-4 transition-transform duration-150 hover:-translate-y-[3px] hover:shadow-[0_22px_50px_rgba(0,0,0,0.65)] ${toneClasses(
+      className={`rounded-2xl border px-3 py-3 shadow-[0_16px_40px_rgba(0,0,0,0.45)] backdrop-blur-2xl ${toneClasses(
         tone,
       )}`}
     >
-      <div className="pointer-events-none absolute inset-0 rounded-2xl border border-white/10 mix-blend-screen" />
-      <div className="pointer-events-none absolute inset-y-0 right-0 w-1/3 bg-white/5 blur-2xl" />
-      <p
-        className={`text-[11px] uppercase tracking-[0.16em] ${
-          tone === "default" ? "text-white/65" : "text-white/75"
-        }`}
-      >
-        {title}
-      </p>
-      <p className="mt-1 text-3xl font-semibold">{value}</p>
-      <p className="text-[12px] text-white/70">{subtitle}</p>
-    </div>
-  );
-}
-
-type PadelSummaryTone = "default" | "emerald" | "rose" | "sky";
-
-function padelSummaryToneClasses(tone: PadelSummaryTone) {
-  switch (tone) {
-    case "emerald":
-      return "border-emerald-300/30 bg-emerald-400/12 text-emerald-50";
-    case "rose":
-      return "border-rose-300/30 bg-rose-400/12 text-rose-50";
-    case "sky":
-      return "border-sky-300/30 bg-sky-400/12 text-sky-50";
-    default:
-      return "border-white/12 bg-white/5 text-white";
-  }
-}
-
-function PadelSummaryCard({
-  label,
-  value,
-  subtitle,
-  tone = "default",
-}: {
-  label: string;
-  value: string | number;
-  subtitle?: string;
-  tone?: PadelSummaryTone;
-}) {
-  return (
-    <div
-      className={`rounded-2xl border px-3 py-3 shadow-[0_16px_40px_rgba(0,0,0,0.45)] backdrop-blur-2xl ${padelSummaryToneClasses(
-        tone,
-      )}`}
-    >
-      <p className="text-[10px] uppercase tracking-[0.2em] text-white/60">{label}</p>
+      <p className="text-[10px] uppercase tracking-[0.2em] text-white/60">{title}</p>
       <p className="mt-1 text-lg font-semibold">{value}</p>
-      {subtitle ? <p className="text-[11px] text-white/60">{subtitle}</p> : null}
+      <p className="text-[11px] text-white/60">{subtitle}</p>
     </div>
-  );
-}
-
-type PadelOutcomeTone = "emerald" | "rose" | "slate";
-type PadelOutcome = { label: string; tone: PadelOutcomeTone };
-
-function resolvePadelOutcome(match: PadelMatchPreview): PadelOutcome | null {
-  if (match.status === "CANCELLED") return { label: "Cancelado", tone: "slate" };
-  if (match.status !== "DONE") return null;
-  if (!match.winnerSide || !match.mySide) return { label: "Final", tone: "slate" };
-  return match.winnerSide === match.mySide
-    ? { label: "Vitória", tone: "emerald" }
-    : { label: "Derrota", tone: "rose" };
-}
-
-function padelOutcomeToneClasses(tone: PadelOutcomeTone) {
-  switch (tone) {
-    case "emerald":
-      return "border-emerald-300/30 bg-emerald-400/15 text-emerald-100";
-    case "rose":
-      return "border-rose-300/30 bg-rose-400/15 text-rose-100";
-    default:
-      return "border-white/20 bg-white/10 text-white/70";
-  }
-}
-
-function PadelOutcomeBadge({ outcome }: { outcome: PadelOutcome | null }) {
-  if (!outcome) return null;
-  return (
-    <span
-      className={`rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] ${padelOutcomeToneClasses(
-        outcome.tone,
-      )}`}
-    >
-      {outcome.label}
-    </span>
   );
 }
 

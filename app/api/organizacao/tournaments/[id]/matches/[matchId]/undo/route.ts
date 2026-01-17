@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
+import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { OrganizationMemberRole, Prisma } from "@prisma/client";
 
 const UNDO_WINDOW_MS = 60 * 1000;
@@ -8,6 +9,13 @@ const UNDO_WINDOW_MS = 60 * 1000;
 async function getOrganizationRole(userId: string, eventId: number) {
   const evt = await prisma.event.findUnique({ where: { id: eventId }, select: { organizationId: true } });
   if (!evt?.organizationId) return null;
+  const organization = await prisma.organization.findUnique({
+    where: { id: evt.organizationId },
+    select: { officialEmail: true, officialEmailVerifiedAt: true },
+  });
+  if (!organization) return null;
+  const emailGate = ensureOrganizationEmailVerified(organization);
+  if (!emailGate.ok) return null;
   const profile = await prisma.profile.findUnique({
     where: { id: userId },
     select: { onboardingDone: true, fullName: true, username: true },

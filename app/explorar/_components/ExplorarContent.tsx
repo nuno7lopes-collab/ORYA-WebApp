@@ -317,8 +317,6 @@ const exploreMainClass = "min-h-screen w-full text-white";
 
 const exploreFilterClass =
   "relative z-30 flex flex-col gap-4 rounded-3xl border border-white/12 bg-gradient-to-r from-white/8 via-[#0b1222]/65 to-white/6 p-5 shadow-[0_28px_80px_rgba(0,0,0,0.6)] backdrop-blur-3xl";
-const exploreWorldCardClass =
-  "rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-black/15 to-black/40 p-5 shadow-[0_26px_70px_rgba(0,0,0,0.55)]";
 const exploreTabsCardClass =
   "rounded-3xl border border-white/10 bg-white/4 px-4 py-3 shadow-[0_18px_50px_rgba(0,0,0,0.45)]";
 const filterPillClass =
@@ -1411,8 +1409,6 @@ export function ExplorarContent({ initialWorld, hideWorldTabs = false }: Explora
   const activeHasMore = isReservasWorld ? serviceHasMore : isPadelWorld ? false : hasMore;
   const activeIsLoadingMore = isReservasWorld ? serviceLoadingMore : isPadelWorld ? false : isLoadingMore;
   const activeNextCursor = isReservasWorld ? serviceNextCursor : isPadelWorld ? null : nextCursor;
-  const worldMeta = WORLD_META[world];
-  const WorldIcon = worldMeta.icon;
 
   return (
     <main className={exploreMainClass}>
@@ -1450,33 +1446,6 @@ export function ExplorarContent({ initialWorld, hideWorldTabs = false }: Explora
             </div>
           </div>
         )}
-
-        <div className={exploreWorldCardClass}>
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div className="flex items-center gap-4">
-              <div className="relative h-14 w-14">
-                <div className="absolute inset-0 rounded-2xl bg-white/10 blur-2xl" />
-                <div className="relative flex h-14 w-14 items-center justify-center rounded-2xl border border-white/15 bg-white/10 text-2xl shadow-[0_0_25px_rgba(255,255,255,0.2)]">
-                  <WorldIcon className="h-7 w-7 text-white" />
-                </div>
-              </div>
-              <div className="space-y-1">
-                <p className="text-[11px] uppercase tracking-[0.32em] text-white/45">
-                  Mundo
-                </p>
-                <h1 className="text-xl md:text-2xl font-semibold text-white">
-                  {worldMeta.title}
-                </h1>
-                <p className="text-sm text-white/60 max-w-xl">{worldMeta.subtitle}</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-3">
-              <span
-                className={`h-2 w-20 rounded-full bg-gradient-to-r ${worldMeta.accent} shadow-[0_0_16px_rgba(255,255,255,0.35)]`}
-              />
-            </div>
-          </div>
-        </div>
 
         {/* TOPO – FILTROS PRINCIPAIS */}
         <div className={exploreFilterClass}>

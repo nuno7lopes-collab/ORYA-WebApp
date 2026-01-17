@@ -3,7 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import ProfileHeader from "@/app/components/profile/ProfileHeader";
-import { getEventCoverUrl } from "@/lib/eventCover";
+import { getProfileCoverUrl } from "@/lib/profileCover";
 import { getPadelOnboardingMissing, isPadelOnboardingComplete } from "@/domain/padelOnboarding";
 import { resolvePadelMatchStats } from "@/domain/padel/score";
 import PadelDisputeButton from "./PadelDisputeButton";
@@ -106,13 +106,13 @@ type BadgeTone = "emerald" | "cyan" | "amber" | "violet" | "slate";
 function toneClasses(tone: StatTone) {
   switch (tone) {
     case "emerald":
-      return "border-emerald-300/30 from-emerald-500/16 via-emerald-500/9 to-[#0c1a14] shadow-[0_12px_26px_rgba(16,185,129,0.18)] text-emerald-50";
+      return "border-emerald-300/30 bg-emerald-400/12 text-emerald-50";
     case "cyan":
-      return "border-cyan-300/30 from-cyan-500/16 via-cyan-500/9 to-[#08171c] shadow-[0_12px_26px_rgba(34,211,238,0.18)] text-cyan-50";
+      return "border-cyan-300/30 bg-cyan-400/12 text-cyan-50";
     case "purple":
-      return "border-purple-300/30 from-purple-500/16 via-purple-500/9 to-[#120d1f] shadow-[0_12px_26px_rgba(168,85,247,0.18)] text-purple-50";
+      return "border-purple-300/30 bg-purple-400/12 text-purple-50";
     default:
-      return "border-white/15 from-white/12 via-[#0b1224]/78 to-[#0a0f1d] shadow-[0_12px_26px_rgba(0,0,0,0.45)] text-white";
+      return "border-white/12 bg-white/5 text-white";
   }
 }
 
@@ -129,17 +129,13 @@ function StatCard({
 }) {
   return (
     <div
-      className={`relative overflow-hidden rounded-2xl border bg-gradient-to-br p-4 transition-transform duration-150 hover:-translate-y-[3px] hover:shadow-[0_22px_50px_rgba(0,0,0,0.65)] ${toneClasses(
+      className={`rounded-2xl border px-3 py-3 shadow-[0_16px_40px_rgba(0,0,0,0.45)] backdrop-blur-2xl ${toneClasses(
         tone,
       )}`}
     >
-      <div className="pointer-events-none absolute inset-0 rounded-2xl border border-white/10 mix-blend-screen" />
-      <div className="pointer-events-none absolute inset-y-0 right-0 w-1/3 bg-white/5 blur-2xl" />
-      <p className={`text-[11px] uppercase tracking-[0.16em] ${tone === "default" ? "text-white/65" : "text-white/75"}`}>
-        {title}
-      </p>
-      <p className="mt-1 text-3xl font-semibold">{value}</p>
-      <p className="text-[12px] text-white/70">{subtitle}</p>
+      <p className="text-[10px] uppercase tracking-[0.2em] text-white/60">{title}</p>
+      <p className="mt-1 text-lg font-semibold">{value}</p>
+      <p className="text-[11px] text-white/60">{subtitle}</p>
     </div>
   );
 }
@@ -282,18 +278,41 @@ export default async function PadelProfilePage({ params }: PageProps) {
   const isPrivate = resolvedProfile.visibility !== "PUBLIC";
   let isFollowing = false;
   let initialIsFollowing = false;
+  let followersCount = 0;
+  let followingCount = 0;
 
-  if (prisma.follows && viewerId && !isOwner) {
-    const followRow = await prisma.follows.findFirst({
-      where: { follower_id: viewerId, following_id: resolvedProfile.id },
-      select: { id: true },
-    });
-    initialIsFollowing = Boolean(followRow);
-    isFollowing = Boolean(followRow);
+  if (prisma.follows) {
+    const [followers, following] = await Promise.all([
+      prisma.follows.count({ where: { following_id: resolvedProfile.id } }),
+      prisma.follows.count({ where: { follower_id: resolvedProfile.id } }),
+    ]);
+    followersCount = followers;
+    followingCount = following;
+
+    if (viewerId && !isOwner) {
+      const followRow = await prisma.follows.findFirst({
+        where: { follower_id: viewerId, following_id: resolvedProfile.id },
+        select: { id: true },
+      });
+      initialIsFollowing = Boolean(followRow);
+      isFollowing = Boolean(followRow);
+    }
   }
 
   const canSeeProfile = isOwner || !isPrivate || isFollowing;
   const profileHandle = resolvedProfile.username ?? usernameParam;
+  const coverCandidate =
+    resolvedProfile.coverUrl?.trim() ||
+    resolvedProfile.avatarUrl ||
+    null;
+  const headerCoverUrl = coverCandidate
+    ? getProfileCoverUrl(coverCandidate, {
+        width: 1500,
+        height: 500,
+        quality: 72,
+        format: "webp",
+      })
+    : null;
 
   const padelUser = await prisma.users.findUnique({
     where: { id: resolvedProfile.id },
@@ -327,9 +346,11 @@ export default async function PadelProfilePage({ params }: PageProps) {
             username={resolvedProfile.username}
             avatarUrl={resolvedProfile.avatarUrl}
             avatarUpdatedAt={resolvedProfile.updatedAt ? resolvedProfile.updatedAt.getTime() : null}
-            coverUrl={resolvedProfile.coverUrl}
+            coverUrl={headerCoverUrl}
             city={resolvedProfile.city}
             visibility={resolvedProfile.visibility as "PUBLIC" | "PRIVATE" | "FOLLOWERS" | null}
+            followers={followersCount}
+            following={followingCount}
             targetUserId={resolvedProfile.id}
             initialIsFollowing={initialIsFollowing}
             isVerified={resolvedProfile.is_verified}
@@ -359,9 +380,11 @@ export default async function PadelProfilePage({ params }: PageProps) {
             username={resolvedProfile.username}
             avatarUrl={resolvedProfile.avatarUrl}
             avatarUpdatedAt={resolvedProfile.updatedAt ? resolvedProfile.updatedAt.getTime() : null}
-            coverUrl={resolvedProfile.coverUrl}
+            coverUrl={headerCoverUrl}
             city={resolvedProfile.city}
             visibility={resolvedProfile.visibility as "PUBLIC" | "PRIVATE" | "FOLLOWERS" | null}
+            followers={followersCount}
+            following={followingCount}
             targetUserId={resolvedProfile.id}
             initialIsFollowing={initialIsFollowing}
             isVerified={resolvedProfile.is_verified}
@@ -583,19 +606,6 @@ export default async function PadelProfilePage({ params }: PageProps) {
     currentWinStreak,
   });
 
-  const coverCandidate =
-    resolvedProfile.coverUrl?.trim() ||
-    resolvedProfile.avatarUrl ||
-    null;
-  const headerCoverUrl = coverCandidate
-    ? getEventCoverUrl(coverCandidate, {
-        seed: resolvedProfile.username ?? resolvedProfile.id,
-        width: 1400,
-        quality: 72,
-        format: "webp",
-      })
-    : null;
-
   return (
     <main className="relative min-h-screen w-full overflow-hidden text-white">
       <section className="relative flex flex-col gap-6 py-10">
@@ -609,6 +619,8 @@ export default async function PadelProfilePage({ params }: PageProps) {
           bio={resolvedProfile.bio}
           city={resolvedProfile.city}
           visibility={resolvedProfile.visibility as "PUBLIC" | "PRIVATE" | "FOLLOWERS" | null}
+          followers={followersCount}
+          following={followingCount}
           targetUserId={resolvedProfile.id}
           initialIsFollowing={initialIsFollowing}
           isVerified={resolvedProfile.is_verified}
@@ -617,7 +629,6 @@ export default async function PadelProfilePage({ params }: PageProps) {
             label: "Ver perfil normal",
             tone: "ghost",
           }}
-          padelStatus={{ label: "Padel ativo", tone: "emerald" }}
         />
 
         <div className="px-5 sm:px-8">

@@ -6,6 +6,7 @@ import { canManageEvents } from "@/lib/organizationPermissions";
 import { normalizeEmail } from "@/lib/utils/email";
 import { resolveUserIdentifier } from "@/lib/userResolver";
 import { validateUsername } from "@/lib/username";
+import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 
 const EMAIL_REGEX = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
@@ -48,10 +49,17 @@ function normalizeInviteIdentifier(raw: string) {
   return { ok: true as const, normalized: validation.normalized, type: "username" as const };
 }
 
-async function ensureInviteAccess(userId: string, eventId: number) {
+async function ensureInviteAccess(
+  userId: string,
+  eventId: number,
+  options?: { requireVerifiedEmail?: boolean },
+) {
   const event = await prisma.event.findUnique({
     where: { id: eventId },
-    select: { organizationId: true },
+    select: {
+      organizationId: true,
+      organization: { select: { officialEmail: true, officialEmailVerifiedAt: true } },
+    },
   });
   if (!event) return { ok: false as const, status: 404, error: "EVENT_NOT_FOUND" };
 
@@ -93,6 +101,13 @@ async function ensureInviteAccess(userId: string, eventId: number) {
     return { ok: false as const, status: 403, error: "FORBIDDEN" };
   }
 
+  if (options?.requireVerifiedEmail && event.organization) {
+    const emailGate = ensureOrganizationEmailVerified(event.organization);
+    if (!emailGate.ok) {
+      return { ok: false as const, status: 403, error: emailGate.error };
+    }
+  }
+
   return { ok: true as const, isAdmin: false };
 }
 
@@ -106,7 +121,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       return NextResponse.json({ ok: false, error: "EVENT_ID_INVALID" }, { status: 400 });
     }
 
-    const access = await ensureInviteAccess(user.id, eventId);
+    const access = await ensureInviteAccess(user.id, eventId, { requireVerifiedEmail: true });
     if (!access.ok) {
       return NextResponse.json({ ok: false, error: access.error }, { status: access.status });
     }
@@ -158,7 +173,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       return NextResponse.json({ ok: false, error: "EVENT_ID_INVALID" }, { status: 400 });
     }
 
-    const access = await ensureInviteAccess(user.id, eventId);
+    const access = await ensureInviteAccess(user.id, eventId, { requireVerifiedEmail: true });
     if (!access.ok) {
       return NextResponse.json({ ok: false, error: access.error }, { status: access.status });
     }

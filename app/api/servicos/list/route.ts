@@ -88,10 +88,6 @@ export async function GET(req: NextRequest) {
 
     const organizationFilter: Prisma.OrganizationWhereInput = {
       status: "ACTIVE",
-      OR: [
-        { primaryModule: "RESERVAS" },
-        { organizationModules: { some: { moduleKey: "RESERVAS", enabled: true } } },
-      ],
     };
 
     if (cityParam && cityParam.toLowerCase() !== "portugal") {

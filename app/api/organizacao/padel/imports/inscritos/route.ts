@@ -16,6 +16,7 @@ import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
+import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import {
   buildImportPairKey,
   normalizeImportLookup,
@@ -77,6 +78,8 @@ export async function POST(req: NextRequest) {
     roles: allowedRoles,
   });
   if (!organization) return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  const emailGate = ensureOrganizationEmailVerified(organization);
+  if (!emailGate.ok) return NextResponse.json({ ok: false, error: emailGate.error }, { status: 403 });
 
   const config = await prisma.padelTournamentConfig.findUnique({
     where: { eventId },

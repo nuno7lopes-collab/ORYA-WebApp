@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { getEventCoverUrl } from "@/lib/eventCover";
 import ReservasBookingClient from "@/app/[username]/_components/ReservasBookingClient";
@@ -52,6 +52,8 @@ type ReservasBookingSectionProps = {
   professionals: Professional[];
   resources: Resource[];
   initialServiceId?: number | null;
+  featuredServiceIds?: number[];
+  servicesLayout?: "grid" | "carousel";
 };
 
 const cardBaseClass =
@@ -61,7 +63,7 @@ const cardActiveClass =
   "border-white/45 bg-white/10 shadow-[0_24px_70px_rgba(0,0,0,0.55)]";
 
 const modalShellClass =
-  "relative w-full max-w-6xl overflow-hidden rounded-none border border-white/10 bg-[#050810] shadow-[0_30px_80px_rgba(0,0,0,0.7)] sm:rounded-[32px]";
+  "relative mx-auto w-full max-w-6xl overflow-hidden rounded-none border border-white/10 bg-[#050810] shadow-[0_30px_80px_rgba(0,0,0,0.7)] sm:rounded-[32px]";
 
 const toggleBaseClass =
   "rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] transition";
@@ -76,6 +78,8 @@ export default function ReservasBookingSection({
   professionals,
   resources,
   initialServiceId,
+  featuredServiceIds = [],
+  servicesLayout = "grid",
 }: ReservasBookingSectionProps) {
   const activeServices = useMemo(
     () => services.filter((service) => service.isActive),
@@ -87,6 +91,9 @@ export default function ReservasBookingSection({
   const [modalServiceId, setModalServiceId] = useState<number | null>(null);
   const [modalProfessionalId, setModalProfessionalId] = useState<number | null>(null);
   const [modalInitialServiceId, setModalInitialServiceId] = useState<number | null>(null);
+  const carouselRef = useRef<HTMLDivElement | null>(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
 
   useEffect(() => {
     if (!initialServiceId) return;
@@ -140,8 +147,17 @@ export default function ReservasBookingSection({
     setModalInitialServiceId(null);
   };
 
-  const selectedService = activeServices.find((service) => service.id === selectedServiceId) ?? null;
   const activeProfessionals = professionals;
+  const orderedServices = useMemo(() => {
+    const normalizedIds = featuredServiceIds.map((id) => Number(id)).filter((id) => Number.isFinite(id));
+    const uniqueFeaturedIds = Array.from(new Set(normalizedIds));
+    const featuredSet = new Set(uniqueFeaturedIds);
+    const featured = uniqueFeaturedIds
+      .map((id) => activeServices.find((service) => service.id === id))
+      .filter((service): service is Service => Boolean(service));
+    const remaining = activeServices.filter((service) => !featuredSet.has(service.id));
+    return [...featured, ...remaining];
+  }, [activeServices, featuredServiceIds]);
   const servicesByProfessional = useMemo(() => {
     const map = new Map<number, Service[]>();
     activeProfessionals.forEach((professional) => {
@@ -154,6 +170,90 @@ export default function ReservasBookingSection({
     });
     return map;
   }, [activeProfessionals, activeServices]);
+
+  const updateScrollState = useCallback(() => {
+    const node = carouselRef.current;
+    if (!node) return;
+    setCanScrollLeft(node.scrollLeft > 8);
+    setCanScrollRight(node.scrollLeft + node.clientWidth < node.scrollWidth - 8);
+  }, []);
+
+  useEffect(() => {
+    if (servicesLayout !== "carousel") return;
+    updateScrollState();
+    const node = carouselRef.current;
+    if (!node) return;
+    const handleResize = () => updateScrollState();
+    node.addEventListener("scroll", updateScrollState);
+    window.addEventListener("resize", handleResize);
+    return () => {
+      node.removeEventListener("scroll", updateScrollState);
+      window.removeEventListener("resize", handleResize);
+    };
+  }, [servicesLayout, updateScrollState]);
+
+  const scrollCarousel = useCallback((direction: "left" | "right") => {
+    const node = carouselRef.current;
+    if (!node) return;
+    const offset = node.clientWidth * 0.85 * (direction === "left" ? -1 : 1);
+    node.scrollBy({ left: offset, behavior: "smooth" });
+  }, []);
+
+  const renderServiceCard = (service: Service, extraClassName = "") => {
+    const coverUrl = getEventCoverUrl(service.coverImageUrl, {
+      seed: `service-${service.id}`,
+      width: 900,
+      quality: 70,
+      format: "webp",
+    });
+    const isSelected = service.id === selectedServiceId;
+    const priceLabel =
+      service.unitPriceCents > 0
+        ? formatMoney(service.unitPriceCents, service.currency)
+        : "Gratuito";
+    return (
+      <button
+        key={service.id}
+        type="button"
+        className={`${cardBaseClass} ${isSelected ? cardActiveClass : ""} ${extraClassName}`}
+        onClick={() => openModal(service.id)}
+      >
+        <div className="absolute inset-0">
+          <Image
+            src={coverUrl}
+            alt={service.title}
+            fill
+            sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+            className="object-cover"
+          />
+        </div>
+        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-black/10" />
+        <div className="relative z-10 flex h-full min-h-[180px] flex-col justify-between gap-3">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-white">{service.title}</p>
+              <p className="mt-1 text-[12px] text-white/70">
+                {service.durationMinutes} min · {priceLabel}
+              </p>
+            </div>
+            <span className="rounded-full border border-white/20 bg-white/10 px-2 py-1 text-[10px] text-white/70">
+              Reservar
+            </span>
+          </div>
+          <div className="space-y-2">
+            {service.description && (
+              <p className="text-[12px] text-white/70 line-clamp-2">{service.description}</p>
+            )}
+            {service.categoryTag && (
+              <span className="inline-flex rounded-full border border-white/15 bg-white/10 px-2 py-1 text-[10px] text-white/70">
+                {service.categoryTag}
+              </span>
+            )}
+          </div>
+        </div>
+      </button>
+    );
+  };
 
   if (activeServices.length === 0) {
     return (
@@ -208,63 +308,53 @@ export default function ReservasBookingSection({
           </div>
         </div>
         {viewMode === "services" ? (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {activeServices.map((service) => {
-              const coverUrl = getEventCoverUrl(service.coverImageUrl, {
-                seed: `service-${service.id}`,
-                width: 900,
-                quality: 70,
-                format: "webp",
-              });
-              const isSelected = service.id === selectedServiceId;
-              const priceLabel =
-                service.unitPriceCents > 0
-                  ? formatMoney(service.unitPriceCents, service.currency)
-                  : "Gratuito";
-              return (
-                <button
-                  key={service.id}
-                  type="button"
-                  className={`${cardBaseClass} ${isSelected ? cardActiveClass : ""}`}
-                  onClick={() => openModal(service.id)}
-                >
-                  <div className="absolute inset-0">
-                    <Image
-                      src={coverUrl}
-                      alt={service.title}
-                      fill
-                      sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
-                      className="object-cover"
-                    />
+          servicesLayout === "carousel" ? (
+            <div className="relative">
+              <div
+                ref={carouselRef}
+                className="flex gap-4 overflow-x-auto pb-2 scroll-smooth snap-x snap-mandatory"
+              >
+                {orderedServices.map((service) => (
+                  <div
+                    key={service.id}
+                    className="min-w-[240px] snap-start sm:min-w-[280px] lg:min-w-[320px]"
+                  >
+                    {renderServiceCard(service, "w-full")}
                   </div>
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-black/10" />
-                  <div className="relative z-10 flex h-full min-h-[180px] flex-col justify-between gap-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-semibold text-white">{service.title}</p>
-                        <p className="mt-1 text-[12px] text-white/70">
-                          {service.durationMinutes} min · {priceLabel}
-                        </p>
-                      </div>
-                      <span className="rounded-full border border-white/20 bg-white/10 px-2 py-1 text-[10px] text-white/70">
-                        Reservar
-                      </span>
-                    </div>
-                    <div className="space-y-2">
-                      {service.description && (
-                        <p className="text-[12px] text-white/70 line-clamp-2">{service.description}</p>
-                      )}
-                      {service.categoryTag && (
-                        <span className="inline-flex rounded-full border border-white/15 bg-white/10 px-2 py-1 text-[10px] text-white/70">
-                          {service.categoryTag}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
+                ))}
+              </div>
+              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center gap-2">
+                <div className="pointer-events-auto flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => scrollCarousel("left")}
+                    disabled={!canScrollLeft}
+                    className={`flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-black/60 text-white/80 transition ${
+                      canScrollLeft ? "hover:bg-black/80" : "opacity-40"
+                    }`}
+                    aria-label="Anterior"
+                  >
+                    ‹
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => scrollCarousel("right")}
+                    disabled={!canScrollRight}
+                    className={`flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-black/60 text-white/80 transition ${
+                      canScrollRight ? "hover:bg-black/80" : "opacity-40"
+                    }`}
+                    aria-label="Seguinte"
+                  >
+                    ›
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {orderedServices.map((service) => renderServiceCard(service))}
+            </div>
+          )
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {activeProfessionals.length === 0 ? (

@@ -51,10 +51,6 @@ export async function GET(
         isActive: true,
         organization: {
           status: "ACTIVE",
-          OR: [
-            { primaryModule: "RESERVAS" },
-            { organizationModules: { some: { moduleKey: "RESERVAS", enabled: true } } },
-          ],
         },
       },
       select: {

@@ -88,10 +88,6 @@ export async function POST(
         isActive: true,
         organization: {
           status: "ACTIVE",
-          OR: [
-            { primaryModule: "RESERVAS" },
-            { organizationModules: { some: { moduleKey: "RESERVAS", enabled: true } } },
-          ],
         },
       },
       select: {

@@ -11,6 +11,7 @@ type AgendaItem = {
   locationLabel: string;
   isPast: boolean;
   isFree: boolean;
+  templateType?: string | null;
 };
 
 type AgendaGroup = {
@@ -122,6 +123,7 @@ export default function OrganizationAgendaTabs({
                 const href = item.isPast
                   ? `/eventos/${item.slug}`
                   : `/eventos/${item.slug}?checkout=1#bilhetes`;
+                const isPadel = item.templateType === "PADEL";
                 return (
                   <Link
                     key={item.id}
@@ -148,9 +150,11 @@ export default function OrganizationAgendaTabs({
                     >
                       {item.isPast
                         ? "Ver resumo"
-                        : item.isFree
-                          ? "Garantir lugar"
-                          : "Comprar bilhete"}
+                        : isPadel
+                          ? "Inscrever agora"
+                          : item.isFree
+                            ? "Garantir lugar"
+                            : "Comprar bilhete"}
                     </span>
                   </Link>
                 );

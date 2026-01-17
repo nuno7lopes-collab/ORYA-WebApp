@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
+import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 
 type ParticipantInput = {
   id?: number;
@@ -11,10 +12,17 @@ type ParticipantInput = {
   seed?: number | null;
 };
 
-async function ensureOrganizationAccess(userId: string, eventId: number) {
+async function ensureOrganizationAccess(
+  userId: string,
+  eventId: number,
+  options?: { requireVerifiedEmail?: boolean },
+) {
   const evt = await prisma.event.findUnique({
     where: { id: eventId },
-    select: { organizationId: true },
+    select: {
+      organizationId: true,
+      organization: { select: { officialEmail: true, officialEmailVerifiedAt: true } },
+    },
   });
   if (!evt?.organizationId) return false;
   const profile = await prisma.profile.findUnique({
@@ -33,7 +41,12 @@ async function ensureOrganizationAccess(userId: string, eventId: number) {
     },
     select: { id: true },
   });
-  return Boolean(member);
+  if (!member) return false;
+  if (options?.requireVerifiedEmail) {
+    const emailGate = ensureOrganizationEmailVerified(evt.organization ?? {});
+    if (!emailGate.ok) return false;
+  }
+  return true;
 }
 
 function isPowerOfTwo(value: number) {
@@ -131,7 +144,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   });
   if (!tournament) return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
 
-  const authorized = await ensureOrganizationAccess(authData.user.id, tournament.eventId);
+  const authorized = await ensureOrganizationAccess(authData.user.id, tournament.eventId, {
+    requireVerifiedEmail: true,
+  });
   if (!authorized) return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
   const body = await req.json().catch(() => ({}));

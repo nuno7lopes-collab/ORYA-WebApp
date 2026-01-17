@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import WavesSectionClient, { type WaveTicket } from "./WavesSectionClient";
+import { getTicketCopy } from "@/app/components/checkout/checkoutCopy";
 
 const EMAIL_REGEX = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
@@ -47,6 +48,8 @@ export default function InviteGateClient({
   const [inviteType, setInviteType] = useState<"email" | "username" | null>(null);
   const [inviteNormalized, setInviteNormalized] = useState<string | null>(null);
   const [validated, setValidated] = useState(false);
+  const ticketCopy = getTicketCopy(checkoutUiVariant);
+  const freeLabelLower = ticketCopy.freeLabel.toLowerCase();
 
   const handleCheck = async () => {
     const trimmed = identifier.trim();
@@ -112,10 +115,10 @@ export default function InviteGateClient({
         return "Este convite não corresponde ao email desta conta.";
       }
       if (isFree && !hasUsername) {
-        return "Define um username na tua conta para concluir a inscrição gratuita.";
+        return `Define um username na tua conta para concluir a ${freeLabelLower}.`;
       }
       return isFree
-        ? "Convite validado. Podes continuar a inscrição gratuita."
+        ? `Convite validado. Podes continuar a ${freeLabelLower}.`
         : "Convite validado. Podes continuar o checkout.";
     }
     if (inviteType === "username") {
@@ -126,7 +129,7 @@ export default function InviteGateClient({
         return "Este convite não corresponde ao teu username.";
       }
       return isFree
-        ? "Convite validado. Podes continuar a inscrição gratuita."
+        ? `Convite validado. Podes continuar a ${freeLabelLower}.`
         : "Convite validado. Podes continuar o checkout.";
     }
     return null;

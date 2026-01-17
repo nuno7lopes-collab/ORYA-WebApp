@@ -73,6 +73,16 @@ export default function MobileBottomNav({ pathname, socialBadgeCount }: MobileBo
     () => ({
       label: "Descobrir",
       icon: IconCompass,
+      path: "/explorar",
+      active: (p) => p.startsWith("/explorar") || p.startsWith("/procurar"),
+    }),
+    [],
+  );
+
+  const itemInicio: Item = useMemo(
+    () => ({
+      label: "Início",
+      icon: IconHome,
       path: "/descobrir",
       active: (p) => p === "/descobrir" || p === "/",
     }),
@@ -96,16 +106,6 @@ export default function MobileBottomNav({ pathname, socialBadgeCount }: MobileBo
       icon: IconClock,
       path: "/agora",
       active: (p) => p.startsWith("/agora"),
-    }),
-    [],
-  );
-
-  const itemProcurar: Item = useMemo(
-    () => ({
-      label: "Procurar",
-      icon: IconSearch,
-      path: "/procurar",
-      active: (p) => p.startsWith("/procurar") || p.startsWith("/explorar"),
     }),
     [],
   );
@@ -144,10 +144,10 @@ export default function MobileBottomNav({ pathname, socialBadgeCount }: MobileBo
       />
       <div className="relative mx-auto max-w-3xl px-3">
         <div className="grid h-[56px] grid-cols-5 items-center text-center gap-1">
+          <NavItem item={itemInicio} isActive={itemInicio.active(currentPathname)} onClick={go} />
           <NavItem item={itemDescobrir} isActive={itemDescobrir.active(currentPathname)} onClick={go} />
-          <NavItem item={itemRede} isActive={itemRede.active(currentPathname)} onClick={go} />
           <NavItem item={itemAgora} isActive={itemAgora.active(currentPathname)} onClick={go} />
-          <NavItem item={itemProcurar} isActive={itemProcurar.active(currentPathname)} onClick={go} />
+          <NavItem item={itemRede} isActive={itemRede.active(currentPathname)} onClick={go} />
           <NavItem item={itemPerfil} isActive={itemPerfil.active(currentPathname)} onClick={go} />
         </div>
       </div>
@@ -220,11 +220,12 @@ function IconCompass(props: IconProps) {
   );
 }
 
-function IconSearch(props: IconProps) {
+function IconHome(props: IconProps) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" {...props}>
-      <circle cx="11" cy="11" r="6.5" />
-      <path d="m16.5 16.5 4 4" />
+      <path d="M4 10.5 12 4l8 6.5" />
+      <path d="M6.5 9.5V20h11V9.5" />
+      <path d="M10 20v-6h4v6" />
     </svg>
   );
 }

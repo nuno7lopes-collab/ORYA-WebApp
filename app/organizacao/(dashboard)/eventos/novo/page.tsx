@@ -57,7 +57,14 @@ type PadelClubSummary = {
   isActive: boolean;
   courtsCount?: number | null;
 };
-type PadelCourtSummary = { id: number; name: string; isActive: boolean; displayOrder: number };
+type PadelCourtSummary = {
+  id: number;
+  name: string;
+  isActive: boolean;
+  displayOrder: number;
+  indoor?: boolean | null;
+  surface?: string | null;
+};
 type PadelStaffSummary = { id: number; fullName?: string | null; email?: string | null; inheritToEvents?: boolean | null };
 type PadelCategorySummary = {
   id: number;
@@ -70,6 +77,18 @@ type PadelRuleSetSummary = { id: number; name: string; season?: string | null; y
 type PadelCategoriesResponse = { ok: boolean; items?: PadelCategorySummary[] };
 type PadelRuleSetsResponse = { ok: boolean; items?: PadelRuleSetSummary[] };
 type PadelCategoryConfig = { capacityTeams: string; format: string | null };
+type PadelPublicClub = {
+  id: number;
+  name: string;
+  shortName?: string | null;
+  city?: string | null;
+  address?: string | null;
+  courtsCount?: number | null;
+  organizationName?: string | null;
+  organizationUsername?: string | null;
+  courts?: Array<{ id: number; name: string; indoor: boolean; surface: string | null }>;
+};
+type PadelPublicClubsResponse = { ok: boolean; items?: PadelPublicClub[]; error?: string };
 
 const normalizeIntegerInput = (value: string) => {
   const match = value.trim().match(/^\d+/);
@@ -276,6 +295,11 @@ export default function NewOrganizationEventPage({
   const [selectedPadelClubId, setSelectedPadelClubId] = useState<number | null>(null);
   const [selectedPadelCourtIds, setSelectedPadelCourtIds] = useState<number[]>([]);
   const [selectedPadelStaffIds, setSelectedPadelStaffIds] = useState<number[]>([]);
+  const [padelClubSource, setPadelClubSource] = useState<"ORG" | "DIRECTORY">("ORG");
+  const [padelClubSourceTouched, setPadelClubSourceTouched] = useState(false);
+  const [padelDirectoryQuery, setPadelDirectoryQuery] = useState("");
+  const [padelDirectoryError, setPadelDirectoryError] = useState<string | null>(null);
+  const [creatingPartnerClubId, setCreatingPartnerClubId] = useState<number | null>(null);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showLoadingHint, setShowLoadingHint] = useState(false);
@@ -350,6 +374,14 @@ export default function NewOrganizationEventPage({
   const primaryLabel = isPadelPreset ? "torneio" : "evento";
   const primaryLabelTitle = isPadelPreset ? "Torneio" : "Evento";
   const primaryLabelPlural = isPadelPreset ? "torneios" : "eventos";
+  const ticketLabel = isPadelPreset ? "inscrição" : "bilhete";
+  const ticketLabelCap = isPadelPreset ? "Inscrição" : "Bilhete";
+  const ticketLabelPlural = isPadelPreset ? "inscrições" : "bilhetes";
+  const ticketLabelPluralCap = isPadelPreset ? "Inscrições" : "Bilhetes";
+  const ticketLabelArticle = isPadelPreset ? "da" : "do";
+  const ticketLabelIndefinite = isPadelPreset ? "uma" : "um";
+  const freeTicketPlaceholder = isPadelPreset ? "Inscrição" : "Entrada";
+  const freeTicketLabel = isPadelPreset ? "Inscrição grátis" : "Entrada grátis";
   const detailBasePath = isPadelPreset ? "/organizacao/torneios" : "/organizacao/eventos";
   const coverSuggestions = useMemo(
     () => getEventCoverSuggestionIds({ templateType: templateHint, primaryModule }),
@@ -428,8 +460,8 @@ export default function NewOrganizationEventPage({
       );
     }
     const actionsText = actions.join(" e ");
-    return `Para vender bilhetes pagos, ${actionsText}.`;
-  }, [paidTicketsBlocked, stripeNotReady, needsOfficialEmailVerification, organizationOfficialEmail]);
+    return `Para vender ${ticketLabelPlural} pagos, ${actionsText}.`;
+  }, [paidTicketsBlocked, stripeNotReady, needsOfficialEmailVerification, organizationOfficialEmail, ticketLabelPlural]);
 
   useEffect(() => {
     if (!paidTicketsBlocked) return;
@@ -468,8 +500,15 @@ export default function NewOrganizationEventPage({
     fetcher,
     { revalidateOnFocus: false },
   );
-  const { data: padelClubs } = useSWR<{ ok: boolean; items?: PadelClubSummary[] }>(
+  const { data: padelClubs, mutate: mutatePadelClubs } = useSWR<{ ok: boolean; items?: PadelClubSummary[] }>(
     selectedPreset === "padel" ? "/api/padel/clubs" : null,
+    fetcher,
+    { revalidateOnFocus: false },
+  );
+  const { data: padelDirectoryRes, isLoading: padelDirectoryLoading } = useSWR<PadelPublicClubsResponse>(
+    selectedPreset === "padel" && padelClubSource === "DIRECTORY"
+      ? `/api/padel/public/clubs?limit=8&includeCourts=1&q=${encodeURIComponent(padelDirectoryQuery.trim())}`
+      : null,
     fetcher,
     { revalidateOnFocus: false },
   );
@@ -498,6 +537,7 @@ export default function NewOrganizationEventPage({
     { revalidateOnFocus: false },
   );
   const padelCategoryItems = padelCategories?.items ?? [];
+  const padelDirectoryClubs = padelDirectoryRes?.items ?? [];
 
   useEffect(() => {
     if (draftLoaded) return;
@@ -554,7 +594,7 @@ export default function NewOrganizationEventPage({
       setSelectedPreset(draft.selectedPreset ?? null);
       setIsFreeEvent(Boolean(draft.isFreeEvent));
       setLiveHubVisibility(draft.liveHubVisibility ?? "PUBLIC");
-      setFreeTicketName(draft.freeTicketName || "Inscrição");
+      setFreeTicketName(draft.freeTicketName || freeTicketPlaceholder);
       setFreeTicketPublicAccess(draft.freeTicketPublicAccess ?? true);
       setFreeCapacity(normalizeIntegerInput(draft.freeCapacity || ""));
     } catch (err) {
@@ -562,7 +602,7 @@ export default function NewOrganizationEventPage({
     } finally {
       setDraftLoaded(true);
     }
-  }, [draftLoaded]);
+  }, [draftLoaded, freeTicketPlaceholder]);
 
   useEffect(() => {
     if (!draftLoaded) return;
@@ -571,6 +611,17 @@ export default function NewOrganizationEventPage({
       setSelectedPreset(nextPreset);
     }
   }, [draftLoaded, forcePreset, isPadelOrg, selectedPreset]);
+
+  useEffect(() => {
+    if (!draftLoaded) return;
+    setFreeTicketName((prev) => {
+      const normalized = prev?.trim();
+      if (!normalized || normalized === "Inscrição" || normalized === "Entrada") {
+        return freeTicketPlaceholder;
+      }
+      return prev;
+    });
+  }, [draftLoaded, freeTicketPlaceholder]);
 
   useEffect(() => {
     if (!draftLoaded || coverUrl || coverLibrary.length === 0) return;
@@ -630,12 +681,12 @@ export default function NewOrganizationEventPage({
     if (!isFreeEvent) return;
     setTicketTypes([
       {
-        name: freeTicketName.trim() || "Inscrição",
+        name: freeTicketName.trim() || freeTicketPlaceholder,
         price: "0",
         totalQuantity: freeCapacity,
       },
     ]);
-  }, [isFreeEvent, freeTicketName, freeCapacity]);
+  }, [isFreeEvent, freeTicketName, freeCapacity, freeTicketPlaceholder]);
 
   useEffect(() => {
     clearErrorsForFields(["tickets"]);
@@ -647,6 +698,10 @@ export default function NewOrganizationEventPage({
       setSelectedPadelClubId(null);
       setSelectedPadelCourtIds([]);
       setSelectedPadelStaffIds([]);
+      setPadelClubSource("ORG");
+      setPadelClubSourceTouched(false);
+      setPadelDirectoryQuery("");
+      setPadelDirectoryError(null);
       setLocationManuallySet(false);
       setPadelFormat("TODOS_CONTRA_TODOS");
       setPadelEligibility("OPEN");
@@ -671,13 +726,27 @@ export default function NewOrganizationEventPage({
   }, [selectedPreset, padelClubs, selectedPadelClubId]);
 
   useEffect(() => {
+    if (padelClubSourceTouched || selectedPreset !== "padel") return;
+    const hasClubs = (padelClubs?.items?.length ?? 0) > 0;
+    setPadelClubSource(hasClubs ? "ORG" : "DIRECTORY");
+  }, [padelClubSourceTouched, padelClubs?.items?.length, selectedPreset]);
+
+  useEffect(() => {
     if (!padelCourts?.items) return;
+    if (padelCourts.items.length === 0) {
+      if (selectedPadelCourtIds.length > 0) setSelectedPadelCourtIds([]);
+      return;
+    }
     const activeCourts = padelCourts.items.filter((c) => c.isActive).map((c) => c.id);
     if (activeCourts.length > 0) setSelectedPadelCourtIds(activeCourts);
   }, [padelCourts]);
 
   useEffect(() => {
     if (!padelStaff?.items) return;
+    if (padelStaff.items.length === 0) {
+      if (selectedPadelStaffIds.length > 0) setSelectedPadelStaffIds([]);
+      return;
+    }
     const inherited = padelStaff.items.filter((s) => s.inheritToEvents).map((s) => s.id);
     if (inherited.length > 0) setSelectedPadelStaffIds(inherited);
   }, [padelStaff]);
@@ -739,7 +808,7 @@ export default function NewOrganizationEventPage({
 
   const normalizePadelTicketBaseName = (name: string) => {
     const base = name.split("·")[0]?.trim();
-    return base || "Inscrição";
+    return base || freeTicketPlaceholder;
   };
 
   const getPadelCategoryTag = (categoryId: number) => {
@@ -880,6 +949,90 @@ export default function NewOrganizationEventPage({
       ? padelClubs?.items?.find((c) => c.id === selectedPadelClubId) ?? null
       : null;
 
+  const createPartnerCourts = async (clubId: number, club: PadelPublicClub) => {
+    const courtsSource =
+      Array.isArray(club.courts) && club.courts.length > 0
+        ? club.courts.map((court, idx) => ({
+            name: court.name || `Court ${idx + 1}`,
+            indoor: Boolean(court.indoor),
+            surface: court.surface ?? "",
+            displayOrder: idx + 1,
+          }))
+        : Array.from({ length: Math.max(1, club.courtsCount ?? 1) }).map((_, idx) => ({
+            name: `Court ${idx + 1}`,
+            indoor: false,
+            surface: "",
+            displayOrder: idx + 1,
+          }));
+
+    const createdIds: number[] = [];
+    for (const court of courtsSource) {
+      const res = await fetch(`/api/padel/clubs/${clubId}/courts`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: court.name,
+          description: "",
+          surface: court.surface,
+          indoor: court.indoor,
+          isActive: true,
+          displayOrder: court.displayOrder,
+        }),
+      });
+      const json = await res.json().catch(() => null);
+      if (res.ok && json?.court?.id) {
+        createdIds.push(json.court.id);
+      }
+    }
+    return createdIds;
+  };
+
+  const createPartnerClubFromDirectory = async (club: PadelPublicClub) => {
+    if (!organizationId) {
+      setPadelDirectoryError("Seleciona uma organização antes de adicionar o clube.");
+      return;
+    }
+    setPadelDirectoryError(null);
+    setCreatingPartnerClubId(club.id);
+    try {
+      const res = await fetch("/api/padel/clubs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          organizationId,
+          name: club.name,
+          city: club.city ?? "",
+          address: club.address ?? "",
+          courtsCount: club.courtsCount ?? 1,
+          isActive: true,
+        }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.club) {
+        setPadelDirectoryError(json?.error || "Nao foi possivel criar o clube parceiro.");
+        return;
+      }
+      const savedClub = json.club as { id?: number };
+      if (!savedClub.id) {
+        setPadelDirectoryError("Erro ao criar clube parceiro.");
+        return;
+      }
+      await mutatePadelClubs();
+      setPadelClubSource("ORG");
+      setPadelClubSourceTouched(true);
+      setSelectedPadelClubId(savedClub.id);
+      setLocationManuallySet(false);
+      const createdCourtIds = await createPartnerCourts(savedClub.id, club);
+      if (createdCourtIds.length > 0) {
+        setSelectedPadelCourtIds(createdCourtIds);
+      }
+    } catch (err) {
+      setPadelDirectoryError("Erro ao criar clube parceiro.");
+    } finally {
+      setCreatingPartnerClubId(null);
+    }
+  };
+
   const padelExtrasContent =
     selectedPreset === "padel" ? (
       <div className="space-y-4">
@@ -891,58 +1044,162 @@ export default function NewOrganizationEventPage({
                 Courts: {padelCourts?.items?.filter((c) => c.isActive).length ?? "—"} · Sel: {selectedPadelCourtIds.length || "—"}
               </span>
             </div>
-            <select
-              className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white/90 outline-none transition focus:border-[var(--orya-cyan)] focus:ring-2 focus:ring-[rgba(107,255,255,0.35)]"
-              value={selectedPadelClubId ?? ""}
-              onChange={(e) => {
-                setLocationManuallySet(false);
-                setSelectedPadelClubId(Number(e.target.value) || null);
-              }}
-            >
-              <option value="">Clube</option>
-              {(padelClubs?.items || [])
-                .filter((c) => c.isActive)
-                .map((club) => (
-                  <option key={club.id} value={club.id}>
-                    {club.name} {club.city ? `— ${club.city}` : ""}
-                  </option>
-                ))}
-            </select>
-            {!padelClubs?.items?.length && <p className="text-[12px] text-white/60">Sem clubes.</p>}
+            <div className="inline-flex rounded-full border border-white/15 bg-black/40 p-1 text-[12px]">
+              {[
+                { key: "ORG" as const, label: "Meus clubes" },
+                { key: "DIRECTORY" as const, label: "Diretorio" },
+              ].map((opt) => (
+                <button
+                  key={opt.key}
+                  type="button"
+                  onClick={() => {
+                    setPadelClubSource(opt.key);
+                    setPadelClubSourceTouched(true);
+                    setPadelDirectoryError(null);
+                  }}
+                  className={`rounded-full px-3 py-1 transition ${
+                    padelClubSource === opt.key
+                      ? "bg-white text-black font-semibold shadow"
+                      : "text-white/70 hover:bg-white/10"
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+
+            {padelClubSource === "ORG" ? (
+              <>
+                <select
+                  className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white/90 outline-none transition focus:border-[var(--orya-cyan)] focus:ring-2 focus:ring-[rgba(107,255,255,0.35)]"
+                  value={selectedPadelClubId ?? ""}
+                  onChange={(e) => {
+                    setLocationManuallySet(false);
+                    setSelectedPadelClubId(Number(e.target.value) || null);
+                  }}
+                >
+                  <option value="">Clube</option>
+                  {(padelClubs?.items || [])
+                    .filter((c) => c.isActive)
+                    .map((club) => (
+                      <option key={club.id} value={club.id}>
+                        {club.name} {club.city ? `— ${club.city}` : ""}
+                      </option>
+                    ))}
+                </select>
+                {!padelClubs?.items?.length && (
+                  <div className="space-y-2">
+                    <p className="text-[12px] text-white/60">Sem clubes na tua organizacao.</p>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPadelClubSource("DIRECTORY");
+                          setPadelClubSourceTouched(true);
+                          setPadelDirectoryError(null);
+                        }}
+                        className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:border-white/40"
+                      >
+                        Procurar no diretorio
+                      </button>
+                      <Link
+                        href="/organizacao/torneios?section=padel-hub&padel=clubs"
+                        className="rounded-full border border-white/15 px-3 py-1 text-[11px] text-white/70 hover:border-white/30"
+                      >
+                        Criar clube rapido
+                      </Link>
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="space-y-2">
+                <input
+                  value={padelDirectoryQuery}
+                  onChange={(e) => setPadelDirectoryQuery(e.target.value)}
+                  placeholder="Pesquisar clube, cidade, organizacao"
+                  className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white/90 outline-none transition focus:border-[var(--orya-cyan)] focus:ring-2 focus:ring-[rgba(107,255,255,0.35)]"
+                />
+                {padelDirectoryError && (
+                  <p className="text-[12px] text-rose-200">{padelDirectoryError}</p>
+                )}
+                {padelDirectoryLoading ? (
+                  <p className="text-[12px] text-white/60">A procurar clubes...</p>
+                ) : padelDirectoryClubs.length === 0 ? (
+                  <p className="text-[12px] text-white/60">Sem resultados no diretorio.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {padelDirectoryClubs.map((club) => {
+                      const isBusy = creatingPartnerClubId === club.id;
+                      return (
+                        <div
+                          key={`dir-${club.id}`}
+                          className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/12 bg-black/30 px-3 py-2 text-sm"
+                        >
+                          <div>
+                            <p className="font-semibold text-white">{club.name}</p>
+                            <p className="text-[11px] text-white/60">
+                              {[club.city, club.address].filter(Boolean).join(" · ") || "Local por definir"}
+                            </p>
+                            {club.organizationName && (
+                              <p className="text-[10px] text-white/45">{club.organizationName}</p>
+                            )}
+                          </div>
+                          <button
+                            type="button"
+                            disabled={isBusy}
+                            onClick={() => createPartnerClubFromDirectory(club)}
+                            className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:border-white/40 disabled:opacity-60"
+                          >
+                            {isBusy ? "A adicionar..." : "Adicionar parceiro"}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="space-y-2">
             <label className={labelClass}>Courts</label>
             <div className="rounded-2xl border border-white/12 bg-white/[0.04] p-3 max-h-56 overflow-auto space-y-2">
-              {(padelCourts?.items || [])
-                .filter((c) => c.isActive)
-                .map((ct) => {
-                  const checked = selectedPadelCourtIds.includes(ct.id);
-                  return (
-                    <label
-                      key={ct.id}
-                      className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-[12px] ${
-                        checked
-                          ? "border-emerald-400/50 bg-emerald-500/10 text-emerald-50"
-                          : "border-white/15 bg-black/30 text-white/80"
-                      } transition hover:border-[var(--orya-cyan)]/50`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={(e) =>
-                          setSelectedPadelCourtIds((prev) =>
-                            e.target.checked ? [...prev, ct.id] : prev.filter((id) => id !== ct.id),
-                          )
-                        }
-                        className="accent-white"
-                      />
-                      <span>{ct.name}</span>
-                      <span className="text-[10px] text-white/50">#{ct.displayOrder}</span>
-                    </label>
-                  );
-                })}
-              {!padelCourts?.items?.length && <p className="text-[12px] text-white/60">Sem courts.</p>}
+              {!selectedPadelClubId && (
+                <p className="text-[12px] text-white/60">Seleciona um clube para carregar courts.</p>
+              )}
+              {selectedPadelClubId &&
+                (padelCourts?.items || [])
+                  .filter((c) => c.isActive)
+                  .map((ct) => {
+                    const checked = selectedPadelCourtIds.includes(ct.id);
+                    return (
+                      <label
+                        key={ct.id}
+                        className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-[12px] ${
+                          checked
+                            ? "border-emerald-400/50 bg-emerald-500/10 text-emerald-50"
+                            : "border-white/15 bg-black/30 text-white/80"
+                        } transition hover:border-[var(--orya-cyan)]/50`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(e) =>
+                            setSelectedPadelCourtIds((prev) =>
+                              e.target.checked ? [...prev, ct.id] : prev.filter((id) => id !== ct.id),
+                            )
+                          }
+                          className="accent-white"
+                        />
+                        <span>{ct.name}</span>
+                        <span className="text-[10px] text-white/50">#{ct.displayOrder}</span>
+                      </label>
+                    );
+                  })}
+              {selectedPadelClubId && !padelCourts?.items?.length && (
+                <p className="text-[12px] text-white/60">Sem courts.</p>
+              )}
               {selectedPadelCourtIds.length === 0 && (padelCourts?.items?.length || 0) > 0 && (
                 <p className="text-[11px] text-red-200">Seleciona 1 court.</p>
               )}
@@ -953,31 +1210,35 @@ export default function NewOrganizationEventPage({
         <div className="space-y-2">
           <label className={labelClass}>Staff</label>
           <div className="rounded-2xl border border-white/12 bg-white/[0.04] p-3 max-h-48 overflow-auto space-y-2">
-            {(padelStaff?.items || []).map((member) => {
-              const checked = selectedPadelStaffIds.includes(member.id);
-              return (
-                <label
-                  key={member.id}
-                  className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-[12px] ${
-                    checked ? "border-emerald-400/50 bg-emerald-500/10 text-emerald-50" : "border-white/15 bg-black/30 text-white/80"
-                  } transition hover:border-[var(--orya-cyan)]/50`}
-                >
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    onChange={(e) =>
-                      setSelectedPadelStaffIds((prev) =>
-                        e.target.checked ? [...prev, member.id] : prev.filter((id) => id !== member.id),
-                      )
-                    }
-                    className="accent-white"
-                  />
-                  <span>{member.fullName || member.email || "Staff"}</span>
-                  {member.inheritToEvents && <span className="text-[10px] text-emerald-300">auto</span>}
-                </label>
-              );
-            })}
-            {!padelStaff?.items?.length && (
+            {!selectedPadelClubId && (
+              <p className="text-[12px] text-white/60">Seleciona um clube para carregar staff.</p>
+            )}
+            {selectedPadelClubId &&
+              (padelStaff?.items || []).map((member) => {
+                const checked = selectedPadelStaffIds.includes(member.id);
+                return (
+                  <label
+                    key={member.id}
+                    className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-[12px] ${
+                      checked ? "border-emerald-400/50 bg-emerald-500/10 text-emerald-50" : "border-white/15 bg-black/30 text-white/80"
+                    } transition hover:border-[var(--orya-cyan)]/50`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={(e) =>
+                        setSelectedPadelStaffIds((prev) =>
+                          e.target.checked ? [...prev, member.id] : prev.filter((id) => id !== member.id),
+                        )
+                      }
+                      className="accent-white"
+                    />
+                    <span>{member.fullName || member.email || "Staff"}</span>
+                    {member.inheritToEvents && <span className="text-[10px] text-emerald-300">auto</span>}
+                  </label>
+                );
+              })}
+            {selectedPadelClubId && !padelStaff?.items?.length && (
               <p className="text-[12px] text-white/60">Sem staff.</p>
             )}
           </div>
@@ -1122,7 +1383,7 @@ export default function NewOrganizationEventPage({
         typeof totalQuantityRaw === "number" && Number.isFinite(totalQuantityRaw) && totalQuantityRaw > 0
           ? Math.floor(totalQuantityRaw)
           : null;
-      const baseName = freeTicketName.trim() || "Inscrição";
+      const baseName = freeTicketName.trim() || freeTicketPlaceholder;
 
       if (shouldSplitFreeTickets) {
         return padelCategoryIds.map((categoryId) => {
@@ -1208,7 +1469,7 @@ export default function NewOrganizationEventPage({
       return "Sem categorias";
     }
     if (preparedTickets.length === 0) {
-      return "Sem bilhetes (1 gratuito)";
+      return isPadelPreset ? "Sem inscrições (1 gratuita)" : "Sem bilhetes (1 gratuito)";
     }
     if (isFreeEvent) {
       if (shouldSplitFreeTickets) {
@@ -1223,7 +1484,7 @@ export default function NewOrganizationEventPage({
       return `${countLabel} · desde ${minPrice.toFixed(2)} €`;
     }
     const minPrice = Math.min(...preparedTickets.map((t) => t.price));
-    const countLabel = `${preparedTickets.length} bilhete${preparedTickets.length === 1 ? "" : "s"}`;
+    const countLabel = `${preparedTickets.length} ${preparedTickets.length === 1 ? ticketLabel : ticketLabelPlural}`;
     return `${countLabel} · desde ${minPrice.toFixed(2)} €`;
   }, [
     preparedTickets,
@@ -1233,6 +1494,8 @@ export default function NewOrganizationEventPage({
     padelCategoryIds.length,
     isPadelPaid,
     isPadelPreset,
+    ticketLabel,
+    ticketLabelPlural,
   ]);
 
   const liveHubSummary =
@@ -1303,7 +1566,7 @@ export default function NewOrganizationEventPage({
         if (hasBelowMinimum) {
           issues.push({
             field: "tickets",
-            message: `Para ${primaryLabelPlural} pagos, cada bilhete tem de custar pelo menos 1 €.`,
+            message: `Para ${primaryLabelPlural} pagos, cada ${ticketLabel} tem de custar pelo menos 1 €.`,
           });
         }
       }
@@ -1312,7 +1575,7 @@ export default function NewOrganizationEventPage({
           field: "tickets",
           message:
             paidTicketsBlockedMessage ??
-            "Liga o Stripe e verifica o email oficial da organização para vender bilhetes pagos.",
+            `Liga o Stripe e verifica o email oficial da organização para vender ${ticketLabelPlural} pagos.`,
         });
       }
     }
@@ -1331,10 +1594,10 @@ export default function NewOrganizationEventPage({
       const uniqueTicketCategories = new Set(ticketCategoryIds);
       const missingCategories = padelCategoryIds.filter((id) => !uniqueTicketCategories.has(id));
       if (missingCategories.length > 0) {
-        issues.push({ field: "tickets", message: "Cria um bilhete por categoria de padel." });
+        issues.push({ field: "tickets", message: `Cria ${ticketLabelIndefinite} ${ticketLabel} por categoria de padel.` });
       }
       if (ticketCategoryIds.length !== uniqueTicketCategories.size) {
-        issues.push({ field: "tickets", message: "Cada bilhete deve apontar para uma categoria diferente." });
+        issues.push({ field: "tickets", message: `Cada ${ticketLabel} deve apontar para uma categoria diferente.` });
       }
       const missingTag = currentTickets.some((ticket) => {
         if (typeof ticket.padelCategoryId !== "number") return false;
@@ -1342,7 +1605,10 @@ export default function NewOrganizationEventPage({
         return !ticket.name.includes(expectedTag);
       });
       if (missingTag) {
-        issues.push({ field: "tickets", message: "O nome do bilhete deve incluir o código da categoria (ex: M4)." });
+        issues.push({
+          field: "tickets",
+          message: `O nome ${ticketLabelArticle} ${ticketLabel} deve incluir o código da categoria (ex: M4).`,
+        });
       }
     }
     if (selectedPreset === "padel" && padelRegistrationStartsAt && padelRegistrationEndsAt) {
@@ -1719,6 +1985,28 @@ export default function NewOrganizationEventPage({
       const publicTicketScope = hasTicketsPayload ? "SPECIFIC" : "ALL";
       const participantAccessMode = hasTicketsPayload ? "TICKET" : "NONE";
       const participantTicketScope = hasTicketsPayload ? "SPECIFIC" : "ALL";
+      const selectedCourtsPayload =
+        selectedPadelClubId && padelCourts?.items
+          ? padelCourts.items.filter((court) => selectedPadelCourtIds.includes(court.id))
+          : [];
+      const courtsFromClubs = selectedCourtsPayload.map((court) => ({
+        id: court.id,
+        clubId: selectedPadelClubId,
+        clubName: selectedPadelClub?.name ?? null,
+        name: court.name,
+        indoor: court.indoor ?? null,
+        displayOrder: court.displayOrder ?? null,
+      }));
+      const staffFromClubs =
+        selectedPadelClubId && padelStaff?.items
+          ? padelStaff.items
+              .filter((member) => selectedPadelStaffIds.includes(member.id))
+              .map((member) => ({
+                clubName: selectedPadelClub?.name ?? null,
+                email: member.email ?? null,
+                role: member.fullName ?? null,
+              }))
+          : [];
 
       const payload = {
         title: title.trim(),
@@ -1754,6 +2042,8 @@ export default function NewOrganizationEventPage({
                 splitDeadlineHours: padelSplitDeadlineHours ? Number(padelSplitDeadlineHours) : null,
                 padelV2Enabled: true,
                 advancedSettings: {
+                  courtsFromClubs: courtsFromClubs.length > 0 ? courtsFromClubs : null,
+                  staffFromClubs: staffFromClubs.length > 0 ? staffFromClubs : null,
                   waitlistEnabled: padelWaitlistEnabled,
                   registrationStartsAt: normalizeRegistrationValue(padelRegistrationStartsAt),
                   registrationEndsAt: normalizeRegistrationValue(padelRegistrationEndsAt),
@@ -1826,7 +2116,7 @@ export default function NewOrganizationEventPage({
     setAddress("");
     setTicketTypes([]);
     setIsFreeEvent(false);
-    setFreeTicketName("Inscrição");
+    setFreeTicketName(freeTicketPlaceholder);
     setFreeTicketPublicAccess(true);
     setFreeCapacity("");
     setCoverUrl(null);
@@ -2312,7 +2602,7 @@ export default function NewOrganizationEventPage({
   const applyPadelTicketNameToAll = () => {
     setTicketTypes((prev) => {
       if (prev.length === 0) return prev;
-      const baseName = normalizePadelTicketBaseName(prev[0].name || "Inscrição");
+      const baseName = normalizePadelTicketBaseName(prev[0].name || freeTicketPlaceholder);
       return prev.map((row) => {
         if (typeof row.padelCategoryId !== "number") return row;
         return {
@@ -2444,7 +2734,7 @@ export default function NewOrganizationEventPage({
               type="button"
               onClick={() => setIsFreeEvent(false)}
               disabled={paidTicketsBlocked}
-              title={paidTicketsBlockedMessage ?? "Ativa o Stripe e o email oficial para vender bilhetes pagos."}
+              title={paidTicketsBlockedMessage ?? `Ativa o Stripe e o email oficial para vender ${ticketLabelPlural} pagos.`}
               className={`rounded-full px-3 py-1 font-semibold transition ${
                 !isFreeEvent && !paidTicketsBlocked ? "bg-white text-black shadow" : "text-white/70"
               } ${paidTicketsBlocked ? "cursor-not-allowed opacity-50" : ""}`}
@@ -2464,7 +2754,7 @@ export default function NewOrganizationEventPage({
         </div>
         {isPadelPreset && (
           <p className="text-[11px] text-white/55">
-            Pago: 1 bilhete por categoria. Grátis: capacidade definida nas categorias.
+            Pago: 1 {ticketLabel} por categoria. Grátis: capacidade definida nas categorias.
           </p>
         )}
         {paidTicketsBlocked && (
@@ -2502,7 +2792,11 @@ export default function NewOrganizationEventPage({
         )}
         {ticketTypes.length === 0 && !isFreeEvent && (
           <div className="rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-[12px] text-white/70">
-            {isPadelPaid ? "Seleciona categorias." : "Sem bilhetes, criamos 1 gratuito."}
+            {isPadelPaid
+              ? "Seleciona categorias."
+              : isPadelPreset
+                ? "Sem inscrições, criamos 1 gratuita."
+                : "Sem bilhetes, criamos 1 gratuito."}
           </div>
         )}
         {fieldErrors.tickets && (
@@ -2516,7 +2810,7 @@ export default function NewOrganizationEventPage({
       {isFreeEvent ? (
         <div className="space-y-3 rounded-2xl border border-white/12 bg-white/5 p-4">
           <div className="flex items-center justify-between">
-            <p className={labelClass}>Inscrição grátis</p>
+            <p className={labelClass}>{freeTicketLabel}</p>
             <span className="rounded-full border border-emerald-300/40 bg-emerald-400/10 px-3 py-1 text-[12px] text-emerald-50">
               Grátis
             </span>
@@ -2529,7 +2823,7 @@ export default function NewOrganizationEventPage({
                 value={freeTicketName}
                 onChange={(e) => setFreeTicketName(e.target.value)}
                 className={inputClass(false)}
-                placeholder="Inscrição"
+                placeholder={freeTicketPlaceholder}
               />
             </div>
             <div className="space-y-1">
@@ -2574,21 +2868,23 @@ export default function NewOrganizationEventPage({
           </div>
           {shouldSplitFreeTickets && (
             <div className="rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-[12px] text-white/70">
-              Criamos um bilhete gratuito por categoria.
+              Criamos {ticketLabelIndefinite} {ticketLabel} {isPadelPreset ? "gratuita" : "gratuito"} por categoria.
             </div>
           )}
         </div>
       ) : (
         <div className="space-y-4 rounded-2xl border border-white/12 bg-white/5 p-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className={labelClass}>{isPadelPaid ? "Bilhetes por categoria" : "Bilhetes"}</h2>
+            <h2 className={labelClass}>
+              {isPadelPaid ? `${ticketLabelPluralCap} por categoria` : ticketLabelPluralCap}
+            </h2>
             {!isPadelPaid && (
               <button
                 type="button"
                 onClick={handleAddTicketType}
                 className={`${CTA_PRIMARY} px-3 py-1 text-[13px]`}
               >
-                + Adicionar bilhete
+                + Adicionar {ticketLabel}
               </button>
             )}
           </div>
@@ -2642,7 +2938,7 @@ export default function NewOrganizationEventPage({
                           )}
                         </>
                       ) : (
-                        `Bilhete ${idx + 1}`
+                        `${ticketLabelCap} ${idx + 1}`
                       )}
                     </span>
                     {!isPadelPaid && ticketTypes.length > 1 && (
@@ -2658,7 +2954,7 @@ export default function NewOrganizationEventPage({
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                     <div className="space-y-1 flex-1">
                       <label className={labelClass}>
-                        Nome do bilhete <span aria-hidden>*</span>
+                        Nome {ticketLabelArticle} {ticketLabel} <span aria-hidden>*</span>
                       </label>
                       <input
                         type="text"
@@ -2755,7 +3051,7 @@ export default function NewOrganizationEventPage({
 
       {hasInviteOnlyTickets && (
         <div className="rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-[12px] text-white/70">
-          Bilhetes por convite exigem convites adicionados depois de criares o {primaryLabel}.
+          {ticketLabelPluralCap} por convite exigem convites adicionados depois de criares o {primaryLabel}.
         </div>
       )}
     </div>
@@ -2782,11 +3078,11 @@ export default function NewOrganizationEventPage({
                 className={`flex w-full max-w-4xl max-h-[calc(100vh-6rem)] flex-col ${MODAL_PANEL_CLASS}`}
                 role="dialog"
                 aria-modal="true"
-                aria-label="Bilhetes"
+                aria-label={ticketLabelPluralCap}
               >
                 <div className={MODAL_HEADER_CLASS}>
                   <div>
-                    <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Bilhetes</p>
+                    <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">{ticketLabelPluralCap}</p>
                     <p className="text-sm font-semibold text-white">Preço & capacidade</p>
                   </div>
                   <button
@@ -3561,7 +3857,7 @@ export default function NewOrganizationEventPage({
                       className="group flex w-full items-center justify-between gap-4 px-3 py-3 text-left transition hover:bg-white/6"
                     >
                       <div className="space-y-1">
-                        <p className={labelClass}>Categorias & bilhetes</p>
+                        <p className={labelClass}>Categorias & {ticketLabelPlural}</p>
                         <p className="text-[12px] text-white/75">{ticketsSummary}</p>
                         {paidTicketsBlocked && !isFreeEvent && (
                           <p className="text-[11px] text-amber-200/90">Stripe + email oficial.</p>
@@ -3576,7 +3872,7 @@ export default function NewOrganizationEventPage({
                       className="group flex w-full items-center justify-between gap-4 px-3 py-3 text-left transition hover:bg-white/6"
                     >
                       <div className="space-y-1">
-                        <p className={labelClass}>Bilhetes</p>
+                        <p className={labelClass}>{ticketLabelPluralCap}</p>
                         <p className="text-[12px] text-white/75">{ticketsSummary}</p>
                         {paidTicketsBlocked && !isFreeEvent && (
                           <p className="text-[11px] text-amber-200/90">Stripe + email oficial.</p>
@@ -3706,7 +4002,7 @@ export default function NewOrganizationEventPage({
                     </div>
                     {isPadelPaid && (
                       <p className="text-[11px] text-white/55">
-                        Capacidade e preço são definidos nos bilhetes por categoria.
+                        Capacidade e preço são definidos nas {ticketLabelPlural} por categoria.
                       </p>
                     )}
                     <div className="rounded-2xl border border-white/12 bg-white/5 p-3">
@@ -3747,7 +4043,7 @@ export default function NewOrganizationEventPage({
                         <div className="hidden grid-cols-[1.2fr_0.9fr_0.7fr] gap-2 border-b border-white/10 px-4 py-2 text-[10px] uppercase tracking-[0.2em] text-white/45 sm:grid">
                           <span>Categoria</span>
                           <span>Formato</span>
-                          <span>{isPadelPaid ? "Capacidade (bilhetes)" : "Capacidade"}</span>
+                          <span>{isPadelPaid ? `Capacidade (${ticketLabelPlural})` : "Capacidade"}</span>
                         </div>
                         <div className="divide-y divide-white/10">
                           {padelCategoryIds.map((categoryId) => {
@@ -3798,7 +4094,7 @@ export default function NewOrganizationEventPage({
                                 </div>
                                 <div className="space-y-1">
                                   <span className="text-[10px] uppercase tracking-[0.16em] text-white/45 sm:hidden">
-                                    {isPadelPaid ? "Capacidade (bilhetes)" : "Capacidade"}
+                                    {isPadelPaid ? `Capacidade (${ticketLabelPlural})` : "Capacidade"}
                                   </span>
                                   <input
                                     type="number"
@@ -3835,7 +4131,7 @@ export default function NewOrganizationEventPage({
                   <div ref={padelTicketsRef} className="space-y-3">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="space-y-1">
-                        <p className={labelClass}>Bilhetes</p>
+                        <p className={labelClass}>{ticketLabelPluralCap}</p>
                         <p className="text-[12px] text-white/70">
                           {padelCategoryIds.length === 0 ? ticketsSummary : `${ticketsSummary} · ${accessSummary}`}
                         </p>

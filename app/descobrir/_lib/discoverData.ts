@@ -226,12 +226,6 @@ export async function getDiscoverData(options?: {
 }
 function buildDiscoverWhere(tab?: DiscoverTab): Prisma.EventWhereInput {
   const organizationFilter: Prisma.OrganizationWhereInput = { status: "ACTIVE" };
-  if (tab === "reservas") {
-    organizationFilter.OR = [
-      { primaryModule: "RESERVAS" },
-      { organizationModules: { some: { moduleKey: "RESERVAS", enabled: true } } },
-    ];
-  }
 
   const base: Prisma.EventWhereInput = {
     status: { in: ["PUBLISHED", "DATE_CHANGED"] },
@@ -246,8 +240,6 @@ function buildDiscoverWhere(tab?: DiscoverTab): Prisma.EventWhereInput {
         OR: [
           { tournament: { isNot: null } },
           { templateType: "PADEL" },
-          { organization: { primaryModule: "TORNEIOS" } },
-          { organization: { organizationModules: { some: { moduleKey: "TORNEIOS", enabled: true } } } },
         ],
       },
     ];

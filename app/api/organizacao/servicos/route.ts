@@ -7,7 +7,7 @@ import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { ensureDefaultPolicies } from "@/lib/organizationPolicies";
 import { ensureReservasModuleAccess } from "@/lib/reservas/access";
-import { formatPaidSalesGateMessage, getPaidSalesGate } from "@/lib/organizationPayments";
+import { ensureOrganizationWriteAccess } from "@/lib/organizationWriteAccess";
 import { OrganizationMemberRole } from "@prisma/client";
 
 const ALLOWED_ROLES: OrganizationMemberRole[] = [
@@ -121,6 +121,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: reservasAccess.error }, { status: 403 });
     }
 
+    const writeAccess = ensureOrganizationWriteAccess(organization, {
+      requireStripeForServices: true,
+    });
+    if (!writeAccess.ok) {
+      return NextResponse.json({ ok: false, error: writeAccess.error }, { status: 403 });
+    }
+
     await ensureDefaultPolicies(prisma, organization.id);
 
     const payload = await req.json().catch(() => ({}));
@@ -141,29 +148,6 @@ export async function POST(req: NextRequest) {
     }
     if (!Number.isFinite(unitPriceCents) || unitPriceCents < 0) {
       return NextResponse.json({ ok: false, error: "Dados inválidos." }, { status: 400 });
-    }
-
-    if (unitPriceCents > 0) {
-      const gate = getPaidSalesGate({
-        officialEmail: organization.officialEmail ?? null,
-        officialEmailVerifiedAt: organization.officialEmailVerifiedAt ?? null,
-        stripeAccountId: organization.stripeAccountId ?? null,
-        stripeChargesEnabled: organization.stripeChargesEnabled ?? false,
-        stripePayoutsEnabled: organization.stripePayoutsEnabled ?? false,
-        requireStripe: organization.orgType !== "PLATFORM",
-      });
-      if (!gate.ok) {
-        return NextResponse.json(
-          {
-            ok: false,
-            code: "PAYMENTS_NOT_READY",
-            error: formatPaidSalesGateMessage(gate, "Para vender serviços pagos,"),
-            missingEmail: gate.missingEmail,
-            missingStripe: gate.missingStripe,
-          },
-          { status: 403 },
-        );
-      }
     }
 
     let policyId: number | null = null;

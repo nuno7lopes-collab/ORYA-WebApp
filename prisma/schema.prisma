@@ -76,6 +76,7 @@ model Profile {
   chatDeletedMessages                                              ChatMessage[]           @relation("ChatMessageDeletedBy")
   chatReadStates                                                   ChatReadState[]
   chatModerationLogs                                               ChatModerationLog[]
+  store                                                            Store?
   promoCodesPromoted                                               PromoCode[]            @relation("PromoCodePromoter")
 
   @@map("profiles")
@@ -129,6 +130,7 @@ model Organization {
   publicYoutube           String?                         @map("public_youtube")
   publicDescription       String?                         @map("public_description")
   publicHours             String?                         @map("public_hours")
+  publicProfileLayout     Json?                           @map("public_profile_layout")
   infoRules               String?                         @map("info_rules")
   infoFaq                 String?                         @map("info_faq")
   infoRequirements        String?                         @map("info_requirements")
@@ -171,11 +173,474 @@ model Organization {
   transactions            Transaction[]
   membershipPlans         MembershipPlan[]
   membershipSubscriptions MembershipSubscription[]
+  store                   Store?
   organization_follows_organization_follows_organization_idToorganizations organization_follows[] @relation("organization_follows_organization_idToorganizations")
 
   @@index([stripeCustomerId], map: "organizations_stripe_customer_idx")
   @@index([stripeSubscriptionId], map: "organizations_stripe_subscription_idx")
   @@map("organizations")
+  @@schema("app_v3")
+}
+
+model Store {
+  id                         Int              @id @default(autoincrement())
+  ownerType                  StoreOwnerType   @map("owner_type")
+  ownerOrganizationId        Int?             @map("owner_organization_id")
+  ownerUserId                String?          @map("owner_user_id") @db.Uuid
+  status                     StoreStatus      @default(CLOSED)
+  showOnProfile              Boolean          @default(false) @map("show_on_profile")
+  catalogLocked              Boolean          @default(true) @map("catalog_locked")
+  checkoutEnabled            Boolean          @default(false) @map("checkout_enabled")
+  currency                   String           @default("EUR")
+  supportEmail               String?          @map("support_email")
+  supportPhone               String?          @map("support_phone")
+  returnPolicy               String?          @map("return_policy")
+  privacyPolicy              String?          @map("privacy_policy")
+  termsUrl                   String?          @map("terms_url")
+  freeShippingThresholdCents Int?             @map("free_shipping_threshold_cents")
+  shippingMode               StoreShippingMode @default(FLAT) @map("shipping_mode")
+  createdAt                  DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                  DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization? @relation(fields: [ownerOrganizationId], references: [id], onDelete: Cascade)
+  ownerUser    Profile?      @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+  categories   StoreCategory[]
+  products     StoreProduct[]
+  bundles      StoreBundle[]
+  carts        StoreCart[]
+  orders       StoreOrder[]
+  shippingZones StoreShippingZone[]
+
+  @@unique([ownerOrganizationId], map: "stores_owner_org_unique")
+  @@unique([ownerUserId], map: "stores_owner_user_unique")
+  @@index([ownerType], map: "stores_owner_type_idx")
+  @@map("stores")
+  @@schema("app_v3")
+}
+
+model StoreCategory {
+  id            Int      @id @default(autoincrement())
+  storeId       Int      @map("store_id")
+  name          String
+  slug          String
+  description   String?
+  sortOrder     Int      @default(0) @map("sort_order")
+  isActive      Boolean  @default(true) @map("is_active")
+  coverImageUrl String?  @map("cover_image_url")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  store         Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  products      StoreProduct[]
+
+  @@unique([storeId, slug], map: "store_categories_store_slug_unique")
+  @@index([storeId], map: "store_categories_store_idx")
+  @@map("store_categories")
+  @@schema("app_v3")
+}
+
+model StoreProduct {
+  id                   Int                 @id @default(autoincrement())
+  storeId              Int                 @map("store_id")
+  categoryId           Int?                @map("category_id")
+  name                 String
+  slug                 String
+  shortDescription     String?             @map("short_description")
+  description          String?
+  status               StoreProductStatus  @default(DRAFT)
+  isVisible            Boolean             @default(false) @map("is_visible")
+  priceCents           Int                 @map("price_cents")
+  compareAtPriceCents  Int?                @map("compare_at_price_cents")
+  currency             String              @default("EUR")
+  sku                  String?
+  stockPolicy          StoreStockPolicy    @default(NONE) @map("stock_policy")
+  stockQty             Int?                @map("stock_qty")
+  requiresShipping     Boolean             @default(true) @map("requires_shipping")
+  weightGrams          Int?                @map("weight_grams")
+  lengthMm             Int?                @map("length_mm")
+  widthMm              Int?                @map("width_mm")
+  heightMm             Int?                @map("height_mm")
+  tags                 String[]            @default([]) @map("tags")
+  createdAt            DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  store                Store               @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  category             StoreCategory?      @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  variants             StoreProductVariant[]
+  images               StoreProductImage[]
+  options              StoreProductOption[]
+  bundles              StoreBundleItem[]
+  digitalAssets        StoreDigitalAsset[]
+  orderLines           StoreOrderLine[]
+  inventoryMovements   StoreInventoryMovement[]
+
+  @@unique([storeId, slug], map: "store_products_store_slug_unique")
+  @@index([storeId], map: "store_products_store_idx")
+  @@index([categoryId], map: "store_products_category_idx")
+  @@index([status], map: "store_products_status_idx")
+  @@map("store_products")
+  @@schema("app_v3")
+}
+
+model StoreProductVariant {
+  id           Int      @id @default(autoincrement())
+  productId    Int      @map("product_id")
+  label        String
+  sku          String?
+  priceCents   Int?     @map("price_cents")
+  stockQty     Int?     @map("stock_qty")
+  isActive     Boolean  @default(true) @map("is_active")
+  sortOrder    Int      @default(0) @map("sort_order")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  product      StoreProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
+  bundles      StoreBundleItem[]
+  orderLines   StoreOrderLine[]
+  inventoryMovements StoreInventoryMovement[]
+
+  @@unique([productId, label], map: "store_product_variants_product_label_unique")
+  @@index([productId], map: "store_product_variants_product_idx")
+  @@map("store_product_variants")
+  @@schema("app_v3")
+}
+
+model StoreProductImage {
+  id         Int      @id @default(autoincrement())
+  productId  Int      @map("product_id")
+  url        String
+  altText    String?  @map("alt_text")
+  sortOrder  Int      @default(0) @map("sort_order")
+  isPrimary  Boolean  @default(false) @map("is_primary")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  product    StoreProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId], map: "store_product_images_product_idx")
+  @@map("store_product_images")
+  @@schema("app_v3")
+}
+
+model StoreProductOption {
+  id              Int                    @id @default(autoincrement())
+  productId       Int                    @map("product_id")
+  optionType      StoreProductOptionType @map("option_type")
+  label           String
+  required        Boolean                @default(false)
+  maxLength       Int?                   @map("max_length")
+  minValue        Int?                   @map("min_value")
+  maxValue        Int?                   @map("max_value")
+  priceDeltaCents Int                    @default(0) @map("price_delta_cents")
+  sortOrder       Int                    @default(0) @map("sort_order")
+  createdAt       DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime               @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  product         StoreProduct           @relation(fields: [productId], references: [id], onDelete: Cascade)
+  values          StoreProductOptionValue[]
+
+  @@index([productId], map: "store_product_options_product_idx")
+  @@map("store_product_options")
+  @@schema("app_v3")
+}
+
+model StoreProductOptionValue {
+  id              Int      @id @default(autoincrement())
+  optionId        Int      @map("option_id")
+  value           String
+  label           String?
+  priceDeltaCents Int      @default(0) @map("price_delta_cents")
+  sortOrder       Int      @default(0) @map("sort_order")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  option          StoreProductOption @relation(fields: [optionId], references: [id], onDelete: Cascade)
+
+  @@unique([optionId, value], map: "store_product_option_values_option_value_unique")
+  @@index([optionId], map: "store_product_option_values_option_idx")
+  @@map("store_product_option_values")
+  @@schema("app_v3")
+}
+
+model StoreDigitalAsset {
+  id           Int      @id @default(autoincrement())
+  productId    Int      @map("product_id")
+  storagePath  String   @map("storage_path")
+  filename     String
+  sizeBytes    Int      @map("size_bytes")
+  mimeType     String   @map("mime_type")
+  maxDownloads Int?     @map("max_downloads")
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  product      StoreProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId], map: "store_digital_assets_product_idx")
+  @@map("store_digital_assets")
+  @@schema("app_v3")
+}
+
+model StoreDigitalGrant {
+  id             Int      @id @default(autoincrement())
+  orderLineId    Int      @map("order_line_id")
+  userId         String?  @map("user_id") @db.Uuid
+  downloadToken  String   @map("download_token")
+  expiresAt      DateTime? @map("expires_at") @db.Timestamptz(6)
+  downloadsCount Int      @default(0) @map("downloads_count")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  orderLine      StoreOrderLine @relation(fields: [orderLineId], references: [id], onDelete: Cascade)
+  user           Profile? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@unique([downloadToken], map: "store_digital_grants_token_unique")
+  @@index([orderLineId], map: "store_digital_grants_line_idx")
+  @@index([userId], map: "store_digital_grants_user_idx")
+  @@map("store_digital_grants")
+  @@schema("app_v3")
+}
+
+model StoreBundle {
+  id          Int                  @id @default(autoincrement())
+  storeId     Int                  @map("store_id")
+  name        String
+  slug        String
+  description String?
+  pricingMode StoreBundlePricingMode @map("pricing_mode")
+  priceCents  Int?                 @map("price_cents")
+  percentOff  Int?                 @map("percent_off")
+  status      StoreBundleStatus    @default(DRAFT)
+  isVisible   Boolean              @default(false) @map("is_visible")
+  createdAt   DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  store       Store                @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  items       StoreBundleItem[]
+
+  @@unique([storeId, slug], map: "store_bundles_store_slug_unique")
+  @@index([storeId], map: "store_bundles_store_idx")
+  @@map("store_bundles")
+  @@schema("app_v3")
+}
+
+model StoreBundleItem {
+  id        Int      @id @default(autoincrement())
+  bundleId  Int      @map("bundle_id")
+  productId Int      @map("product_id")
+  variantId Int?     @map("variant_id")
+  quantity  Int      @default(1)
+  bundle    StoreBundle @relation(fields: [bundleId], references: [id], onDelete: Cascade)
+  product   StoreProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
+  variant   StoreProductVariant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
+
+  @@index([bundleId], map: "store_bundle_items_bundle_idx")
+  @@index([productId], map: "store_bundle_items_product_idx")
+  @@index([variantId], map: "store_bundle_items_variant_idx")
+  @@map("store_bundle_items")
+  @@schema("app_v3")
+}
+
+model StoreCart {
+  id        String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  storeId   Int             @map("store_id")
+  userId    String?         @map("user_id") @db.Uuid
+  sessionId String?         @map("session_id")
+  status    StoreCartStatus @default(ACTIVE)
+  currency  String          @default("EUR")
+  createdAt DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  store     Store           @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  user      Profile?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+  items     StoreCartItem[]
+
+  @@index([storeId], map: "store_carts_store_idx")
+  @@index([userId], map: "store_carts_user_idx")
+  @@index([sessionId], map: "store_carts_session_idx")
+  @@map("store_carts")
+  @@schema("app_v3")
+}
+
+model StoreCartItem {
+  id             Int      @id @default(autoincrement())
+  cartId         String   @map("cart_id") @db.Uuid
+  productId      Int      @map("product_id")
+  variantId      Int?     @map("variant_id")
+  quantity       Int
+  unitPriceCents Int      @map("unit_price_cents")
+  personalization Json    @default("{}")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  cart           StoreCart @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  product        StoreProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
+  variant        StoreProductVariant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
+
+  @@index([cartId], map: "store_cart_items_cart_idx")
+  @@index([productId], map: "store_cart_items_product_idx")
+  @@index([variantId], map: "store_cart_items_variant_idx")
+  @@map("store_cart_items")
+  @@schema("app_v3")
+}
+
+model StoreOrder {
+  id              Int            @id @default(autoincrement())
+  storeId         Int            @map("store_id")
+  userId          String?        @map("user_id") @db.Uuid
+  orderNumber     String?        @map("order_number")
+  status          StoreOrderStatus @default(PENDING)
+  paymentIntentId String?        @map("payment_intent_id")
+  purchaseId      String?        @map("purchase_id") @db.Text
+  subtotalCents   Int            @map("subtotal_cents")
+  discountCents   Int            @default(0) @map("discount_cents")
+  shippingCents   Int            @default(0) @map("shipping_cents")
+  shippingZoneId  Int?           @map("shipping_zone_id")
+  shippingMethodId Int?          @map("shipping_method_id")
+  totalCents      Int            @map("total_cents")
+  currency        String         @default("EUR")
+  customerEmail   String?        @map("customer_email") @db.Citext
+  customerName    String?        @map("customer_name")
+  customerPhone   String?        @map("customer_phone")
+  notes           String?
+  createdAt       DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime       @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  store           Store          @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  user            Profile?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+  shippingZone    StoreShippingZone?   @relation("StoreOrderShippingZone", fields: [shippingZoneId], references: [id], onDelete: SetNull)
+  shippingMethod  StoreShippingMethod? @relation("StoreOrderShippingMethod", fields: [shippingMethodId], references: [id], onDelete: SetNull)
+  lines           StoreOrderLine[]
+  addresses       StoreOrderAddress[]
+  shipments       StoreShipment[]
+
+  @@unique([orderNumber], map: "store_orders_order_number_unique")
+  @@index([storeId], map: "store_orders_store_idx")
+  @@index([userId], map: "store_orders_user_idx")
+  @@index([status], map: "store_orders_status_idx")
+  @@index([paymentIntentId], map: "store_orders_payment_intent_idx")
+  @@index([purchaseId], map: "store_orders_purchase_idx")
+  @@index([shippingZoneId], map: "store_orders_shipping_zone_idx")
+  @@index([shippingMethodId], map: "store_orders_shipping_method_idx")
+  @@map("store_orders")
+  @@schema("app_v3")
+}
+
+model StoreOrderLine {
+  id               Int      @id @default(autoincrement())
+  orderId          Int      @map("order_id")
+  productId        Int?     @map("product_id")
+  variantId        Int?     @map("variant_id")
+  nameSnapshot     String   @map("name_snapshot")
+  skuSnapshot      String?  @map("sku_snapshot")
+  quantity         Int
+  unitPriceCents   Int      @map("unit_price_cents")
+  discountCents    Int      @default(0) @map("discount_cents")
+  totalCents       Int      @map("total_cents")
+  requiresShipping Boolean  @default(true) @map("requires_shipping")
+  personalization  Json    @default("{}")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  order            StoreOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product          StoreProduct? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  variant          StoreProductVariant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
+  digitalGrants    StoreDigitalGrant[]
+
+  @@index([orderId], map: "store_order_lines_order_idx")
+  @@index([productId], map: "store_order_lines_product_idx")
+  @@index([variantId], map: "store_order_lines_variant_idx")
+  @@map("store_order_lines")
+  @@schema("app_v3")
+}
+
+model StoreOrderAddress {
+  id          Int             @id @default(autoincrement())
+  orderId     Int             @map("order_id")
+  addressType StoreAddressType @map("address_type")
+  fullName    String          @map("full_name")
+  line1       String
+  line2       String?
+  city        String
+  region      String?
+  postalCode  String          @map("postal_code")
+  country     String
+  nif         String?         @map("nif") @db.Text
+  createdAt   DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  order       StoreOrder      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId], map: "store_order_addresses_order_idx")
+  @@map("store_order_addresses")
+  @@schema("app_v3")
+}
+
+model StoreShipment {
+  id             Int               @id @default(autoincrement())
+  orderId        Int               @map("order_id")
+  carrier        String?
+  trackingNumber String?           @map("tracking_number")
+  trackingUrl    String?           @map("tracking_url")
+  status         StoreShipmentStatus @default(PENDING)
+  shippedAt      DateTime?         @map("shipped_at") @db.Timestamptz(6)
+  deliveredAt    DateTime?         @map("delivered_at") @db.Timestamptz(6)
+  createdAt      DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  order          StoreOrder        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId], map: "store_shipments_order_idx")
+  @@map("store_shipments")
+  @@schema("app_v3")
+}
+
+model StoreShippingZone {
+  id        Int      @id @default(autoincrement())
+  storeId   Int      @map("store_id")
+  name      String
+  countries String[] @default([]) @map("countries")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  store     Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  methods   StoreShippingMethod[]
+  orders    StoreOrder[] @relation("StoreOrderShippingZone")
+
+  @@index([storeId], map: "store_shipping_zones_store_idx")
+  @@map("store_shipping_zones")
+  @@schema("app_v3")
+}
+
+model StoreShippingMethod {
+  id            Int               @id @default(autoincrement())
+  zoneId        Int               @map("zone_id")
+  name          String
+  description   String?
+  baseRateCents Int               @map("base_rate_cents")
+  mode          StoreShippingMode @default(FLAT)
+  freeOverCents Int?              @map("free_over_cents")
+  isDefault     Boolean           @default(false) @map("is_default")
+  etaMinDays    Int?              @map("eta_min_days")
+  etaMaxDays    Int?              @map("eta_max_days")
+  createdAt     DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  zone          StoreShippingZone @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+  tiers         StoreShippingTier[]
+  orders        StoreOrder[] @relation("StoreOrderShippingMethod")
+
+  @@index([zoneId], map: "store_shipping_methods_zone_idx")
+  @@map("store_shipping_methods")
+  @@schema("app_v3")
+}
+
+model StoreShippingTier {
+  id               Int      @id @default(autoincrement())
+  methodId         Int      @map("method_id")
+  minSubtotalCents Int      @map("min_subtotal_cents")
+  maxSubtotalCents Int?     @map("max_subtotal_cents")
+  rateCents        Int      @map("rate_cents")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  method           StoreShippingMethod @relation(fields: [methodId], references: [id], onDelete: Cascade)
+
+  @@index([methodId], map: "store_shipping_tiers_method_idx")
+  @@map("store_shipping_tiers")
+  @@schema("app_v3")
+}
+
+model StoreInventoryMovement {
+  id            Int                       @id @default(autoincrement())
+  productId     Int                       @map("product_id")
+  variantId     Int?                      @map("variant_id")
+  movementType  StoreInventoryMovementType @map("movement_type")
+  quantity      Int
+  reason        String?
+  createdAt     DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
+  product       StoreProduct              @relation(fields: [productId], references: [id], onDelete: Cascade)
+  variant       StoreProductVariant?      @relation(fields: [variantId], references: [id], onDelete: SetNull)
+
+  @@index([productId], map: "store_inventory_movements_product_idx")
+  @@index([variantId], map: "store_inventory_movements_variant_idx")
+  @@map("store_inventory_movements")
   @@schema("app_v3")
 }
 
@@ -2475,6 +2940,7 @@ enum OrganizationModule {
   FINANCEIRO
   MENSAGENS
   MARKETING
+  LOJA
   ANALYTICS
   DEFINICOES
   PERFIL_PUBLICO
@@ -2487,6 +2953,110 @@ enum OrganizationFormStatus {
   DRAFT
   PUBLISHED
   ARCHIVED
+
+  @@schema("app_v3")
+}
+
+enum StoreOwnerType {
+  ORG
+  PROFILE
+
+  @@schema("app_v3")
+}
+
+enum StoreStatus {
+  DRAFT
+  CLOSED
+  OPEN
+
+  @@schema("app_v3")
+}
+
+enum StoreShippingMode {
+  FLAT
+  VALUE_TIERS
+
+  @@schema("app_v3")
+}
+
+enum StoreProductStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+
+  @@schema("app_v3")
+}
+
+enum StoreStockPolicy {
+  NONE
+  TRACKED
+
+  @@schema("app_v3")
+}
+
+enum StoreProductOptionType {
+  TEXT
+  SELECT
+  NUMBER
+  CHECKBOX
+
+  @@schema("app_v3")
+}
+
+enum StoreBundlePricingMode {
+  FIXED
+  PERCENT_DISCOUNT
+
+  @@schema("app_v3")
+}
+
+enum StoreBundleStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+
+  @@schema("app_v3")
+}
+
+enum StoreCartStatus {
+  ACTIVE
+  CHECKOUT_LOCKED
+  ABANDONED
+
+  @@schema("app_v3")
+}
+
+enum StoreOrderStatus {
+  PENDING
+  PAID
+  FULFILLED
+  CANCELLED
+  REFUNDED
+  PARTIAL_REFUND
+
+  @@schema("app_v3")
+}
+
+enum StoreAddressType {
+  SHIPPING
+  BILLING
+
+  @@schema("app_v3")
+}
+
+enum StoreShipmentStatus {
+  PENDING
+  SHIPPED
+  DELIVERED
+
+  @@schema("app_v3")
+}
+
+enum StoreInventoryMovementType {
+  ADJUST
+  SALE
+  REFUND
+  RETURN
 
   @@schema("app_v3")
 }

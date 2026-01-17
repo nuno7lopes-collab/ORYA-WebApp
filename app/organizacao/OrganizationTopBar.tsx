@@ -16,6 +16,7 @@ import { RoleBadge } from "@/app/organizacao/RoleBadge";
 import { NotificationBell } from "@/app/components/notifications/NotificationBell";
 import ObjectiveSubnav from "@/app/organizacao/ObjectiveSubnav";
 import { type ObjectiveTab } from "@/app/organizacao/objectiveNav";
+import StoreAdminSubnav from "@/components/store/StoreAdminSubnav";
 import { ORG_SHELL_GUTTER } from "@/app/organizacao/layoutTokens";
 import { ModuleIcon } from "@/app/organizacao/moduleIcons";
 
@@ -82,6 +83,7 @@ const MODULE_ICON_GRADIENTS: Record<string, string> = {
   STAFF: "from-[#60A5FA]/35 via-[#7FE0FF]/30 to-[#F59E0B]/35",
   FINANCEIRO: "from-[#F97316]/35 via-[#F59E0B]/30 to-[#FF7AD1]/35",
   MARKETING: "from-[#FF7AD1]/35 via-[#FB7185]/30 to-[#F59E0B]/35",
+  LOJA: "from-[#F97316]/35 via-[#FB7185]/30 to-[#F59E0B]/35",
   PERFIL_PUBLICO: "from-[#22D3EE]/35 via-[#60A5FA]/30 to-[#A78BFA]/35",
   DEFINICOES: "from-[#94A3B8]/35 via-[#64748B]/25 to-[#94A3B8]/35",
 };
@@ -150,6 +152,7 @@ export default function OrganizationTopBar({
     if (pathname?.startsWith("/organizacao/reservas")) return setApp("Reservas", "RESERVAS");
     if (pathname?.startsWith("/organizacao/inscricoes")) return setApp("Formulários", "INSCRICOES");
     if (pathname?.startsWith("/organizacao/mensagens")) return setApp("Mensagens", "MENSAGENS");
+    if (pathname?.startsWith("/organizacao/loja")) return setApp("Loja", "LOJA");
     if (pathname?.startsWith("/organizacao/staff") || pathname?.startsWith("/organizacao/treinadores")) {
       return setApp("Equipa", "STAFF");
     }
@@ -237,6 +240,7 @@ export default function OrganizationTopBar({
     return "overview";
   }, [activeObjective, moduleState.primary, pathname, searchParams]);
   const isDashboardOverview = pathname === "/organizacao" && (!searchParams?.get("tab") || searchParams?.get("tab") === "overview");
+  const isStoreRoute = pathname?.startsWith("/organizacao/loja");
 
   const objectiveModules = useMemo(() => {
     const rawModules = Array.isArray(activeOrg?.modules) ? activeOrg?.modules : [];
@@ -413,11 +417,11 @@ export default function OrganizationTopBar({
       >
         <div
           className={cn(
-            "relative flex h-[var(--org-topbar-height)] flex-nowrap items-center gap-3",
+            "relative flex min-h-[var(--org-topbar-height)] flex-wrap items-center gap-3 py-2 lg:h-[var(--org-topbar-height)] lg:flex-nowrap lg:py-0",
             ORG_SHELL_GUTTER,
           )}
         >
-          <div className="flex min-w-0 flex-1 items-center gap-2 overflow-visible">
+          <div className="flex min-w-0 items-center gap-2">
             <Link
               href="/organizacao?tab=overview"
               className="group flex h-9 shrink-0 items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 text-sm text-white/85 shadow-[0_12px_38px_rgba(0,0,0,0.3)] transition hover:bg-white/10"
@@ -435,7 +439,15 @@ export default function OrganizationTopBar({
               <span className="text-sm font-semibold text-white">{currentApp.label}</span>
               <span className="text-white/50 opacity-0 transition group-hover:opacity-100">←</span>
             </Link>
-            {activeObjective && !isDashboardOverview ? (
+          </div>
+          <div className="order-3 flex w-full min-w-0 items-center gap-2 lg:order-none lg:flex-1">
+            {isStoreRoute ? (
+              <StoreAdminSubnav
+                baseHref="/organizacao/loja"
+                variant="topbar"
+                className="w-full max-w-full"
+              />
+            ) : activeObjective && !isDashboardOverview ? (
               <ObjectiveSubnav
                 objective={activeObjective}
                 activeId={activeObjectiveSection ?? undefined}
@@ -444,12 +456,12 @@ export default function OrganizationTopBar({
                 modules={objectiveModules.modules}
                 mode="dashboard"
                 variant="topbar"
-                className="min-w-0 max-w-[680px] overflow-visible"
+                className="w-full max-w-full"
               />
             ) : null}
           </div>
 
-        <div className="ml-auto flex items-center gap-2">
+          <div className="order-2 ml-auto flex items-center gap-2 lg:order-none">
           {isOrgDataLoading ? (
             <div className="hidden items-center gap-2 sm:flex">
               <span className="h-[26px] w-[120px] animate-pulse rounded-full border border-white/10 bg-white/5" />

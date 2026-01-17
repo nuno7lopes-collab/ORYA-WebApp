@@ -110,6 +110,12 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
   const isPadelEvent = event.templateType === "PADEL";
   const eventRouteBase = isPadelEvent ? "/organizacao/torneios" : "/organizacao/eventos";
   const primaryLabel = isPadelEvent ? "torneio" : "evento";
+  const ticketLabelPlural = isPadelEvent ? "inscrições" : "bilhetes";
+  const ticketLabelPluralCap = isPadelEvent ? "Inscrições" : "Bilhetes";
+  const ticketsSoldLabel = isPadelEvent ? "Inscrições registadas" : "Bilhetes vendidos";
+  const revenueHint = isPadelEvent
+    ? "Calculado com base em preço × inscrições registadas, por wave."
+    : "Calculado com base em preço × bilhetes vendidos, por wave.";
   const fallbackHref = eventRouteBase;
 
   const { organization, membership } = await getActiveOrganizationForUser(userId, {
@@ -396,7 +402,7 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="rounded-2xl border border-[#6BFFFF]/40 bg-[#02040b]/95 backdrop-blur-xl px-4 py-3.5">
             <p className="text-[11px] text-[#6BFFFF]/80">
-              Bilhetes vendidos
+              {ticketsSoldLabel}
             </p>
             <p className="mt-1 text-2xl font-semibold tracking-tight">
               {totalTicketsSold}
@@ -423,7 +429,7 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
               {totalRevenue.replace(".", ",")} €
             </p>
             <p className="mt-1 text-[11px] text-white/55">
-              Calculado com base em preço × bilhetes vendidos, por wave.
+              {revenueHint}
             </p>
           </div>
         </div>
@@ -433,7 +439,7 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
         <div className="flex items-center justify-between gap-2">
           <div>
             <h2 className="text-sm font-semibold text-white/90">
-              Waves &amp; bilhetes
+              Waves &amp; {ticketLabelPlural}
             </h2>
             <p className="text-[11px] text-white/65">
               Visão por wave: estado, stock, vendas e receita individual.
@@ -444,7 +450,7 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
         {event.ticketTypes.length === 0 && (
           <div className="mt-2 rounded-xl border border-dashed border-white/20 bg-white/5 px-4 py-4 text-[11px] text-white/70">
             Este {primaryLabel} ainda não tem waves configuradas. Usa o criador de{" "}
-            {primaryLabel}s para adicionar bilhetes.
+            {primaryLabel}s para adicionar {ticketLabelPlural}.
           </div>
         )}
 

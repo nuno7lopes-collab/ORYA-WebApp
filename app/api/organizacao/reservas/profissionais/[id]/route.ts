@@ -53,7 +53,9 @@ export async function PATCH(
     if (!organization || !membership) {
       return NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 });
     }
-    const reservasAccess = await ensureReservasModuleAccess(organization);
+    const reservasAccess = await ensureReservasModuleAccess(organization, undefined, {
+      requireVerifiedEmail: true,
+    });
     if (!reservasAccess.ok) {
       return NextResponse.json({ ok: false, error: reservasAccess.error }, { status: 403 });
     }
@@ -143,7 +145,9 @@ export async function DELETE(
     if (!organization || !membership) {
       return NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 });
     }
-    const reservasAccess = await ensureReservasModuleAccess(organization);
+    const reservasAccess = await ensureReservasModuleAccess(organization, undefined, {
+      requireVerifiedEmail: true,
+    });
     if (!reservasAccess.ok) {
       return NextResponse.json({ ok: false, error: reservasAccess.error }, { status: 403 });
     }

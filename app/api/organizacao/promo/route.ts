@@ -4,6 +4,7 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { isOrgAdminOrAbove } from "@/lib/organizationPermissions";
 import { resolveOrganizationIdFromParams } from "@/lib/organizationId";
+import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 
 const resolveOrganizationId = (req: NextRequest) => {
   const orgParam = resolveOrganizationIdFromParams(req.nextUrl.searchParams);
@@ -48,6 +49,10 @@ export async function GET(req: NextRequest) {
       const status =
         ctx.error === "UNAUTHENTICATED" ? 401 : ctx.error === "PROFILE_NOT_FOUND" ? 404 : 403;
       return NextResponse.json({ ok: false, error: ctx.error }, { status });
+    }
+    const emailGate = ensureOrganizationEmailVerified(ctx.organization);
+    if (!emailGate.ok) {
+      return NextResponse.json({ ok: false, error: emailGate.error }, { status: 403 });
     }
     if (!isOrgAdminOrAbove(ctx.membership.role) && ctx.membership.role !== "PROMOTER") {
       return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
@@ -228,6 +233,10 @@ export async function POST(req: NextRequest) {
         ctx.error === "UNAUTHENTICATED" ? 401 : ctx.error === "PROFILE_NOT_FOUND" ? 404 : 403;
       return NextResponse.json({ ok: false, error: ctx.error }, { status });
     }
+    const emailGate = ensureOrganizationEmailVerified(ctx.organization);
+    if (!emailGate.ok) {
+      return NextResponse.json({ ok: false, error: emailGate.error }, { status: 403 });
+    }
 
     const body = await req.json().catch(() => null);
     if (!body) {
@@ -360,6 +369,10 @@ export async function PATCH(req: NextRequest) {
       const status =
         ctx.error === "UNAUTHENTICATED" ? 401 : ctx.error === "PROFILE_NOT_FOUND" ? 404 : 403;
       return NextResponse.json({ ok: false, error: ctx.error }, { status });
+    }
+    const emailGate = ensureOrganizationEmailVerified(ctx.organization);
+    if (!emailGate.ok) {
+      return NextResponse.json({ ok: false, error: emailGate.error }, { status: 403 });
     }
 
     const body = await req.json().catch(() => null);

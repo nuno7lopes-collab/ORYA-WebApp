@@ -195,7 +195,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (!organization || !membership) {
       return NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 });
     }
-    const reservasAccess = await ensureReservasModuleAccess(organization);
+    const reservasAccess = await ensureReservasModuleAccess(organization, undefined, {
+      requireVerifiedEmail: true,
+    });
     if (!reservasAccess.ok) {
       return NextResponse.json({ ok: false, error: reservasAccess.error }, { status: 403 });
     }

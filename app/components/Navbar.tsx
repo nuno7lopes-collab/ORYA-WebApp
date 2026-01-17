@@ -155,6 +155,13 @@ export function Navbar() {
     }
   }, [rawPathname]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handleOpenSearch = () => setIsSearchOpen(true);
+    window.addEventListener("orya:open-search", handleOpenSearch);
+    return () => window.removeEventListener("orya:open-search", handleOpenSearch);
+  }, []);
+
   useLayoutEffect(() => {
     if (typeof document === "undefined") return;
     if (shouldHide) {
@@ -279,7 +286,7 @@ export function Navbar() {
     if (!query) return;
 
     setIsSearchOpen(false);
-    router.push(`/procurar?query=${encodeURIComponent(query)}`);
+    router.push(`/explorar?query=${encodeURIComponent(query)}`);
   };
 
   const handleLogout = async () => {
@@ -509,11 +516,14 @@ export function Navbar() {
     { key: "users", label: "Utilizadores" },
   ];
 
+  const navButtonBase =
+    "inline-flex items-center justify-center rounded-full border text-[12px] font-semibold transition-colors h-10 px-4";
+
   const mainNavItems = [
     {
-      label: "Inicio",
+      label: "Início",
       href: "/descobrir",
-      active: (path: string) => path === "/" || path.startsWith("/descobrir"),
+      active: (path: string) => path === "/descobrir" || path === "/",
     },
     {
       label: "Descobrir",
@@ -541,26 +551,26 @@ export function Navbar() {
               : "border-white/10 bg-[linear-gradient(120deg,rgba(8,10,20,0.38),rgba(8,10,20,0.52))] shadow-[0_16px_40px_rgba(0,0,0,0.45)] backdrop-blur-[18px]"
           }`}
         >
-            {/* Logo + navegação principal */}
-            <div className="flex flex-1 items-center gap-3">
-              <Logo />
+          {/* Logo + navegação principal */}
+          <div className="flex flex-1 items-center gap-3">
+            <Logo />
 
-              <nav className="hidden items-center gap-3 text-xs text-zinc-300 md:flex">
-                {mainNavItems.map((item) => {
-                  const isActive = item.active(pathname);
-                  const handleClick = () => {
-                    router.push(item.href);
-                  };
+            <nav className="hidden items-center gap-3 text-xs text-zinc-300 md:flex">
+              {mainNavItems.map((item) => {
+                const isActive = item.active(pathname);
+                const handleClick = () => {
+                  router.push(item.href);
+                };
 
                 return (
                   <button
                     key={item.label}
                     type="button"
                     onClick={handleClick}
-                    className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
+                    className={`${navButtonBase} ${
                       isActive
-                        ? "bg-[linear-gradient(120deg,rgba(255,0,200,0.22),rgba(107,255,255,0.18))] text-white border border-white/30 shadow-[0_0_18px_rgba(107,255,255,0.35)]"
-                        : "text-white/85 hover:text-white bg-white/5 border border-white/16 hover:border-white/26"
+                        ? "bg-[linear-gradient(120deg,rgba(255,0,200,0.22),rgba(107,255,255,0.18))] text-white border-white/30 shadow-[0_0_18px_rgba(107,255,255,0.35)]"
+                        : "text-white/85 hover:text-white bg-white/5 border-white/16 hover:border-white/26"
                     }`}
                   >
                     {item.label}
@@ -575,7 +585,7 @@ export function Navbar() {
             <button
               type="button"
               onClick={() => setIsSearchOpen(true)}
-              className="group relative flex w-full max-w-xl items-center gap-3 rounded-full border border-white/16 bg-[linear-gradient(120deg,rgba(255,0,200,0.1),rgba(107,255,255,0.1)),rgba(5,6,12,0.82)] px-4 py-2 text-left text-[13px] text-white hover:border-white/35 hover:shadow-[0_0_35px_rgba(107,255,255,0.28)] transition shadow-[0_26px_60px_rgba(0,0,0,0.7)] backdrop-blur-2xl"
+              className="group relative flex h-10 w-full max-w-xl items-center gap-3 rounded-full border border-white/16 bg-[linear-gradient(120deg,rgba(255,0,200,0.1),rgba(107,255,255,0.1)),rgba(5,6,12,0.82)] px-4 text-left text-[13px] text-white hover:border-white/35 hover:shadow-[0_0_35px_rgba(107,255,255,0.28)] transition shadow-[0_26px_60px_rgba(0,0,0,0.7)] backdrop-blur-2xl"
             >
               <span className="flex h-5 w-5 items-center justify-center rounded-full border border-white/30 text-[10px] text-white/70">
                 ⌕
@@ -601,7 +611,7 @@ export function Navbar() {
                 }
                 router.push("/organizacao");
               }}
-              className="hidden md:inline-flex items-center gap-2 rounded-full border border-white/18 bg-white/5 px-3 py-1.5 text-[11px] font-semibold text-white/85 shadow-[0_0_18px_rgba(0,0,0,0.25)] hover:border-white/30 hover:bg-white/10 transition"
+              className={`${navButtonBase} hidden md:inline-flex border-white/18 bg-white/5 text-white/85 shadow-[0_0_18px_rgba(0,0,0,0.25)] hover:border-white/30 hover:bg-white/10`}
             >
               Organizar
             </button>
@@ -615,7 +625,7 @@ export function Navbar() {
                 }
                 router.push("/social?tab=notifications");
               }}
-              className="relative flex h-9 w-9 items-center justify-center rounded-full border border-amber-400/60 bg-amber-500/15 text-amber-100 hover:bg-amber-500/20 transition"
+              className="relative flex h-10 w-10 items-center justify-center rounded-full border border-amber-400/60 bg-amber-500/15 text-amber-100 hover:bg-amber-500/20 transition"
               aria-label="Notificações"
             >
               <BellIcon className="h-4 w-4 text-amber-100" />
@@ -624,8 +634,8 @@ export function Navbar() {
               )}
             </button>
             {isLoading ? (
-              <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[11px] text-white/60 animate-pulse">
-                <div className="h-7 w-7 rounded-full bg-white/20" />
+              <div className="flex h-10 items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 text-[11px] text-white/60 animate-pulse">
+                <div className="h-8 w-8 rounded-full bg-white/20" />
                 <div className="h-3 w-20 rounded-full bg-white/15" />
               </div>
             ) : !isAuthenticated || inAuthPage ? (
@@ -635,7 +645,7 @@ export function Navbar() {
                   const redirect = pathname && pathname !== "/" ? pathname : "/";
                   openAuthModal({ mode: "login", redirectTo: redirect });
                 }}
-                className={`${CTA_PRIMARY} px-3.5 py-1.5 text-[11px]`}
+                className={`${CTA_PRIMARY} h-10 px-4 text-[12px]`}
               >
                 Entrar / Registar
               </button>
@@ -644,12 +654,12 @@ export function Navbar() {
                 <button
                   type="button"
                   onClick={() => setIsProfileMenuOpen((open) => !open)}
-                  className="flex items-center gap-2 rounded-full border border-white/18 bg-white/8 px-2.5 py-1 text-[11px] text-white/90 hover:border-white/28 hover:bg-white/12 shadow-[0_0_22px_rgba(255,0,200,0.22)] transition"
+                  className="flex h-10 items-center gap-2 rounded-full border border-white/18 bg-white/8 px-3 text-[11px] text-white/90 hover:border-white/28 hover:bg-white/12 shadow-[0_0_22px_rgba(255,0,200,0.22)] transition"
                   aria-haspopup="menu"
                   aria-expanded={isProfileMenuOpen}
                   aria-label="Abrir menu de conta"
                 >
-                  <div className="relative h-9 w-9">
+                  <div className="relative h-8 w-8">
                     <div className="absolute inset-[-3px] rounded-full bg-[conic-gradient(from_180deg,#ff00c8_0deg,#ff5afc_120deg,#6b7bff_240deg,#ff00c8_360deg)] opacity-85 blur-[8px]" />
                     <Avatar
                       src={profile?.avatarUrl ?? null}
@@ -698,13 +708,6 @@ export function Navbar() {
                       className="flex w-full items-center justify-between rounded-xl px-2.5 py-2 text-left hover:bg-white/8"
                     >
                       <span>Definições</span>
-                    </Link>
-                    <Link
-                      href="/organizacao"
-                      onClick={() => setIsProfileMenuOpen(false)}
-                      className="flex w-full items-center justify-between rounded-xl px-2.5 py-2 text-left hover:bg-white/8"
-                    >
-                      <span>Organizar (modo empresa)</span>
                     </Link>
                     {pathname?.startsWith("/organizacao") && (
                       <Link

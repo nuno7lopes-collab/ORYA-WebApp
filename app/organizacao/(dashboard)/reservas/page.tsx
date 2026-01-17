@@ -23,7 +23,6 @@ import {
   DASHBOARD_MUTED,
   DASHBOARD_TITLE,
 } from "@/app/organizacao/dashboardUi";
-import { parseOrganizationModules, resolvePrimaryModule } from "@/lib/organizationCategories";
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
@@ -40,6 +39,7 @@ const CHIP_BASE =
   "rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[12px] text-white/65 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] transition hover:border-white/20 hover:bg-white/10 hover:text-white";
 const CHIP_ACTIVE =
   "border-white/35 bg-white/18 text-white shadow-[0_10px_24px_rgba(0,0,0,0.3)]";
+const SERVICE_DURATION_OPTIONS = [30, 60, 90, 120];
 
 const formatRangeDate = (date: Date, timezone: string) =>
   new Intl.DateTimeFormat("pt-PT", {
@@ -388,6 +388,7 @@ export default function ReservasDashboardPage() {
   const [serviceDrawerOpen, setServiceDrawerOpen] = useState(false);
   const [serviceTitle, setServiceTitle] = useState("");
   const [serviceDescription, setServiceDescription] = useState("");
+  const [serviceDuration, setServiceDuration] = useState("60");
   const [servicePrice, setServicePrice] = useState("20");
   const [serviceSaving, setServiceSaving] = useState(false);
   const [serviceError, setServiceError] = useState<string | null>(null);
@@ -436,16 +437,6 @@ export default function ReservasDashboardPage() {
   const timezone = orgData?.organization?.timezone ?? "Europe/Lisbon";
   const membershipRole = orgData?.membershipRole ?? null;
   const isStaffMember = membershipRole === "STAFF";
-  const normalizedModules = useMemo(
-    () => parseOrganizationModules(orgData?.organization?.modules) ?? [],
-    [orgData?.organization?.modules],
-  );
-  const primaryModule = resolvePrimaryModule(
-    orgData?.organization?.primaryModule ?? null,
-    normalizedModules,
-  );
-  const hasReservasModule = normalizedModules.includes("RESERVAS") || primaryModule === "RESERVAS";
-  const moduleDisabled = Boolean(orgData && !hasReservasModule);
 
   const stripePromise = useMemo(() => {
     const key = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
@@ -917,6 +908,7 @@ export default function ReservasDashboardPage() {
     setServiceError(null);
     setServiceTitle("");
     setServiceDescription("");
+    setServiceDuration("60");
     setServicePrice("20");
   };
 
@@ -939,7 +931,12 @@ export default function ReservasDashboardPage() {
       setServiceError("Indica um título.");
       return;
     }
-    const priceValue = Number(servicePrice);
+    const durationValue = Number(serviceDuration);
+    if (!SERVICE_DURATION_OPTIONS.includes(durationValue)) {
+      setServiceError("Seleciona a duração.");
+      return;
+    }
+    const priceValue = Number(servicePrice.replace(",", "."));
     if (!Number.isFinite(priceValue) || priceValue < 0) {
       setServiceError("Preço inválido.");
       return;
@@ -953,7 +950,7 @@ export default function ReservasDashboardPage() {
         body: JSON.stringify({
           title,
           description: serviceDescription.trim() || null,
-          durationMinutes: 60,
+          durationMinutes: durationValue,
           unitPriceCents: Math.round(priceValue * 100),
           currency: "EUR",
           categoryTag: null,
@@ -1129,23 +1126,6 @@ export default function ReservasDashboardPage() {
     mutateUpcoming();
     closeCreateDrawer();
   };
-
-  if (moduleDisabled) {
-    return (
-      <div className="space-y-5">
-        <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-5 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl text-white">
-          <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Reservas</p>
-          <h1 className="text-2xl font-semibold">Módulo desativado</h1>
-          <p className="text-sm text-white/70">
-            Ativa o módulo nas apps da organização para começares a gerir marcações.
-          </p>
-          <Link href="/organizacao?tab=overview&section=modulos" className={cn(CTA_SECONDARY, "mt-4 text-[12px]")}>
-            Gerir apps
-          </Link>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="space-y-5">
@@ -1734,14 +1714,18 @@ export default function ReservasDashboardPage() {
               </div>
 
               <div>
-                <label className="text-white/50">Descrição</label>
-                <textarea
+                <label className="text-white/50">Duração</label>
+                <select
                   className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
-                  rows={3}
-                  value={serviceDescription}
-                  onChange={(event) => setServiceDescription(event.target.value)}
-                  placeholder="Resumo"
-                />
+                  value={serviceDuration}
+                  onChange={(event) => setServiceDuration(event.target.value)}
+                >
+                  {SERVICE_DURATION_OPTIONS.map((option) => (
+                    <option key={`service-duration-${option}`} value={String(option)}>
+                      {option} min
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div>
@@ -1750,9 +1734,22 @@ export default function ReservasDashboardPage() {
                   type="number"
                   min="0"
                   step="0.01"
+                  inputMode="decimal"
                   className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
                   value={servicePrice}
                   onChange={(event) => setServicePrice(event.target.value)}
+                />
+                <p className="text-[11px] text-white/50">Usa 0 para gratuito.</p>
+              </div>
+
+              <div>
+                <label className="text-white/50">Descrição</label>
+                <textarea
+                  className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+                  rows={3}
+                  value={serviceDescription}
+                  onChange={(event) => setServiceDescription(event.target.value)}
+                  placeholder="Resumo (opcional)"
                 />
               </div>
             </div>
@@ -1764,7 +1761,12 @@ export default function ReservasDashboardPage() {
             )}
 
             <div className="mt-6 flex flex-wrap gap-3">
-              <button type="button" className={CTA_PRIMARY} onClick={handleCreateService} disabled={serviceSaving}>
+              <button
+                type="button"
+                className={CTA_PRIMARY}
+                onClick={handleCreateService}
+                disabled={serviceSaving || !serviceTitle.trim()}
+              >
                 {serviceSaving ? "A criar..." : "Criar serviço"}
               </button>
               <button type="button" className={CTA_SECONDARY} onClick={closeServiceDrawer}>

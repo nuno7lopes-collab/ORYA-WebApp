@@ -5,6 +5,7 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { CheckinResultCode, EntitlementStatus } from "@prisma/client";
 import { buildDefaultCheckinWindow, isOutsideWindow } from "@/lib/checkin/policy";
 import { canManageEvents } from "@/lib/organizationPermissions";
+import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 
 type Body = { qrToken?: string; eventId?: number };
 
@@ -19,6 +20,16 @@ async function ensureCheckinAccess(userId: string, eventId: number) {
   });
   if (!event) return { ok: false as const, reason: "EVENT_NOT_FOUND" };
   if (!event.organizationId) return { ok: false as const, reason: "FORBIDDEN_CHECKIN_ACCESS" };
+
+  const organization = await prisma.organization.findUnique({
+    where: { id: event.organizationId },
+    select: { officialEmail: true, officialEmailVerifiedAt: true },
+  });
+  if (!organization) return { ok: false as const, reason: "FORBIDDEN_CHECKIN_ACCESS" };
+  const emailGate = ensureOrganizationEmailVerified(organization);
+  if (!emailGate.ok) {
+    return { ok: false as const, reason: "FORBIDDEN_CHECKIN_ACCESS" };
+  }
 
   const profile = await prisma.profile.findUnique({
     where: { id: userId },

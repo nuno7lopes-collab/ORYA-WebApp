@@ -200,7 +200,7 @@ export default function PairingInviteCard({
             href={status.urls.detailUrl}
             className="rounded-full border border-white/20 px-3 py-1.5 text-[11px] text-white/80"
           >
-            Ver bilhete
+            Ver inscrição
           </Link>
         )}
         {!status && fallbackUrl && fallbackLabel && (

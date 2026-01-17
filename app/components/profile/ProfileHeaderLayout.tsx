@@ -112,21 +112,31 @@ export default function ProfileHeaderLayout({
         </div>
       </div>
 
-      <div className="relative -mt-12 px-5 pb-6 sm:-mt-14 sm:px-8">
-        <div className={`${contentWidthClassName} flex flex-col gap-4 md:flex-row md:items-end md:justify-between`}>
-          <div className="flex items-start gap-4">
-            <div className="relative shrink-0">{avatarSlot}</div>
-            <div className="flex min-w-0 flex-col gap-3">
-              {statsSlot && (
-                <div className="flex flex-wrap items-center gap-3">{statsSlot}</div>
-              )}
-              {titleSlot}
-              {metaSlot}
-              {bioSlot}
-              {linksSlot}
-            </div>
+      <div className="relative mt-4 px-5 pb-6 sm:mt-6 sm:px-8">
+        <div
+          className={`${contentWidthClassName} grid grid-cols-[auto_minmax(0,1fr)] gap-4 md:grid-cols-[auto_minmax(0,1fr)_auto] md:gap-x-8`}
+        >
+          <div className="relative -mt-10 shrink-0 md:row-span-2 md:-mt-12">
+            {avatarSlot}
           </div>
-          {actionsSlot && <div className="flex flex-wrap items-center gap-2">{actionsSlot}</div>}
+          <div className="flex min-w-0 flex-col gap-2 pt-2 md:pt-4">
+            {titleSlot}
+            {metaSlot}
+          </div>
+          {statsSlot && (
+            <div className="col-span-2 flex flex-wrap items-center justify-end gap-3 md:col-span-1 md:col-start-3 md:row-start-1 md:self-end">
+              {statsSlot}
+            </div>
+          )}
+          <div className="col-span-2 flex min-w-0 flex-col gap-2 md:col-span-1 md:col-start-2 md:row-start-2">
+            {bioSlot}
+            {linksSlot}
+          </div>
+          {actionsSlot && (
+            <div className="col-span-2 flex flex-wrap items-center justify-end gap-2 md:col-span-1 md:col-start-3 md:row-start-2">
+              {actionsSlot}
+            </div>
+          )}
         </div>
         {afterSlot}
       </div>

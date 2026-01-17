@@ -11,6 +11,7 @@ import { refundPurchase } from "@/lib/refunds/refundService";
 import { PaymentEventSource, RefundReason, EntitlementType, EntitlementStatus, Prisma, NotificationType } from "@prisma/client";
 import { FulfillPayload } from "@/lib/operations/types";
 import { fulfillPaidIntent } from "@/lib/operations/fulfillPaid";
+import { fulfillStoreOrderIntent } from "@/lib/operations/fulfillStoreOrder";
 import { markSaleDisputed } from "@/domain/finance/disputes";
 import {
   sendPurchaseConfirmationEmail,
@@ -515,7 +516,7 @@ async function deliverNotificationOutbox(item: {
       viewerRole === "CAPTAIN"
         ? "Ver estado"
         : entitlementId
-          ? "Ver bilhete"
+          ? "Ver inscrição"
           : "Aceitar convite";
     const eventTitle = pairing?.event?.title ?? null;
 
@@ -768,6 +769,7 @@ async function deliverNotificationOutbox(item: {
 }
 
 async function performPaymentFulfillment(intent: Stripe.PaymentIntent, stripeEventId?: string) {
+  const handledStore = await fulfillStoreOrderIntent(intent as Stripe.PaymentIntent);
   const handledService = await fulfillServiceBookingIntent(intent as Stripe.PaymentIntent);
   const handledCredits = await fulfillServiceCreditPurchaseIntent(intent as Stripe.PaymentIntent);
   const handledResale = await fulfillResaleIntent(intent as Stripe.PaymentIntent);
@@ -775,11 +777,18 @@ async function performPaymentFulfillment(intent: Stripe.PaymentIntent, stripeEve
   const handledPadelFull = await fulfillPadelFullIntent(intent as Stripe.PaymentIntent);
   const handledSecondCharge = await fulfillPadelSecondCharge(intent as Stripe.PaymentIntent);
   const handledPaid =
-    handledService || handledCredits || handledResale || handledPadelSplit || handledPadelFull || handledSecondCharge
+    handledStore ||
+    handledService ||
+    handledCredits ||
+    handledResale ||
+    handledPadelSplit ||
+    handledPadelFull ||
+    handledSecondCharge
       ? true
       : await fulfillPaidIntent(intent as Stripe.PaymentIntent, stripeEventId);
 
   return (
+    handledStore ||
     handledService ||
     handledCredits ||
     handledResale ||
@@ -1206,13 +1215,18 @@ async function processSendNotificationPurchase(op: OperationRecord) {
   if (!purchaseId || !userId) throw new Error("SEND_NOTIFICATION_PURCHASE missing purchaseId or userId");
 
   try {
+    const eventTemplate = eventId
+      ? await prisma.event.findUnique({ where: { id: eventId }, select: { templateType: true } })
+      : null;
+    const ticketCtaLabel = eventTemplate?.templateType === "PADEL" ? "Ver inscrições" : "Ver bilhetes";
+
     await createNotification({
       userId,
       type: NotificationType.EVENT_SALE,
       title: "Compra confirmada",
       body: eventId ? `A tua compra para o evento ${eventId} foi confirmada.` : "Compra confirmada.",
       ctaUrl: absUrl("/me/carteira?section=wallet"),
-      ctaLabel: "Ver bilhetes",
+      ctaLabel: ticketCtaLabel,
       payload: { purchaseId, eventId },
     });
   } catch (err) {

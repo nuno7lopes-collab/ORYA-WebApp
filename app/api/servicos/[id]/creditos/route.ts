@@ -22,10 +22,6 @@ export async function GET(
         id: serviceId,
         organization: {
           status: "ACTIVE",
-          OR: [
-            { primaryModule: "RESERVAS" },
-            { organizationModules: { some: { moduleKey: "RESERVAS", enabled: true } } },
-          ],
         },
       },
       select: { id: true },

@@ -4,6 +4,7 @@ import { OrganizationFormFieldType } from "@prisma/client";
 import { requireUser } from "@/lib/auth/requireUser";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
+import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 async function ensureInscricoesEnabled(organization: {
   id: number;
   username?: string | null;
@@ -52,6 +53,10 @@ export async function GET(req: NextRequest, context: { params: Promise<{ id: str
     });
     if (!organization) {
       return NextResponse.json({ ok: false, error: "Sem organização ativa." }, { status: 403 });
+    }
+    const emailGate = ensureOrganizationEmailVerified(organization);
+    if (!emailGate.ok) {
+      return NextResponse.json({ ok: false, error: emailGate.error }, { status: 403 });
     }
     if (!(await ensureInscricoesEnabled(organization))) {
       return NextResponse.json({ ok: false, error: "Módulo de formulários desativado." }, { status: 403 });
@@ -121,6 +126,10 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
     });
     if (!organization) {
       return NextResponse.json({ ok: false, error: "Sem organização ativa." }, { status: 403 });
+    }
+    const emailGate = ensureOrganizationEmailVerified(organization);
+    if (!emailGate.ok) {
+      return NextResponse.json({ ok: false, error: emailGate.error }, { status: 403 });
     }
     if (!(await ensureInscricoesEnabled(organization))) {
       return NextResponse.json({ ok: false, error: "Módulo de formulários desativado." }, { status: 403 });

@@ -7,6 +7,7 @@ import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { canManageEvents } from "@/lib/organizationPermissions";
+import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { padel_format, EventTemplateType, EventPublicAccessMode, EventParticipantAccessMode } from "@prisma/client";
 
 const slugify = (value: string) =>
@@ -57,6 +58,10 @@ export async function POST(req: NextRequest) {
     });
     if (!organization || !membership || !canManageEvents(membership.role)) {
       return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    }
+    const emailGate = ensureOrganizationEmailVerified(organization);
+    if (!emailGate.ok) {
+      return NextResponse.json({ ok: false, error: emailGate.error }, { status: 403 });
     }
 
     const title = body.title?.trim() || "Mix rápido";

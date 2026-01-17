@@ -25,6 +25,8 @@ type OrganizationSwitcherOption = {
     brandingPrimaryColor?: string | null;
     brandingSecondaryColor?: string | null;
     language?: string | null;
+    officialEmail?: string | null;
+    officialEmailVerifiedAt?: Date | null;
   };
 };
 
@@ -76,6 +78,8 @@ export default async function OrganizationDashboardLayout({ children }: { childr
           entityType: (organization as { entityType?: string | null }).entityType ?? null,
           status: organization.status ?? null,
           language: (organization as { language?: string | null }).language ?? null,
+          officialEmail: (organization as { officialEmail?: string | null }).officialEmail ?? null,
+          officialEmailVerifiedAt: (organization as { officialEmailVerifiedAt?: Date | null }).officialEmailVerifiedAt ?? null,
         };
         activeRole = membership.role ?? null;
       }
@@ -121,6 +125,8 @@ export default async function OrganizationDashboardLayout({ children }: { childr
             brandingPrimaryColor: (m.organization as { brandingPrimaryColor?: string | null }).brandingPrimaryColor ?? null,
             brandingSecondaryColor: (m.organization as { brandingSecondaryColor?: string | null }).brandingSecondaryColor ?? null,
             language: (m.organization as { language?: string | null }).language ?? null,
+            officialEmail: (m.organization as { officialEmail?: string | null }).officialEmail ?? null,
+            officialEmailVerifiedAt: (m.organization as { officialEmailVerifiedAt?: Date | null }).officialEmailVerifiedAt ?? null,
           },
         }));
     } catch (err: unknown) {
@@ -140,6 +146,10 @@ export default async function OrganizationDashboardLayout({ children }: { childr
   const brandSecondary = activeOrganization?.brandingSecondaryColor ?? undefined;
   const organizationLanguage = activeOrganization?.language ?? "pt";
   const isSuspended = activeOrganization?.status === OrganizationStatus.SUSPENDED;
+  const officialEmail = (activeOrganization as { officialEmail?: string | null })?.officialEmail ?? null;
+  const officialEmailVerifiedAt =
+    (activeOrganization as { officialEmailVerifiedAt?: Date | null })?.officialEmailVerifiedAt ?? null;
+  const isEmailVerified = Boolean(officialEmail && officialEmailVerifiedAt);
 
   const userInfo = user
     ? {
@@ -187,6 +197,7 @@ export default async function OrganizationDashboardLayout({ children }: { childr
         user={userInfo}
         role={activeRole}
         isSuspended={isSuspended}
+        emailVerification={activeOrganization ? { isVerified: isEmailVerified, email: officialEmail } : null}
       >
         {children}
       </OrganizationDashboardShell>

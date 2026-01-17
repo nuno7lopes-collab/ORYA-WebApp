@@ -115,15 +115,6 @@ export default function MePage() {
             tone: "amber" as const,
           }
         : null;
-  const padelStatusPill = padelStatus
-    ? {
-        label: padelStatus.complete
-          ? "Padel completo"
-          : `Padel incompleto${padelStatus.missingCount ? ` · ${padelStatus.missingCount}` : ""}`,
-        tone: padelStatus.complete ? ("emerald" as const) : ("amber" as const),
-      }
-    : null;
-
   const now = new Date();
   const agendaItems = agendaData?.items ?? [];
   const upcomingEvents = agendaItems.filter((item) => item.type === "EVENTO").slice(0, 3);
@@ -179,42 +170,33 @@ export default function MePage() {
         isVerified={profile?.isVerified ?? false}
         isOwner
         padelAction={padelAction ?? undefined}
-        padelStatus={padelStatusPill ?? undefined}
       />
 
       {/* STATUS */}
       <section className="rounded-3xl border border-white/15 bg-white/5 p-5 shadow-[0_24px_70px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="rounded-2xl border border-white/14 bg-gradient-to-br from-white/10 via-[#0b1224]/75 to-[#0a0f1d] p-4 shadow-[0_18px_40px_rgba(0,0,0,0.55)] transition-transform duration-150 hover:-translate-y-[3px] hover:shadow-[0_22px_50px_rgba(0,0,0,0.65)] relative overflow-hidden">
-            <div className="pointer-events-none absolute inset-0 rounded-2xl border border-white/10 mix-blend-screen" />
-            <div className="pointer-events-none absolute inset-y-0 right-0 w-1/3 bg-white/5 blur-2xl" />
-            <p className="text-[11px] uppercase tracking-[0.16em] text-white/65">Eventos com bilhete</p>
-            <p className="mt-1 text-3xl font-semibold text-white">{totalEvents}</p>
-            <p className="text-[12px] text-white/60">Timeline ORYA.</p>
+          <div className="rounded-2xl border border-white/12 bg-white/5 px-3 py-3 shadow-[0_16px_40px_rgba(0,0,0,0.45)] backdrop-blur-2xl text-white">
+            <p className="text-[10px] uppercase tracking-[0.2em] text-white/60">Eventos com bilhete</p>
+            <p className="mt-1 text-lg font-semibold">{totalEvents}</p>
+            <p className="text-[11px] text-white/60">Timeline ORYA.</p>
           </div>
 
-          <div className="rounded-2xl border border-emerald-300/30 bg-gradient-to-br from-emerald-500/16 via-emerald-500/9 to-[#0c1a14] p-4 shadow-[0_18px_40px_rgba(16,185,129,0.28)] transition-transform duration-150 hover:-translate-y-[3px] hover:shadow-[0_22px_50px_rgba(16,185,129,0.32)] relative overflow-hidden">
-            <div className="pointer-events-none absolute inset-0 rounded-2xl border border-emerald-100/12 mix-blend-screen" />
-            <div className="pointer-events-none absolute inset-y-0 right-0 w-1/3 bg-emerald-100/10 blur-2xl" />
-            <p className="text-[11px] uppercase tracking-[0.16em] text-emerald-50/80">Próximos</p>
-            <p className="mt-1 text-3xl font-semibold text-emerald-50">{totalUpcoming}</p>
-            <p className="text-[12px] text-emerald-50/80">O que vem aí.</p>
+          <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/12 px-3 py-3 shadow-[0_16px_40px_rgba(0,0,0,0.45)] backdrop-blur-2xl text-emerald-50">
+            <p className="text-[10px] uppercase tracking-[0.2em] text-emerald-50/80">Próximos</p>
+            <p className="mt-1 text-lg font-semibold">{totalUpcoming}</p>
+            <p className="text-[11px] text-emerald-50/80">O que vem aí.</p>
           </div>
 
-          <div className="rounded-2xl border border-cyan-300/30 bg-gradient-to-br from-cyan-500/16 via-cyan-500/9 to-[#08171c] p-4 shadow-[0_18px_40px_rgba(34,211,238,0.28)] transition-transform duration-150 hover:-translate-y-[3px] hover:shadow-[0_22px_50px_rgba(34,211,238,0.32)] relative overflow-hidden">
-            <div className="pointer-events-none absolute inset-0 rounded-2xl border border-cyan-100/12 mix-blend-screen" />
-            <div className="pointer-events-none absolute inset-y-0 right-0 w-1/3 bg-cyan-100/10 blur-2xl" />
-            <p className="text-[11px] uppercase tracking-[0.16em] text-cyan-50/80">Passados</p>
-            <p className="mt-1 text-3xl font-semibold text-cyan-50">{totalPast}</p>
-            <p className="text-[12px] text-cyan-50/80">Memórias.</p>
+          <div className="rounded-2xl border border-rose-300/30 bg-rose-400/12 px-3 py-3 shadow-[0_16px_40px_rgba(0,0,0,0.45)] backdrop-blur-2xl text-rose-50">
+            <p className="text-[10px] uppercase tracking-[0.2em] text-rose-50/80">Passados</p>
+            <p className="mt-1 text-lg font-semibold">{totalPast}</p>
+            <p className="text-[11px] text-rose-50/80">Memórias.</p>
           </div>
 
-          <div className="rounded-2xl border border-purple-300/30 bg-gradient-to-br from-purple-500/16 via-purple-500/9 to-[#120d1f] p-4 shadow-[0_18px_40px_rgba(168,85,247,0.28)] transition-transform duration-150 hover:-translate-y-[3px] hover:shadow-[0_22px_50px_rgba(168,85,247,0.32)] relative overflow-hidden">
-            <div className="pointer-events-none absolute inset-0 rounded-2xl border border-purple-100/12 mix-blend-screen" />
-            <div className="pointer-events-none absolute inset-y-0 right-0 w-1/3 bg-purple-100/10 blur-2xl" />
-            <p className="text-[11px] uppercase tracking-[0.16em] text-purple-50/80">Total investido</p>
-            <p className="mt-1 text-3xl font-semibold text-purple-50">{totalSpentEuros} €</p>
-            <p className="text-[12px] text-purple-50/80">Total pago.</p>
+          <div className="rounded-2xl border border-purple-300/30 bg-purple-400/12 px-3 py-3 shadow-[0_16px_40px_rgba(0,0,0,0.45)] backdrop-blur-2xl text-purple-50">
+            <p className="text-[10px] uppercase tracking-[0.2em] text-purple-50/80">Total investido</p>
+            <p className="mt-1 text-lg font-semibold">{totalSpentEuros} €</p>
+            <p className="text-[11px] text-purple-50/80">Total pago.</p>
           </div>
         </div>
       </section>

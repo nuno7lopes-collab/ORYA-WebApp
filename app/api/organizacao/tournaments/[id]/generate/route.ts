@@ -2,9 +2,17 @@ import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { generateAndPersistTournamentStructure, getConfirmedPairings } from "@/domain/tournaments/generation";
 import { prisma } from "@/lib/prisma";
+import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { TournamentFormat } from "@prisma/client";
 
 async function isOrganizationUser(userId: string, organizationId: number) {
+  const organization = await prisma.organization.findUnique({
+    where: { id: organizationId },
+    select: { officialEmail: true, officialEmailVerifiedAt: true },
+  });
+  if (!organization) return false;
+  const emailGate = ensureOrganizationEmailVerified(organization);
+  if (!emailGate.ok) return false;
   const profile = await prisma.profile.findUnique({
     where: { id: userId },
     select: { onboardingDone: true, fullName: true, username: true },

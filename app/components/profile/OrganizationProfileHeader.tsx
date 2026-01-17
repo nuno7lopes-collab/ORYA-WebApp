@@ -25,6 +25,13 @@ type OrganizationProfileHeaderProps = {
   contactEmail?: string | null;
 };
 
+type OrganizationFollowerItem = {
+  userId: string;
+  username: string | null;
+  fullName: string | null;
+  avatarUrl: string | null;
+};
+
 export default function OrganizationProfileHeader({
   name,
   username,
@@ -46,6 +53,9 @@ export default function OrganizationProfileHeader({
   const handle = username?.trim() || null;
   const [followersDisplay, setFollowersDisplay] = useState(followersCount ?? 0);
   const [avatar, setAvatar] = useState<string | null>(avatarUrl);
+  const [isListModalOpen, setIsListModalOpen] = useState(false);
+  const [listLoading, setListLoading] = useState(false);
+  const [listItems, setListItems] = useState<OrganizationFollowerItem[]>([]);
   const mailtoHref = contactEmail ? `mailto:${contactEmail}` : null;
   const iconBaseClass =
     "inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/20 bg-white/8 text-white/85 transition hover:border-white/40 hover:bg-white/12";
@@ -59,9 +69,30 @@ export default function OrganizationProfileHeader({
     setAvatar(null);
   };
 
+  const fetchFollowers = async () => {
+    const res = await fetch(`/api/social/organization-followers?organizationId=${organizationId}&limit=50`);
+    const json = await res.json().catch(() => null);
+    if (!res.ok || !json?.ok || !Array.isArray(json.items)) return [];
+    return json.items as OrganizationFollowerItem[];
+  };
+
+  const openFollowersModal = () => {
+    if (!isPublic) return;
+    setIsListModalOpen(true);
+    setListLoading(true);
+    fetchFollowers()
+      .then((items) => setListItems(items))
+      .catch(() => setListItems([]))
+      .finally(() => setListLoading(false));
+  };
+
   const statsSlot = (
     <>
-      <ProfileStatPill label="Seguidores" value={followersDisplay ?? "—"} />
+      <ProfileStatPill
+        label="Seguidores"
+        value={followersDisplay ?? "—"}
+        onClick={isPublic ? openFollowersModal : undefined}
+      />
     </>
   );
 
@@ -208,15 +239,77 @@ export default function OrganizationProfileHeader({
   );
 
   return (
-    <ProfileHeaderLayout
-      coverUrl={coverUrl}
-      avatarSlot={avatarSlot}
-      statsSlot={statsSlot}
-      titleSlot={titleSlot}
-      metaSlot={metaSlot}
-      bioSlot={bioSlot}
-      linksSlot={linksSlot}
-      actionsSlot={actionsSlot}
-    />
+    <>
+      <ProfileHeaderLayout
+        coverUrl={coverUrl}
+        avatarSlot={avatarSlot}
+        statsSlot={statsSlot}
+        titleSlot={titleSlot}
+        metaSlot={metaSlot}
+        bioSlot={bioSlot}
+        linksSlot={linksSlot}
+        actionsSlot={actionsSlot}
+      />
+      {isListModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm px-4"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) {
+              setIsListModalOpen(false);
+            }
+          }}
+        >
+          <div className="w-full max-w-md rounded-3xl border border-white/12 bg-[rgba(8,10,18,0.92)] p-4 shadow-[0_30px_80px_rgba(0,0,0,0.8)] backdrop-blur-2xl">
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-white">Seguidores</h3>
+              <button
+                onClick={() => setIsListModalOpen(false)}
+                className="rounded-full border border-white/15 bg-white/10 px-2 py-1 text-[11px] text-white/80 hover:bg-white/15"
+              >
+                Fechar
+              </button>
+            </div>
+            {listLoading ? (
+              <div className="space-y-2">
+                <div className="h-12 rounded-xl orya-skeleton-surface animate-pulse" />
+                <div className="h-12 rounded-xl orya-skeleton-surface animate-pulse" />
+              </div>
+            ) : listItems.length === 0 ? (
+              <p className="text-[12px] text-white/70">Sem seguidores por agora.</p>
+            ) : (
+              <div className="max-h-[60vh] space-y-2 overflow-y-auto pr-1">
+                {listItems.map((item) => {
+                  const handle = item.username || item.userId;
+                  return (
+                    <Link
+                      key={item.userId}
+                      href={item.username ? `/${item.username}` : `/me`}
+                      className="flex items-center gap-3 rounded-xl border border-white/8 bg-white/5 px-3 py-2 transition-colors hover:border-white/20 hover:bg-white/8"
+                      onClick={() => setIsListModalOpen(false)}
+                    >
+                      <Avatar
+                        src={item.avatarUrl}
+                        name={item.fullName || item.username || handle}
+                        className="h-10 w-10 border border-white/12"
+                        textClassName="text-[11px] font-semibold uppercase text-white/80"
+                        fallbackText="OR"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold text-white">
+                          {item.fullName || item.username || "Utilizador ORYA"}
+                        </p>
+                        {item.username && (
+                          <p className="truncate text-[11px] text-white/65">@{item.username}</p>
+                        )}
+                      </div>
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </>
   );
 }

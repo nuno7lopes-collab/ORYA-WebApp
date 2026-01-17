@@ -6,6 +6,7 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import type { LiveHubModule, LiveHubViewerRole } from "@/lib/liveHubConfig";
 import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
+import { getTicketCopy } from "@/app/components/checkout/checkoutCopy";
 import { useUser } from "@/app/hooks/useUser";
 import { Avatar } from "@/components/ui/avatar";
 import ChatThread from "@/components/chat/ChatThread";
@@ -2379,6 +2380,7 @@ export default function EventLiveClient({
   const liveHub = data.liveHub as { modules: LiveHubModule[]; mode: "DEFAULT" | "PREMIUM" };
   const pairingIdFromQuery = searchParams?.get("pairingId");
   const showCourt = event.templateType === "PADEL";
+  const ticketCopy = getTicketCopy(showCourt ? "PADEL" : "DEFAULT");
 
   if (access?.liveHubAllowed === false) {
     const visibility = access?.liveHubVisibility ?? "PUBLIC";
@@ -3066,9 +3068,18 @@ export default function EventLiveClient({
       case "CTA": {
         const ctaCopy =
           viewerRole === "PUBLIC"
-            ? "Queres aparecer como participante? Garante o teu bilhete."
+            ? ticketCopy.isPadel
+              ? "Queres aparecer como participante? Garante a tua inscrição."
+              : "Queres aparecer como participante? Garante o teu bilhete."
             : "Já tens acesso como participante. Aproveita o LiveHub.";
-        const ctaLabel = viewerRole === "PUBLIC" ? "Garantir lugar" : "Ver o meu bilhete";
+        const ctaLabel =
+          viewerRole === "PUBLIC"
+            ? ticketCopy.isPadel
+              ? ticketCopy.buyLabel
+              : "Garantir lugar"
+            : ticketCopy.isPadel
+              ? "Ver a minha inscrição"
+              : "Ver o meu bilhete";
         return (
           <section key="cta" className="rounded-3xl border border-white/10 bg-white/5 p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">

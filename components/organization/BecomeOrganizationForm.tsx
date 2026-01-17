@@ -66,7 +66,7 @@ const OPERATION_OPTIONS = [
   },
 ] as const;
 
-const OPTIONAL_MODULES = ["INSCRICOES", "MENSAGENS"] as const;
+const OPTIONAL_MODULES = ["INSCRICOES", "MENSAGENS", "LOJA"] as const;
 type OptionalModule = (typeof OPTIONAL_MODULES)[number];
 
 const MODULE_META: Record<OptionalModule, { label: string; description: string }> = {
@@ -77,6 +77,10 @@ const MODULE_META: Record<OptionalModule, { label: string; description: string }
   MENSAGENS: {
     label: "Mensagens",
     description: "Mensagens e automações para participantes.",
+  },
+  LOJA: {
+    label: "Loja",
+    description: "Produtos físicos e digitais com carrinho e checkout.",
   },
 };
 
