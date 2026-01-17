@@ -16,13 +16,13 @@ type BracketResponse = {
 };
 
 export default async function WidgetBracketPage({ searchParams }: PageProps) {
-  const eventId = typeof searchParams?.eventId === "string" ? searchParams.eventId : undefined;
+  const requestEventId = typeof searchParams?.eventId === "string" ? searchParams.eventId : undefined;
   const slug = typeof searchParams?.slug === "string" ? searchParams.slug : undefined;
   const lang = typeof searchParams?.lang === "string" ? searchParams.lang : undefined;
   const locale = resolveLocale(lang);
   const baseUrl = getAppBaseUrl();
-  const url = eventId
-    ? `${baseUrl}/api/widgets/padel/bracket?eventId=${encodeURIComponent(eventId)}`
+  const url = requestEventId
+    ? `${baseUrl}/api/widgets/padel/bracket?eventId=${encodeURIComponent(requestEventId)}`
     : slug
       ? `${baseUrl}/api/widgets/padel/bracket?slug=${encodeURIComponent(slug)}`
       : null;
