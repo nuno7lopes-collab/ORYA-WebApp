@@ -66,12 +66,6 @@ export async function PATCH(
     if (!writeAccess.ok) {
       return NextResponse.json({ ok: false, error: writeAccess.error }, { status: 403 });
     }
-    const writeAccess = ensureOrganizationWriteAccess(organization, {
-      requireStripeForServices: true,
-    });
-    if (!writeAccess.ok) {
-      return NextResponse.json({ ok: false, error: writeAccess.error }, { status: 403 });
-    }
 
     const pack = await prisma.servicePack.findFirst({
       where: { id: packId, serviceId, service: { organizationId: organization.id } },

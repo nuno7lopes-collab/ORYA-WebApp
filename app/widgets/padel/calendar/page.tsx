@@ -35,11 +35,11 @@ type CalendarResponse = {
 
 export default async function WidgetPadelCalendarPage({ searchParams }: PageProps) {
   const slug = typeof searchParams?.slug === "string" ? searchParams.slug : undefined;
-  const eventId = typeof searchParams?.eventId === "string" ? searchParams.eventId : undefined;
+  const requestEventId = typeof searchParams?.eventId === "string" ? searchParams.eventId : undefined;
   const lang = typeof searchParams?.lang === "string" ? searchParams.lang : undefined;
   const locale = resolveLocale(lang);
 
-  if (!slug && !eventId) {
+  if (!slug && !requestEventId) {
     return (
       <div className="min-h-screen bg-[#0b0f1d] px-4 py-4 text-white">
         <p className="text-sm text-white/70">{t("eventMissing", locale)}</p>
@@ -50,7 +50,7 @@ export default async function WidgetPadelCalendarPage({ searchParams }: PageProp
   const baseUrl = getAppBaseUrl();
   const url = new URL("/api/widgets/padel/calendar", baseUrl);
   if (slug) url.searchParams.set("slug", slug);
-  if (eventId) url.searchParams.set("eventId", eventId);
+  if (requestEventId) url.searchParams.set("eventId", requestEventId);
 
   const res = (await fetch(url.toString(), { cache: "no-store" })
     .then((r) => r.json())
