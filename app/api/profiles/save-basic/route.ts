@@ -6,6 +6,7 @@ import { parsePhoneNumberFromString } from "libphonenumber-js";
 import { setUsernameForOwner, UsernameTakenError, normalizeAndValidateUsername } from "@/lib/globalUsernames";
 import { getNotificationPrefs } from "@/lib/notifications";
 import { normalizeProfileAvatarUrl, normalizeProfileCoverUrl } from "@/lib/profileMedia";
+import { INTEREST_MAX_SELECTION, normalizeInterestSelection } from "@/lib/interests";
 
 interface SaveBasicBody {
   fullName?: string;
@@ -14,10 +15,11 @@ interface SaveBasicBody {
   avatarUrl?: string | null;
   coverUrl?: string | null;
   bio?: string | null;
-  visibility?: "PUBLIC" | "PRIVATE";
+  visibility?: "PUBLIC" | "PRIVATE" | "FOLLOWERS";
+  favouriteCategories?: string[];
   allowEmailNotifications?: boolean;
   allowEventReminders?: boolean;
-  allowFriendRequests?: boolean;
+  allowFollowRequests?: boolean;
   followersCount?: number; // ignored for now (future-proof)
   followingCount?: number; // ignored for now (future-proof)
 }
@@ -57,10 +59,21 @@ export async function POST(req: NextRequest) {
     const avatarUrl = rawAvatarUrl === undefined ? undefined : normalizeProfileAvatarUrl(rawAvatarUrl);
     const coverUrl = rawCoverUrl === undefined ? undefined : normalizeProfileCoverUrl(rawCoverUrl);
     const rawBio = body.bio;
-    const visibility = body.visibility === "PRIVATE" ? "PRIVATE" : body.visibility === "PUBLIC" ? "PUBLIC" : undefined;
+    const visibility =
+      body.visibility === "PRIVATE" || body.visibility === "PUBLIC" || body.visibility === "FOLLOWERS"
+        ? body.visibility
+        : undefined;
+    const favouriteCategories = Array.isArray(body.favouriteCategories)
+      ? normalizeInterestSelection(
+          body.favouriteCategories.filter(
+            (item): item is string => typeof item === "string",
+          ),
+          INTEREST_MAX_SELECTION,
+        )
+      : undefined;
     const allowEmailNotifications = typeof body.allowEmailNotifications === "boolean" ? body.allowEmailNotifications : undefined;
     const allowEventReminders = typeof body.allowEventReminders === "boolean" ? body.allowEventReminders : undefined;
-    const allowFriendRequests = typeof body.allowFriendRequests === "boolean" ? body.allowFriendRequests : undefined;
+    const allowFollowRequests = typeof body.allowFollowRequests === "boolean" ? body.allowFollowRequests : undefined;
 
     const fullName = rawFullName.trim();
     const username = rawUsername.trim();
@@ -108,7 +121,7 @@ export async function POST(req: NextRequest) {
     const notificationUpdates: Record<string, boolean> = {};
     if (allowEmailNotifications !== undefined) notificationUpdates.allowEmailNotifications = allowEmailNotifications;
     if (allowEventReminders !== undefined) notificationUpdates.allowEventReminders = allowEventReminders;
-    if (allowFriendRequests !== undefined) notificationUpdates.allowFriendRequests = allowFriendRequests;
+    if (allowFollowRequests !== undefined) notificationUpdates.allowFollowRequests = allowFollowRequests;
 
     const profile = await prisma.$transaction(async (tx) => {
       await setUsernameForOwner({
@@ -129,6 +142,7 @@ export async function POST(req: NextRequest) {
           ...(avatarUrl !== undefined ? { avatarUrl: avatarUrl || null } : {}),
           ...(coverUrl !== undefined ? { coverUrl: coverUrl || null } : {}),
           ...(visibility ? { visibility } : {}),
+          ...(favouriteCategories !== undefined ? { favouriteCategories } : {}),
         },
         create: {
           id: userId,
@@ -141,6 +155,7 @@ export async function POST(req: NextRequest) {
           avatarUrl: avatarUrl ?? null,
           coverUrl: coverUrl ?? null,
           visibility: visibility ?? "PUBLIC",
+          favouriteCategories: favouriteCategories ?? [],
         },
       });
 
@@ -172,7 +187,7 @@ export async function POST(req: NextRequest) {
       visibility: profile.visibility,
       allowEmailNotifications: notificationPrefs?.allowEmailNotifications ?? true,
       allowEventReminders: notificationPrefs?.allowEventReminders ?? true,
-      allowFriendRequests: notificationPrefs?.allowFriendRequests ?? true,
+      allowFollowRequests: notificationPrefs?.allowFollowRequests ?? true,
     };
 
     return NextResponse.json(

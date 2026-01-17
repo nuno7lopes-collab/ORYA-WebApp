@@ -1,9 +1,14 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
+import { isSameOrigin } from "@/lib/auth/requestValidation";
 
 // Utilitário para limpar cookies locais (incluindo os sb- do Supabase) quando ficam corrompidos.
-export async function POST() {
+export async function POST(req: NextRequest) {
   try {
+    if (!isSameOrigin(req)) {
+      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    }
+
     const store = await cookies();
     const all = store.getAll();
 

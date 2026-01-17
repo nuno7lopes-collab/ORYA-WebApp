@@ -8,8 +8,9 @@ import { clampDeadlineHours, computeSplitDeadlineAt } from "@/domain/padelDeadli
 import { readNumericParam } from "@/lib/routeParams";
 
 // Regulariza uma dupla cancelada por falha de pagamento (SPLIT).
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
-  const pairingId = readNumericParam(params?.id, req, "pairings");
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const resolved = await params;
+  const pairingId = readNumericParam(resolved?.id, req, "pairings");
   if (pairingId === null) {
     return NextResponse.json({ ok: false, error: "INVALID_ID" }, { status: 400 });
   }
@@ -26,7 +27,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       slots: true,
       event: {
         select: {
-          organizerId: true,
+          organizationId: true,
           startsAt: true,
           padelTournamentConfig: { select: { splitDeadlineHours: true } },
         },
@@ -41,9 +42,9 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const isCaptain = pairing.createdByUserId === user.id;
   let isStaff = false;
   if (!isCaptain) {
-    const staff = await prisma.organizerMember.findFirst({
+    const staff = await prisma.organizationMember.findFirst({
       where: {
-        organizerId: pairing.organizerId,
+        organizationId: pairing.organizationId,
         userId: user.id,
         role: { in: ["OWNER", "CO_OWNER", "ADMIN"] },
       },

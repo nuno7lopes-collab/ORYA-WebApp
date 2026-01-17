@@ -1,6 +1,6 @@
 import { EntitlementStatus, EntitlementType } from "@prisma/client";
 
-export type RequesterRole = "OWNER" | "ORGANIZER" | "ADMIN";
+export type RequesterRole = "OWNER" | "ORGANIZATION" | "ADMIN";
 
 export type EntitlementActions = {
   canShowQr: boolean;
@@ -14,7 +14,7 @@ export type ResolverInput = {
   type: EntitlementType;
   status: EntitlementStatus;
   isOwner: boolean;
-  isOrganizer: boolean;
+  isOrganization: boolean;
   isAdmin: boolean;
   checkinWindow?: { start: Date | null; end: Date | null };
   outsideWindow?: boolean;
@@ -31,13 +31,13 @@ function insideWindow(window?: { start: Date | null; end: Date | null }) {
 }
 
 export function resolveActions(input: ResolverInput): EntitlementActions {
-  const { status, isOwner, isOrganizer, isAdmin, checkinWindow, outsideWindow, emailVerified, isGuestOwner } = input;
+  const { status, isOwner, isOrganization, isAdmin, checkinWindow, outsideWindow, emailVerified, isGuestOwner } = input;
   const baseBlocked =
     status === EntitlementStatus.REFUNDED ||
     status === EntitlementStatus.REVOKED ||
     status === EntitlementStatus.SUSPENDED;
 
-  const canViewDetails = isOwner || isAdmin || isOrganizer;
+  const canViewDetails = isOwner || isAdmin || isOrganization;
   const canShowQr =
     isOwner &&
     status === EntitlementStatus.ACTIVE &&
@@ -47,7 +47,7 @@ export function resolveActions(input: ResolverInput): EntitlementActions {
 
   const isWithinWindow = !outsideWindow && insideWindow(checkinWindow);
   const canCheckIn =
-    (isOrganizer || isAdmin) &&
+    (isOrganization || isAdmin) &&
     status === EntitlementStatus.ACTIVE &&
     !baseBlocked &&
     isWithinWindow;

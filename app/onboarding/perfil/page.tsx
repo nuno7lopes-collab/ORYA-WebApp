@@ -4,11 +4,15 @@ import { Suspense, useEffect, useState, FormEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useUser } from "@/app/hooks/useUser";
 import { sanitizeUsername, validateUsername, USERNAME_RULES_HINT } from "@/lib/username";
+import { sanitizeRedirectPath } from "@/lib/auth/redirects";
 
 function OnboardingPerfilContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const redirectTo = searchParams.get("redirectTo") || "/";
+  const redirectTo = sanitizeRedirectPath(
+    searchParams.get("redirectTo") ?? searchParams.get("redirect"),
+    "/"
+  );
 
   const { user, profile, isLoading, refetch } = useUser();
 
@@ -67,19 +71,21 @@ function ProfileForm({
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  async function checkUsernameAvailability(currentUsername: string) {
+  async function checkUsernameAvailability(
+    currentUsername: string
+  ): Promise<"available" | "taken" | "error" | "invalid"> {
     const trimmed = sanitizeUsername(currentUsername);
     if (!trimmed) {
       setUsernameHint(USERNAME_RULES_HINT);
       setUsernameStatus("idle");
-      return false;
+      return "invalid";
     }
 
     const validation = validateUsername(trimmed);
     if (!validation.valid) {
       setUsernameHint(validation.error);
       setUsernameStatus("error");
-      return false;
+      return "invalid";
     }
 
     setUsernameHint(null);
@@ -89,17 +95,19 @@ function ProfileForm({
 
       if (!res.ok) {
         setUsernameStatus("error");
-        return false;
+        setUsernameHint("Não foi possível verificar o username.");
+        return "error";
       }
 
       const data = (await res.json()) as { available: boolean };
       const available = data.available;
       setUsernameStatus(available ? "available" : "taken");
-      return available;
+      return available ? "available" : "taken";
     } catch (e) {
       console.error("Erro a verificar username:", e);
       setUsernameStatus("error");
-      return false;
+      setUsernameHint("Não foi possível verificar o username.");
+      return "error";
     }
   }
 
@@ -118,10 +126,19 @@ function ProfileForm({
 
     setIsSubmitting(true);
 
-    const available = await checkUsernameAvailability(trimmedUsername);
-    if (!available) {
+    const availability = await checkUsernameAvailability(trimmedUsername);
+    if (availability === "error") {
+      setIsSubmitting(false);
+      setError("Não foi possível verificar o username.");
+      return;
+    }
+    if (availability === "taken") {
       setIsSubmitting(false);
       setError("Este @ já está a ser usado — escolhe outro.");
+      return;
+    }
+    if (availability !== "available") {
+      setIsSubmitting(false);
       return;
     }
 
@@ -171,7 +188,7 @@ function ProfileForm({
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
               className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black/80"
-              placeholder="Como os teus amigos te conhecem"
+              placeholder="Como as pessoas te conhecem"
             />
           </div>
 

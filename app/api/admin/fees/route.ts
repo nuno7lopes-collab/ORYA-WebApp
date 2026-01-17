@@ -1,40 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createSupabaseServer } from "@/lib/supabaseServer";
+import { requireAdminUser } from "@/lib/admin/auth";
 import { getPlatformAndStripeFees, setPlatformFees, setStripeBaseFees } from "@/lib/platformSettings";
-
-function rolesContainsAdmin(roles: unknown) {
-  if (Array.isArray(roles)) return roles.includes("admin");
-  if (typeof roles === "string") {
-    try {
-      const parsed = JSON.parse(roles);
-      if (Array.isArray(parsed) && parsed.includes("admin")) return true;
-    } catch {
-      return roles.split(",").map((r) => r.trim()).includes("admin");
-    }
-  }
-  return false;
-}
-
-async function isAdminUser(userId: string) {
-  const supabase = await createSupabaseServer();
-  const profileRes = await supabase.from("profiles").select("roles").eq("id", userId).maybeSingle();
-  const rolesFromSupabase = profileRes.data?.roles ?? [];
-  return rolesContainsAdmin(rolesFromSupabase);
-}
 
 export async function GET(_req: NextRequest) {
   try {
-    const supabase = await createSupabaseServer();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
-    }
-
-    if (!(await isAdminUser(user.id))) {
-      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    const admin = await requireAdminUser();
+    if (!admin.ok) {
+      return NextResponse.json({ ok: false, error: admin.error }, { status: admin.status });
     }
 
     const { orya, stripe } = await getPlatformAndStripeFees();
@@ -55,17 +27,9 @@ export async function GET(_req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const supabase = await createSupabaseServer();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
-    }
-
-    if (!(await isAdminUser(user.id))) {
-      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    const admin = await requireAdminUser();
+    if (!admin.ok) {
+      return NextResponse.json({ ok: false, error: admin.error }, { status: admin.status });
     }
 
     const body = await req.json();

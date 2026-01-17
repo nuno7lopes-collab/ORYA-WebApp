@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
 
-const HOLD_MINUTES = 20;
+const HOLD_MINUTES = 10;
+const COMPLETION_GRACE_HOURS = 2;
 
 export async function GET(req: NextRequest) {
   try {
@@ -12,70 +13,79 @@ export async function GET(req: NextRequest) {
     }
 
     const cutoff = new Date(Date.now() - HOLD_MINUTES * 60 * 1000);
+    const now = new Date();
 
-    const stale = await prisma.booking.findMany({
-      where: {
-        status: "PENDING",
-        createdAt: { lt: cutoff },
-      },
-      select: { id: true, availabilityId: true, organizerId: true, serviceId: true, userId: true },
-    });
+    const [stale, legacyStale] = await Promise.all([
+      prisma.booking.findMany({
+        where: {
+          status: { in: ["PENDING_CONFIRMATION", "PENDING"] },
+          pendingExpiresAt: { lt: now },
+          paymentIntentId: null,
+        },
+        select: { id: true, organizationId: true, serviceId: true, userId: true },
+      }),
+      prisma.booking.findMany({
+        where: {
+          status: "PENDING",
+          pendingExpiresAt: null,
+          createdAt: { lt: cutoff },
+          paymentIntentId: null,
+        },
+        select: { id: true, organizationId: true, serviceId: true, userId: true },
+      }),
+    ]);
 
-    if (stale.length === 0) {
-      return NextResponse.json({ ok: true, cancelled: 0, updatedAvailabilities: 0 });
-    }
-
-    const bookingIds = stale.map((b) => b.id);
-    const availabilityIds = Array.from(
-      new Set(stale.map((b) => b.availabilityId).filter((id): id is number => Number.isFinite(id))),
-    );
+    const expired = [...stale, ...legacyStale];
+    const bookingIds = expired.map((b) => b.id);
 
     await prisma.$transaction(async (tx) => {
-      await tx.booking.updateMany({
-        where: { id: { in: bookingIds } },
-        data: { status: "CANCELLED" },
-      });
-
-      for (const booking of stale) {
-        await recordOrganizationAudit(tx, {
-          organizerId: booking.organizerId,
-          actorUserId: null,
-          action: "BOOKING_AUTO_CANCELLED",
-          metadata: {
-            bookingId: booking.id,
-            serviceId: booking.serviceId,
-            availabilityId: booking.availabilityId,
-            userId: booking.userId,
-            reason: "PAYMENT_TIMEOUT",
-          },
+      if (bookingIds.length) {
+        await tx.booking.updateMany({
+          where: { id: { in: bookingIds } },
+          data: { status: "CANCELLED_BY_CLIENT" },
         });
+
+        for (const booking of expired) {
+          await recordOrganizationAudit(tx, {
+            organizationId: booking.organizationId,
+            actorUserId: null,
+            action: "BOOKING_AUTO_CANCELLED",
+            metadata: {
+              bookingId: booking.id,
+              serviceId: booking.serviceId,
+              userId: booking.userId,
+              reason: "PENDING_EXPIRED",
+            },
+          });
+        }
       }
     });
 
-    let updatedAvailabilities = 0;
-    for (const availabilityId of availabilityIds) {
-      const availability = await prisma.availability.findUnique({
-        where: { id: availabilityId },
-        select: { id: true, capacity: true, status: true },
-      });
-      if (!availability || availability.status === "CANCELLED") continue;
+    const completionCutoff = new Date(now.getTime() - COMPLETION_GRACE_HOURS * 60 * 60 * 1000);
+    const candidates = await prisma.booking.findMany({
+      where: {
+        status: "CONFIRMED",
+        startsAt: { lt: completionCutoff },
+      },
+      select: { id: true, startsAt: true, durationMinutes: true, organizationId: true, serviceId: true },
+    });
 
-      const activeCount = await prisma.booking.count({
-        where: { availabilityId, status: { not: "CANCELLED" } },
-      });
-      if (activeCount < availability.capacity && availability.status === "FULL") {
-        await prisma.availability.update({
-          where: { id: availabilityId },
-          data: { status: "OPEN" },
+    let completed = 0;
+    for (const booking of candidates) {
+      const endAt = new Date(booking.startsAt.getTime() + booking.durationMinutes * 60 * 1000);
+      if (endAt.getTime() + COMPLETION_GRACE_HOURS * 60 * 60 * 1000 <= now.getTime()) {
+        await prisma.booking.update({
+          where: { id: booking.id },
+          data: { status: "COMPLETED" },
         });
-        updatedAvailabilities += 1;
+        completed += 1;
       }
     }
 
     return NextResponse.json({
       ok: true,
       cancelled: bookingIds.length,
-      updatedAvailabilities,
+      completed,
     });
   } catch (err) {
     console.error("[CRON BOOKINGS CLEANUP]", err);

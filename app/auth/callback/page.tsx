@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabaseBrowser";
+import { sanitizeRedirectPath } from "@/lib/auth/redirects";
 
 function AuthCallbackInner() {
   const router = useRouter();
@@ -17,12 +18,14 @@ function AuthCallbackInner() {
         await supabaseBrowser.auth.getSession();
 
         let target =
+          searchParams.get("redirectTo") ||
           searchParams.get("redirect") ||
+          searchParams.get("next") ||
           (typeof window !== "undefined"
             ? window.localStorage.getItem("orya_post_auth_redirect") || "/"
             : "/");
 
-        if (!target || target === "") target = "/";
+        target = sanitizeRedirectPath(target, "/");
 
         // Migração de bilhetes guest para user recém autenticado (best-effort, assíncrono)
         fetch("/api/tickets/migrate-guest", {

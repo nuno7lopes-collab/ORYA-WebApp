@@ -4,9 +4,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { resend } from "@/lib/resend";
 import { env } from "@/lib/env";
+import { getAppBaseUrl } from "@/lib/appBaseUrl";
+import { isSameOriginOrApp } from "@/lib/auth/requestValidation";
+import { rateLimit } from "@/lib/auth/rateLimit";
 
 export async function POST(req: NextRequest) {
   try {
+    if (!isSameOriginOrApp(req)) {
+      return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
+    }
+
     const { email } = await req.json();
 
     if (!email) {
@@ -17,11 +24,20 @@ export async function POST(req: NextRequest) {
     }
 
     // Gera novo OTP de signup e envia via Resend (mesmo template do send-otp)
-    const siteUrl =
-      process.env.NEXT_PUBLIC_SITE_URL ??
-      process.env.NEXT_PUBLIC_BASE_URL ??
-      process.env.SITE_URL ??
-      env.supabaseUrl;
+    const limiter = await rateLimit(req, {
+      windowMs: 10 * 60 * 1000,
+      max: 5,
+      keyPrefix: "auth:resend-otp",
+      identifier: String(email),
+    });
+    if (!limiter.allowed) {
+      return NextResponse.json(
+        { error: "RATE_LIMITED" },
+        { status: 429, headers: { "Retry-After": String(limiter.retryAfter) } }
+      );
+    }
+
+    const siteUrl = getAppBaseUrl();
 
     const { data, error } = await supabaseAdmin.auth.admin.generateLink({
       type: "signup",
@@ -72,17 +88,17 @@ export async function POST(req: NextRequest) {
               </tr>
               <tr>
                 <td style="padding:28px 32px;color:#e5e7eb;font-size:14px;line-height:1.6;">
-                  <p style="margin:0 0 12px 0;">Olá! Aqui está o teu código de 6 dígitos para continuares na ORYA.</p>
-                  <p style="margin:0 0 24px 0;">Introduz este código na app para verificares o teu email:</p>
+                  <p style="margin:0 0 12px 0;">Aqui está o teu código.</p>
+                  <p style="margin:0 0 24px 0;">Introduz para verificar o teu email:</p>
                   <div style="display:inline-block;padding:12px 18px;border-radius:12px;background:#111522;border:1px solid rgba(255,255,255,0.08);font-size:24px;font-weight:800;letter-spacing:6px;color:#fdfdfd;">
                     ${code}
                   </div>
-                  <p style="margin:24px 0 0 0;color:#aeb7c6;font-size:13px;">Se não foste tu, ignora este email.</p>
+                  <p style="margin:24px 0 0 0;color:#aeb7c6;font-size:13px;">Se não foste tu, ignora.</p>
                 </td>
               </tr>
               <tr>
                 <td style="padding:18px 32px;color:#7a8397;font-size:12px;background:#0c0f18;border-top:1px solid rgba(255,255,255,0.06);">
-                  Obrigado por confiares na ORYA.
+                  ORYA
                 </td>
               </tr>
             </table>

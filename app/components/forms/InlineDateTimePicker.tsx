@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { CTA_PRIMARY } from "@/app/organizador/dashboardUi";
+import { CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
 
 type Props = {
   label: string;
@@ -139,7 +139,7 @@ export function InlineDateTimePicker({
         onClick={() => setOpen(true)}
         className="flex w-full items-center justify-between rounded-md border border-white/15 bg-black/20 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]/60"
       >
-        <span>{parsedValue ? parsedValue.toLocaleString("pt-PT") : "Escolher data e hora"}</span>
+        <span>{parsedValue ? parsedValue.toLocaleString("pt-PT") : "Escolher data/hora"}</span>
         <span className="text-[11px] text-white/60">📅</span>
       </button>
       {open && mounted && createPortal(

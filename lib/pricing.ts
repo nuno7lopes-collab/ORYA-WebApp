@@ -10,12 +10,12 @@ export type CheckoutLine = {
 export type FeeContext = {
   eventFeeModeOverride?: FeeMode | null;
   eventFeeMode?: FeeMode | null;
-  organizerFeeMode?: FeeMode | null;
+  organizationFeeMode?: FeeMode | null;
   platformDefaultFeeMode?: FeeMode | null;
   eventPlatformFeeBpsOverride?: number | null;
   eventPlatformFeeFixedCentsOverride?: number | null;
-  organizerPlatformFeeBps?: number | null;
-  organizerPlatformFeeFixedCents?: number | null;
+  organizationPlatformFeeBps?: number | null;
+  organizationPlatformFeeFixedCents?: number | null;
   platformDefaultFeeBps: number;
   platformDefaultFeeFixedCents: number;
   isPlatformOrg?: boolean;
@@ -35,7 +35,7 @@ function resolveFeeMode(ctx: FeeContext): FeeMode {
   return (
     ctx.eventFeeModeOverride ||
     ctx.eventFeeMode ||
-    ctx.organizerFeeMode ||
+    ctx.organizationFeeMode ||
     ctx.platformDefaultFeeMode ||
     FeeMode.ADDED
   );
@@ -47,11 +47,11 @@ function resolvePlatformFees(ctx: FeeContext) {
   }
   const feeBps =
     ctx.eventPlatformFeeBpsOverride ??
-    ctx.organizerPlatformFeeBps ??
+    ctx.organizationPlatformFeeBps ??
     ctx.platformDefaultFeeBps;
   const feeFixedCents =
     ctx.eventPlatformFeeFixedCentsOverride ??
-    ctx.organizerPlatformFeeFixedCents ??
+    ctx.organizationPlatformFeeFixedCents ??
     ctx.platformDefaultFeeFixedCents;
 
   return {
@@ -62,7 +62,7 @@ function resolvePlatformFees(ctx: FeeContext) {
 
 /**
  * Função central de cálculo de checkout/fees.
- * - Prioridade: override do evento -> configs do organizer -> defaults da plataforma.
+ * - Prioridade: override do evento -> configs do organization -> defaults da plataforma.
  * - feeMode: ADDED ou INCLUDED.
  */
 export function computePricing(

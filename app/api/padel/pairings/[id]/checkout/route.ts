@@ -12,11 +12,15 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { validateEligibility } from "@/domain/padelEligibility";
 import { env } from "@/lib/env";
 import { checkPadelCategoryLimit } from "@/domain/padelCategoryLimit";
+import { checkPadelCategoryPlayerCapacity } from "@/domain/padelCategoryCapacity";
 import { readNumericParam } from "@/lib/routeParams";
+import { getPadelOnboardingMissing, isPadelOnboardingComplete } from "@/domain/padelOnboarding";
+import { validatePadelCategoryGender } from "@/domain/padelCategoryGender";
 
 // Apenas valida e delega criação de intent ao endpoint central (/api/payments/intent).
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
-  const pairingId = readNumericParam(params?.id, req, "pairings");
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const resolved = await params;
+  const pairingId = readNumericParam(resolved?.id, req, "pairings");
   if (pairingId === null) return NextResponse.json({ ok: false, error: "INVALID_ID" }, { status: 400 });
 
   const supabase = await createSupabaseServer();
@@ -34,7 +38,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     where: { id: pairingId },
     include: {
       slots: true,
-      event: { select: { organizerId: true, slug: true, id: true } },
+      event: { select: { organizationId: true, slug: true, id: true } },
     },
   });
   if (!pairing) return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
@@ -43,6 +47,31 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   }
   if (pairing.pairingStatus === "CANCELLED") {
     return NextResponse.json({ ok: false, error: "PAIRING_CANCELLED" }, { status: 400 });
+  }
+
+  const [profile] = await Promise.all([
+    prisma.profile.findUnique({
+      where: { id: user.id },
+      select: {
+        gender: true,
+        fullName: true,
+        username: true,
+        contactPhone: true,
+        padelLevel: true,
+        padelPreferredSide: true,
+      },
+    }),
+  ]);
+
+  const missing = getPadelOnboardingMissing({
+    profile,
+    email: user.email ?? null,
+  });
+  if (!isPadelOnboardingComplete(missing)) {
+    return NextResponse.json(
+      { ok: false, error: "PADEL_ONBOARDING_REQUIRED", missing },
+      { status: 409 },
+    );
   }
 
   const pending =
@@ -108,6 +137,24 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     );
   }
 
+  const category = pairing.categoryId
+    ? await prisma.padelCategory.findUnique({
+        where: { id: pairing.categoryId },
+        select: { genderRestriction: true, minLevel: true, maxLevel: true },
+      })
+    : null;
+  const categoryGender = validatePadelCategoryGender(
+    category?.genderRestriction ?? null,
+    captainProfile?.gender as Gender | null,
+    partnerProfile?.gender as Gender | null,
+  );
+  if (!categoryGender.ok) {
+    return NextResponse.json(
+      { ok: false, error: categoryGender.code },
+      { status: 409 },
+    );
+  }
+
   // Não permitir checkout se utilizador já tiver pairing ativo no torneio
   const existingActive = await prisma.padelPairing.findFirst({
     where: {
@@ -140,6 +187,17 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       },
       { status: 409 },
     );
+  }
+
+  const playerCapacity = await prisma.$transaction((tx) =>
+    checkPadelCategoryPlayerCapacity({
+      tx,
+      eventId: pairing.event.id,
+      categoryId: pairing.categoryId ?? null,
+    }),
+  );
+  if (!playerCapacity.ok) {
+    return NextResponse.json({ ok: false, error: playerCapacity.code }, { status: 409 });
   }
 
   const currency = ticketType.currency || "EUR";

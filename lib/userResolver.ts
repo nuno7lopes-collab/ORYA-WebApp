@@ -18,6 +18,8 @@ export type ResolvedUser = {
 export async function resolveUserIdentifier(identifier: string): Promise<ResolvedUser | null> {
   const value = identifier.trim();
   if (!value) return null;
+  const normalized = value.startsWith("@") ? value.slice(1) : value;
+  if (!normalized) return null;
 
   const select = {
     id: true,
@@ -27,9 +29,9 @@ export async function resolveUserIdentifier(identifier: string): Promise<Resolve
   };
 
   // Se for UUID válido, tenta match direto
-  if (/^[0-9a-fA-F-]{36}$/.test(value)) {
+  if (/^[0-9a-fA-F-]{36}$/.test(normalized)) {
     const byId = await prisma.profile.findUnique({
-      where: { id: value },
+      where: { id: normalized },
       select,
     });
     if (byId) {
@@ -47,12 +49,12 @@ export async function resolveUserIdentifier(identifier: string): Promise<Resolve
   }
 
   // Username (case insensitive). Para email, procura em auth.users e mapeia para profile.
-  const lowered = value.toLowerCase();
+  const lowered = normalized.toLowerCase();
 
   // Tenta por username no profile (citext)
   let match = await prisma.profile.findFirst({
     where: {
-      OR: [{ username: value }, { username: lowered }],
+      OR: [{ username: normalized }, { username: lowered }],
       isDeleted: false,
     },
     select,
@@ -60,7 +62,7 @@ export async function resolveUserIdentifier(identifier: string): Promise<Resolve
 
   let resolvedEmail: string | null = null;
   // Se for email, procurar em auth.users e ligar ao profile
-  if (!match && value.includes("@")) {
+  if (!match && normalized.includes("@")) {
     const userByEmail = await prisma.users.findFirst({
       where: { email: lowered },
       select: { id: true, email: true },
@@ -84,7 +86,7 @@ export async function resolveUserIdentifier(identifier: string): Promise<Resolve
       username: match.username,
       fullName: match.fullName,
       avatarUrl: match.avatarUrl,
-      email: resolvedEmail ?? (value.includes("@") ? value : null),
+      email: resolvedEmail ?? (normalized.includes("@") ? normalized : null),
     },
   };
 }

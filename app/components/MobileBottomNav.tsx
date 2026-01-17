@@ -15,6 +15,9 @@ const RESERVED_ROOT_ROUTES = new Set([
   "admin",
   "api",
   "auth",
+  "atividade",
+  "agora",
+  "descobrir",
   "em-breve",
   "eventos",
   "explorar",
@@ -24,8 +27,12 @@ const RESERVED_ROOT_ROUTES = new Set([
   "mapa",
   "me",
   "onboarding",
-  "organizador",
+  "organizacao",
+  "organização",
+  "perfil",
+  "procurar",
   "padel",
+  "rede",
   "resale",
   "reset-password",
   "servicos",
@@ -58,50 +65,57 @@ type Item = {
   badge?: number;
 };
 
-export default function MobileBottomNav({
-  pathname,
-  socialBadgeCount,
-}: MobileBottomNavProps) {
+export default function MobileBottomNav({ pathname, socialBadgeCount }: MobileBottomNavProps) {
   const router = useRouter();
   const currentPathname = normalizePathname(pathname);
 
-  const itemHome: Item = useMemo(
-    () => ({
-      label: "Inicio",
-      icon: IconHome,
-      path: "/",
-      active: (p) => p === "/",
-    }),
-    [],
-  );
-
-  const itemExplorar: Item = useMemo(
+  const itemDescobrir: Item = useMemo(
     () => ({
       label: "Descobrir",
-      icon: IconSearch,
+      icon: IconCompass,
       path: "/explorar",
-      active: (p) => p.startsWith("/explorar"),
+      active: (p) => p.startsWith("/explorar") || p.startsWith("/procurar"),
     }),
     [],
   );
 
-  const itemSocial: Item = useMemo(
+  const itemInicio: Item = useMemo(
     () => ({
-      label: "Social",
-      icon: IconHeart,
-      path: "/social",
-      active: (p) => p.startsWith("/social"),
+      label: "Início",
+      icon: IconHome,
+      path: "/descobrir",
+      active: (p) => p === "/descobrir" || p === "/",
+    }),
+    [],
+  );
+
+  const itemRede: Item = useMemo(
+    () => ({
+      label: "Rede",
+      icon: IconUsers,
+      path: "/rede",
+      active: (p) => p.startsWith("/rede"),
       badge: typeof socialBadgeCount === "number" && socialBadgeCount > 0 ? socialBadgeCount : undefined,
     }),
     [socialBadgeCount],
+  );
+
+  const itemAgora: Item = useMemo(
+    () => ({
+      label: "Agora",
+      icon: IconClock,
+      path: "/agora",
+      active: (p) => p.startsWith("/agora"),
+    }),
+    [],
   );
 
   const itemPerfil: Item = useMemo(
     () => ({
       label: "Perfil",
       icon: IconUser,
-      path: "/me",
-      active: (p) => isProfilePath(p),
+      path: "/perfil",
+      active: (p) => p.startsWith("/perfil") || isProfilePath(p),
     }),
     [],
   );
@@ -129,10 +143,11 @@ export default function MobileBottomNav({
         className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/35 to-transparent"
       />
       <div className="relative mx-auto max-w-3xl px-3">
-        <div className="grid h-[54px] grid-cols-4 items-center text-center gap-1">
-          <NavItem item={itemHome} isActive={itemHome.active(currentPathname)} onClick={go} />
-          <NavItem item={itemExplorar} isActive={itemExplorar.active(currentPathname)} onClick={go} />
-          <NavItem item={itemSocial} isActive={itemSocial.active(currentPathname)} onClick={go} />
+        <div className="grid h-[56px] grid-cols-5 items-center text-center gap-1">
+          <NavItem item={itemInicio} isActive={itemInicio.active(currentPathname)} onClick={go} />
+          <NavItem item={itemDescobrir} isActive={itemDescobrir.active(currentPathname)} onClick={go} />
+          <NavItem item={itemAgora} isActive={itemAgora.active(currentPathname)} onClick={go} />
+          <NavItem item={itemRede} isActive={itemRede.active(currentPathname)} onClick={go} />
           <NavItem item={itemPerfil} isActive={itemPerfil.active(currentPathname)} onClick={go} />
         </div>
       </div>
@@ -195,28 +210,41 @@ function NavItem({ item, isActive, onClick }: NavItemProps) {
   );
 }
 
+function IconCompass(props: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M10 14l4-4" />
+      <path d="M9 9l6 2-2 6-6-2 2-6Z" />
+    </svg>
+  );
+}
+
 function IconHome(props: IconProps) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" {...props}>
       <path d="M4 10.5 12 4l8 6.5" />
-      <path d="M6.5 9.8V19a1 1 0 0 0 1 1h3.6v-5.2h1.8V20h3.6a1 1 0 0 0 1-1V9.8" />
+      <path d="M6.5 9.5V20h11V9.5" />
+      <path d="M10 20v-6h4v6" />
     </svg>
   );
 }
 
-function IconSearch(props: IconProps) {
+function IconUsers(props: IconProps) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" {...props}>
-      <circle cx="11" cy="11" r="6.5" />
-      <path d="m16.5 16.5 4 4" />
+      <circle cx="8" cy="8" r="3" />
+      <circle cx="16" cy="10" r="2.5" />
+      <path d="M3 19c1.6-3 4-4.5 7-4.5s5.4 1.5 7 4.5" />
     </svg>
   );
 }
 
-function IconHeart(props: IconProps) {
+function IconClock(props: IconProps) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" {...props}>
-      <path d="M12 20s-6.8-4.2-8.5-7.4C2.1 10.2 2.8 7.4 5 6.3c2-1 4.6-.4 6 1.6 1.4-2 4-2.6 6-1.6 2.2 1.1 2.9 3.9 1.5 6.3C18.8 15.8 12 20 12 20Z" />
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M12 7.5v5l3.5 2" />
     </svg>
   );
 }

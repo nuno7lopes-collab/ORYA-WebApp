@@ -5,8 +5,12 @@ import { useRouter } from "next/navigation";
 import { useUser } from "@/app/hooks/useUser";
 import { useEffect, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabaseBrowser";
+import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
+import { FilterChip } from "@/app/components/mobile/MobileFilters";
+import InterestIcon from "@/app/components/interests/InterestIcon";
+import { INTEREST_MAX_SELECTION, INTEREST_OPTIONS, normalizeInterestSelection, type InterestId } from "@/lib/interests";
 
-type Visibility = "PUBLIC" | "PRIVATE";
+type Visibility = "PUBLIC" | "PRIVATE" | "FOLLOWERS";
 function Card({ children }: { children: React.ReactNode }) {
   return (
     <section className="rounded-3xl border border-white/15 bg-white/5 p-5 shadow-[0_24px_60px_rgba(0,0,0,0.65)] backdrop-blur-2xl">
@@ -16,18 +20,22 @@ function Card({ children }: { children: React.ReactNode }) {
 }
 
 export default function SettingsPage() {
-  const { user, profile, isLoading, error, mutate } = useUser();
+  const { user, profile, isLoading, error, mutate, roles } = useUser();
   const router = useRouter();
+  const { openModal: openAuthModal, isOpen: isAuthOpen } = useAuthModal();
+  const isOrganizer = roles.includes("organization");
 
   const [email, setEmail] = useState("");
   const [visibility, setVisibility] = useState<Visibility>("PUBLIC");
   const [allowEmailNotifications, setAllowEmailNotifications] = useState(true);
   const [allowEventReminders, setAllowEventReminders] = useState(true);
-  const [allowFriendRequests, setAllowFriendRequests] = useState(true);
+  const [allowFollowRequests, setAllowFollowRequests] = useState(true);
   const [allowSalesAlerts, setAllowSalesAlerts] = useState(true);
   const [allowSystemAnnouncements, setAllowSystemAnnouncements] = useState(true);
+  const [interests, setInterests] = useState<InterestId[]>([]);
 
   const [savingSettings, setSavingSettings] = useState(false);
+  const [savingInterests, setSavingInterests] = useState(false);
   const [savingEmail, setSavingEmail] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [logoutLoading, setLogoutLoading] = useState(false);
@@ -45,13 +53,17 @@ export default function SettingsPage() {
     if (typeof profile?.allowEventReminders === "boolean") {
       setAllowEventReminders(profile.allowEventReminders);
     }
-    if (typeof profile?.allowFriendRequests === "boolean") {
-      setAllowFriendRequests(profile.allowFriendRequests);
+    if (typeof profile?.allowFollowRequests === "boolean") {
+      setAllowFollowRequests(profile.allowFollowRequests);
+    }
+    if (Array.isArray(profile?.favouriteCategories)) {
+      setInterests(normalizeInterestSelection(profile.favouriteCategories));
     }
   }, [
     profile?.allowEmailNotifications,
     profile?.allowEventReminders,
-    profile?.allowFriendRequests,
+    profile?.allowFollowRequests,
+    profile?.favouriteCategories,
     profile?.visibility,
     user?.email,
   ]);
@@ -65,7 +77,7 @@ export default function SettingsPage() {
         if (!cancelled && res.ok && json?.prefs) {
           setAllowEmailNotifications(Boolean(json.prefs.allowEmailNotifications));
           setAllowEventReminders(Boolean(json.prefs.allowEventReminders));
-          setAllowFriendRequests(Boolean(json.prefs.allowFriendRequests));
+          setAllowFollowRequests(Boolean(json.prefs.allowFollowRequests));
           setAllowSalesAlerts(Boolean(json.prefs.allowSalesAlerts));
           setAllowSystemAnnouncements(Boolean(json.prefs.allowSystemAnnouncements));
         }
@@ -93,7 +105,7 @@ export default function SettingsPage() {
           visibility,
           allowEmailNotifications,
           allowEventReminders,
-          allowFriendRequests,
+          allowFollowRequests,
           allowSalesAlerts,
           allowSystemAnnouncements,
         }),
@@ -107,7 +119,7 @@ export default function SettingsPage() {
         body: JSON.stringify({
           allowEmailNotifications,
           allowEventReminders,
-          allowFriendRequests,
+          allowFollowRequests,
           allowSalesAlerts,
           allowSystemAnnouncements,
         }),
@@ -120,6 +132,31 @@ export default function SettingsPage() {
       setErrorMsg("Não foi possível guardar as definições.");
     } finally {
       setSavingSettings(false);
+    }
+  }
+
+  async function handleSaveInterests() {
+    if (!user) return;
+    setSavingInterests(true);
+    setFeedback(null);
+    setErrorMsg(null);
+
+    try {
+      const res = await fetch("/api/me/settings/save", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ favouriteCategories: interests }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) throw new Error(json.error || "Erro ao guardar interesses.");
+
+      setFeedback("Interesses atualizados.");
+      await mutate();
+    } catch (err) {
+      console.error(err);
+      setErrorMsg("Não foi possível guardar os interesses.");
+    } finally {
+      setSavingInterests(false);
     }
   }
 
@@ -163,7 +200,7 @@ export default function SettingsPage() {
     } finally {
       setLogoutLoading(false);
       router.refresh();
-      router.push("/login");
+      router.push("/");
     }
   }
 
@@ -181,7 +218,7 @@ export default function SettingsPage() {
       if (!res.ok || !json?.ok) throw new Error(json?.error || "Erro ao apagar conta.");
       setFeedback(json.message || "Conta marcada para eliminação. Podes reverter dentro de 30 dias.");
       setShowDeleteConfirm(false);
-      router.push("/login?pending_delete=1");
+      router.push("/");
     } catch (err) {
       console.error(err);
       setErrorMsg("Não foi possível marcar a eliminação. Tenta mais tarde.");
@@ -205,13 +242,18 @@ export default function SettingsPage() {
       <main className="relative min-h-screen w-full overflow-hidden text-white">
         <div className="relative orya-page-width px-5 py-10 space-y-4">
           <h1 className="text-xl font-semibold">Definições</h1>
-          <p className="text-sm text-white/70">Precisas de iniciar sessão para aceder às definições da conta.</p>
-          <Link
-            href="/login?redirectTo=/me/settings"
+          <p className="text-sm text-white/70">Inicia sessão para acederes às definições.</p>
+          <button
+            type="button"
+            onClick={() => {
+              if (!isAuthOpen) {
+                openAuthModal({ mode: "login", redirectTo: "/me/settings", showGoogle: true });
+              }
+            }}
             className="inline-flex items-center gap-2 rounded-full bg-white text-black px-4 py-2 text-sm font-semibold shadow-[0_18px_45px_rgba(0,0,0,0.35)] transition hover:shadow-[0_22px_55px_rgba(255,255,255,0.25)]"
           >
             Entrar
-          </Link>
+          </button>
         </div>
       </main>
     );
@@ -226,9 +268,7 @@ export default function SettingsPage() {
             <h1 className="bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] bg-clip-text text-3xl font-bold leading-tight text-transparent">
               Definições
             </h1>
-            <p className="text-sm text-white/70">
-              Controla email, privacidade, notificações e sessão num painel com efeito glassy ORYA.
-            </p>
+            <p className="text-sm text-white/70">Email, interesses, privacidade e notificações.</p>
           </div>
         </header>
 
@@ -247,7 +287,7 @@ export default function SettingsPage() {
           <Card>
             <div className="space-y-1">
               <h2 className="text-sm font-semibold text-white/90 tracking-[0.08em]">Email</h2>
-              <p className="text-xs text-white/65">Atualiza o email de login. Podemos pedir confirmação.</p>
+              <p className="text-xs text-white/65">Atualiza o teu email.</p>
             </div>
             <div className="mt-3 space-y-2">
               <input
@@ -288,12 +328,23 @@ export default function SettingsPage() {
                 <input
                   type="radio"
                   name="visibility"
+                  value="FOLLOWERS"
+                  checked={visibility === "FOLLOWERS"}
+                  onChange={() => setVisibility("FOLLOWERS")}
+                  className="h-3 w-3 accent-[#7CFFB2]"
+                />
+                <span>Só seguidores</span>
+              </label>
+              <label className="inline-flex items-center gap-2 rounded-xl border border-white/12 bg-white/5 px-3 py-2">
+                <input
+                  type="radio"
+                  name="visibility"
                   value="PRIVATE"
                   checked={visibility === "PRIVATE"}
                   onChange={() => setVisibility("PRIVATE")}
                   className="h-3 w-3 accent-[#FF00C8]"
                 />
-                <span>Perfil privado (conteúdo do perfil só para ti)</span>
+                <span>Perfil privado</span>
               </label>
             </div>
           </Card>
@@ -301,16 +352,59 @@ export default function SettingsPage() {
 
         <Card>
           <div className="space-y-1">
+            <h2 className="text-sm font-semibold text-white/90 tracking-[0.08em]">Interesses</h2>
+            <p className="text-xs text-white/65">
+              Escolhe até {INTEREST_MAX_SELECTION} interesses para personalizar a tua experiência.
+            </p>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {INTEREST_OPTIONS.map((interest) => {
+              const isActive = interests.includes(interest.id);
+              const isLimitReached = !isActive && interests.length >= INTEREST_MAX_SELECTION;
+              return (
+                <FilterChip
+                  key={interest.id}
+                  label={interest.label}
+                  icon={<InterestIcon id={interest.id} className="h-3 w-3" />}
+                  active={isActive}
+                  onClick={() => {
+                    setInterests((prev) => {
+                      if (prev.includes(interest.id)) {
+                        return prev.filter((item) => item !== interest.id);
+                      }
+                      if (prev.length >= INTEREST_MAX_SELECTION) return prev;
+                      return [...prev, interest.id];
+                    });
+                  }}
+                  className={isLimitReached ? "opacity-50 pointer-events-none" : ""}
+                />
+              );
+            })}
+          </div>
+          <button
+            type="button"
+            onClick={handleSaveInterests}
+            disabled={savingInterests}
+            className="mt-4 inline-flex items-center justify-center rounded-full border border-white/20 bg-white/85 text-black px-4 py-2 text-sm font-semibold shadow-[0_10px_26px_rgba(255,255,255,0.2)] hover:scale-[1.01] active:scale-[0.99] transition disabled:opacity-60"
+          >
+            {savingInterests ? "A guardar..." : "Guardar interesses"}
+          </button>
+        </Card>
+
+        <Card>
+          <div className="space-y-1">
             <h2 className="text-sm font-semibold text-white/90 tracking-[0.08em]">Notificações</h2>
-            <p className="text-xs text-white/65">Controla emails e alertas relevantes.</p>
+            <p className="text-xs text-white/65">Emails e alertas.</p>
           </div>
           <div className="mt-3 flex flex-col gap-2 text-sm text-white/80">
             {[
               { value: allowEmailNotifications, setter: setAllowEmailNotifications, label: "Email de novidades e segurança" },
               { value: allowEventReminders, setter: setAllowEventReminders, label: "Lembretes de eventos" },
-              { value: allowFriendRequests, setter: setAllowFriendRequests, label: "Pedidos de amizade / convites" },
-              { value: allowSalesAlerts, setter: setAllowSalesAlerts, label: "Alertas de vendas / estado Stripe" },
-              { value: allowSystemAnnouncements, setter: setAllowSystemAnnouncements, label: "Anúncios do sistema / updates críticos" },
+              { value: allowFollowRequests, setter: setAllowFollowRequests, label: "Pedidos para seguir e convites" },
+              ...(isOrganizer
+                ? [{ value: allowSalesAlerts, setter: setAllowSalesAlerts, label: "Alertas de vendas e estado Stripe" }]
+                : []),
+              { value: allowSystemAnnouncements, setter: setAllowSystemAnnouncements, label: "Anúncios do sistema e atualizações críticas" },
             ].map((opt) => (
               <label
                 key={opt.label}
@@ -340,7 +434,7 @@ export default function SettingsPage() {
           <div className="space-y-1">
             <h2 className="text-sm font-semibold text-white/90 tracking-[0.08em]">Sessão e conta</h2>
             <p className="text-xs text-white/65">
-              Termina sessão ou marca a tua conta para eliminação. Tens 30 dias para reverter; depois desse prazo, a conta é anonimizada.
+              Termina sessão ou elimina a conta. Tens 30 dias para reverter.
             </p>
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
@@ -402,9 +496,8 @@ export default function SettingsPage() {
             </div>
 
             <p className="mt-3 text-sm text-white/70 leading-relaxed">
-              Vamos marcar a tua conta para eliminação e desativá-la de imediato. Tens 30 dias para reativar fazendo
-              login ou clicando no link do email de cancelamento. Após esse prazo, os dados pessoais são anonimizados.
-              Para continuares, escreve <span className="font-semibold text-white">APAGAR CONTA</span> e confirma.
+              A conta será desativada já. Tens 30 dias para reativar via login ou email. Depois disso, os dados são
+              anonimizados. Escreve <span className="font-semibold text-white">APAGAR CONTA</span> para confirmar.
             </p>
 
             <div className="mt-4 space-y-2">

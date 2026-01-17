@@ -1,36 +1,13 @@
 // app/api/admin/refunds/retry/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { createSupabaseServer } from "@/lib/supabaseServer";
-
-async function ensureAdmin() {
-  const supabase = await createSupabaseServer();
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser();
-
-  if (error || !user) {
-    return { ok: false as const, status: 401 as const, reason: "UNAUTHENTICATED" };
-  }
-
-  const profile = await prisma.profile.findUnique({
-    where: { id: user.id },
-    select: { roles: true },
-  });
-  const roles = profile?.roles ?? [];
-  const isAdmin = Array.isArray(roles) && roles.includes("admin");
-  if (!isAdmin) {
-    return { ok: false as const, status: 403 as const, reason: "FORBIDDEN" };
-  }
-  return { ok: true as const };
-}
+import { requireAdminUser } from "@/lib/admin/auth";
 
 export async function POST(req: NextRequest) {
   try {
-    const admin = await ensureAdmin();
+    const admin = await requireAdminUser();
     if (!admin.ok) {
-      return NextResponse.json({ ok: false, error: admin.reason }, { status: admin.status });
+      return NextResponse.json({ ok: false, error: admin.error }, { status: admin.status });
     }
 
     const body = (await req.json().catch(() => null)) as { operationId?: number | string } | null;

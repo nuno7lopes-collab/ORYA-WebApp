@@ -46,6 +46,7 @@ export async function GET(req: NextRequest) {
     });
 
     const followingSet = new Set<string>();
+    const requestSet = new Set<string>();
 
     if (user && results.length > 0) {
       const followingRows = await prisma.follows.findMany({
@@ -53,6 +54,12 @@ export async function GET(req: NextRequest) {
         select: { following_id: true },
       });
       followingRows.forEach((row) => followingSet.add(row.following_id));
+
+      const requestRows = await prisma.follow_requests.findMany({
+        where: { requester_id: user.id, target_id: { in: results.map((r) => r.id) } },
+        select: { target_id: true },
+      });
+      requestRows.forEach((row) => requestSet.add(row.target_id));
     }
 
     const mapped = results.map((r) => ({
@@ -61,6 +68,7 @@ export async function GET(req: NextRequest) {
       fullName: r.fullName,
       avatarUrl: r.avatarUrl,
       isFollowing: followingSet.has(r.id),
+      isRequested: requestSet.has(r.id),
     }));
 
     let ordered = mapped;

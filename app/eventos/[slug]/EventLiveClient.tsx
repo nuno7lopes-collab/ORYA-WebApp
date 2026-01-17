@@ -6,9 +6,10 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import type { LiveHubModule, LiveHubViewerRole } from "@/lib/liveHubConfig";
 import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
+import { getTicketCopy } from "@/app/components/checkout/checkoutCopy";
 import { useUser } from "@/app/hooks/useUser";
-import { getCustomLiveHubMatchOrder } from "@/lib/organizerPremium";
 import { Avatar } from "@/components/ui/avatar";
+import ChatThread from "@/components/chat/ChatThread";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 const LOCALE = "pt-PT";
@@ -302,7 +303,7 @@ function getStreamEmbed(url?: string | null) {
     const parentHost =
       typeof window !== "undefined"
         ? window.location.hostname
-        : (process.env.NEXT_PUBLIC_BASE_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? "app.orya.pt")
+        : (process.env.NEXT_PUBLIC_BASE_URL ?? process.env.NEXT_PUBLIC_SITE_URL ?? "app.orya.pt")
             .replace(/^https?:\/\//, "");
 
     if (host === "youtu.be") {
@@ -403,17 +404,17 @@ function renderPairingName(id: number | null | undefined, pairings: Record<numbe
 
 function RoleBadge({ role }: { role: LiveHubViewerRole }) {
   const style =
-    role === "ORGANIZER"
+    role === "ORGANIZATION"
       ? "border-emerald-400/40 bg-emerald-500/10 text-emerald-100"
       : role === "PARTICIPANT"
         ? "border-sky-400/40 bg-sky-500/10 text-sky-100"
         : "border-white/15 bg-white/5 text-white/70";
-  const label = role === "ORGANIZER" ? "Organizador" : role === "PARTICIPANT" ? "Participante" : "Público";
+  const label = role === "ORGANIZATION" ? "Organização" : role === "PARTICIPANT" ? "Participante" : "Público";
   return <span className={`rounded-full border px-3 py-1 text-[11px] uppercase tracking-[0.2em] ${style}`}>{label}</span>;
 }
 
-function SponsorsStrip({ organizer }: { organizer: { publicName?: string | null } | null }) {
-  const sponsorLabels = organizer?.publicName ? [organizer.publicName] : [];
+function SponsorsStrip({ organization }: { organization: { publicName?: string | null } | null }) {
+  const sponsorLabels = organization?.publicName ? [organization.publicName] : [];
   return (
     <section className="rounded-3xl border border-white/10 bg-white/5 p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -500,7 +501,7 @@ function EmptyCard({ title, children }: { title: string; children: string }) {
   );
 }
 
-function OrganizerMatchEditor({
+function OrganizationMatchEditor({
   match,
   tournamentId,
   onUpdated,
@@ -575,7 +576,7 @@ function OrganizerMatchEditor({
     setSaving(true);
     savingRef.current = true;
     setError(null);
-    const res = await fetch(`/api/organizador/tournaments/${tournamentId}/matches/${match.id}/result`, {
+    const res = await fetch(`/api/organizacao/tournaments/${tournamentId}/matches/${match.id}/result`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -647,7 +648,7 @@ function OrganizerMatchEditor({
     setSaving(true);
     savingRef.current = true;
     setError(null);
-    const res = await fetch(`/api/organizador/tournaments/${tournamentId}/matches/${match.id}/result`, {
+    const res = await fetch(`/api/organizacao/tournaments/${tournamentId}/matches/${match.id}/result`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -694,7 +695,7 @@ function OrganizerMatchEditor({
     setError(null);
     setInfo(null);
     try {
-      const res = await fetch(`/api/organizador/tournaments/${tournamentId}/matches/${match.id}/result`, {
+      const res = await fetch(`/api/organizacao/tournaments/${tournamentId}/matches/${match.id}/result`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -736,7 +737,7 @@ function OrganizerMatchEditor({
     setInfo(null);
     const nextStatus = score.a > 0 || score.b > 0 ? "IN_PROGRESS" : "PENDING";
     try {
-      const res = await fetch(`/api/organizador/tournaments/${tournamentId}/matches/${match.id}/result`, {
+      const res = await fetch(`/api/organizacao/tournaments/${tournamentId}/matches/${match.id}/result`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -766,7 +767,7 @@ function OrganizerMatchEditor({
     setError(null);
     setInfo(null);
     try {
-      const res = await fetch(`/api/organizador/tournaments/${tournamentId}/matches/${match.id}/undo`, {
+      const res = await fetch(`/api/organizacao/tournaments/${tournamentId}/matches/${match.id}/undo`, {
         method: "POST",
       });
       const json = await res.json().catch(() => null);
@@ -1014,7 +1015,7 @@ function LiveHubTv({
 function BracketRoundsView({
   matches,
   pairings,
-  isOrganizerEdit,
+  isOrganizationEdit,
   tournamentId,
   onUpdated,
   goalLimits,
@@ -1024,7 +1025,7 @@ function BracketRoundsView({
 }: {
   matches: MatchPayload[];
   pairings: Record<number, PairingMeta>;
-  isOrganizerEdit: boolean;
+  isOrganizationEdit: boolean;
   tournamentId: number | null;
   onUpdated: () => void;
   goalLimits: GoalLimitsConfig;
@@ -1222,9 +1223,9 @@ function BracketRoundsView({
             style={{ height: options.connectorHeight }}
           />
         )}
-        {isOrganizerEdit && tournamentId && (
+        {isOrganizationEdit && tournamentId && (
           <div className="pt-1">
-            <OrganizerMatchEditor
+            <OrganizationMatchEditor
               match={match}
               tournamentId={tournamentId}
               onUpdated={onUpdated}
@@ -1498,7 +1499,7 @@ function OneVOneBracket({
   stage,
   pairings,
   eventStatus,
-  isOrganizerEdit,
+  isOrganizationEdit,
   tournamentId,
   onUpdated,
   goalLimits,
@@ -1507,7 +1508,7 @@ function OneVOneBracket({
   stage: { matches?: MatchPayload[]; name?: string | null } | null;
   pairings: Record<number, PairingMeta>;
   eventStatus: string;
-  isOrganizerEdit: boolean;
+  isOrganizationEdit: boolean;
   tournamentId: number | null;
   onUpdated: () => void;
   goalLimits: GoalLimitsConfig;
@@ -1535,7 +1536,7 @@ function OneVOneBracket({
       <BracketRoundsView
         matches={stage.matches}
         pairings={pairings}
-        isOrganizerEdit={isOrganizerEdit}
+        isOrganizationEdit={isOrganizationEdit}
         tournamentId={tournamentId}
         onUpdated={onUpdated}
         goalLimits={goalLimits}
@@ -1547,7 +1548,7 @@ function OneVOneBracket({
 
 function OneVOneLiveLayout({
   event,
-  organizer,
+  organization,
   tournament,
   pairings,
   eventStatus,
@@ -1559,14 +1560,14 @@ function OneVOneLiveLayout({
   followPending,
   isFollowing,
   showSponsors,
-  isOrganizerEdit,
+  isOrganizationEdit,
   canManageLiveConfig,
   canResolveDispute,
   onRefresh,
   variant = "full",
 }: {
   event: EventPayload;
-  organizer: { id: number; publicName: string; username: string | null; brandingAvatarUrl: string | null } | null;
+  organization: { id: number; publicName: string; username: string | null; brandingAvatarUrl: string | null } | null;
   tournament: any;
   pairings: Record<number, PairingMeta>;
   eventStatus: string;
@@ -1578,7 +1579,7 @@ function OneVOneLiveLayout({
   followPending: boolean;
   isFollowing: boolean;
   showSponsors: boolean;
-  isOrganizerEdit: boolean;
+  isOrganizationEdit: boolean;
   canManageLiveConfig: boolean;
   canResolveDispute: boolean;
   onRefresh: () => void;
@@ -1686,7 +1687,7 @@ function OneVOneLiveLayout({
     setSavingConfig(true);
     setConfigMessage(null);
     try {
-      await fetch(`/api/organizador/tournaments/${tournament.id}/featured-match`, {
+      await fetch(`/api/organizacao/tournaments/${tournament.id}/featured-match`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ matchId }),
@@ -1706,7 +1707,7 @@ function OneVOneLiveLayout({
     setConfigMessage(null);
     try {
       if (streamUrl.trim() !== (event.liveStreamUrl ?? "")) {
-        await fetch("/api/organizador/events/update", {
+        await fetch("/api/organizacao/events/update", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -1716,7 +1717,7 @@ function OneVOneLiveLayout({
         });
       }
       if (tournament?.id) {
-        await fetch(`/api/organizador/tournaments/${tournament.id}/sponsors`, {
+        await fetch(`/api/organizacao/tournaments/${tournament.id}/sponsors`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -1726,7 +1727,7 @@ function OneVOneLiveLayout({
             nowPlaying: sponsorDraft?.nowPlaying ?? null,
           }),
         });
-        await fetch(`/api/organizador/tournaments/${tournament.id}/rules`, {
+        await fetch(`/api/organizacao/tournaments/${tournament.id}/rules`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -1806,7 +1807,7 @@ function OneVOneLiveLayout({
               Override
             </span>
           )}
-          <span>{nowMatch ? (nowIsLive ? "Ao vivo" : "Ultimo resultado") : "Sem destaque"}</span>
+          <span>{nowMatch ? (nowIsLive ? "Ao vivo" : "Último") : "Sem"}</span>
         </div>
       </div>
       {nowSponsor && (
@@ -1955,7 +1956,7 @@ function OneVOneLiveLayout({
               {streamLabel}
             </a>
           )}
-          {!embedUrl && organizer && (
+          {!embedUrl && organization && (
             <button
               type="button"
               disabled={followPending}
@@ -1982,15 +1983,21 @@ function OneVOneLiveLayout({
             ))}
           </div>
           <div className="rounded-2xl border border-white/10 bg-black/30 p-4 text-sm text-white/70">
-            {activeTab === "chat" && "Chat disponível em breve."}
+            {activeTab === "chat" && (
+              <ChatThread
+                entityType="EVENT"
+                entityId={event.id}
+                canPostAnnouncements={canPostAnnouncements}
+              />
+            )}
             {activeTab === "stats" && "Stats do torneio em breve."}
             {activeTab === "rules" && (
               <ul className="space-y-1 text-sm text-white/70">
                 <li>Jogo a eliminar direto (1v1).</li>
-                <li>Vence quem chega primeiro ao limite de golos.</li>
-                <li>Limite padrão: {goalDefaultLimit} golos.</li>
+                <li>Vence quem atingir o limite.</li>
+                <li>Limite padrão: {goalDefaultLimit}.</li>
                 {goalRoundOverrides && (
-                  <li>Existem limites por ronda configurados pelo organizador.</li>
+                  <li>Limites por ronda configurados.</li>
                 )}
                 <li>Fair play obrigatório.</li>
                 <li>Decisões do staff são finais.</li>
@@ -2006,7 +2013,7 @@ function OneVOneLiveLayout({
         stage={bracketStage}
         pairings={pairings}
         eventStatus={eventStatus}
-        isOrganizerEdit={isOrganizerEdit}
+        isOrganizationEdit={isOrganizationEdit}
         tournamentId={tournament?.id ?? null}
         onUpdated={onRefresh}
         goalLimits={tournament?.goalLimits as GoalLimitsConfig}
@@ -2035,13 +2042,13 @@ function OneVOneLiveLayout({
         </section>
       )}
 
-      {showSponsors && !hasHeroSponsor && sideSponsors.length === 0 && <SponsorsStrip organizer={organizer} />}
+      {showSponsors && !hasHeroSponsor && sideSponsors.length === 0 && <SponsorsStrip organization={organization} />}
 
-      {isOrganizerEdit && (
+      {isOrganizationEdit && (
         <section className="rounded-3xl border border-white/10 bg-white/5 p-4 space-y-3">
           <div className="flex items-center justify-between">
             <h3 className="text-base font-semibold text-white">Live Ops (overlay)</h3>
-            <span className="text-xs text-white/50">Organizador</span>
+            <span className="text-xs text-white/50">Organização</span>
           </div>
           <div className="rounded-2xl border border-white/10 bg-black/30 p-3 space-y-2">
             <p className="text-[11px] uppercase tracking-[0.2em] text-white/50">Agora a jogar</p>
@@ -2276,7 +2283,7 @@ function OneVOneLiveLayout({
               </div>
             </>
           ) : (
-            <p className="text-xs text-white/50">Configuração avançada reservada a ADMIN.</p>
+            <p className="text-xs text-white/50">Avançado: só ADMIN.</p>
           )}
         </section>
       )}
@@ -2301,7 +2308,7 @@ export default function EventLiveClient({
   const [startingMatchId, setStartingMatchId] = useState<number | null>(null);
   const [startMessage, setStartMessage] = useState<string | null>(null);
   const isTv = searchParams?.get("tv") === "1";
-  const isOrganizerRoute = Boolean(pathname && pathname.startsWith("/organizador/"));
+  const isOrganizationRoute = Boolean(pathname && pathname.startsWith("/organizacao/"));
   const [nowMs, setNowMs] = useState(() => Date.now());
 
   const url = useMemo(() => `/api/livehub/${slug}`, [slug]);
@@ -2310,13 +2317,12 @@ export default function EventLiveClient({
     void mutate();
   };
 
-  const organizer = (data?.organizer as
+  const organization = (data?.organization as
     | {
         id: number;
         publicName: string;
         username: string | null;
         brandingAvatarUrl: string | null;
-        liveHubPremiumEnabled?: boolean | null;
         isFollowed?: boolean;
       }
     | null) ?? null;
@@ -2343,8 +2349,8 @@ export default function EventLiveClient({
   const pairings: Record<number, PairingMeta> = data?.pairings || {};
 
   useEffect(() => {
-    setIsFollowing(Boolean(organizer?.isFollowed));
-  }, [organizer?.isFollowed]);
+    setIsFollowing(Boolean(organization?.isFollowed));
+  }, [organization?.isFollowed]);
 
   useEffect(() => {
     const interval = setInterval(() => setNowMs(Date.now()), 1000);
@@ -2364,19 +2370,23 @@ export default function EventLiveClient({
   const event: EventPayload = data.event;
   const viewerRole: LiveHubViewerRole = data.viewerRole;
   const canEditMatches = Boolean(data?.canEditMatches);
-  const organizerRole = typeof data?.organizerRole === "string" ? data.organizerRole : null;
+  const organizationRole = typeof data?.organizationRole === "string" ? data.organizationRole : null;
+  const canPostAnnouncements =
+    organizationRole !== null &&
+    ["OWNER", "CO_OWNER", "ADMIN", "STAFF", "TRAINER"].includes(organizationRole);
   const canManageLiveConfig =
-    organizerRole === "OWNER" || organizerRole === "CO_OWNER" || organizerRole === "ADMIN";
+    organizationRole === "OWNER" || organizationRole === "CO_OWNER" || organizationRole === "ADMIN";
   const canResolveDispute = canManageLiveConfig;
   const liveHub = data.liveHub as { modules: LiveHubModule[]; mode: "DEFAULT" | "PREMIUM" };
   const pairingIdFromQuery = searchParams?.get("pairingId");
   const showCourt = event.templateType === "PADEL";
+  const ticketCopy = getTicketCopy(showCourt ? "PADEL" : "DEFAULT");
 
   if (access?.liveHubAllowed === false) {
     const visibility = access?.liveHubVisibility ?? "PUBLIC";
     const message =
       visibility === "DISABLED"
-        ? "O LiveHub foi desativado pelo organizador."
+        ? "O LiveHub foi desativado pelo organização."
         : visibility === "PRIVATE"
           ? "O LiveHub está reservado para participantes."
           : "O LiveHub está indisponível.";
@@ -2400,16 +2410,16 @@ export default function EventLiveClient({
   };
 
   const toggleFollow = async () => {
-    if (!organizer) return;
+    if (!organization) return;
     if (!ensureAuthForFollow()) return;
     const next = !isFollowing;
     setFollowPending(true);
     setIsFollowing(next);
     try {
-      const res = await fetch(next ? "/api/social/follow-organizer" : "/api/social/unfollow-organizer", {
+      const res = await fetch(next ? "/api/social/follow-organization" : "/api/social/unfollow-organization", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ organizerId: organizer.id }),
+        body: JSON.stringify({ organizationId: organization.id }),
       });
       if (!res.ok) {
         setIsFollowing(!next);
@@ -2450,19 +2460,12 @@ export default function EventLiveClient({
     a.updatedAt && b.updatedAt ? new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime() : 0;
   const latestCompletedMatch = completedMatches.slice().sort(byUpdatedAtDesc)[0] ?? null;
   const defaultNowMatch = liveMatches.sort(compareMatchOrder)[0] ?? latestCompletedMatch;
-  const oneVOneOrderedMatches = flatMatches.slice().sort(compareBracketOrder);
-  const oneVOneLiveMatches = oneVOneOrderedMatches.filter((m) => m.status === "IN_PROGRESS" || m.status === "LIVE");
-  const oneVOneLatestCompleted = oneVOneOrderedMatches.filter((m) => m.status === "DONE").sort(byUpdatedAtDesc)[0] ?? null;
-  const oneVOneNowMatch = oneVOneLiveMatches[0] ?? oneVOneLatestCompleted;
-  const usePremium = liveHub?.mode === "PREMIUM";
-  const matchOrder = usePremium ? getCustomLiveHubMatchOrder(organizer) : null;
-  const useOneVOneOrdering = matchOrder === "ONEVONE";
-  const isOneVOne = useOneVOneOrdering;
+  const isOneVOne = false;
   const featuredMatchId = typeof tournamentView?.featuredMatchId === "number" ? tournamentView.featuredMatchId : null;
   const featuredMatch = featuredMatchId ? flatMatches.find((m) => m.id === featuredMatchId) ?? null : null;
   const featuredActive =
     featuredMatch && featuredMatch.status !== "DONE" && featuredMatch.status !== "CANCELLED" ? featuredMatch : null;
-  const autoNowMatch = useOneVOneOrdering ? oneVOneNowMatch : defaultNowMatch;
+  const autoNowMatch = defaultNowMatch;
   const nowMatch = featuredActive ?? autoNowMatch;
 
   const upcomingMatches = flatMatches
@@ -2508,10 +2511,14 @@ export default function EventLiveClient({
     : derivedChampionPairingId
       ? pairingLabelPlain(derivedChampionPairingId, pairings) || null
       : null;
-  const isOrganizerEdit =
-    viewerRole === "ORGANIZER" && canEditMatches && isOrganizerRoute && searchParams?.get("edit") === "1";
-  const organizerEditHref = (() => {
-    const base = isOrganizerRoute && pathname ? pathname : `/organizador/eventos/${event.id}/live`;
+  const isOrganizationEdit =
+    viewerRole === "ORGANIZATION" && canEditMatches && isOrganizationRoute && searchParams?.get("edit") === "1";
+  const organizationEditHref = (() => {
+    const defaultBase =
+      event.templateType === "PADEL"
+        ? `/organizacao/torneios/${event.id}/live`
+        : `/organizacao/eventos/${event.id}/live`;
+    const base = isOrganizationRoute && pathname ? pathname : defaultBase;
     const params = new URLSearchParams(searchParams?.toString());
     params.set("tab", "preview");
     params.set("edit", "1");
@@ -2535,7 +2542,7 @@ export default function EventLiveClient({
     setStartMessage(null);
     try {
       const res = await fetch(
-        `/api/organizador/tournaments/${tournamentView.id}/matches/${firstPlayableMatch.id}/result`,
+        `/api/organizacao/tournaments/${tournamentView.id}/matches/${firstPlayableMatch.id}/result`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -2569,8 +2576,8 @@ export default function EventLiveClient({
     const inlineStatus = nowMatch
       ? nowMatch.status === "IN_PROGRESS" || nowMatch.status === "LIVE"
         ? "Ao vivo"
-        : "Ultimo resultado"
-      : "Sem destaque";
+        : "Último"
+      : "Sem";
     return (
       <div className="space-y-4">
         {hero && (
@@ -2620,16 +2627,16 @@ export default function EventLiveClient({
     const showSponsors = resolvedModules.includes("SPONSORS");
     return (
       <div className="space-y-6">
-        {variant === "full" && viewerRole === "ORGANIZER" && canEditMatches && isOrganizerRoute && !isOrganizerEdit && (
+        {variant === "full" && viewerRole === "ORGANIZATION" && canEditMatches && isOrganizationRoute && !isOrganizationEdit && (
           <div className="rounded-3xl border border-white/10 bg-white/5 p-4 text-sm text-white/70">
             Estás em modo público.{" "}
-            <Link href={organizerEditHref} className="text-white underline">
-              Ativar overlay do organizador
+            <Link href={organizationEditHref} className="text-white underline">
+              Ativar overlay do organização
             </Link>
             .
           </div>
         )}
-        {variant === "full" && viewerRole === "ORGANIZER" && canEditMatches && isOrganizerRoute && (
+        {variant === "full" && viewerRole === "ORGANIZATION" && canEditMatches && isOrganizationRoute && (
           <section className="rounded-3xl border border-white/10 bg-white/5 p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="space-y-1">
@@ -2653,7 +2660,7 @@ export default function EventLiveClient({
         )}
         <OneVOneLiveLayout
           event={event}
-          organizer={organizer}
+          organization={organization}
           tournament={tournamentView}
           pairings={pairings}
           eventStatus={eventStatus}
@@ -2665,7 +2672,7 @@ export default function EventLiveClient({
           followPending={followPending}
           isFollowing={isFollowing}
           showSponsors={showSponsors}
-          isOrganizerEdit={isOrganizerEdit}
+          isOrganizationEdit={isOrganizationEdit}
           canManageLiveConfig={canManageLiveConfig}
           canResolveDispute={canResolveDispute}
           onRefresh={() => mutate()}
@@ -2723,19 +2730,19 @@ export default function EventLiveClient({
               </div>
             </div>
 
-            {organizer && (
+            {organization && (
               <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
                 <Avatar
-                  src={organizer.brandingAvatarUrl}
-                  name={organizer.publicName || "Organização"}
+                  src={organization.brandingAvatarUrl}
+                  name={organization.publicName || "Organização"}
                   className="h-10 w-10 border border-white/10"
                   textClassName="text-xs font-semibold uppercase tracking-[0.16em] text-white/80"
                   fallbackText="OR"
                 />
                 <div>
                   <p className="text-[11px] uppercase tracking-[0.2em] text-white/50">Organizado por</p>
-                  <p className="text-white font-medium">{organizer.publicName}</p>
-                  {organizer.username && <p className="text-white/50 text-xs">@{organizer.username}</p>}
+                  <p className="text-white font-medium">{organization.publicName}</p>
+                  {organization.username && <p className="text-white/50 text-xs">@{organization.username}</p>}
                 </div>
               </div>
             )}
@@ -2772,7 +2779,7 @@ export default function EventLiveClient({
                   {streamLabel}
                 </a>
               )}
-              {organizer && (
+              {organization && (
                 <button
                   type="button"
                   disabled={followPending}
@@ -2953,7 +2960,7 @@ export default function EventLiveClient({
                       <BracketRoundsView
                         matches={stage.matches}
                         pairings={pairings}
-                        isOrganizerEdit={isOrganizerEdit}
+                        isOrganizationEdit={isOrganizationEdit}
                         tournamentId={tournamentView?.id ?? null}
                         onUpdated={onRefresh}
                         goalLimits={goalLimits}
@@ -3061,9 +3068,18 @@ export default function EventLiveClient({
       case "CTA": {
         const ctaCopy =
           viewerRole === "PUBLIC"
-            ? "Queres aparecer como participante? Garante o teu bilhete."
+            ? ticketCopy.isPadel
+              ? "Queres aparecer como participante? Garante a tua inscrição."
+              : "Queres aparecer como participante? Garante o teu bilhete."
             : "Já tens acesso como participante. Aproveita o LiveHub.";
-        const ctaLabel = viewerRole === "PUBLIC" ? "Garantir lugar" : "Ver o meu bilhete";
+        const ctaLabel =
+          viewerRole === "PUBLIC"
+            ? ticketCopy.isPadel
+              ? ticketCopy.buyLabel
+              : "Garantir lugar"
+            : ticketCopy.isPadel
+              ? "Ver a minha inscrição"
+              : "Ver o meu bilhete";
         return (
           <section key="cta" className="rounded-3xl border border-white/10 bg-white/5 p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -3082,7 +3098,7 @@ export default function EventLiveClient({
         );
       }
       case "SPONSORS": {
-        return <SponsorsStrip organizer={organizer} />;
+        return <SponsorsStrip organization={organization} />;
       }
       default:
         return null;
@@ -3093,11 +3109,11 @@ export default function EventLiveClient({
     <div className="space-y-6">
       {resolvedModules.map((mod) => renderModule(mod))}
 
-      {viewerRole === "ORGANIZER" && canEditMatches && tournamentView && isOrganizerRoute && (
+      {viewerRole === "ORGANIZATION" && canEditMatches && tournamentView && isOrganizationRoute && (
         <section className="rounded-3xl border border-white/10 bg-white/5 p-4 space-y-3">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold text-white">Gestão rápida</h2>
-            <span className="text-xs text-white/50">Organizador</span>
+            <span className="text-xs text-white/50">Organização</span>
           </div>
           <div className="rounded-2xl border border-white/10 bg-black/30 px-4 py-3">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -3126,7 +3142,7 @@ export default function EventLiveClient({
               .map((match) => (
                 <div key={`edit-${match.id}`} className="space-y-2">
                   <MatchCard match={match} pairings={pairings} timeZone={timeZone} showCourt={showCourt} />
-                  <OrganizerMatchEditor
+                  <OrganizationMatchEditor
                     match={match}
                     tournamentId={tournamentView.id}
                     onUpdated={() => mutate()}

@@ -56,18 +56,15 @@ function parseNumber(raw: unknown, fallback: number) {
   return Number.isFinite(n) ? n : fallback;
 }
 
-function parseList(raw: unknown) {
-  if (typeof raw !== "string") return [];
-  return raw
-    .split(/[,\s]+/g)
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
 export const env = {
   supabaseUrl: getEnv("SUPABASE_URL", ["NEXT_PUBLIC_SUPABASE_URL"]),
   supabaseAnonKey: getEnv("SUPABASE_ANON_KEY", ["NEXT_PUBLIC_SUPABASE_ANON_KEY"]),
   serviceRoleKey: getEnv("SUPABASE_SERVICE_ROLE"),
+  supabaseCookieDomain:
+    process.env.SUPABASE_COOKIE_DOMAIN ??
+    process.env.AUTH_COOKIE_DOMAIN ??
+    process.env.NEXT_PUBLIC_SUPABASE_COOKIE_DOMAIN ??
+    "",
   dbUrl: getEnv("DATABASE_URL"),
   stripeSecretKey: getEnv("STRIPE_SECRET_KEY"),
   stripeWebhookSecret: getEnv("STRIPE_WEBHOOK_SECRET"),
@@ -77,7 +74,14 @@ export const env = {
     process.env.RESEND_FROM ??
     process.env.RESEND_FROM_EMAIL ??
     "no-reply@orya.pt",
-  appBaseUrl: getOptionalUrlEnv("APP_BASE_URL", "NEXT_PUBLIC_BASE_URL", "NEXT_PUBLIC_SITE_URL", "VERCEL_URL"),
+  appBaseUrl: getOptionalUrlEnv(
+    "APP_BASE_URL",
+    "NEXT_PUBLIC_BASE_URL",
+    "NEXT_PUBLIC_SITE_URL",
+    "NEXT_PUBLIC_APP_URL",
+    "SITE_URL",
+    "VERCEL_URL",
+  ),
   uploadsBucket:
     process.env.SUPABASE_STORAGE_BUCKET_UPLOADS ??
     process.env.SUPABASE_STORAGE_BUCKET ??
@@ -86,6 +90,5 @@ export const env = {
   eventCoversBucket: process.env.SUPABASE_STORAGE_BUCKET_EVENT_COVERS ?? "",
   storageSignedUrls: parseBoolean(process.env.SUPABASE_STORAGE_SIGNED_URLS, false),
   storageSignedTtlSeconds: parseNumber(process.env.SUPABASE_STORAGE_SIGNED_TTL_SECONDS, 60 * 60 * 24 * 30), // 30 dias
-  stripePremiumPriceIds: parseList(process.env.STRIPE_PREMIUM_PRICE_IDS),
-  stripePremiumProductIds: parseList(process.env.STRIPE_PREMIUM_PRODUCT_IDS),
+  storeEnabled: parseBoolean(process.env.STORE_ENABLED, false),
 };

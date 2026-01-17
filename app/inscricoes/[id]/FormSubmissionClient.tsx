@@ -21,8 +21,8 @@ type FormPayload = {
   title: string;
   description?: string | null;
   status: "DRAFT" | "PUBLISHED" | "ARCHIVED";
-  organizerName: string;
-  organizerUsername?: string | null;
+  organizationName: string;
+  organizationUsername?: string | null;
   capacity?: number | null;
   waitlistEnabled: boolean;
   startAt?: string | null;
@@ -65,11 +65,43 @@ export function FormSubmissionClient({ form }: { form: FormPayload }) {
 
   const hasStart = Boolean(form.startAt);
   const hasEnd = Boolean(form.endAt);
-  const isOpen = form.status !== "ARCHIVED";
-  const statusLabel = isOpen ? "Inscrições abertas" : "Inscrições encerradas";
-  const statusTone = isOpen
-    ? "border-emerald-400/40 bg-emerald-500/10 text-emerald-50"
-    : "border-white/20 bg-white/10 text-white/70";
+  const nowMs = Date.now();
+  const startMs = form.startAt ? new Date(form.startAt).getTime() : null;
+  const endMs = form.endAt ? new Date(form.endAt).getTime() : null;
+  const isBeforeStart =
+    typeof startMs === "number" && Number.isFinite(startMs) ? nowMs < startMs : false;
+  const isAfterEnd =
+    typeof endMs === "number" && Number.isFinite(endMs) ? nowMs > endMs : false;
+  const isWithinWindow = !isBeforeStart && !isAfterEnd;
+  const isOpen = form.status === "PUBLISHED" && isWithinWindow;
+  const statusLabel =
+    form.status === "DRAFT"
+      ? "Pré-visualização"
+      : form.status === "ARCHIVED"
+        ? "Respostas encerradas"
+        : isBeforeStart
+          ? "Respostas ainda não abriram"
+          : isAfterEnd
+            ? "Respostas encerradas"
+            : "Respostas abertas";
+  const statusTone =
+    form.status === "PUBLISHED" && isWithinWindow
+      ? "border-emerald-400/40 bg-emerald-500/10 text-emerald-50"
+      : form.status === "DRAFT"
+        ? "border-sky-400/40 bg-sky-500/10 text-sky-50"
+        : isBeforeStart
+          ? "border-amber-400/40 bg-amber-500/10 text-amber-50"
+          : "border-white/20 bg-white/10 text-white/70";
+  const closedReason =
+    form.status !== "PUBLISHED"
+      ? form.status === "DRAFT"
+        ? "Formulário em rascunho. Pré-visualização ativa."
+        : "As respostas estão encerradas para este formulário."
+      : isBeforeStart
+        ? "As respostas ainda não abriram."
+        : isAfterEnd
+          ? "As respostas já fecharam."
+          : null;
 
   const startLabel = hasStart ? formatDateTime(form.startAt) : null;
   const endLabel = hasEnd ? formatDateTime(form.endAt) : null;
@@ -84,6 +116,10 @@ export function FormSubmissionClient({ form }: { form: FormPayload }) {
     event.preventDefault();
     setError(null);
     setSuccess(null);
+    if (!isOpen) {
+      setError(closedReason ?? "Este formulário ainda não está a aceitar respostas.");
+      return;
+    }
     setSubmitting(true);
     try {
       const res = await fetch(`/api/inscricoes/${form.id}/submit`, {
@@ -93,11 +129,12 @@ export function FormSubmissionClient({ form }: { form: FormPayload }) {
       });
       const data = await res.json().catch(() => null);
       if (!res.ok || data?.ok === false) {
-        setError(data?.error || "Não foi possível enviar a inscrição.");
+        setError(data?.error || "Não foi possível enviar a resposta.");
         setSubmitting(false);
         return;
       }
-      const status = data?.status === "WAITLISTED" ? "Ficaste em lista de espera." : "Inscrição enviada com sucesso.";
+      const status =
+        data?.status === "WAITLISTED" ? "Ficaste em lista de espera." : "Resposta enviada com sucesso.";
       setSuccess(status);
       setSubmitting(false);
     } catch (err) {
@@ -113,7 +150,7 @@ export function FormSubmissionClient({ form }: { form: FormPayload }) {
         <header className="space-y-4 rounded-3xl border border-white/12 bg-gradient-to-br from-white/10 via-[#0b1124]/80 to-[#050912]/90 p-6 shadow-[0_30px_120px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="space-y-2">
-              <p className="text-[11px] uppercase tracking-[0.3em] text-white/60">Inscrições ORYA</p>
+              <p className="text-[11px] uppercase tracking-[0.3em] text-white/60">Formulários ORYA</p>
               <h1 className="text-3xl font-semibold">{form.title}</h1>
               {form.description && <p className="text-white/70">{form.description}</p>}
             </div>
@@ -130,17 +167,17 @@ export function FormSubmissionClient({ form }: { form: FormPayload }) {
               </span>
             )}
             <span className="rounded-full border border-white/15 bg-white/5 px-3 py-1">
-              {form.waitlistEnabled ? "Lista de espera ativa" : "Sem lista de espera"}
+              {form.waitlistEnabled ? "Espera ativa" : "Sem espera"}
             </span>
           </div>
           <div className="text-[12px] text-white/60">
             Organização:{" "}
-            {form.organizerUsername ? (
-              <Link href={`/${form.organizerUsername}`} className="text-white hover:text-white/80">
-                {form.organizerName}
+            {form.organizationUsername ? (
+              <Link href={`/${form.organizationUsername}`} className="text-white hover:text-white/80">
+                {form.organizationName}
               </Link>
             ) : (
-              <span className="text-white">{form.organizerName}</span>
+              <span className="text-white">{form.organizationName}</span>
             )}
           </div>
         </header>
@@ -151,23 +188,29 @@ export function FormSubmissionClient({ form }: { form: FormPayload }) {
             <h2 className="mt-2 text-lg font-semibold text-white">Detalhes essenciais</h2>
             <p className="mt-2 text-[12px] text-white/60">
               {form.description ||
-                "Preenche o formulário com atenção. A organização vai usar estes dados para gerir vagas e convocações."}
+                "Preenche com atenção. A organização usa estes dados para gerir vagas."}
             </p>
           </div>
           <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050912]/90 p-5 text-sm text-white/75 shadow-[0_24px_70px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
             <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">O que acontece agora</p>
             <h2 className="mt-2 text-lg font-semibold text-white">Próximos passos</h2>
             <div className="mt-3 space-y-2 text-[12px] text-white/70">
-              <p>1. Preenche o formulário completo e envia a inscrição.</p>
-              <p>2. Recebes confirmação imediata na página.</p>
-              <p>3. A organização atualiza o teu estado (aceite, espera ou convocado).</p>
+              <p>1. Preenche e envia.</p>
+              <p>2. Confirmação imediata.</p>
+              <p>3. Organização atualiza o estado.</p>
             </div>
           </div>
         </section>
 
         {!isLoggedIn && (
           <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-[12px] text-white/70">
-            Estás a submeter como convidado. Se iniciares sessão, a inscrição fica ligada ao teu perfil.
+            Submissão como convidado. Inicia sessão para ligar ao perfil.
+          </div>
+        )}
+
+        {!isOpen && (
+          <div className="rounded-2xl border border-white/15 bg-white/5 px-4 py-3 text-[12px] text-white/70">
+            {closedReason ?? "As respostas estão encerradas para este formulário."}
           </div>
         )}
 
@@ -184,7 +227,7 @@ export function FormSubmissionClient({ form }: { form: FormPayload }) {
                 value={guestEmail}
                 onChange={(e) => setGuestEmail(e.target.value)}
               />
-              <p className="text-[11px] text-white/50">Usamos este email para confirmação e contacto.</p>
+              <p className="text-[11px] text-white/50">Email para confirmação e contacto.</p>
             </div>
           )}
           {form.fields.map((field) => {
@@ -258,10 +301,10 @@ export function FormSubmissionClient({ form }: { form: FormPayload }) {
 
           <button
             type="submit"
-            disabled={submitting}
+            disabled={submitting || !isOpen}
             className="w-full rounded-full bg-white px-4 py-2 text-sm font-semibold text-black transition hover:scale-[1.01] disabled:opacity-60"
           >
-            {submitting ? "A enviar..." : "Enviar inscrição"}
+            {submitting ? "A enviar..." : isOpen ? "Enviar resposta" : "Formulário fechado"}
           </button>
         </form>
       </section>

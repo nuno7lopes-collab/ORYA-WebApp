@@ -1,13 +1,15 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
-import { OrganizerMemberRole } from "@prisma/client";
+import { OrganizationMemberRole } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { getActiveOrganizerForUser } from "@/lib/organizerContext";
+import { getActiveOrganizationForUser } from "@/lib/organizationContext";
+import { parseOrganizationId, resolveOrganizationIdFromParams } from "@/lib/organizationId";
 import { PORTUGAL_CITIES } from "@/config/cities";
 
-const allowedRoles: OrganizerMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
+const readRoles: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
+const writeRoles: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
 
 function normalizeSlug(raw: string | null | undefined) {
   if (!raw) return "";
@@ -19,16 +21,16 @@ function normalizeSlug(raw: string | null | undefined) {
     .replace(/^-|-$/g, "");
 }
 
-async function generateUniqueSlug(base: string, organizerId: number, excludeId?: number | null) {
+async function generateUniqueSlug(base: string, organizationId: number, excludeId?: number | null) {
   if (!base) return "";
   let candidate = base;
   let suffix = 2;
-  // Garante slug único por organizador; acrescenta -2, -3, ...
+  // Garante slug único por organização; acrescenta -2, -3, ...
   // Usa findFirst case-insensitive para evitar conflitos.
   while (true) {
     const exists = await prisma.padelClub.findFirst({
       where: {
-        organizerId,
+        organizationId,
         slug: { equals: candidate, mode: "insensitive" },
         ...(excludeId ? { NOT: { id: excludeId } } : {}),
       },
@@ -48,18 +50,17 @@ export async function GET(req: NextRequest) {
 
   if (!user) return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
-  const organizerIdParam = req.nextUrl.searchParams.get("organizerId");
-  const parsedOrgId = organizerIdParam ? Number(organizerIdParam) : null;
-  const { organizer } = await getActiveOrganizerForUser(user.id, {
-    organizerId: Number.isFinite(parsedOrgId) ? parsedOrgId : undefined,
-    roles: allowedRoles,
+  const parsedOrgId = resolveOrganizationIdFromParams(req.nextUrl.searchParams);
+  const { organization } = await getActiveOrganizationForUser(user.id, {
+    organizationId: Number.isFinite(parsedOrgId) ? parsedOrgId : undefined,
+    roles: readRoles,
   });
-  if (!organizer) return NextResponse.json({ ok: false, error: "NO_ORGANIZER" }, { status: 403 });
+  if (!organization) return NextResponse.json({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });
 
   const includeInactive = req.nextUrl.searchParams.get("includeInactive") === "1";
   const items = await prisma.padelClub.findMany({
     where: {
-      organizerId: organizer.id,
+      organizationId: organization.id,
       deletedAt: null,
       ...(includeInactive ? {} : { isActive: true }),
     },
@@ -80,14 +81,13 @@ export async function POST(req: NextRequest) {
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
   if (!body) return NextResponse.json({ ok: false, error: "INVALID_BODY" }, { status: 400 });
 
-  const organizerIdParam = body.organizerId ?? req.nextUrl.searchParams.get("organizerId");
-  const parsedOrgId =
-    typeof organizerIdParam === "number" ? organizerIdParam : organizerIdParam ? Number(organizerIdParam) : null;
-  const { organizer } = await getActiveOrganizerForUser(user.id, {
-    organizerId: Number.isFinite(parsedOrgId) ? parsedOrgId : undefined,
-    roles: allowedRoles,
+  const organizationIdParam = body.organizationId ?? resolveOrganizationIdFromParams(req.nextUrl.searchParams);
+  const parsedOrgId = parseOrganizationId(organizationIdParam);
+  const { organization } = await getActiveOrganizationForUser(user.id, {
+    organizationId: Number.isFinite(parsedOrgId) ? parsedOrgId : undefined,
+    roles: writeRoles,
   });
-  if (!organizer) return NextResponse.json({ ok: false, error: "NO_ORGANIZER" }, { status: 403 });
+  if (!organization) return NextResponse.json({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });
 
   const id = typeof body.id === "number" ? body.id : null;
   const name = typeof body.name === "string" ? body.name.trim() : "";
@@ -122,10 +122,10 @@ export async function POST(req: NextRequest) {
   const safeIsDefault = isActive ? isDefault : false;
 
   try {
-    const slug = baseSlug ? await generateUniqueSlug(baseSlug, organizer.id, id) : null;
+    const slug = baseSlug ? await generateUniqueSlug(baseSlug, organization.id, id) : null;
 
     const data = {
-      organizerId: organizer.id,
+      organizationId: organization.id,
       name,
       shortName: name,
       city: city || null,
@@ -141,7 +141,7 @@ export async function POST(req: NextRequest) {
     const club = await prisma.$transaction(async (tx) => {
       let saved = id
         ? await tx.padelClub.update({
-            where: { id, organizerId: organizer.id, deletedAt: null },
+            where: { id, organizationId: organization.id, deletedAt: null },
             data,
           })
         : await tx.padelClub.create({
@@ -150,13 +150,13 @@ export async function POST(req: NextRequest) {
 
       if (isDefault) {
         await tx.padelClub.updateMany({
-          where: { organizerId: organizer.id, NOT: { id: saved.id }, isDefault: true, deletedAt: null },
+          where: { organizationId: organization.id, NOT: { id: saved.id }, isDefault: true, deletedAt: null },
           data: { isDefault: false },
         });
       } else {
         // Se não existir nenhum default, garante que o primeiro ativo fica default
         const defaults = await tx.padelClub.count({
-          where: { organizerId: organizer.id, isDefault: true, deletedAt: null, isActive: true },
+          where: { organizationId: organization.id, isDefault: true, deletedAt: null, isActive: true },
         });
         if (defaults === 0 && saved.isActive) {
           saved = await tx.padelClub.update({ where: { id: saved.id }, data: { isDefault: true } });
@@ -198,26 +198,25 @@ export async function DELETE(req: NextRequest) {
 
   const url = new URL(req.url);
   const idParam = url.searchParams.get("id");
-  const organizerIdParam = url.searchParams.get("organizerId");
   const clubId = idParam ? Number(idParam) : NaN;
-  const orgId = organizerIdParam ? Number(organizerIdParam) : NaN;
+  const orgId = resolveOrganizationIdFromParams(url.searchParams);
 
   if (!Number.isFinite(clubId)) return NextResponse.json({ ok: false, error: "INVALID_CLUB" }, { status: 400 });
 
-  const { organizer } = await getActiveOrganizerForUser(user.id, {
-    organizerId: Number.isFinite(orgId) ? orgId : undefined,
-    roles: allowedRoles,
+  const { organization } = await getActiveOrganizationForUser(user.id, {
+    organizationId: orgId ?? undefined,
+    roles: writeRoles,
   });
-  if (!organizer) return NextResponse.json({ ok: false, error: "NO_ORGANIZER" }, { status: 403 });
+  if (!organization) return NextResponse.json({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });
 
   const club = await prisma.padelClub.findFirst({
-    where: { id: clubId, organizerId: organizer.id, deletedAt: null },
+    where: { id: clubId, organizationId: organization.id, deletedAt: null },
   });
   if (!club) return NextResponse.json({ ok: false, error: "CLUB_NOT_FOUND" }, { status: 404 });
 
   const tournamentRefs = await prisma.padelTournamentConfig.count({
     where: {
-      organizerId: organizer.id,
+      organizationId: organization.id,
       OR: [{ padelClubId: clubId }, { partnerClubIds: { has: clubId } }],
     },
   });

@@ -25,6 +25,7 @@ export async function refundPurchase(params: {
       id: true,
       totalCents: true,
       platformFeeCents: true,
+      cardPlatformFeeCents: true,
       stripeFeeCents: true,
       paymentIntentId: true,
       currency: true,
@@ -35,7 +36,11 @@ export async function refundPurchase(params: {
     return null;
   }
 
-  const baseAmount = Math.max(0, saleSummary.totalCents - saleSummary.platformFeeCents - saleSummary.stripeFeeCents);
+  const cardFeeCents = saleSummary.cardPlatformFeeCents ?? 0;
+  const baseAmount = Math.max(
+    0,
+    saleSummary.totalCents - saleSummary.platformFeeCents - cardFeeCents - saleSummary.stripeFeeCents,
+  );
 
   let stripeRefundId: string | null = null;
   try {
@@ -59,7 +64,7 @@ export async function refundPurchase(params: {
       paymentIntentId: paymentIntentId ?? saleSummary.paymentIntentId ?? null,
       eventId,
       baseAmountCents: baseAmount,
-      feesExcludedCents: (saleSummary.platformFeeCents ?? 0) + (saleSummary.stripeFeeCents ?? 0),
+      feesExcludedCents: (saleSummary.platformFeeCents ?? 0) + cardFeeCents + (saleSummary.stripeFeeCents ?? 0),
       reason,
       refundedBy: refundedBy ?? null,
       stripeRefundId: stripeRefundId ?? null,

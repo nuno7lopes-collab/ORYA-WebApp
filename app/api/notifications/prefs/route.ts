@@ -26,7 +26,7 @@ export async function POST(req: Request) {
   const allowed = [
     "allowEmailNotifications",
     "allowEventReminders",
-    "allowFriendRequests",
+    "allowFollowRequests",
     "allowSalesAlerts",
     "allowSystemAnnouncements",
   ];

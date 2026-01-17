@@ -2,7 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { resend } from "@/lib/resend";
 import { env } from "@/lib/env";
+import { getAppBaseUrl } from "@/lib/appBaseUrl";
 import { normalizeAndValidateUsername, checkUsernameAvailability } from "@/lib/globalUsernames";
+import { isSameOriginOrApp } from "@/lib/auth/requestValidation";
+import { rateLimit } from "@/lib/auth/rateLimit";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -19,17 +22,17 @@ function buildEmailHtml(code: string) {
             </tr>
             <tr>
               <td style="padding:28px 32px;color:#e5e7eb;font-size:14px;line-height:1.6;">
-                <p style="margin:0 0 12px 0;">Olá! Aqui está o teu código de 6 dígitos para continuares na ORYA.</p>
-                <p style="margin:0 0 24px 0;">Introduz este código na app para verificares o teu email:</p>
+                <p style="margin:0 0 12px 0;">Aqui está o teu código.</p>
+                <p style="margin:0 0 24px 0;">Introduz para verificar o teu email:</p>
                 <div style="display:inline-block;padding:12px 18px;border-radius:12px;background:#111522;border:1px solid rgba(255,255,255,0.08);font-size:24px;font-weight:800;letter-spacing:6px;color:#fdfdfd;">
                   ${code}
                 </div>
-                <p style="margin:24px 0 0 0;color:#aeb7c6;font-size:13px;">Se não foste tu, ignora este email.</p>
+                <p style="margin:24px 0 0 0;color:#aeb7c6;font-size:13px;">Se não foste tu, ignora.</p>
               </td>
             </tr>
             <tr>
               <td style="padding:18px 32px;color:#7a8397;font-size:12px;background:#0c0f18;border-top:1px solid rgba(255,255,255,0.06);">
-                Obrigado por confiares na ORYA.
+                ORYA
               </td>
             </tr>
           </table>
@@ -41,6 +44,10 @@ function buildEmailHtml(code: string) {
 
 export async function POST(req: NextRequest) {
   try {
+    if (!isSameOriginOrApp(req)) {
+      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    }
+
     const body = (await req.json().catch(() => null)) as
       | { email?: string; password?: string | null; username?: string | null; fullName?: string | null }
       | null;
@@ -56,6 +63,20 @@ export async function POST(req: NextRequest) {
         { status: 400 },
       );
     }
+
+    const limiter = await rateLimit(req, {
+      windowMs: 10 * 60 * 1000,
+      max: 5,
+      keyPrefix: "auth:send-otp",
+      identifier: rawEmail,
+    });
+    if (!limiter.allowed) {
+      return NextResponse.json(
+        { ok: false, error: "RATE_LIMITED" },
+        { status: 429, headers: { "Retry-After": String(limiter.retryAfter) } }
+      );
+    }
+
     if (password !== null && password !== undefined && password.length < 6) {
       return NextResponse.json(
         { ok: false, error: "A password deve ter pelo menos 6 caracteres." },
@@ -82,11 +103,7 @@ export async function POST(req: NextRequest) {
     }
     const fullName = rawFullName?.trim() || null;
 
-    const siteUrl =
-      process.env.NEXT_PUBLIC_SITE_URL ??
-      process.env.NEXT_PUBLIC_BASE_URL ??
-      process.env.SITE_URL ??
-      env.supabaseUrl;
+    const siteUrl = getAppBaseUrl();
 
     // Apenas OTP de signup. Se email já existir → pedir login/Google.
     const linkPayload: Record<string, unknown> = {
@@ -119,6 +136,21 @@ export async function POST(req: NextRequest) {
             code: "email_exists",
           },
           { status: 409 },
+        );
+      }
+      if (errorCode === "weak_password") {
+        const reasons =
+          typeof error === "object" && error && "reasons" in error
+            ? (error as { reasons?: string[] }).reasons
+            : undefined;
+        return NextResponse.json(
+          {
+            ok: false,
+            error: "A password não foi aceite pelo sistema de autenticação.",
+            code: "weak_password",
+            reasons,
+          },
+          { status: 400 },
         );
       }
       console.error("[send-otp] generateLink error:", error);

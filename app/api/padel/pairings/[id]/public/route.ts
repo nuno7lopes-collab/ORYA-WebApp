@@ -6,8 +6,9 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { readNumericParam } from "@/lib/routeParams";
 
 // Toggle public/open slot (MVP): capitão ou staff OWNER/ADMIN
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
-  const pairingId = readNumericParam(params?.id, req, "pairings");
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const resolved = await params;
+  const pairingId = readNumericParam(resolved?.id, req, "pairings");
   if (pairingId === null) return NextResponse.json({ ok: false, error: "INVALID_ID" }, { status: 400 });
 
   const supabase = await createSupabaseServer();
@@ -21,16 +22,16 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
   const pairing = await prisma.padelPairing.findUnique({
     where: { id: pairingId },
-    include: { slots: true, event: { select: { organizerId: true } } },
+    include: { slots: true, event: { select: { organizationId: true } } },
   });
   if (!pairing) return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
 
   const isCaptain = pairing.createdByUserId === user.id;
   let isStaff = false;
   if (!isCaptain) {
-    const staff = await prisma.organizerMember.findFirst({
+    const staff = await prisma.organizationMember.findFirst({
       where: {
-        organizerId: pairing.organizerId,
+        organizationId: pairing.organizationId,
         userId: user.id,
         role: { in: ["OWNER", "CO_OWNER", "ADMIN"] },
       },

@@ -216,7 +216,7 @@ export async function GET(req: NextRequest) {
         isDeleted: false,
         startsAt: { lte: end },
         endsAt: { gte: start },
-        organizer: {
+        organization: {
           status: "ACTIVE",
           members: {
             some: {

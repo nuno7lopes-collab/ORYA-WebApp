@@ -4,16 +4,10 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useCheckout } from "./contextoCheckout";
 import { formatEuro } from "@/lib/money";
-import { CTA_PRIMARY } from "@/app/organizador/dashboardUi";
+import { CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
+import { getTicketCopy } from "./checkoutCopy";
 
 const FREE_PLACEHOLDER_INTENT_ID = "FREE_CHECKOUT";
-
-const scenarioCopy: Record<string, string> = {
-  GROUP_SPLIT: "Pagaste apenas a tua parte desta dupla.",
-  GROUP_FULL: "Pagaste 2 lugares (tu + parceiro).",
-  RESALE: "Compra de bilhete em revenda.",
-  FREE_CHECKOUT: "Inscrição gratuita concluída.",
-};
 
 function normalizeCheckoutStatus(raw: unknown): "PROCESSING" | "PAID" | "FAILED" {
   const v = typeof raw === "string" ? raw.trim().toUpperCase() : "";
@@ -57,6 +51,20 @@ export default function Step3Sucesso() {
     dados?.additional && typeof dados.additional === "object"
       ? (dados.additional as Record<string, unknown>)
       : undefined;
+  const checkoutVariant =
+    additional && typeof additional.checkoutUiVariant === "string"
+      ? additional.checkoutUiVariant
+      : "DEFAULT";
+  const ticketCopy = getTicketCopy(checkoutVariant);
+  const ticketPluralWithArticle = `${ticketCopy.articlePlural} ${ticketCopy.plural}`;
+  const freeLabelLower = ticketCopy.freeLabel.toLowerCase();
+  const freeSuccessTitle = ticketCopy.isPadel ? "Inscrição confirmada 🎉" : "Entrada confirmada 🎉";
+  const scenarioCopy: Record<string, string> = {
+    GROUP_SPLIT: "Pagaste apenas a tua parte desta dupla.",
+    GROUP_FULL: "Pagaste 2 lugares (tu + parceiro).",
+    RESALE: `Compra de ${ticketCopy.singular} em revenda.`,
+    FREE_CHECKOUT: `${ticketCopy.freeLabel} concluída.`,
+  };
 
   const scenario =
     (dados?.paymentScenario as string | null | undefined) ??
@@ -81,7 +89,7 @@ export default function Step3Sucesso() {
 
   useEffect(() => {
     if (dados && !purchaseId && !isFreeScenario) {
-      router.replace("/explorar");
+      router.replace("/explorar/eventos");
     }
   }, [dados, router, purchaseId, isFreeScenario]);
 
@@ -242,7 +250,7 @@ export default function Step3Sucesso() {
       <div className="text-center space-y-4">
         <h2 className="text-xl font-semibold text-black">Algo correu mal 🤔</h2>
         <p className="text-sm text-black/70">
-          Não encontrámos os dados do bilhete. Fecha esta janela e tenta novamente.
+          Não encontrámos os dados da tua {ticketCopy.singular}. Fecha esta janela e tenta novamente.
         </p>
         <button
           onClick={fecharCheckout}
@@ -274,7 +282,7 @@ export default function Step3Sucesso() {
         <h2 className="text-3xl font-semibold bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] bg-clip-text text-transparent">
           {status === "PAID"
             ? isFreeScenario
-              ? "Inscrição confirmada 🎉"
+              ? freeSuccessTitle
               : "Compra Confirmada 🎉"
             : status === "FAILED"
               ? "Pagamento não confirmado"
@@ -285,12 +293,12 @@ export default function Step3Sucesso() {
             ? statusError ?? "Não conseguimos confirmar o pagamento. Tenta novamente ou contacta suporte."
             : status === "PAID"
               ? guestEmail
-                ? `Obrigado! Enviámos os teus bilhetes para ${guestEmail}.`
+                ? `Obrigado! Enviámos ${ticketPluralWithArticle} para ${guestEmail}.`
                 : isFreeScenario
-                  ? "A tua inscrição gratuita está confirmada."
-                  : "Compra confirmada. Já podes ver os teus bilhetes."
+                  ? `A tua ${freeLabelLower} está confirmada.`
+                  : `Compra confirmada. Já podes ver ${ticketPluralWithArticle}.`
               : guestEmail
-                ? `Estamos a confirmar o pagamento. Assim que estiver confirmado, vais receber os bilhetes em ${guestEmail}.`
+                ? `Estamos a confirmar o pagamento. Assim que estiver confirmado, vais receber ${ticketPluralWithArticle} em ${guestEmail}.`
                 : "Estamos a confirmar o pagamento. Mantém esta página aberta."}
         </p>
       </div>
@@ -302,7 +310,7 @@ export default function Step3Sucesso() {
         <div className="space-y-1">
           <p className="text-[11px] uppercase tracking-widest text-white/50">Evento</p>
           <p className="text-xl font-semibold">
-            {dados.ticketName ?? "Bilhete"}
+            {dados.ticketName ?? ticketCopy.singularCap}
           </p>
           {scenario && scenarioCopy[scenario] && (
             <p className="text-[11px] text-white/70">{scenarioCopy[scenario]}</p>
@@ -322,7 +330,7 @@ export default function Step3Sucesso() {
           <p>
             {status === "PAID"
               ? guestEmail
-                ? "Guarda o email com os bilhetes. Podes criar conta e ligar estes bilhetes mais tarde."
+                ? `Guarda o email com ${ticketPluralWithArticle}. Podes criar conta e ligar ${ticketCopy.articlePlural} ${ticketCopy.plural} mais tarde.`
                 : "A tua compra foi concluída com sucesso."
               : status === "FAILED"
                 ? `O pagamento não ficou confirmado. Se o teu banco debitou, contacta suporte${purchaseId ? ` com o ID de compra: ${purchaseId}` : ""}.`
@@ -336,7 +344,9 @@ export default function Step3Sucesso() {
             onClick={() => (guestEmail ? router.push("/login") : router.push("/me"))}
             className={`${CTA_PRIMARY} w-full justify-center py-3 text-sm active:scale-95`}
           >
-            {guestEmail ? "Criar conta e ligar bilhetes" : "Ver os teus bilhetes"}
+            {guestEmail
+              ? `Criar conta e ligar ${ticketPluralWithArticle}`
+              : `Ver ${ticketPluralWithArticle}`}
           </button>
         ) : status === "FAILED" ? (
           <div className="w-full rounded-2xl border border-red-500/40 bg-red-500/10 text-sm text-red-100 py-3 text-center">

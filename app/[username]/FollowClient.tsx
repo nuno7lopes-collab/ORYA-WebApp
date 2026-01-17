@@ -1,17 +1,22 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
-import { CTA_PRIMARY } from "@/app/organizador/dashboardUi";
+import { CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
 import { cn } from "@/lib/utils";
 
 type Props = {
   targetUserId: string;
   initialIsFollowing: boolean;
   onChange?: (next: boolean) => void;
+  onMutualChange?: (next: boolean) => void;
 };
 
-export default function FollowClient({ targetUserId, initialIsFollowing, onChange }: Props) {
-  const [isFollowing, setIsFollowing] = useState(initialIsFollowing);
+type FollowState = "following" | "requested" | "none";
+
+export default function FollowClient({ targetUserId, initialIsFollowing, onChange, onMutualChange }: Props) {
+  const [status, setStatus] = useState<FollowState>(initialIsFollowing ? "following" : "none");
+  const [isPrivate, setIsPrivate] = useState(false);
+  const [isFollower, setIsFollower] = useState(false);
   const [fetching, setFetching] = useState(false);
   const [isPending, startTransition] = useTransition();
 
@@ -23,7 +28,18 @@ export default function FollowClient({ targetUserId, initialIsFollowing, onChang
         const res = await fetch(`/api/social/follow-status?userId=${targetUserId}`);
         const json = await res.json();
         if (mounted && res.ok && json?.ok) {
-          setIsFollowing(Boolean(json.isFollowing));
+          const nextPrivate = json.targetVisibility && json.targetVisibility !== "PUBLIC";
+          setIsPrivate(Boolean(nextPrivate));
+          setIsFollower(Boolean(json.isFollower));
+          onMutualChange?.(Boolean(json.isMutual));
+          if (json.isFollowing) {
+            setStatus("following");
+          } else if (json.requestPending) {
+            setStatus("requested");
+          } else {
+            setStatus("none");
+            onMutualChange?.(false);
+          }
         }
       } catch {
         // ignore
@@ -34,30 +50,86 @@ export default function FollowClient({ targetUserId, initialIsFollowing, onChang
     return () => {
       mounted = false;
     };
-  }, [targetUserId]);
+  }, [targetUserId, onMutualChange]);
 
   const toggleFollow = async () => {
-    const next = !isFollowing;
-    setIsFollowing(next);
-    onChange?.(next);
+    if (status === "following") {
+      setStatus("none");
+    } else if (status === "requested") {
+      setStatus("none");
+    } else {
+      setStatus(isPrivate ? "requested" : "following");
+    }
     startTransition(async () => {
       try {
-        const res = await fetch(next ? "/api/social/follow" : "/api/social/unfollow", {
+        if (status === "following") {
+          const res = await fetch("/api/social/unfollow", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ targetUserId }),
+          });
+          const json = await res.json().catch(() => null);
+          if (!res.ok || !json?.ok) {
+            setStatus("following");
+          } else {
+            onChange?.(false);
+            onMutualChange?.(false);
+          }
+          return;
+        }
+        if (status === "requested") {
+          const res = await fetch("/api/social/follow-requests/cancel", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ targetUserId }),
+          });
+          const json = await res.json().catch(() => null);
+          if (!res.ok || !json?.ok) {
+            setStatus("requested");
+          }
+          return;
+        }
+
+        const res = await fetch("/api/social/follow", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ targetUserId }),
         });
-        const json = await res.json();
+        const json = await res.json().catch(() => null);
         if (!res.ok || !json?.ok) {
-          setIsFollowing(!next);
-          onChange?.(!next);
+          setStatus("none");
+          return;
+        }
+        if (json.status === "REQUESTED") {
+          setStatus("requested");
+          onMutualChange?.(false);
+          return;
+        }
+        if (json.status === "FOLLOWING") {
+          setStatus("following");
+          onChange?.(true);
+          onMutualChange?.(isFollower);
         }
       } catch {
-        setIsFollowing(!next);
-        onChange?.(!next);
+        if (status === "following") {
+          setStatus("following");
+        } else if (status === "requested") {
+          setStatus("requested");
+        } else {
+          setStatus("none");
+        }
       }
     });
   };
+
+  const label =
+    status === "following"
+      ? "A seguir"
+      : status === "requested"
+        ? "Pedido enviado"
+        : isPrivate
+          ? "Pedir para seguir"
+          : "Seguir";
 
   return (
     <button
@@ -66,12 +138,12 @@ export default function FollowClient({ targetUserId, initialIsFollowing, onChang
       onClick={toggleFollow}
       className={cn(
         "disabled:opacity-60",
-        isFollowing
+        status !== "none"
           ? "inline-flex items-center rounded-full border border-white/20 bg-white/8 px-4 py-2 text-[12px] font-semibold text-white/65 transition hover:bg-white/12"
           : cn(CTA_PRIMARY, "px-4 py-2 text-[12px]"),
       )}
     >
-      {isFollowing ? "A seguir" : "Seguir"}
+      {label}
     </button>
   );
 }

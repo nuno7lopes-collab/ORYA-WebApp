@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { AdminLayout } from "@/app/admin/components/AdminLayout";
 import { AdminTopActions } from "@/app/admin/components/AdminTopActions";
+import { AdminPageHeader } from "@/app/admin/components/AdminPageHeader";
 
 // Tipos esperados da API de admin tickets (flexíveis para não rebentar se mudares algo no backend)
 type AdminTicketEvent = {
@@ -72,17 +73,17 @@ function formatMoney(cents?: number | null, currency: string = "EUR") {
 function statusBadgeClasses(status: string) {
   switch (status) {
     case "ACTIVE":
-      return "bg-emerald-50 text-emerald-700 border-emerald-200";
+      return "bg-emerald-500/12 text-emerald-100 border-emerald-400/30";
     case "USED":
-      return "bg-sky-50 text-sky-700 border-sky-200";
+      return "bg-sky-500/12 text-sky-100 border-sky-400/30";
     case "REFUNDED":
-      return "bg-amber-50 text-amber-800 border-amber-200";
+      return "bg-amber-500/12 text-amber-100 border-amber-400/30";
     case "CANCELLED":
-      return "bg-rose-50 text-rose-700 border-rose-200";
+      return "bg-rose-500/12 text-rose-100 border-rose-400/30";
     case "RESALE_LISTED":
-      return "bg-purple-50 text-purple-700 border-purple-200";
+      return "bg-purple-500/12 text-purple-100 border-purple-400/30";
     default:
-      return "bg-neutral-50 text-neutral-700 border-neutral-200";
+      return "bg-white/10 text-white/70 border-white/20";
   }
 }
 
@@ -205,6 +206,8 @@ export default function AdminTicketsPage() {
 
   async function handleRefund(intentId?: string | null) {
     if (!intentId) return;
+    const confirmed = window.confirm(`Confirmar refund para ${intentId}?`);
+    if (!confirmed) return;
     setLoading(true);
     setActionMessage(null);
     try {
@@ -231,23 +234,15 @@ export default function AdminTicketsPage() {
   return (
     <AdminLayout title="Bilhetes & histórico" subtitle="Consulta bilhetes, estados, intent e ações de refund.">
       <div className="mx-auto flex max-w-6xl flex-col gap-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-neutral-400">
-              Admin · Tickets
-            </p>
-            <h1 className="mt-1 text-2xl font-semibold tracking-tight text-neutral-50">
-              Bilhetes & histórico
-            </h1>
-            <p className="mt-1 max-w-xl text-sm text-neutral-400">
-              Consulta bilhetes emitidos em toda a plataforma, estados atuais e ligações a eventos e utilizadores.
-            </p>
-          </div>
-          <AdminTopActions showTicketsExport />
-        </div>
+        <AdminPageHeader
+          title="Bilhetes & histórico"
+          subtitle="Consulta bilhetes emitidos, estados atuais e ligações a eventos e utilizadores."
+          eyebrow="Admin • Bilhetes"
+          actions={<AdminTopActions showTicketsExport />}
+        />
 
         {/* Filtros */}
-        <section className="rounded-2xl border border-neutral-800 bg-neutral-900/60 p-4 shadow-sm">
+        <section className="admin-section">
           <form
             className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between"
             onSubmit={(e) => {
@@ -257,7 +252,7 @@ export default function AdminTicketsPage() {
           >
             <div className="grid flex-1 grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
               <div>
-                <label className="mb-1 block text-xs font-medium text-neutral-400">
+                <label className="mb-1 block text-[10px] uppercase tracking-[0.2em] text-white/45">
                   Pesquisa
                 </label>
                 <input
@@ -265,41 +260,41 @@ export default function AdminTicketsPage() {
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder="ID do bilhete, título do evento…"
-                  className="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-50 placeholder:text-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-400/60"
+                  className="admin-input"
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-neutral-400">Intent</label>
+                <label className="mb-1 block text-[10px] uppercase tracking-[0.2em] text-white/45">Intent</label>
                 <input
                   type="text"
                   value={intentFilter}
                   onChange={(e) => setIntentFilter(e.target.value)}
                   placeholder="payment_intent id"
-                  className="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-50 placeholder:text-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-400/60"
+                  className="admin-input"
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-neutral-400">Slug do evento</label>
+                <label className="mb-1 block text-[10px] uppercase tracking-[0.2em] text-white/45">Slug do evento</label>
                 <input
                   type="text"
                   value={slugFilter}
                   onChange={(e) => setSlugFilter(e.target.value)}
                   placeholder="ex.: test-connect"
-                  className="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-50 placeholder:text-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-400/60"
+                  className="admin-input"
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-neutral-400">Utilizador</label>
+                <label className="mb-1 block text-[10px] uppercase tracking-[0.2em] text-white/45">Utilizador</label>
                 <input
                   type="text"
                   value={userFilter}
                   onChange={(e) => setUserFilter(e.target.value)}
                   placeholder="email ou username"
-                  className="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-50 placeholder:text-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-400/60"
+                  className="admin-input"
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-neutral-400">Estado</label>
+                <label className="mb-1 block text-[10px] uppercase tracking-[0.2em] text-white/45">Estado</label>
                 <select
                   value={statusFilter}
                   onChange={(e) => {
@@ -307,7 +302,7 @@ export default function AdminTicketsPage() {
                     setStatusFilter(value);
                     void loadTickets({ status: value });
                   }}
-                  className="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-50 focus:outline-none focus:ring-2 focus:ring-neutral-400/60"
+                  className="admin-select"
                 >
                   <option value="ALL">Todos</option>
                   <option value="ACTIVE">Ativos</option>
@@ -319,225 +314,218 @@ export default function AdminTicketsPage() {
               </div>
             </div>
 
-        <div className="flex gap-2 self-end md:self-auto">
-          <button
-            type="button"
-            onClick={() => {
-              setQuery("");
-              setStatusFilter("ALL");
-              setIntentFilter("");
-              setSlugFilter("");
-              setUserFilter("");
-              setPage(1);
-              void loadTickets({ q: "", status: "ALL", intent: "", slug: "", user: "", page: 1 });
-            }}
-            className="rounded-full border border-neutral-700 px-3 py-2 text-xs text-neutral-300 hover:bg-neutral-800/80"
-          >
-            Limpar filtros
-          </button>
+            <div className="flex gap-2 self-end md:self-auto">
               <button
-                type="submit"
-                className="rounded-full bg-neutral-50 px-4 py-2 text-xs font-semibold text-neutral-900 hover:bg-white"
+                type="button"
+                onClick={() => {
+                  setQuery("");
+                  setStatusFilter("ALL");
+                  setIntentFilter("");
+                  setSlugFilter("");
+                  setUserFilter("");
+                  setPage(1);
+                  void loadTickets({ q: "", status: "ALL", intent: "", slug: "", user: "", page: 1 });
+                }}
+                className="admin-button-secondary px-3 py-2 text-xs"
               >
+                Limpar filtros
+              </button>
+              <button type="submit" className="admin-button px-4 py-2 text-xs">
                 Aplicar
               </button>
             </div>
           </form>
         </section>
 
-        {/* Mensagens de erro / loading / vazio */}
-        {loading && (
-          <div className="rounded-2xl border border-neutral-800 bg-neutral-900/60 p-4 text-sm text-neutral-300">
-            A carregar bilhetes…
-          </div>
-        )}
+        <section className="admin-section space-y-4">
+          {/* Mensagens de erro / loading / vazio */}
+          {loading && <div className="text-sm text-white/70">A carregar bilhetes…</div>}
 
-        {!loading && errorMsg && (
-          <div className="rounded-2xl border border-rose-700/60 bg-rose-950/60 p-4 text-sm text-rose-100">
-            {errorMsg}
-          </div>
-        )}
+          {!loading && errorMsg && (
+            <div className="rounded-xl border border-rose-500/40 bg-rose-500/10 p-4 text-sm text-rose-100">
+              {errorMsg}
+            </div>
+          )}
 
-        {!loading && actionMessage && !errorMsg && (
-          <div className="rounded-2xl border border-emerald-700/60 bg-emerald-900/50 p-4 text-sm text-emerald-100">
-            {actionMessage}
-          </div>
-        )}
+          {!loading && actionMessage && !errorMsg && (
+            <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-4 text-sm text-emerald-100">
+              {actionMessage}
+            </div>
+          )}
 
-        {!loading && !errorMsg && !hasTickets && (
-          <div className="rounded-2xl border border-dashed border-neutral-800 bg-neutral-900/60 p-6 text-sm text-neutral-300">
-            <p className="font-medium">Nenhum bilhete encontrado para estes filtros.</p>
-            <p className="mt-1 text-neutral-400">
-              Ajusta a pesquisa ou o estado para veres outros resultados.
-            </p>
-          </div>
-        )}
+          {!loading && !errorMsg && !hasTickets && (
+            <div className="rounded-xl border border-dashed border-white/15 p-6 text-sm text-white/70">
+              <p className="font-medium text-white">Sem bilhetes para estes filtros.</p>
+              <p className="mt-1 text-white/55">Ajusta a pesquisa ou o estado para veres outros resultados.</p>
+            </div>
+          )}
 
-        {/* Tabela de bilhetes */}
-        {!loading && !errorMsg && hasTickets && (
-          <section className="overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-950/80">
-            <div className="max-h-[70vh] overflow-auto">
-              <table className="min-w-full text-left text-xs text-neutral-200">
-                <thead className="sticky top-0 z-10 bg-neutral-950/95">
-                  <tr className="border-b border-neutral-800 text-[11px] uppercase tracking-[0.16em] text-neutral-500">
-                    <th className="px-3 py-3">Bilhete</th>
-                    <th className="px-3 py-3">Evento</th>
-                    <th className="px-3 py-3">Tipo</th>
-                    <th className="px-3 py-3">Utilizador</th>
-                    <th className="px-3 py-3">Preço / Fees</th>
-                    <th className="px-3 py-3">Estado</th>
-                    <th className="px-3 py-3">Comprado em</th>
-                    <th className="px-3 py-3">Intent</th>
-                    <th className="px-3 py-3 text-right">Ações</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {tickets.map((t) => {
-                    const event = t.event;
-                    const user = t.user;
-                    const profile = user?.profile;
-                    const userLabel = profile?.username
-                      ? `@${profile.username}`
-                      : profile?.fullName
-                        ? profile.fullName
-                        : user?.email ?? "—";
+          {/* Tabela de bilhetes */}
+          {!loading && !errorMsg && hasTickets && (
+            <div className="admin-card overflow-hidden">
+              <div className="max-h-[70vh] overflow-auto">
+                <table className="admin-table text-left">
+                  <thead>
+                    <tr>
+                      <th className="px-3 py-3">Bilhete</th>
+                      <th className="px-3 py-3">Evento</th>
+                      <th className="px-3 py-3">Tipo</th>
+                      <th className="px-3 py-3">Utilizador</th>
+                      <th className="px-3 py-3">Preço / Fees</th>
+                      <th className="px-3 py-3">Estado</th>
+                      <th className="px-3 py-3">Comprado em</th>
+                      <th className="px-3 py-3">Intent</th>
+                      <th className="px-3 py-3 text-right">Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {tickets.map((t) => {
+                      const event = t.event;
+                      const user = t.user;
+                      const profile = user?.profile;
+                      const userLabel = profile?.username
+                        ? `@${profile.username}`
+                        : profile?.fullName
+                          ? profile.fullName
+                          : user?.email ?? "—";
 
-                    return (
-                      <tr key={t.id} className="border-b border-neutral-900/80 last:border-0 hover:bg-neutral-900/80">
-                        <td className="px-3 py-3 align-top font-mono text-[11px] text-neutral-300">{t.id}</td>
-                        <td className="px-3 py-3 align-top">
-                          {event?.title ? (
-                            <div className="flex flex-col gap-0.5">
-                              {event.slug ? (
-                                <Link href={`/eventos/${event.slug}`} className="text-xs font-medium text-neutral-50 hover:underline">
-                                  {event.title}
-                                </Link>
-                              ) : (
-                                <span className="text-xs font-medium text-neutral-50">{event.title}</span>
-                              )}
-                              {event.startsAt && (
-                                <span className="text-[11px] text-neutral-400">
-                                  {formatDate(event.startsAt)}
-                                </span>
+                      return (
+                        <tr key={t.id} className="hover:bg-white/5">
+                          <td className="px-3 py-3 align-top font-mono text-[11px] text-white/60">{t.id}</td>
+                          <td className="px-3 py-3 align-top">
+                            {event?.title ? (
+                              <div className="flex flex-col gap-0.5">
+                                {event.slug ? (
+                                  <Link href={`/eventos/${event.slug}`} className="text-xs font-medium text-white/90 hover:underline">
+                                    {event.title}
+                                  </Link>
+                                ) : (
+                                  <span className="text-xs font-medium text-white/90">{event.title}</span>
+                                )}
+                                {event.startsAt && (
+                                  <span className="text-[11px] text-white/50">
+                                    {formatDate(event.startsAt)}
+                                  </span>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-xs text-white/50">—</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-3 align-top text-xs text-white/80">{t.ticketType?.name ?? "—"}</td>
+                          <td className="px-3 py-3 align-top">
+                            <div className="flex flex-col gap-0.5 text-xs">
+                              <span className="font-medium text-white/85">{userLabel}</span>
+                              {user?.email && (
+                                <span className="text-[11px] text-white/50">{user.email}</span>
                               )}
                             </div>
-                          ) : (
-                            <span className="text-xs text-neutral-500">—</span>
-                          )}
-                        </td>
-                        <td className="px-3 py-3 align-top text-xs text-neutral-100">
-                          {t.ticketType?.name ?? "—"}
-                        </td>
-                        <td className="px-3 py-3 align-top">
-                          <div className="flex flex-col gap-0.5 text-xs">
-                            <span className="font-medium text-neutral-50">{userLabel}</span>
-                            {user?.email && (
-                              <span className="text-[11px] text-neutral-500">{user.email}</span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-3 py-3 align-top text-[11px] text-neutral-100">
-                          <div className="flex flex-col gap-1">
-                            <span className="text-xs text-neutral-100">
-                              Pago: {formatMoney(t.pricePaidCents ?? null, t.currency || "EUR")}
+                          </td>
+                          <td className="px-3 py-3 align-top text-[11px] text-white/80">
+                            <div className="flex flex-col gap-1">
+                              <span className="text-xs text-white/85">
+                                Pago: {formatMoney(t.pricePaidCents ?? null, t.currency || "EUR")}
+                              </span>
+                              <span className="text-[11px] text-white/50">
+                                Fee: {formatMoney(t.platformFeeCents ?? null, t.currency || "EUR")}
+                              </span>
+                              <span className="text-[11px] text-white/50">
+                                Total: {formatMoney(t.totalPaidCents ?? null, t.currency || "EUR")}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="px-3 py-3 align-top">
+                            <span className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-medium ${statusBadgeClasses(t.status || "")}`}>
+                              {statusLabel(t.status)}
                             </span>
-                            <span className="text-[11px] text-neutral-400">
-                              Fee: {formatMoney(t.platformFeeCents ?? null, t.currency || "EUR")}
-                            </span>
-                            <span className="text-[11px] text-neutral-400">
-                              Total: {formatMoney(t.totalPaidCents ?? null, t.currency || "EUR")}
-                            </span>
-                          </div>
-                        </td>
-                        <td className="px-3 py-3 align-top">
-                          <span className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-medium ${statusBadgeClasses(t.status || "")}`}>
-                            {statusLabel(t.status)}
-                          </span>
-                        </td>
-                        <td className="px-3 py-3 align-top text-[11px] text-neutral-300">
-                          {formatDate(t.purchasedAt)}
-                        </td>
-                        <td className="px-3 py-3 align-top font-mono text-[10px] text-neutral-500 max-w-[160px] truncate">
-                          <div className="flex flex-col gap-1">
-                            <span className="truncate">{t.stripePaymentIntentId || "—"}</span>
-                            {t.stripePaymentIntentId && (
-                              <div className="flex flex-wrap gap-1">
+                          </td>
+                          <td className="px-3 py-3 align-top text-[11px] text-white/60">
+                            {formatDate(t.purchasedAt)}
+                          </td>
+                          <td className="px-3 py-3 align-top max-w-[160px] truncate font-mono text-[10px] text-white/50">
+                            <div className="flex flex-col gap-1">
+                              <span className="truncate">{t.stripePaymentIntentId || "—"}</span>
+                              {t.stripePaymentIntentId && (
+                                <div className="flex flex-wrap gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => navigator.clipboard?.writeText(t.stripePaymentIntentId || "")}
+                                    className="admin-button-secondary px-2 py-0.5 text-[10px]"
+                                  >
+                                    Copiar
+                                  </button>
+                                  <Link
+                                    href={`/admin/finance?payment_q=${encodeURIComponent(t.stripePaymentIntentId)}#pagamentos`}
+                                    className="admin-button-secondary px-2 py-0.5 text-[10px]"
+                                  >
+                                    Ver intent
+                                  </Link>
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-3 py-3 align-top text-right">
+                            <div className="flex flex-wrap justify-end gap-2">
+                              <Link
+                                href={`/admin/finance?payment_q=${encodeURIComponent(t.stripePaymentIntentId || "")}#pagamentos`}
+                                className="admin-button-secondary px-2.5 py-1 text-[11px]"
+                              >
+                                Pagamento
+                              </Link>
+                              {t.stripePaymentIntentId && t.paymentEventStatus !== "REFUNDED" && (
                                 <button
                                   type="button"
-                                  onClick={() => navigator.clipboard?.writeText(t.stripePaymentIntentId || "")}
-                                  className="rounded-full border border-neutral-700 px-2 py-0.5 text-[10px] text-neutral-300 hover:bg-neutral-800/70"
+                                  onClick={() => handleRefund(t.stripePaymentIntentId)}
+                                  className="admin-button-secondary px-2.5 py-1 text-[11px]"
                                 >
-                                  Copiar
+                                  Refund
                                 </button>
-                                <Link
-                                  href={`/admin/payments?q=${encodeURIComponent(t.stripePaymentIntentId)}`}
-                                  className="rounded-full border border-neutral-700 px-2 py-0.5 text-[10px] text-neutral-300 hover:bg-neutral-800/70"
-                                >
-                                  Ver intent
-                                </Link>
-                              </div>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-3 py-3 align-top text-right">
-                          <div className="flex flex-wrap justify-end gap-2">
-                            <Link
-                              href={`/admin/payments?q=${encodeURIComponent(t.stripePaymentIntentId || "")}`}
-                              className="rounded-full border border-neutral-700 px-2.5 py-1 text-[11px] text-neutral-200 hover:bg-neutral-800/70"
-                            >
-                              Pagamento
-                            </Link>
-                            {t.stripePaymentIntentId && t.paymentEventStatus === "REFUNDED" && (
-                              <button
-                                type="button"
-                                onClick={() => handleRefund(t.stripePaymentIntentId)}
-                                className="rounded-full border border-neutral-700 px-2.5 py-1 text-[11px] text-neutral-100 hover:bg-neutral-800/70"
-                              >
-                                Refund
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
-          </section>
-        )}
-      </div>
-      {/* Paginação simples */}
-      <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4 text-xs text-neutral-300">
-        <span>
-          Página {page} · {total} registos
-        </span>
-        <div className="flex gap-2">
-          <button
-            type="button"
-            disabled={page <= 1}
-            onClick={() => {
-              const next = Math.max(1, page - 1);
-              setPage(next);
-              void loadTickets({ page: next });
-            }}
-            className="rounded-full border border-neutral-700 px-3 py-1.5 disabled:opacity-40 hover:bg-neutral-800/70"
-          >
-            Anterior
-          </button>
-          <button
-            type="button"
-            disabled={page * pageSize >= total}
-            onClick={() => {
-              const next = page + 1;
-              setPage(next);
-              void loadTickets({ page: next });
-            }}
-            className="rounded-full border border-neutral-700 px-3 py-1.5 disabled:opacity-40 hover:bg-neutral-800/70"
-          >
-            Seguinte
-          </button>
-        </div>
+          )}
+
+          {!loading && !errorMsg && hasTickets && (
+            <div className="flex items-center justify-between text-xs text-white/60">
+              <span>
+                Página {page} · {total} registos
+              </span>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  disabled={page <= 1}
+                  onClick={() => {
+                    const next = Math.max(1, page - 1);
+                    setPage(next);
+                    void loadTickets({ page: next });
+                  }}
+                  className="admin-button-secondary px-3 py-1.5 disabled:opacity-40"
+                >
+                  Anterior
+                </button>
+                <button
+                  type="button"
+                  disabled={page * pageSize >= total}
+                  onClick={() => {
+                    const next = page + 1;
+                    setPage(next);
+                    void loadTickets({ page: next });
+                  }}
+                  className="admin-button-secondary px-3 py-1.5 disabled:opacity-40"
+                >
+                  Seguinte
+                </button>
+              </div>
+            </div>
+          )}
+        </section>
       </div>
     </AdminLayout>
   );

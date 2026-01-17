@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useState, ReactNode, useCallback } from "react";
 
-type Mode = "login" | "signup" | "verify" | "onboarding" | null;
+type Mode = "login" | "signup" | "verify" | "reset" | "onboarding" | null;
 type OnboardingStep = "perfil" | "foto" | "interesses" | "local" | "final" | null;
 
 type AuthModalContextType = {

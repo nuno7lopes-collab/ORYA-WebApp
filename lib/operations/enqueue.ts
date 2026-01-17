@@ -13,7 +13,7 @@ type EnqueueParams = {
     paymentIntentId?: string | null;
     stripeEventId?: string | null;
     eventId?: number | null;
-    organizerId?: number | null;
+    organizationId?: number | null;
     pairingId?: number | null;
   };
 };
@@ -44,7 +44,7 @@ export async function enqueueOperation(params: EnqueueParams) {
             payment_intent_id,
             stripe_event_id,
             event_id,
-            organizer_id,
+            organization_id,
             pairing_id
           )
           VALUES (
@@ -57,7 +57,7 @@ export async function enqueueOperation(params: EnqueueParams) {
             ${correlations.paymentIntentId ?? null},
             ${correlations.stripeEventId ?? null},
             ${correlations.eventId ?? null},
-            ${correlations.organizerId ?? null},
+            ${correlations.organizationId ?? null},
             ${correlations.pairingId ?? null}
           )
           ON CONFLICT (dedupe_key)
@@ -69,7 +69,7 @@ export async function enqueueOperation(params: EnqueueParams) {
             payment_intent_id = COALESCE(operations.payment_intent_id, EXCLUDED.payment_intent_id),
             stripe_event_id = COALESCE(operations.stripe_event_id, EXCLUDED.stripe_event_id),
             event_id = COALESCE(operations.event_id, EXCLUDED.event_id),
-            organizer_id = COALESCE(operations.organizer_id, EXCLUDED.organizer_id),
+            organization_id = COALESCE(operations.organization_id, EXCLUDED.organization_id),
             pairing_id = COALESCE(operations.pairing_id, EXCLUDED.pairing_id);
         `,
     );

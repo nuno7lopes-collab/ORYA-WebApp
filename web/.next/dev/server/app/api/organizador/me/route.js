@@ -1,0 +1,11 @@
+var R=require("../../../../chunks/[turbopack]_runtime.js")("server/app/api/organizador/me/route.js")
+R.c("server/chunks/node_modules_@react-email_render_dist_node_index_mjs_1bf9c5b5._.js")
+R.c("server/chunks/node_modules_next_bbbab6fc._.js")
+R.c("server/chunks/node_modules_@supabase_storage-js_dist_module_829f4f3c._.js")
+R.c("server/chunks/node_modules_@supabase_auth-js_dist_module_02e1b12e._.js")
+R.c("server/chunks/node_modules_zod_v4_dead09ad._.js")
+R.c("server/chunks/node_modules_49d5f662._.js")
+R.c("server/chunks/[root-of-the-server]__f4fd06d0._.js")
+R.c("server/chunks/_next-internal_server_app_api_organizador_me_route_actions_746748b2.js")
+R.m("[project]/node_modules/next/dist/esm/build/templates/app-route.js { INNER_APP_ROUTE => \"[project]/app/api/organizador/me/route.ts [app-route] (ecmascript)\" } [app-route] (ecmascript)")
+module.exports=R.m("[project]/node_modules/next/dist/esm/build/templates/app-route.js { INNER_APP_ROUTE => \"[project]/app/api/organizador/me/route.ts [app-route] (ecmascript)\" } [app-route] (ecmascript)").exports

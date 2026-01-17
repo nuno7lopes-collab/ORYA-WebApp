@@ -5,6 +5,18 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabaseBrowser";
 
 type Stage = "checking" | "ready" | "error" | "done";
+const mapAuthErrorMessage = (message: string | null | undefined) => {
+  if (!message) return message;
+  const normalized = message.toLowerCase();
+  if (
+    normalized.includes("password is known to be weak") ||
+    normalized.includes("weak and easy to guess") ||
+    normalized.includes("weak_password")
+  ) {
+    return "A password não foi aceite pelo sistema de autenticação.";
+  }
+  return message;
+};
 
 function ResetPasswordInner() {
   const router = useRouter();
@@ -99,8 +111,8 @@ function ResetPasswordInner() {
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     if (loading) return;
-    if (password.length < 8) {
-      setError("A password deve ter pelo menos 8 caracteres.");
+    if (password.length < 6) {
+      setError("A password deve ter pelo menos 6 caracteres.");
       return;
     }
     if (password !== confirm) {
@@ -112,7 +124,7 @@ function ResetPasswordInner() {
     try {
       const { error: updateError } = await supabaseBrowser.auth.updateUser({ password });
       if (updateError) {
-        setError(updateError.message || "Não foi possível atualizar a password.");
+        setError(mapAuthErrorMessage(updateError.message) || "Não foi possível atualizar a password.");
         setLoading(false);
         return;
       }
@@ -142,7 +154,7 @@ function ResetPasswordInner() {
           </div>
           <h1 className="mt-3 text-3xl font-semibold text-white">Escolhe a tua nova password</h1>
           <p className="mt-2 text-sm text-white/65">
-            Link seguro com validade curta. Define uma password forte para proteger a tua conta.
+            Link seguro com validade curta. Define uma password com pelo menos 6 caracteres.
           </p>
 
           <div className="mt-6 rounded-2xl border border-white/10 bg-black/25 p-5 shadow-[0_20px_60px_rgba(0,0,0,0.45)]">

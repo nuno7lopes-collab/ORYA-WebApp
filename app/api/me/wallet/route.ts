@@ -5,6 +5,7 @@ import { resolveActions } from "@/lib/entitlements/accessResolver";
 import { buildDefaultCheckinWindow } from "@/lib/checkin/policy";
 import { EntitlementStatus, EntitlementType, Prisma } from "@prisma/client";
 import crypto from "crypto";
+import { normalizeEmail } from "@/lib/utils/email";
 
 const MAX_PAGE = 50;
 
@@ -77,7 +78,20 @@ export async function GET(req: NextRequest) {
     };
 
     if (!isAdmin) {
-      andFilters.push({ ownerUserId: userId });
+      const identities = await prisma.emailIdentity.findMany({
+        where: { userId },
+        select: { id: true },
+      });
+      const identityIds = identities.map((identity) => identity.id);
+      const normalizedEmail = normalizeEmail(data.user.email ?? null);
+      const ownerClauses: Prisma.EntitlementWhereInput[] = [{ ownerUserId: userId }];
+      if (identityIds.length) {
+        ownerClauses.push({ ownerIdentityId: { in: identityIds } });
+      }
+      if (normalizedEmail) {
+        ownerClauses.push({ ownerKey: `email:${normalizedEmail}` });
+      }
+      andFilters.push({ OR: ownerClauses });
     }
 
     if (statusFilter.length) {
@@ -151,7 +165,7 @@ export async function GET(req: NextRequest) {
           type: e.type,
           status: e.status,
           isOwner: true,
-          isOrganizer: false,
+          isOrganization: false,
           isAdmin,
           checkinWindow,
           outsideWindow,

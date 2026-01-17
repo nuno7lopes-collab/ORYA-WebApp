@@ -2,6 +2,7 @@ import {
   notifyDeadlineExpired,
   notifyOffsessionActionRequired,
   notifyPairingInvite,
+  notifyPairingInviteSent,
   notifyPairingReminder,
   notifyPartnerPaid,
 } from "@/domain/notifications/producer";
@@ -13,7 +14,15 @@ export async function queuePairingInvite(params: {
   inviterUserId?: string;
   token?: string;
 }) {
-  return notifyPairingInvite(params);
+  await notifyPairingInvite(params);
+  if (params.inviterUserId) {
+    await notifyPairingInviteSent({
+      pairingId: params.pairingId,
+      targetUserId: params.targetUserId,
+      inviterUserId: params.inviterUserId,
+      token: params.token,
+    });
+  }
 }
 
 export async function queuePairingReminder(pairingId: number, targetUserId: string) {

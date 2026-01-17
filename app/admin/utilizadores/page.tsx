@@ -7,7 +7,8 @@ import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import type { Prisma } from "@prisma/client";
 import { UsersTableClient } from "./UsersTableClient";
-import { CTA_PRIMARY } from "@/app/organizador/dashboardUi";
+import { AdminLayout } from "@/app/admin/components/AdminLayout";
+import { AdminPageHeader } from "@/app/admin/components/AdminPageHeader";
 
 type AdminUsersPageProps = {
   searchParams?: {
@@ -51,12 +52,12 @@ export default async function AdminUsersPage({ searchParams }: AdminUsersPagePro
     ];
   }
 
-  const [totalUsers, totalOrganizers, totalAdmins, users] = await Promise.all([
+  const [totalUsers, totalOrganizations, totalAdmins, users] = await Promise.all([
     prisma.profile.count(),
     prisma.profile.count({
       where: {
         roles: {
-          has: "organizer",
+          has: "organization",
         },
       },
     }),
@@ -85,45 +86,18 @@ export default async function AdminUsersPage({ searchParams }: AdminUsersPagePro
   ]);
 
   return (
-    <main className="min-h-screen text-white pb-16">
-      {/* Top bar */}
-      <header className="border-b border-white/10 bg-black/50 backdrop-blur-xl">
-        <div className="max-w-6xl mx-auto px-5 py-4 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-tr from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] text-[10px] font-extrabold tracking-[0.16em]">
-              ADM
-            </span>
-            <div>
-              <p className="text-[11px] uppercase tracking-[0.18em] text-white/60">
-                Painel · Admin
-              </p>
-              <p className="text-sm text-white/85">Gestão de utilizadores da plataforma.</p>
-            </div>
-          </div>
-
-          <div className="hidden sm:flex items-center gap-2 text-[11px] text-white/70">
-            <span className="px-2 py-1 rounded-full border border-white/15">
-              {me.username ? `@${me.username}` : "Admin"}
-            </span>
-          </div>
-        </div>
-      </header>
-
-      <section className="max-w-6xl mx-auto px-5 pt-6 space-y-6">
+    <AdminLayout title="Utilizadores" subtitle="Gestão de contas e roles da plataforma.">
+      <section className="space-y-6">
         {/* Header + search */}
         <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
-          <div className="space-y-1">
-            <h1 className="text-2xl md:text-3xl font-semibold tracking-tight">
-              Utilizadores
-            </h1>
-            <p className="text-sm text-white/70 max-w-xl">
-              Pesquisa e visão rápida dos perfis registados na ORYA. Esta área é apenas
-              para debugging e gestão interna.
-            </p>
-          </div>
+          <AdminPageHeader
+            title="Utilizadores"
+            subtitle="Pesquisa e visão rápida dos perfis registados na ORYA. Área interna de gestão."
+            eyebrow="Admin • Utilizadores"
+          />
 
           <form className="w-full md:w-72" action="/admin/utilizadores" method="GET">
-            <label className="block text-[11px] text-white/65 mb-1">
+            <label className="block text-[10px] uppercase tracking-[0.2em] text-white/45 mb-1">
               Pesquisar utilizador (username, nome, cidade)
             </label>
             <div className="flex items-center gap-2">
@@ -132,11 +106,11 @@ export default async function AdminUsersPage({ searchParams }: AdminUsersPagePro
                 name="q"
                 defaultValue={search}
                 placeholder="ex: joao, porto..."
-                className="flex-1 rounded-xl border border-white/20 bg-black/40 px-3 py-2 text-sm text-white placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-[#6BFFFF]/80"
+                className="admin-input"
               />
               <button
                 type="submit"
-                className={`${CTA_PRIMARY} px-3 py-2 text-[11px] active:scale-95`}
+                className="admin-button px-3 py-2 text-[11px] active:scale-95"
               >
                 Buscar
               </button>
@@ -157,11 +131,11 @@ export default async function AdminUsersPage({ searchParams }: AdminUsersPagePro
           </div>
           <div className="rounded-2xl border border-white/12 bg-black/60 px-4 py-3">
             <p className="text-[11px] text-white/55 uppercase tracking-[0.14em]">
-              Organizadores
+              Organizações
             </p>
-            <p className="mt-1 text-2xl font-semibold">{totalOrganizers}</p>
+            <p className="mt-1 text-2xl font-semibold">{totalOrganizations}</p>
             <p className="mt-1 text-[11px] text-white/55">
-              Perfis com role de organizador ativa.
+              Perfis com role de organização ativa.
             </p>
           </div>
           <div className="rounded-2xl border border-white/12 bg-black/60 px-4 py-3">
@@ -201,6 +175,6 @@ export default async function AdminUsersPage({ searchParams }: AdminUsersPagePro
           )}
         </div>
       </section>
-    </main>
+    </AdminLayout>
   );
 }

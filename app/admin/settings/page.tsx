@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
 import Link from "next/link";
+import { AdminLayout } from "@/app/admin/components/AdminLayout";
+import { AdminPageHeader } from "@/app/admin/components/AdminPageHeader";
 
 type FeesResponse =
   | {
@@ -62,8 +64,8 @@ export default function AdminSettingsPage() {
   const oryaFeeCents = computeFee(sampleBase, parsedPlatformBps, parsedPlatformFixedCents);
   const stripeFeeOnTopCents = computeFee(sampleBase + oryaFeeCents, parsedStripeBps, parsedStripeFixedCents);
   const stripeFeeIncludedCents = computeFee(sampleBase, parsedStripeBps, parsedStripeFixedCents);
-  const organizerNetOnTop = Math.max(0, sampleBase - stripeFeeOnTopCents);
-  const organizerNetIncluded = Math.max(0, sampleBase - oryaFeeCents - stripeFeeIncludedCents);
+  const organizationNetOnTop = Math.max(0, sampleBase - stripeFeeOnTopCents);
+  const organizationNetIncluded = Math.max(0, sampleBase - oryaFeeCents - stripeFeeIncludedCents);
 
   const handleSave = async () => {
     setSaveError(null);
@@ -99,41 +101,21 @@ export default function AdminSettingsPage() {
   };
 
   return (
-    <main className="min-h-screen text-white pb-16">
-      <header className="border-b border-white/10 bg-black/50 backdrop-blur-xl">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-4">
-          <div className="flex items-center gap-3">
-            <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-tr from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] text-xs font-extrabold tracking-[0.15em]">
-              AD
-            </span>
-            <div>
-              <p className="text-xs uppercase tracking-[0.18em] text-white/60">Admin · Taxas</p>
-              <p className="text-sm text-white/85">Overview de fees</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 text-[11px]">
-            <Link
-              href="/admin"
-              className="rounded-full border border-white/20 px-3 py-1.5 text-white/75 transition-colors hover:bg-white/10"
-            >
-              Dashboard
-            </Link>
-          </div>
-        </div>
-      </header>
+    <AdminLayout title="Configurações" subtitle="Taxas globais de plataforma e Stripe.">
+      <section className="space-y-6">
+        <AdminPageHeader
+          title="Taxas configuradas"
+          subtitle="Valores globais definidos pela ORYA e Stripe para cálculos internos e previews."
+          eyebrow="Admin • Configurações"
+        />
 
-      <section className="mx-auto max-w-5xl space-y-6 px-5 pt-8">
         <div className="flex flex-col gap-2">
-          <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">Taxas configuradas</h1>
-          <p className="max-w-3xl text-sm text-white/70">
-            Valores globais definidos pela ORYA. No v1 o preço público já inclui todas as taxas; não existe repasse
-            explícito ao cliente. A taxa da Stripe pode variar por método/país; aqui controlas o valor base usado nos
-            cálculos internos e previews.
-          </p>
+          <p className="text-[11px] uppercase tracking-[0.2em] text-white/45">Pagamentos</p>
+          <h2 className="text-lg font-semibold text-white/90">Parâmetros atuais</h2>
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
-          <div className="rounded-2xl border border-white/12 bg-white/5 p-4 shadow-[0_12px_40px_rgba(0,0,0,0.35)]">
+          <div className="admin-card p-4">
             <p className="text-[11px] uppercase tracking-[0.18em] text-white/60">ORYA</p>
             <h2 className="mt-1 text-lg font-semibold text-white">Taxa da plataforma</h2>
             <div className="mt-3 space-y-3 text-sm text-white/80">
@@ -145,7 +127,7 @@ export default function AdminSettingsPage() {
                   min="0"
                   value={platformPercent}
                   onChange={(e) => setPlatformPercent(e.target.value)}
-                  className="w-28 rounded-md border border-white/15 bg-black/30 px-2 py-1 text-right text-sm outline-none focus:border-white/60"
+                  className="admin-input w-28 text-right"
                 />
               </label>
               <label className="flex items-center justify-between gap-3">
@@ -156,7 +138,7 @@ export default function AdminSettingsPage() {
                   min="0"
                   value={platformFixed}
                   onChange={(e) => setPlatformFixed(e.target.value)}
-                  className="w-28 rounded-md border border-white/15 bg-black/30 px-2 py-1 text-right text-sm outline-none focus:border-white/60"
+                  className="admin-input w-28 text-right"
                 />
               </label>
               <p className="text-[11px] text-white/60">
@@ -165,9 +147,11 @@ export default function AdminSettingsPage() {
             </div>
           </div>
 
-          <div className="rounded-2xl border border-white/12 bg-white/5 p-4 shadow-[0_12px_40px_rgba(0,0,0,0.35)]">
+          <div className="admin-card p-4">
             <p className="text-[11px] uppercase tracking-[0.18em] text-white/60">Stripe</p>
-            <h2 className="mt-1 text-lg font-semibold text-white">Taxa base ({data && data.ok ? data.stripe.region : "UE"})</h2>
+            <h2 className="mt-1 text-lg font-semibold text-white">
+              Taxa base ({data && data.ok ? data.stripe.region : "UE"})
+            </h2>
             <div className="mt-3 space-y-3 text-sm text-white/80">
               <label className="flex items-center justify-between gap-3">
                 <span>Percentual</span>
@@ -177,7 +161,7 @@ export default function AdminSettingsPage() {
                   min="0"
                   value={stripePercent}
                   onChange={(e) => setStripePercent(e.target.value)}
-                  className="w-28 rounded-md border border-white/15 bg-black/30 px-2 py-1 text-right text-sm outline-none focus:border-white/60"
+                  className="admin-input w-28 text-right"
                 />
               </label>
               <label className="flex items-center justify-between gap-3">
@@ -188,7 +172,7 @@ export default function AdminSettingsPage() {
                   min="0"
                   value={stripeFixed}
                   onChange={(e) => setStripeFixed(e.target.value)}
-                  className="w-28 rounded-md border border-white/15 bg-black/30 px-2 py-1 text-right text-sm outline-none focus:border-white/60"
+                  className="admin-input w-28 text-right"
                 />
               </label>
               <p className="text-[11px] text-white/60">
@@ -198,21 +182,44 @@ export default function AdminSettingsPage() {
           </div>
         </div>
 
-        <div className="rounded-2xl border border-white/12 bg-white/5 p-4 shadow-[0_12px_40px_rgba(0,0,0,0.35)]">
+        <div className="admin-card p-4">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="text-[11px] uppercase tracking-[0.2em] text-white/50">Operações</p>
+              <h3 className="text-sm font-semibold text-white">Gestão de pagamentos</h3>
+              <p className="text-[12px] text-white/60">
+                Acede rapidamente às secções financeiras para reprocessar, libertar ou reembolsar.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Link href="/admin/finance#pagamentos" className="admin-button-secondary px-3 py-1.5 text-[11px]">
+                Pagamentos
+              </Link>
+              <Link href="/admin/finance#payouts" className="admin-button-secondary px-3 py-1.5 text-[11px]">
+                Payouts
+              </Link>
+              <Link href="/admin/finance#reembolsos" className="admin-button-secondary px-3 py-1.5 text-[11px]">
+                Reembolsos
+              </Link>
+            </div>
+          </div>
+        </div>
+
+        <div className="admin-card p-4">
           <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
             <h3 className="text-sm font-semibold text-white">Exemplo rápido (bilhete 10 €)</h3>
             <button
               type="button"
               onClick={handleSave}
               disabled={saving}
-              className="inline-flex items-center justify-center rounded-md border border-white/20 bg-white/10 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-white/15 disabled:opacity-60"
+              className="admin-button px-3 py-1.5 text-sm disabled:opacity-60"
             >
               {saving ? "A guardar…" : "Guardar alterações"}
             </button>
           </div>
 
           <div className="grid gap-3 pt-3 text-sm text-white/85 md:grid-cols-2">
-            <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+            <div className="admin-card-soft p-3">
               <p className="mb-2 text-xs uppercase tracking-[0.15em] text-white/60">Cliente paga</p>
               <p className="flex justify-between">
                 <span>Preço base</span>
@@ -231,13 +238,13 @@ export default function AdminSettingsPage() {
                 <span>{formatEur(sampleBase + oryaFeeCents)}</span>
               </p>
               <p className="flex justify-between text-white/70">
-                <span>Recebe organizador (após Stripe)</span>
-                <span>{formatEur(organizerNetOnTop)}</span>
+                <span>Recebe organização (após Stripe)</span>
+                <span>{formatEur(organizationNetOnTop)}</span>
               </p>
-              <p className="mt-1 text-[11px] text-white/60">Stripe cobra sobre o total (bilhete + taxa ORYA).</p>
+              <p className="mt-1 text-[11px] text-white/60">Stripe cobra sobre o total.</p>
             </div>
-            <div className="rounded-xl border border-white/10 bg-black/20 p-3">
-              <p className="mb-2 text-xs uppercase tracking-[0.15em] text-white/60">Organizador absorve (INCLUDED)</p>
+            <div className="admin-card-soft p-3">
+              <p className="mb-2 text-xs uppercase tracking-[0.15em] text-white/60">Organização absorve (INCLUDED)</p>
               <p className="flex justify-between">
                 <span>Preço mostrado</span>
                 <span>10,00 €</span>
@@ -251,10 +258,10 @@ export default function AdminSettingsPage() {
                 <span suppressHydrationWarning>{formatEur(stripeFeeIncludedCents)}</span>
               </p>
               <p className="flex justify-between font-semibold">
-                <span>Recebe organizador (após Stripe)</span>
-                <span>{formatEur(organizerNetIncluded)}</span>
+                <span>Recebe organização (após Stripe)</span>
+                <span>{formatEur(organizationNetIncluded)}</span>
               </p>
-              <p className="text-[11px] text-white/60">A taxa ORYA é deduzida ao valor. Stripe deduz a sua própria taxa no payout.</p>
+              <p className="text-[11px] text-white/60">Taxa ORYA deduzida. Stripe deduz no payout.</p>
             </div>
           </div>
           {isLoading && <p className="mt-3 text-[11px] text-white/60">A carregar valores...</p>}
@@ -263,6 +270,6 @@ export default function AdminSettingsPage() {
           {data && !data.ok && <p className="mt-3 text-[11px] text-red-300">Erro a carregar fees.</p>}
         </div>
       </section>
-    </main>
+    </AdminLayout>
   );
 }

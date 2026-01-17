@@ -1,0 +1,6 @@
+{
+  "version": 3,
+  "sources": [],
+  "sections": [
+    {"offset": {"line": 4, "column": 0}, "map": {"version":3,"sources":["file:///Users/nuno/orya/ORYA-WebApp/lib/analytics.ts"],"sourcesContent":["export type AnalyticsPayload = Record<string, any>;\n\nexport function trackEvent(name: string, payload?: AnalyticsPayload) {\n  if (!name) return;\n  // Por agora, apenas console.log; preparado para PostHog/Amplitude/GA.\n  // Mantém formato consistente para fácil troca futura.\n   \n  console.log(\"[trackEvent]\", name, payload ?? {});\n}\n"],"names":[],"mappings":";;;;AAEO,SAAS,WAAW,IAAY,EAAE,OAA0B;IACjE,IAAI,CAAC,MAAM;IACX,sEAAsE;IACtE,sDAAsD;IAEtD,QAAQ,GAAG,CAAC,gBAAgB,MAAM,WAAW,CAAC;AAChD"}}]
+}

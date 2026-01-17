@@ -4,6 +4,7 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { stripe } from "@/lib/stripeClient";
+import { getStripeBaseFees } from "@/lib/platformSettings";
 import {
   Prisma,
   PadelPairingStatus,
@@ -19,7 +20,7 @@ import { autoChargeKey } from "@/lib/stripe/idempotency";
 // Pode ser executado via cron. Não expõe dados sensíveis, mas requer permissão server-side.
 export async function POST() {
   const now = new Date();
-  await prisma.$transaction((tx) => expireHolds(tx, now));
+  await expireHolds(prisma, now);
 
   // Tentativa de cobrança off-session do capitão (Modelo A) quando deadline expirou e parceiro não pagou
   const chargeable = await prisma.padelPairing.findMany({
@@ -33,6 +34,8 @@ export async function POST() {
       slots: { include: { ticket: true } },
     },
   });
+
+  const stripeBaseFees = await getStripeBaseFees();
 
   for (const pairing of chargeable) {
     if (pairing.secondChargePaymentIntentId) {
@@ -65,6 +68,16 @@ export async function POST() {
         ? paidTicket!.totalPaidCents
         : paidTicket?.pricePaid ?? 0;
     const currency = (paidTicket?.currency ?? "EUR").toUpperCase();
+    const platformFeeCents = paidTicket?.platformFeeCents ?? 0;
+    const stripeFeeEstimateCents =
+      amount > 0
+        ? Math.max(
+            0,
+            Math.round((amount * (stripeBaseFees.feeBps ?? 0)) / 10_000) +
+              (stripeBaseFees.feeFixedCents ?? 0),
+          )
+        : 0;
+    const payoutAmountCents = Math.max(0, amount - platformFeeCents - stripeFeeEstimateCents);
 
     if (!paymentMethodId || !amount || amount <= 0) {
       await prisma.padelPairing.update({
@@ -81,6 +94,11 @@ export async function POST() {
     try {
       const attempt = 1;
       const idempotencyKey = autoChargeKey(pairing.id, attempt);
+      const event = await prisma.event.findUnique({
+        where: { id: pairing.eventId },
+        select: { organization: { select: { stripeAccountId: true } } },
+      });
+      const recipientConnectAccountId = event?.organization?.stripeAccountId ?? "";
 
       const intent = await stripe.paymentIntents.create(
         {
@@ -94,6 +112,15 @@ export async function POST() {
             eventId: pairing.eventId,
             scenario: "GROUP_SPLIT_SECOND_CHARGE",
             idempotencyKey,
+            recipientConnectAccountId,
+            payoutAmountCents: String(payoutAmountCents),
+            grossAmountCents: String(amount),
+            platformFeeCents: String(platformFeeCents),
+            feeMode: "INCLUDED",
+            sourceType: "PADEL_PAIRING",
+            sourceId: String(pairing.id),
+            currency,
+            stripeFeeEstimateCents: String(stripeFeeEstimateCents),
           },
         },
         { idempotencyKey },
@@ -105,11 +132,16 @@ export async function POST() {
             where: { pairingId: pairing.id, slotStatus: PadelPairingSlotStatus.PENDING },
             data: { paymentStatus: PadelPairingPaymentStatus.PAID },
           });
+          const slots = await tx.padelPairingSlot.findMany({
+            where: { pairingId: pairing.id },
+            select: { slotStatus: true },
+          });
+          const allFilled = slots.length > 0 && slots.every((slot) => slot.slotStatus === PadelPairingSlotStatus.FILLED);
           await tx.padelPairing.update({
             where: { id: pairing.id },
             data: {
               lifecycleStatus: PadelPairingLifecycleStatus.CONFIRMED_CAPTAIN_FULL,
-              pairingStatus: PadelPairingStatus.COMPLETE,
+              pairingStatus: allFilled ? PadelPairingStatus.COMPLETE : PadelPairingStatus.INCOMPLETE,
               guaranteeStatus: "SUCCEEDED",
               secondChargePaymentIntentId: intent.id,
               captainSecondChargedAt: new Date(),

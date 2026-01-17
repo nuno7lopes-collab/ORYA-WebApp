@@ -1,0 +1,206 @@
+export const runtime = "nodejs";
+
+import type { ReactNode, CSSProperties } from "react";
+import OrganizationDashboardShell from "../OrganizationDashboardShell";
+import { createSupabaseServer } from "@/lib/supabaseServer";
+import { getActiveOrganizationForUser } from "@/lib/organizationContext";
+import { prisma } from "@/lib/prisma";
+import { OrganizationLangSetter } from "../OrganizationLangSetter";
+import { OrganizationStatus } from "@prisma/client";
+
+type OrganizationSwitcherOption = {
+  organizationId: number;
+  role: string;
+  organization: {
+    id: number;
+    username: string | null;
+    publicName: string | null;
+    businessName: string | null;
+    city: string | null;
+    entityType: string | null;
+    organizationKind?: string | null;
+    primaryModule?: string | null;
+    status: string | null;
+    brandingAvatarUrl?: string | null;
+    brandingPrimaryColor?: string | null;
+    brandingSecondaryColor?: string | null;
+    language?: string | null;
+    officialEmail?: string | null;
+    officialEmailVerifiedAt?: Date | null;
+  };
+};
+
+/**
+ * Layout do dashboard da organização com shell principal.
+ * Não contém lógica de autenticação; isso é tratado no layout pai /organizacao.
+ * Busca o organization ativo no server para alimentar o switcher e reduzir fetches client.
+ */
+export default async function OrganizationDashboardLayout({ children }: { children: ReactNode }) {
+  const supabase = await createSupabaseServer();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  let orgOptions: OrganizationSwitcherOption[] = [];
+  let activeOrganization: OrganizationSwitcherOption["organization"] | null = null;
+  let activeRole: string | null = null;
+  let activeModules: string[] = [];
+  let profile:
+    | { fullName: string | null; username: string | null; avatarUrl: string | null; updatedAt: Date | null }
+    | null = null;
+
+  if (user) {
+    try {
+      profile = await prisma.profile.findUnique({
+        where: { id: user.id },
+        select: { fullName: true, username: true, avatarUrl: true, updatedAt: true },
+      });
+    } catch {
+      profile = null;
+    }
+
+    try {
+      const { organization, membership } = await getActiveOrganizationForUser(user.id, {
+        allowedStatuses: [OrganizationStatus.ACTIVE, OrganizationStatus.SUSPENDED],
+      });
+      if (organization && membership) {
+        activeOrganization = {
+          id: organization.id,
+          publicName: organization.publicName,
+          businessName: organization.businessName,
+          username: (organization as { username?: string | null }).username ?? null,
+          brandingAvatarUrl: (organization as { brandingAvatarUrl?: string | null }).brandingAvatarUrl ?? null,
+          brandingPrimaryColor: (organization as { brandingPrimaryColor?: string | null }).brandingPrimaryColor ?? null,
+          brandingSecondaryColor: (organization as { brandingSecondaryColor?: string | null }).brandingSecondaryColor ?? null,
+          organizationKind: (organization as { organizationKind?: string | null }).organizationKind ?? null,
+          primaryModule: (organization as { primaryModule?: string | null }).primaryModule ?? null,
+          city: (organization as { city?: string | null }).city ?? null,
+          entityType: (organization as { entityType?: string | null }).entityType ?? null,
+          status: organization.status ?? null,
+          language: (organization as { language?: string | null }).language ?? null,
+          officialEmail: (organization as { officialEmail?: string | null }).officialEmail ?? null,
+          officialEmailVerifiedAt: (organization as { officialEmailVerifiedAt?: Date | null }).officialEmailVerifiedAt ?? null,
+        };
+        activeRole = membership.role ?? null;
+      }
+    } catch {
+    }
+
+    if (activeOrganization) {
+      try {
+        const modulesRows = await prisma.organizationModuleEntry.findMany({
+          where: { organizationId: activeOrganization.id, enabled: true },
+          select: { moduleKey: true },
+          orderBy: { moduleKey: "asc" },
+        });
+        activeModules = modulesRows.map((row) => row.moduleKey);
+      } catch {
+        activeModules = [];
+      }
+    }
+
+    try {
+      const memberships = await prisma.organizationMember.findMany({
+        where: { userId: user.id },
+        include: { organization: true },
+        orderBy: [{ lastUsedAt: "desc" }, { createdAt: "asc" }],
+      });
+
+      orgOptions = memberships
+        .filter((m) => m.organization)
+        .map((m) => ({
+          organizationId: m.organizationId,
+          role: m.role,
+          organization: {
+            id: m.organization!.id,
+            username: m.organization!.username,
+            publicName: m.organization!.publicName,
+            businessName: m.organization!.businessName,
+            city: m.organization!.city,
+            entityType: m.organization!.entityType,
+            organizationKind: (m.organization as { organizationKind?: string | null }).organizationKind ?? null,
+            primaryModule: (m.organization as { primaryModule?: string | null }).primaryModule ?? null,
+            status: m.organization!.status,
+            brandingAvatarUrl: (m.organization as { brandingAvatarUrl?: string | null }).brandingAvatarUrl ?? null,
+            brandingPrimaryColor: (m.organization as { brandingPrimaryColor?: string | null }).brandingPrimaryColor ?? null,
+            brandingSecondaryColor: (m.organization as { brandingSecondaryColor?: string | null }).brandingSecondaryColor ?? null,
+            language: (m.organization as { language?: string | null }).language ?? null,
+            officialEmail: (m.organization as { officialEmail?: string | null }).officialEmail ?? null,
+            officialEmailVerifiedAt: (m.organization as { officialEmailVerifiedAt?: Date | null }).officialEmailVerifiedAt ?? null,
+          },
+        }));
+    } catch (err: unknown) {
+      const msg =
+        typeof err === "object" && err && "message" in err ? String((err as { message?: unknown }).message) : "";
+      if (!(msg.includes("does not exist") || msg.includes("organization_members"))) {
+        throw err;
+      }
+    }
+  }
+
+  const organizationName =
+    activeOrganization?.publicName || activeOrganization?.businessName || "Organização";
+  const organizationAvatarUrl = activeOrganization?.brandingAvatarUrl ?? null;
+  const organizationUsername = activeOrganization?.username ?? null;
+  const brandPrimary = activeOrganization?.brandingPrimaryColor ?? undefined;
+  const brandSecondary = activeOrganization?.brandingSecondaryColor ?? undefined;
+  const organizationLanguage = activeOrganization?.language ?? "pt";
+  const isSuspended = activeOrganization?.status === OrganizationStatus.SUSPENDED;
+  const officialEmail = (activeOrganization as { officialEmail?: string | null })?.officialEmail ?? null;
+  const officialEmailVerifiedAt =
+    (activeOrganization as { officialEmailVerifiedAt?: Date | null })?.officialEmailVerifiedAt ?? null;
+  const isEmailVerified = Boolean(officialEmail && officialEmailVerifiedAt);
+
+  const userInfo = user
+    ? {
+        id: user.id,
+        name: profile?.fullName || profile?.username || user.email || null,
+        email: user.email ?? null,
+        avatarUrl: profile?.avatarUrl ?? null,
+        avatarUpdatedAt: profile?.updatedAt ? profile.updatedAt.getTime() : null,
+      }
+    : null;
+
+  const activeOrgLite = activeOrganization
+    ? {
+        id: activeOrganization.id,
+        name: organizationName,
+        username: organizationUsername,
+        avatarUrl: organizationAvatarUrl,
+        organizationKind: activeOrganization.organizationKind ?? null,
+        primaryModule: activeOrganization.primaryModule ?? null,
+        modules: activeModules,
+      }
+    : null;
+
+  return (
+    <div
+      className="flex min-h-screen w-full flex-col text-white"
+      style={
+        {
+          "--brand-primary": brandPrimary,
+          "--brand-secondary": brandSecondary,
+        } as CSSProperties
+      }
+    >
+      <OrganizationLangSetter language={organizationLanguage} />
+      {organizationUsername ? (
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `try{sessionStorage.setItem("orya_last_organization_username","${organizationUsername}");}catch(e){}`,
+          }}
+        />
+      ) : null}
+      <OrganizationDashboardShell
+        activeOrg={activeOrgLite}
+        orgOptions={orgOptions}
+        user={userInfo}
+        role={activeRole}
+        isSuspended={isSuspended}
+        emailVerification={activeOrganization ? { isVerified: isEmailVerified, email: officialEmail } : null}
+      >
+        {children}
+      </OrganizationDashboardShell>
+    </div>
+  );
+}

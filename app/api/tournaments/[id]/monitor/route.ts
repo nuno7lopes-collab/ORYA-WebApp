@@ -4,8 +4,9 @@ import { summarizeMatchStatus, computeStandingsForGroup } from "@/domain/tournam
 import { type TieBreakRule } from "@/domain/tournaments/standings";
 import { readNumericParam } from "@/lib/routeParams";
 
-export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
-  const id = readNumericParam(params?.id, req, "tournaments");
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const resolved = await params;
+  const id = readNumericParam(resolved?.id, req, "tournaments");
   if (id === null) return NextResponse.json({ ok: false, error: "INVALID_ID" }, { status: 400 });
 
   const data = await getTournamentStructure(id);

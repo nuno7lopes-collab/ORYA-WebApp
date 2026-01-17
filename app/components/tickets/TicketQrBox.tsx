@@ -10,11 +10,12 @@ type TicketQrBoxProps = {
 const REFRESH_INTERVAL_MS = 15_000; // 15s
 
 export default function TicketQrBox({ qrToken, purchaseId }: TicketQrBoxProps) {
-  const [refreshKey, setRefreshKey] = useState(() => Date.now());
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     if (!qrToken) return;
 
+    setRefreshKey(Date.now());
     const id = setInterval(() => {
       setRefreshKey(Date.now());
     }, REFRESH_INTERVAL_MS);

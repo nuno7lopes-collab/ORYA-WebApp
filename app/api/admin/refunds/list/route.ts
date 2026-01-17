@@ -1,39 +1,16 @@
 // app/api/admin/refunds/list/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { createSupabaseServer } from "@/lib/supabaseServer";
+import { requireAdminUser } from "@/lib/admin/auth";
 import type { Prisma } from "@prisma/client";
 
 const PAGE_SIZE = 50;
 
-async function ensureAdmin() {
-  const supabase = await createSupabaseServer();
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser();
-
-  if (error || !user) {
-    return { ok: false as const, status: 401 as const, reason: "UNAUTHENTICATED" };
-  }
-
-  const profile = await prisma.profile.findUnique({
-    where: { id: user.id },
-    select: { roles: true },
-  });
-  const roles = profile?.roles ?? [];
-  const isAdmin = Array.isArray(roles) && roles.includes("admin");
-  if (!isAdmin) {
-    return { ok: false as const, status: 403 as const, reason: "FORBIDDEN" };
-  }
-  return { ok: true as const };
-}
-
 export async function GET(req: NextRequest) {
   try {
-    const admin = await ensureAdmin();
+    const admin = await requireAdminUser();
     if (!admin.ok) {
-      return NextResponse.json({ ok: false, error: admin.reason }, { status: admin.status });
+      return NextResponse.json({ ok: false, error: admin.error }, { status: admin.status });
     }
 
     const url = new URL(req.url);

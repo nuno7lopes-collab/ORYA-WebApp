@@ -1,12 +1,13 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
-import { OrganizerMemberRole, PadelPreferredSide } from "@prisma/client";
+import { OrganizationMemberRole, PadelPreferredSide } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { getActiveOrganizerForUser } from "@/lib/organizerContext";
+import { getActiveOrganizationForUser } from "@/lib/organizationContext";
+import { parseOrganizationId, resolveOrganizationIdFromParams } from "@/lib/organizationId";
 
-const allowedRoles: OrganizerMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
+const allowedRoles: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
 
 export async function GET(req: NextRequest) {
   const supabase = await createSupabaseServer();
@@ -16,16 +17,15 @@ export async function GET(req: NextRequest) {
 
   if (!user) return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
-  const organizerIdParam = req.nextUrl.searchParams.get("organizerId");
-  const parsedOrgId = organizerIdParam ? Number(organizerIdParam) : null;
-  const { organizer } = await getActiveOrganizerForUser(user.id, {
-    organizerId: Number.isFinite(parsedOrgId) ? parsedOrgId : undefined,
+  const parsedOrgId = resolveOrganizationIdFromParams(req.nextUrl.searchParams);
+  const { organization } = await getActiveOrganizationForUser(user.id, {
+    organizationId: Number.isFinite(parsedOrgId) ? parsedOrgId : undefined,
     roles: allowedRoles,
   });
-  if (!organizer) return NextResponse.json({ ok: false, error: "NO_ORGANIZER" }, { status: 403 });
+  if (!organization) return NextResponse.json({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });
 
   const players = await prisma.padelPlayerProfile.findMany({
-    where: { organizerId: organizer.id },
+    where: { organizationId: organization.id },
     orderBy: [{ createdAt: "desc" }],
   });
 
@@ -43,13 +43,13 @@ export async function POST(req: NextRequest) {
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
   if (!body) return NextResponse.json({ ok: false, error: "INVALID_BODY" }, { status: 400 });
 
-  const organizerIdParam = body.organizerId ?? req.nextUrl.searchParams.get("organizerId");
-  const parsedOrgId = typeof organizerIdParam === "number" ? organizerIdParam : organizerIdParam ? Number(organizerIdParam) : null;
-  const { organizer } = await getActiveOrganizerForUser(user.id, {
-    organizerId: Number.isFinite(parsedOrgId) ? parsedOrgId : undefined,
+  const organizationIdParam = body.organizationId ?? resolveOrganizationIdFromParams(req.nextUrl.searchParams);
+  const parsedOrgId = parseOrganizationId(organizationIdParam);
+  const { organization } = await getActiveOrganizationForUser(user.id, {
+    organizationId: Number.isFinite(parsedOrgId) ? parsedOrgId : undefined,
     roles: allowedRoles,
   });
-  if (!organizer) return NextResponse.json({ ok: false, error: "NO_ORGANIZER" }, { status: 403 });
+  if (!organization) return NextResponse.json({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });
 
   const fullName = typeof body.fullName === "string" ? body.fullName.trim() : "";
   const displayName = typeof body.displayName === "string" ? body.displayName.trim() : fullName;
@@ -73,7 +73,7 @@ export async function POST(req: NextRequest) {
     const player = email
       ? await (async () => {
           const existing = await prisma.padelPlayerProfile.findFirst({
-            where: { organizerId: organizer.id, email },
+            where: { organizationId: organization.id, email },
             select: { id: true },
           });
           if (existing?.id) {
@@ -95,7 +95,7 @@ export async function POST(req: NextRequest) {
           }
           return prisma.padelPlayerProfile.create({
             data: {
-              organizerId: organizer.id,
+              organizationId: organization.id,
               fullName,
               displayName: displayName || fullName,
               email,
@@ -112,7 +112,7 @@ export async function POST(req: NextRequest) {
         })()
       : await prisma.padelPlayerProfile.create({
           data: {
-            organizerId: organizer.id,
+            organizationId: organization.id,
             fullName,
             displayName: displayName || fullName,
             phone,

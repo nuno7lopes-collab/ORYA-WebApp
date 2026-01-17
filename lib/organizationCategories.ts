@@ -1,38 +1,84 @@
-export const ORGANIZATION_CATEGORIES = ["EVENTOS", "PADEL", "RESERVAS", "CLUBS"] as const;
-export type OrganizationCategory = (typeof ORGANIZATION_CATEGORIES)[number];
-
-export const ORGANIZATION_MODULES = ["INSCRICOES"] as const;
+export const ORGANIZATION_MODULES = [
+  "EVENTOS",
+  "RESERVAS",
+  "TORNEIOS",
+  "STAFF",
+  "FINANCEIRO",
+  "MENSAGENS",
+  "MARKETING",
+  "LOJA",
+  "ANALYTICS",
+  "DEFINICOES",
+  "PERFIL_PUBLICO",
+  "INSCRICOES",
+] as const;
 export type OrganizationModule = (typeof ORGANIZATION_MODULES)[number];
 
-export const DEFAULT_ORGANIZATION_CATEGORY: OrganizationCategory = "EVENTOS";
-export const DEFAULT_ORGANIZATION_MODULES: OrganizationModule[] = ["INSCRICOES"];
+export const OPERATION_MODULES = ["EVENTOS", "RESERVAS", "TORNEIOS"] as const;
+export type OperationModule = (typeof OPERATION_MODULES)[number];
 
-const organizationCategorySet = new Set<OrganizationCategory>(ORGANIZATION_CATEGORIES);
+export const DEFAULT_PRIMARY_MODULE: OperationModule = "EVENTOS";
+export const CORE_ORGANIZATION_MODULES: OrganizationModule[] = [
+  "STAFF",
+  "FINANCEIRO",
+  "MARKETING",
+  "DEFINICOES",
+  "PERFIL_PUBLICO",
+];
+export const DEFAULT_ORGANIZATION_MODULES: OrganizationModule[] = [
+  ...CORE_ORGANIZATION_MODULES,
+  DEFAULT_PRIMARY_MODULE,
+];
+
+const operationModuleSet = new Set<OperationModule>(OPERATION_MODULES);
 const organizationModuleSet = new Set<OrganizationModule>(ORGANIZATION_MODULES);
 
-export const ORGANIZATION_CATEGORY_LABELS: Record<OrganizationCategory, string> = {
-  EVENTOS: "Eventos",
-  PADEL: "Padel",
-  RESERVAS: "Reservas",
-  CLUBS: "Clubes",
-};
-
-export function normalizeOrganizationCategory(value?: string | null): OrganizationCategory {
-  if (typeof value !== "string") return DEFAULT_ORGANIZATION_CATEGORY;
-  const normalized = value.trim().toUpperCase();
-  if (!normalized) return DEFAULT_ORGANIZATION_CATEGORY;
-  return organizationCategorySet.has(normalized as OrganizationCategory)
-    ? (normalized as OrganizationCategory)
-    : DEFAULT_ORGANIZATION_CATEGORY;
+export function getDefaultOrganizationModules(
+  primaryModule?: OperationModule | null,
+): OrganizationModule[] {
+  const resolvedPrimary = resolvePrimaryModule(primaryModule, null);
+  const modules = [...CORE_ORGANIZATION_MODULES, resolvedPrimary];
+  const unique = new Set<OrganizationModule>();
+  const normalized: OrganizationModule[] = [];
+  for (const entry of modules) {
+    if (!unique.has(entry)) {
+      unique.add(entry);
+      normalized.push(entry);
+    }
+  }
+  return normalized;
 }
 
-export function parseOrganizationCategory(value: unknown): OrganizationCategory | null {
+export function normalizePrimaryModule(value?: string | null): OperationModule {
+  if (typeof value !== "string") return DEFAULT_PRIMARY_MODULE;
+  const normalized = value.trim().toUpperCase();
+  if (!normalized) return DEFAULT_PRIMARY_MODULE;
+  return operationModuleSet.has(normalized as OperationModule)
+    ? (normalized as OperationModule)
+    : DEFAULT_PRIMARY_MODULE;
+}
+
+export function parsePrimaryModule(value: unknown): OperationModule | null {
   if (typeof value !== "string") return null;
   const normalized = value.trim().toUpperCase();
   if (!normalized) return null;
-  return organizationCategorySet.has(normalized as OrganizationCategory)
-    ? (normalized as OrganizationCategory)
+  return operationModuleSet.has(normalized as OperationModule)
+    ? (normalized as OperationModule)
     : null;
+}
+
+export function resolvePrimaryModule(
+  primaryModule?: string | null,
+  modules?: string[] | null,
+): OperationModule {
+  const parsed = parsePrimaryModule(primaryModule ?? null);
+  if (parsed) return parsed;
+  const fallback =
+    Array.isArray(modules) &&
+    modules
+      .map((module) => module.trim().toUpperCase())
+      .find((module) => operationModuleSet.has(module as OperationModule));
+  return fallback ? (fallback as OperationModule) : DEFAULT_PRIMARY_MODULE;
 }
 
 export function parseOrganizationModules(value: unknown): OrganizationModule[] | null {
@@ -40,8 +86,9 @@ export function parseOrganizationModules(value: unknown): OrganizationModule[] |
   const normalized: OrganizationModule[] = [];
   for (const entry of value) {
     if (typeof entry !== "string") return null;
-    const candidate = entry.trim().toUpperCase();
+    let candidate = entry.trim().toUpperCase();
     if (!candidate) return null;
+    if (candidate === "ANALYTICS") candidate = "FINANCEIRO";
     if (!organizationModuleSet.has(candidate as OrganizationModule)) return null;
     if (!normalized.includes(candidate as OrganizationModule)) {
       normalized.push(candidate as OrganizationModule);

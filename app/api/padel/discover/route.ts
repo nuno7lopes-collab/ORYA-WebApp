@@ -3,8 +3,18 @@ export const runtime = "nodejs";
 import { NextRequest, NextResponse } from "next/server";
 import { Prisma, padel_format, PadelEligibilityType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { resolvePadelCompetitionState } from "@/domain/padelCompetitionState";
+import { enforcePublicRateLimit } from "@/lib/padel/publicRateLimit";
 
 const DEFAULT_LIMIT = 12;
+const SUPPORTED_FORMATS = new Set<padel_format>([
+  padel_format.TODOS_CONTRA_TODOS,
+  padel_format.QUADRO_ELIMINATORIO,
+  padel_format.GRUPOS_ELIMINATORIAS,
+  padel_format.QUADRO_AB,
+  padel_format.NON_STOP,
+  padel_format.CAMPEONATO_LIGA,
+]);
 
 function clampLimit(raw: string | null) {
   const parsed = raw ? Number(raw) : NaN;
@@ -53,6 +63,12 @@ function buildDateFilter(dateParam: string | null, dayParam: string | null) {
 
 export async function GET(req: NextRequest) {
   try {
+    const rateLimited = await enforcePublicRateLimit(req, {
+      keyPrefix: "padel_discover",
+      max: 120,
+    });
+    if (rateLimited) return rateLimited;
+
     const params = req.nextUrl.searchParams;
     const q = params.get("q")?.trim() ?? "";
     const city = params.get("city")?.trim() ?? "";
@@ -75,8 +91,8 @@ export async function GET(req: NextRequest) {
       templateType: "PADEL",
       status: { in: ["PUBLISHED", "DATE_CHANGED"] },
       isDeleted: false,
-      organizerId: { not: null },
-      organizer: { status: "ACTIVE" },
+      organizationId: { not: null },
+      organization: { status: "ACTIVE" },
     };
 
     if (city && city.toLowerCase() !== "portugal") {
@@ -131,7 +147,7 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    if (formatParam && Object.values(padel_format).includes(formatParam as padel_format)) {
+    if (formatParam && SUPPORTED_FORMATS.has(formatParam as padel_format)) {
       andFilters.push({ padelTournamentConfig: { is: { format: formatParam as padel_format } } });
     }
 
@@ -159,8 +175,10 @@ export async function GET(req: NextRequest) {
       take: limit,
       include: {
         ticketTypes: { select: { price: true, status: true } },
-        organizer: { select: { publicName: true, username: true } },
-        padelTournamentConfig: { select: { format: true, eligibilityType: true, padelClubId: true } },
+        organization: { select: { publicName: true, username: true } },
+        padelTournamentConfig: {
+          select: { format: true, eligibilityType: true, padelClubId: true, advancedSettings: true },
+        },
         padelCategoryLinks: {
           where: { isEnabled: true },
           select: { padelCategoryId: true, category: { select: { id: true, label: true } } },
@@ -169,7 +187,14 @@ export async function GET(req: NextRequest) {
     });
 
     const levelsMap = new Map<number, { id: number; label: string }>();
-    const items = events.map((event) => {
+    const visibleEvents = events.filter((event) => {
+      const competitionState = resolvePadelCompetitionState({
+        eventStatus: event.status,
+        competitionState: (event.padelTournamentConfig?.advancedSettings as any)?.competitionState ?? null,
+      });
+      return competitionState === "DEVELOPMENT" || competitionState === "PUBLIC";
+    });
+    const items = visibleEvents.map((event) => {
       const ticketPrices = event.ticketTypes
         .map((t) => (typeof t.price === "number" ? t.price : null))
         .filter((p): p is number => p !== null);
@@ -196,7 +221,7 @@ export async function GET(req: NextRequest) {
         locationName: event.locationName ?? null,
         locationCity: event.locationCity ?? null,
         priceFrom,
-        organizerName: event.organizer?.publicName ?? event.organizer?.username ?? null,
+        organizationName: event.organization?.publicName ?? event.organization?.username ?? null,
         format: event.padelTournamentConfig?.format ?? null,
         eligibility: event.padelTournamentConfig?.eligibilityType ?? null,
         levels,

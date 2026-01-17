@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { CTA_PRIMARY, CTA_SECONDARY } from "@/app/organizador/dashboardUi";
+import { CTA_PRIMARY, CTA_SECONDARY } from "@/app/organizacao/dashboardUi";
 
 export default function NovaEventoPage() {
   return (
@@ -15,10 +15,10 @@ export default function NovaEventoPage() {
             organização.
           </p>
           <div className="mt-5 flex flex-wrap gap-2">
-            <Link href="/organizador/become" className={CTA_PRIMARY}>
+            <Link href="/organizacao/become" className={CTA_PRIMARY}>
               Criar organização
             </Link>
-            <Link href="/organizador?tab=create" className={CTA_SECONDARY}>
+            <Link href="/organizacao?tab=create" className={CTA_SECONDARY}>
               Ir para o dashboard
             </Link>
           </div>

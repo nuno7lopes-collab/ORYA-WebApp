@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { CTA_PRIMARY } from "@/app/organizador/dashboardUi";
 
 type Status = "idle" | "loading" | "success" | "error";
 
@@ -37,20 +36,20 @@ export default function PaymentTools() {
 
   return (
     <div className="space-y-3">
-      <form onSubmit={handleReprocess} className="space-y-2 rounded-2xl border border-white/10 bg-white/5 p-3">
-        <label className="text-[11px] text-white/70">Reprocessar PaymentIntent</label>
+      <form onSubmit={handleReprocess} className="admin-card-soft space-y-2 p-3">
+        <label className="text-[10px] uppercase tracking-[0.2em] text-white/45">Reprocessar PaymentIntent</label>
         <input
           type="text"
           value={pi}
           onChange={(e) => setPi(e.target.value)}
           placeholder="pi_..."
-          className="w-full rounded-xl border border-white/15 bg-black/50 px-3 py-2 text-sm text-white outline-none focus:border-white/30"
+          className="admin-input"
           required
         />
         <button
           type="submit"
           disabled={status === "loading"}
-          className={`${CTA_PRIMARY} px-4 py-2 text-sm disabled:opacity-60`}
+          className="admin-button px-4 py-2 text-sm disabled:opacity-60"
         >
           {status === "loading" ? "A reprocessar..." : "Reprocessar"}
         </button>

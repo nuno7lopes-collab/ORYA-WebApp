@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { Prisma, EventTemplateType } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 
 const DEFAULT_PAGE_SIZE = 12;
 
@@ -93,13 +93,12 @@ export async function GET(req: NextRequest) {
 
   const where: Prisma.EventWhereInput = {
     status: { in: ["PUBLISHED", "DATE_CHANGED"] },
-    isTest: { not: true },
     isDeleted: false,
   };
 
   const listingFilter: Prisma.EventWhereInput = {
-    organizerId: { not: null },
-    organizer: { status: "ACTIVE" },
+    organizationId: { not: null },
+    organization: { status: "ACTIVE" },
   };
   where.AND = Array.isArray(where.AND) ? [...where.AND, listingFilter] : [listingFilter];
 
@@ -130,7 +129,7 @@ export async function GET(req: NextRequest) {
   // Categorias principais: Padel vs Eventos gerais (tudo o resto)
   if (categoryFilters.length > 0) {
     const hasPadel = categoryFilters.includes("PADEL");
-    const hasGeneral = categoryFilters.includes("GERAL");
+    const hasGeneral = categoryFilters.includes("GERAL") || categoryFilters.includes("EVENTOS") || categoryFilters.includes("OTHER");
     const andFilters: Prisma.EventWhereInput[] = [];
 
     if (hasPadel && !hasGeneral) {
@@ -139,24 +138,6 @@ export async function GET(req: NextRequest) {
       andFilters.push({
         OR: [{ templateType: { not: "PADEL" } }, { templateType: null }],
       });
-    } else if (!hasPadel && !hasGeneral) {
-      const mapToTemplate: Record<string, EventTemplateType> = {
-        OUTRO: "OTHER",
-        FESTA: "PARTY",
-        CONCERTO: "OTHER",
-        PALESTRA: "TALK",
-        ARTE: "OTHER",
-        COMIDA: "OTHER",
-        DRINKS: "OTHER",
-        VOLUNTARIADO: "VOLUNTEERING",
-      };
-      const templateTypes = categoryFilters
-        .map((c) => mapToTemplate[c])
-        .filter((v): v is EventTemplateType => Boolean(v));
-
-      if (templateTypes.length > 0) {
-        andFilters.push({ templateType: { in: templateTypes } });
-      }
     }
 
     if (andFilters.length > 0) {
@@ -259,7 +240,7 @@ export async function GET(req: NextRequest) {
           status: true,
         },
       },
-      organizer: {
+      organization: {
         select: {
           publicName: true,
         },
@@ -306,24 +287,24 @@ export async function GET(req: NextRequest) {
 
     let orderedEvents = events;
     if (viewerId && events.length > 0 && searchParam && searchParam.trim().length >= 1) {
-      const organizerIds = Array.from(
+      const organizationIds = Array.from(
         new Set(
           events
-            .map((event) => event.organizerId)
+            .map((event) => event.organizationId)
             .filter((id): id is number => typeof id === "number"),
         ),
       );
-      if (organizerIds.length > 0) {
-        const rows = await prisma.organizer_follows.findMany({
-          where: { follower_id: viewerId, organizer_id: { in: organizerIds } },
-          select: { organizer_id: true },
+      if (organizationIds.length > 0) {
+        const rows = await prisma.organization_follows.findMany({
+          where: { follower_id: viewerId, organization_id: { in: organizationIds } },
+          select: { organization_id: true },
         });
         if (rows.length > 0) {
-          const followedIds = new Set(rows.map((row) => row.organizer_id));
+          const followedIds = new Set(rows.map((row) => row.organization_id));
           const followed: typeof events = [];
           const rest: typeof events = [];
           events.forEach((event) => {
-            if (event.organizerId && followedIds.has(event.organizerId)) {
+            if (event.organizationId && followedIds.has(event.organizationId)) {
               followed.push(event);
             } else {
               rest.push(event);
@@ -356,7 +337,7 @@ export async function GET(req: NextRequest) {
       }
 
       const ownerProfile = event.ownerUserId ? ownerMap.get(event.ownerUserId) : null;
-      const hostName = event.organizer?.publicName ?? ownerProfile?.fullName ?? null;
+      const hostName = event.organization?.publicName ?? ownerProfile?.fullName ?? null;
       const hostUsername = ownerProfile?.username ?? null;
 
       const templateToCategory: Record<string, string> = {

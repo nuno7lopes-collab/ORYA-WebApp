@@ -1,6 +1,4 @@
 -- Baseline schema for app_v3 (generated from production).
-CREATE EXTENSION IF NOT EXISTS "pgcrypto";
-CREATE EXTENSION IF NOT EXISTS "citext";
 CREATE SCHEMA IF NOT EXISTS "app_v3";
 CREATE TYPE app_v3."AccountStatus" AS ENUM (
     'ACTIVE',
@@ -47,7 +45,7 @@ CREATE TYPE app_v3."EventTemplateType" AS ENUM (
     'OTHER'
 );
 CREATE TYPE app_v3."EventType" AS ENUM (
-    'ORGANIZER_EVENT'
+    'ORGANIZATION_EVENT'
 );
 CREATE TYPE app_v3."FeeMode" AS ENUM (
     'INCLUDED',
@@ -69,8 +67,8 @@ CREATE TYPE app_v3."NotificationPriority" AS ENUM (
     'HIGH'
 );
 CREATE TYPE app_v3."NotificationType" AS ENUM (
-    'ORGANIZER_INVITE',
-    'ORGANIZER_TRANSFER',
+    'ORGANIZATION_INVITE',
+    'ORGANIZATION_TRANSFER',
     'STAFF_INVITE',
     'STAFF_ROLE_CHANGE',
     'EVENT_SALE',
@@ -88,7 +86,7 @@ CREATE TYPE app_v3."NotificationType" AS ENUM (
     'TICKET_TRANSFER_ACCEPTED',
     'TICKET_TRANSFER_DECLINED',
     'CLUB_INVITE',
-    'NEW_EVENT_FROM_FOLLOWED_ORGANIZER'
+    'NEW_EVENT_FROM_FOLLOWED_ORGANIZATION'
 );
 CREATE TYPE app_v3."OperationStatus" AS ENUM (
     'PENDING',
@@ -151,13 +149,13 @@ CREATE TYPE app_v3."OrganizationReviewStatus" AS ENUM (
     'APPROVED',
     'REJECTED'
 );
-CREATE TYPE app_v3."OrganizerEmailRequestStatus" AS ENUM (
+CREATE TYPE app_v3."OrganizationEmailRequestStatus" AS ENUM (
     'PENDING',
     'CONFIRMED',
     'CANCELLED',
     'EXPIRED'
 );
-CREATE TYPE app_v3."OrganizerMemberRole" AS ENUM (
+CREATE TYPE app_v3."OrganizationMemberRole" AS ENUM (
     'OWNER',
     'CO_OWNER',
     'ADMIN',
@@ -165,13 +163,13 @@ CREATE TYPE app_v3."OrganizerMemberRole" AS ENUM (
     'VIEWER',
     'PROMOTER'
 );
-CREATE TYPE app_v3."OrganizerOwnerTransferStatus" AS ENUM (
+CREATE TYPE app_v3."OrganizationOwnerTransferStatus" AS ENUM (
     'PENDING',
     'CONFIRMED',
     'CANCELLED',
     'EXPIRED'
 );
-CREATE TYPE app_v3."OrganizerStatus" AS ENUM (
+CREATE TYPE app_v3."OrganizationStatus" AS ENUM (
     'PENDING',
     'ACTIVE',
     'SUSPENDED'
@@ -244,7 +242,7 @@ CREATE TYPE app_v3."PaymentMode" AS ENUM (
     'TEST'
 );
 CREATE TYPE app_v3."PayoutMode" AS ENUM (
-    'ORGANIZER',
+    'ORGANIZATION',
     'PLATFORM'
 );
 CREATE TYPE app_v3."PayoutRecordStatus" AS ENUM (
@@ -257,7 +255,7 @@ CREATE TYPE app_v3."PromoType" AS ENUM (
     'FIXED'
 );
 CREATE TYPE app_v3."RefundFeePayer" AS ENUM (
-    'ORGANIZER',
+    'ORGANIZATION',
     'CUSTOMER'
 );
 CREATE TYPE app_v3."RefundReason" AS ENUM (
@@ -449,7 +447,7 @@ ALTER SEQUENCE app_v3.booking_policy_refs_id_seq OWNED BY app_v3.booking_policy_
 CREATE TABLE app_v3.bookings (
     id integer NOT NULL,
     service_id integer NOT NULL,
-    organizer_id integer NOT NULL,
+    organization_id integer NOT NULL,
     user_id uuid NOT NULL,
     availability_id integer,
     payment_intent_id text,
@@ -471,7 +469,7 @@ CREATE SEQUENCE app_v3.bookings_id_seq
 ALTER SEQUENCE app_v3.bookings_id_seq OWNED BY app_v3.bookings.id;
 CREATE TABLE app_v3.connect_accounts (
     id integer NOT NULL,
-    organizer_id integer NOT NULL,
+    organization_id integer NOT NULL,
     stripe_account_id text NOT NULL,
     created_at timestamp(6) with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_at timestamp(6) with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL
@@ -586,9 +584,9 @@ CREATE TABLE app_v3.events (
     slug text NOT NULL,
     title text NOT NULL,
     description text NOT NULL,
-    type app_v3."EventType" DEFAULT 'ORGANIZER_EVENT'::app_v3."EventType" NOT NULL,
+    type app_v3."EventType" DEFAULT 'ORGANIZATION_EVENT'::app_v3."EventType" NOT NULL,
     template_type app_v3."EventTemplateType",
-    organizer_id integer,
+    organization_id integer,
     starts_at timestamp(3) without time zone NOT NULL,
     ends_at timestamp(3) without time zone NOT NULL,
     location_name text NOT NULL,
@@ -610,8 +608,7 @@ CREATE TABLE app_v3.events (
     platform_fee_bps_override integer,
     platform_fee_fixed_cents_override integer,
     fee_mode app_v3."FeeMode" DEFAULT 'INCLUDED'::app_v3."FeeMode" NOT NULL,
-    is_test boolean DEFAULT false NOT NULL,
-    payout_mode app_v3."PayoutMode" DEFAULT 'ORGANIZER'::app_v3."PayoutMode" NOT NULL,
+    payout_mode app_v3."PayoutMode" DEFAULT 'ORGANIZATION'::app_v3."PayoutMode" NOT NULL,
     invite_only boolean DEFAULT false NOT NULL,
     live_stream_url text,
     public_access_mode app_v3."EventPublicAccessMode" DEFAULT 'OPEN'::app_v3."EventPublicAccessMode" NOT NULL,
@@ -712,7 +709,7 @@ CREATE TABLE app_v3.notifications (
     cta_label text,
     priority app_v3."NotificationPriority" DEFAULT 'NORMAL'::app_v3."NotificationPriority" NOT NULL,
     from_user_id uuid,
-    organizer_id integer,
+    organization_id integer,
     event_id integer,
     ticket_id text,
     invite_id uuid,
@@ -736,7 +733,7 @@ CREATE TABLE app_v3.operations (
     payment_intent_id text,
     stripe_event_id text,
     event_id integer,
-    organizer_id integer,
+    organization_id integer,
     pairing_id integer,
     created_at timestamp(6) with time zone DEFAULT now() NOT NULL,
     updated_at timestamp(6) with time zone DEFAULT now() NOT NULL
@@ -751,7 +748,7 @@ CREATE SEQUENCE app_v3.operations_id_seq
 ALTER SEQUENCE app_v3.operations_id_seq OWNED BY app_v3.operations.id;
 CREATE TABLE app_v3.organization_audit_logs (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
-    organizer_id integer NOT NULL,
+    organization_id integer NOT NULL,
     actor_user_id uuid,
     action text NOT NULL,
     from_user_id uuid,
@@ -802,7 +799,7 @@ CREATE SEQUENCE app_v3.organization_form_submissions_id_seq
 ALTER SEQUENCE app_v3.organization_form_submissions_id_seq OWNED BY app_v3.organization_form_submissions.id;
 CREATE TABLE app_v3.organization_forms (
     id integer NOT NULL,
-    organizer_id integer NOT NULL,
+    organization_id integer NOT NULL,
     title text NOT NULL,
     description text,
     status app_v3."OrganizationFormStatus" DEFAULT 'DRAFT'::app_v3."OrganizationFormStatus" NOT NULL,
@@ -822,16 +819,16 @@ CREATE SEQUENCE app_v3.organization_forms_id_seq
     CACHE 1;
 ALTER SEQUENCE app_v3.organization_forms_id_seq OWNED BY app_v3.organization_forms.id;
 CREATE TABLE app_v3.organization_modules (
-    organizer_id integer NOT NULL,
+    organization_id integer NOT NULL,
     module_key app_v3."OrganizationModule" NOT NULL,
     enabled boolean DEFAULT true NOT NULL
 );
 CREATE TABLE app_v3.organization_owner_transfers (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
-    organizer_id integer NOT NULL,
+    organization_id integer NOT NULL,
     from_user_id uuid NOT NULL,
     to_user_id uuid NOT NULL,
-    status app_v3."OrganizerOwnerTransferStatus" DEFAULT 'PENDING'::app_v3."OrganizerOwnerTransferStatus" NOT NULL,
+    status app_v3."OrganizationOwnerTransferStatus" DEFAULT 'PENDING'::app_v3."OrganizationOwnerTransferStatus" NOT NULL,
     token text NOT NULL,
     expires_at timestamp with time zone NOT NULL,
     created_at timestamp with time zone DEFAULT now(),
@@ -840,7 +837,7 @@ CREATE TABLE app_v3.organization_owner_transfers (
 );
 CREATE TABLE app_v3.organization_policies (
     id integer NOT NULL,
-    organizer_id integer NOT NULL,
+    organization_id integer NOT NULL,
     name text NOT NULL,
     policy_type app_v3."OrganizationPolicyType" NOT NULL,
     cancellation_window_minutes integer,
@@ -857,7 +854,7 @@ CREATE SEQUENCE app_v3.organization_policies_id_seq
 ALTER SEQUENCE app_v3.organization_policies_id_seq OWNED BY app_v3.organization_policies.id;
 CREATE TABLE app_v3.organization_reviews (
     id integer NOT NULL,
-    organizer_id integer NOT NULL,
+    organization_id integer NOT NULL,
     user_id uuid NOT NULL,
     rating integer NOT NULL,
     body text,
@@ -873,27 +870,27 @@ CREATE SEQUENCE app_v3.organization_reviews_id_seq
     NO MAXVALUE
     CACHE 1;
 ALTER SEQUENCE app_v3.organization_reviews_id_seq OWNED BY app_v3.organization_reviews.id;
-CREATE TABLE app_v3.organizer_follows (
+CREATE TABLE app_v3.organization_follows (
     id integer NOT NULL,
     follower_id uuid NOT NULL,
-    organizer_id integer NOT NULL,
+    organization_id integer NOT NULL,
     created_at timestamp(6) with time zone DEFAULT now() NOT NULL
 );
-CREATE SEQUENCE app_v3.organizer_follows_id_seq
+CREATE SEQUENCE app_v3.organization_follows_id_seq
     AS integer
     START WITH 1
     INCREMENT BY 1
     NO MINVALUE
     NO MAXVALUE
     CACHE 1;
-ALTER SEQUENCE app_v3.organizer_follows_id_seq OWNED BY app_v3.organizer_follows.id;
-CREATE TABLE app_v3.organizer_member_invites (
+ALTER SEQUENCE app_v3.organization_follows_id_seq OWNED BY app_v3.organization_follows.id;
+CREATE TABLE app_v3.organization_member_invites (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
-    organizer_id integer NOT NULL,
+    organization_id integer NOT NULL,
     invited_by_user_id uuid NOT NULL,
     target_identifier extensions.citext NOT NULL,
     target_user_id uuid,
-    role app_v3."OrganizerMemberRole" NOT NULL,
+    role app_v3."OrganizationMemberRole" NOT NULL,
     token uuid NOT NULL,
     expires_at timestamp with time zone NOT NULL,
     accepted_at timestamp with time zone,
@@ -902,19 +899,19 @@ CREATE TABLE app_v3.organizer_member_invites (
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now()
 );
-CREATE TABLE app_v3.organizer_members (
+CREATE TABLE app_v3.organization_members (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
-    organizer_id integer NOT NULL,
+    organization_id integer NOT NULL,
     user_id uuid NOT NULL,
-    role app_v3."OrganizerMemberRole" NOT NULL,
+    role app_v3."OrganizationMemberRole" NOT NULL,
     invited_by_user_id uuid,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
     last_used_at timestamp with time zone
 );
-CREATE TABLE app_v3.organizer_official_email_requests (
+CREATE TABLE app_v3.organization_official_email_requests (
     id integer NOT NULL,
-    organizer_id integer NOT NULL,
+    organization_id integer NOT NULL,
     requested_by_user_id uuid,
     new_email text NOT NULL,
     token text NOT NULL,
@@ -924,18 +921,18 @@ CREATE TABLE app_v3.organizer_official_email_requests (
     confirmed_at timestamp with time zone,
     cancelled_at timestamp with time zone
 );
-CREATE SEQUENCE app_v3.organizer_official_email_requests_id_seq
+CREATE SEQUENCE app_v3.organization_official_email_requests_id_seq
     AS integer
     START WITH 1
     INCREMENT BY 1
     NO MINVALUE
     NO MAXVALUE
     CACHE 1;
-ALTER SEQUENCE app_v3.organizer_official_email_requests_id_seq OWNED BY app_v3.organizer_official_email_requests.id;
-CREATE TABLE app_v3.organizers (
+ALTER SEQUENCE app_v3.organization_official_email_requests_id_seq OWNED BY app_v3.organization_official_email_requests.id;
+CREATE TABLE app_v3.organizations (
     id integer NOT NULL,
     stripe_account_id text,
-    status app_v3."OrganizerStatus" DEFAULT 'PENDING'::app_v3."OrganizerStatus" NOT NULL,
+    status app_v3."OrganizationStatus" DEFAULT 'PENDING'::app_v3."OrganizationStatus" NOT NULL,
     created_at timestamp(3) without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_at timestamp(3) without time zone DEFAULT now() NOT NULL,
     fee_mode app_v3."FeeMode" DEFAULT 'ADDED'::app_v3."FeeMode" NOT NULL,
@@ -987,17 +984,17 @@ CREATE TABLE app_v3.organizers (
     stripe_customer_id text,
     stripe_subscription_id text
 );
-CREATE SEQUENCE app_v3.organizers_id_seq
+CREATE SEQUENCE app_v3.organizations_id_seq
     AS integer
     START WITH 1
     INCREMENT BY 1
     NO MINVALUE
     NO MAXVALUE
     CACHE 1;
-ALTER SEQUENCE app_v3.organizers_id_seq OWNED BY app_v3.organizers.id;
+ALTER SEQUENCE app_v3.organizations_id_seq OWNED BY app_v3.organizations.id;
 CREATE TABLE app_v3.padel_availabilities (
     id integer NOT NULL,
-    organizer_id integer NOT NULL,
+    organization_id integer NOT NULL,
     event_id integer NOT NULL,
     player_profile_id integer,
     player_name text,
@@ -1018,7 +1015,7 @@ CREATE SEQUENCE app_v3.padel_availabilities_id_seq
 ALTER SEQUENCE app_v3.padel_availabilities_id_seq OWNED BY app_v3.padel_availabilities.id;
 CREATE TABLE app_v3.padel_categories (
     id integer NOT NULL,
-    organizer_id integer NOT NULL,
+    organization_id integer NOT NULL,
     label text NOT NULL,
     gender_restriction text,
     min_level text,
@@ -1080,7 +1077,7 @@ CREATE SEQUENCE app_v3.padel_club_staff_id_seq
 ALTER SEQUENCE app_v3.padel_club_staff_id_seq OWNED BY app_v3.padel_club_staff.id;
 CREATE TABLE app_v3.padel_clubs (
     id integer NOT NULL,
-    organizer_id integer NOT NULL,
+    organization_id integer NOT NULL,
     name text NOT NULL,
     short_name text,
     city text,
@@ -1105,7 +1102,7 @@ CREATE SEQUENCE app_v3.padel_clubs_id_seq
 ALTER SEQUENCE app_v3.padel_clubs_id_seq OWNED BY app_v3.padel_clubs.id;
 CREATE TABLE app_v3.padel_court_blocks (
     id integer NOT NULL,
-    organizer_id integer NOT NULL,
+    organization_id integer NOT NULL,
     event_id integer NOT NULL,
     padel_club_id integer,
     court_id integer,
@@ -1224,7 +1221,7 @@ ALTER SEQUENCE app_v3.padel_pairing_slots_id_seq OWNED BY app_v3.padel_pairing_s
 CREATE TABLE app_v3.padel_pairings (
     id integer NOT NULL,
     event_id integer NOT NULL,
-    organizer_id integer NOT NULL,
+    organization_id integer NOT NULL,
     category_id integer,
     payment_mode app_v3."PadelPaymentMode" NOT NULL,
     pairing_status app_v3."PadelPairingStatus" DEFAULT 'INCOMPLETE'::app_v3."PadelPairingStatus" NOT NULL,
@@ -1269,7 +1266,7 @@ CREATE SEQUENCE app_v3.padel_pairings_id_seq
 ALTER SEQUENCE app_v3.padel_pairings_id_seq OWNED BY app_v3.padel_pairings.id;
 CREATE TABLE app_v3.padel_player_profiles (
     id integer NOT NULL,
-    organizer_id integer NOT NULL,
+    organization_id integer NOT NULL,
     user_id uuid,
     full_name text NOT NULL,
     email extensions.citext,
@@ -1295,7 +1292,7 @@ CREATE SEQUENCE app_v3.padel_player_profiles_id_seq
 ALTER SEQUENCE app_v3.padel_player_profiles_id_seq OWNED BY app_v3.padel_player_profiles.id;
 CREATE TABLE app_v3.padel_ranking_entries (
     id integer NOT NULL,
-    organizer_id integer NOT NULL,
+    organization_id integer NOT NULL,
     player_id integer NOT NULL,
     event_id integer NOT NULL,
     points integer DEFAULT 0 NOT NULL,
@@ -1315,7 +1312,7 @@ CREATE SEQUENCE app_v3.padel_ranking_entries_id_seq
 ALTER SEQUENCE app_v3.padel_ranking_entries_id_seq OWNED BY app_v3.padel_ranking_entries.id;
 CREATE TABLE app_v3.padel_rule_sets (
     id integer NOT NULL,
-    organizer_id integer NOT NULL,
+    organization_id integer NOT NULL,
     name text NOT NULL,
     tie_break_rules jsonb DEFAULT '{}'::jsonb NOT NULL,
     points_table jsonb DEFAULT '{}'::jsonb NOT NULL,
@@ -1354,7 +1351,7 @@ ALTER SEQUENCE app_v3.padel_teams_id_seq OWNED BY app_v3.padel_teams.id;
 CREATE TABLE app_v3.padel_tournament_configs (
     id integer NOT NULL,
     event_id integer NOT NULL,
-    organizer_id integer NOT NULL,
+    organization_id integer NOT NULL,
     format app_v3.padel_format NOT NULL,
     number_of_courts integer DEFAULT 1 NOT NULL,
     rule_set_id integer,
@@ -1427,7 +1424,7 @@ CREATE SEQUENCE app_v3.payment_events_id_seq
 ALTER SEQUENCE app_v3.payment_events_id_seq OWNED BY app_v3.payment_events.id;
 CREATE TABLE app_v3.payout_records (
     id integer NOT NULL,
-    organizer_id integer NOT NULL,
+    organization_id integer NOT NULL,
     stripe_payout_id text,
     amount_cents integer NOT NULL,
     currency text DEFAULT 'EUR'::text NOT NULL,
@@ -1628,7 +1625,7 @@ CREATE SEQUENCE app_v3.service_staff_id_seq
 ALTER SEQUENCE app_v3.service_staff_id_seq OWNED BY app_v3.service_staff.id;
 CREATE TABLE app_v3.services (
     id integer NOT NULL,
-    organizer_id integer NOT NULL,
+    organization_id integer NOT NULL,
     policy_id integer,
     name text NOT NULL,
     description text,
@@ -1667,7 +1664,7 @@ CREATE SEQUENCE app_v3.split_payment_participants_id_seq
 ALTER SEQUENCE app_v3.split_payment_participants_id_seq OWNED BY app_v3.split_payment_participants.id;
 CREATE TABLE app_v3.split_payments (
     id integer NOT NULL,
-    organizer_id integer NOT NULL,
+    organization_id integer NOT NULL,
     captain_user_id uuid,
     total_amount_cents integer NOT NULL,
     currency text DEFAULT 'EUR'::text NOT NULL,
@@ -1686,7 +1683,7 @@ CREATE SEQUENCE app_v3.split_payments_id_seq
 ALTER SEQUENCE app_v3.split_payments_id_seq OWNED BY app_v3.split_payments.id;
 CREATE TABLE app_v3.staff_assignments (
     id integer NOT NULL,
-    organizer_id integer NOT NULL,
+    organization_id integer NOT NULL,
     scope app_v3."StaffScope" NOT NULL,
     event_id integer,
     created_at timestamp(3) without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
@@ -1930,7 +1927,7 @@ CREATE SEQUENCE app_v3.tournaments_id_seq
 ALTER SEQUENCE app_v3.tournaments_id_seq OWNED BY app_v3.tournaments.id;
 CREATE TABLE app_v3.transactions (
     id integer NOT NULL,
-    organizer_id integer NOT NULL,
+    organization_id integer NOT NULL,
     user_id uuid,
     amount_cents integer NOT NULL,
     currency text DEFAULT 'EUR'::text NOT NULL,
@@ -1983,9 +1980,9 @@ ALTER TABLE ONLY app_v3.organization_form_submissions ALTER COLUMN id SET DEFAUL
 ALTER TABLE ONLY app_v3.organization_forms ALTER COLUMN id SET DEFAULT nextval('app_v3.organization_forms_id_seq'::regclass);
 ALTER TABLE ONLY app_v3.organization_policies ALTER COLUMN id SET DEFAULT nextval('app_v3.organization_policies_id_seq'::regclass);
 ALTER TABLE ONLY app_v3.organization_reviews ALTER COLUMN id SET DEFAULT nextval('app_v3.organization_reviews_id_seq'::regclass);
-ALTER TABLE ONLY app_v3.organizer_follows ALTER COLUMN id SET DEFAULT nextval('app_v3.organizer_follows_id_seq'::regclass);
-ALTER TABLE ONLY app_v3.organizer_official_email_requests ALTER COLUMN id SET DEFAULT nextval('app_v3.organizer_official_email_requests_id_seq'::regclass);
-ALTER TABLE ONLY app_v3.organizers ALTER COLUMN id SET DEFAULT nextval('app_v3.organizers_id_seq'::regclass);
+ALTER TABLE ONLY app_v3.organization_follows ALTER COLUMN id SET DEFAULT nextval('app_v3.organization_follows_id_seq'::regclass);
+ALTER TABLE ONLY app_v3.organization_official_email_requests ALTER COLUMN id SET DEFAULT nextval('app_v3.organization_official_email_requests_id_seq'::regclass);
+ALTER TABLE ONLY app_v3.organizations ALTER COLUMN id SET DEFAULT nextval('app_v3.organizations_id_seq'::regclass);
 ALTER TABLE ONLY app_v3.padel_availabilities ALTER COLUMN id SET DEFAULT nextval('app_v3.padel_availabilities_id_seq'::regclass);
 ALTER TABLE ONLY app_v3.padel_categories ALTER COLUMN id SET DEFAULT nextval('app_v3.padel_categories_id_seq'::regclass);
 ALTER TABLE ONLY app_v3.padel_club_courts ALTER COLUMN id SET DEFAULT nextval('app_v3.padel_club_courts_id_seq'::regclass);
@@ -2088,7 +2085,7 @@ ALTER TABLE ONLY app_v3.organization_form_submissions
 ALTER TABLE ONLY app_v3.organization_forms
     ADD CONSTRAINT organization_forms_pkey PRIMARY KEY (id);
 ALTER TABLE ONLY app_v3.organization_modules
-    ADD CONSTRAINT organization_modules_pkey PRIMARY KEY (organizer_id, module_key);
+    ADD CONSTRAINT organization_modules_pkey PRIMARY KEY (organization_id, module_key);
 ALTER TABLE ONLY app_v3.organization_owner_transfers
     ADD CONSTRAINT organization_owner_transfers_pkey PRIMARY KEY (id);
 ALTER TABLE ONLY app_v3.organization_owner_transfers
@@ -2097,20 +2094,20 @@ ALTER TABLE ONLY app_v3.organization_policies
     ADD CONSTRAINT organization_policies_pkey PRIMARY KEY (id);
 ALTER TABLE ONLY app_v3.organization_reviews
     ADD CONSTRAINT organization_reviews_pkey PRIMARY KEY (id);
-ALTER TABLE ONLY app_v3.organizer_follows
-    ADD CONSTRAINT organizer_follows_pkey PRIMARY KEY (id);
-ALTER TABLE ONLY app_v3.organizer_member_invites
-    ADD CONSTRAINT organizer_member_invites_pkey PRIMARY KEY (id);
-ALTER TABLE ONLY app_v3.organizer_member_invites
-    ADD CONSTRAINT organizer_member_invites_token_key UNIQUE (token);
-ALTER TABLE ONLY app_v3.organizer_members
-    ADD CONSTRAINT organizer_members_pkey PRIMARY KEY (id);
-ALTER TABLE ONLY app_v3.organizer_official_email_requests
-    ADD CONSTRAINT organizer_official_email_requests_pkey PRIMARY KEY (id);
-ALTER TABLE ONLY app_v3.organizer_official_email_requests
-    ADD CONSTRAINT organizer_official_email_requests_token_key UNIQUE (token);
-ALTER TABLE ONLY app_v3.organizers
-    ADD CONSTRAINT organizers_pkey PRIMARY KEY (id);
+ALTER TABLE ONLY app_v3.organization_follows
+    ADD CONSTRAINT organization_follows_pkey PRIMARY KEY (id);
+ALTER TABLE ONLY app_v3.organization_member_invites
+    ADD CONSTRAINT organization_member_invites_pkey PRIMARY KEY (id);
+ALTER TABLE ONLY app_v3.organization_member_invites
+    ADD CONSTRAINT organization_member_invites_token_key UNIQUE (token);
+ALTER TABLE ONLY app_v3.organization_members
+    ADD CONSTRAINT organization_members_pkey PRIMARY KEY (id);
+ALTER TABLE ONLY app_v3.organization_official_email_requests
+    ADD CONSTRAINT organization_official_email_requests_pkey PRIMARY KEY (id);
+ALTER TABLE ONLY app_v3.organization_official_email_requests
+    ADD CONSTRAINT organization_official_email_requests_token_key UNIQUE (token);
+ALTER TABLE ONLY app_v3.organizations
+    ADD CONSTRAINT organizations_pkey PRIMARY KEY (id);
 ALTER TABLE ONLY app_v3.padel_availabilities
     ADD CONSTRAINT padel_availabilities_pkey PRIMARY KEY (id);
 ALTER TABLE ONLY app_v3.padel_categories
@@ -2227,12 +2224,12 @@ CREATE INDEX availabilities_status_idx ON app_v3.availabilities USING btree (sta
 CREATE UNIQUE INDEX booking_policy_refs_booking_id_key ON app_v3.booking_policy_refs USING btree (booking_id);
 CREATE INDEX booking_policy_refs_policy_id_idx ON app_v3.booking_policy_refs USING btree (policy_id);
 CREATE INDEX bookings_availability_id_idx ON app_v3.bookings USING btree (availability_id);
-CREATE INDEX bookings_organizer_id_idx ON app_v3.bookings USING btree (organizer_id);
+CREATE INDEX bookings_organization_id_idx ON app_v3.bookings USING btree (organization_id);
 CREATE UNIQUE INDEX bookings_payment_intent_id_key ON app_v3.bookings USING btree (payment_intent_id);
 CREATE INDEX bookings_service_id_idx ON app_v3.bookings USING btree (service_id);
 CREATE INDEX bookings_status_idx ON app_v3.bookings USING btree (status);
 CREATE INDEX bookings_user_id_idx ON app_v3.bookings USING btree (user_id);
-CREATE UNIQUE INDEX connect_accounts_organizer_id_key ON app_v3.connect_accounts USING btree (organizer_id);
+CREATE UNIQUE INDEX connect_accounts_organization_id_key ON app_v3.connect_accounts USING btree (organization_id);
 CREATE UNIQUE INDEX connect_accounts_stripe_account_id_key ON app_v3.connect_accounts USING btree (stripe_account_id);
 CREATE INDEX email_outbox_purchase_idx ON app_v3.email_outbox USING btree (purchase_id);
 CREATE INDEX email_outbox_recipient_idx ON app_v3.email_outbox USING btree (recipient);
@@ -2247,7 +2244,7 @@ CREATE UNIQUE INDEX event_invites_event_identifier_uq ON app_v3.event_invites US
 CREATE INDEX event_invites_event_idx ON app_v3.event_invites USING btree (event_id);
 CREATE INDEX event_invites_event_scope_idx ON app_v3.event_invites USING btree (event_id, scope);
 CREATE INDEX event_invites_target_idx ON app_v3.event_invites USING btree (target_user_id);
-CREATE INDEX events_organizer_id_idx ON app_v3.events USING btree (organizer_id);
+CREATE INDEX events_organization_id_idx ON app_v3.events USING btree (organization_id);
 CREATE INDEX events_owner_user_id_idx ON app_v3.events USING btree (owner_user_id);
 CREATE UNIQUE INDEX events_slug_key ON app_v3.events USING btree (slug);
 CREATE INDEX events_type_status_idx ON app_v3.events USING btree (type, status);
@@ -2256,8 +2253,8 @@ CREATE INDEX guest_ticket_links_email_idx ON app_v3.guest_ticket_links USING btr
 CREATE INDEX guest_ticket_links_migrated_idx ON app_v3.guest_ticket_links USING btree (migrated_to_user_id);
 CREATE INDEX idx_follows_follower ON app_v3.follows USING btree (follower_id);
 CREATE INDEX idx_follows_following ON app_v3.follows USING btree (following_id);
-CREATE INDEX idx_organizer_follows_follower ON app_v3.organizer_follows USING btree (follower_id);
-CREATE INDEX idx_organizer_follows_organizer ON app_v3.organizer_follows USING btree (organizer_id);
+CREATE INDEX idx_organization_follows_follower ON app_v3.organization_follows USING btree (follower_id);
+CREATE INDEX idx_organization_follows_organization ON app_v3.organization_follows USING btree (organization_id);
 CREATE INDEX match_notifications_match_idx ON app_v3.match_notifications USING btree (match_id);
 CREATE UNIQUE INDEX notification_outbox_dedupe_idx ON app_v3.notification_outbox USING btree (dedupe_key);
 CREATE INDEX notification_outbox_status_idx ON app_v3.notification_outbox USING btree (status);
@@ -2265,7 +2262,7 @@ CREATE INDEX notification_outbox_user_idx ON app_v3.notification_outbox USING bt
 CREATE INDEX notifications_event_id_idx ON app_v3.notifications USING btree (event_id);
 CREATE INDEX notifications_from_user_id_idx ON app_v3.notifications USING btree (from_user_id);
 CREATE INDEX notifications_invite_id_idx ON app_v3.notifications USING btree (invite_id);
-CREATE INDEX notifications_organizer_id_idx ON app_v3.notifications USING btree (organizer_id);
+CREATE INDEX notifications_organization_id_idx ON app_v3.notifications USING btree (organization_id);
 CREATE INDEX notifications_ticket_id_idx ON app_v3.notifications USING btree (ticket_id);
 CREATE INDEX notifications_user_id_created_at_idx ON app_v3.notifications USING btree (user_id, created_at);
 CREATE INDEX notifications_user_id_read_at_idx ON app_v3.notifications USING btree (user_id, read_at);
@@ -2274,40 +2271,40 @@ CREATE INDEX operations_purchase_idx ON app_v3.operations USING btree (purchase_
 CREATE INDEX operations_status_idx ON app_v3.operations USING btree (status);
 CREATE INDEX operations_stripe_event_idx ON app_v3.operations USING btree (stripe_event_id);
 CREATE INDEX organization_audit_logs_actor_idx ON app_v3.organization_audit_logs USING btree (actor_user_id);
-CREATE INDEX organization_audit_logs_org_idx ON app_v3.organization_audit_logs USING btree (organizer_id);
+CREATE INDEX organization_audit_logs_org_idx ON app_v3.organization_audit_logs USING btree (organization_id);
 CREATE INDEX organization_form_fields_form_id_idx ON app_v3.organization_form_fields USING btree (form_id);
 CREATE INDEX organization_form_submissions_form_id_idx ON app_v3.organization_form_submissions USING btree (form_id);
 CREATE INDEX organization_form_submissions_user_id_idx ON app_v3.organization_form_submissions USING btree (user_id);
-CREATE INDEX organization_forms_organizer_id_idx ON app_v3.organization_forms USING btree (organizer_id);
+CREATE INDEX organization_forms_organization_id_idx ON app_v3.organization_forms USING btree (organization_id);
 CREATE INDEX organization_owner_transfers_from_idx ON app_v3.organization_owner_transfers USING btree (from_user_id);
-CREATE INDEX organization_owner_transfers_org_idx ON app_v3.organization_owner_transfers USING btree (organizer_id);
+CREATE INDEX organization_owner_transfers_org_idx ON app_v3.organization_owner_transfers USING btree (organization_id);
 CREATE INDEX organization_owner_transfers_to_idx ON app_v3.organization_owner_transfers USING btree (to_user_id);
-CREATE INDEX organization_policies_organizer_id_idx ON app_v3.organization_policies USING btree (organizer_id);
+CREATE INDEX organization_policies_organization_id_idx ON app_v3.organization_policies USING btree (organization_id);
 CREATE INDEX organization_policies_policy_type_idx ON app_v3.organization_policies USING btree (policy_type);
-CREATE INDEX organization_reviews_organizer_id_idx ON app_v3.organization_reviews USING btree (organizer_id);
+CREATE INDEX organization_reviews_organization_id_idx ON app_v3.organization_reviews USING btree (organization_id);
 CREATE INDEX organization_reviews_user_id_idx ON app_v3.organization_reviews USING btree (user_id);
-CREATE UNIQUE INDEX organizer_follows_unique ON app_v3.organizer_follows USING btree (follower_id, organizer_id);
-CREATE INDEX organizer_member_invites_identifier_idx ON app_v3.organizer_member_invites USING btree (target_identifier);
-CREATE INDEX organizer_member_invites_org_idx ON app_v3.organizer_member_invites USING btree (organizer_id);
-CREATE INDEX organizer_member_invites_target_idx ON app_v3.organizer_member_invites USING btree (target_user_id);
-CREATE INDEX organizer_members_org_role_idx ON app_v3.organizer_members USING btree (organizer_id, role);
-CREATE UNIQUE INDEX organizer_members_org_user_uniq ON app_v3.organizer_members USING btree (organizer_id, user_id);
-CREATE INDEX organizer_members_user_idx ON app_v3.organizer_members USING btree (user_id);
-CREATE INDEX organizer_members_user_last_used_idx ON app_v3.organizer_members USING btree (user_id, last_used_at DESC, created_at);
-CREATE INDEX organizer_official_email_requests_org_idx ON app_v3.organizer_official_email_requests USING btree (organizer_id);
-CREATE INDEX organizers_stripe_customer_idx ON app_v3.organizers USING btree (stripe_customer_id);
-CREATE INDEX organizers_stripe_subscription_idx ON app_v3.organizers USING btree (stripe_subscription_id);
-CREATE UNIQUE INDEX organizers_username_key ON app_v3.organizers USING btree (username) WHERE (username IS NOT NULL);
+CREATE UNIQUE INDEX organization_follows_unique ON app_v3.organization_follows USING btree (follower_id, organization_id);
+CREATE INDEX organization_member_invites_identifier_idx ON app_v3.organization_member_invites USING btree (target_identifier);
+CREATE INDEX organization_member_invites_org_idx ON app_v3.organization_member_invites USING btree (organization_id);
+CREATE INDEX organization_member_invites_target_idx ON app_v3.organization_member_invites USING btree (target_user_id);
+CREATE INDEX organization_members_org_role_idx ON app_v3.organization_members USING btree (organization_id, role);
+CREATE UNIQUE INDEX organization_members_org_user_uniq ON app_v3.organization_members USING btree (organization_id, user_id);
+CREATE INDEX organization_members_user_idx ON app_v3.organization_members USING btree (user_id);
+CREATE INDEX organization_members_user_last_used_idx ON app_v3.organization_members USING btree (user_id, last_used_at DESC, created_at);
+CREATE INDEX organization_official_email_requests_org_idx ON app_v3.organization_official_email_requests USING btree (organization_id);
+CREATE INDEX organizations_stripe_customer_idx ON app_v3.organizations USING btree (stripe_customer_id);
+CREATE INDEX organizations_stripe_subscription_idx ON app_v3.organizations USING btree (stripe_subscription_id);
+CREATE UNIQUE INDEX organizations_username_key ON app_v3.organizations USING btree (username) WHERE (username IS NOT NULL);
 CREATE INDEX padel_availabilities_event_idx ON app_v3.padel_availabilities USING btree (event_id);
-CREATE INDEX padel_availabilities_org_idx ON app_v3.padel_availabilities USING btree (organizer_id);
+CREATE INDEX padel_availabilities_org_idx ON app_v3.padel_availabilities USING btree (organization_id);
 CREATE INDEX padel_availabilities_profile_idx ON app_v3.padel_availabilities USING btree (player_profile_id);
 CREATE INDEX padel_club_courts_club_idx ON app_v3.padel_club_courts USING btree (padel_club_id);
 CREATE INDEX padel_club_staff_club_idx ON app_v3.padel_club_staff USING btree (padel_club_id);
-CREATE INDEX padel_clubs_organizer_idx ON app_v3.padel_clubs USING btree (organizer_id);
+CREATE INDEX padel_clubs_organization_idx ON app_v3.padel_clubs USING btree (organization_id);
 CREATE INDEX padel_court_blocks_club_idx ON app_v3.padel_court_blocks USING btree (padel_club_id);
 CREATE INDEX padel_court_blocks_court_idx ON app_v3.padel_court_blocks USING btree (court_id);
 CREATE INDEX padel_court_blocks_event_idx ON app_v3.padel_court_blocks USING btree (event_id);
-CREATE INDEX padel_court_blocks_org_idx ON app_v3.padel_court_blocks USING btree (organizer_id);
+CREATE INDEX padel_court_blocks_org_idx ON app_v3.padel_court_blocks USING btree (organization_id);
 CREATE INDEX padel_event_category_links_category_idx ON app_v3.padel_event_category_links USING btree (padel_category_id);
 CREATE INDEX padel_event_category_links_event_idx ON app_v3.padel_event_category_links USING btree (event_id);
 CREATE UNIQUE INDEX padel_event_category_links_unique ON app_v3.padel_event_category_links USING btree (event_id, padel_category_id);
@@ -2323,10 +2320,10 @@ CREATE INDEX padel_pairings_category_id_idx ON app_v3.padel_pairings USING btree
 CREATE INDEX padel_pairings_event_id_idx ON app_v3.padel_pairings USING btree (event_id);
 CREATE UNIQUE INDEX padel_pairings_event_player1_active_idx ON app_v3.padel_pairings USING btree (event_id, category_id, player1_user_id) WHERE ((lifecycle_status <> 'CANCELLED_INCOMPLETE'::app_v3."PadelPairingLifecycleStatus") AND (player1_user_id IS NOT NULL));
 CREATE UNIQUE INDEX padel_pairings_event_player2_active_idx ON app_v3.padel_pairings USING btree (event_id, category_id, player2_user_id) WHERE ((lifecycle_status <> 'CANCELLED_INCOMPLETE'::app_v3."PadelPairingLifecycleStatus") AND (player2_user_id IS NOT NULL));
-CREATE INDEX padel_pairings_organizer_id_idx ON app_v3.padel_pairings USING btree (organizer_id);
+CREATE INDEX padel_pairings_organization_id_idx ON app_v3.padel_pairings USING btree (organization_id);
 CREATE INDEX padel_pairings_player1_idx ON app_v3.padel_pairings USING btree (player1_user_id);
 CREATE INDEX padel_pairings_player2_idx ON app_v3.padel_pairings USING btree (player2_user_id);
-CREATE UNIQUE INDEX padel_player_profiles_uniq_email ON app_v3.padel_player_profiles USING btree (organizer_id, email) WHERE (email IS NOT NULL);
+CREATE UNIQUE INDEX padel_player_profiles_uniq_email ON app_v3.padel_player_profiles USING btree (organization_id, email) WHERE (email IS NOT NULL);
 CREATE INDEX padel_tournament_configs_padel_club_idx ON app_v3.padel_tournament_configs USING btree (padel_club_id);
 CREATE UNIQUE INDEX payment_customers_stripe_customer_id_key ON app_v3.payment_customers USING btree (stripe_customer_id);
 CREATE UNIQUE INDEX payment_customers_user_id_key ON app_v3.payment_customers USING btree (user_id);
@@ -2334,7 +2331,7 @@ CREATE INDEX payment_events_event_id_idx ON app_v3.payment_events USING btree (e
 CREATE UNIQUE INDEX payment_events_purchase_id_key ON app_v3.payment_events USING btree (purchase_id) WHERE (purchase_id IS NOT NULL);
 CREATE UNIQUE INDEX payment_events_stripe_event_id_key ON app_v3.payment_events USING btree (stripe_event_id) WHERE (stripe_event_id IS NOT NULL);
 CREATE UNIQUE INDEX payment_events_stripe_payment_intent_id_key ON app_v3.payment_events USING btree (stripe_payment_intent_id);
-CREATE INDEX payout_records_organizer_id_idx ON app_v3.payout_records USING btree (organizer_id);
+CREATE INDEX payout_records_organization_id_idx ON app_v3.payout_records USING btree (organization_id);
 CREATE INDEX payout_records_stripe_payout_id_idx ON app_v3.payout_records USING btree (stripe_payout_id);
 CREATE UNIQUE INDEX profiles_username_key ON app_v3.profiles USING btree (username);
 CREATE UNIQUE INDEX promo_codes_code_ci_unique ON app_v3.promo_codes USING btree (lower(code));
@@ -2362,15 +2359,15 @@ CREATE INDEX service_staff_service_id_idx ON app_v3.service_staff USING btree (s
 CREATE UNIQUE INDEX service_staff_service_id_user_id_key ON app_v3.service_staff USING btree (service_id, user_id);
 CREATE INDEX service_staff_user_id_idx ON app_v3.service_staff USING btree (user_id);
 CREATE INDEX services_is_active_idx ON app_v3.services USING btree (is_active);
-CREATE INDEX services_organizer_id_idx ON app_v3.services USING btree (organizer_id);
+CREATE INDEX services_organization_id_idx ON app_v3.services USING btree (organization_id);
 CREATE INDEX services_policy_id_idx ON app_v3.services USING btree (policy_id);
 CREATE INDEX split_payment_participants_split_payment_id_idx ON app_v3.split_payment_participants USING btree (split_payment_id);
 CREATE INDEX split_payment_participants_status_idx ON app_v3.split_payment_participants USING btree (status);
 CREATE INDEX split_payment_participants_user_id_idx ON app_v3.split_payment_participants USING btree (user_id);
 CREATE INDEX split_payments_captain_user_id_idx ON app_v3.split_payments USING btree (captain_user_id);
-CREATE INDEX split_payments_organizer_id_idx ON app_v3.split_payments USING btree (organizer_id);
+CREATE INDEX split_payments_organization_id_idx ON app_v3.split_payments USING btree (organization_id);
 CREATE INDEX staff_assignments_event_id_idx ON app_v3.staff_assignments USING btree (event_id);
-CREATE INDEX staff_assignments_organizer_id_idx ON app_v3.staff_assignments USING btree (organizer_id);
+CREATE INDEX staff_assignments_organization_id_idx ON app_v3.staff_assignments USING btree (organization_id);
 CREATE INDEX staff_assignments_user_id_idx ON app_v3.staff_assignments USING btree (user_id);
 CREATE INDEX ticket_resales_seller_user_id_idx ON app_v3.ticket_resales USING btree (seller_user_id);
 CREATE INDEX ticket_resales_ticket_id_idx ON app_v3.ticket_resales USING btree (ticket_id);
@@ -2397,7 +2394,7 @@ CREATE INDEX tournament_groups_stage_id_idx ON app_v3.tournament_groups USING bt
 CREATE INDEX tournament_matches_group_id_idx ON app_v3.tournament_matches USING btree (group_id);
 CREATE INDEX tournament_matches_stage_id_idx ON app_v3.tournament_matches USING btree (stage_id);
 CREATE INDEX tournament_stages_tournament_id_idx ON app_v3.tournament_stages USING btree (tournament_id);
-CREATE INDEX transactions_organizer_id_idx ON app_v3.transactions USING btree (organizer_id);
+CREATE INDEX transactions_organization_id_idx ON app_v3.transactions USING btree (organization_id);
 CREATE INDEX transactions_stripe_charge_id_idx ON app_v3.transactions USING btree (stripe_charge_id);
 CREATE INDEX transactions_stripe_payment_intent_id_idx ON app_v3.transactions USING btree (stripe_payment_intent_id);
 CREATE INDEX transactions_user_id_idx ON app_v3.transactions USING btree (user_id);
@@ -2412,13 +2409,13 @@ ALTER TABLE ONLY app_v3.booking_policy_refs
 ALTER TABLE ONLY app_v3.bookings
     ADD CONSTRAINT bookings_availability_id_fkey FOREIGN KEY (availability_id) REFERENCES app_v3.availabilities(id) ON UPDATE CASCADE ON DELETE SET NULL;
 ALTER TABLE ONLY app_v3.bookings
-    ADD CONSTRAINT bookings_organizer_id_fkey FOREIGN KEY (organizer_id) REFERENCES app_v3.organizers(id) ON UPDATE CASCADE ON DELETE CASCADE;
+    ADD CONSTRAINT bookings_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES app_v3.organizations(id) ON UPDATE CASCADE ON DELETE CASCADE;
 ALTER TABLE ONLY app_v3.bookings
     ADD CONSTRAINT bookings_service_id_fkey FOREIGN KEY (service_id) REFERENCES app_v3.services(id) ON UPDATE CASCADE ON DELETE CASCADE;
 ALTER TABLE ONLY app_v3.bookings
     ADD CONSTRAINT bookings_user_id_fkey FOREIGN KEY (user_id) REFERENCES app_v3.profiles(id) ON UPDATE CASCADE ON DELETE CASCADE;
 ALTER TABLE ONLY app_v3.connect_accounts
-    ADD CONSTRAINT connect_accounts_organizer_id_fkey FOREIGN KEY (organizer_id) REFERENCES app_v3.organizers(id) ON UPDATE CASCADE ON DELETE CASCADE;
+    ADD CONSTRAINT connect_accounts_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES app_v3.organizations(id) ON UPDATE CASCADE ON DELETE CASCADE;
 ALTER TABLE ONLY app_v3.email_identities
     ADD CONSTRAINT email_identities_user_fk FOREIGN KEY (user_id) REFERENCES app_v3.profiles(id) ON DELETE SET NULL;
 ALTER TABLE ONLY app_v3.email_outbox
@@ -2440,9 +2437,9 @@ ALTER TABLE ONLY app_v3.notifications
 ALTER TABLE ONLY app_v3.notifications
     ADD CONSTRAINT notifications_from_user_id_fkey FOREIGN KEY (from_user_id) REFERENCES app_v3.profiles(id) ON DELETE SET NULL;
 ALTER TABLE ONLY app_v3.notifications
-    ADD CONSTRAINT notifications_invite_id_fkey FOREIGN KEY (invite_id) REFERENCES app_v3.organizer_member_invites(id) ON DELETE SET NULL;
+    ADD CONSTRAINT notifications_invite_id_fkey FOREIGN KEY (invite_id) REFERENCES app_v3.organization_member_invites(id) ON DELETE SET NULL;
 ALTER TABLE ONLY app_v3.notifications
-    ADD CONSTRAINT notifications_organizer_id_fkey FOREIGN KEY (organizer_id) REFERENCES app_v3.organizers(id) ON DELETE SET NULL;
+    ADD CONSTRAINT notifications_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES app_v3.organizations(id) ON DELETE SET NULL;
 ALTER TABLE ONLY app_v3.notifications
     ADD CONSTRAINT notifications_ticket_id_fkey FOREIGN KEY (ticket_id) REFERENCES app_v3.tickets(id) ON DELETE SET NULL;
 ALTER TABLE ONLY app_v3.notifications
@@ -2454,47 +2451,47 @@ ALTER TABLE ONLY app_v3.organization_form_submissions
 ALTER TABLE ONLY app_v3.organization_form_submissions
     ADD CONSTRAINT organization_form_submissions_user_fk FOREIGN KEY (user_id) REFERENCES app_v3.profiles(id) ON DELETE SET NULL;
 ALTER TABLE ONLY app_v3.organization_forms
-    ADD CONSTRAINT organization_forms_organizer_fk FOREIGN KEY (organizer_id) REFERENCES app_v3.organizers(id) ON DELETE CASCADE;
+    ADD CONSTRAINT organization_forms_organization_fk FOREIGN KEY (organization_id) REFERENCES app_v3.organizations(id) ON DELETE CASCADE;
 ALTER TABLE ONLY app_v3.organization_modules
-    ADD CONSTRAINT organization_modules_organizer_id_fkey FOREIGN KEY (organizer_id) REFERENCES app_v3.organizers(id) ON DELETE CASCADE;
+    ADD CONSTRAINT organization_modules_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES app_v3.organizations(id) ON DELETE CASCADE;
 ALTER TABLE ONLY app_v3.organization_policies
-    ADD CONSTRAINT organization_policies_organizer_id_fkey FOREIGN KEY (organizer_id) REFERENCES app_v3.organizers(id) ON UPDATE CASCADE ON DELETE CASCADE;
+    ADD CONSTRAINT organization_policies_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES app_v3.organizations(id) ON UPDATE CASCADE ON DELETE CASCADE;
 ALTER TABLE ONLY app_v3.organization_reviews
-    ADD CONSTRAINT organization_reviews_organizer_id_fkey FOREIGN KEY (organizer_id) REFERENCES app_v3.organizers(id) ON UPDATE CASCADE ON DELETE CASCADE;
+    ADD CONSTRAINT organization_reviews_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES app_v3.organizations(id) ON UPDATE CASCADE ON DELETE CASCADE;
 ALTER TABLE ONLY app_v3.organization_reviews
     ADD CONSTRAINT organization_reviews_user_id_fkey FOREIGN KEY (user_id) REFERENCES app_v3.profiles(id) ON UPDATE CASCADE ON DELETE CASCADE;
-ALTER TABLE ONLY app_v3.organizer_follows
-    ADD CONSTRAINT organizer_follows_follower_fk FOREIGN KEY (follower_id) REFERENCES app_v3.profiles(id) ON DELETE CASCADE;
-ALTER TABLE ONLY app_v3.organizer_follows
-    ADD CONSTRAINT organizer_follows_organizer_fk FOREIGN KEY (organizer_id) REFERENCES app_v3.organizers(id) ON DELETE CASCADE;
-ALTER TABLE ONLY app_v3.organizer_member_invites
-    ADD CONSTRAINT organizer_member_invites_invited_by_user_id_fkey FOREIGN KEY (invited_by_user_id) REFERENCES app_v3.profiles(id) ON DELETE CASCADE;
-ALTER TABLE ONLY app_v3.organizer_member_invites
-    ADD CONSTRAINT organizer_member_invites_organizer_id_fkey FOREIGN KEY (organizer_id) REFERENCES app_v3.organizers(id) ON DELETE CASCADE;
-ALTER TABLE ONLY app_v3.organizer_members
-    ADD CONSTRAINT organizer_members_invited_by_user_id_fkey FOREIGN KEY (invited_by_user_id) REFERENCES app_v3.profiles(id);
-ALTER TABLE ONLY app_v3.organizer_members
-    ADD CONSTRAINT organizer_members_org_fk FOREIGN KEY (organizer_id) REFERENCES app_v3.organizers(id) ON DELETE CASCADE;
-ALTER TABLE ONLY app_v3.organizer_members
-    ADD CONSTRAINT organizer_members_user_fk FOREIGN KEY (user_id) REFERENCES app_v3.profiles(id) ON DELETE CASCADE;
-ALTER TABLE ONLY app_v3.organizer_official_email_requests
-    ADD CONSTRAINT organizer_official_email_requests_organizer_id_fkey FOREIGN KEY (organizer_id) REFERENCES app_v3.organizers(id) ON DELETE CASCADE;
-ALTER TABLE ONLY app_v3.organizers
-    ADD CONSTRAINT organizers_padel_default_rule_set_fk FOREIGN KEY (padel_default_rule_set_id) REFERENCES app_v3.padel_rule_sets(id) ON DELETE SET NULL;
+ALTER TABLE ONLY app_v3.organization_follows
+    ADD CONSTRAINT organization_follows_follower_fk FOREIGN KEY (follower_id) REFERENCES app_v3.profiles(id) ON DELETE CASCADE;
+ALTER TABLE ONLY app_v3.organization_follows
+    ADD CONSTRAINT organization_follows_organization_fk FOREIGN KEY (organization_id) REFERENCES app_v3.organizations(id) ON DELETE CASCADE;
+ALTER TABLE ONLY app_v3.organization_member_invites
+    ADD CONSTRAINT organization_member_invites_invited_by_user_id_fkey FOREIGN KEY (invited_by_user_id) REFERENCES app_v3.profiles(id) ON DELETE CASCADE;
+ALTER TABLE ONLY app_v3.organization_member_invites
+    ADD CONSTRAINT organization_member_invites_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES app_v3.organizations(id) ON DELETE CASCADE;
+ALTER TABLE ONLY app_v3.organization_members
+    ADD CONSTRAINT organization_members_invited_by_user_id_fkey FOREIGN KEY (invited_by_user_id) REFERENCES app_v3.profiles(id);
+ALTER TABLE ONLY app_v3.organization_members
+    ADD CONSTRAINT organization_members_org_fk FOREIGN KEY (organization_id) REFERENCES app_v3.organizations(id) ON DELETE CASCADE;
+ALTER TABLE ONLY app_v3.organization_members
+    ADD CONSTRAINT organization_members_user_fk FOREIGN KEY (user_id) REFERENCES app_v3.profiles(id) ON DELETE CASCADE;
+ALTER TABLE ONLY app_v3.organization_official_email_requests
+    ADD CONSTRAINT organization_official_email_requests_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES app_v3.organizations(id) ON DELETE CASCADE;
+ALTER TABLE ONLY app_v3.organizations
+    ADD CONSTRAINT organizations_padel_default_rule_set_fk FOREIGN KEY (padel_default_rule_set_id) REFERENCES app_v3.padel_rule_sets(id) ON DELETE SET NULL;
 ALTER TABLE ONLY app_v3.padel_availabilities
     ADD CONSTRAINT padel_availabilities_event_fk FOREIGN KEY (event_id) REFERENCES app_v3.events(id) ON DELETE CASCADE;
 ALTER TABLE ONLY app_v3.padel_availabilities
-    ADD CONSTRAINT padel_availabilities_organizer_fk FOREIGN KEY (organizer_id) REFERENCES app_v3.organizers(id) ON DELETE CASCADE;
+    ADD CONSTRAINT padel_availabilities_organization_fk FOREIGN KEY (organization_id) REFERENCES app_v3.organizations(id) ON DELETE CASCADE;
 ALTER TABLE ONLY app_v3.padel_availabilities
     ADD CONSTRAINT padel_availabilities_profile_fk FOREIGN KEY (player_profile_id) REFERENCES app_v3.padel_player_profiles(id) ON DELETE SET NULL;
 ALTER TABLE ONLY app_v3.padel_categories
-    ADD CONSTRAINT padel_categories_organizer_id_fkey FOREIGN KEY (organizer_id) REFERENCES app_v3.organizers(id) ON DELETE CASCADE;
+    ADD CONSTRAINT padel_categories_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES app_v3.organizations(id) ON DELETE CASCADE;
 ALTER TABLE ONLY app_v3.padel_club_courts
     ADD CONSTRAINT padel_club_courts_padel_club_id_fkey FOREIGN KEY (padel_club_id) REFERENCES app_v3.padel_clubs(id) ON DELETE CASCADE;
 ALTER TABLE ONLY app_v3.padel_club_staff
     ADD CONSTRAINT padel_club_staff_padel_club_id_fkey FOREIGN KEY (padel_club_id) REFERENCES app_v3.padel_clubs(id) ON DELETE CASCADE;
 ALTER TABLE ONLY app_v3.padel_clubs
-    ADD CONSTRAINT padel_clubs_organizer_id_fkey FOREIGN KEY (organizer_id) REFERENCES app_v3.organizers(id) ON DELETE CASCADE;
+    ADD CONSTRAINT padel_clubs_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES app_v3.organizations(id) ON DELETE CASCADE;
 ALTER TABLE ONLY app_v3.padel_court_blocks
     ADD CONSTRAINT padel_court_blocks_club_fk FOREIGN KEY (padel_club_id) REFERENCES app_v3.padel_clubs(id) ON DELETE SET NULL;
 ALTER TABLE ONLY app_v3.padel_court_blocks
@@ -2502,7 +2499,7 @@ ALTER TABLE ONLY app_v3.padel_court_blocks
 ALTER TABLE ONLY app_v3.padel_court_blocks
     ADD CONSTRAINT padel_court_blocks_event_fk FOREIGN KEY (event_id) REFERENCES app_v3.events(id) ON DELETE CASCADE;
 ALTER TABLE ONLY app_v3.padel_court_blocks
-    ADD CONSTRAINT padel_court_blocks_organizer_fk FOREIGN KEY (organizer_id) REFERENCES app_v3.organizers(id) ON DELETE CASCADE;
+    ADD CONSTRAINT padel_court_blocks_organization_fk FOREIGN KEY (organization_id) REFERENCES app_v3.organizations(id) ON DELETE CASCADE;
 ALTER TABLE ONLY app_v3.padel_event_category_links
     ADD CONSTRAINT padel_event_category_links_category_fk FOREIGN KEY (padel_category_id) REFERENCES app_v3.padel_categories(id) ON DELETE CASCADE;
 ALTER TABLE ONLY app_v3.padel_event_category_links
@@ -2538,19 +2535,19 @@ ALTER TABLE ONLY app_v3.padel_pairings
 ALTER TABLE ONLY app_v3.padel_pairings
     ADD CONSTRAINT padel_pairings_event_id_fkey FOREIGN KEY (event_id) REFERENCES app_v3.events(id) ON UPDATE CASCADE ON DELETE CASCADE;
 ALTER TABLE ONLY app_v3.padel_pairings
-    ADD CONSTRAINT padel_pairings_organizer_id_fkey FOREIGN KEY (organizer_id) REFERENCES app_v3.organizers(id) ON UPDATE CASCADE ON DELETE CASCADE;
+    ADD CONSTRAINT padel_pairings_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES app_v3.organizations(id) ON UPDATE CASCADE ON DELETE CASCADE;
 ALTER TABLE ONLY app_v3.padel_player_profiles
-    ADD CONSTRAINT padel_player_profiles_organizer_id_fkey FOREIGN KEY (organizer_id) REFERENCES app_v3.organizers(id) ON DELETE CASCADE;
+    ADD CONSTRAINT padel_player_profiles_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES app_v3.organizations(id) ON DELETE CASCADE;
 ALTER TABLE ONLY app_v3.padel_player_profiles
     ADD CONSTRAINT padel_player_profiles_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE SET NULL;
 ALTER TABLE ONLY app_v3.padel_ranking_entries
     ADD CONSTRAINT padel_ranking_entries_event_id_fkey FOREIGN KEY (event_id) REFERENCES app_v3.events(id) ON DELETE CASCADE;
 ALTER TABLE ONLY app_v3.padel_ranking_entries
-    ADD CONSTRAINT padel_ranking_entries_organizer_id_fkey FOREIGN KEY (organizer_id) REFERENCES app_v3.organizers(id) ON DELETE CASCADE;
+    ADD CONSTRAINT padel_ranking_entries_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES app_v3.organizations(id) ON DELETE CASCADE;
 ALTER TABLE ONLY app_v3.padel_ranking_entries
     ADD CONSTRAINT padel_ranking_entries_player_id_fkey FOREIGN KEY (player_id) REFERENCES app_v3.padel_player_profiles(id) ON DELETE CASCADE;
 ALTER TABLE ONLY app_v3.padel_rule_sets
-    ADD CONSTRAINT padel_rule_sets_organizer_id_fkey FOREIGN KEY (organizer_id) REFERENCES app_v3.organizers(id) ON DELETE CASCADE;
+    ADD CONSTRAINT padel_rule_sets_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES app_v3.organizations(id) ON DELETE CASCADE;
 ALTER TABLE ONLY app_v3.padel_teams
     ADD CONSTRAINT padel_teams_category_id_fkey FOREIGN KEY (category_id) REFERENCES app_v3.padel_categories(id) ON DELETE SET NULL;
 ALTER TABLE ONLY app_v3.padel_teams
@@ -2564,7 +2561,7 @@ ALTER TABLE ONLY app_v3.padel_tournament_configs
 ALTER TABLE ONLY app_v3.padel_tournament_configs
     ADD CONSTRAINT padel_tournament_configs_event_id_fkey FOREIGN KEY (event_id) REFERENCES app_v3.events(id) ON DELETE CASCADE;
 ALTER TABLE ONLY app_v3.padel_tournament_configs
-    ADD CONSTRAINT padel_tournament_configs_organizer_id_fkey FOREIGN KEY (organizer_id) REFERENCES app_v3.organizers(id) ON DELETE CASCADE;
+    ADD CONSTRAINT padel_tournament_configs_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES app_v3.organizations(id) ON DELETE CASCADE;
 ALTER TABLE ONLY app_v3.padel_tournament_configs
     ADD CONSTRAINT padel_tournament_configs_padel_club_id_fkey FOREIGN KEY (padel_club_id) REFERENCES app_v3.padel_clubs(id) ON DELETE SET NULL;
 ALTER TABLE ONLY app_v3.padel_tournament_configs
@@ -2572,7 +2569,7 @@ ALTER TABLE ONLY app_v3.padel_tournament_configs
 ALTER TABLE ONLY app_v3.payment_customers
     ADD CONSTRAINT payment_customers_user_id_fkey FOREIGN KEY (user_id) REFERENCES app_v3.profiles(id) ON UPDATE CASCADE ON DELETE CASCADE;
 ALTER TABLE ONLY app_v3.payout_records
-    ADD CONSTRAINT payout_records_organizer_id_fkey FOREIGN KEY (organizer_id) REFERENCES app_v3.organizers(id) ON UPDATE CASCADE ON DELETE CASCADE;
+    ADD CONSTRAINT payout_records_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES app_v3.organizations(id) ON UPDATE CASCADE ON DELETE CASCADE;
 ALTER TABLE ONLY app_v3.profiles
     ADD CONSTRAINT profiles_id_fkey FOREIGN KEY (id) REFERENCES auth.users(id) ON DELETE CASCADE;
 ALTER TABLE ONLY app_v3.promo_codes
@@ -2598,7 +2595,7 @@ ALTER TABLE ONLY app_v3.service_staff
 ALTER TABLE ONLY app_v3.service_staff
     ADD CONSTRAINT service_staff_user_id_fkey FOREIGN KEY (user_id) REFERENCES app_v3.profiles(id) ON UPDATE CASCADE ON DELETE CASCADE;
 ALTER TABLE ONLY app_v3.services
-    ADD CONSTRAINT services_organizer_id_fkey FOREIGN KEY (organizer_id) REFERENCES app_v3.organizers(id) ON UPDATE CASCADE ON DELETE CASCADE;
+    ADD CONSTRAINT services_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES app_v3.organizations(id) ON UPDATE CASCADE ON DELETE CASCADE;
 ALTER TABLE ONLY app_v3.services
     ADD CONSTRAINT services_policy_id_fkey FOREIGN KEY (policy_id) REFERENCES app_v3.organization_policies(id) ON UPDATE CASCADE ON DELETE SET NULL;
 ALTER TABLE ONLY app_v3.split_payment_participants
@@ -2608,7 +2605,7 @@ ALTER TABLE ONLY app_v3.split_payment_participants
 ALTER TABLE ONLY app_v3.split_payments
     ADD CONSTRAINT split_payments_captain_user_id_fkey FOREIGN KEY (captain_user_id) REFERENCES app_v3.profiles(id) ON UPDATE CASCADE ON DELETE SET NULL;
 ALTER TABLE ONLY app_v3.split_payments
-    ADD CONSTRAINT split_payments_organizer_id_fkey FOREIGN KEY (organizer_id) REFERENCES app_v3.organizers(id) ON UPDATE CASCADE ON DELETE CASCADE;
+    ADD CONSTRAINT split_payments_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES app_v3.organizations(id) ON UPDATE CASCADE ON DELETE CASCADE;
 ALTER TABLE ONLY app_v3.ticket_resales
     ADD CONSTRAINT ticket_resales_ticket_id_fkey FOREIGN KEY (ticket_id) REFERENCES app_v3.tickets(id) ON UPDATE CASCADE ON DELETE CASCADE;
 ALTER TABLE ONLY app_v3.ticket_reservations
@@ -2642,20 +2639,20 @@ ALTER TABLE ONLY app_v3.tournaments
 ALTER TABLE ONLY app_v3.tournaments
     ADD CONSTRAINT tournaments_generated_by_user_fk FOREIGN KEY (generated_by_user_id) REFERENCES app_v3.profiles(id) ON DELETE SET NULL;
 ALTER TABLE ONLY app_v3.transactions
-    ADD CONSTRAINT transactions_organizer_id_fkey FOREIGN KEY (organizer_id) REFERENCES app_v3.organizers(id) ON UPDATE CASCADE ON DELETE CASCADE;
+    ADD CONSTRAINT transactions_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES app_v3.organizations(id) ON UPDATE CASCADE ON DELETE CASCADE;
 ALTER TABLE ONLY app_v3.transactions
     ADD CONSTRAINT transactions_user_id_fkey FOREIGN KEY (user_id) REFERENCES app_v3.profiles(id) ON UPDATE CASCADE ON DELETE SET NULL;
 ALTER TABLE ONLY app_v3.user_activities
     ADD CONSTRAINT user_activities_user_id_fkey FOREIGN KEY (user_id) REFERENCES app_v3.profiles(id) ON UPDATE CASCADE ON DELETE CASCADE;
 ALTER TABLE app_v3.events ENABLE ROW LEVEL SECURITY;
 CREATE POLICY events_member_select ON app_v3.events FOR SELECT TO authenticated USING (((owner_user_id = ( SELECT auth.uid() AS uid)) OR (EXISTS ( SELECT 1
-   FROM app_v3.organizer_members m
-  WHERE ((m.organizer_id = events.organizer_id) AND (m.user_id = ( SELECT auth.uid() AS uid)))))));
+   FROM app_v3.organization_members m
+  WHERE ((m.organization_id = events.organization_id) AND (m.user_id = ( SELECT auth.uid() AS uid)))))));
 CREATE POLICY events_member_update ON app_v3.events FOR UPDATE TO authenticated USING (((owner_user_id = ( SELECT auth.uid() AS uid)) OR (EXISTS ( SELECT 1
-   FROM app_v3.organizer_members m
-  WHERE ((m.organizer_id = events.organizer_id) AND (m.user_id = ( SELECT auth.uid() AS uid))))))) WITH CHECK (((owner_user_id = ( SELECT auth.uid() AS uid)) OR (EXISTS ( SELECT 1
-   FROM app_v3.organizer_members m
-  WHERE ((m.organizer_id = events.organizer_id) AND (m.user_id = ( SELECT auth.uid() AS uid)))))));
+   FROM app_v3.organization_members m
+  WHERE ((m.organization_id = events.organization_id) AND (m.user_id = ( SELECT auth.uid() AS uid))))))) WITH CHECK (((owner_user_id = ( SELECT auth.uid() AS uid)) OR (EXISTS ( SELECT 1
+   FROM app_v3.organization_members m
+  WHERE ((m.organization_id = events.organization_id) AND (m.user_id = ( SELECT auth.uid() AS uid)))))));
 CREATE POLICY events_public_select ON app_v3.events FOR SELECT TO anon USING ((status = 'PUBLISHED'::app_v3."EventStatus"));
 ALTER TABLE app_v3.guest_ticket_links ENABLE ROW LEVEL SECURITY;
 CREATE POLICY guest_ticket_links_owner_only ON app_v3.guest_ticket_links FOR SELECT TO authenticated USING ((( SELECT (auth.jwt() ->> 'email'::text)) = guest_email));
@@ -2665,126 +2662,126 @@ CREATE POLICY insert_own_transfer ON app_v3.ticket_transfers FOR INSERT TO authe
 ALTER TABLE app_v3.notifications ENABLE ROW LEVEL SECURITY;
 CREATE POLICY notifications_owner_only ON app_v3.notifications FOR SELECT TO authenticated USING ((user_id = ( SELECT auth.uid() AS uid)));
 CREATE POLICY notifications_service_role ON app_v3.notifications TO service_role USING (true) WITH CHECK (true);
-ALTER TABLE app_v3.organizer_member_invites ENABLE ROW LEVEL SECURITY;
-CREATE POLICY organizer_member_invites_delete ON app_v3.organizer_member_invites FOR DELETE TO authenticated USING ((EXISTS ( SELECT 1
-   FROM app_v3.organizer_members m
-  WHERE ((m.organizer_id = organizer_member_invites.organizer_id) AND (m.user_id = ( SELECT auth.uid() AS uid))))));
-CREATE POLICY organizer_member_invites_insert ON app_v3.organizer_member_invites FOR INSERT TO authenticated WITH CHECK ((EXISTS ( SELECT 1
-   FROM app_v3.organizer_members m
-  WHERE ((m.organizer_id = organizer_member_invites.organizer_id) AND (m.user_id = ( SELECT auth.uid() AS uid))))));
-CREATE POLICY organizer_member_invites_select ON app_v3.organizer_member_invites FOR SELECT TO authenticated USING (((target_user_id = ( SELECT auth.uid() AS uid)) OR (EXISTS ( SELECT 1
-   FROM app_v3.organizer_members m
-  WHERE ((m.organizer_id = organizer_member_invites.organizer_id) AND (m.user_id = ( SELECT auth.uid() AS uid)))))));
-CREATE POLICY organizer_member_invites_update ON app_v3.organizer_member_invites FOR UPDATE TO authenticated USING ((EXISTS ( SELECT 1
-   FROM app_v3.organizer_members m
-  WHERE ((m.organizer_id = organizer_member_invites.organizer_id) AND (m.user_id = ( SELECT auth.uid() AS uid)))))) WITH CHECK ((EXISTS ( SELECT 1
-   FROM app_v3.organizer_members m
-  WHERE ((m.organizer_id = organizer_member_invites.organizer_id) AND (m.user_id = ( SELECT auth.uid() AS uid))))));
-ALTER TABLE app_v3.organizer_members ENABLE ROW LEVEL SECURITY;
-CREATE POLICY organizer_members_delete ON app_v3.organizer_members FOR DELETE TO authenticated USING ((EXISTS ( SELECT 1
-   FROM app_v3.organizer_members m2
-  WHERE ((m2.organizer_id = organizer_members.organizer_id) AND (m2.user_id = ( SELECT auth.uid() AS uid))))));
-CREATE POLICY organizer_members_insert ON app_v3.organizer_members FOR INSERT TO authenticated WITH CHECK ((EXISTS ( SELECT 1
-   FROM app_v3.organizer_members m2
-  WHERE ((m2.organizer_id = organizer_members.organizer_id) AND (m2.user_id = ( SELECT auth.uid() AS uid))))));
-CREATE POLICY organizer_members_select ON app_v3.organizer_members FOR SELECT TO authenticated USING ((EXISTS ( SELECT 1
-   FROM app_v3.organizer_members m2
-  WHERE ((m2.organizer_id = organizer_members.organizer_id) AND (m2.user_id = ( SELECT auth.uid() AS uid))))));
-CREATE POLICY organizer_members_update ON app_v3.organizer_members FOR UPDATE TO authenticated USING ((EXISTS ( SELECT 1
-   FROM app_v3.organizer_members m2
-  WHERE ((m2.organizer_id = organizer_members.organizer_id) AND (m2.user_id = ( SELECT auth.uid() AS uid)))))) WITH CHECK ((EXISTS ( SELECT 1
-   FROM app_v3.organizer_members m2
-  WHERE ((m2.organizer_id = organizer_members.organizer_id) AND (m2.user_id = ( SELECT auth.uid() AS uid))))));
-ALTER TABLE app_v3.organizers ENABLE ROW LEVEL SECURITY;
-CREATE POLICY organizers_select_member ON app_v3.organizers FOR SELECT TO authenticated USING ((EXISTS ( SELECT 1
-   FROM app_v3.organizer_members m
-  WHERE ((m.organizer_id = organizers.id) AND (m.user_id = ( SELECT auth.uid() AS uid))))));
-CREATE POLICY organizers_update_member ON app_v3.organizers FOR UPDATE TO authenticated USING ((EXISTS ( SELECT 1
-   FROM app_v3.organizer_members m
-  WHERE ((m.organizer_id = organizers.id) AND (m.user_id = ( SELECT auth.uid() AS uid)))))) WITH CHECK ((EXISTS ( SELECT 1
-   FROM app_v3.organizer_members m
-  WHERE ((m.organizer_id = organizers.id) AND (m.user_id = ( SELECT auth.uid() AS uid))))));
+ALTER TABLE app_v3.organization_member_invites ENABLE ROW LEVEL SECURITY;
+CREATE POLICY organization_member_invites_delete ON app_v3.organization_member_invites FOR DELETE TO authenticated USING ((EXISTS ( SELECT 1
+   FROM app_v3.organization_members m
+  WHERE ((m.organization_id = organization_member_invites.organization_id) AND (m.user_id = ( SELECT auth.uid() AS uid))))));
+CREATE POLICY organization_member_invites_insert ON app_v3.organization_member_invites FOR INSERT TO authenticated WITH CHECK ((EXISTS ( SELECT 1
+   FROM app_v3.organization_members m
+  WHERE ((m.organization_id = organization_member_invites.organization_id) AND (m.user_id = ( SELECT auth.uid() AS uid))))));
+CREATE POLICY organization_member_invites_select ON app_v3.organization_member_invites FOR SELECT TO authenticated USING (((target_user_id = ( SELECT auth.uid() AS uid)) OR (EXISTS ( SELECT 1
+   FROM app_v3.organization_members m
+  WHERE ((m.organization_id = organization_member_invites.organization_id) AND (m.user_id = ( SELECT auth.uid() AS uid)))))));
+CREATE POLICY organization_member_invites_update ON app_v3.organization_member_invites FOR UPDATE TO authenticated USING ((EXISTS ( SELECT 1
+   FROM app_v3.organization_members m
+  WHERE ((m.organization_id = organization_member_invites.organization_id) AND (m.user_id = ( SELECT auth.uid() AS uid)))))) WITH CHECK ((EXISTS ( SELECT 1
+   FROM app_v3.organization_members m
+  WHERE ((m.organization_id = organization_member_invites.organization_id) AND (m.user_id = ( SELECT auth.uid() AS uid))))));
+ALTER TABLE app_v3.organization_members ENABLE ROW LEVEL SECURITY;
+CREATE POLICY organization_members_delete ON app_v3.organization_members FOR DELETE TO authenticated USING ((EXISTS ( SELECT 1
+   FROM app_v3.organization_members m2
+  WHERE ((m2.organization_id = organization_members.organization_id) AND (m2.user_id = ( SELECT auth.uid() AS uid))))));
+CREATE POLICY organization_members_insert ON app_v3.organization_members FOR INSERT TO authenticated WITH CHECK ((EXISTS ( SELECT 1
+   FROM app_v3.organization_members m2
+  WHERE ((m2.organization_id = organization_members.organization_id) AND (m2.user_id = ( SELECT auth.uid() AS uid))))));
+CREATE POLICY organization_members_select ON app_v3.organization_members FOR SELECT TO authenticated USING ((EXISTS ( SELECT 1
+   FROM app_v3.organization_members m2
+  WHERE ((m2.organization_id = organization_members.organization_id) AND (m2.user_id = ( SELECT auth.uid() AS uid))))));
+CREATE POLICY organization_members_update ON app_v3.organization_members FOR UPDATE TO authenticated USING ((EXISTS ( SELECT 1
+   FROM app_v3.organization_members m2
+  WHERE ((m2.organization_id = organization_members.organization_id) AND (m2.user_id = ( SELECT auth.uid() AS uid)))))) WITH CHECK ((EXISTS ( SELECT 1
+   FROM app_v3.organization_members m2
+  WHERE ((m2.organization_id = organization_members.organization_id) AND (m2.user_id = ( SELECT auth.uid() AS uid))))));
+ALTER TABLE app_v3.organizations ENABLE ROW LEVEL SECURITY;
+CREATE POLICY organizations_select_member ON app_v3.organizations FOR SELECT TO authenticated USING ((EXISTS ( SELECT 1
+   FROM app_v3.organization_members m
+  WHERE ((m.organization_id = organizations.id) AND (m.user_id = ( SELECT auth.uid() AS uid))))));
+CREATE POLICY organizations_update_member ON app_v3.organizations FOR UPDATE TO authenticated USING ((EXISTS ( SELECT 1
+   FROM app_v3.organization_members m
+  WHERE ((m.organization_id = organizations.id) AND (m.user_id = ( SELECT auth.uid() AS uid)))))) WITH CHECK ((EXISTS ( SELECT 1
+   FROM app_v3.organization_members m
+  WHERE ((m.organization_id = organizations.id) AND (m.user_id = ( SELECT auth.uid() AS uid))))));
 ALTER TABLE app_v3.padel_categories ENABLE ROW LEVEL SECURITY;
 CREATE POLICY padel_categories_rw ON app_v3.padel_categories TO authenticated USING ((EXISTS ( SELECT 1
-   FROM (app_v3.organizers o
-     JOIN app_v3.organizer_members m ON ((m.organizer_id = o.id)))
-  WHERE ((o.id = padel_categories.organizer_id) AND (m.user_id = ( SELECT auth.uid() AS uid)))))) WITH CHECK ((EXISTS ( SELECT 1
-   FROM (app_v3.organizers o
-     JOIN app_v3.organizer_members m ON ((m.organizer_id = o.id)))
-  WHERE ((o.id = padel_categories.organizer_id) AND (m.user_id = ( SELECT auth.uid() AS uid))))));
+   FROM (app_v3.organizations o
+     JOIN app_v3.organization_members m ON ((m.organization_id = o.id)))
+  WHERE ((o.id = padel_categories.organization_id) AND (m.user_id = ( SELECT auth.uid() AS uid)))))) WITH CHECK ((EXISTS ( SELECT 1
+   FROM (app_v3.organizations o
+     JOIN app_v3.organization_members m ON ((m.organization_id = o.id)))
+  WHERE ((o.id = padel_categories.organization_id) AND (m.user_id = ( SELECT auth.uid() AS uid))))));
 ALTER TABLE app_v3.padel_matches ENABLE ROW LEVEL SECURITY;
 CREATE POLICY padel_matches_rw ON app_v3.padel_matches TO authenticated USING ((EXISTS ( SELECT 1
    FROM ((app_v3.events e
-     JOIN app_v3.organizers o ON ((o.id = e.organizer_id)))
-     JOIN app_v3.organizer_members m ON ((m.organizer_id = o.id)))
+     JOIN app_v3.organizations o ON ((o.id = e.organization_id)))
+     JOIN app_v3.organization_members m ON ((m.organization_id = o.id)))
   WHERE ((e.id = padel_matches.event_id) AND (m.user_id = ( SELECT auth.uid() AS uid)))))) WITH CHECK ((EXISTS ( SELECT 1
    FROM ((app_v3.events e
-     JOIN app_v3.organizers o ON ((o.id = e.organizer_id)))
-     JOIN app_v3.organizer_members m ON ((m.organizer_id = o.id)))
+     JOIN app_v3.organizations o ON ((o.id = e.organization_id)))
+     JOIN app_v3.organization_members m ON ((m.organization_id = o.id)))
   WHERE ((e.id = padel_matches.event_id) AND (m.user_id = ( SELECT auth.uid() AS uid))))));
 ALTER TABLE app_v3.padel_player_profiles ENABLE ROW LEVEL SECURITY;
 CREATE POLICY padel_player_profiles_rw ON app_v3.padel_player_profiles TO authenticated USING ((EXISTS ( SELECT 1
-   FROM (app_v3.organizers o
-     JOIN app_v3.organizer_members m ON ((m.organizer_id = o.id)))
-  WHERE ((o.id = padel_player_profiles.organizer_id) AND (m.user_id = ( SELECT auth.uid() AS uid)))))) WITH CHECK ((EXISTS ( SELECT 1
-   FROM (app_v3.organizers o
-     JOIN app_v3.organizer_members m ON ((m.organizer_id = o.id)))
-  WHERE ((o.id = padel_player_profiles.organizer_id) AND (m.user_id = ( SELECT auth.uid() AS uid))))));
+   FROM (app_v3.organizations o
+     JOIN app_v3.organization_members m ON ((m.organization_id = o.id)))
+  WHERE ((o.id = padel_player_profiles.organization_id) AND (m.user_id = ( SELECT auth.uid() AS uid)))))) WITH CHECK ((EXISTS ( SELECT 1
+   FROM (app_v3.organizations o
+     JOIN app_v3.organization_members m ON ((m.organization_id = o.id)))
+  WHERE ((o.id = padel_player_profiles.organization_id) AND (m.user_id = ( SELECT auth.uid() AS uid))))));
 ALTER TABLE app_v3.padel_ranking_entries ENABLE ROW LEVEL SECURITY;
 CREATE POLICY padel_ranking_entries_rw ON app_v3.padel_ranking_entries TO authenticated USING ((EXISTS ( SELECT 1
-   FROM (app_v3.organizers o
-     JOIN app_v3.organizer_members m ON ((m.organizer_id = o.id)))
-  WHERE ((o.id = padel_ranking_entries.organizer_id) AND (m.user_id = ( SELECT auth.uid() AS uid)))))) WITH CHECK ((EXISTS ( SELECT 1
-   FROM (app_v3.organizers o
-     JOIN app_v3.organizer_members m ON ((m.organizer_id = o.id)))
-  WHERE ((o.id = padel_ranking_entries.organizer_id) AND (m.user_id = ( SELECT auth.uid() AS uid))))));
+   FROM (app_v3.organizations o
+     JOIN app_v3.organization_members m ON ((m.organization_id = o.id)))
+  WHERE ((o.id = padel_ranking_entries.organization_id) AND (m.user_id = ( SELECT auth.uid() AS uid)))))) WITH CHECK ((EXISTS ( SELECT 1
+   FROM (app_v3.organizations o
+     JOIN app_v3.organization_members m ON ((m.organization_id = o.id)))
+  WHERE ((o.id = padel_ranking_entries.organization_id) AND (m.user_id = ( SELECT auth.uid() AS uid))))));
 ALTER TABLE app_v3.padel_rule_sets ENABLE ROW LEVEL SECURITY;
 CREATE POLICY padel_rule_sets_rw ON app_v3.padel_rule_sets TO authenticated USING ((EXISTS ( SELECT 1
-   FROM (app_v3.organizers o
-     JOIN app_v3.organizer_members m ON ((m.organizer_id = o.id)))
-  WHERE ((o.id = padel_rule_sets.organizer_id) AND (m.user_id = ( SELECT auth.uid() AS uid)))))) WITH CHECK ((EXISTS ( SELECT 1
-   FROM (app_v3.organizers o
-     JOIN app_v3.organizer_members m ON ((m.organizer_id = o.id)))
-  WHERE ((o.id = padel_rule_sets.organizer_id) AND (m.user_id = ( SELECT auth.uid() AS uid))))));
+   FROM (app_v3.organizations o
+     JOIN app_v3.organization_members m ON ((m.organization_id = o.id)))
+  WHERE ((o.id = padel_rule_sets.organization_id) AND (m.user_id = ( SELECT auth.uid() AS uid)))))) WITH CHECK ((EXISTS ( SELECT 1
+   FROM (app_v3.organizations o
+     JOIN app_v3.organization_members m ON ((m.organization_id = o.id)))
+  WHERE ((o.id = padel_rule_sets.organization_id) AND (m.user_id = ( SELECT auth.uid() AS uid))))));
 ALTER TABLE app_v3.padel_teams ENABLE ROW LEVEL SECURITY;
 CREATE POLICY padel_teams_rw ON app_v3.padel_teams TO authenticated USING ((EXISTS ( SELECT 1
    FROM ((app_v3.events e
-     JOIN app_v3.organizers o ON ((o.id = e.organizer_id)))
-     JOIN app_v3.organizer_members m ON ((m.organizer_id = o.id)))
+     JOIN app_v3.organizations o ON ((o.id = e.organization_id)))
+     JOIN app_v3.organization_members m ON ((m.organization_id = o.id)))
   WHERE ((e.id = padel_teams.event_id) AND (m.user_id = ( SELECT auth.uid() AS uid)))))) WITH CHECK ((EXISTS ( SELECT 1
    FROM ((app_v3.events e
-     JOIN app_v3.organizers o ON ((o.id = e.organizer_id)))
-     JOIN app_v3.organizer_members m ON ((m.organizer_id = o.id)))
+     JOIN app_v3.organizations o ON ((o.id = e.organization_id)))
+     JOIN app_v3.organization_members m ON ((m.organization_id = o.id)))
   WHERE ((e.id = padel_teams.event_id) AND (m.user_id = ( SELECT auth.uid() AS uid))))));
 ALTER TABLE app_v3.padel_tournament_configs ENABLE ROW LEVEL SECURITY;
 CREATE POLICY padel_tournament_configs_rw ON app_v3.padel_tournament_configs TO authenticated USING ((EXISTS ( SELECT 1
-   FROM (app_v3.organizers o
-     JOIN app_v3.organizer_members m ON ((m.organizer_id = o.id)))
-  WHERE ((o.id = padel_tournament_configs.organizer_id) AND (m.user_id = ( SELECT auth.uid() AS uid)))))) WITH CHECK ((EXISTS ( SELECT 1
-   FROM (app_v3.organizers o
-     JOIN app_v3.organizer_members m ON ((m.organizer_id = o.id)))
-  WHERE ((o.id = padel_tournament_configs.organizer_id) AND (m.user_id = ( SELECT auth.uid() AS uid))))));
+   FROM (app_v3.organizations o
+     JOIN app_v3.organization_members m ON ((m.organization_id = o.id)))
+  WHERE ((o.id = padel_tournament_configs.organization_id) AND (m.user_id = ( SELECT auth.uid() AS uid)))))) WITH CHECK ((EXISTS ( SELECT 1
+   FROM (app_v3.organizations o
+     JOIN app_v3.organization_members m ON ((m.organization_id = o.id)))
+  WHERE ((o.id = padel_tournament_configs.organization_id) AND (m.user_id = ( SELECT auth.uid() AS uid))))));
 ALTER TABLE app_v3.sale_lines ENABLE ROW LEVEL SECURITY;
 CREATE POLICY sale_lines_service_role ON app_v3.sale_lines FOR SELECT TO service_role USING (true);
 CREATE POLICY sale_lines_view ON app_v3.sale_lines FOR SELECT TO authenticated USING ((EXISTS ( SELECT 1
    FROM app_v3.sale_summaries s
   WHERE ((s.id = sale_lines.sale_summary_id) AND ((s.user_id = ( SELECT auth.uid() AS uid)) OR (EXISTS ( SELECT 1
            FROM (app_v3.events e
-             JOIN app_v3.organizer_members m ON ((m.organizer_id = e.organizer_id)))
+             JOIN app_v3.organization_members m ON ((m.organization_id = e.organization_id)))
           WHERE ((e.id = s.event_id) AND (m.user_id = ( SELECT auth.uid() AS uid))))))))));
 ALTER TABLE app_v3.sale_summaries ENABLE ROW LEVEL SECURITY;
 CREATE POLICY sale_summaries_service_role ON app_v3.sale_summaries FOR SELECT TO service_role USING (true);
 CREATE POLICY sale_summaries_view ON app_v3.sale_summaries FOR SELECT TO authenticated USING (((user_id = ( SELECT auth.uid() AS uid)) OR (EXISTS ( SELECT 1
    FROM (app_v3.events e
-     JOIN app_v3.organizer_members m ON ((m.organizer_id = e.organizer_id)))
+     JOIN app_v3.organization_members m ON ((m.organization_id = e.organization_id)))
   WHERE ((e.id = sale_summaries.event_id) AND (m.user_id = ( SELECT auth.uid() AS uid)))))));
 CREATE POLICY select_own_resales ON app_v3.ticket_resales FOR SELECT TO authenticated USING ((seller_user_id = ( SELECT auth.uid() AS uid)));
 CREATE POLICY select_own_transfers ON app_v3.ticket_transfers FOR SELECT TO authenticated USING (((from_user_id = ( SELECT auth.uid() AS uid)) OR (to_user_id = ( SELECT auth.uid() AS uid))));
 CREATE POLICY select_public_listed_resales ON app_v3.ticket_resales FOR SELECT TO anon USING ((status = 'LISTED'::app_v3."ResaleStatus"));
 ALTER TABLE app_v3.staff_assignments ENABLE ROW LEVEL SECURITY;
-CREATE POLICY staff_assignments_select ON app_v3.staff_assignments FOR SELECT TO authenticated USING (((user_id = ( SELECT auth.uid() AS uid)) OR (organizer_id IN ( SELECT o.id
-   FROM (app_v3.organizers o
-     JOIN app_v3.organizer_members m ON ((m.organizer_id = o.id)))
+CREATE POLICY staff_assignments_select ON app_v3.staff_assignments FOR SELECT TO authenticated USING (((user_id = ( SELECT auth.uid() AS uid)) OR (organization_id IN ( SELECT o.id
+   FROM (app_v3.organizations o
+     JOIN app_v3.organization_members m ON ((m.organization_id = o.id)))
   WHERE (m.user_id = ( SELECT auth.uid() AS uid))))));
 ALTER TABLE app_v3.ticket_resales ENABLE ROW LEVEL SECURITY;
 ALTER TABLE app_v3.ticket_transfers ENABLE ROW LEVEL SECURITY;

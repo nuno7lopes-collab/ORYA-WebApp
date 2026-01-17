@@ -15,27 +15,46 @@ import { validateEligibility } from "@/domain/padelEligibility";
 import { PairingAction, transition } from "@/domain/padelPairingStateMachine";
 import { ensureEntriesForConfirmedPairing } from "@/domain/tournaments/ensureEntriesForConfirmedPairing";
 import { checkPadelCategoryLimit } from "@/domain/padelCategoryLimit";
+import { checkPadelCategoryPlayerCapacity } from "@/domain/padelCategoryCapacity";
+import { checkPadelRegistrationWindow } from "@/domain/padelRegistration";
+import { getPadelOnboardingMissing, isPadelOnboardingComplete } from "@/domain/padelOnboarding";
+import { validatePadelCategoryGender } from "@/domain/padelCategoryGender";
 
-async function ensurePlayerProfile(params: { organizerId: number; userId: string }) {
-  const { organizerId, userId } = params;
+async function ensurePlayerProfile(params: { organizationId: number; userId: string }) {
+  const { organizationId, userId } = params;
   const existing = await prisma.padelPlayerProfile.findFirst({
-    where: { organizerId, userId },
+    where: { organizationId, userId },
     select: { id: true },
   });
   if (existing) return existing.id;
   const [profile, authUser] = await Promise.all([
-    prisma.profile.findUnique({ where: { id: userId }, select: { fullName: true } }),
+    prisma.profile.findUnique({
+      where: { id: userId },
+      select: {
+        fullName: true,
+        contactPhone: true,
+        gender: true,
+        padelLevel: true,
+        padelPreferredSide: true,
+        padelClubName: true,
+      },
+    }),
     prisma.users.findUnique({ where: { id: userId }, select: { email: true } }),
   ]);
   const name = profile?.fullName?.trim() || "Jogador Padel";
   const email = authUser?.email ?? null;
   const created = await prisma.padelPlayerProfile.create({
     data: {
-      organizerId,
+      organizationId,
       userId,
       fullName: name,
       displayName: name,
       email: email ?? undefined,
+      phone: profile?.contactPhone ?? undefined,
+      gender: profile?.gender ?? undefined,
+      level: profile?.padelLevel ?? undefined,
+      preferredSide: profile?.padelPreferredSide ?? undefined,
+      clubName: profile?.padelClubName ?? undefined,
     },
     select: { id: true },
   });
@@ -58,18 +77,52 @@ export async function POST(req: NextRequest) {
 
   const pairing = await prisma.padelPairing.findUnique({
     where: { id: pairingId },
-    include: { slots: true, event: { select: { organizerId: true } } },
+    include: { slots: true, event: { select: { organizationId: true } } },
   });
   if (!pairing) return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
-  const organizerId = pairing.event?.organizerId ?? null;
-  if (!organizerId) {
+  const organizationId = pairing.event?.organizationId ?? null;
+  if (!organizationId) {
     return NextResponse.json({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+  }
+
+  const [event, windowConfig] = await Promise.all([
+    prisma.event.findUnique({
+      where: { id: pairing.eventId },
+      select: { status: true, startsAt: true },
+    }),
+    prisma.padelTournamentConfig.findUnique({
+      where: { eventId: pairing.eventId },
+      select: { advancedSettings: true },
+    }),
+  ]);
+  if (!event) {
+    return NextResponse.json({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+  }
+  const advanced = (windowConfig?.advancedSettings || {}) as {
+    registrationStartsAt?: string | null;
+    registrationEndsAt?: string | null;
+    competitionState?: string | null;
+  };
+  const registrationStartsAt =
+    advanced.registrationStartsAt && !Number.isNaN(new Date(advanced.registrationStartsAt).getTime())
+      ? new Date(advanced.registrationStartsAt)
+      : null;
+  const registrationEndsAt =
+    advanced.registrationEndsAt && !Number.isNaN(new Date(advanced.registrationEndsAt).getTime())
+      ? new Date(advanced.registrationEndsAt)
+      : null;
+  const registrationCheck = checkPadelRegistrationWindow({
+    eventStatus: event.status,
+    eventStartsAt: event.startsAt ?? null,
+    registrationStartsAt,
+    registrationEndsAt,
+    competitionState: advanced.competitionState ?? null,
+  });
+  if (!registrationCheck.ok) {
+    return NextResponse.json({ ok: false, error: registrationCheck.code }, { status: 409 });
   }
   if (pairing.player2UserId) {
     return NextResponse.json({ ok: false, error: "INVITE_ALREADY_USED" }, { status: 409 });
-  }
-  if (pairing.payment_mode === PadelPaymentMode.SPLIT && pairing.deadlineAt && pairing.deadlineAt.getTime() < Date.now()) {
-    return NextResponse.json({ ok: false, error: "PAIRING_EXPIRED" }, { status: 410 });
   }
   if (
     pairing.pairingJoinMode !== "LOOKING_FOR_PARTNER" &&
@@ -112,18 +165,50 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  const playerCapacity = await prisma.$transaction((tx) =>
+    checkPadelCategoryPlayerCapacity({
+      tx,
+      eventId: pairing.eventId,
+      categoryId: pairing.categoryId ?? null,
+    }),
+  );
+  if (!playerCapacity.ok) {
+    return NextResponse.json({ ok: false, error: playerCapacity.code }, { status: 409 });
+  }
+
   const [captainProfile, partnerProfile] = await Promise.all([
     pairing.player1UserId
       ? prisma.profile.findUnique({ where: { id: pairing.player1UserId }, select: { gender: true } })
       : Promise.resolve(null),
-    prisma.profile.findUnique({ where: { id: user.id }, select: { gender: true } }),
+    prisma.profile.findUnique({
+      where: { id: user.id },
+      select: {
+        gender: true,
+        fullName: true,
+        username: true,
+        contactPhone: true,
+        padelLevel: true,
+        padelPreferredSide: true,
+      },
+    }),
   ]);
-  const config = await prisma.padelTournamentConfig.findUnique({
+
+  const missing = getPadelOnboardingMissing({
+    profile: partnerProfile,
+    email: user.email ?? null,
+  });
+  if (!isPadelOnboardingComplete(missing)) {
+    return NextResponse.json(
+      { ok: false, error: "PADEL_ONBOARDING_REQUIRED", missing },
+      { status: 409 },
+    );
+  }
+  const eligibilityConfig = await prisma.padelTournamentConfig.findUnique({
     where: { eventId: pairing.eventId },
     select: { eligibilityType: true },
   });
   const eligibility = validateEligibility(
-    (config?.eligibilityType as PadelEligibilityType) ?? PadelEligibilityType.OPEN,
+    (eligibilityConfig?.eligibilityType as PadelEligibilityType) ?? PadelEligibilityType.OPEN,
     (captainProfile?.gender as Gender | null) ?? null,
     partnerProfile?.gender as Gender | null,
   );
@@ -134,9 +219,35 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  const category = pairing.categoryId
+    ? await prisma.padelCategory.findUnique({
+        where: { id: pairing.categoryId },
+        select: { genderRestriction: true, minLevel: true, maxLevel: true },
+      })
+    : null;
+  const categoryGender = validatePadelCategoryGender(
+    category?.genderRestriction ?? null,
+    captainProfile?.gender as Gender | null,
+    partnerProfile?.gender as Gender | null,
+  );
+  if (!categoryGender.ok) {
+    return NextResponse.json(
+      { ok: false, error: categoryGender.code },
+      { status: 409 },
+    );
+  }
+
   const pendingSlot = pairing.slots.find((s) => s.slotStatus === "PENDING");
   if (!pendingSlot) {
     return NextResponse.json({ ok: false, error: "NO_PENDING_SLOT" }, { status: 400 });
+  }
+  if (
+    pairing.payment_mode === PadelPaymentMode.SPLIT &&
+    pairing.deadlineAt &&
+    pairing.deadlineAt.getTime() < Date.now() &&
+    pendingSlot.paymentStatus !== PadelPairingPaymentStatus.PAID
+  ) {
+    return NextResponse.json({ ok: false, error: "PAIRING_EXPIRED" }, { status: 410 });
   }
 
   if (pairing.payment_mode === PadelPaymentMode.SPLIT && pendingSlot.paymentStatus !== PadelPairingPaymentStatus.PAID) {
@@ -162,7 +273,7 @@ export async function POST(req: NextRequest) {
     const partnerAcceptedAt = new Date();
     const partnerPaidAt =
       pendingSlot.paymentStatus === PadelPairingPaymentStatus.PAID ? new Date() : null;
-    const playerProfileId = await ensurePlayerProfile({ organizerId, userId: user.id });
+    const playerProfileId = await ensurePlayerProfile({ organizationId, userId: user.id });
 
     const { pairing: updated, shouldEnsureEntries } = await prisma.$transaction(async (tx) => {
       const updatedPairing = await tx.padelPairing.update({

@@ -23,6 +23,6 @@ export type OperationRecord = {
   paymentIntentId: string | null;
   stripeEventId: string | null;
   eventId?: number | null;
-  organizerId?: number | null;
+  organizationId?: number | null;
   pairingId?: number | null;
 };

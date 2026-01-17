@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { isAppRequest, isSameOriginOrApp } from "@/lib/auth/requestValidation";
+import { rateLimit } from "@/lib/auth/rateLimit";
 
 /**
  * Endpoint simples para verificar se um email está bloqueado por conta PENDING_DELETE.
@@ -7,11 +9,40 @@ import { prisma } from "@/lib/prisma";
  */
 export async function GET(req: NextRequest) {
   try {
+    if (!isSameOriginOrApp(req)) {
+      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    }
+
     const email = req.nextUrl.searchParams.get("email");
     if (!email || !email.includes("@")) {
       return NextResponse.json({ ok: false, error: "INVALID_EMAIL" }, { status: 400 });
     }
     const normalized = email.trim().toLowerCase();
+
+    const limiter = await rateLimit(req, {
+      windowMs: 5 * 60 * 1000,
+      max: 10,
+      keyPrefix: "auth:check-email",
+      identifier: normalized,
+    });
+    if (!limiter.allowed) {
+      return NextResponse.json(
+        { ok: false, error: "RATE_LIMITED" },
+        { status: 429, headers: { "Retry-After": String(limiter.retryAfter) } }
+      );
+    }
+    const allowDetails = isAppRequest(req);
+    if (!allowDetails) {
+      return NextResponse.json(
+        {
+          ok: true,
+          blocked: false,
+          message: "Se existir conta, receberás instruções.",
+        },
+        { status: 200 },
+      );
+    }
+
     const authUser = await prisma.users.findFirst({
       where: { email: normalized },
       select: { id: true },

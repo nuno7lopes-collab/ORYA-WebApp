@@ -1,0 +1,10 @@
+var R=require("../../../../chunks/[turbopack]_runtime.js")("server/app/api/profiles/save-basic/route.js")
+R.c("server/chunks/node_modules_next_74b02f1b._.js")
+R.c("server/chunks/node_modules_@supabase_storage-js_dist_module_829f4f3c._.js")
+R.c("server/chunks/node_modules_@supabase_auth-js_dist_module_02e1b12e._.js")
+R.c("server/chunks/node_modules_libphonenumber-js_a48f0828._.js")
+R.c("server/chunks/node_modules_6a002b03._.js")
+R.c("server/chunks/[root-of-the-server]__50548ba0._.js")
+R.c("server/chunks/_next-internal_server_app_api_profiles_save-basic_route_actions_63f90ec7.js")
+R.m("[project]/node_modules/next/dist/esm/build/templates/app-route.js { INNER_APP_ROUTE => \"[project]/app/api/profiles/save-basic/route.ts [app-route] (ecmascript)\" } [app-route] (ecmascript)")
+module.exports=R.m("[project]/node_modules/next/dist/esm/build/templates/app-route.js { INNER_APP_ROUTE => \"[project]/app/api/profiles/save-basic/route.ts [app-route] (ecmascript)\" } [app-route] (ecmascript)").exports

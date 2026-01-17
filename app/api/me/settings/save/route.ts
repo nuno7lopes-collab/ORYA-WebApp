@@ -3,12 +3,14 @@ import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { clearUsernameForOwner } from "@/lib/globalUsernames";
 import { getNotificationPrefs } from "@/lib/notifications";
+import { INTEREST_MAX_SELECTION, normalizeInterestSelection } from "@/lib/interests";
 
 type Body = {
-  visibility?: "PUBLIC" | "PRIVATE";
+  visibility?: "PUBLIC" | "PRIVATE" | "FOLLOWERS";
+  favouriteCategories?: string[];
   allowEmailNotifications?: boolean;
   allowEventReminders?: boolean;
-  allowFriendRequests?: boolean;
+  allowFollowRequests?: boolean;
   allowSalesAlerts?: boolean;
   allowSystemAnnouncements?: boolean;
   hardDelete?: boolean;
@@ -35,12 +37,16 @@ export async function PATCH(req: NextRequest) {
 
     const visibility = body.visibility;
     const wantsHardDelete = body.hardDelete === true;
-    if (visibility && visibility !== "PUBLIC" && visibility !== "PRIVATE") {
+    const favouriteCategories = Array.isArray(body.favouriteCategories)
+      ? normalizeInterestSelection(body.favouriteCategories, INTEREST_MAX_SELECTION)
+      : undefined;
+    if (visibility && visibility !== "PUBLIC" && visibility !== "PRIVATE" && visibility !== "FOLLOWERS") {
       return NextResponse.json({ ok: false, error: "Visibilidade inválida." }, { status: 400 });
     }
 
     const dataToUpdate: Record<string, unknown> = {};
     if (visibility) dataToUpdate.visibility = visibility;
+    if (favouriteCategories !== undefined) dataToUpdate.favouriteCategories = favouriteCategories;
 
     if (wantsHardDelete) {
       // Libera username e marca soft-delete
@@ -85,9 +91,14 @@ export async function PATCH(req: NextRequest) {
       create: {
         id: user.id,
         roles: ["user"],
-        favouriteCategories: [],
+        favouriteCategories: favouriteCategories ?? [],
         onboardingDone: false,
-        visibility: dataToUpdate.visibility === "PRIVATE" ? "PRIVATE" : "PUBLIC",
+        visibility:
+          dataToUpdate.visibility === "PRIVATE"
+            ? "PRIVATE"
+            : dataToUpdate.visibility === "FOLLOWERS"
+              ? "FOLLOWERS"
+              : "PUBLIC",
       },
     });
 
@@ -98,7 +109,7 @@ export async function PATCH(req: NextRequest) {
     };
     assign("allowEmailNotifications", "allowEmailNotifications");
     assign("allowEventReminders", "allowEventReminders");
-    assign("allowFriendRequests", "allowFriendRequests");
+    assign("allowFollowRequests", "allowFollowRequests");
     assign("allowSalesAlerts", "allowSalesAlerts");
     assign("allowSystemAnnouncements", "allowSystemAnnouncements");
     if (Object.keys(notificationPrefsUpdate).length > 0) {
@@ -115,9 +126,10 @@ export async function PATCH(req: NextRequest) {
       ok: true,
       profile: {
         visibility: profile.visibility,
+        favouriteCategories: profile.favouriteCategories,
         allowEmailNotifications: notificationPrefs?.allowEmailNotifications ?? true,
         allowEventReminders: notificationPrefs?.allowEventReminders ?? true,
-        allowFriendRequests: notificationPrefs?.allowFriendRequests ?? true,
+        allowFollowRequests: notificationPrefs?.allowFollowRequests ?? true,
         allowSalesAlerts: notificationPrefs?.allowSalesAlerts ?? true,
         allowSystemAnnouncements: notificationPrefs?.allowSystemAnnouncements ?? true,
       },

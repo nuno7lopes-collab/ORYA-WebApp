@@ -1,12 +1,15 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
-import { OrganizerMemberRole } from "@prisma/client";
+import { OrganizationMemberRole } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { getActiveOrganizerForUser } from "@/lib/organizerContext";
+import { getActiveOrganizationForUser } from "@/lib/organizationContext";
+import { resolveOrganizationIdFromParams } from "@/lib/organizationId";
+import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
+import { queueMatchChanged } from "@/domain/notifications/tournament";
 
-const allowedRoles: OrganizerMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
+const allowedRoles: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
 const BUFFER_MINUTES = 5; // tempo mínimo entre registos para evitar sobreposição acidental
 const LOCK_TTL_SECONDS = 45;
 
@@ -23,29 +26,34 @@ const overlapsWithBuffer = (aStart: Date, aEnd: Date, bStart: Date, bEnd: Date, 
   return aStartBuffered < bEnd && bStart < aEndBuffered;
 };
 
-async function ensureOrganizer(req: NextRequest) {
+async function ensureOrganization(req: NextRequest) {
   const supabase = await createSupabaseServer();
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return { error: "UNAUTHENTICATED" as const, status: 401 };
 
-  const organizerIdParam = req.nextUrl.searchParams.get("organizerId");
-  const parsedOrgId = organizerIdParam ? Number(organizerIdParam) : null;
-  const { organizer } = await getActiveOrganizerForUser(user.id, {
-    organizerId: Number.isFinite(parsedOrgId) ? parsedOrgId : undefined,
+  const parsedOrgId = resolveOrganizationIdFromParams(req.nextUrl.searchParams);
+  const { organization } = await getActiveOrganizationForUser(user.id, {
+    organizationId: Number.isFinite(parsedOrgId) ? parsedOrgId : undefined,
     roles: allowedRoles,
   });
-  if (!organizer) return { error: "NO_ORGANIZER" as const, status: 403 };
-  return { organizer };
+  if (!organization) return { error: "NO_ORGANIZATION" as const, status: 403 };
+  return { organization, userId: user.id };
 }
 
+const getRequestMeta = (req: NextRequest) => {
+  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || null;
+  const userAgent = req.headers.get("user-agent") || null;
+  return { ip, userAgent };
+};
+
 export async function GET(req: NextRequest) {
-  const check = await ensureOrganizer(req);
+  const check = await ensureOrganization(req);
   if ("error" in check) {
     return NextResponse.json({ ok: false, error: check.error }, { status: check.status });
   }
-  const { organizer } = check;
+  const { organization } = check;
 
   const eventIdParam = req.nextUrl.searchParams.get("eventId");
   const eventId = eventIdParam ? Number(eventIdParam) : Number.NaN;
@@ -54,7 +62,7 @@ export async function GET(req: NextRequest) {
   }
 
   const event = await prisma.event.findFirst({
-    where: { id: eventId, organizerId: organizer.id },
+    where: { id: eventId, organizationId: organization.id },
     select: { id: true, timezone: true, startsAt: true, endsAt: true },
   });
   if (!event) {
@@ -63,11 +71,11 @@ export async function GET(req: NextRequest) {
 
   const [blocks, availabilities, matches] = await Promise.all([
     prisma.padelCourtBlock.findMany({
-      where: { organizerId: organizer.id, eventId },
+      where: { organizationId: organization.id, eventId },
       orderBy: [{ startAt: "asc" }],
       select: {
         id: true,
-        organizerId: true,
+        organizationId: true,
         eventId: true,
         padelClubId: true,
         courtId: true,
@@ -80,11 +88,11 @@ export async function GET(req: NextRequest) {
       },
     }),
     prisma.padelAvailability.findMany({
-      where: { organizerId: organizer.id, eventId },
+      where: { organizationId: organization.id, eventId },
       orderBy: [{ startAt: "asc" }],
       select: {
         id: true,
-        organizerId: true,
+        organizationId: true,
         eventId: true,
         playerProfileId: true,
         playerName: true,
@@ -117,6 +125,7 @@ export async function GET(req: NextRequest) {
         pairingAId: true,
         pairingBId: true,
         updatedAt: true,
+        score: true,
       },
       orderBy: [{ plannedStartAt: "asc" }, { startTime: "asc" }],
     }),
@@ -229,6 +238,8 @@ export async function GET(req: NextRequest) {
       availabilities,
       matches,
       conflicts,
+      eventStartsAt: event.startsAt,
+      eventEndsAt: event.endsAt,
       eventTimezone: event.timezone,
       bufferMinutes: BUFFER_MINUTES,
     },
@@ -237,11 +248,11 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const check = await ensureOrganizer(req);
+  const check = await ensureOrganization(req);
   if ("error" in check) {
     return NextResponse.json({ ok: false, error: check.error }, { status: check.status });
   }
-  const { organizer } = check;
+  const { organization } = check;
 
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
   if (!body) return NextResponse.json({ ok: false, error: "INVALID_BODY" }, { status: 400 });
@@ -261,9 +272,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "INVALID_DATE_RANGE" }, { status: 400 });
   }
 
-  // Confirm event belongs to organizer
+  // Confirm event belongs to organization
   const event = await prisma.event.findFirst({
-    where: { id: eventId as number, organizerId: organizer.id },
+    where: { id: eventId as number, organizationId: organization.id },
     select: { id: true, templateType: true },
   });
   if (!event) {
@@ -278,7 +289,7 @@ export async function POST(req: NextRequest) {
 
     if (courtId) {
       const court = await prisma.padelClubCourt.findFirst({
-        where: { id: courtId, club: { organizerId: organizer.id } },
+        where: { id: courtId, club: { organizationId: organization.id } },
         select: { id: true, padelClubId: true },
       });
       if (!court) return NextResponse.json({ ok: false, error: "COURT_NOT_FOUND" }, { status: 404 });
@@ -286,7 +297,7 @@ export async function POST(req: NextRequest) {
 
     const overlappingBlocks = await prisma.padelCourtBlock.findFirst({
       where: {
-        organizerId: organizer.id,
+        organizationId: organization.id,
         eventId: event.id,
         ...(courtId ? { courtId } : {}),
         startAt: { lt: endAt },
@@ -308,7 +319,7 @@ export async function POST(req: NextRequest) {
     try {
       const block = await prisma.padelCourtBlock.create({
         data: {
-          organizerId: organizer.id,
+          organizationId: organization.id,
           eventId: event.id,
           padelClubId: padelClubId ?? null,
           courtId: courtId ?? null,
@@ -318,6 +329,21 @@ export async function POST(req: NextRequest) {
           kind: typeof body.kind === "string" ? body.kind : "BLOCK",
           note: typeof body.note === "string" ? body.note.trim() || null : null,
         },
+      });
+      await recordOrganizationAuditSafe({
+        organizationId: organization.id,
+        actorUserId: check.userId,
+        action: "PADEL_CALENDAR_BLOCK_CREATE",
+        metadata: {
+          blockId: block.id,
+          eventId: event.id,
+          courtId: block.courtId ?? null,
+          startAt: block.startAt,
+          endAt: block.endAt,
+          label: block.label ?? null,
+          kind: block.kind ?? null,
+        },
+        ...getRequestMeta(req),
       });
 
       return NextResponse.json({ ok: true, block }, { status: 201 });
@@ -335,7 +361,7 @@ export async function POST(req: NextRequest) {
 
   if (playerProfileId) {
     const profile = await prisma.padelPlayerProfile.findFirst({
-      where: { id: playerProfileId, organizerId: organizer.id },
+      where: { id: playerProfileId, organizationId: organization.id },
       select: { id: true },
     });
     if (!profile) return NextResponse.json({ ok: false, error: "PLAYER_NOT_FOUND" }, { status: 404 });
@@ -345,7 +371,7 @@ export async function POST(req: NextRequest) {
   if (playerProfileId || emailToCheck) {
     const overlappingAvailability = await prisma.padelAvailability.findFirst({
       where: {
-        organizerId: organizer.id,
+        organizationId: organization.id,
         eventId: event.id,
         ...(playerProfileId ? { playerProfileId } : {}),
         ...(emailToCheck ? { playerEmail: emailToCheck } : {}),
@@ -366,7 +392,7 @@ export async function POST(req: NextRequest) {
 
   const availability = await prisma.padelAvailability.create({
     data: {
-      organizerId: organizer.id,
+      organizationId: organization.id,
       eventId: event.id,
       playerProfileId: playerProfileId ?? null,
       playerName: typeof body.playerName === "string" ? body.playerName.trim() || null : null,
@@ -376,16 +402,30 @@ export async function POST(req: NextRequest) {
       note: typeof body.note === "string" ? body.note.trim() || null : null,
     },
   });
+  await recordOrganizationAuditSafe({
+    organizationId: organization.id,
+    actorUserId: check.userId,
+    action: "PADEL_CALENDAR_AVAILABILITY_CREATE",
+    metadata: {
+      availabilityId: availability.id,
+      eventId: event.id,
+      playerProfileId: availability.playerProfileId ?? null,
+      playerEmail: availability.playerEmail ?? null,
+      startAt: availability.startAt,
+      endAt: availability.endAt,
+    },
+    ...getRequestMeta(req),
+  });
 
   return NextResponse.json({ ok: true, availability }, { status: 201 });
 }
 
 export async function PATCH(req: NextRequest) {
-  const check = await ensureOrganizer(req);
+  const check = await ensureOrganization(req);
   if ("error" in check) {
     return NextResponse.json({ ok: false, error: check.error }, { status: check.status });
   }
-  const { organizer } = check;
+  const { organization } = check;
 
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
   if (!body) return NextResponse.json({ ok: false, error: "INVALID_BODY" }, { status: 400 });
@@ -405,7 +445,7 @@ export async function PATCH(req: NextRequest) {
       typeof body.courtId === "number" ? body.courtId : typeof body.courtId === "string" ? Number(body.courtId) : undefined;
 
     const block = await prisma.padelCourtBlock.findFirst({
-      where: { id: id as number, organizerId: organizer.id },
+      where: { id: id as number, organizationId: organization.id },
       select: { id: true, startAt: true, endAt: true, eventId: true, courtId: true, updatedAt: true },
     });
     if (!block) return NextResponse.json({ ok: false, error: "BLOCK_NOT_FOUND" }, { status: 404 });
@@ -422,7 +462,7 @@ export async function PATCH(req: NextRequest) {
 
     if (courtId) {
       const court = await prisma.padelClubCourt.findFirst({
-        where: { id: courtId, club: { organizerId: organizer.id } },
+        where: { id: courtId, club: { organizationId: organization.id } },
         select: { id: true },
       });
       if (!court) return NextResponse.json({ ok: false, error: "COURT_NOT_FOUND" }, { status: 404 });
@@ -439,7 +479,7 @@ export async function PATCH(req: NextRequest) {
     if (startAt && endAt) {
       const overlapping = await prisma.padelCourtBlock.findFirst({
         where: {
-          organizerId: organizer.id,
+          organizationId: organization.id,
           eventId: block.eventId,
           ...(typeof courtId === "number" ? { courtId } : {}),
           id: { not: id as number },
@@ -473,6 +513,26 @@ export async function PATCH(req: NextRequest) {
       },
     });
     await releaseLock(lockKey);
+    await recordOrganizationAuditSafe({
+      organizationId: organization.id,
+      actorUserId: check.userId,
+      action: "PADEL_CALENDAR_BLOCK_UPDATE",
+      metadata: {
+        blockId: updated.id,
+        eventId: block.eventId,
+        before: {
+          startAt: block.startAt,
+          endAt: block.endAt,
+          courtId: block.courtId ?? null,
+        },
+        after: {
+          startAt: updated.startAt,
+          endAt: updated.endAt,
+          courtId: updated.courtId ?? null,
+        },
+      },
+      ...getRequestMeta(req),
+    });
     return NextResponse.json({ ok: true, block: updated }, { status: 200 });
   }
 
@@ -487,7 +547,7 @@ export async function PATCH(req: NextRequest) {
           : undefined;
 
     const availability = await prisma.padelAvailability.findFirst({
-      where: { id: id as number, organizerId: organizer.id },
+      where: { id: id as number, organizationId: organization.id },
       select: { id: true, startAt: true, endAt: true, eventId: true, playerProfileId: true, playerEmail: true, updatedAt: true },
     });
     if (!availability) return NextResponse.json({ ok: false, error: "AVAILABILITY_NOT_FOUND" }, { status: 404 });
@@ -504,7 +564,7 @@ export async function PATCH(req: NextRequest) {
 
     if (playerProfileId) {
       const profile = await prisma.padelPlayerProfile.findFirst({
-        where: { id: playerProfileId, organizerId: organizer.id },
+        where: { id: playerProfileId, organizationId: organization.id },
         select: { id: true },
       });
       if (!profile) return NextResponse.json({ ok: false, error: "PLAYER_NOT_FOUND" }, { status: 404 });
@@ -522,7 +582,7 @@ export async function PATCH(req: NextRequest) {
     if (startAt && endAt && (playerProfileId || emailToCheck)) {
       const overlapping = await prisma.padelAvailability.findFirst({
         where: {
-          organizerId: organizer.id,
+          organizationId: organization.id,
           eventId: availability.eventId,
           ...(playerProfileId ? { playerProfileId } : {}),
           ...(emailToCheck ? { playerEmail: emailToCheck } : {}),
@@ -552,6 +612,28 @@ export async function PATCH(req: NextRequest) {
         ...(typeof body.note === "string" ? { note: body.note.trim() || null } : {}),
       },
     });
+    await recordOrganizationAuditSafe({
+      organizationId: organization.id,
+      actorUserId: check.userId,
+      action: "PADEL_CALENDAR_AVAILABILITY_UPDATE",
+      metadata: {
+        availabilityId: updated.id,
+        eventId: availability.eventId,
+        before: {
+          startAt: availability.startAt,
+          endAt: availability.endAt,
+          playerProfileId: availability.playerProfileId ?? null,
+          playerEmail: availability.playerEmail ?? null,
+        },
+        after: {
+          startAt: updated.startAt,
+          endAt: updated.endAt,
+          playerProfileId: updated.playerProfileId ?? null,
+          playerEmail: updated.playerEmail ?? null,
+        },
+      },
+      ...getRequestMeta(req),
+    });
     return NextResponse.json({ ok: true, availability: updated }, { status: 200 });
   }
 
@@ -568,7 +650,7 @@ export async function PATCH(req: NextRequest) {
       typeof body.courtId === "number" ? body.courtId : typeof body.courtId === "string" ? Number(body.courtId) : undefined;
 
     const match = await prisma.padelMatch.findFirst({
-      where: { id: id as number, event: { organizerId: organizer.id } },
+      where: { id: id as number, event: { organizationId: organization.id } },
       select: {
         id: true,
         status: true,
@@ -577,6 +659,10 @@ export async function PATCH(req: NextRequest) {
         updatedAt: true,
         pairingAId: true,
         pairingBId: true,
+        plannedStartAt: true,
+        plannedEndAt: true,
+        plannedDurationMinutes: true,
+        score: true,
       },
     });
     if (!match) return NextResponse.json({ ok: false, error: "MATCH_NOT_FOUND" }, { status: 404 });
@@ -604,7 +690,7 @@ export async function PATCH(req: NextRequest) {
 
     if (courtId) {
       const court = await prisma.padelClubCourt.findFirst({
-        where: { id: courtId, club: { organizerId: organizer.id } },
+        where: { id: courtId, club: { organizationId: organization.id } },
         select: { id: true },
       });
       if (!court) return NextResponse.json({ ok: false, error: "COURT_NOT_FOUND" }, { status: 404 });
@@ -650,7 +736,7 @@ export async function PATCH(req: NextRequest) {
 
       const overlappingBlock = await prisma.padelCourtBlock.findFirst({
         where: {
-          organizerId: organizer.id,
+          organizationId: organization.id,
           eventId: match.eventId,
           ...(targetCourtId ? { courtId: targetCourtId } : {}),
           startAt: { lt: desiredEnd },
@@ -714,16 +800,76 @@ export async function PATCH(req: NextRequest) {
     if (!lock) {
       return NextResponse.json({ ok: false, error: "LOCKED" }, { status: 423 });
     }
+    const score = match.score && typeof match.score === "object" ? (match.score as Record<string, unknown>) : {};
+    const delayStatusRaw = typeof score.delayStatus === "string" ? score.delayStatus : null;
+    const shouldMarkRescheduled = delayStatusRaw === "DELAYED";
+    const nextScore = shouldMarkRescheduled
+      ? {
+          ...score,
+          delayStatus: "RESCHEDULED",
+          rescheduledAt: new Date().toISOString(),
+          rescheduledBy: check.userId,
+        }
+      : score;
+
     const updated = await prisma.padelMatch.update({
       where: { id: id as number },
       data: {
         ...(typeof courtId !== "undefined" ? { courtId: Number.isFinite(courtId) ? courtId : null } : {}),
         ...(plannedStartAt ? { plannedStartAt } : {}),
         ...(desiredEnd ? { plannedEndAt: desiredEnd, plannedDurationMinutes: Math.round((desiredEnd.getTime() - (desiredStart?.getTime() ?? desiredEnd.getTime())) / 60000) } : {}),
+        ...(shouldMarkRescheduled ? { score: nextScore } : {}),
       },
       select: { id: true, plannedStartAt: true, plannedEndAt: true, plannedDurationMinutes: true, courtId: true },
     });
     await releaseLock(lockKey);
+    await recordOrganizationAuditSafe({
+      organizationId: organization.id,
+      actorUserId: check.userId,
+      action: "PADEL_CALENDAR_MATCH_SCHEDULE",
+      metadata: {
+        matchId: match.id,
+        eventId: match.eventId,
+        before: {
+          plannedStartAt: match.plannedStartAt,
+          plannedEndAt: match.plannedEndAt,
+          plannedDurationMinutes: match.plannedDurationMinutes,
+          courtId: match.courtId ?? null,
+        },
+        after: {
+          plannedStartAt: updated.plannedStartAt,
+          plannedEndAt: updated.plannedEndAt,
+          plannedDurationMinutes: updated.plannedDurationMinutes,
+          courtId: updated.courtId ?? null,
+        },
+      },
+      ...getRequestMeta(req),
+    });
+
+    const startChanged = (match.plannedStartAt?.getTime() ?? 0) !== (updated.plannedStartAt?.getTime() ?? 0);
+    const courtChanged = (match.courtId ?? null) !== (updated.courtId ?? null);
+    if ((startChanged || courtChanged) && (match.pairingAId || match.pairingBId)) {
+      const pairingIds = [match.pairingAId, match.pairingBId].filter(Boolean) as number[];
+      const pairings = await prisma.padelPairing.findMany({
+        where: { id: { in: pairingIds } },
+        select: { slots: { select: { profileId: true } } },
+      });
+      const userIds = Array.from(
+        new Set(
+          pairings
+            .flatMap((pairing) => pairing.slots.map((slot) => slot.profileId))
+            .filter(Boolean) as string[],
+        ),
+      );
+      if (userIds.length > 0) {
+        await queueMatchChanged({
+          userIds,
+          matchId: match.id,
+          startAt: updated.plannedStartAt ?? null,
+          courtId: updated.courtId ?? null,
+        });
+      }
+    }
     return NextResponse.json({ ok: true, match: updated }, { status: 200 });
   }
 
@@ -731,11 +877,11 @@ export async function PATCH(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
-  const check = await ensureOrganizer(req);
+  const check = await ensureOrganization(req);
   if ("error" in check) {
     return NextResponse.json({ ok: false, error: check.error }, { status: check.status });
   }
-  const { organizer } = check;
+  const { organization } = check;
 
   const typeParam = req.nextUrl.searchParams.get("type");
   const idParam = req.nextUrl.searchParams.get("id");
@@ -746,21 +892,35 @@ export async function DELETE(req: NextRequest) {
 
   if (typeParam === "block") {
     const exists = await prisma.padelCourtBlock.findFirst({
-      where: { id, organizerId: organizer.id },
+      where: { id, organizationId: organization.id },
       select: { id: true },
     });
     if (!exists) return NextResponse.json({ ok: false, error: "BLOCK_NOT_FOUND" }, { status: 404 });
     await prisma.padelCourtBlock.delete({ where: { id } });
+    await recordOrganizationAuditSafe({
+      organizationId: organization.id,
+      actorUserId: check.userId,
+      action: "PADEL_CALENDAR_BLOCK_DELETE",
+      metadata: { blockId: id },
+      ...getRequestMeta(req),
+    });
     return NextResponse.json({ ok: true, deleted: true }, { status: 200 });
   }
 
   if (typeParam === "availability") {
     const exists = await prisma.padelAvailability.findFirst({
-      where: { id, organizerId: organizer.id },
+      where: { id, organizationId: organization.id },
       select: { id: true },
     });
     if (!exists) return NextResponse.json({ ok: false, error: "AVAILABILITY_NOT_FOUND" }, { status: 404 });
     await prisma.padelAvailability.delete({ where: { id } });
+    await recordOrganizationAuditSafe({
+      organizationId: organization.id,
+      actorUserId: check.userId,
+      action: "PADEL_CALENDAR_AVAILABILITY_DELETE",
+      metadata: { availabilityId: id },
+      ...getRequestMeta(req),
+    });
     return NextResponse.json({ ok: true, deleted: true }, { status: 200 });
   }
 

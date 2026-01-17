@@ -44,7 +44,17 @@ export async function fulfillPaidIntent(intent: IntentLike, stripeEventId?: stri
     return false;
   }
 
-  let breakdown: { lines: BreakdownLine[]; subtotalCents: number; discountCents: number; platformFeeCents: number; totalCents: number; feeMode?: string | null; currency?: string | null } | null =
+  let breakdown: {
+    lines: BreakdownLine[];
+    subtotalCents: number;
+    discountCents: number;
+    platformFeeCents: number;
+    cardPlatformFeeCents?: number;
+    totalCents: number;
+    feeMode?: string | null;
+    currency?: string | null;
+    paymentMethod?: string | null;
+  } | null =
     null;
   if (typeof meta.breakdown === "string") {
     try {
@@ -55,9 +65,11 @@ export async function fulfillPaidIntent(intent: IntentLike, stripeEventId?: stri
           subtotalCents: Number(parsed.subtotalCents ?? 0),
           discountCents: Number(parsed.discountCents ?? 0),
           platformFeeCents: Number(parsed.platformFeeCents ?? 0),
+          cardPlatformFeeCents: Number(parsed.cardPlatformFeeCents ?? 0),
           totalCents: Number(parsed.totalCents ?? 0),
           feeMode: parsed.feeMode ?? null,
           currency: parsed.currency ?? intent.currency ?? "EUR",
+          paymentMethod: parsed.paymentMethod ?? null,
         };
       }
     } catch {
@@ -134,12 +146,19 @@ export async function fulfillPaidIntent(intent: IntentLike, stripeEventId?: stri
       subtotalCents: breakdown?.subtotalCents ?? 0,
       discountCents: breakdown?.discountCents ?? 0,
       platformFeeCents: breakdown?.platformFeeCents ?? 0,
+      cardPlatformFeeCents: breakdown?.cardPlatformFeeCents ?? 0,
       stripeFeeCents: 0,
       totalCents: breakdown?.totalCents ?? intent.amount_received ?? intent.amount ?? 0,
-      netCents: Math.max(0, (breakdown?.totalCents ?? 0) - (breakdown?.platformFeeCents ?? 0)),
+      netCents: Math.max(
+        0,
+        (breakdown?.totalCents ?? 0) -
+          (breakdown?.platformFeeCents ?? 0) -
+          (breakdown?.cardPlatformFeeCents ?? 0),
+      ),
       feeMode: (breakdown?.feeMode as any) ?? null,
       currency: (breakdown?.currency ?? intent.currency ?? "EUR").toUpperCase(),
       status: "PAID" as const,
+      paymentMethod: breakdown?.paymentMethod ?? null,
     };
 
     const saleSummary = existingSummary

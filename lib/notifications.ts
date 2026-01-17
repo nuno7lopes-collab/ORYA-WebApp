@@ -12,7 +12,7 @@ export type CreateNotificationInput = {
   priority?: NotificationPriority;
   senderVisibility?: "PUBLIC" | "PRIVATE";
   fromUserId?: string | null;
-  organizerId?: number | null;
+  organizationId?: number | null;
   eventId?: number | null;
   ticketId?: string | null;
   inviteId?: string | null;
@@ -23,16 +23,18 @@ export async function shouldNotify(userId: string, type: NotificationType) {
   switch (type) {
     case "EVENT_SALE":
       return prefs.allowSalesAlerts;
-    case "FRIEND_REQUEST":
-    case "FRIEND_ACCEPT":
-      return prefs.allowFriendRequests;
+    case "FOLLOW_REQUEST":
+    case "FOLLOW_ACCEPT":
+      return prefs.allowFollowRequests;
     case "FOLLOWED_YOU":
-      return prefs.allowFriendRequests;
+      return prefs.allowFollowRequests;
     case "SYSTEM_ANNOUNCE":
     case "STRIPE_STATUS":
+    case "CHAT_OPEN":
+    case "CHAT_ANNOUNCEMENT":
       return prefs.allowSystemAnnouncements;
     case "EVENT_REMINDER":
-    case "NEW_EVENT_FROM_FOLLOWED_ORGANIZER":
+    case "NEW_EVENT_FROM_FOLLOWED_ORGANIZATION":
       return prefs.allowEventReminders;
     default:
       return true;
@@ -71,7 +73,7 @@ export async function createNotification(input: CreateNotificationInput) {
     priority = "NORMAL",
     senderVisibility = "PUBLIC",
     fromUserId = null,
-    organizerId = null,
+    organizationId = null,
     eventId = null,
     ticketId = null,
     inviteId = null,
@@ -87,7 +89,7 @@ export async function createNotification(input: CreateNotificationInput) {
     ctaLabel: ctaLabel || undefined,
     priority,
     fromUserId: fromUserId || undefined,
-    organizerId: organizerId ?? undefined,
+    organizationId: organizationId ?? undefined,
     eventId: eventId ?? undefined,
     ticketId: ticketId ?? undefined,
     inviteId: inviteId ?? undefined,
@@ -104,7 +106,7 @@ export async function getNotificationPrefs(userId: string) {
     userId,
     allowEmailNotifications: true,
     allowEventReminders: true,
-    allowFriendRequests: true,
+    allowFollowRequests: true,
     allowSalesAlerts: true,
     allowSystemAnnouncements: true,
   };

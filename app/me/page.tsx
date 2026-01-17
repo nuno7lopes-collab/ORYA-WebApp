@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, type ReactElement } from "react";
+import { useEffect, useMemo, useState, type ReactElement } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import ProfileHeader from "@/app/components/profile/ProfileHeader";
@@ -8,6 +8,7 @@ import { useUser } from "@/app/hooks/useUser";
 import { useWallet } from "@/app/components/wallet/useWallet";
 import { WalletCard } from "@/app/components/wallet/WalletCard";
 import useSWR from "swr";
+import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
 
 function parseDate(value?: string | null): Date | null {
   if (!value) return null;
@@ -28,6 +29,8 @@ function formatAgendaDate(value?: string | null) {
 export default function MePage() {
   const { user, profile, isLoading: meLoading } = useUser();
   const router = useRouter();
+  const { openModal: openAuthModal, isOpen: isAuthOpen } = useAuthModal();
+  const [padelStatus, setPadelStatus] = useState<{ complete: boolean; missingCount: number } | null>(null);
   const {
     items: tickets,
     loading: ticketsLoading,
@@ -49,18 +52,14 @@ export default function MePage() {
     agendaUrl,
     fetcher,
   );
-  const { data: orgsData } = useSWR<{ ok: boolean; items?: Array<{ organizerId: number; role: string; organizer: { publicName: string | null; businessName: string | null; username: string | null; organizationCategory: string | null } }> }>(
-    user ? "/api/organizador/organizations" : null,
+  const { data: orgsData } = useSWR<{ ok: boolean; items?: Array<{ organizationId: number; role: string; organization: { publicName: string | null; businessName: string | null; username: string | null; primaryModule: string | null } }> }>(
+    user ? "/api/organizacao/organizations" : null,
     fetcher,
   );
 
   // Redireciona quando já tem username ou força login
   useEffect(() => {
     if (meLoading) return;
-    if (!user) {
-      router.replace("/login?redirectTo=/me");
-      return;
-    }
     if (profile?.username) {
       router.replace(`/${profile.username}`);
     }
@@ -75,12 +74,47 @@ export default function MePage() {
     return () => window.removeEventListener("focus", onFocus);
   }, [user, refetchWallet]);
 
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const res = await fetch("/api/padel/onboarding");
+        const data = (await res.json().catch(() => null)) as { ok?: boolean; missing?: Record<string, boolean> } | null;
+        if (!res.ok || !data?.ok || !data?.missing) return;
+        const missingCount = Object.keys(data.missing || {}).length;
+        if (!cancelled) {
+          setPadelStatus({ complete: missingCount === 0, missingCount });
+        }
+      } catch {
+        if (!cancelled) setPadelStatus(null);
+      }
+    };
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+
   const displayName =
     profile?.fullName ||
     profile?.username ||
     user?.email?.split("@")[0] ||
     "Utilizador ORYA";
 
+  const padelProfileHref = profile?.username
+    ? `/${profile.username}/padel`
+    : "/onboarding/padel";
+  const padelAction =
+    padelStatus?.complete
+      ? { href: padelProfileHref, label: "Padel", tone: "emerald" as const }
+      : padelStatus
+        ? {
+            href: `/onboarding/padel?redirectTo=${encodeURIComponent(padelProfileHref)}`,
+            label: "Concluir Padel",
+            tone: "amber" as const,
+          }
+        : null;
   const now = new Date();
   const agendaItems = agendaData?.items ?? [];
   const upcomingEvents = agendaItems.filter((item) => item.type === "EVENTO").slice(0, 3);
@@ -130,46 +164,39 @@ export default function MePage() {
         avatarUrl={profile?.avatarUrl}
         avatarUpdatedAt={profile?.updatedAt ?? null}
         city={profile?.city}
-        visibility={profile?.visibility === "PUBLIC" ? "PUBLIC" : "PRIVATE"}
+        visibility={profile?.visibility ?? "PUBLIC"}
         followers={null}
         following={null}
         isVerified={profile?.isVerified ?? false}
         isOwner
+        padelAction={padelAction ?? undefined}
       />
 
       {/* STATUS */}
       <section className="rounded-3xl border border-white/15 bg-white/5 p-5 shadow-[0_24px_70px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="rounded-2xl border border-white/14 bg-gradient-to-br from-white/10 via-[#0b1224]/75 to-[#0a0f1d] p-4 shadow-[0_18px_40px_rgba(0,0,0,0.55)] transition-transform duration-150 hover:-translate-y-[3px] hover:shadow-[0_22px_50px_rgba(0,0,0,0.65)] relative overflow-hidden">
-            <div className="pointer-events-none absolute inset-0 rounded-2xl border border-white/10 mix-blend-screen" />
-            <div className="pointer-events-none absolute inset-y-0 right-0 w-1/3 bg-white/5 blur-2xl" />
-            <p className="text-[11px] uppercase tracking-[0.16em] text-white/65">Eventos com bilhete</p>
-            <p className="mt-1 text-3xl font-semibold text-white">{totalEvents}</p>
-            <p className="text-[12px] text-white/60">Timeline ORYA.</p>
+          <div className="rounded-2xl border border-white/12 bg-white/5 px-3 py-3 shadow-[0_16px_40px_rgba(0,0,0,0.45)] backdrop-blur-2xl text-white">
+            <p className="text-[10px] uppercase tracking-[0.2em] text-white/60">Eventos com bilhete</p>
+            <p className="mt-1 text-lg font-semibold">{totalEvents}</p>
+            <p className="text-[11px] text-white/60">Timeline ORYA.</p>
           </div>
 
-          <div className="rounded-2xl border border-emerald-300/30 bg-gradient-to-br from-emerald-500/16 via-emerald-500/9 to-[#0c1a14] p-4 shadow-[0_18px_40px_rgba(16,185,129,0.28)] transition-transform duration-150 hover:-translate-y-[3px] hover:shadow-[0_22px_50px_rgba(16,185,129,0.32)] relative overflow-hidden">
-            <div className="pointer-events-none absolute inset-0 rounded-2xl border border-emerald-100/12 mix-blend-screen" />
-            <div className="pointer-events-none absolute inset-y-0 right-0 w-1/3 bg-emerald-100/10 blur-2xl" />
-            <p className="text-[11px] uppercase tracking-[0.16em] text-emerald-50/80">Próximos</p>
-            <p className="mt-1 text-3xl font-semibold text-emerald-50">{totalUpcoming}</p>
-            <p className="text-[12px] text-emerald-50/80">O que vem aí.</p>
+          <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/12 px-3 py-3 shadow-[0_16px_40px_rgba(0,0,0,0.45)] backdrop-blur-2xl text-emerald-50">
+            <p className="text-[10px] uppercase tracking-[0.2em] text-emerald-50/80">Próximos</p>
+            <p className="mt-1 text-lg font-semibold">{totalUpcoming}</p>
+            <p className="text-[11px] text-emerald-50/80">O que vem aí.</p>
           </div>
 
-          <div className="rounded-2xl border border-cyan-300/30 bg-gradient-to-br from-cyan-500/16 via-cyan-500/9 to-[#08171c] p-4 shadow-[0_18px_40px_rgba(34,211,238,0.28)] transition-transform duration-150 hover:-translate-y-[3px] hover:shadow-[0_22px_50px_rgba(34,211,238,0.32)] relative overflow-hidden">
-            <div className="pointer-events-none absolute inset-0 rounded-2xl border border-cyan-100/12 mix-blend-screen" />
-            <div className="pointer-events-none absolute inset-y-0 right-0 w-1/3 bg-cyan-100/10 blur-2xl" />
-            <p className="text-[11px] uppercase tracking-[0.16em] text-cyan-50/80">Passados</p>
-            <p className="mt-1 text-3xl font-semibold text-cyan-50">{totalPast}</p>
-            <p className="text-[12px] text-cyan-50/80">Memórias.</p>
+          <div className="rounded-2xl border border-rose-300/30 bg-rose-400/12 px-3 py-3 shadow-[0_16px_40px_rgba(0,0,0,0.45)] backdrop-blur-2xl text-rose-50">
+            <p className="text-[10px] uppercase tracking-[0.2em] text-rose-50/80">Passados</p>
+            <p className="mt-1 text-lg font-semibold">{totalPast}</p>
+            <p className="text-[11px] text-rose-50/80">Memórias.</p>
           </div>
 
-          <div className="rounded-2xl border border-purple-300/30 bg-gradient-to-br from-purple-500/16 via-purple-500/9 to-[#120d1f] p-4 shadow-[0_18px_40px_rgba(168,85,247,0.28)] transition-transform duration-150 hover:-translate-y-[3px] hover:shadow-[0_22px_50px_rgba(168,85,247,0.32)] relative overflow-hidden">
-            <div className="pointer-events-none absolute inset-0 rounded-2xl border border-purple-100/12 mix-blend-screen" />
-            <div className="pointer-events-none absolute inset-y-0 right-0 w-1/3 bg-purple-100/10 blur-2xl" />
-            <p className="text-[11px] uppercase tracking-[0.16em] text-purple-50/80">Total investido</p>
-            <p className="mt-1 text-3xl font-semibold text-purple-50">{totalSpentEuros} €</p>
-            <p className="text-[12px] text-purple-50/80">Total pago.</p>
+          <div className="rounded-2xl border border-purple-300/30 bg-purple-400/12 px-3 py-3 shadow-[0_16px_40px_rgba(0,0,0,0.45)] backdrop-blur-2xl text-purple-50">
+            <p className="text-[10px] uppercase tracking-[0.2em] text-purple-50/80">Total investido</p>
+            <p className="mt-1 text-lg font-semibold">{totalSpentEuros} €</p>
+            <p className="text-[11px] text-purple-50/80">Total pago.</p>
           </div>
         </div>
       </section>
@@ -213,15 +240,20 @@ export default function MePage() {
                 </button>
               )}
               {authRequired ? (
-                <Link
-                  href="/login?redirectTo=/me"
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!isAuthOpen) {
+                      openAuthModal({ mode: "login", redirectTo: "/me", showGoogle: true });
+                    }
+                  }}
                   className="px-3 py-1.5 rounded-lg bg-white text-black text-[11px] font-semibold shadow"
                 >
                   Iniciar sessão
-                </Link>
+                </button>
               ) : (
                 <Link
-                  href="/explorar"
+                  href="/explorar/eventos"
                   className="px-3 py-1.5 rounded-lg border border-white/30 text-[11px] text-white hover:bg-white/10"
                 >
                   Explorar eventos
@@ -248,7 +280,7 @@ export default function MePage() {
             </div>
             <div className="relative flex gap-2 flex-wrap justify-center">
               <Link
-                href="/explorar"
+                href="/explorar/eventos"
                 className="inline-flex mt-2 px-4 py-2.5 rounded-full bg-white text-black text-xs font-semibold shadow-[0_10px_35px_rgba(255,255,255,0.2)] hover:scale-[1.03] active:scale-95 transition-transform"
               >
                 Explorar eventos
@@ -336,7 +368,7 @@ export default function MePage() {
               {padelItems.map((item) => (
                 <Link
                   key={item.id}
-                  href={item.ctaHref ?? "/padel/duplas"}
+                  href={item.ctaHref ?? "/me/carteira"}
                   className="block rounded-xl border border-white/10 bg-black/30 px-3 py-2 hover:bg-white/10"
                 >
                   <p className="text-sm font-semibold text-white">{item.title}</p>
@@ -356,31 +388,33 @@ export default function MePage() {
           <div>
             <h2 className="text-sm font-semibold text-white/95 tracking-[0.08em]">Reservas</h2>
             <p className="text-[11px] text-white/68">
-              Consulta horários marcados e gere cancelamentos.
+              Consulta horários marcados e cancelamentos.
             </p>
           </div>
-          <Link
-            href="/me/reservas"
-            className="inline-flex items-center gap-2 rounded-full border border-white/30 bg-white/10 text-white text-[11px] font-semibold px-4 py-1.5 shadow-[0_10px_26px_rgba(255,255,255,0.15)] hover:border-white/45 hover:bg-white/20 hover:scale-[1.02] active:scale-95 transition-transform backdrop-blur"
-          >
-            Ver reservas
-            <span className="text-[12px]">↗</span>
-          </Link>
+          <div className="flex flex-wrap items-center gap-2">
+            <Link
+              href="/me/reservas"
+              className="inline-flex items-center gap-2 rounded-full border border-white/30 bg-white/10 text-white text-[11px] font-semibold px-4 py-1.5 shadow-[0_10px_26px_rgba(255,255,255,0.15)] hover:border-white/45 hover:bg-white/20 hover:scale-[1.02] active:scale-95 transition-transform backdrop-blur"
+            >
+              Ver reservas
+              <span className="text-[12px]">↗</span>
+            </Link>
+          </div>
         </div>
         <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-4 text-[12px] text-white/70">
-          Todas as reservas confirmadas ou pendentes aparecem na tua área pessoal.
+          Todas as reservas aparecem na tua área pessoal.
         </div>
       </section>
 
-      {/* ORGANIZACOES */}
+      {/* ORGANIZAÇÕES */}
       <section className="rounded-3xl border border-white/15 bg-white/5 p-5 shadow-[0_24px_70px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-sm font-semibold text-white/95 tracking-[0.08em]">As minhas organizacoes</h2>
-            <p className="text-[11px] text-white/68">Entra rapido no modo organizador.</p>
+            <h2 className="text-sm font-semibold text-white/95 tracking-[0.08em]">As minhas organizações</h2>
+            <p className="text-[11px] text-white/68">Entra rapido no modo organização.</p>
           </div>
           <Link
-            href="/organizador"
+            href="/organizacao"
             className="inline-flex items-center gap-2 rounded-full border border-white/30 bg-white/10 text-white text-[11px] font-semibold px-4 py-1.5 shadow-[0_10px_26px_rgba(255,255,255,0.15)] hover:border-white/45 hover:bg-white/20 hover:scale-[1.02] active:scale-95 transition-transform backdrop-blur"
           >
             Ver painel
@@ -390,7 +424,7 @@ export default function MePage() {
 
         {organizations.length === 0 && (
           <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-4 text-[12px] text-white/70">
-            Ainda nao tens organizacoes associadas.
+            Ainda nao tens organizações associadas.
           </div>
         )}
 
@@ -398,19 +432,19 @@ export default function MePage() {
           <div className="mt-4 grid gap-3 md:grid-cols-2">
             {organizations.map((org) => {
               const name =
-                org.organizer.publicName ||
-                org.organizer.businessName ||
-                org.organizer.username ||
-                "Organizacao";
+                org.organization.publicName ||
+                org.organization.businessName ||
+                org.organization.username ||
+                "Organização";
               return (
                 <Link
-                  key={org.organizerId}
-                  href={`/organizador?tab=overview&org=${org.organizerId}`}
+                  key={org.organizationId}
+                  href={`/organizacao?tab=overview&organizationId=${org.organizationId}`}
                   className="rounded-2xl border border-white/10 bg-white/5 p-4 transition hover:border-white/25 hover:bg-white/10"
                 >
                   <p className="text-sm font-semibold text-white">{name}</p>
                   <p className="text-[12px] text-white/60">
-                    {org.organizer.username ? `@${org.organizer.username}` : ""}
+                    {org.organization.username ? `@${org.organization.username}` : ""}
                   </p>
                   <p className="text-[11px] text-white/50">Role: {org.role}</p>
                 </Link>
@@ -459,18 +493,28 @@ export default function MePage() {
             Autentica-te para veres a tua carteira, histórico e bilhetes. O QR e ações só aparecem depois de iniciares sessão.
           </p>
           <div className="flex flex-col sm:flex-row justify-center gap-3">
-            <Link
-              href="/login?redirectTo=/me"
+            <button
+              type="button"
+              onClick={() => {
+                if (!isAuthOpen) {
+                  openAuthModal({ mode: "login", redirectTo: "/me", showGoogle: true });
+                }
+              }}
               className="px-4 py-2.5 rounded-xl bg-white text-black text-sm font-semibold shadow-[0_18px_45px_rgba(0,0,0,0.35)] transition hover:shadow-[0_22px_55px_rgba(255,255,255,0.25)]"
             >
               Entrar
-            </Link>
-            <Link
-              href="/login?mode=signup&redirectTo=/me"
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (!isAuthOpen) {
+                  openAuthModal({ mode: "signup", redirectTo: "/me", showGoogle: true });
+                }
+              }}
               className="px-4 py-2.5 rounded-xl border border-white/30 bg-white/10 text-sm font-semibold text-white hover:border-white/45 hover:bg-white/20"
             >
               Criar conta
-            </Link>
+            </button>
           </div>
         </div>
       </div>

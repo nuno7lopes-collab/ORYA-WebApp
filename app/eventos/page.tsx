@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { CTA_PRIMARY } from "@/app/organizador/dashboardUi";
+import { CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
 
 type EventCard = {
   id: number;
@@ -93,7 +93,7 @@ export default function EventosFeedPage() {
           </div>
 
           <Link
-            href="/organizador/eventos/novo"
+            href="/organizacao/eventos/novo"
             className={`${CTA_PRIMARY} hidden sm:inline-flex px-4 py-1.5 text-xs active:scale-95`}
           >
             + Criar evento
@@ -136,12 +136,12 @@ export default function EventosFeedPage() {
         )}
 
         {/* Grid de eventos */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-4">
           {loading && !events.length ? (
             Array.from({ length: 6 }).map((_, i) => (
               <div
                 key={i}
-                className="h-64 rounded-2xl border border-white/10 orya-skeleton-surface animate-pulse"
+                className="aspect-square w-full rounded-2xl border border-white/10 orya-skeleton-surface animate-pulse"
               />
             ))
           ) : events.length === 0 ? (
@@ -154,9 +154,9 @@ export default function EventosFeedPage() {
               <Link
                 key={ev.id}
                 href={`/eventos/${ev.slug}`}
-                className="group rounded-2xl border border-white/10 bg-gradient-to-b from-white/5 via-black/70 to-black/90 overflow-hidden shadow-[0_18px_40px_rgba(0,0,0,0.7)] hover:border-[#6BFFFF]/60 hover:shadow-[0_0_40px_rgba(107,255,255,0.35)] transition"
+                className="group w-full rounded-2xl border border-white/10 bg-gradient-to-b from-white/5 via-black/70 to-black/90 overflow-hidden shadow-[0_18px_40px_rgba(0,0,0,0.7)] hover:border-[#6BFFFF]/60 hover:shadow-[0_0_40px_rgba(107,255,255,0.35)] transition"
               >
-                <div className="relative h-32 overflow-hidden">
+                <div className="relative aspect-square overflow-hidden">
                   <div className="h-full w-full bg-[radial-gradient(circle_at_top,_#FF00C8_0,_#02020a_65%)] flex items-center justify-center text-xs text-white/60">
                     ORYA • Evento
                   </div>

@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
-import { decideCancellation } from "@/lib/bookingCancellation";
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
+import { decideCancellation } from "@/lib/bookingCancellation";
+import { refundBookingPayment } from "@/lib/reservas/bookingRefund";
 
 function parseId(value: string) {
   const parsed = Number(value);
@@ -18,9 +19,10 @@ function getRequestMeta(req: NextRequest) {
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: { id: string } },
+  { params }: { params: Promise<{ id: string }> },
 ) {
-  const bookingId = parseId(params.id);
+  const resolved = await params;
+  const bookingId = parseId(resolved.id);
   if (!bookingId) {
     return NextResponse.json({ ok: false, error: "ID inválido." }, { status: 400 });
   }
@@ -37,28 +39,24 @@ export async function POST(
       const booking = await tx.booking.findUnique({
         where: { id: bookingId },
         include: {
-          availability: true,
-          policyRef: {
+          service: {
             select: {
+              id: true,
+              organizationId: true,
+              policyId: true,
               policy: {
                 select: {
                   id: true,
-                  name: true,
-                  policyType: true,
                   cancellationWindowMinutes: true,
                 },
               },
             },
           },
-          service: {
+          policyRef: {
             select: {
-              id: true,
-              organizerId: true,
               policy: {
                 select: {
                   id: true,
-                  name: true,
-                  policyType: true,
                   cancellationWindowMinutes: true,
                 },
               },
@@ -75,60 +73,53 @@ export async function POST(
         return { error: NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 }) };
       }
 
-      if (booking.status === "CANCELLED") {
-        return { booking, policy: booking.policyRef?.policy ?? booking.service?.policy ?? null, already: true };
+      if (["CANCELLED_BY_CLIENT", "CANCELLED_BY_ORG", "CANCELLED"].includes(booking.status)) {
+        return { booking, already: true };
       }
 
-      const fallbackPolicy = booking.organizerId
-        ? await tx.organizationPolicy.findFirst({
-            where: { organizerId: booking.organizerId, policyType: "MODERATE" },
-            select: {
-              id: true,
-              name: true,
-              policyType: true,
-              cancellationWindowMinutes: true,
-            },
-          })
-        : null;
-
+      const isPending = ["PENDING_CONFIRMATION", "PENDING"].includes(booking.status);
+      const fallbackPolicy =
+        booking.service?.policyId &&
+        (await tx.organizationPolicy.findFirst({
+          where: { id: booking.service.policyId, organizationId: booking.organizationId },
+          select: { id: true, cancellationWindowMinutes: true },
+        }));
       const policy =
-        booking.policyRef?.policy ?? booking.service?.policy ?? fallbackPolicy ?? null;
+        booking.policyRef?.policy ??
+        booking.service?.policy ??
+        fallbackPolicy ??
+        (await tx.organizationPolicy.findFirst({
+          where: { organizationId: booking.organizationId, policyType: "MODERATE" },
+          select: { id: true, cancellationWindowMinutes: true },
+        })) ??
+        (await tx.organizationPolicy.findFirst({
+          where: { organizationId: booking.organizationId },
+          orderBy: { createdAt: "asc" },
+          select: { id: true, cancellationWindowMinutes: true },
+        }));
 
       const decision = decideCancellation(
         booking.startsAt,
         policy?.cancellationWindowMinutes ?? null,
         now,
       );
+      const canCancel = isPending || (booking.status === "CONFIRMED" && decision.allowed);
 
-      if (!decision.allowed) {
-        const message =
-          decision.reason === "ALREADY_STARTED"
-            ? "A reserva já começou."
-            : decision.reason === "WINDOW_EXPIRED"
-              ? "O prazo de cancelamento já passou."
-              : "Esta reserva não permite cancelamento.";
-        return { error: NextResponse.json({ ok: false, error: message }, { status: 400 }) };
+      if (!canCancel) {
+        return { error: NextResponse.json({ ok: false, error: "O prazo de cancelamento já passou." }, { status: 400 }) };
       }
 
       const updated = await tx.booking.update({
         where: { id: booking.id },
-        data: { status: "CANCELLED" },
+        data: { status: "CANCELLED_BY_CLIENT" },
       });
 
-      if (booking.availability && booking.availability.status !== "CANCELLED") {
-        const activeCount = await tx.booking.count({
-          where: { availabilityId: booking.availability.id, status: { not: "CANCELLED" } },
-        });
-        if (activeCount < booking.availability.capacity && booking.availability.status === "FULL") {
-          await tx.availability.update({
-            where: { id: booking.availability.id },
-            data: { status: "OPEN" },
-          });
-        }
-      }
+      const refundRequired =
+        !!booking.paymentIntentId &&
+        (isPending || (booking.status === "CONFIRMED" && decision.allowed));
 
       await recordOrganizationAudit(tx, {
-        organizerId: booking.organizerId,
+        organizationId: booking.organizationId,
         actorUserId: user.id,
         action: "BOOKING_CANCELLED",
         metadata: {
@@ -136,18 +127,31 @@ export async function POST(
           serviceId: booking.serviceId,
           availabilityId: booking.availabilityId,
           source: "USER",
-          policyId: policy?.id ?? null,
           reason,
-          deadline: decision.deadline ? decision.deadline.toISOString() : null,
+          deadline: decision.deadline?.toISOString() ?? null,
+          refundRequired,
         },
         ip,
         userAgent,
       });
 
-      return { booking: updated, policy, decision, already: false };
+      return { booking: updated, already: false, refundRequired, paymentIntentId: booking.paymentIntentId };
     });
 
     if ("error" in result) return result.error;
+
+    if (result.refundRequired && result.paymentIntentId) {
+      try {
+        await refundBookingPayment({
+          bookingId: result.booking.id,
+          paymentIntentId: result.paymentIntentId,
+          reason: "CLIENT_CANCEL",
+        });
+      } catch (refundErr) {
+        console.error("[reservas/cancel] refund failed", refundErr);
+        return NextResponse.json({ ok: false, error: "Reserva cancelada, mas o reembolso falhou." }, { status: 502 });
+      }
+    }
 
     return NextResponse.json({
       ok: true,
@@ -155,7 +159,6 @@ export async function POST(
         id: result.booking.id,
         status: result.booking.status,
       },
-      policy: result.policy,
       alreadyCancelled: result.already,
     });
   } catch (err) {

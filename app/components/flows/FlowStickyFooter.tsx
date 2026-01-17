@@ -1,6 +1,6 @@
 "use client";
 
-import { CTA_PRIMARY, CTA_SECONDARY } from "@/app/organizador/dashboardUi";
+import { CTA_PRIMARY, CTA_SECONDARY } from "@/app/organizacao/dashboardUi";
 
 type FlowStickyFooterProps = {
   backLabel?: string;
@@ -40,7 +40,7 @@ export function FlowStickyFooter({
         )}
         <div className="relative flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="text-[12px] text-white/70 leading-snug">
-            {helper ? <p>{helper}</p> : <p>Guarda e revê no final. Navega sem perder contexto.</p>}
+            {helper ? <p>{helper}</p> : <p>Guarda e revê no final.</p>}
             {disabledReason && <p className="text-white/55">{disabledReason}</p>}
           </div>
           <div className="flex flex-wrap gap-2">

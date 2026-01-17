@@ -15,7 +15,7 @@ export async function GET(_req: NextRequest) {
       take: 200,
       select: {
         id: true,
-        organizerId: true,
+        organizationId: true,
         availabilityId: true,
         startsAt: true,
         durationMinutes: true,
@@ -23,6 +23,23 @@ export async function GET(_req: NextRequest) {
         price: true,
         currency: true,
         createdAt: true,
+        pendingExpiresAt: true,
+        assignmentMode: true,
+        partySize: true,
+        professional: {
+          select: {
+            id: true,
+            name: true,
+            user: { select: { fullName: true, avatarUrl: true } },
+          },
+        },
+        resource: {
+          select: {
+            id: true,
+            label: true,
+            capacity: true,
+          },
+        },
         policyRef: {
           select: {
             policy: {
@@ -38,7 +55,7 @@ export async function GET(_req: NextRequest) {
         service: {
           select: {
             id: true,
-            name: true,
+            title: true,
             policy: {
               select: {
                 id: true,
@@ -47,7 +64,7 @@ export async function GET(_req: NextRequest) {
                 cancellationWindowMinutes: true,
               },
             },
-            organizer: {
+            organization: {
               select: {
                 id: true,
                 publicName: true,
@@ -59,19 +76,25 @@ export async function GET(_req: NextRequest) {
             },
           },
         },
+        court: {
+          select: { id: true, name: true },
+        },
+        review: {
+          select: { id: true },
+        },
       },
     });
 
-    const organizerIds = Array.from(new Set(bookings.map((booking) => booking.organizerId)));
-    const defaults = organizerIds.length
+    const organizationIds = Array.from(new Set(bookings.map((booking) => booking.organizationId)));
+    const defaults = organizationIds.length
       ? await prisma.organizationPolicy.findMany({
           where: {
-            organizerId: { in: organizerIds },
+            organizationId: { in: organizationIds },
             policyType: "MODERATE",
           },
           select: {
             id: true,
-            organizerId: true,
+            organizationId: true,
             name: true,
             policyType: true,
             cancellationWindowMinutes: true,
@@ -79,9 +102,9 @@ export async function GET(_req: NextRequest) {
         })
       : [];
 
-    const defaultByOrganizer = new Map<number, (typeof defaults)[number]>();
+    const defaultByOrganization = new Map<number, (typeof defaults)[number]>();
     defaults.forEach((policy) => {
-      defaultByOrganizer.set(policy.organizerId, policy);
+      defaultByOrganization.set(policy.organizationId, policy);
     });
 
     const now = new Date();
@@ -90,7 +113,7 @@ export async function GET(_req: NextRequest) {
       const policyRaw =
         booking.policyRef?.policy ??
         booking.service?.policy ??
-        defaultByOrganizer.get(booking.organizerId) ??
+        defaultByOrganization.get(booking.organizationId) ??
         null;
 
       const policy = policyRaw
@@ -102,10 +125,13 @@ export async function GET(_req: NextRequest) {
           }
         : null;
 
-      const decision =
-        booking.status === "CONFIRMED" || booking.status === "PENDING"
-          ? decideCancellation(booking.startsAt, policy?.cancellationWindowMinutes ?? null, now)
-          : { allowed: false, reason: null, deadline: null };
+      const isPending = ["PENDING_CONFIRMATION", "PENDING"].includes(booking.status);
+      const cancellationDecision = decideCancellation(
+        booking.startsAt,
+        policy?.cancellationWindowMinutes ?? null,
+        now,
+      );
+      const canCancel = isPending || (booking.status === "CONFIRMED" && cancellationDecision.allowed);
 
       return {
         id: booking.id,
@@ -116,13 +142,24 @@ export async function GET(_req: NextRequest) {
         currency: booking.currency,
         createdAt: booking.createdAt,
         availabilityId: booking.availabilityId,
-        service: booking.service ? { id: booking.service.id, name: booking.service.name } : null,
-        organizer: booking.service?.organizer ?? null,
+        pendingExpiresAt: booking.pendingExpiresAt,
+        assignmentMode: booking.assignmentMode,
+        partySize: booking.partySize ?? null,
+        professional: booking.professional
+          ? { id: booking.professional.id, name: booking.professional.name, avatarUrl: booking.professional.user?.avatarUrl ?? null }
+          : null,
+        resource: booking.resource
+          ? { id: booking.resource.id, label: booking.resource.label, capacity: booking.resource.capacity }
+          : null,
+        reviewId: booking.review?.id ?? null,
+        service: booking.service ? { id: booking.service.id, title: booking.service.title } : null,
+        court: booking.court ? { id: booking.court.id, name: booking.court.name } : null,
+        organization: booking.service?.organization ?? null,
         policy,
         cancellation: {
-          allowed: decision.allowed,
-          reason: decision.reason,
-          deadline: decision.deadline,
+          allowed: canCancel,
+          reason: canCancel ? null : cancellationDecision.reason,
+          deadline: cancellationDecision.deadline,
         },
       };
     });

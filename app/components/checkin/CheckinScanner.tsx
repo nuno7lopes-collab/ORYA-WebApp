@@ -23,7 +23,7 @@ type Props = {
   backLabel: string;
   title?: string;
   subtitle?: string;
-  allowOrganizerEvents?: boolean;
+  allowOrganizationEvents?: boolean;
   embedded?: boolean;
   showBackLink?: boolean;
 };
@@ -66,7 +66,7 @@ const STATUS_META: Record<
     label: "Suspenso",
     tone: "border-red-400/50 bg-red-500/10 text-red-50",
     canConfirm: false,
-    hint: "Bilhete suspenso — pede ajuda ao organizador.",
+    hint: "Bilhete suspenso — pede ajuda ao organização.",
   },
   NOT_ALLOWED: {
     label: "Não permitido",
@@ -108,7 +108,7 @@ export function CheckinScanner({
   backLabel,
   title = "Modo Receção",
   subtitle = "Valida o Pass ORYA em 2 passos: pré-visualizar e confirmar.",
-  allowOrganizerEvents = false,
+  allowOrganizationEvents = false,
   embedded = false,
   showBackLink = true,
 }: Props) {
@@ -135,11 +135,11 @@ export function CheckinScanner({
   const hasEvent = Number.isFinite(effectiveEventId) && effectiveEventId > 0;
 
   useEffect(() => {
-    if (!allowOrganizerEvents || hasQueryEvent) return;
+    if (!allowOrganizationEvents || hasQueryEvent) return;
     let active = true;
     setEventsLoading(true);
     setEventsError(null);
-    fetch("/api/organizador/events/list?limit=60")
+    fetch("/api/organizacao/events/list?limit=60")
       .then(async (res) => {
         const data = await res.json().catch(() => null);
         if (!res.ok || !data?.ok) {
@@ -159,7 +159,7 @@ export function CheckinScanner({
     return () => {
       active = false;
     };
-  }, [allowOrganizerEvents, hasQueryEvent]);
+  }, [allowOrganizationEvents, hasQueryEvent]);
 
   const [deviceId, setDeviceId] = useState("");
   const [qrToken, setQrToken] = useState("");
@@ -211,7 +211,7 @@ export function CheckinScanner({
     }
     setPreviewing(true);
     try {
-      const res = await fetch("/api/organizador/checkin/preview", {
+      const res = await fetch("/api/organizacao/checkin/preview", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ qrToken: qrToken.trim(), eventId: effectiveEventId }),
@@ -236,7 +236,7 @@ export function CheckinScanner({
     setConfirming(true);
     setError(null);
     try {
-      const res = await fetch("/api/organizador/checkin", {
+      const res = await fetch("/api/organizacao/checkin", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ qrToken: qrToken.trim(), eventId: effectiveEventId, deviceId }),
@@ -287,7 +287,7 @@ export function CheckinScanner({
           </div>
         )}
 
-        {allowOrganizerEvents && !hasQueryEvent && (
+        {allowOrganizationEvents && !hasQueryEvent && (
           <div className="rounded-2xl border border-white/15 bg-white/5 p-4 text-sm text-white/80">
             <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Evento</p>
             <p className="mt-1 text-[12px] text-white/70">

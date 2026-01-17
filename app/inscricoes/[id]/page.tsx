@@ -1,7 +1,6 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { FormSubmissionClient } from "./FormSubmissionClient";
-import { getCustomPremiumProfileModules, isCustomPremiumActive } from "@/lib/organizerPremium";
 
 type Params = { id: string };
 
@@ -13,45 +12,41 @@ export default async function PublicFormPage({ params }: { params: Promise<Param
   const form = await prisma.organizationForm.findUnique({
     where: { id: formId },
     include: {
-      organizer: {
+      organization: {
         select: {
           id: true,
           status: true,
           publicName: true,
           businessName: true,
           username: true,
-          liveHubPremiumEnabled: true,
         },
       },
       fields: { orderBy: { order: "asc" } },
     },
   });
 
-  if (!form || form.organizer.status !== "ACTIVE") {
+  if (!form || form.organization.status !== "ACTIVE") {
     notFound();
   }
 
-  const premiumActive = isCustomPremiumActive(form.organizer);
-  const premiumModules = premiumActive ? getCustomPremiumProfileModules(form.organizer) ?? {} : {};
-  const allowInscricoes = Boolean(premiumModules.inscricoes);
   const isPublic = form.status !== "ARCHIVED";
   if (!isPublic) {
     notFound();
   }
 
   const moduleEnabled = await prisma.organizationModuleEntry.findFirst({
-    where: { organizerId: form.organizer.id, moduleKey: "INSCRICOES", enabled: true },
-    select: { organizerId: true },
+    where: { organizationId: form.organization.id, moduleKey: "INSCRICOES", enabled: true },
+    select: { organizationId: true },
   });
 
-  if (!moduleEnabled || !allowInscricoes) {
+  if (!moduleEnabled) {
     notFound();
   }
 
-  const organizerName =
-    form.organizer.publicName ||
-    form.organizer.businessName ||
-    form.organizer.username ||
+  const organizationName =
+    form.organization.publicName ||
+    form.organization.businessName ||
+    form.organization.username ||
     "Organização";
 
   const fields = form.fields.map((field) => ({
@@ -73,8 +68,8 @@ export default async function PublicFormPage({ params }: { params: Promise<Param
         title: form.title,
         description: form.description ?? null,
         status: form.status,
-        organizerName,
-        organizerUsername: form.organizer.username ?? null,
+        organizationName,
+        organizationUsername: form.organization.username ?? null,
         capacity: form.capacity ?? null,
         waitlistEnabled: form.waitlistEnabled,
         startAt: form.startAt ? form.startAt.toISOString() : null,

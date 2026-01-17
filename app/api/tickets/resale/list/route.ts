@@ -98,22 +98,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 2. Verificar se já existe transferência PENDING para este bilhete
-    const existingPendingTransfer = await prisma.ticketTransfer.findFirst({
-      where: {
-        ticketId: ticket.id,
-        status: "PENDING",
-      },
-    });
-
-    if (existingPendingTransfer) {
-      return NextResponse.json(
-        { ok: false, error: "TRANSFER_ALREADY_PENDING" },
-        { status: 400 }
-      );
-    }
-
-    // 3. Verificar se o bilhete já está em revenda LISTED
+    // 2. Verificar se o bilhete já está em revenda LISTED
     const existingResale = await prisma.ticketResale.findFirst({
       where: {
         ticketId: ticket.id,
@@ -128,7 +113,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 4. Validar configuração de revenda ao nível do evento
+    // 3. Validar configuração de revenda ao nível do evento
     const event = ticket.event;
     if (event) {
       const resaleMode =

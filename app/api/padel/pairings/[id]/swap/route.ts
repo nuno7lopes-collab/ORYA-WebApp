@@ -2,11 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { canSwapPartner } from "@/domain/padel/pairingPolicy";
+import { computeGraceUntil } from "@/domain/padelDeadlines";
 import { PadelPairingPaymentStatus, PadelPairingSlotStatus } from "@prisma/client";
 import { readNumericParam } from "@/lib/routeParams";
+import { randomUUID } from "crypto";
 
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
-  const pairingId = readNumericParam(params?.id, req, "pairings");
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const resolved = await params;
+  const pairingId = readNumericParam(resolved?.id, req, "pairings");
   if (pairingId === null) return NextResponse.json({ ok: false, error: "INVALID_ID" }, { status: 400 });
 
   const supabase = await createSupabaseServer();
@@ -17,7 +20,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     where: { id: pairingId },
     select: {
       id: true,
-      organizerId: true,
+      organizationId: true,
       player1UserId: true,
       player2UserId: true,
       lifecycleStatus: true,
@@ -27,7 +30,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   });
   if (!pairing) return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
 
-  // Apenas capitão ou staff do organizer
+  // Apenas capitão pode trocar parceiro.
   const isCaptain = pairing.player1UserId === authData.user.id;
   if (!isCaptain) {
     return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
@@ -40,6 +43,31 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const partnerSlot = pairing.slots.find((slot) => slot.slot_role === "PARTNER");
   if (!partnerSlot) {
     return NextResponse.json({ ok: false, error: "PARTNER_SLOT_MISSING" }, { status: 400 });
+  }
+  if (partnerSlot.paymentStatus === PadelPairingPaymentStatus.PAID) {
+    return NextResponse.json({ ok: false, error: "PARTNER_LOCKED" }, { status: 409 });
+  }
+  if (partnerSlot.profileId) {
+    const now = new Date();
+    const swapToken = randomUUID();
+    const swapExpiresAt = computeGraceUntil(now);
+    const updated = await prisma.padelPairing.update({
+      where: { id: pairing.id },
+      data: {
+        partnerLinkToken: swapToken,
+        partnerLinkExpiresAt: swapExpiresAt,
+      },
+      select: { partnerLinkToken: true, partnerLinkExpiresAt: true },
+    });
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "PARTNER_CONFIRMATION_REQUIRED",
+        swapToken: updated.partnerLinkToken,
+        swapExpiresAt: updated.partnerLinkExpiresAt?.toISOString() ?? null,
+      },
+      { status: 409 },
+    );
   }
 
   // Liberta o parceiro (slot) sem mexer em pagamentos; fluxos de pagamento devem ser tratados noutra rota
@@ -61,6 +89,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
             slotStatus: PadelPairingSlotStatus.PENDING,
             paymentStatus: PadelPairingPaymentStatus.UNPAID,
             invitedContact: null,
+            invitedUserId: null,
           },
         },
       },

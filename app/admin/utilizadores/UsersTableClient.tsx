@@ -47,110 +47,106 @@ export function UsersTableClient({ users }: Props) {
   }
 
   return (
-    <div className="overflow-x-auto">
-      <table className="min-w-full text-left text-[11px]">
-        <thead className="bg-white/5 border-b border-white/10">
-          <tr className="text-white/70">
-            <th className="px-4 py-2 font-semibold">Username</th>
-            <th className="px-4 py-2 font-semibold">Nome</th>
-            <th className="px-4 py-2 font-semibold">Cidade</th>
-            <th className="px-4 py-2 font-semibold">Roles</th>
-            <th className="px-4 py-2 font-semibold">Criado</th>
-            <th className="px-4 py-2 font-semibold">Estado</th>
-            <th className="px-4 py-2 font-semibold">Ações</th>
-          </tr>
-        </thead>
-        <tbody>
-          {users.map((u) => (
-            <tr
-              key={u.id}
-              className="border-b border-white/5 hover:bg-white/[0.03] transition-colors"
-            >
-              <td className="px-4 py-3 whitespace-nowrap text-white">
-                {u.username ? `@${u.username}` : "—"}
-              </td>
-              <td className="px-4 py-3 whitespace-nowrap text-white/90">
-                {u.fullName || "—"}
-              </td>
-              <td className="px-4 py-3 whitespace-nowrap text-white/80">
-                {u.city || "—"}
-              </td>
-              <td className="px-4 py-3 whitespace-nowrap">
-                <div className="flex flex-wrap gap-2">
-                  {(u.roles || []).map((r) => (
-                    <span
-                      key={r}
-                      className="inline-flex items-center rounded-full bg-white/10 px-2 py-1 text-[10px] uppercase tracking-[0.12em] text-white/75"
-                    >
-                      {r}
-                    </span>
-                  ))}
-                  {(!u.roles || u.roles.length === 0) && (
-                    <span className="text-white/50 text-[10px]">sem roles</span>
-                  )}
-                </div>
-              </td>
-              <td className="px-4 py-3 whitespace-nowrap text-white/70">
-                {new Date(u.createdAt).toLocaleDateString("pt-PT", {
-                  day: "2-digit",
-                  month: "short",
-                  year: "numeric",
-                })}
-              </td>
-              <td className="px-4 py-3 whitespace-nowrap">
-                {u.isDeleted ? (
-                  <span className="inline-flex items-center rounded-full bg-red-500/15 px-2 py-1 text-[10px] font-semibold text-red-200">
-                    Banido
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center rounded-full bg-emerald-500/15 px-2 py-1 text-[10px] font-semibold text-emerald-200">
-                    Ativo
-                  </span>
-                )}
-              </td>
-              <td className="px-4 py-3 whitespace-nowrap">
-                <div className="flex flex-wrap gap-2">
-                  {u.isDeleted ? (
-                    <button
-                      onClick={() => runAction(u.id, "unban")}
-                      disabled={loadingId === u.id}
-                      className="rounded-full border border-emerald-400/40 px-3 py-1 text-[11px] text-emerald-100 hover:bg-emerald-500/10 disabled:opacity-40"
-                    >
-                      {loadingId === u.id && loadingAction === "unban"
-                        ? "A reativar..."
-                        : "Reativar"}
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => runAction(u.id, "ban")}
-                      disabled={loadingId === u.id}
-                      className="rounded-full border border-amber-400/40 px-3 py-1 text-[11px] text-amber-100 hover:bg-amber-500/10 disabled:opacity-40"
-                    >
-                      {loadingId === u.id && loadingAction === "ban"
-                        ? "A banir..."
-                        : "Banir"}
-                    </button>
-                  )}
-                  <button
-                    onClick={() => {
-                      const ok = confirm(
-                        "Eliminar em definitivo este utilizador? Esta ação remove do Auth e do perfil.",
-                      );
-                      if (ok) runAction(u.id, "hard_delete");
-                    }}
-                    disabled={loadingId === u.id}
-                    className="rounded-full border border-red-500/50 px-3 py-1 text-[11px] text-red-200 hover:bg-red-500/10 disabled:opacity-40"
-                  >
-                    {loadingId === u.id && loadingAction === "hard_delete"
-                      ? "A apagar..."
-                      : "Hard delete"}
-                  </button>
-                </div>
-              </td>
+    <div className="admin-card overflow-hidden">
+      <div className="overflow-x-auto">
+        <table className="admin-table text-left">
+          <thead>
+            <tr>
+              <th className="px-4 py-3">Username</th>
+              <th className="px-4 py-3">Nome</th>
+              <th className="px-4 py-3">Cidade</th>
+              <th className="px-4 py-3">Roles</th>
+              <th className="px-4 py-3">Criado</th>
+              <th className="px-4 py-3">Estado</th>
+              <th className="px-4 py-3">Ações</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {users.map((u) => (
+              <tr key={u.id}>
+                <td className="px-4 py-3 whitespace-nowrap text-white/90">
+                  {u.username ? `@${u.username}` : "—"}
+                </td>
+                <td className="px-4 py-3 whitespace-nowrap text-white/80">
+                  {u.fullName || "—"}
+                </td>
+                <td className="px-4 py-3 whitespace-nowrap text-white/70">
+                  {u.city || "—"}
+                </td>
+                <td className="px-4 py-3 whitespace-nowrap">
+                  <div className="flex flex-wrap gap-2">
+                    {(u.roles || []).map((r) => (
+                      <span key={r} className="admin-chip">
+                        {r}
+                      </span>
+                    ))}
+                    {(!u.roles || u.roles.length === 0) && (
+                      <span className="text-white/45 text-[10px] uppercase tracking-[0.18em]">sem roles</span>
+                    )}
+                  </div>
+                </td>
+                <td className="px-4 py-3 whitespace-nowrap text-white/60">
+                  {new Date(u.createdAt).toLocaleDateString("pt-PT", {
+                    day: "2-digit",
+                    month: "short",
+                    year: "numeric",
+                  })}
+                </td>
+                <td className="px-4 py-3 whitespace-nowrap">
+                  {u.isDeleted ? (
+                    <span className="inline-flex items-center rounded-full border border-rose-500/40 bg-rose-500/15 px-2 py-1 text-[10px] font-semibold text-rose-100">
+                      Banido
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center rounded-full border border-emerald-400/40 bg-emerald-500/15 px-2 py-1 text-[10px] font-semibold text-emerald-100">
+                      Ativo
+                    </span>
+                  )}
+                </td>
+                <td className="px-4 py-3 whitespace-nowrap">
+                  <div className="flex flex-wrap gap-2">
+                    {u.isDeleted ? (
+                      <button
+                        onClick={() => runAction(u.id, "unban")}
+                        disabled={loadingId === u.id}
+                        className="admin-button-secondary px-3 py-1 text-[11px] text-emerald-100 border-emerald-400/40 disabled:opacity-40"
+                      >
+                        {loadingId === u.id && loadingAction === "unban"
+                          ? "A reativar..."
+                          : "Reativar"}
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => runAction(u.id, "ban")}
+                        disabled={loadingId === u.id}
+                        className="admin-button-secondary px-3 py-1 text-[11px] text-amber-100 border-amber-400/40 disabled:opacity-40"
+                      >
+                        {loadingId === u.id && loadingAction === "ban"
+                          ? "A banir..."
+                          : "Banir"}
+                      </button>
+                    )}
+                    <button
+                      onClick={() => {
+                        const ok = confirm(
+                          "Eliminar em definitivo este utilizador? Esta ação remove do Auth e do perfil.",
+                        );
+                        if (ok) runAction(u.id, "hard_delete");
+                      }}
+                      disabled={loadingId === u.id}
+                      className="admin-button-secondary px-3 py-1 text-[11px] text-rose-100 border-rose-500/50 disabled:opacity-40"
+                    >
+                      {loadingId === u.id && loadingAction === "hard_delete"
+                        ? "A apagar..."
+                        : "Hard delete"}
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

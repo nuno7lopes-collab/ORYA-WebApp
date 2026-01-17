@@ -1,14 +1,15 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type SVGProps } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import Image from "next/image";
 import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
 import { useUser } from "@/app/hooks/useUser";
 import Link from "next/link";
 import { supabaseBrowser } from "@/lib/supabaseBrowser";
-import Image from "next/image";
-import { CTA_PRIMARY } from "@/app/organizador/dashboardUi";
+import { CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
 import { Avatar } from "@/components/ui/avatar";
+import { getEventCoverUrl } from "@/lib/eventCover";
 import MobileBottomNav from "./MobileBottomNav";
 import useSWR from "swr";
 
@@ -24,13 +25,12 @@ type SearchEvent = {
   isFree: boolean;
 };
 
-type SearchOrganizer = {
+type SearchOrganization = {
   id: number;
   username: string | null;
   publicName: string | null;
   businessName: string | null;
   brandingAvatarUrl: string | null;
-  organizationCategory: string | null;
   city: string | null;
   isFollowing?: boolean;
 };
@@ -43,13 +43,53 @@ type SearchUser = {
   isFollowing?: boolean;
 };
 
-type SearchTab = "all" | "events" | "organizers" | "users";
+type SearchTab = "all" | "events" | "organizations" | "users";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
+
+const RESERVED_ROOT_ROUTES = new Set([
+  "admin",
+  "api",
+  "auth",
+  "atividade",
+  "agora",
+  "descobrir",
+  "em-breve",
+  "eventos",
+  "explorar",
+  "inscricoes",
+  "live",
+  "login",
+  "mapa",
+  "me",
+  "onboarding",
+  "organizacao",
+  "organização",
+  "perfil",
+  "procurar",
+  "padel",
+  "rede",
+  "resale",
+  "reset-password",
+  "servicos",
+  "signup",
+  "social",
+  "staff",
+]);
+
+const isRootProfileHandle = (path?: string | null) => {
+  if (!path || path === "/") return false;
+  const segment = path.startsWith("/") ? path.slice(1) : path;
+  if (!segment || segment.includes("/")) return false;
+  return !RESERVED_ROOT_ROUTES.has(segment);
+};
 
 export function Navbar() {
   const router = useRouter();
   const rawPathname = usePathname();
+  if (rawPathname?.startsWith("/admin")) {
+    return null;
+  }
 
   const { openModal: openAuthModal, isOpen: isAuthOpen } = useAuthModal();
   const { user, profile, isLoading } = useUser();
@@ -65,32 +105,41 @@ export function Navbar() {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [eventResults, setEventResults] = useState<SearchEvent[]>([]);
-  const [organizerResults, setOrganizerResults] = useState<SearchOrganizer[]>([]);
+  const [organizationResults, setOrganizationResults] = useState<SearchOrganization[]>([]);
   const [userResults, setUserResults] = useState<SearchUser[]>([]);
   const [isSuggestLoading, setIsSuggestLoading] = useState(false);
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [activeSearchTab, setActiveSearchTab] = useState<SearchTab>("all");
   const [followPending, setFollowPending] = useState<Record<string, boolean>>({});
   const [hydratedPathname, setHydratedPathname] = useState<string | null>(null);
-  const [lastOrganizerUsername, setLastOrganizerUsername] = useState<string | null>(null);
   const profileMenuRef = useRef<HTMLDivElement | null>(null);
   const searchPanelRef = useRef<HTMLDivElement | null>(null);
   const lastScrollYRef = useRef(0);
   const pathname = hydratedPathname ?? "";
-  const shouldHide = rawPathname?.startsWith("/organizador");
-
+  const shouldHide =
+    rawPathname?.startsWith("/organizacao") || rawPathname?.startsWith("/landing");
+  const isMobileHubRoute =
+    rawPathname?.startsWith("/descobrir") ||
+    rawPathname?.startsWith("/rede") ||
+    rawPathname?.startsWith("/agora") ||
+    rawPathname?.startsWith("/procurar") ||
+    rawPathname?.startsWith("/explorar") ||
+    rawPathname?.startsWith("/perfil") ||
+    isRootProfileHandle(rawPathname);
   const Logo = () => (
     <button
       type="button"
-      onClick={() => router.push("/")}
+      onClick={() => router.push("/descobrir")}
       className="group flex items-center gap-2 transition hover:opacity-90 sm:gap-3"
       aria-label="Voltar à homepage ORYA"
     >
       <Image
-        src="/brand/orya-logo.png"
+        src="/brand/orya-logo-112.png"
         alt="Logo ORYA"
         width={56}
         height={56}
+        priority
+        sizes="56px"
         className="h-14 w-14 shrink-0 rounded-full object-cover"
       />
       <span className="text-base font-semibold leading-none tracking-[0.18em] text-white sm:text-lg sm:tracking-[0.24em]">
@@ -107,6 +156,13 @@ export function Navbar() {
   }, [rawPathname]);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handleOpenSearch = () => setIsSearchOpen(true);
+    window.addEventListener("orya:open-search", handleOpenSearch);
+    return () => window.removeEventListener("orya:open-search", handleOpenSearch);
+  }, []);
+
+  useLayoutEffect(() => {
     if (typeof document === "undefined") return;
     if (shouldHide) {
       document.body.dataset.navHidden = "true";
@@ -114,6 +170,15 @@ export function Navbar() {
       delete document.body.dataset.navHidden;
     }
   }, [shouldHide]);
+
+  useLayoutEffect(() => {
+    if (typeof document === "undefined") return;
+    if (isMobileHubRoute) {
+      document.body.dataset.mobileNavHidden = "true";
+    } else {
+      delete document.body.dataset.mobileNavHidden;
+    }
+  }, [isMobileHubRoute]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -227,6 +292,7 @@ export function Navbar() {
   const handleLogout = async () => {
     try {
       await supabaseBrowser.auth.signOut();
+      await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
     } catch (err) {
       console.warn("[navbar] signOut falhou", err);
     } finally {
@@ -248,7 +314,7 @@ export function Navbar() {
       const q = searchQuery.trim();
       if (q.length < 1) {
         setEventResults([]);
-        setOrganizerResults([]);
+        setOrganizationResults([]);
         setUserResults([]);
         setIsSuggestLoading(false);
         return;
@@ -256,7 +322,7 @@ export function Navbar() {
       try {
         setIsSuggestLoading(true);
         const query = encodeURIComponent(q);
-        const [eventsData, usersData, organizersData] = await Promise.all([
+        const [eventsData, usersData, organizationsData] = await Promise.all([
           fetch(`/api/explorar/list?q=${query}&limit=6`, {
             cache: "no-store",
             signal: controller.signal,
@@ -269,7 +335,7 @@ export function Navbar() {
           })
             .then((res) => (res.ok ? res.json() : null))
             .catch(() => null),
-          fetch(`/api/organizers/search?q=${query}&limit=6`, {
+          fetch(`/api/organizations/search?q=${query}&limit=6`, {
             cache: "no-store",
             signal: controller.signal,
           })
@@ -296,8 +362,8 @@ export function Navbar() {
           ? (usersData.results as SearchUser[])
           : [];
 
-        const organizerItems = Array.isArray(organizersData?.results)
-          ? (organizersData.results as SearchOrganizer[])
+        const organizationItems = Array.isArray(organizationsData?.results)
+          ? (organizationsData.results as SearchOrganization[])
           : [];
 
         setEventResults(
@@ -314,12 +380,12 @@ export function Navbar() {
           })),
         );
         setUserResults(userItems);
-        setOrganizerResults(organizerItems);
+        setOrganizationResults(organizationItems);
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") return;
         if (active) {
           setEventResults([]);
-          setOrganizerResults([]);
+          setOrganizationResults([]);
           setUserResults([]);
         }
       } finally {
@@ -362,7 +428,7 @@ export function Navbar() {
       : "Data a anunciar";
 
   const hasResults =
-    eventResults.length > 0 || organizerResults.length > 0 || userResults.length > 0;
+    eventResults.length > 0 || organizationResults.length > 0 || userResults.length > 0;
   const normalizedQuery = searchQuery.trim();
   const hasActiveQuery = normalizedQuery.length >= 1;
 
@@ -378,8 +444,8 @@ export function Navbar() {
     );
   };
 
-  const updateOrganizerFollowState = (targetId: number, next: boolean) => {
-    setOrganizerResults((prev) =>
+  const updateOrganizationFollowState = (targetId: number, next: boolean) => {
+    setOrganizationResults((prev) =>
       prev.map((item) =>
         item.id === targetId ? { ...item, isFollowing: next } : item,
       ),
@@ -414,25 +480,25 @@ export function Navbar() {
     }
   };
 
-  const toggleOrganizerFollow = async (targetId: number, next: boolean) => {
+  const toggleOrganizationFollow = async (targetId: number, next: boolean) => {
     if (!ensureAuthForFollow()) return;
     const key = `org_${targetId}`;
     setFollowPendingFlag(key, true);
-    updateOrganizerFollowState(targetId, next);
+    updateOrganizationFollowState(targetId, next);
     try {
       const res = await fetch(
-        next ? "/api/social/follow-organizer" : "/api/social/unfollow-organizer",
+        next ? "/api/social/follow-organization" : "/api/social/unfollow-organization",
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ organizerId: targetId }),
+          body: JSON.stringify({ organizationId: targetId }),
         },
       );
       if (!res.ok) {
-        updateOrganizerFollowState(targetId, !next);
+        updateOrganizationFollowState(targetId, !next);
       }
     } catch {
-      updateOrganizerFollowState(targetId, !next);
+      updateOrganizationFollowState(targetId, !next);
     } finally {
       setFollowPendingFlag(key, false);
     }
@@ -446,25 +512,37 @@ export function Navbar() {
   const searchTabs: Array<{ key: SearchTab; label: string }> = [
     { key: "all", label: "Global" },
     { key: "events", label: "Eventos" },
-    { key: "organizers", label: "Organizadores" },
+    { key: "organizations", label: "Organizações" },
     { key: "users", label: "Utilizadores" },
   ];
 
-  useEffect(() => {
-    try {
-      const stored = sessionStorage.getItem("orya_last_organizer_username");
-      if (stored) setLastOrganizerUsername(stored);
-    } catch {
-      // ignore storage issues
-    }
-  }, []);
+  const navButtonBase =
+    "inline-flex items-center justify-center rounded-full border text-[12px] font-semibold transition-colors h-10 px-4";
+
+  const mainNavItems = [
+    {
+      label: "Início",
+      href: "/descobrir",
+      active: (path: string) => path === "/descobrir" || path === "/",
+    },
+    {
+      label: "Descobrir",
+      href: "/explorar",
+      active: (path: string) =>
+        path.startsWith("/explorar") || path.startsWith("/procurar"),
+    },
+  ];
+
+  if (shouldHide) {
+    return null;
+  }
 
   return (
     <>
       <header
         className={`fixed inset-x-0 top-0 z-50 transition-transform duration-300 ease-out ${
           isVisible ? "translate-y-0" : "-translate-y-full"
-        } ${shouldHide ? "hidden" : ""}`}
+        } ${shouldHide ? "hidden" : ""} ${isMobileHubRoute ? "hidden md:block" : ""}`}
       >
         <div
           className={`relative flex w-full items-center gap-4 rounded-b-[28px] border-b px-4 py-4 transition-all duration-300 md:px-6 md:py-5 lg:px-8 ${
@@ -473,51 +551,32 @@ export function Navbar() {
               : "border-white/10 bg-[linear-gradient(120deg,rgba(8,10,20,0.38),rgba(8,10,20,0.52))] shadow-[0_16px_40px_rgba(0,0,0,0.45)] backdrop-blur-[18px]"
           }`}
         >
-          {/* Logo + link explorar */}
+          {/* Logo + navegação principal */}
           <div className="flex flex-1 items-center gap-3">
             <Logo />
 
             <nav className="hidden items-center gap-3 text-xs text-zinc-300 md:flex">
-              <button
-                type="button"
-                onClick={() => router.push("/explorar")}
-                className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
-                  pathname?.startsWith("/explorar")
-                    ? "bg-[linear-gradient(120deg,rgba(255,0,200,0.22),rgba(107,255,255,0.18))] text-white border border-white/30 shadow-[0_0_18px_rgba(107,255,255,0.35)]"
-                    : "text-white/85 hover:text-white bg-white/5 border border-white/16 hover:border-white/26"
-                }`}
-              >
-                Explorar
-              </button>
-              <button
-                type="button"
-                onClick={() => router.push("/social")}
-                className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
-                  pathname?.startsWith("/social")
-                    ? "bg-[linear-gradient(120deg,rgba(107,255,255,0.2),rgba(34,197,94,0.2))] text-white border border-white/30 shadow-[0_0_18px_rgba(107,255,255,0.35)]"
-                    : "text-white/85 hover:text-white bg-white/5 border border-white/16 hover:border-white/26"
-                }`}
-              >
-                <span className="flex items-center gap-2">
-                  Social
-                  {isAuthenticated && unreadCount > 0 && (
-                    <span className="inline-flex min-w-[18px] items-center justify-center rounded-full bg-emerald-400 px-1 text-[10px] font-semibold text-black">
-                      {unreadCount > 9 ? "9+" : unreadCount}
-                    </span>
-                  )}
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={() => router.push("/organizador")}
-                className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
-                  pathname?.startsWith("/organizador")
-                    ? "bg-[linear-gradient(120deg,rgba(107,255,255,0.18),rgba(22,70,245,0.22))] text-white border border-white/28 shadow-[0_0_18px_rgba(22,70,245,0.28)]"
-                    : "text-white/85 hover:text-white bg-white/5 border border-white/16 hover:border-white/26"
-                }`}
-              >
-                Organizar
-              </button>
+              {mainNavItems.map((item) => {
+                const isActive = item.active(pathname);
+                const handleClick = () => {
+                  router.push(item.href);
+                };
+
+                return (
+                  <button
+                    key={item.label}
+                    type="button"
+                    onClick={handleClick}
+                    className={`${navButtonBase} ${
+                      isActive
+                        ? "bg-[linear-gradient(120deg,rgba(255,0,200,0.22),rgba(107,255,255,0.18))] text-white border-white/30 shadow-[0_0_18px_rgba(107,255,255,0.35)]"
+                        : "text-white/85 hover:text-white bg-white/5 border-white/16 hover:border-white/26"
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                );
+              })}
             </nav>
           </div>
 
@@ -526,7 +585,7 @@ export function Navbar() {
             <button
               type="button"
               onClick={() => setIsSearchOpen(true)}
-              className="group relative flex w-full max-w-xl items-center gap-3 rounded-full border border-white/16 bg-[linear-gradient(120deg,rgba(255,0,200,0.1),rgba(107,255,255,0.1)),rgba(5,6,12,0.82)] px-4 py-2 text-left text-[13px] text-white hover:border-white/35 hover:shadow-[0_0_35px_rgba(107,255,255,0.28)] transition shadow-[0_26px_60px_rgba(0,0,0,0.7)] backdrop-blur-2xl"
+              className="group relative flex h-10 w-full max-w-xl items-center gap-3 rounded-full border border-white/16 bg-[linear-gradient(120deg,rgba(255,0,200,0.1),rgba(107,255,255,0.1)),rgba(5,6,12,0.82)] px-4 text-left text-[13px] text-white hover:border-white/35 hover:shadow-[0_0_35px_rgba(107,255,255,0.28)] transition shadow-[0_26px_60px_rgba(0,0,0,0.7)] backdrop-blur-2xl"
             >
               <span className="flex h-5 w-5 items-center justify-center rounded-full border border-white/30 text-[10px] text-white/70">
                 ⌕
@@ -540,19 +599,43 @@ export function Navbar() {
             </button>
           </div>
 
-          {/* Lado direito: auth/profile */}
+          {/* Lado direito: notificações, auth/profile */}
           <div className="flex flex-1 items-center justify-end gap-2 md:gap-3">
-            {/* Acesso rápido a Organizar no mobile */}
             <button
               type="button"
-              onClick={() => router.push("/organizador")}
-              className="inline-flex md:hidden items-center rounded-full border border-white/16 bg-white/10 px-3 py-1.5 text-[11px] font-semibold text-white/90 hover:border-white/28 hover:bg-white/16 transition"
+              onClick={() => {
+                if (!isAuthenticated) {
+                  const redirect = pathname && pathname !== "/" ? pathname : "/";
+                  openAuthModal({ mode: "login", redirectTo: redirect });
+                  return;
+                }
+                router.push("/organizacao");
+              }}
+              className={`${navButtonBase} hidden md:inline-flex border-white/18 bg-white/5 text-white/85 shadow-[0_0_18px_rgba(0,0,0,0.25)] hover:border-white/30 hover:bg-white/10`}
             >
               Organizar
             </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (!isAuthenticated) {
+                  const redirect = pathname && pathname !== "/" ? pathname : "/";
+                  openAuthModal({ mode: "login", redirectTo: redirect });
+                  return;
+                }
+                router.push("/social?tab=notifications");
+              }}
+              className="relative flex h-10 w-10 items-center justify-center rounded-full border border-amber-400/60 bg-amber-500/15 text-amber-100 hover:bg-amber-500/20 transition"
+              aria-label="Notificações"
+            >
+              <BellIcon className="h-4 w-4 text-amber-100" />
+              {isAuthenticated && unreadCount > 0 && (
+                <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-[#ff5bd6] shadow-[0_0_10px_rgba(255,91,214,0.7)]" />
+              )}
+            </button>
             {isLoading ? (
-              <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[11px] text-white/60 animate-pulse">
-                <div className="h-7 w-7 rounded-full bg-white/20" />
+              <div className="flex h-10 items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 text-[11px] text-white/60 animate-pulse">
+                <div className="h-8 w-8 rounded-full bg-white/20" />
                 <div className="h-3 w-20 rounded-full bg-white/15" />
               </div>
             ) : !isAuthenticated || inAuthPage ? (
@@ -562,7 +645,7 @@ export function Navbar() {
                   const redirect = pathname && pathname !== "/" ? pathname : "/";
                   openAuthModal({ mode: "login", redirectTo: redirect });
                 }}
-                className={`${CTA_PRIMARY} px-3.5 py-1.5 text-[11px]`}
+                className={`${CTA_PRIMARY} h-10 px-4 text-[12px]`}
               >
                 Entrar / Registar
               </button>
@@ -571,12 +654,12 @@ export function Navbar() {
                 <button
                   type="button"
                   onClick={() => setIsProfileMenuOpen((open) => !open)}
-                  className="flex items-center gap-2 rounded-full border border-white/18 bg-white/8 px-2.5 py-1 text-[11px] text-white/90 hover:border-white/28 hover:bg-white/12 shadow-[0_0_22px_rgba(255,0,200,0.22)] transition"
+                  className="flex h-10 items-center gap-2 rounded-full border border-white/18 bg-white/8 px-3 text-[11px] text-white/90 hover:border-white/28 hover:bg-white/12 shadow-[0_0_22px_rgba(255,0,200,0.22)] transition"
                   aria-haspopup="menu"
                   aria-expanded={isProfileMenuOpen}
                   aria-label="Abrir menu de conta"
                 >
-                  <div className="relative h-9 w-9">
+                  <div className="relative h-8 w-8">
                     <div className="absolute inset-[-3px] rounded-full bg-[conic-gradient(from_180deg,#ff00c8_0deg,#ff5afc_120deg,#6b7bff_240deg,#ff00c8_360deg)] opacity-85 blur-[8px]" />
                     <Avatar
                       src={profile?.avatarUrl ?? null}
@@ -603,7 +686,7 @@ export function Navbar() {
                       onClick={() => setIsProfileMenuOpen(false)}
                       className="flex w-full items-center justify-between rounded-xl px-2.5 py-2 text-left hover:bg-white/8"
                     >
-                      <span className="font-semibold text-white">Minha conta</span>
+                      <span className="font-semibold text-white">Perfil</span>
                     </Link>
                     <Link
                       href="/me/carteira"
@@ -626,23 +709,7 @@ export function Navbar() {
                     >
                       <span>Definições</span>
                     </Link>
-                    <Link
-                      href="/organizador"
-                      onClick={() => setIsProfileMenuOpen(false)}
-                      className="flex w-full items-center justify-between rounded-xl px-2.5 py-2 text-left hover:bg-white/8"
-                    >
-                      <span>Organizar (modo empresa)</span>
-                    </Link>
-                    {lastOrganizerUsername && (
-                      <Link
-                        href={`/${lastOrganizerUsername}`}
-                        onClick={() => setIsProfileMenuOpen(false)}
-                        className="flex w-full items-center justify-between rounded-xl px-2.5 py-2 text-left hover:bg-white/8"
-                      >
-                        <span>Ver página pública</span>
-                      </Link>
-                    )}
-                    {pathname?.startsWith("/organizador") && (
+                    {pathname?.startsWith("/organizacao") && (
                       <Link
                         href="/me"
                         onClick={() => setIsProfileMenuOpen(false)}
@@ -651,7 +718,7 @@ export function Navbar() {
                         <span>Voltar a utilizador</span>
                       </Link>
                     )}
-                    {/* Dashboard de organizador removido do dropdown: já está acessível na nav */}
+                    {/* Dashboard de organização removido do dropdown: já está acessível na nav */}
                     <div className="my-1 h-px w-full bg-white/10" />
                     <button
                       type="button"
@@ -746,7 +813,7 @@ export function Navbar() {
                   <div className="mt-3 max-h-[60vh] space-y-4 overflow-y-auto pr-1">
                     {!hasActiveQuery && (
                       <p className="text-[11px] text-white/70">
-                        Começa a escrever para veres eventos, organizadores e utilizadores.
+                        Começa a escrever para veres eventos, organizações e utilizadores.
                       </p>
                     )}
 
@@ -772,52 +839,54 @@ export function Navbar() {
                             )}
                           </div>
                           <div className="mt-2 space-y-2">
-                            {eventResults.slice(0, 3).map((item) => (
-                              <button
-                                key={`event-${item.id}`}
-                                type="button"
-                                onClick={() => goTo(buildEventHref(item.slug))}
-                                className="w-full rounded-xl border border-white/12 bg-[linear-gradient(120deg,rgba(255,255,255,0.04),rgba(8,10,22,0.7))] p-2.5 text-left hover:border-white/20 hover:bg-white/8 transition flex gap-3"
-                              >
-                                <div className="h-12 w-12 overflow-hidden rounded-lg border border-white/10 bg-[radial-gradient(circle_at_30%_30%,rgba(255,0,200,0.14),transparent_45%),radial-gradient(circle_at_70%_70%,rgba(107,255,255,0.14),transparent_50%),#0b0f1b]">
-                                  {item.coverImageUrl ? (
-                                    // eslint-disable-next-line @next/next/no-img-element
+                            {eventResults.slice(0, 3).map((item) => {
+                              const coverSrc = getEventCoverUrl(item.coverImageUrl, {
+                                seed: item.slug ?? item.id,
+                                width: 200,
+                                quality: 70,
+                                format: "webp",
+                              });
+                              return (
+                                <button
+                                  key={`event-${item.id}`}
+                                  type="button"
+                                  onClick={() => goTo(buildEventHref(item.slug))}
+                                  className="w-full rounded-xl border border-white/12 bg-[linear-gradient(120deg,rgba(255,255,255,0.04),rgba(8,10,22,0.7))] p-2.5 text-left hover:border-white/20 hover:bg-white/8 transition flex gap-3"
+                                >
+                                  <div className="h-12 w-12 overflow-hidden rounded-lg border border-white/10 bg-[radial-gradient(circle_at_30%_30%,rgba(255,0,200,0.14),transparent_45%),radial-gradient(circle_at_70%_70%,rgba(107,255,255,0.14),transparent_50%),#0b0f1b]">
+                                    {/* eslint-disable-next-line @next/next/no-img-element */}
                                     <img
-                                      src={item.coverImageUrl}
+                                      src={coverSrc}
                                       alt={item.title}
                                       className="h-full w-full object-cover"
                                     />
-                                  ) : (
-                                    <div className="flex h-full w-full items-center justify-center text-[10px] font-semibold uppercase tracking-wide text-white/55">
-                                      ORYA
-                                    </div>
-                                  )}
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <p className="text-[12px] font-semibold text-white line-clamp-1">
-                                    {item.title}
-                                  </p>
-                                  <p className="text-[10px] text-white/80 line-clamp-1">
-                                    {item.locationName || item.locationCity || "Local a anunciar"}
-                                  </p>
-                                  <p className="text-[10px] text-white/70">
-                                    {formatEventDate(item.startsAt)}
-                                  </p>
-                                </div>
-                                <div className="flex flex-col items-end gap-1 text-[10px] text-white/70">
-                                  <span>
-                                    {item.isFree
-                                      ? "Grátis"
-                                      : item.priceFrom !== null
-                                        ? `Desde ${item.priceFrom.toFixed(2)} €`
-                                        : "Preço a anunciar"}
-                                  </span>
-                                  <span className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[10px] text-white/85">
-                                    Ver
-                                  </span>
-                                </div>
-                              </button>
-                            ))}
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-[12px] font-semibold text-white line-clamp-1">
+                                      {item.title}
+                                    </p>
+                                    <p className="text-[10px] text-white/80 line-clamp-1">
+                                      {item.locationName || item.locationCity || "Local a anunciar"}
+                                    </p>
+                                    <p className="text-[10px] text-white/70">
+                                      {formatEventDate(item.startsAt)}
+                                    </p>
+                                  </div>
+                                  <div className="flex flex-col items-end gap-1 text-[10px] text-white/70">
+                                    <span>
+                                      {item.isFree
+                                        ? "Grátis"
+                                        : item.priceFrom !== null
+                                          ? `Desde ${item.priceFrom.toFixed(2)} €`
+                                          : "Preço a anunciar"}
+                                    </span>
+                                    <span className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[10px] text-white/85">
+                                      Ver
+                                    </span>
+                                  </div>
+                                </button>
+                              );
+                            })}
                             {eventResults.length === 0 && (
                               <p className="text-[11px] text-white/60">Nenhum evento encontrado.</p>
                             )}
@@ -826,11 +895,11 @@ export function Navbar() {
 
                         <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
                           <div className="flex items-center justify-between text-[11px] text-white/75">
-                            <span>Organizadores</span>
-                            {organizerResults.length > 0 && (
+                            <span>Organizações</span>
+                            {organizationResults.length > 0 && (
                               <button
                                 type="button"
-                                onClick={() => setActiveSearchTab("organizers")}
+                                onClick={() => setActiveSearchTab("organizations")}
                                 className="rounded-full border border-white/12 bg-white/5 px-2 py-0.5 text-[10px] text-white/70 hover:bg-white/10"
                               >
                                 Ver tudo
@@ -838,14 +907,14 @@ export function Navbar() {
                             )}
                           </div>
                           <div className="mt-2 space-y-2">
-                            {organizerResults.slice(0, 3).map((item) => {
+                            {organizationResults.slice(0, 3).map((item) => {
                               const isFollowing = Boolean(item.isFollowing);
                               const pending = followPending[`org_${item.id}`];
                               const displayName =
                                 item.publicName?.trim() ||
                                 item.businessName?.trim() ||
                                 item.username ||
-                                "Organizador ORYA";
+                                "Organização ORYA";
                               return (
                                 <div
                                   key={`org-${item.id}`}
@@ -868,14 +937,14 @@ export function Navbar() {
                                         {displayName}
                                       </p>
                                       <p className="text-[10px] text-white/70 line-clamp-1">
-                                        {item.username ? `@${item.username}` : item.city || "Organizador"}
+                                        {item.username ? `@${item.username}` : item.city || "Organização"}
                                       </p>
                                     </div>
                                   </button>
                                   <button
                                     type="button"
                                     disabled={pending}
-                                    onClick={() => toggleOrganizerFollow(item.id, !isFollowing)}
+                                    onClick={() => toggleOrganizationFollow(item.id, !isFollowing)}
                                     className={`rounded-full px-3 py-1 text-[10px] font-semibold transition ${
                                       isFollowing
                                         ? "border border-emerald-300/40 bg-emerald-400/15 text-emerald-100"
@@ -887,8 +956,8 @@ export function Navbar() {
                                 </div>
                               );
                             })}
-                            {organizerResults.length === 0 && (
-                              <p className="text-[11px] text-white/60">Nenhum organizador encontrado.</p>
+                            {organizationResults.length === 0 && (
+                              <p className="text-[11px] text-white/60">Nenhum organização encontrado.</p>
                             )}
                           </div>
                         </div>
@@ -963,68 +1032,70 @@ export function Navbar() {
 
                     {hasActiveQuery && activeSearchTab === "events" && (
                       <div className="space-y-2">
-                        {eventResults.map((item) => (
-                          <button
-                            key={`event-tab-${item.id}`}
-                            type="button"
-                            onClick={() => goTo(buildEventHref(item.slug))}
-                            className="w-full rounded-xl border border-white/12 bg-[linear-gradient(120deg,rgba(255,255,255,0.04),rgba(8,10,22,0.7))] p-2.5 text-left hover:border-white/20 hover:bg-white/8 transition flex gap-3"
-                          >
-                            <div className="h-12 w-12 overflow-hidden rounded-lg border border-white/10 bg-[radial-gradient(circle_at_30%_30%,rgba(255,0,200,0.14),transparent_45%),radial-gradient(circle_at_70%_70%,rgba(107,255,255,0.14),transparent_50%),#0b0f1b]">
-                              {item.coverImageUrl ? (
-                                // eslint-disable-next-line @next/next/no-img-element
+                        {eventResults.map((item) => {
+                          const coverSrc = getEventCoverUrl(item.coverImageUrl, {
+                            seed: item.slug ?? item.id,
+                            width: 200,
+                            quality: 70,
+                            format: "webp",
+                          });
+                          return (
+                            <button
+                              key={`event-tab-${item.id}`}
+                              type="button"
+                              onClick={() => goTo(buildEventHref(item.slug))}
+                              className="w-full rounded-xl border border-white/12 bg-[linear-gradient(120deg,rgba(255,255,255,0.04),rgba(8,10,22,0.7))] p-2.5 text-left hover:border-white/20 hover:bg-white/8 transition flex gap-3"
+                            >
+                              <div className="h-12 w-12 overflow-hidden rounded-lg border border-white/10 bg-[radial-gradient(circle_at_30%_30%,rgba(255,0,200,0.14),transparent_45%),radial-gradient(circle_at_70%_70%,rgba(107,255,255,0.14),transparent_50%),#0b0f1b]">
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
                                 <img
-                                  src={item.coverImageUrl}
+                                  src={coverSrc}
                                   alt={item.title}
                                   className="h-full w-full object-cover"
                                 />
-                              ) : (
-                                <div className="flex h-full w-full items-center justify-center text-[10px] font-semibold uppercase tracking-wide text-white/55">
-                                  ORYA
-                                </div>
-                              )}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-[12px] font-semibold text-white line-clamp-1">
-                                {item.title}
-                              </p>
-                              <p className="text-[10px] text-white/80 line-clamp-1">
-                                {item.locationName || item.locationCity || "Local a anunciar"}
-                              </p>
-                              <p className="text-[10px] text-white/70">
-                                {formatEventDate(item.startsAt)}
-                              </p>
-                            </div>
-                            <div className="flex flex-col items-end gap-1 text-[10px] text-white/70">
-                              <span>
-                                {item.isFree
-                                  ? "Grátis"
-                                  : item.priceFrom !== null
-                                    ? `Desde ${item.priceFrom.toFixed(2)} €`
-                                    : "Preço a anunciar"}
-                              </span>
-                              <span className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[10px] text-white/85">
-                                Ver
-                              </span>
-                            </div>
-                          </button>
-                        ))}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-[12px] font-semibold text-white line-clamp-1">
+                                  {item.title}
+                                </p>
+                                <p className="text-[10px] text-white/80 line-clamp-1">
+                                  {item.locationName || item.locationCity || "Local a anunciar"}
+                                </p>
+                                <p className="text-[10px] text-white/70">
+                                  {formatEventDate(item.startsAt)}
+                                </p>
+                              </div>
+                              <div className="flex flex-col items-end gap-1 text-[10px] text-white/70">
+                                <span>
+                                  {item.isFree
+                                    ? "Grátis"
+                                    : item.priceFrom !== null
+                                      ? `Desde ${item.priceFrom.toFixed(2)} €`
+                                      : "Preço a anunciar"}
+                                </span>
+                                <span className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[10px] text-white/85">
+                                  Ver
+                                </span>
+                              </div>
+                            </button>
+                          );
+                        })}
                         {eventResults.length === 0 && (
                           <p className="text-[11px] text-white/60">Nenhum evento encontrado.</p>
                         )}
                       </div>
                     )}
 
-                    {hasActiveQuery && activeSearchTab === "organizers" && (
+                    {hasActiveQuery && activeSearchTab === "organizations" && (
                       <div className="space-y-2">
-                        {organizerResults.map((item) => {
+                        {organizationResults.map((item) => {
                           const isFollowing = Boolean(item.isFollowing);
                           const pending = followPending[`org_${item.id}`];
                           const displayName =
                             item.publicName?.trim() ||
                             item.businessName?.trim() ||
                             item.username ||
-                            "Organizador ORYA";
+                            "Organização ORYA";
                           return (
                             <div
                               key={`org-tab-${item.id}`}
@@ -1047,14 +1118,14 @@ export function Navbar() {
                                     {displayName}
                                   </p>
                                   <p className="text-[10px] text-white/70 line-clamp-1">
-                                    {item.username ? `@${item.username}` : item.city || "Organizador"}
+                                    {item.username ? `@${item.username}` : item.city || "Organização"}
                                   </p>
                                 </div>
                               </button>
                               <button
                                 type="button"
                                 disabled={pending}
-                                onClick={() => toggleOrganizerFollow(item.id, !isFollowing)}
+                                onClick={() => toggleOrganizationFollow(item.id, !isFollowing)}
                                 className={`rounded-full px-3 py-1 text-[10px] font-semibold transition ${
                                   isFollowing
                                     ? "border border-emerald-300/40 bg-emerald-400/15 text-emerald-100"
@@ -1066,8 +1137,8 @@ export function Navbar() {
                             </div>
                           );
                         })}
-                        {organizerResults.length === 0 && (
-                          <p className="text-[11px] text-white/60">Nenhum organizador encontrado.</p>
+                        {organizationResults.length === 0 && (
+                          <p className="text-[11px] text-white/60">Nenhum organização encontrado.</p>
                         )}
                       </div>
                     )}
@@ -1132,7 +1203,27 @@ export function Navbar() {
           </div>
         </div>
       )}
-      <MobileBottomNav pathname={pathname} socialBadgeCount={unreadCount} />
+      {!shouldHide && <MobileBottomNav pathname={pathname} socialBadgeCount={unreadCount} />}
     </>
+  );
+}
+
+type IconProps = SVGProps<SVGSVGElement>;
+
+function BellIcon(props: IconProps) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      fillOpacity="0.4"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      {...props}
+    >
+      <path d="M6.8 9.5a5.2 5.2 0 0 1 10.4 0v3.7c0 .8.3 1.6.8 2.2l.7.9H5.3l.7-.9c.5-.6.8-1.4.8-2.2V9.5Z" />
+      <path d="M9.5 18.5a2.5 2.5 0 0 0 5 0" />
+    </svg>
   );
 }

@@ -36,29 +36,29 @@ export async function ensureAuthenticated(
   return user;
 }
 
-export function isOrganizer(
+export function isOrganization(
   profile:
     | { roles?: string[] | null }
     | null
     | undefined
 ): boolean {
   if (!profile || !profile.roles) return false;
-  return profile.roles.includes("organizer");
+  return profile.roles.includes("organization");
 }
 
-export function assertOrganizer(
+export function assertOrganization(
   user: User | null | undefined,
   profile:
     | { id: string; roles?: string[] | null }
     | null
     | undefined,
-  _organizer?: { userId: string } | null
+  _organization?: { userId: string } | null
 ): void {
   if (!user) {
     throw new Error("UNAUTHENTICATED");
   }
 
-  if (!isOrganizer(profile)) {
-    throw new Error("NOT_ORGANIZER");
+  if (!isOrganization(profile)) {
+    throw new Error("NOT_ORGANIZATION");
   }
 }

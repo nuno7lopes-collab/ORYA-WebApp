@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CTA_PRIMARY } from "@/app/organizador/dashboardUi";
+import { CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
 
 export default function NotFound() {
   return (
@@ -32,7 +32,7 @@ export default function NotFound() {
 
         <div className="space-y-3">
           <Link
-            href="/explorar"
+            href="/explorar/eventos"
             className={`${CTA_PRIMARY} w-full justify-center px-4 py-2.5 text-xs active:scale-95`}
           >
             Voltar a explorar eventos

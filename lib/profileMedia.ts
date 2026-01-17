@@ -3,20 +3,35 @@ import { env } from "@/lib/env";
 const SUPABASE_PUBLIC_PREFIX = `${env.supabaseUrl.replace(/\/+$/, "")}/storage/v1/object/public/`;
 
 function resolveBuckets(primary?: string, fallback?: string) {
+  const buckets = new Set<string>();
   const primaryTrimmed = primary?.trim();
-  if (primaryTrimmed) return [primaryTrimmed];
+  if (primaryTrimmed) buckets.add(primaryTrimmed);
   const fallbackTrimmed = fallback?.trim();
-  return fallbackTrimmed ? [fallbackTrimmed] : [];
+  if (fallbackTrimmed) buckets.add(fallbackTrimmed);
+  return Array.from(buckets);
 }
 
-function normalizePublicUrl(raw: string | null | undefined, buckets: string[]) {
+function normalizePublicUrl(
+  raw: string | null | undefined,
+  buckets: string[],
+  options?: { pathPrefixes?: string[] },
+) {
   if (typeof raw !== "string") return null;
   const trimmed = raw.trim();
   if (!trimmed) return null;
   if (!/^https?:\/\//i.test(trimmed)) return null;
   for (const bucket of buckets) {
     if (!bucket) continue;
-    if (trimmed.startsWith(`${SUPABASE_PUBLIC_PREFIX}${bucket}/`)) return trimmed;
+    const prefix = `${SUPABASE_PUBLIC_PREFIX}${bucket}/`;
+    if (!trimmed.startsWith(prefix)) continue;
+    if (options?.pathPrefixes?.length) {
+      const path = trimmed.slice(prefix.length).split("?")[0];
+      const matches = options.pathPrefixes.some((segment) =>
+        path.startsWith(segment.replace(/^\/+/, "")),
+      );
+      if (!matches) continue;
+    }
+    return trimmed;
   }
   return null;
 }
@@ -29,13 +44,13 @@ export function normalizeProfileAvatarUrl(raw: string | null | undefined) {
 }
 
 export function normalizeProfileCoverUrl(raw: string | null | undefined) {
-  return normalizePublicUrl(raw, coverBuckets);
+  return normalizePublicUrl(raw, coverBuckets, { pathPrefixes: ["profile-covers/"] });
 }
 
-export function normalizeOrganizerAvatarUrl(raw: string | null | undefined) {
+export function normalizeOrganizationAvatarUrl(raw: string | null | undefined) {
   return normalizePublicUrl(raw, avatarBuckets);
 }
 
-export function normalizeOrganizerCoverUrl(raw: string | null | undefined) {
-  return normalizePublicUrl(raw, coverBuckets);
+export function normalizeOrganizationCoverUrl(raw: string | null | undefined) {
+  return normalizePublicUrl(raw, coverBuckets, { pathPrefixes: ["profile-covers/"] });
 }

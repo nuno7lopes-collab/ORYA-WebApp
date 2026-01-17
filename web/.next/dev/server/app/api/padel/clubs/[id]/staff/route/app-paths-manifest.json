@@ -1,0 +1,3 @@
+{
+  "/api/padel/clubs/[id]/staff/route": "app/api/padel/clubs/[id]/staff/route.js"
+}

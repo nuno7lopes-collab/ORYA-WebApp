@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 type TxLike = Prisma.TransactionClient | PrismaClient;
 
 export type OrganizationAuditInput = {
-  organizerId: number;
+  organizationId: number;
   actorUserId?: string | null;
   action: string;
   fromUserId?: string | null;
@@ -27,7 +27,7 @@ export async function recordOrganizationAudit(
   if (!auditModel?.create) return null;
   return auditModel.create({
     data: {
-      organizerId: input.organizerId,
+      organizationId: input.organizationId,
       actorUserId: input.actorUserId ?? null,
       action: input.action,
       fromUserId: input.fromUserId ?? null,

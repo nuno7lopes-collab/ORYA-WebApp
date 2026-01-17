@@ -2,9 +2,10 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { createSupabaseServer } from "@/lib/supabaseServer";
+import { requireAdminUser } from "@/lib/admin/auth";
 import { getStripeBaseFees } from "@/lib/platformSettings";
 import type { Prisma, PaymentMode } from "@prisma/client";
+import { resolveOrganizationIdFromParams } from "@/lib/organizationId";
 
 type Aggregate = {
   grossCents: number;
@@ -14,29 +15,6 @@ type Aggregate = {
   netCents: number;
   tickets: number;
 };
-
-async function ensureAdmin() {
-  const supabase = await createSupabaseServer();
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser();
-
-  if (error || !user) {
-    return { ok: false as const, status: 401 as const, reason: "UNAUTHENTICATED" };
-  }
-
-  const profile = await prisma.profile.findUnique({
-    where: { id: user.id },
-    select: { roles: true },
-  });
-  const roles = profile?.roles ?? [];
-  const isAdmin = Array.isArray(roles) && roles.includes("admin");
-  if (!isAdmin) {
-    return { ok: false as const, status: 403 as const, reason: "FORBIDDEN" };
-  }
-  return { ok: true as const };
-}
 
 const emptyAgg: Aggregate = {
   grossCents: 0,
@@ -49,13 +27,13 @@ const emptyAgg: Aggregate = {
 
 export async function GET(req: NextRequest) {
   try {
-    const admin = await ensureAdmin();
+    const admin = await requireAdminUser();
     if (!admin.ok) {
-      return NextResponse.json({ ok: false, error: admin.reason }, { status: admin.status });
+      return NextResponse.json({ ok: false, error: admin.error }, { status: admin.status });
     }
 
     const url = new URL(req.url);
-    const organizerId = Number(url.searchParams.get("organizerId"));
+    const organizationId = resolveOrganizationIdFromParams(url.searchParams);
     const eventId = Number(url.searchParams.get("eventId"));
     const modeParam = (url.searchParams.get("mode") || "ALL").toUpperCase();
     const fromParam = url.searchParams.get("from");
@@ -86,15 +64,15 @@ export async function GET(req: NextRequest) {
       paymentIntentIds = events.map((e) => e.stripePaymentIntentId).filter(Boolean) as string[];
       if (paymentIntentIds.length === 0) {
         return NextResponse.json(
-          { ok: true, totals: emptyAgg, byOrganizer: [], period: { from: fromDate, to: toDate } },
+          { ok: true, totals: emptyAgg, byOrganization: [], period: { from: fromDate, to: toDate } },
           { status: 200 },
         );
       }
     }
 
     const where: Prisma.SaleSummaryWhereInput = {};
-    if (Number.isFinite(organizerId)) {
-      where.event = { organizerId: Number(organizerId) };
+    if (typeof organizationId === "number") {
+      where.event = { organizationId };
     }
     if (Number.isFinite(eventId)) {
       where.eventId = Number(eventId);
@@ -116,28 +94,29 @@ export async function GET(req: NextRequest) {
         subtotalCents: true,
         discountCents: true,
         platformFeeCents: true,
+        cardPlatformFeeCents: true,
         stripeFeeCents: true,
         totalCents: true,
         netCents: true,
         createdAt: true,
         lines: { select: { quantity: true } },
-        event: { select: { organizerId: true, title: true } },
+        event: { select: { organizationId: true, title: true } },
       },
       orderBy: { createdAt: "desc" },
       take: 1000, // segurança para não explodir o painel
     });
 
     const totals: Aggregate = { ...emptyAgg };
-    const byOrganizer = new Map<
+    const byOrganization = new Map<
       number,
-      Aggregate & { organizerId: number; events: Set<number> }
+      Aggregate & { organizationId: number; events: Set<number> }
     >();
 
     const add = (orgId: number, agg: Aggregate, eventIdValue: number) => {
-      if (!byOrganizer.has(orgId)) {
-        byOrganizer.set(orgId, { ...emptyAgg, organizerId: orgId, events: new Set() });
+      if (!byOrganization.has(orgId)) {
+        byOrganization.set(orgId, { ...emptyAgg, organizationId: orgId, events: new Set() });
       }
-      const target = byOrganizer.get(orgId)!;
+      const target = byOrganization.get(orgId)!;
       target.grossCents += agg.grossCents;
       target.discountCents += agg.discountCents;
       target.platformFeeCents += agg.platformFeeCents;
@@ -150,7 +129,7 @@ export async function GET(req: NextRequest) {
     for (const s of summaries) {
       const gross = s.subtotalCents ?? 0;
       const discount = s.discountCents ?? 0;
-      const platformFee = s.platformFeeCents ?? 0;
+      const platformFee = (s.platformFeeCents ?? 0) + (s.cardPlatformFeeCents ?? 0);
       const total = s.totalCents ?? gross - discount + platformFee;
       const stripeFee = s.stripeFeeCents != null ? s.stripeFeeCents : estimateStripeFee(total);
       const net =
@@ -166,12 +145,12 @@ export async function GET(req: NextRequest) {
       totals.netCents += net;
       totals.tickets += tickets;
 
-      const organizerKey = s.event?.organizerId ?? 0;
-      add(organizerKey, { grossCents: gross, discountCents: discount, platformFeeCents: platformFee, stripeFeeCents: stripeFee, netCents: net, tickets }, s.eventId);
+      const organizationKey = s.event?.organizationId ?? 0;
+      add(organizationKey, { grossCents: gross, discountCents: discount, platformFeeCents: platformFee, stripeFeeCents: stripeFee, netCents: net, tickets }, s.eventId);
     }
 
-    const list = Array.from(byOrganizer.values()).map((entry) => ({
-      organizerId: entry.organizerId,
+    const list = Array.from(byOrganization.values()).map((entry) => ({
+      organizationId: entry.organizationId,
       grossCents: entry.grossCents,
       discountCents: entry.discountCents,
       platformFeeCents: entry.platformFeeCents,
@@ -185,7 +164,7 @@ export async function GET(req: NextRequest) {
       {
         ok: true,
         totals,
-        byOrganizer: list,
+        byOrganization: list,
         period: { from: fromDate, to: toDate },
       },
       { status: 200 },

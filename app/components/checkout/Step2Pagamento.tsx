@@ -14,9 +14,13 @@ import {
 } from "@stripe/stripe-js";
 import { type CheckoutBreakdown, useCheckout } from "./contextoCheckout";
 import { supabaseBrowser } from "@/lib/supabaseBrowser";
+import { sanitizeRedirectPath } from "@/lib/auth/redirects";
 import { isValidPhone, sanitizePhone } from "@/lib/phone";
 import { sanitizeUsername, validateUsername } from "@/lib/username";
-import { CTA_PRIMARY } from "@/app/organizador/dashboardUi";
+import { CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
+import { getTicketCopy } from "./checkoutCopy";
+
+type TicketCopy = ReturnType<typeof getTicketCopy>;
 
 function isValidEmail(email: string) {
   return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email);
@@ -69,12 +73,6 @@ type CheckoutItem = {
   ticketId: number;
   quantity: number;
 };
-const scenarioCopy: Record<string, string> = {
-  GROUP_SPLIT: "Estás a pagar apenas a tua parte desta dupla.",
-  GROUP_FULL: "Estás a comprar 2 lugares (tu + parceiro).",
-  RESALE: "Estás a comprar um bilhete em revenda.",
-  FREE_CHECKOUT: "Evento gratuito — só para utilizadores com conta e username.",
-};
 
 type CheckoutWave = {
   id: number | string;
@@ -100,9 +98,11 @@ type CheckoutData = {
     inviteToken?: string;
     paymentIntentId?: string;
     appliedPromoLabel?: string;
+    promoCode?: string;
     freeCheckout?: boolean;
     clientFingerprint?: string;
     intentFingerprint?: string;
+    paymentMethod?: "mbway" | "card";
   };
   paymentScenario?: string | null;
 };
@@ -117,6 +117,33 @@ const FREE_PLACEHOLDER_INTENT_ID = "FREE_CHECKOUT";
 
 export default function Step2Pagamento() {
   const { dados, irParaPasso, atualizarDados, breakdown, setBreakdown } = useCheckout();
+  const checkoutVariant =
+    typeof dados?.additional?.checkoutUiVariant === "string"
+      ? dados.additional.checkoutUiVariant
+      : "DEFAULT";
+  const ticketCopy = getTicketCopy(checkoutVariant);
+  const ticketPluralWithArticle = `${ticketCopy.articlePlural} ${ticketCopy.plural}`;
+  const ticketOneOf = ticketCopy.isPadel ? "uma das inscrições" : "um dos bilhetes";
+  const ticketAllPlural = ticketCopy.isPadel ? "todas as inscrições" : "todos os bilhetes";
+  const ticketNameLabel = ticketCopy.isPadel ? "Nome na inscrição" : "Nome no bilhete";
+  const ticketEmailLabel = ticketCopy.isPadel ? "Email para inscrições e recibo." : "Email para bilhetes e recibo.";
+  const freeHeaderLabel = ticketCopy.freeLabel;
+  const freeLabelLower = freeHeaderLabel.toLowerCase();
+  const freeDescription = ticketCopy.isPadel
+    ? "Confirma a tua inscrição. Requer sessão iniciada e username definido."
+    : "Confirma a tua entrada gratuita. Requer sessão iniciada e username definido.";
+  const freePrepLabel = ticketCopy.isPadel
+    ? "A preparar a tua inscrição…"
+    : "A preparar a tua entrada gratuita…";
+  const freeConfirmLabel = ticketCopy.isPadel
+    ? "Estamos a confirmar a tua inscrição gratuita."
+    : "Estamos a confirmar a tua entrada gratuita.";
+  const scenarioCopy: Record<string, string> = {
+    GROUP_SPLIT: "Estás a pagar apenas a tua parte desta dupla.",
+    GROUP_FULL: "Estás a comprar 2 lugares (tu + parceiro).",
+    RESALE: `Estás a comprar ${ticketCopy.articleSingular} ${ticketCopy.singular} em revenda.`,
+    FREE_CHECKOUT: `${ticketCopy.freeLabel} — só para utilizadores com conta e username.`,
+  };
 
   const [clientSecret, setClientSecret] = useState<string | null>(null);
   const [serverAmount, setServerAmount] = useState<number | null>(null);
@@ -144,6 +171,7 @@ export default function Step2Pagamento() {
   const [appliedDiscount, setAppliedDiscount] = useState<number>(0);
   const [promoWarning, setPromoWarning] = useState<string | null>(null);
   const [appliedPromoLabel, setAppliedPromoLabel] = useState<string | null>(null);
+  const [paymentMethod, setPaymentMethod] = useState<"mbway" | "card">("mbway");
   const lastIntentKeyRef = useRef<string | null>(null);
   const inFlightIntentRef = useRef<string | null>(null);
   const ensuredIdemKeyRef = useRef(false);
@@ -162,6 +190,26 @@ export default function Step2Pagamento() {
     autoAppliedPromo?: boolean;
     purchaseId?: string | null;
   } | null>(null);
+
+  const handleSelectPaymentMethod = (method: "mbway" | "card") => {
+    if (method === paymentMethod) return;
+    setPaymentMethod(method);
+    setCachedIntent(null);
+    setClientSecret(null);
+    setServerAmount(null);
+    setBreakdown(null);
+    lastIntentKeyRef.current = null;
+    inFlightIntentRef.current = null;
+    if (safeDados) {
+      atualizarDados({
+        additional: {
+          ...(safeDados.additional ?? {}),
+          paymentMethod: method,
+          intentFingerprint: undefined,
+        },
+      });
+    }
+  };
 
   const safeDados: CheckoutData | null =
     dados && typeof dados === "object" ? (dados as CheckoutData) : null;
@@ -184,11 +232,24 @@ export default function Step2Pagamento() {
     safeDados?.additional && typeof safeDados.additional === "object"
       ? (safeDados.additional as Record<string, unknown>).inviteToken
       : undefined;
+  const promoFromLink =
+    safeDados?.additional && typeof safeDados.additional === "object"
+      ? (safeDados.additional as Record<string, unknown>).promoCode
+      : undefined;
 
   const additionalForRules =
     safeDados?.additional && typeof safeDados.additional === "object"
       ? safeDados.additional
       : {};
+
+  useEffect(() => {
+    if (!promoFromLink || typeof promoFromLink !== "string") return;
+    if (promoInput.trim() || promoCode.trim()) return;
+    const normalized = promoFromLink.trim().toUpperCase();
+    if (!normalized) return;
+    setPromoInput(normalized);
+    setPromoCode(normalized);
+  }, [promoCode, promoFromLink, promoInput]);
 
   // Regras de acesso ao checkout:
   // - FREE_CHECKOUT: sempre com conta
@@ -339,6 +400,11 @@ export default function Step2Pagamento() {
     if (typeof additional.guestPhone === "string") {
       setGuestPhone(additional.guestPhone);
     }
+    const method =
+      (additional as Record<string, unknown>).paymentMethod === "card"
+        ? "card"
+        : "mbway";
+    setPaymentMethod(method);
   }, [safeDados]);
 
   const payload = useMemo(() => {
@@ -370,6 +436,8 @@ export default function Step2Pagamento() {
 
     const totalFromStep1 =
       typeof additional.total === "number" ? additional.total : null;
+    const resolvedPaymentMethod =
+      paymentMethod === "card" ? "card" : "mbway";
 
     // IdempotencyKey estável: reutiliza a existente; se não houver, gera apenas uma vez
     let idemKey: string | undefined =
@@ -395,6 +463,7 @@ export default function Step2Pagamento() {
       promoCode: promoCode.trim() || undefined,
       paymentScenario: safeDados.paymentScenario ?? undefined,
       requiresAuth,
+      paymentMethod: resolvedPaymentMethod,
       idempotencyKey: idemKey,
       purchaseId: purchaseId || undefined,
       pairingId: typeof pairingId === "number" ? pairingId : undefined,
@@ -403,7 +472,7 @@ export default function Step2Pagamento() {
       eventId: safeDados.eventId ? Number(safeDados.eventId) : undefined,
       inviteToken: typeof inviteToken === "string" && inviteToken.trim() ? inviteToken.trim() : undefined,
     };
-  }, [safeDados, promoCode, requiresAuth]);
+  }, [safeDados, promoCode, requiresAuth, paymentMethod, pairingId, pairingSlotId, pairingTicketTypeId, inviteToken]);
 
   // Garante idempotencyKey persistida no contexto para estabilizar intentKey e evitar re-renders infinitos
   useEffect(() => {
@@ -482,6 +551,7 @@ export default function Step2Pagamento() {
       promoCode: payload.promoCode ?? null,
       paymentScenario: payload.paymentScenario ?? null,
       requiresAuth,
+      paymentMethod,
       mode: purchaseMode,
       userId: userId ?? null,
       guest: guestPayload
@@ -888,9 +958,7 @@ export default function Step2Pagamento() {
             if (!cancelled) {
               setError("Este evento gratuito requer sessão com username definido.");
               setPurchaseMode("auth");
-              setAuthInfo(
-                "Inicia sessão e define um username para concluir a inscrição gratuita.",
-              );
+              setAuthInfo(`Inicia sessão e define um username para concluir a ${freeLabelLower}.`);
             }
             return;
           }
@@ -910,16 +978,38 @@ export default function Step2Pagamento() {
             respCode === "PRICE_CHANGED"
               ? "Os preços foram atualizados. Revê a seleção e tenta novamente."
               : respCode === "INSUFFICIENT_STOCK"
-                ? "Stock insuficiente para um dos bilhetes."
+                ? `Stock insuficiente para ${ticketOneOf}.`
                 : typeof data?.error === "string"
                   ? data.error
                   : "Não foi possível preparar o pagamento.";
 
-          if (respCode === "ORGANIZER_STRIPE_NOT_CONNECTED") {
+          if (respCode === "ORGANIZATION_PAYMENTS_NOT_READY") {
+            if (!cancelled) {
+              const missingEmail = Boolean(data?.missingEmail);
+              const missingStripe = Boolean(data?.missingStripe);
+              setError(
+                data?.error ||
+                  "Pagamentos desativados para este evento. Verifica o email oficial e liga a Stripe.",
+              );
+              const infoParts: string[] = [];
+              if (missingEmail) {
+                infoParts.push("Verifica o email oficial da organização em Definições.");
+              }
+              if (missingStripe) {
+                infoParts.push("Liga a Stripe em Finanças & Payouts para ativares pagamentos.");
+              }
+              if (infoParts.length) {
+                setAuthInfo(infoParts.join(" "));
+              }
+            }
+            return;
+          }
+
+          if (respCode === "ORGANIZATION_STRIPE_NOT_CONNECTED") {
             if (!cancelled) {
               setError(
                 data?.message ||
-                  "Pagamentos desativados para este evento enquanto o organizador não ligar a Stripe.",
+                  "Pagamentos desativados para este evento enquanto o organização não ligar a Stripe.",
               );
               setAuthInfo("Liga a Stripe em Finanças & Payouts para ativares pagamentos.");
             }
@@ -1162,6 +1252,10 @@ export default function Step2Pagamento() {
         : serverAmount !== null
           ? serverAmount / 100
           : null;
+  const cardFeeBps = breakdown?.cardPlatformFeeBps ?? 100;
+  const cardFeePercentLabel = Number.isFinite(cardFeeBps)
+    ? `${(cardFeeBps / 100).toFixed(cardFeeBps % 100 === 0 ? 0 : 2)}%`
+    : "1%";
 
   const appearance: Appearance = {
     theme: "night",
@@ -1260,10 +1354,10 @@ export default function Step2Pagamento() {
     setError(null);
     const localErrors: { name?: string; email?: string; phone?: string } = {};
     if (!guestName.trim()) {
-      localErrors.name = "Nome é obrigatório para emitir o bilhete.";
+      localErrors.name = `Nome é obrigatório para emitir ${ticketCopy.articleSingular} ${ticketCopy.singular}.`;
     }
     if (!guestEmail.trim()) {
-      localErrors.email = "Email é obrigatório para enviar os bilhetes.";
+      localErrors.email = `Email é obrigatório para enviar ${ticketPluralWithArticle}.`;
     } else if (!isValidEmail(guestEmail.trim())) {
       localErrors.email = "Email inválido. Confirma o formato (ex: nome@dominio.com).";
     } else if (guestEmailConfirm.trim() && guestEmailConfirm.trim() !== guestEmail.trim()) {
@@ -1350,11 +1444,11 @@ export default function Step2Pagamento() {
             Passo 2 de 3
           </p>
           <h2 className="text-2xl font-semibold leading-tight">
-            {isFreeScenario ? "Inscrição gratuita" : "Pagamento"}
+            {isFreeScenario ? freeHeaderLabel : "Pagamento"}
           </h2>
           <p className="text-[11px] text-white/60 max-w-xs">
             {isFreeScenario
-              ? "Confirma a tua inscrição. Requer sessão iniciada e username definido."
+              ? freeDescription
               : "Pagamento seguro processado pela Stripe."}
           </p>
           {scenario && scenarioCopy[scenario] && (
@@ -1409,10 +1503,12 @@ export default function Step2Pagamento() {
                 <div className="absolute inset-0 h-14 w-14 animate-pulse rounded-full border border-[#6BFFFF]/20" />
               </div>
               <h3 className="text-sm font-semibold mb-1 animate-pulse">
-                A preparar o teu pagamento…
+                {isFreeScenario ? freePrepLabel : "A preparar o teu pagamento…"}
               </h3>
               <p className="text-[11px] text-white/65 max-w-xs leading-relaxed">
-                Estamos a ligar-te à Stripe para criar uma transação segura.
+                {isFreeScenario
+                  ? freeConfirmLabel
+                  : "Estamos a ligar-te à Stripe para criar uma transação segura."}
               </p>
             </div>
           ) : error ? (
@@ -1505,6 +1601,58 @@ export default function Step2Pagamento() {
                   </div>
                 )}
               </div>
+              {!isFreeScenario && (
+                <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 space-y-3">
+                  <div className="flex items-center justify-between text-[11px] text-white/70">
+                    <span className="uppercase tracking-[0.16em]">Método de pagamento</span>
+                    <span
+                      className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[10px] text-white/70"
+                      title="MB WAY não tem taxa adicional. Cartão inclui taxa de plataforma."
+                    >
+                      Info
+                    </span>
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <button
+                      type="button"
+                      onClick={() => handleSelectPaymentMethod("mbway")}
+                      className={`flex flex-col items-start gap-1 rounded-2xl border px-4 py-3 text-left transition ${
+                        paymentMethod === "mbway"
+                          ? "border-emerald-300/60 bg-emerald-400/10 text-white shadow-[0_18px_40px_rgba(16,185,129,0.18)]"
+                          : "border-white/15 bg-white/5 text-white/75 hover:border-white/30"
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold">MB WAY</span>
+                        <span className="rounded-full border border-amber-300/40 bg-amber-400/10 px-2 py-0.5 text-[10px] font-semibold text-amber-100">
+                          Recomendado · 0€ taxas
+                        </span>
+                      </div>
+                      <span className="text-[11px] text-white/60">Pagamento rápido no telemóvel.</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSelectPaymentMethod("card")}
+                      className={`flex flex-col items-start gap-1 rounded-2xl border px-4 py-3 text-left transition ${
+                        paymentMethod === "card"
+                          ? "border-white/40 bg-white/10 text-white shadow-[0_18px_40px_rgba(255,255,255,0.14)]"
+                          : "border-white/15 bg-white/5 text-white/75 hover:border-white/30"
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold">Cartão</span>
+                        <span className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[10px] text-white/70">
+                          +{cardFeePercentLabel}
+                        </span>
+                      </div>
+                      <span className="text-[11px] text-white/60">Inclui taxa de plataforma.</span>
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-white/55">
+                    MB WAY não tem taxa adicional. Cartão inclui taxa de plataforma.
+                  </p>
+                </div>
+              )}
               <Elements stripe={stripePromise} options={options}>
                 <PaymentForm
                   total={total}
@@ -1568,7 +1716,10 @@ export default function Step2Pagamento() {
               <div className="rounded-xl border border-emerald-400/30 bg-emerald-500/10 px-3 py-2 text-[11px] text-emerald-50">
                 Este checkout exige conta. Para eventos gratuitos precisas de iniciar sessão e ter um username definido.
               </div>
-              <AuthWall onAuthenticated={handleAuthenticated} />
+              <AuthWall
+                onAuthenticated={handleAuthenticated}
+                ticketPluralWithArticle={ticketPluralWithArticle}
+              />
             </div>
           ) : purchaseMode === "guest" ? (
             <GuestCheckoutCard
@@ -1582,9 +1733,16 @@ export default function Step2Pagamento() {
               onChangeEmailConfirm={setGuestEmailConfirm}
               onChangePhone={setGuestPhone}
               onContinue={handleGuestContinue}
+              ticketNameLabel={ticketNameLabel}
+              ticketEmailLabel={ticketEmailLabel}
+              ticketPluralWithArticle={ticketPluralWithArticle}
+              ticketAllPlural={ticketAllPlural}
             />
           ) : (
-            <AuthWall onAuthenticated={handleAuthenticated} />
+            <AuthWall
+              onAuthenticated={handleAuthenticated}
+              ticketPluralWithArticle={ticketPluralWithArticle}
+            />
           )}
         </div>
       )}
@@ -1610,6 +1768,12 @@ function PaymentForm({ total, discount = 0, breakdown, clientSecret, onLoadError
   const currency = breakdown?.currency ?? "EUR";
   const discountCents = Math.max(0, Math.round(discount * 100));
   const promoApplied = discountCents > 0;
+  const cardPlatformFeeCents = breakdown?.cardPlatformFeeCents ?? 0;
+  const baseCents = breakdown
+    ? Math.max(0, (breakdown.subtotalCents ?? 0) - (breakdown.discountCents ?? 0))
+    : total
+      ? Math.round(total * 100)
+      : 0;
 
   useEffect(() => {
     // sempre que o clientSecret muda, obrigamos o PaymentElement a fazer ready novamente
@@ -1821,16 +1985,26 @@ function PaymentForm({ total, discount = 0, breakdown, clientSecret, onLoadError
             </span>
           </div>
 
-          {total !== null && (
-          <div className="flex items-center justify-between rounded-xl bg-white/10 px-4 py-3 border border-white/12">
-              <div className="flex flex-col text-white/80">
-                <span className="text-[12px]">Total a pagar</span>
-              </div>
-              <span className="text-xl font-semibold text-white">
-                {formatMoney(Math.round(total * 100), currency)}
-              </span>
+          <div className="space-y-2 text-[12px] text-white/75">
+            <div className="flex items-center justify-between">
+              <span>Valor base</span>
+              <span>{formatMoney(baseCents, currency)}</span>
             </div>
-          )}
+            {cardPlatformFeeCents > 0 && (
+              <div className="flex items-center justify-between">
+                <span>Taxa de plataforma (Cartão)</span>
+                <span>{formatMoney(cardPlatformFeeCents, currency)}</span>
+              </div>
+            )}
+          </div>
+          <div className="flex items-center justify-between rounded-xl bg-white/10 px-4 py-3 border border-white/12">
+            <div className="flex flex-col text-white/80">
+              <span className="text-[12px]">Total a pagar</span>
+            </div>
+            <span className="text-xl font-semibold text-white">
+              {formatMoney(Math.round(total * 100), currency)}
+            </span>
+          </div>
         </div>
       )}
 
@@ -1891,13 +2065,14 @@ function PaymentForm({ total, discount = 0, breakdown, clientSecret, onLoadError
 
 type AuthWallProps = {
   onAuthenticated?: (userId: string) => void;
+  ticketPluralWithArticle: string;
 };
 
 function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function AuthWall({ onAuthenticated }: AuthWallProps) {
+function AuthWall({ onAuthenticated, ticketPluralWithArticle }: AuthWallProps) {
   const [mode, setMode] = useState<"login" | "signup" | "verify">("login");
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
@@ -1909,17 +2084,7 @@ function AuthWall({ onAuthenticated }: AuthWallProps) {
   const [otp, setOtp] = useState("");
   const [authOtpCooldown, setAuthOtpCooldown] = useState(0);
   const [authOtpResending, setAuthOtpResending] = useState(false);
-
-  function isUnconfirmedError(err: unknown) {
-    if (!err) return false;
-    const anyErr = err as { message?: string; status?: number; error_description?: string };
-    const msg = (anyErr.message || anyErr.error_description || "").toLowerCase();
-    return (
-      msg.includes("not confirmed") ||
-      msg.includes("confirm your email") ||
-      msg.includes("email_not_confirmed")
-    );
-  }
+  const isEmailLike = (value: string) => value.includes("@");
 
   useEffect(() => {
     if (authOtpCooldown <= 0) return;
@@ -1930,6 +2095,12 @@ function AuthWall({ onAuthenticated }: AuthWallProps) {
   }, [authOtpCooldown]);
 
   async function triggerResendOtp(email: string) {
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail || !isEmailLike(cleanEmail)) {
+      setError("Indica um email válido para reenviar o código.");
+      setAuthOtpCooldown(0);
+      return;
+    }
     setError(null);
     setAuthOtpResending(true);
     setAuthOtpCooldown(60);
@@ -1937,7 +2108,7 @@ function AuthWall({ onAuthenticated }: AuthWallProps) {
       const res = await fetch("/api/auth/resend-otp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ email: cleanEmail }),
       });
       const data = await res.json().catch(() => null);
       if (!res.ok) {
@@ -1953,17 +2124,42 @@ function AuthWall({ onAuthenticated }: AuthWallProps) {
     }
   }
 
+  async function syncSessionWithServer() {
+    try {
+      const { data } = await supabaseBrowser.auth.getSession();
+      const access_token = data.session?.access_token;
+      const refresh_token = data.session?.refresh_token;
+      if (!access_token || !refresh_token) return;
+      await fetch("/api/auth/refresh", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ access_token, refresh_token }),
+        credentials: "include",
+      });
+    } catch (err) {
+      console.warn("[AuthWall] syncSessionWithServer falhou", err);
+    }
+  }
+
   async function handleGoogle() {
     setSubmitting(true);
     setError(null);
     try {
       const redirectTo =
         typeof window !== "undefined"
-          ? `${window.location.origin}/auth/callback?redirect=${encodeURIComponent(window.location.href)}`
+          ? (() => {
+              const currentPath = `${window.location.pathname}${window.location.search}`;
+              const safeRedirect = sanitizeRedirectPath(currentPath, "/");
+              return `${window.location.origin}/auth/callback?redirectTo=${encodeURIComponent(
+                safeRedirect
+              )}`;
+            })()
           : undefined;
       if (typeof window !== "undefined") {
         try {
-          localStorage.setItem("orya_post_auth_redirect", window.location.href);
+          const currentPath = `${window.location.pathname}${window.location.search}`;
+          const safeRedirect = sanitizeRedirectPath(currentPath, "/");
+          localStorage.setItem("orya_post_auth_redirect", safeRedirect);
         } catch {}
       }
       const { error } = await supabaseBrowser.auth.signInWithOAuth({
@@ -1987,12 +2183,13 @@ function AuthWall({ onAuthenticated }: AuthWallProps) {
     setError(null);
 
     try {
+      const emailToUse = identifier.trim().toLowerCase();
+
       if (mode === "verify") {
-        if (!identifier || !otp.trim()) {
+        if (!identifier || !isEmailLike(identifier) || !otp.trim()) {
           setError("Indica o email e o código recebido.");
           return;
         }
-        const emailToUse = identifier.trim().toLowerCase();
         const token = otp.trim();
         const { error: verifyErr } = await supabaseBrowser.auth.verifyOtp({
           type: "signup",
@@ -2004,6 +2201,7 @@ function AuthWall({ onAuthenticated }: AuthWallProps) {
           setAuthOtpCooldown(0);
           return;
         }
+        await syncSessionWithServer();
         await delay(400);
         const { data: userData } = await supabaseBrowser.auth.getUser();
         if (userData?.user) onAuthenticated?.(userData.user.id);
@@ -2015,37 +2213,45 @@ function AuthWall({ onAuthenticated }: AuthWallProps) {
         return;
       }
 
-      let emailToUse = identifier.trim().toLowerCase();
-      if (!identifier.includes("@")) {
-        const res = await fetch("/api/auth/resolve-identifier", {
+      if (mode === "login") {
+        const loginRes = await fetch("/api/auth/login", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ identifier }),
+          body: JSON.stringify({ identifier, password }),
+          credentials: "include",
         });
-        const data = await res.json().catch(() => null);
-        if (!res.ok || !data?.ok || !data?.email) {
+        const loginData = await loginRes.json().catch(() => null);
+        if (!loginRes.ok || !loginData?.ok) {
+          if (loginData?.error === "EMAIL_NOT_CONFIRMED") {
+            const emailValue = isEmailLike(identifier) ? identifier : "";
+            setMode("verify");
+            setIdentifier(emailValue);
+            setError(
+              emailValue
+                ? "Email ainda não confirmado. Reenviei-te um novo código."
+                : "Email ainda não confirmado. Indica o teu email para receberes o código."
+            );
+            if (emailValue) {
+              await triggerResendOtp(emailValue);
+            }
+            return;
+          }
+          if (loginData?.error === "RATE_LIMITED") {
+            setError("Muitas tentativas. Tenta novamente dentro de minutos.");
+            return;
+          }
           setError("Credenciais inválidas. Confirma username/email e password.");
           return;
         }
-        emailToUse = data.email;
-      }
 
-      if (mode === "login") {
-        const { error } = await supabaseBrowser.auth.signInWithPassword({
-          email: emailToUse,
-          password,
-        });
-        if (error) {
-          if (isUnconfirmedError(error)) {
-            setMode("verify");
-            setIdentifier(emailToUse);
-            setError("Email ainda não confirmado. Reenviei-te um novo código.");
-            await triggerResendOtp(emailToUse);
-            return;
-          }
-          setError(error.message ?? "Não foi possível iniciar sessão.");
-          return;
+        const session = loginData?.session;
+        if (session?.access_token && session?.refresh_token) {
+          await supabaseBrowser.auth.setSession({
+            access_token: session.access_token,
+            refresh_token: session.refresh_token,
+          });
         }
+        await syncSessionWithServer();
       } else {
         if (password.length < 6) {
           setError("A password deve ter pelo menos 6 caracteres.");
@@ -2117,7 +2323,7 @@ function AuthWall({ onAuthenticated }: AuthWallProps) {
             Inicia sessão para continuar
           </h3>
           <p className="text-[11px] text-white/60 max-w-sm leading-relaxed">
-            Para associar os bilhetes à tua conta ORYA e evitar problemas no
+            Para associar {ticketPluralWithArticle} à tua conta ORYA e evitar problemas no
             check-in, tens de estar com a sessão iniciada antes de pagar.
           </p>
         </div>
@@ -2210,8 +2416,20 @@ function AuthWall({ onAuthenticated }: AuthWallProps) {
           ) : (
             <>
               <p className="text-[12px] text-white/70">
-                Enviámos um código de confirmação para <strong>{identifier}</strong>. Introduz abaixo ou pede novo código.
+                Código enviado para{" "}
+                <strong>{isEmailLike(identifier) ? identifier : "teu email"}</strong>. Introduz abaixo.
               </p>
+              <div className="flex flex-col gap-1">
+                <label className="text-white/70">Email</label>
+                <input
+                  type="email"
+                  className="w-full rounded-xl bg-black/60 border border-white/15 px-3 py-2 text-[12px] outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]"
+                  placeholder="nome@exemplo.com"
+                  value={identifier}
+                  onChange={(e) => setIdentifier(e.target.value)}
+                  autoComplete="email"
+                />
+              </div>
               <div className="flex flex-col gap-1">
                 <label className="text-white/70">Código</label>
                 <input
@@ -2226,12 +2444,12 @@ function AuthWall({ onAuthenticated }: AuthWallProps) {
               </div>
               <div className="text-[11px] text-white/65 flex items-center justify-between">
                 <span>
-                  Não chegou? {authOtpCooldown > 0 ? `Podes reenviar em ${authOtpCooldown}s.` : "Reenvia um novo código."}
+                  Não chegou? {authOtpCooldown > 0 ? `Reenvio em ${authOtpCooldown}s.` : "Reenvia."}
                 </span>
                 <button
                   type="button"
                   onClick={() => identifier && triggerResendOtp(identifier)}
-                  disabled={authOtpCooldown > 0 || authOtpResending || !identifier}
+                  disabled={authOtpCooldown > 0 || authOtpResending || !identifier || !isEmailLike(identifier)}
                   className="text-[#6BFFFF] hover:text-white transition disabled:opacity-50"
                 >
                   Reenviar código
@@ -2245,7 +2463,7 @@ function AuthWall({ onAuthenticated }: AuthWallProps) {
           <p className="text-[11px] text-red-300 mt-1 leading-snug">{error}</p>
         )}
         {authOtpCooldown > 0 && mode === "verify" && (
-          <p className="text-[11px] text-white/60">Podes reenviar código em {authOtpCooldown}s.</p>
+          <p className="text-[11px] text-white/60">Reenvio em {authOtpCooldown}s.</p>
         )}
 
         <button
@@ -2265,14 +2483,14 @@ function AuthWall({ onAuthenticated }: AuthWallProps) {
           {mode === "verify"
             ? submitting
               ? "A confirmar…"
-              : "Confirmar código e continuar"
+              : "Confirmar e continuar"
             : mode === "login"
             ? submitting
               ? "A entrar…"
-              : "Iniciar sessão e continuar"
+              : "Entrar e continuar"
             : submitting
             ? "A enviar código…"
-            : "Criar conta e enviar código"}
+            : "Criar conta e enviar"}
         </button>
       </form>
     </div>
@@ -2290,6 +2508,10 @@ type GuestCheckoutCardProps = {
   onChangeEmailConfirm: (v: string) => void;
   onChangePhone: (v: string) => void;
   onContinue: () => void;
+  ticketNameLabel: string;
+  ticketEmailLabel: string;
+  ticketPluralWithArticle: string;
+  ticketAllPlural: string;
 };
 
 function GuestCheckoutCard({
@@ -2303,6 +2525,10 @@ function GuestCheckoutCard({
   onChangeEmailConfirm,
   onChangePhone,
   onContinue,
+  ticketNameLabel,
+  ticketEmailLabel,
+  ticketPluralWithArticle,
+  ticketAllPlural,
 }: GuestCheckoutCardProps) {
   return (
     <div className="flex-1 rounded-2xl border border-white/12 bg-white/[0.06] px-6 py-6 shadow-[0_20px_60px_rgba(0,0,0,0.55)] backdrop-blur-xl flex flex-col gap-4">
@@ -2310,12 +2536,11 @@ function GuestCheckoutCard({
         <div>
           <h3 className="text-sm font-semibold mb-1">Continuar como convidado</h3>
           <p className="text-[11px] text-white/60 max-w-sm leading-relaxed">
-            Compra em 30 segundos. Guardamos os teus bilhetes pelo email e podes
-            criar conta depois para os ligar ao teu perfil.
+            Compra rápida. Guardamos {ticketPluralWithArticle} no email.
           </p>
           <div className="mt-2 space-y-1 text-[11px] text-white/55">
-            <p>• Email é usado para entregar bilhetes e recibo.</p>
-            <p>• Telefone ajuda no contacto no dia do evento (opcional).</p>
+            <p>• {ticketEmailLabel}</p>
+            <p>• Telefone ajuda no dia (opcional).</p>
           </div>
         </div>
         <span className="text-[20px]">🎟️</span>
@@ -2329,7 +2554,7 @@ function GuestCheckoutCard({
             className={`w-full rounded-xl bg-white/[0.05] border px-3 py-2 text-[12px] outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF] ${
               guestErrors.name ? "border-red-400/70" : "border-white/15"
             }`}
-            placeholder="Como queres que apareça no bilhete"
+            placeholder={ticketNameLabel}
             value={guestName}
             onChange={(e) => onChangeName(e.target.value)}
             autoComplete="name"
@@ -2398,8 +2623,8 @@ function GuestCheckoutCard({
       </button>
 
       <p className="mt-1 text-[10px] text-white/40 leading-snug">
-        Vamos enviar os bilhetes para este email. Depois podes criar conta e
-        migrar todos os bilhetes para o teu perfil.
+        Vamos enviar {ticketPluralWithArticle} para este email. Depois podes criar conta e
+        migrar {ticketAllPlural} para o teu perfil.
       </p>
     </div>
   );

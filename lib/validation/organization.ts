@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ORGANIZATION_CATEGORIES, ORGANIZATION_MODULES } from "@/lib/organizationCategories";
+import { OPERATION_MODULES, ORGANIZATION_MODULES } from "@/lib/organizationCategories";
 
 /**
  * Valida NIF português (9 dígitos, dígito de controlo módulo 11).
@@ -63,53 +63,28 @@ export function isValidWebsite(value: string): boolean {
   }
 }
 
-const optionalTrimmedString = z
-  .union([z.string(), z.undefined(), z.null()])
-  .transform((v) => (v ?? "").trim());
-
 const moduleKeys = ORGANIZATION_MODULES as unknown as [string, ...string[]];
 
-export const becomeOrganizerSchema = z.object({
-  organizationCategory: z
+export const becomeOrganizationSchema = z.object({
+  primaryModule: z
     .string()
     .trim()
-    .min(1, "Escolhe a categoria principal.")
-    .refine((value) => ORGANIZATION_CATEGORIES.includes(value as (typeof ORGANIZATION_CATEGORIES)[number]), {
-      message: "Categoria inválida.",
+    .min(1, "Escolhe uma operação principal.")
+    .refine((value) => OPERATION_MODULES.includes(value as (typeof OPERATION_MODULES)[number]), {
+      message: "Operação inválida.",
     }),
   modules: z.array(z.enum(moduleKeys)).default([]),
-  entityType: z
-    .string()
-    .trim()
-    .min(1, "Escolhe o tipo de entidade."),
   businessName: z
     .string()
     .trim()
     .min(1, "Indica o nome da tua organização."),
-  city: z
-    .string()
-    .trim()
-    .min(1, "Escolhe a cidade base."),
   username: z
     .string()
     .trim()
     .min(1, "O username é obrigatório.")
-    .max(30, "Máximo 30 caracteres."),
-  website: optionalTrimmedString.refine(
-    (value) => value === "" || isValidWebsite(value),
-    {
-      message: "Website inválido. Usa um URL válido (ex: https://orya.pt).",
-    },
-  ),
-  iban: optionalTrimmedString.refine(
-    (value) => value === "" || isValidIBAN(value),
-    { message: "IBAN inválido. Verifica os dados do teu banco." },
-  ),
-  taxId: optionalTrimmedString.refine(
-    (value) => value === "" || isValidPortugueseNIF(value),
-    { message: "NIF inválido. Verifica se tem 9 dígitos e está correto." },
-  ),
+    .min(3, "Mínimo 3 caracteres.")
+    .max(15, "Máximo 15 caracteres."),
 });
 
-export type BecomeOrganizerSchema = typeof becomeOrganizerSchema;
-export type BecomeOrganizerFormValues = z.input<typeof becomeOrganizerSchema>;
+export type BecomeOrganizationSchema = typeof becomeOrganizationSchema;
+export type BecomeOrganizationFormValues = z.input<typeof becomeOrganizationSchema>;

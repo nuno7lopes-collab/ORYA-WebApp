@@ -16,23 +16,23 @@ export async function POST() {
     }
 
     // Verificar se o utilizador é owner único de alguma organização
-    const ownerMemberships = await prisma.organizerMember.findMany({
+    const ownerMemberships = await prisma.organizationMember.findMany({
       where: { userId: user.id, role: "OWNER" },
-      include: { organizer: true },
+      include: { organization: true },
     });
 
     const blockedOrgs: string[] = [];
     for (const mem of ownerMemberships) {
-      if (!mem.organizer) continue;
-      const otherOwners = await prisma.organizerMember.count({
+      if (!mem.organization) continue;
+      const otherOwners = await prisma.organizationMember.count({
         where: {
-          organizerId: mem.organizerId,
+          organizationId: mem.organizationId,
           role: "OWNER",
           userId: { not: user.id },
         },
       });
       if (otherOwners === 0) {
-        blockedOrgs.push(mem.organizer.publicName || mem.organizer.businessName || `Organização #${mem.organizerId}`);
+        blockedOrgs.push(mem.organization.publicName || mem.organization.businessName || `Organização #${mem.organizationId}`);
       }
     }
 
