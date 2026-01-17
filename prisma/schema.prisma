@@ -77,7 +77,9 @@ model Profile {
   chatReadStates                                                   ChatReadState[]
   chatModerationLogs                                               ChatModerationLog[]
   store                                                            Store?
+  storeCarts                                                       StoreCart[]
   storeOrders                                                      StoreOrder[]
+  storeDigitalGrants                                               StoreDigitalGrant[]
   promoCodesPromoted                                               PromoCode[]            @relation("PromoCodePromoter")
 
   @@map("profiles")
@@ -270,6 +272,7 @@ model StoreProduct {
   options              StoreProductOption[]
   bundles              StoreBundleItem[]
   digitalAssets        StoreDigitalAsset[]
+  cartItems            StoreCartItem[]
   orderLines           StoreOrderLine[]
   inventoryMovements   StoreInventoryMovement[]
 
@@ -294,6 +297,7 @@ model StoreProductVariant {
   updatedAt    DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   product      StoreProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
   bundles      StoreBundleItem[]
+  cartItems    StoreCartItem[]
   orderLines   StoreOrderLine[]
   inventoryMovements StoreInventoryMovement[]
 
