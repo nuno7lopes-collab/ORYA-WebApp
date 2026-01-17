@@ -1,6 +1,0 @@
-{
-  "version": 3,
-  "sources": [],
-  "sections": [
-    {"offset": {"line": 34, "column": 0}, "map": {"version":3,"sources":["file:///Users/nuno/orya/ORYA-WebApp/app/organizador/%28dashboard%29/padel/page.tsx"],"sourcesContent":["import { redirect } from \"next/navigation\";\n\ntype Props = {\n  searchParams?: Record<string, string | string[] | undefined>;\n};\n\nexport default function OrganizerPadelRedirect({ searchParams }: Props) {\n  const params = new URLSearchParams();\n  if (searchParams) {\n    Object.entries(searchParams).forEach(([key, value]) => {\n      if (key === \"tab\" || key === \"section\") return;\n      if (typeof value === \"string\") params.set(key, value);\n      if (Array.isArray(value) && value[0]) params.set(key, value[0]);\n    });\n  }\n  params.set(\"tab\", \"manage\");\n  params.set(\"section\", \"padel-hub\");\n  redirect(`/organizador?${params.toString()}`);\n}\n"],"names":[],"mappings":";;;;AAAA;AAAA;;AAMe,SAAS,uBAAuB,EAAE,YAAY,EAAS;IACpE,MAAM,SAAS,IAAI;IACnB,IAAI,cAAc;QAChB,OAAO,OAAO,CAAC,cAAc,OAAO,CAAC,CAAC,CAAC,KAAK,MAAM;YAChD,IAAI,QAAQ,SAAS,QAAQ,WAAW;YACxC,IAAI,OAAO,UAAU,UAAU,OAAO,GAAG,CAAC,KAAK;YAC/C,IAAI,MAAM,OAAO,CAAC,UAAU,KAAK,CAAC,EAAE,EAAE,OAAO,GAAG,CAAC,KAAK,KAAK,CAAC,EAAE;QAChE;IACF;IACA,OAAO,GAAG,CAAC,OAAO;IAClB,OAAO,GAAG,CAAC,WAAW;IACtB,IAAA,iMAAQ,EAAC,CAAC,aAAa,EAAE,OAAO,QAAQ,IAAI;AAC9C"}}]
-}

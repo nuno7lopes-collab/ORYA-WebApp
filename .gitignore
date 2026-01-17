@@ -36,6 +36,16 @@ yarn-error.log*
 # vercel
 .vercel
 
+# local artifacts
+.dev.log
+Arquivo*.zip
+Arquivo.zip
+11.7.0
+
+# nested web app artifacts
+/web/.next/
+/web/.vercel/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
