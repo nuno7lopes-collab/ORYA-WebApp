@@ -19,9 +19,12 @@ import {
 } from "@/lib/organizationCategories";
 import { normalizeInterestSelection, resolveInterestLabel } from "@/lib/interests";
 import { getPaidSalesGate } from "@/lib/organizationPayments";
+import { isStoreFeatureEnabled, isStorePublic } from "@/lib/storeAccess";
 import { OrganizationFormStatus } from "@prisma/client";
 import ReservasBookingSection from "@/app/[username]/_components/ReservasBookingSection";
 import { ensurePublicProfileLayout, type PublicProfileModuleType } from "@/lib/publicProfileLayout";
+import { formatEventLocationLabel } from "@/lib/location/eventLocation";
+import { getUserFollowCounts, isUserFollowing } from "@/domain/social/follows";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -71,6 +74,14 @@ function formatTimeLabel(date: Date | null, timezone: string) {
   }).format(date);
 }
 
+function formatMoney(cents: number, currency: string) {
+  return new Intl.NumberFormat("pt-PT", {
+    style: "currency",
+    currency,
+    minimumFractionDigits: 2,
+  }).format(cents / 100);
+}
+
 type OrganizationEvent = {
   id: number;
   slug: string;
@@ -79,6 +90,11 @@ type OrganizationEvent = {
   endsAt: Date | null;
   locationName: string | null;
   locationCity: string | null;
+  address: string | null;
+  locationSource: "OSM" | "MANUAL" | null;
+  locationFormattedAddress: string | null;
+  locationComponents: Record<string, unknown> | null;
+  locationOverrides: Record<string, unknown> | null;
   timezone: string | null;
   templateType: string | null;
   coverImageUrl: string | null;
@@ -181,8 +197,18 @@ function buildAgendaGroups(events: OrganizationEvent[], pastEventIds?: Set<numbe
         }).format(event.startsAt as Date)
       : "data-a-definir";
     const label = hasDate ? formatDayLabel(event.startsAt as Date, timezone) : "Data a definir";
-    const locationLabel =
-      [event.locationName, event.locationCity].filter(Boolean).join(" · ") || "Local a anunciar";
+    const locationLabel = formatEventLocationLabel(
+      {
+        locationName: event.locationName,
+        locationCity: event.locationCity,
+        address: event.address,
+        locationSource: event.locationSource,
+        locationFormattedAddress: event.locationFormattedAddress,
+        locationComponents: event.locationComponents,
+        locationOverrides: event.locationOverrides,
+      },
+      "Local a anunciar",
+    );
     const item: AgendaItem = {
       id: event.id,
       slug: event.slug,
@@ -367,6 +393,10 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
           locationName: true,
           locationCity: true,
           address: true,
+          locationSource: true,
+          locationFormattedAddress: true,
+          locationComponents: true,
+          locationOverrides: true,
           isFree: true,
           timezone: true,
           templateType: true,
@@ -484,6 +514,40 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
           })
         : Promise.resolve([] as Array<{ id: number; rating: number; comment: string | null; createdAt: Date; user: { fullName: string | null; avatarUrl: string | null } | null }>),
     ]);
+
+    const store = await prisma.store.findFirst({
+      where: { ownerOrganizationId: organizationProfile.id },
+      select: { id: true, status: true, showOnProfile: true, catalogLocked: true, currency: true },
+    });
+    const storeEnabled = isStoreFeatureEnabled();
+    const storeVisibleOnProfile = Boolean(store?.showOnProfile);
+    const storePublic = storeEnabled && isStorePublic(store) && !store?.catalogLocked;
+    const [storeProducts, storeProductsCount] = storePublic
+      ? await Promise.all([
+          prisma.storeProduct.findMany({
+            where: { storeId: store.id, status: "ACTIVE", isVisible: true },
+            orderBy: [{ createdAt: "desc" }],
+            take: 8,
+            select: {
+              id: true,
+              name: true,
+              slug: true,
+              priceCents: true,
+              compareAtPriceCents: true,
+              currency: true,
+              createdAt: true,
+              images: {
+                select: { url: true, altText: true, isPrimary: true, sortOrder: true },
+                orderBy: [{ isPrimary: "desc" }, { sortOrder: "asc" }],
+                take: 1,
+              },
+            },
+          }),
+          prisma.storeProduct.count({
+            where: { storeId: store.id, status: "ACTIVE", isVisible: true },
+          }),
+        ])
+      : [[], 0];
 
     const professionalsList = professionals.map((pro) => ({
       id: pro.id,
@@ -821,17 +885,262 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
       </section>
     ) : null;
 
+    const storeBaseHref = `/${organizationProfile.username ?? usernameParam}/loja`;
+    const storeHasProducts = storeProducts.length > 0;
+    const storePreviewLimit = 8;
+    const storePreviewItems = storeProducts.slice(0, storePreviewLimit);
+    const storeHasMore = storeProductsCount > storePreviewLimit;
+    const storeCompactGrid = storeProductsCount > 0 && storeProductsCount <= 4;
+    const storeStatus = !storeEnabled
+      ? {
+          label: "Loja indisponivel",
+          description: "A funcionalidade da loja esta temporariamente desativada.",
+          tone: "amber",
+        }
+      : store?.catalogLocked
+        ? {
+            label: "Catalogo fechado",
+            description: "O catalogo esta em manutencao e sera atualizado em breve.",
+            tone: "amber",
+          }
+        : store?.status !== "OPEN"
+          ? {
+              label: "Loja fechada",
+              description: "Volta em breve para veres os produtos disponiveis.",
+              tone: "slate",
+            }
+          : storeHasProducts
+            ? {
+                label: "Loja ativa",
+                description: "Produtos oficiais com checkout rapido ORYA.",
+                tone: "emerald",
+              }
+            : {
+                label: "Produtos em preparacao",
+                description: "Os primeiros produtos vao aparecer aqui muito em breve.",
+                tone: "slate",
+              };
+    const storeStatusClasses =
+      storeStatus.tone === "emerald"
+        ? "border-emerald-300/40 bg-emerald-400/10 text-emerald-100"
+        : storeStatus.tone === "amber"
+          ? "border-amber-300/40 bg-amber-400/10 text-amber-100"
+          : "border-white/15 bg-white/10 text-white/70";
+    const storeFallbackTitle = storeStatus.tone === "amber" ? "Em atualizacao" : "Em breve";
+    const storeFallbackBody =
+      storeStatus.tone === "amber"
+        ? "Estamos a atualizar o catalogo para garantir a melhor experiencia."
+        : "Assim que a loja estiver pronta, vais ver produtos oficiais e compras diretas aqui.";
+    const storeFallbackFooter =
+      storeStatus.tone === "amber"
+        ? "Obrigado pela paciencia."
+        : "Segue esta organizacao para receber novidades.";
+    const storeCtaClasses = storePublic
+      ? "rounded-full bg-white px-4 py-2 text-[12px] font-semibold text-black shadow-[0_10px_30px_rgba(255,255,255,0.25)]"
+      : "rounded-full border border-white/20 bg-white/10 px-4 py-2 text-[12px] font-semibold text-white/80";
+    const showStoreModule = storeVisibleOnProfile;
+    const storeModuleContent = showStoreModule ? (
+      <section className="relative overflow-hidden rounded-3xl border border-white/12 bg-gradient-to-br from-[#0b1226]/85 via-[#121a33]/75 to-[#060b14]/95 p-4 shadow-[0_18px_60px_rgba(0,0,0,0.55)] backdrop-blur-2xl sm:p-5">
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-white/8 to-transparent" />
+        <div className="relative space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="space-y-1">
+              <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Loja</p>
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="text-lg font-semibold text-white">Produtos oficiais</h3>
+                <span
+                  className={`rounded-full border px-2 py-1 text-[10px] uppercase tracking-[0.2em] ${storeStatusClasses}`}
+                >
+                  {storeStatus.label}
+                </span>
+              </div>
+              <p className="text-[12px] text-white/60">Checkout ORYA.</p>
+            </div>
+            <Link href={storeBaseHref} className={storeCtaClasses}>
+              Visitar loja
+            </Link>
+          </div>
+
+          {storePublic && storeHasProducts ? (
+            <div
+              className={
+                storeCompactGrid
+                  ? "flex flex-wrap gap-3"
+                  : "grid auto-cols-[150px] grid-flow-col gap-3 overflow-x-auto pb-2 sm:auto-cols-[170px]"
+              }
+            >
+              {storePreviewItems.map((product) => {
+                const image = product.images[0];
+                const compareAt = product.compareAtPriceCents ?? null;
+                const hasDiscount =
+                  typeof compareAt === "number" && compareAt > product.priceCents;
+                const discount = hasDiscount
+                  ? Math.round(((compareAt - product.priceCents) / compareAt) * 100)
+                  : null;
+                const isNew =
+                  now.getTime() - product.createdAt.getTime() <= 1000 * 60 * 60 * 24 * 30;
+                return (
+                  <Link
+                    key={product.id}
+                    href={`${storeBaseHref}/produto/${product.slug}`}
+                    className={`group rounded-2xl border border-white/10 bg-black/40 p-3 transition hover:border-white/30 hover:bg-black/30 ${
+                      storeCompactGrid ? "w-[150px] sm:w-[170px]" : "w-full"
+                    }`}
+                  >
+                    <div className="relative aspect-square w-full overflow-hidden rounded-xl border border-white/10 bg-black/60">
+                      {image ? (
+                        <img
+                          src={image.url}
+                          alt={image.altText || product.name}
+                          className="h-full w-full object-cover transition group-hover:scale-[1.02]"
+                        />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center text-xs text-white/40">
+                          Sem imagem
+                        </div>
+                      )}
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
+                      <div className="absolute left-3 top-3 flex gap-2">
+                        {isNew ? (
+                          <span className="rounded-full border border-emerald-300/40 bg-emerald-400/15 px-2 py-1 text-[9px] uppercase tracking-[0.2em] text-emerald-100">
+                            Novo
+                          </span>
+                        ) : null}
+                        {discount ? (
+                          <span className="rounded-full border border-white/20 bg-black/60 px-2 py-1 text-[9px] uppercase tracking-[0.2em] text-white/80">
+                            -{discount}%
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
+                    <div className="mt-3 space-y-1">
+                      <p className="line-clamp-2 text-sm font-semibold text-white">{product.name}</p>
+                      <div className="flex items-center gap-2 text-[11px] text-white/70">
+                        <span className="text-white">{formatMoney(product.priceCents, product.currency)}</span>
+                        {hasDiscount ? (
+                          <span className="text-white/40 line-through">
+                            {formatMoney(compareAt, product.currency)}
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-[1.1fr_0.9fr]">
+              <div className="rounded-2xl border border-white/12 bg-white/5 p-3">
+                <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">
+                  {storeStatus.label}
+                </p>
+                <p className="mt-2 text-sm text-white/70">{storeStatus.description}</p>
+              </div>
+              <div className="rounded-2xl border border-white/12 bg-black/30 p-3 text-sm text-white/70">
+                <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">
+                  {storeFallbackTitle}
+                </p>
+                <p className="mt-2">{storeFallbackBody}</p>
+                <div className="mt-3 rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-[12px] text-white/60">
+                  {storeFallbackFooter}
+                </div>
+              </div>
+            </div>
+          )}
+          {storePublic && storeHasProducts && storeHasMore ? (
+            <div className="flex justify-end">
+              <Link href={storeBaseHref} className="text-[11px] text-white/60 hover:text-white/90">
+                Ver todos · {storeProductsCount}+
+              </Link>
+            </div>
+          ) : null}
+        </div>
+      </section>
+    ) : null;
+
     const moduleContentByType: Record<PublicProfileModuleType, JSX.Element | null> = {
       SERVICOS: servicesModuleContent,
       AGENDA: agendaModuleContent,
       FORMULARIOS: formsModuleContent,
       AVALIACOES: reviewsModuleContent,
       SOBRE: aboutModuleContent,
-      LOJA: null,
+      LOJA: storeModuleContent,
     };
 
     const modulesToRender = profileLayout.modules.filter(
       (module) => module.enabled && moduleContentByType[module.type],
+    );
+    const showPadelSection =
+      hasTorneiosModule && (padelPlayersCount > 0 || padelTopPlayers.length > 0);
+    const showTrainerSection = hasTorneiosModule && trainerProfiles.length > 0;
+    const contactItems = [
+      publicWebsiteHref ? { label: "Website", value: publicWebsiteHref, href: publicWebsiteHref } : null,
+      publicInstagram ? { label: "Instagram", value: publicInstagram, href: publicInstagram } : null,
+      publicYoutube ? { label: "YouTube", value: publicYoutube, href: publicYoutube } : null,
+      contactEmail ? { label: "Email", value: contactEmail, href: `mailto:${contactEmail}` } : null,
+    ].filter(Boolean) as Array<{ label: string; value: string; href: string }>;
+    const secondaryContacts = contactItems.filter((item) => item.label !== "Email");
+    const showEmptyModulesFallback =
+      modulesToRender.length === 0 && !showPadelSection && !showTrainerSection;
+    const emptyModulesFallback = (
+      <section className="relative overflow-hidden rounded-3xl border border-white/12 bg-gradient-to-br from-[#0b1226]/85 via-[#0b1124]/75 to-[#070c16]/95 p-7 shadow-[0_28px_90px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
+        <div className="pointer-events-none absolute inset-0">
+          <div className="absolute -left-12 -top-12 h-48 w-48 rounded-full bg-[#6BFFFF]/12 blur-[120px]" />
+          <div className="absolute -right-8 top-6 h-40 w-40 rounded-full bg-[#FF7AD1]/12 blur-[120px]" />
+          <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-white/8 to-transparent" />
+        </div>
+        <div className="relative grid gap-6 md:grid-cols-[1.2fr_0.8fr]">
+          <div className="space-y-4">
+            <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[10px] uppercase tracking-[0.2em] text-white/70">
+              <span className="h-2 w-2 rounded-full bg-emerald-300/70 shadow-[0_0_12px_rgba(16,185,129,0.6)]" />
+              Perfil em preparação
+            </div>
+            <div className="space-y-2">
+              <h3 className="text-xl font-semibold text-white">Estamos a preparar novidades</h3>
+              <p className="text-sm text-white/70">
+                Este perfil vai ficar ativo muito em breve. Assim que os primeiros modulos forem publicados,
+                vais ver servicos, eventos, torneios, formularios e loja.
+              </p>
+            </div>
+            <div className="text-[11px] uppercase tracking-[0.2em] text-white/50">
+              Sem modulos ativos
+            </div>
+          </div>
+          <div className="rounded-2xl border border-white/12 bg-black/30 p-4 shadow-[0_18px_60px_rgba(0,0,0,0.5)] backdrop-blur-2xl">
+            <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Contacto principal</p>
+            {contactEmail ? (
+              <a
+                href={`mailto:${contactEmail}`}
+                className="mt-3 flex items-center justify-between rounded-2xl border border-emerald-300/40 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-100 transition hover:border-emerald-200/70 hover:bg-emerald-400/15"
+              >
+                <span className="font-semibold">{contactEmail}</span>
+                <span className="text-[10px] uppercase tracking-[0.2em] text-emerald-200/80">
+                  Enviar email
+                </span>
+              </a>
+            ) : (
+              <div className="mt-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/60">
+                Email por anunciar.
+              </div>
+            )}
+            {secondaryContacts.length > 0 ? (
+              <div className="mt-4 space-y-2 text-[12px] text-white/70">
+                <p className="text-[11px] uppercase tracking-[0.2em] text-white/50">Outros canais</p>
+                {secondaryContacts.map((item) => (
+                  <a
+                    key={item.label}
+                    href={item.href}
+                    className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 px-3 py-2 transition hover:border-white/25"
+                  >
+                    <span className="text-white/60">{item.label}</span>
+                    <span className="text-white">{item.value}</span>
+                  </a>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        </div>
+      </section>
     );
 
     return (
@@ -872,13 +1181,11 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
                     );
                   })}
                 </div>
-              ) : (
-                <div className="rounded-3xl border border-white/12 bg-white/5 p-5 text-sm text-white/70 shadow-[0_20px_60px_rgba(0,0,0,0.45)] backdrop-blur-2xl">
-                  Sem módulos disponíveis neste momento.
-                </div>
-              )}
+              ) : showEmptyModulesFallback ? (
+                emptyModulesFallback
+              ) : null}
 
-              {hasTorneiosModule && (
+              {showPadelSection && (
                 <section className="space-y-4">
                   <div>
                     <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">Centro de competição</p>
@@ -917,7 +1224,7 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
                 </section>
               )}
 
-              {hasTorneiosModule && trainerProfiles.length > 0 && (
+              {showTrainerSection && (
                 <section className="space-y-4">
                   <div>
                     <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">Treinadores</p>
@@ -1029,20 +1336,13 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
   }> = [];
 
   if (prisma.follows) {
-    const [followers, following] = await Promise.all([
-      prisma.follows.count({ where: { following_id: resolvedProfile.id } }),
-      prisma.follows.count({ where: { follower_id: resolvedProfile.id } }),
-    ]);
-    followersCount = followers;
-    followingCount = following;
+    const counts = await getUserFollowCounts(resolvedProfile.id);
+    followersCount = counts.followersCount;
+    followingCount = counts.followingTotal;
 
     if (!isOwner && viewerId) {
-      const followRow = await prisma.follows.findFirst({
-        where: { follower_id: viewerId, following_id: resolvedProfile.id },
-        select: { id: true },
-      });
-      initialIsFollowing = Boolean(followRow);
-      isFollowing = Boolean(followRow);
+      isFollowing = await isUserFollowing(viewerId, resolvedProfile.id);
+      initialIsFollowing = isFollowing;
     }
   }
 
@@ -1406,8 +1706,18 @@ function EventSpotlightCard({
           {formatEventDateRange(event.startsAt, event.endsAt, event.timezone)}
         </p>
         <p className="text-[12px] text-white/65">
-          {event.locationName}
-          {event.locationCity ? ` · ${event.locationCity}` : ""}
+          {formatEventLocationLabel(
+            {
+              locationName: event.locationName,
+              locationCity: event.locationCity,
+              address: event.address,
+              locationSource: event.locationSource,
+              locationFormattedAddress: event.locationFormattedAddress,
+              locationComponents: event.locationComponents,
+              locationOverrides: event.locationOverrides,
+            },
+            "Local a anunciar",
+          )}
         </p>
         <div className="mt-4 flex flex-wrap items-center gap-2">
           {ctaHref && (

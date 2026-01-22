@@ -10,7 +10,7 @@ import styles from "./page.module.css";
 import { useUser } from "@/app/hooks/useUser";
 import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
 import { CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
-import { PT_CITIES, type PTCity } from "@/lib/constants/ptCities";
+import { PT_CITIES } from "@/lib/constants/ptCities";
 import {
   getEventCoverSuggestionIds,
   getEventCoverUrl,
@@ -19,6 +19,8 @@ import {
 } from "@/lib/eventCover";
 import { getOrganizationRoleFlags } from "@/lib/organizationUiPermissions";
 import { parseOrganizationModules, resolvePrimaryModule } from "@/lib/organizationCategories";
+import { fetchGeoAutocomplete, fetchGeoDetails } from "@/lib/geo/client";
+import type { GeoAutocompleteItem, GeoDetailsItem } from "@/lib/geo/provider";
 
 type TicketTypeRow = {
   name: string;
@@ -44,16 +46,17 @@ type FieldKey =
   | "tickets"
   | "padel";
 
-type RecentVenuesResponse = {
-  ok: boolean;
-  items?: Array<{ name: string; city?: string | null }>;
-};
+type LocationMode = "OSM" | "MANUAL";
+type LocationSource = "OSM" | "MANUAL";
 
 type PadelClubSummary = {
   id: number;
   name: string;
   city?: string | null;
   address?: string | null;
+  locationFormattedAddress?: string | null;
+  kind?: "OWN" | "PARTNER" | null;
+  sourceClubId?: number | null;
   isActive: boolean;
   courtsCount?: number | null;
 };
@@ -246,9 +249,24 @@ export default function NewOrganizationEventPage({
   const [startsAt, setStartsAt] = useState("");
   const [endsAt, setEndsAt] = useState("");
   const [locationName, setLocationName] = useState("");
-  const [locationCity, setLocationCity] = useState<PTCity>(PT_CITIES[0]);
-  const [locationManuallySet, setLocationManuallySet] = useState(false);
+  const [locationCity, setLocationCity] = useState<string>(PT_CITIES[0]);
   const [address, setAddress] = useState("");
+  const [locationManuallySet, setLocationManuallySet] = useState(false);
+  const [locationMode, setLocationMode] = useState<LocationMode>("OSM");
+  const [locationQuery, setLocationQuery] = useState("");
+  const [locationSuggestions, setLocationSuggestions] = useState<GeoAutocompleteItem[]>([]);
+  const [locationSearchLoading, setLocationSearchLoading] = useState(false);
+  const [locationSearchError, setLocationSearchError] = useState<string | null>(null);
+  const [locationDetailsLoading, setLocationDetailsLoading] = useState(false);
+  const [locationConfirmed, setLocationConfirmed] = useState(false);
+  const [locationProviderId, setLocationProviderId] = useState<string | null>(null);
+  const [locationFormattedAddress, setLocationFormattedAddress] = useState<string | null>(null);
+  const [locationComponents, setLocationComponents] = useState<Record<string, unknown> | null>(null);
+  const [locationHouseNumber, setLocationHouseNumber] = useState("");
+  const [locationPostalCode, setLocationPostalCode] = useState("");
+  const [locationLat, setLocationLat] = useState<number | null>(null);
+  const [locationLng, setLocationLng] = useState<number | null>(null);
+  const [locationTbd, setLocationTbd] = useState(false);
   const [ticketTypes, setTicketTypes] = useState<TicketTypeRow[]>([]);
   const [coverUrl, setCoverUrl] = useState<string | null>(null);
   const [uploadingCover, setUploadingCover] = useState(false);
@@ -295,6 +313,7 @@ export default function NewOrganizationEventPage({
   const [selectedPadelClubId, setSelectedPadelClubId] = useState<number | null>(null);
   const [selectedPadelCourtIds, setSelectedPadelCourtIds] = useState<number[]>([]);
   const [selectedPadelStaffIds, setSelectedPadelStaffIds] = useState<number[]>([]);
+  const [padelClubMode, setPadelClubMode] = useState<"OWN" | "PARTNER">("OWN");
   const [padelClubSource, setPadelClubSource] = useState<"ORG" | "DIRECTORY">("ORG");
   const [padelClubSourceTouched, setPadelClubSourceTouched] = useState(false);
   const [padelDirectoryQuery, setPadelDirectoryQuery] = useState("");
@@ -320,7 +339,9 @@ export default function NewOrganizationEventPage({
   const errorSummaryRef = useRef<HTMLDivElement | null>(null);
   const titleRef = useRef<HTMLInputElement | null>(null);
   const padelSectionRef = useRef<HTMLDivElement | null>(null);
+  const padelCategoriesRef = useRef<HTMLDivElement | null>(null);
   const padelTicketsRef = useRef<HTMLDivElement | null>(null);
+  const padelOperationRef = useRef<HTMLDivElement | null>(null);
   const scheduleInitializedRef = useRef(false);
   const startDatePopoverRef = useRef<HTMLDivElement | null>(null);
   const startTimePopoverRef = useRef<HTMLDivElement | null>(null);
@@ -336,6 +357,10 @@ export default function NewOrganizationEventPage({
   const ticketsModalRef = useRef<HTMLDivElement | null>(null);
   const modalOverflowRef = useRef<{ body: string; html: string } | null>(null);
   const suggestionBlurTimeout = useRef<NodeJS.Timeout | null>(null);
+  const locationSearchTimeout = useRef<NodeJS.Timeout | null>(null);
+  const locationSearchSeq = useRef(0);
+  const locationDetailsSeq = useRef(0);
+  const activeProviderRef = useRef<string | null>(null);
 
   useEffect(() => {
     setPortalRoot(document.body);
@@ -366,7 +391,7 @@ export default function NewOrganizationEventPage({
   const hasEventosModule = normalizedModules.includes("EVENTOS") || primaryModule === "EVENTOS";
   const hasTorneiosModule = normalizedModules.includes("TORNEIOS") || primaryModule === "TORNEIOS";
   const hasCurrentModule = isPadelPreset ? hasTorneiosModule : hasEventosModule;
-  const isPadelOrg = primaryModule === "TORNEIOS";
+  const canSwitchPreset = !forcePreset && hasEventosModule && hasTorneiosModule;
   const isPadelPaid = isPadelPreset && !isFreeEvent;
   const isTicketsModalOpen = showTicketsModal && !isPadelPreset;
   const coverLibrary = useMemo(() => listEventCoverFallbacks(), []);
@@ -495,11 +520,6 @@ export default function NewOrganizationEventPage({
   ]);
   const organizationId = organizationStatus?.organization?.id ?? null;
 
-  const { data: recentVenues } = useSWR<RecentVenuesResponse>(
-    user ? `/api/organizacao/venues/recent?q=${encodeURIComponent(locationName.trim())}` : null,
-    fetcher,
-    { revalidateOnFocus: false },
-  );
   const { data: padelClubs, mutate: mutatePadelClubs } = useSWR<{ ok: boolean; items?: PadelClubSummary[] }>(
     selectedPreset === "padel" ? "/api/padel/clubs" : null,
     fetcher,
@@ -538,6 +558,20 @@ export default function NewOrganizationEventPage({
   );
   const padelCategoryItems = padelCategories?.items ?? [];
   const padelDirectoryClubs = padelDirectoryRes?.items ?? [];
+  const padelClubItems = padelClubs?.items ?? [];
+  const ownPadelClubs = useMemo(
+    () => padelClubItems.filter((club) => club.kind !== "PARTNER"),
+    [padelClubItems],
+  );
+  const partnerPadelClubs = useMemo(
+    () => padelClubItems.filter((club) => club.kind === "PARTNER"),
+    [padelClubItems],
+  );
+  const orgPadelClubs = padelClubMode === "PARTNER" ? partnerPadelClubs : ownPadelClubs;
+  const selectedPadelClub =
+    selectedPreset === "padel"
+      ? padelClubs?.items?.find((c) => c.id === selectedPadelClubId) ?? null
+      : null;
 
   useEffect(() => {
     if (draftLoaded) return;
@@ -571,12 +605,15 @@ export default function NewOrganizationEventPage({
       setStartsAt(draft.startsAt ?? "");
       setEndsAt(draft.endsAt ?? "");
       setLocationName(draft.locationName ?? "");
-      setLocationCity(
-        draft.locationCity && PT_CITIES.includes(draft.locationCity as PTCity)
-          ? (draft.locationCity as PTCity)
-          : PT_CITIES[0],
-      );
+      setLocationCity(draft.locationCity ?? PT_CITIES[0]);
       setAddress(draft.address ?? "");
+      if (draft.locationName || draft.locationCity || draft.address) {
+        setLocationMode("MANUAL");
+        setLocationManuallySet(true);
+        setLocationQuery(
+          [draft.locationName, draft.locationCity, draft.address].filter(Boolean).join(", ")
+        );
+      }
       const draftTicketTypes =
         Array.isArray(draft.ticketTypes) && draft.ticketTypes.length > 0
           ? draft.ticketTypes
@@ -606,11 +643,17 @@ export default function NewOrganizationEventPage({
 
   useEffect(() => {
     if (!draftLoaded) return;
-    const nextPreset = forcePreset ?? (isPadelOrg ? "padel" : "default");
-    if (selectedPreset !== nextPreset) {
+    if (forcePreset) {
+      if (selectedPreset !== forcePreset) {
+        setSelectedPreset(forcePreset);
+      }
+      return;
+    }
+    if (!selectedPreset) {
+      const nextPreset = hasEventosModule ? "default" : "padel";
       setSelectedPreset(nextPreset);
     }
-  }, [draftLoaded, forcePreset, isPadelOrg, selectedPreset]);
+  }, [draftLoaded, forcePreset, hasEventosModule, selectedPreset]);
 
   useEffect(() => {
     if (!draftLoaded) return;
@@ -694,42 +737,49 @@ export default function NewOrganizationEventPage({
   }, [isFreeEvent]);
 
   useEffect(() => {
-    if (selectedPreset !== "padel") {
-      setSelectedPadelClubId(null);
-      setSelectedPadelCourtIds([]);
-      setSelectedPadelStaffIds([]);
-      setPadelClubSource("ORG");
-      setPadelClubSourceTouched(false);
-      setPadelDirectoryQuery("");
-      setPadelDirectoryError(null);
-      setLocationManuallySet(false);
-      setPadelFormat("TODOS_CONTRA_TODOS");
-      setPadelEligibility("OPEN");
-      setPadelRuleSetId(null);
-      setPadelCategoryIds([]);
-      setPadelDefaultCategoryId(null);
-      setPadelCategoryConfigs({});
-      setPadelSplitDeadlineHours("48");
-      setPadelWaitlistEnabled(false);
-      setPadelRegistrationStartsAt("");
-      setPadelRegistrationEndsAt("");
-      setPadelAllowSecondCategory(true);
-      setPadelMaxEntriesTotal("");
-      setPadelAdvancedOpen(false);
-      setPadelRulesOpen(false);
-      return;
+    if (selectedPreset === "padel") return;
+    setSelectedPadelClubId(null);
+    setSelectedPadelCourtIds([]);
+    setSelectedPadelStaffIds([]);
+    setPadelClubMode("OWN");
+    setPadelClubSource("ORG");
+    setPadelClubSourceTouched(false);
+    setPadelDirectoryQuery("");
+    setPadelDirectoryError(null);
+    setLocationManuallySet(false);
+    setPadelFormat("TODOS_CONTRA_TODOS");
+    setPadelEligibility("OPEN");
+    setPadelRuleSetId(null);
+    setPadelCategoryIds([]);
+    setPadelDefaultCategoryId(null);
+    setPadelCategoryConfigs({});
+    setPadelSplitDeadlineHours("48");
+    setPadelWaitlistEnabled(false);
+    setPadelRegistrationStartsAt("");
+    setPadelRegistrationEndsAt("");
+    setPadelAllowSecondCategory(true);
+    setPadelMaxEntriesTotal("");
+    setPadelAdvancedOpen(false);
+    setPadelRulesOpen(false);
+  }, [selectedPreset]);
+
+  useEffect(() => {
+    if (selectedPreset !== "padel") return;
+    if (!selectedPadelClubId) {
+      const preferredList = padelClubMode === "PARTNER" ? partnerPadelClubs : ownPadelClubs;
+      if (preferredList.length > 0) {
+        const firstActive = preferredList.find((c) => c.isActive) ?? preferredList[0];
+        setSelectedPadelClubId(firstActive.id);
+      }
     }
-    if (padelClubs?.items && padelClubs.items.length > 0 && !selectedPadelClubId) {
-      const firstActive = padelClubs.items.find((c) => c.isActive) ?? padelClubs.items[0];
-      setSelectedPadelClubId(firstActive.id);
-    }
-  }, [selectedPreset, padelClubs, selectedPadelClubId]);
+  }, [selectedPreset, selectedPadelClubId, padelClubMode, ownPadelClubs, partnerPadelClubs]);
 
   useEffect(() => {
     if (padelClubSourceTouched || selectedPreset !== "padel") return;
-    const hasClubs = (padelClubs?.items?.length ?? 0) > 0;
-    setPadelClubSource(hasClubs ? "ORG" : "DIRECTORY");
-  }, [padelClubSourceTouched, padelClubs?.items?.length, selectedPreset]);
+    const hasOwnClubs = ownPadelClubs.length > 0;
+    setPadelClubMode(hasOwnClubs ? "OWN" : "PARTNER");
+    setPadelClubSource(hasOwnClubs ? "ORG" : "DIRECTORY");
+  }, [padelClubSourceTouched, ownPadelClubs.length, selectedPreset]);
 
   useEffect(() => {
     if (!padelCourts?.items) return;
@@ -740,6 +790,16 @@ export default function NewOrganizationEventPage({
     const activeCourts = padelCourts.items.filter((c) => c.isActive).map((c) => c.id);
     if (activeCourts.length > 0) setSelectedPadelCourtIds(activeCourts);
   }, [padelCourts]);
+
+  useEffect(() => {
+    if (!selectedPadelClub) return;
+    if (selectedPadelClub.kind === "PARTNER" && padelClubMode !== "PARTNER") {
+      setPadelClubMode("PARTNER");
+    }
+    if (selectedPadelClub.kind !== "PARTNER" && padelClubMode !== "OWN") {
+      setPadelClubMode("OWN");
+    }
+  }, [selectedPadelClub?.id, selectedPadelClub?.kind, padelClubMode]);
 
   useEffect(() => {
     if (!padelStaff?.items) return;
@@ -904,18 +964,197 @@ export default function NewOrganizationEventPage({
     if (!selectedPadelClubId) return;
     const club = padelClubs?.items?.find((c) => c.id === selectedPadelClubId);
     if (!club) return;
-    const composed = [club.address?.trim(), club.city?.trim()].filter(Boolean).join(", ");
+    const composed =
+      club.locationFormattedAddress?.trim() ||
+      [club.address?.trim(), club.city?.trim()].filter(Boolean).join(", ");
     if (!locationManuallySet) {
       if (composed) setLocationName(composed);
       else if (!locationName) setLocationName(club.name ?? "");
     }
-    if (club.city && PT_CITIES.includes(club.city as PTCity)) {
+    if (club.city) {
       // Preenche cidade a partir do clube, mas não sobrepõe escolha manual já feita.
       if (!locationManuallySet || !locationCity) {
-        setLocationCity(club.city as PTCity);
+        setLocationCity(club.city);
       }
     }
+    if (!locationManuallySet) {
+      setLocationMode("MANUAL");
+      setLocationProviderId(null);
+      setLocationFormattedAddress(null);
+      setLocationComponents(null);
+      setLocationLat(null);
+      setLocationLng(null);
+      setLocationQuery(composed || club.name || "");
+    }
   }, [selectedPreset, selectedPadelClubId, padelClubs?.items, locationManuallySet, locationName]);
+
+  useEffect(() => {
+    if (locationMode !== "OSM") {
+      setLocationSuggestions([]);
+      setLocationSearchLoading(false);
+      setLocationSearchError(null);
+      return;
+    }
+    const query = locationQuery.trim();
+    if (query.length < 2) {
+      setLocationSuggestions([]);
+      setLocationSearchError(null);
+      return;
+    }
+    if (locationSearchTimeout.current) {
+      clearTimeout(locationSearchTimeout.current);
+    }
+    setLocationSearchError(null);
+    const seq = ++locationSearchSeq.current;
+    locationSearchTimeout.current = setTimeout(async () => {
+      setLocationSearchLoading(true);
+      try {
+        const items = await fetchGeoAutocomplete(query);
+        if (locationSearchSeq.current === seq) {
+          setLocationSuggestions(items);
+        }
+      } catch (err) {
+        console.warn("[eventos/novo] autocomplete falhou", err);
+        if (locationSearchSeq.current === seq) {
+          setLocationSuggestions([]);
+          setLocationSearchError(err instanceof Error ? err.message : "Falha ao obter sugestões.");
+        }
+      } finally {
+        if (locationSearchSeq.current === seq) {
+          setLocationSearchLoading(false);
+        }
+      }
+    }, 280);
+
+    return () => {
+      if (locationSearchTimeout.current) {
+        clearTimeout(locationSearchTimeout.current);
+      }
+    };
+  }, [locationMode, locationQuery]);
+
+  const applyGeoDetails = (details: GeoDetailsItem | null, fallbackName?: string | null) => {
+    if (!details) return;
+    const nextName = details.name || fallbackName || locationName;
+    const nextCity = details.city || locationCity;
+    const nextAddress = details.address || address;
+    setLocationFormattedAddress(details.formattedAddress || locationFormattedAddress);
+    setLocationComponents(details.components ?? null);
+    const detailsHouse =
+      details.components && typeof (details.components as { houseNumber?: unknown }).houseNumber === "string"
+        ? ((details.components as { houseNumber?: string }).houseNumber ?? "")
+        : "";
+    const detailsPostal =
+      details.components && typeof (details.components as { postalCode?: unknown }).postalCode === "string"
+        ? ((details.components as { postalCode?: string }).postalCode ?? "")
+        : "";
+    setLocationHouseNumber(detailsHouse);
+    setLocationPostalCode(detailsPostal);
+    if (Number.isFinite(details.lat ?? NaN) && Number.isFinite(details.lng ?? NaN)) {
+      setLocationLat(details.lat);
+      setLocationLng(details.lng);
+    }
+    if (nextName) setLocationName(nextName);
+    if (nextCity) setLocationCity(nextCity);
+    if (nextAddress) setAddress(nextAddress);
+  };
+
+  const handleSelectGeoSuggestion = async (item: GeoAutocompleteItem) => {
+    setLocationMode("OSM");
+    setLocationManuallySet(true);
+    setLocationTbd(false);
+    setLocationProviderId(item.providerId);
+    activeProviderRef.current = item.providerId;
+    setLocationLat(item.lat);
+    setLocationLng(item.lng);
+    setLocationQuery(item.label);
+    setLocationName(item.name || item.label);
+    setLocationCity(item.city || "");
+    setAddress(item.address || "");
+    setLocationFormattedAddress(item.label);
+    setLocationComponents(null);
+    setLocationHouseNumber("");
+    setLocationPostalCode("");
+    setLocationSearchError(null);
+    setShowLocationSuggestions(false);
+    setLocationConfirmed(false);
+
+    const seq = ++locationDetailsSeq.current;
+    setLocationDetailsLoading(true);
+    try {
+      const details = await fetchGeoDetails(item.providerId);
+      if (locationDetailsSeq.current !== seq) return;
+      if (activeProviderRef.current !== item.providerId) return;
+      applyGeoDetails(details, item.name || item.label);
+      if (details?.formattedAddress) {
+        setLocationQuery(details.formattedAddress);
+      }
+    } catch (err) {
+      console.warn("[eventos/novo] detalhes falharam", err);
+    } finally {
+      if (locationDetailsSeq.current === seq) {
+        setLocationDetailsLoading(false);
+      }
+    }
+  };
+
+  const enableManualLocation = () => {
+    setLocationMode("MANUAL");
+    setLocationManuallySet(true);
+    setLocationProviderId(null);
+    activeProviderRef.current = null;
+    setLocationFormattedAddress(null);
+    setLocationComponents(null);
+    setLocationHouseNumber("");
+    setLocationPostalCode("");
+    setLocationLat(null);
+    setLocationLng(null);
+    setLocationSuggestions([]);
+    setLocationSearchLoading(false);
+    setLocationSearchError(null);
+    setLocationConfirmed(true);
+  };
+
+  const enableOsmLocation = () => {
+    setLocationMode("OSM");
+    setLocationTbd(false);
+    setLocationProviderId(null);
+    activeProviderRef.current = null;
+    setLocationFormattedAddress(null);
+    setLocationComponents(null);
+    setLocationHouseNumber("");
+    setLocationPostalCode("");
+    setLocationLat(null);
+    setLocationLng(null);
+    setLocationSearchError(null);
+    setLocationConfirmed(false);
+    if (!locationQuery) {
+      const fallback = [locationName, locationCity, address].filter(Boolean).join(", ");
+      if (fallback) setLocationQuery(fallback);
+    }
+  };
+
+  const markLocationTbd = () => {
+    setLocationMode("MANUAL");
+    setLocationManuallySet(true);
+    setLocationTbd(true);
+    setLocationName("");
+    setLocationCity("");
+    setAddress("");
+    setLocationProviderId(null);
+    activeProviderRef.current = null;
+    setLocationFormattedAddress(null);
+    setLocationComponents(null);
+    setLocationHouseNumber("");
+    setLocationPostalCode("");
+    setLocationLat(null);
+    setLocationLng(null);
+    setLocationQuery("");
+    setLocationSuggestions([]);
+    setLocationSearchLoading(false);
+    setLocationSearchError(null);
+    setLocationConfirmed(true);
+  };
 
   const baseInputClasses =
     "w-full rounded-xl border border-white/12 bg-black/25 px-4 py-3 text-sm text-white/90 placeholder:text-white/45 outline-none transition backdrop-blur-sm focus:border-[var(--orya-cyan)] focus:ring-2 focus:ring-[rgba(107,255,255,0.35)] focus:ring-offset-0 focus:ring-offset-transparent";
@@ -930,6 +1169,7 @@ export default function NewOrganizationEventPage({
     { value: "QUADRO_ELIMINATORIO", label: "Eliminatório" },
     { value: "GRUPOS_ELIMINATORIAS", label: "Grupos + KO" },
     { value: "QUADRO_AB", label: "Quadro A/B" },
+    { value: "DUPLA_ELIMINACAO", label: "Dupla eliminação" },
     { value: "NON_STOP", label: "Non-stop" },
     { value: "CAMPEONATO_LIGA", label: "Campeonato/Liga" },
   ];
@@ -944,10 +1184,6 @@ export default function NewOrganizationEventPage({
   const selectedStartDate = startDateInput ? parseInputDate(startDateInput) : null;
   const selectedEndDate = endDateInput ? parseInputDate(endDateInput) : null;
   const minEndDate = selectedStartDate ?? today;
-  const selectedPadelClub =
-    selectedPreset === "padel"
-      ? padelClubs?.items?.find((c) => c.id === selectedPadelClubId) ?? null
-      : null;
 
   const createPartnerCourts = async (clubId: number, club: PadelPublicClub) => {
     const courtsSource =
@@ -992,9 +1228,21 @@ export default function NewOrganizationEventPage({
       setPadelDirectoryError("Seleciona uma organização antes de adicionar o clube.");
       return;
     }
+    const existingPartner = partnerPadelClubs.find(
+      (item) => item.sourceClubId === club.id || (item.name === club.name && item.city === club.city),
+    );
+    if (existingPartner) {
+      setPadelClubMode("PARTNER");
+      setPadelClubSource("DIRECTORY");
+      setPadelClubSourceTouched(true);
+      setSelectedPadelClubId(existingPartner.id);
+      clearErrorsForFields(["padel"]);
+      return;
+    }
     setPadelDirectoryError(null);
     setCreatingPartnerClubId(club.id);
     try {
+      const formattedAddress = [club.address, club.city].filter(Boolean).join(", ");
       const res = await fetch("/api/padel/clubs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1003,6 +1251,10 @@ export default function NewOrganizationEventPage({
           name: club.name,
           city: club.city ?? "",
           address: club.address ?? "",
+          kind: "PARTNER",
+          sourceClubId: club.id,
+          locationSource: "MANUAL",
+          locationFormattedAddress: formattedAddress || null,
           courtsCount: club.courtsCount ?? 1,
           isActive: true,
         }),
@@ -1018,9 +1270,11 @@ export default function NewOrganizationEventPage({
         return;
       }
       await mutatePadelClubs();
-      setPadelClubSource("ORG");
+      setPadelClubMode("PARTNER");
+      setPadelClubSource("DIRECTORY");
       setPadelClubSourceTouched(true);
       setSelectedPadelClubId(savedClub.id);
+      clearErrorsForFields(["padel"]);
       setLocationManuallySet(false);
       const createdCourtIds = await createPartnerCourts(savedClub.id, club);
       if (createdCourtIds.length > 0) {
@@ -1044,18 +1298,20 @@ export default function NewOrganizationEventPage({
                 Courts: {padelCourts?.items?.filter((c) => c.isActive).length ?? "—"} · Sel: {selectedPadelCourtIds.length || "—"}
               </span>
             </div>
-            <div className="inline-flex rounded-full border border-white/15 bg-black/40 p-1 text-[12px]">
-              {[
-                { key: "ORG" as const, label: "Meus clubes" },
-                { key: "DIRECTORY" as const, label: "Diretorio" },
-              ].map((opt) => (
+              <div className="inline-flex rounded-full border border-white/15 bg-black/40 p-1 text-[12px]">
+                {[
+                  { key: "ORG" as const, label: "Meus clubes" },
+                  { key: "DIRECTORY" as const, label: "Parceiros" },
+                ].map((opt) => (
                 <button
                   key={opt.key}
                   type="button"
                   onClick={() => {
+                    setPadelClubMode(opt.key === "DIRECTORY" ? "PARTNER" : "OWN");
                     setPadelClubSource(opt.key);
                     setPadelClubSourceTouched(true);
                     setPadelDirectoryError(null);
+                    clearErrorsForFields(["padel"]);
                   }}
                   className={`rounded-full px-3 py-1 transition ${
                     padelClubSource === opt.key
@@ -1076,10 +1332,11 @@ export default function NewOrganizationEventPage({
                   onChange={(e) => {
                     setLocationManuallySet(false);
                     setSelectedPadelClubId(Number(e.target.value) || null);
+                    clearErrorsForFields(["padel"]);
                   }}
                 >
                   <option value="">Clube</option>
-                  {(padelClubs?.items || [])
+                  {orgPadelClubs
                     .filter((c) => c.isActive)
                     .map((club) => (
                       <option key={club.id} value={club.id}>
@@ -1087,16 +1344,18 @@ export default function NewOrganizationEventPage({
                       </option>
                     ))}
                 </select>
-                {!padelClubs?.items?.length && (
-                  <div className="space-y-2">
+                {orgPadelClubs.length === 0 && (
+                  <div ref={padelCategoriesRef} className="space-y-2">
                     <p className="text-[12px] text-white/60">Sem clubes na tua organizacao.</p>
                     <div className="flex flex-wrap gap-2">
                       <button
                         type="button"
                         onClick={() => {
+                          setPadelClubMode("PARTNER");
                           setPadelClubSource("DIRECTORY");
                           setPadelClubSourceTouched(true);
                           setPadelDirectoryError(null);
+                          clearErrorsForFields(["padel"]);
                         }}
                         className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:border-white/40"
                       >
@@ -1114,6 +1373,37 @@ export default function NewOrganizationEventPage({
               </>
             ) : (
               <div className="space-y-2">
+                {partnerPadelClubs.length > 0 && (
+                  <div className="space-y-2 rounded-xl border border-white/12 bg-black/35 p-3">
+                    <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">Parceiros já adicionados</p>
+                    <div className="space-y-2">
+                      {partnerPadelClubs.map((club) => (
+                        <div
+                          key={`partner-${club.id}`}
+                          className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-[12px]"
+                        >
+                          <div>
+                            <p className="font-semibold text-white">{club.name}</p>
+                            <p className="text-white/60">{[club.city, club.address].filter(Boolean).join(" · ")}</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedPadelClubId(club.id);
+                              setPadelClubMode("PARTNER");
+                              setPadelClubSource("DIRECTORY");
+                              setPadelClubSourceTouched(true);
+                              clearErrorsForFields(["padel"]);
+                            }}
+                            className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:border-white/40"
+                          >
+                            Selecionar
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <input
                   value={padelDirectoryQuery}
                   onChange={(e) => setPadelDirectoryQuery(e.target.value)}
@@ -1185,11 +1475,12 @@ export default function NewOrganizationEventPage({
                         <input
                           type="checkbox"
                           checked={checked}
-                          onChange={(e) =>
+                          onChange={(e) => {
+                            clearErrorsForFields(["padel"]);
                             setSelectedPadelCourtIds((prev) =>
                               e.target.checked ? [...prev, ct.id] : prev.filter((id) => id !== ct.id),
-                            )
-                          }
+                            );
+                          }}
                           className="accent-white"
                         />
                         <span>{ct.name}</span>
@@ -1209,6 +1500,9 @@ export default function NewOrganizationEventPage({
 
         <div className="space-y-2">
           <label className={labelClass}>Staff</label>
+          {padelClubMode === "PARTNER" && (
+            <p className="text-[11px] text-amber-200">Obrigatório para clubes parceiros.</p>
+          )}
           <div className="rounded-2xl border border-white/12 bg-white/[0.04] p-3 max-h-48 overflow-auto space-y-2">
             {!selectedPadelClubId && (
               <p className="text-[12px] text-white/60">Seleciona um clube para carregar staff.</p>
@@ -1226,11 +1520,12 @@ export default function NewOrganizationEventPage({
                     <input
                       type="checkbox"
                       checked={checked}
-                      onChange={(e) =>
+                      onChange={(e) => {
+                        clearErrorsForFields(["padel"]);
                         setSelectedPadelStaffIds((prev) =>
                           e.target.checked ? [...prev, member.id] : prev.filter((id) => id !== member.id),
-                        )
-                      }
+                        );
+                      }}
                       className="accent-white"
                     />
                     <span>{member.fullName || member.email || "Staff"}</span>
@@ -1246,21 +1541,38 @@ export default function NewOrganizationEventPage({
       </div>
     ) : null;
 
+  const scrollToPadelTarget = (ref: RefObject<HTMLElement | null>) => {
+    const target = ref.current ?? padelSectionRef.current;
+    if (target) {
+      target.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  };
+
+  const openPadelOperation = () => {
+    setPadelAdvancedOpen(true);
+    setTimeout(() => {
+      scrollToPadelTarget(padelOperationRef);
+    }, 80);
+  };
+
+  const handlePadelClubModeChange = (mode: "OWN" | "PARTNER") => {
+    clearErrorsForFields(["padel"]);
+    setPadelClubMode(mode);
+    setPadelClubSourceTouched(true);
+    if (!selectedPadelClubId) {
+      setPadelClubSource(mode === "PARTNER" ? "DIRECTORY" : "ORG");
+    } else if (mode === "OWN" && padelClubSource !== "ORG") {
+      setPadelClubSource("ORG");
+    }
+    setPadelDirectoryError(null);
+    setPadelAdvancedOpen(true);
+  };
+
   const handleRequireLogin = () => {
     openModal({
       mode: "login",
       redirectTo: `${detailBasePath}/novo`,
     });
-  };
-
-  const handleSelectLocationSuggestion = (suggestion: { name: string; city?: string | null }) => {
-    setLocationName(suggestion.name);
-    if (suggestion.city && PT_CITIES.includes(suggestion.city as PTCity)) {
-      setLocationCity(suggestion.city as PTCity);
-    }
-    setLocationManuallySet(true);
-    clearErrorsForFields(["locationName", "locationCity"]);
-    setShowLocationSuggestions(false);
   };
 
   const handleAddTicketType = () => {
@@ -1517,10 +1829,36 @@ export default function NewOrganizationEventPage({
     : "Público";
 
   const locationSummary = useMemo(() => {
+    if (locationFormattedAddress) return locationFormattedAddress;
     const parts = [locationName.trim(), locationCity.trim(), address.trim()].filter(Boolean);
     if (parts.length === 0) return "Localização";
     return parts.join(" · ");
-  }, [locationName, locationCity, address]);
+  }, [locationFormattedAddress, locationName, locationCity, address]);
+
+  const buildLocationFormattedAddress = () => {
+    const components = locationComponents as
+      | {
+          road?: string | null;
+          houseNumber?: string | null;
+          postalCode?: string | null;
+          address?: Record<string, unknown>;
+        }
+      | null;
+    const road =
+      (typeof components?.road === "string" && components.road.trim()) ||
+      (typeof components?.address?.road === "string" && components.address.road.trim()) ||
+      null;
+    const houseNumber = locationHouseNumber.trim() || (components?.houseNumber ?? "");
+    const postalCode = locationPostalCode.trim() || (components?.postalCode ?? "");
+    const country =
+      (typeof components?.address?.country === "string" && components.address.country.trim()) || "";
+    const line1 = [road, houseNumber].filter(Boolean).join(" ").trim();
+    const line2 = [postalCode.trim(), locationCity.trim()].filter(Boolean).join(" ").trim();
+    const parts = [line1, line2, country].filter(Boolean);
+    if (parts.length > 0) return parts.join(", ");
+    if (locationFormattedAddress) return locationFormattedAddress;
+    return [locationName, locationCity, address].filter(Boolean).join(", ");
+  };
   const descriptionSummary = useMemo(() => {
     const trimmed = description.trim();
     if (!trimmed) return "Descrição";
@@ -1536,6 +1874,74 @@ export default function NewOrganizationEventPage({
   const padelCategoryCountLabel = padelCategoryIds.length
     ? `${padelCategoryIds.length} categoria${padelCategoryIds.length === 1 ? "" : "s"}`
     : "Sem categorias";
+  const padelTicketCategoryIds = preparedTickets
+    .map((ticket) => ticket.padelCategoryId)
+    .filter((id): id is number => typeof id === "number");
+  const padelTicketCategorySet = new Set(padelTicketCategoryIds);
+  const padelTicketsCovered =
+    padelCategoryIds.length > 0 && padelCategoryIds.every((id) => padelTicketCategorySet.has(id));
+  const padelTicketsUnique = padelTicketCategoryIds.length === padelTicketCategorySet.size;
+  const padelTicketsOk = padelTicketsCovered && (isFreeEvent || padelTicketsUnique);
+  const padelClubOk = Boolean(selectedPadelClubId);
+  const padelCourtsOk = selectedPadelCourtIds.length > 0;
+  const padelCategoriesOk = padelCategoryIds.length > 0;
+  const hasPadelStaff = (padelStaff?.items?.length ?? 0) > 0;
+  const padelStaffStatus: "ok" | "missing" | "optional" =
+    padelClubMode === "PARTNER"
+      ? selectedPadelStaffIds.length > 0
+        ? "ok"
+        : hasPadelStaff
+          ? "missing"
+          : "optional"
+      : selectedPadelStaffIds.length > 0
+        ? "ok"
+        : "optional";
+  const padelChecklist = [
+    {
+      key: "club",
+      label: "Clube",
+      status: padelClubOk ? "ok" : "missing",
+      detail: selectedPadelClub?.name ?? "Seleciona um clube.",
+    },
+    {
+      key: "courts",
+      label: "Courts",
+      status: padelCourtsOk ? "ok" : "missing",
+      detail: padelCourtsOk
+        ? `${selectedPadelCourtIds.length} selecionado(s).`
+        : selectedPadelClubId
+          ? "Seleciona pelo menos 1 court."
+          : "Seleciona um clube para carregar courts.",
+    },
+    {
+      key: "categories",
+      label: "Categorias",
+      status: padelCategoriesOk ? "ok" : "missing",
+      detail: padelCategoriesOk ? `${padelCategoryIds.length} escolhida(s).` : "Seleciona pelo menos 1 categoria.",
+    },
+    {
+      key: "tickets",
+      label: ticketLabelPluralCap,
+      status: padelTicketsOk ? "ok" : "missing",
+      detail: padelTicketsOk ? ticketsSummary : `Confirma ${ticketLabelPlural} por categoria.`,
+    },
+    {
+      key: "staff",
+      label: "Staff",
+      status: padelStaffStatus,
+      detail:
+        padelStaffStatus === "ok"
+          ? `${selectedPadelStaffIds.length} selecionado(s).`
+          : padelStaffStatus === "missing"
+            ? selectedPadelClubId
+              ? "Seleciona staff local do clube parceiro."
+              : "Seleciona um clube para carregar staff."
+            : "Opcional (recomendado).",
+    },
+  ];
+  const padelChecklistRequired = padelChecklist.filter((item) => item.status !== "optional");
+  const padelChecklistComplete = padelChecklistRequired.filter((item) => item.status === "ok").length;
+  const padelChecklistTotal = padelChecklistRequired.length;
   const scheduleError = fieldErrors.startsAt ?? fieldErrors.endsAt ?? (dateOrderWarning ? "Fim antes do início." : null);
   const locationError = fieldErrors.locationCity ?? fieldErrors.locationName ?? null;
 
@@ -1547,8 +1953,18 @@ export default function NewOrganizationEventPage({
     if (!startsAt) {
       issues.push({ field: "startsAt", message: "Data/hora de início obrigatória." });
     }
-    if (!locationCity.trim()) {
+    const requiresCity = !(locationMode === "MANUAL" && locationTbd);
+    if (!locationCity.trim() && requiresCity) {
       issues.push({ field: "locationCity", message: "Cidade obrigatória." });
+    }
+    if (locationMode === "MANUAL" && !locationTbd && !locationName.trim()) {
+      issues.push({ field: "locationName", message: "Local obrigatório." });
+    }
+    if (locationMode === "OSM" && !locationProviderId) {
+      issues.push({ field: "locationName", message: "Seleciona uma sugestão de localização." });
+    }
+    if (locationMode === "OSM" && locationProviderId && !locationConfirmed) {
+      issues.push({ field: "locationName", message: "Confirma a localização antes de guardar." });
     }
     if (endsAt && startsAt && new Date(endsAt).getTime() <= new Date(startsAt).getTime()) {
       issues.push({ field: "endsAt", message: "A data/hora de fim tem de ser depois do início." });
@@ -1577,6 +1993,22 @@ export default function NewOrganizationEventPage({
             paidTicketsBlockedMessage ??
             `Liga o Stripe e verifica o email oficial da organização para vender ${ticketLabelPlural} pagos.`,
         });
+      }
+    }
+
+    if (selectedPreset === "padel") {
+      if (!selectedPadelClubId) {
+        issues.push({ field: "padel", message: "Seleciona um clube de padel para o torneio." });
+      } else if (selectedPadelCourtIds.length === 0) {
+        issues.push({ field: "padel", message: "Seleciona pelo menos 1 court para o torneio de padel." });
+      }
+      if (
+        padelClubMode === "PARTNER" &&
+        selectedPadelClubId &&
+        selectedPadelStaffIds.length === 0 &&
+        (padelStaff?.items?.length ?? 0) > 0
+      ) {
+        issues.push({ field: "padel", message: "Seleciona staff local para o clube parceiro." });
       }
     }
 
@@ -1805,14 +2237,6 @@ export default function NewOrganizationEventPage({
     return null;
   })();
 
-  const filteredLocationSuggestions = useMemo(() => {
-    const items = recentVenues?.ok && Array.isArray(recentVenues.items) ? recentVenues.items : [];
-    if (items.length === 0) return [];
-    const term = `${locationName} ${locationCity}`.toLowerCase().trim();
-    const filtered = items.filter((s) => `${s.name} ${s.city ?? ""}`.toLowerCase().includes(term));
-    return (term ? filtered : items).slice(0, 8);
-  }, [recentVenues, locationName, locationCity]);
-
   useEffect(() => {
     if (title.trim()) clearErrorsForFields(["title"]);
   }, [title]);
@@ -1822,12 +2246,20 @@ export default function NewOrganizationEventPage({
   }, [startsAt]);
 
   useEffect(() => {
-    if (locationName.trim()) clearErrorsForFields(["locationName"]);
-  }, [locationName]);
+    if (locationMode === "OSM") {
+      if (locationProviderId && locationConfirmed) {
+        clearErrorsForFields(["locationName"]);
+      }
+    } else if (locationName.trim()) {
+      clearErrorsForFields(["locationName"]);
+    }
+  }, [locationMode, locationName, locationProviderId, locationConfirmed]);
 
   useEffect(() => {
-    if (locationCity.trim()) clearErrorsForFields(["locationCity"]);
-  }, [locationCity]);
+    if (locationCity.trim() || (locationMode === "MANUAL" && locationTbd)) {
+      clearErrorsForFields(["locationCity"]);
+    }
+  }, [locationCity, locationMode, locationTbd]);
 
   useEffect(() => {
     if (endsAt && startsAt && new Date(endsAt).getTime() > new Date(startsAt).getTime()) {
@@ -1985,6 +2417,17 @@ export default function NewOrganizationEventPage({
       const publicTicketScope = hasTicketsPayload ? "SPECIFIC" : "ALL";
       const participantAccessMode = hasTicketsPayload ? "TICKET" : "NONE";
       const participantTicketScope = hasTicketsPayload ? "SPECIFIC" : "ALL";
+      const resolvedLocationSource: LocationSource =
+        locationMode === "OSM" && locationProviderId ? "OSM" : "MANUAL";
+      const resolvedLocationOverrides =
+        resolvedLocationSource === "OSM"
+          ? {
+              houseNumber: locationHouseNumber.trim() || null,
+              postalCode: locationPostalCode.trim() || null,
+            }
+          : null;
+      const resolvedFormattedAddress =
+        resolvedLocationSource === "OSM" ? buildLocationFormattedAddress() : null;
       const selectedCourtsPayload =
         selectedPadelClubId && padelCourts?.items
           ? padelCourts.items.filter((court) => selectedPadelCourtIds.includes(court.id))
@@ -2017,6 +2460,14 @@ export default function NewOrganizationEventPage({
         locationCity: locationCity.trim() || null,
         templateType: templateToSend,
         address: address.trim() || null,
+        locationSource: resolvedLocationSource,
+        locationProviderId: resolvedLocationSource === "OSM" ? locationProviderId : null,
+        locationFormattedAddress:
+          resolvedLocationSource === "OSM" ? resolvedFormattedAddress : null,
+        locationComponents: resolvedLocationSource === "OSM" ? locationComponents : null,
+        locationOverrides: resolvedLocationOverrides,
+        latitude: resolvedLocationSource === "OSM" ? locationLat : null,
+        longitude: resolvedLocationSource === "OSM" ? locationLng : null,
         ticketTypes: preparedTickets,
         coverImageUrl: coverUrl,
         inviteOnly: publicAccessMode === "INVITE",
@@ -2114,6 +2565,22 @@ export default function NewOrganizationEventPage({
     setLocationName("");
     setLocationCity(PT_CITIES[0]);
     setAddress("");
+    setLocationMode("OSM");
+    setLocationQuery("");
+    setLocationSuggestions([]);
+    setLocationSearchLoading(false);
+    setLocationDetailsLoading(false);
+    setLocationProviderId(null);
+    activeProviderRef.current = null;
+    setLocationFormattedAddress(null);
+    setLocationComponents(null);
+    setLocationLat(null);
+    setLocationLng(null);
+    setLocationTbd(false);
+    setLocationManuallySet(false);
+    setLocationConfirmed(false);
+    setLocationHouseNumber("");
+    setLocationPostalCode("");
     setTicketTypes([]);
     setIsFreeEvent(false);
     setFreeTicketName(freeTicketPlaceholder);
@@ -2616,107 +3083,230 @@ export default function NewOrganizationEventPage({
   const renderLocationPanel = () => (
     <div className="space-y-4 animate-fade-slide">
       <div className="rounded-2xl border border-white/12 bg-white/5 p-4 space-y-3">
-        <div data-field="locationName" className="space-y-1">
-          <label className={labelClass}>Local</label>
-          <div className="relative overflow-visible">
-            <input
-              type="text"
-              value={locationName}
-              onChange={(e) => {
-                setLocationManuallySet(true);
-                setLocationName(e.target.value);
-                setShowLocationSuggestions(true);
-              }}
-              onFocus={() => setShowLocationSuggestions(true)}
-              onBlur={() => {
-                if (suggestionBlurTimeout.current) clearTimeout(suggestionBlurTimeout.current);
-                suggestionBlurTimeout.current = setTimeout(() => setShowLocationSuggestions(false), 120);
-              }}
-              aria-invalid={Boolean(fieldErrors.locationName)}
-              className={inputClass(Boolean(fieldErrors.locationName))}
-              placeholder="Local"
-            />
-            {showLocationSuggestions && (
-              <div className="absolute left-0 right-0 z-[70] mt-2 max-h-56 overflow-y-auto rounded-xl border border-white/12 bg-black/90 shadow-xl backdrop-blur-2xl animate-popover">
-                {recentVenues === undefined ? (
-                  <div className="px-3 py-2 text-sm text-white/70 animate-pulse">A procurar…</div>
-                ) : filteredLocationSuggestions.length === 0 ? (
-                  <div className="px-3 py-2 text-sm text-white/60">Sem locais.</div>
-                ) : (
-                  filteredLocationSuggestions.map((suggestion) => (
-                    <button
-                      key={`${suggestion.name}-${suggestion.city ?? "?"}`}
-                      type="button"
-                      onMouseDown={(e) => e.preventDefault()}
-                      onClick={() => handleSelectLocationSuggestion(suggestion)}
-                      className="flex w-full flex-col items-start gap-1 border-b border-white/5 px-3 py-2 text-left text-sm hover:bg-white/8 last:border-0 transition"
-                    >
-                      <div className="flex w-full items-center justify-between gap-3">
-                        <span className="font-semibold text-white">{suggestion.name}</span>
-                        <span className="text-[12px] text-white/65">{suggestion.city || "Sem cidade"}</span>
-                      </div>
-                    </button>
-                  ))
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <label className={labelClass}>Local / Morada</label>
+          <div className="flex flex-wrap gap-2 text-[11px] text-white/70">
+            {locationMode === "OSM" ? (
+              <button
+                type="button"
+                onClick={enableManualLocation}
+                className="rounded-full border border-white/15 px-3 py-1 hover:border-white/40"
+              >
+                Modo manual
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={enableOsmLocation}
+                className="rounded-full border border-white/15 px-3 py-1 hover:border-white/40"
+              >
+                Pesquisar local
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={markLocationTbd}
+              className="rounded-full border border-white/15 px-3 py-1 hover:border-white/40"
+            >
+              Local a anunciar
+            </button>
+          </div>
+        </div>
+
+        {locationMode === "OSM" ? (
+          <div className="space-y-3">
+            <div className="relative overflow-visible">
+                <input
+                  type="text"
+                  value={locationQuery}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    setLocationQuery(next);
+                    setLocationTbd(false);
+                    setLocationSearchError(null);
+                    if (locationProviderId) {
+                      setLocationProviderId(null);
+                      activeProviderRef.current = null;
+                      setLocationFormattedAddress(null);
+                      setLocationComponents(null);
+                      setLocationLat(null);
+                      setLocationLng(null);
+                      setLocationConfirmed(false);
+                    }
+                    setShowLocationSuggestions(true);
+                  }}
+                onFocus={() => setShowLocationSuggestions(true)}
+                onBlur={() => {
+                  if (suggestionBlurTimeout.current) clearTimeout(suggestionBlurTimeout.current);
+                  suggestionBlurTimeout.current = setTimeout(() => setShowLocationSuggestions(false), 120);
+                }}
+                aria-invalid={Boolean(fieldErrors.locationName)}
+                className={inputClass(Boolean(fieldErrors.locationName))}
+                placeholder="Procura um local ou morada"
+              />
+              {showLocationSuggestions && (
+                <div className="mt-2 w-full max-h-56 overflow-y-auto rounded-xl border border-white/12 bg-black/90 shadow-xl backdrop-blur-2xl">
+                  {locationSearchLoading ? (
+                    <div className="px-3 py-2 text-sm text-white/70 animate-pulse">A procurar…</div>
+                    ) : locationSearchError ? (
+                      <div className="px-3 py-2 text-sm text-amber-100">{locationSearchError}</div>
+                    ) : locationSuggestions.length === 0 ? (
+                      <div className="px-3 py-2 text-sm text-white/60">Sem sugestões.</div>
+                    ) : (
+                    locationSuggestions.map((suggestion) => (
+                      <button
+                        key={suggestion.providerId}
+                        type="button"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => handleSelectGeoSuggestion(suggestion)}
+                        className="flex w-full flex-col items-start gap-1 border-b border-white/5 px-3 py-2 text-left text-sm hover:bg-white/8 last:border-0 transition"
+                      >
+                        <div className="flex w-full items-center justify-between gap-3">
+                          <span className="font-semibold text-white">{suggestion.label}</span>
+                          <span className="text-[12px] text-white/65">{suggestion.city || "—"}</span>
+                        </div>
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+            {locationProviderId && (
+              <div className="rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-[12px] text-white/70">
+                <div className="flex items-center justify-between gap-3">
+                  <span>{locationFormattedAddress || locationQuery || "Local selecionado"}</span>
+                  {locationDetailsLoading && <span className="text-[10px] uppercase tracking-[0.2em]">A validar…</span>}
+                </div>
+                {locationLat !== null && locationLng !== null && (
+                  <p className="mt-1 text-[11px] text-white/55">
+                    {locationLat.toFixed(5)}, {locationLng.toFixed(5)}
+                  </p>
                 )}
               </div>
             )}
-          </div>
-          {fieldErrors.locationName && (
-            <p className={errorTextClass}>
-              <span aria-hidden>⚠️</span>
-              {fieldErrors.locationName}
-            </p>
-          )}
-        </div>
-
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <div data-field="locationCity" className="space-y-1">
-            <label className={labelClass}>
-              Cidade <span aria-hidden>*</span>
-            </label>
-            <select
-              value={locationCity}
-              onChange={(e) => {
-                setLocationManuallySet(true);
-                const nextCity = e.target.value as PTCity;
-                if (PT_CITIES.includes(nextCity)) {
-                  setLocationCity(nextCity);
-                }
-                setShowLocationSuggestions(true);
-              }}
-              aria-invalid={Boolean(fieldErrors.locationCity)}
-              onFocus={() => setShowLocationSuggestions(true)}
-              onBlur={() => {
-                if (suggestionBlurTimeout.current) clearTimeout(suggestionBlurTimeout.current);
-                suggestionBlurTimeout.current = setTimeout(() => setShowLocationSuggestions(false), 120);
-              }}
-              className={inputClass(Boolean(fieldErrors.locationCity))}
-            >
-              {PT_CITIES.map((city) => (
-                <option key={city} value={city}>
-                  {city}
-                </option>
-              ))}
-            </select>
-            {fieldErrors.locationCity && (
-              <p className={errorTextClass}>
-                <span aria-hidden>⚠️</span>
-                {fieldErrors.locationCity}
-              </p>
+            {locationProviderId && (
+              <div className="flex flex-wrap items-center gap-2 text-[11px]">
+                {locationConfirmed ? (
+                  <span className="rounded-full border border-emerald-300/40 bg-emerald-400/10 px-3 py-1 text-emerald-50">
+                    Local confirmado
+                  </span>
+                ) : (
+                  <span className="rounded-full border border-amber-300/40 bg-amber-400/10 px-3 py-1 text-amber-50">
+                    Confirmação pendente
+                  </span>
+                )}
+                {!locationConfirmed && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLocationFormattedAddress(buildLocationFormattedAddress());
+                      setLocationConfirmed(true);
+                    }}
+                    disabled={locationDetailsLoading}
+                    className="rounded-full border border-white/15 px-3 py-1 text-white/80 hover:border-white/40 disabled:opacity-60"
+                  >
+                    Confirmar local
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={enableManualLocation}
+                  className="rounded-full border border-white/15 px-3 py-1 text-white/60 hover:border-white/40"
+                >
+                  Ajustar manualmente
+                </button>
+              </div>
+            )}
+            {locationProviderId && (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1">
+                  <label className="text-[11px] text-white/60">Nº porta (opcional)</label>
+                  <input
+                    value={locationHouseNumber}
+                    onChange={(e) => {
+                      setLocationHouseNumber(e.target.value);
+                      setLocationConfirmed(false);
+                    }}
+                    className={inputClass(false)}
+                    placeholder="Ex.: 123"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[11px] text-white/60">Código‑postal (opcional)</label>
+                  <input
+                    value={locationPostalCode}
+                    onChange={(e) => {
+                      setLocationPostalCode(e.target.value);
+                      setLocationConfirmed(false);
+                    }}
+                    className={inputClass(false)}
+                    placeholder="Ex.: 4000-123"
+                  />
+                </div>
+                <div className="sm:col-span-2 text-[11px] text-white/60">
+                  {locationConfirmed ? "Confirmado" : "Confirma o endereço antes de guardar."}
+                </div>
+              </div>
             )}
           </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div data-field="locationName" className="space-y-1">
+              <label className={labelClass}>Local</label>
+              <input
+                type="text"
+                value={locationName}
+                onChange={(e) => {
+                  setLocationManuallySet(true);
+                  setLocationName(e.target.value);
+                  setLocationTbd(false);
+                }}
+                aria-invalid={Boolean(fieldErrors.locationName)}
+                className={inputClass(Boolean(fieldErrors.locationName))}
+                placeholder="Local"
+              />
+            </div>
 
-          <div data-field="address" className="space-y-1">
-            <label className={labelClass}>Morada</label>
-            <input
-              type="text"
-              value={address}
-              onChange={(e) => setAddress(e.target.value)}
-              className={inputClass(false)}
-              placeholder="Rua e número"
-            />
+            <div data-field="locationCity" className="space-y-1">
+              <label className={labelClass}>
+                Cidade <span aria-hidden>*</span>
+              </label>
+              <input
+                type="text"
+                value={locationCity}
+                onChange={(e) => {
+                  setLocationManuallySet(true);
+                  setLocationCity(e.target.value);
+                  setLocationTbd(false);
+                }}
+                aria-invalid={Boolean(fieldErrors.locationCity)}
+                className={inputClass(Boolean(fieldErrors.locationCity))}
+                placeholder="Cidade"
+              />
+            </div>
+
+            <div data-field="address" className="space-y-1 sm:col-span-2">
+              <label className={labelClass}>Morada</label>
+              <input
+                type="text"
+                value={address}
+                onChange={(e) => {
+                  setAddress(e.target.value);
+                  setLocationTbd(false);
+                }}
+                className={inputClass(false)}
+                placeholder="Rua e número"
+              />
+            </div>
           </div>
-        </div>
+        )}
+
+        {locationError && (
+          <p className={errorTextClass}>
+            <span aria-hidden>⚠️</span>
+            {locationError}
+          </p>
+        )}
       </div>
     </div>
   );
@@ -3456,6 +4046,34 @@ export default function NewOrganizationEventPage({
             </div>
 
             <div className="min-w-0 space-y-4">
+              {canSwitchPreset && (
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className={labelClass}>Tipo</p>
+                    <p className="text-[11px] text-white/60">Evento clássico ou torneio Padel.</p>
+                  </div>
+                  <div className="inline-flex rounded-full border border-white/15 bg-black/40 p-1 text-[12px]">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedPreset("default")}
+                      className={`rounded-full px-3 py-1 font-semibold transition ${
+                        selectedPreset === "default" ? "bg-white text-black shadow" : "text-white/70"
+                      }`}
+                    >
+                      Evento
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedPreset("padel")}
+                      className={`rounded-full px-3 py-1 font-semibold transition ${
+                        selectedPreset === "padel" ? "bg-white text-black shadow" : "text-white/70"
+                      }`}
+                    >
+                      Torneio
+                    </button>
+                  </div>
+                </div>
+              )}
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <button
                   type="button"
@@ -3508,7 +4126,7 @@ export default function NewOrganizationEventPage({
                         {startsAt ? formatDateLabel(startsAt) : "Data"}
                       </button>
                       {schedulePopover === "startDate" && (
-                        <div className="absolute right-0 z-[var(--z-popover)] mt-2 w-[280px] rounded-2xl border border-white/20 bg-[#0b1018] p-3 shadow-[0_22px_60px_rgba(0,0,0,0.6)] ring-1 ring-white/10">
+                        <div className="absolute right-0 z-[var(--z-popover)] mt-2 w-[280px] rounded-2xl orya-menu-surface p-3">
                           <div className="flex items-center justify-between border-b border-white/10 pb-2">
                             <span className="text-[10px] uppercase tracking-[0.2em] text-white/45">
                               Data de início
@@ -3616,7 +4234,7 @@ export default function NewOrganizationEventPage({
                         {startsAt ? formatTimeLabel(startsAt) : "Hora"}
                       </button>
                       {schedulePopover === "startTime" && (
-                        <div className="absolute right-0 z-[var(--z-popover)] mt-2 w-[210px] rounded-2xl border border-white/20 bg-[#0b1018] p-3 shadow-[0_22px_60px_rgba(0,0,0,0.6)] ring-1 ring-white/10">
+                        <div className="absolute right-0 z-[var(--z-popover)] mt-2 w-[210px] rounded-2xl orya-menu-surface p-3">
                           <div className="flex items-center justify-between border-b border-white/10 pb-2">
                             <span className="text-[10px] uppercase tracking-[0.2em] text-white/45">
                               Hora de início
@@ -3626,7 +4244,7 @@ export default function NewOrganizationEventPage({
                           <div
                             ref={startTimeInputRef}
                             tabIndex={-1}
-                            className="mt-3 max-h-56 space-y-1 overflow-y-auto rounded-xl border border-white/12 bg-[#0a0f16] p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
+                            className="mt-3 max-h-56 space-y-1 overflow-y-auto rounded-xl border border-white/12 bg-white/5 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
                           >
                             {timeSlots.map((slot) => {
                               const isSelected = slot === startTimeInput;
@@ -3674,7 +4292,7 @@ export default function NewOrganizationEventPage({
                         {endsAt ? formatDateLabel(endsAt) : "Data"}
                       </button>
                       {schedulePopover === "endDate" && (
-                        <div className="absolute right-0 z-[var(--z-popover)] mt-2 w-[280px] rounded-2xl border border-white/20 bg-[#0b1018] p-3 shadow-[0_22px_60px_rgba(0,0,0,0.6)] ring-1 ring-white/10">
+                        <div className="absolute right-0 z-[var(--z-popover)] mt-2 w-[280px] rounded-2xl orya-menu-surface p-3">
                           <div className="flex items-center justify-between border-b border-white/10 pb-2">
                             <span className="text-[10px] uppercase tracking-[0.2em] text-white/45">
                               Data de fim
@@ -3776,7 +4394,7 @@ export default function NewOrganizationEventPage({
                         {endsAt ? formatTimeLabel(endsAt) : "Hora"}
                       </button>
                       {schedulePopover === "endTime" && (
-                        <div className="absolute right-0 z-[var(--z-popover)] mt-2 w-[210px] rounded-2xl border border-white/20 bg-[#0b1018] p-3 shadow-[0_22px_60px_rgba(0,0,0,0.6)] ring-1 ring-white/10">
+                        <div className="absolute right-0 z-[var(--z-popover)] mt-2 w-[210px] rounded-2xl orya-menu-surface p-3">
                           <div className="flex items-center justify-between border-b border-white/10 pb-2">
                             <span className="text-[10px] uppercase tracking-[0.2em] text-white/45">
                               Hora de fim
@@ -3786,7 +4404,7 @@ export default function NewOrganizationEventPage({
                           <div
                             ref={endTimeInputRef}
                             tabIndex={-1}
-                            className="mt-3 max-h-56 space-y-1 overflow-y-auto rounded-xl border border-white/12 bg-[#0a0f16] p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
+                            className="mt-3 max-h-56 space-y-1 overflow-y-auto rounded-xl border border-white/12 bg-white/5 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
                           >
                             {timeSlots.map((slot) => {
                               const isSelected = slot === endTimeInput;
@@ -3924,6 +4542,128 @@ export default function NewOrganizationEventPage({
                     <span className="rounded-full border border-white/15 bg-white/[0.08] px-2 py-1">
                       RuleSet: {padelRuleSetLabel}
                     </span>
+                  </div>
+
+                  <div className="grid gap-4 lg:grid-cols-[1.05fr_0.95fr]">
+                    <div className="space-y-3 rounded-2xl border border-white/12 bg-white/5 p-4">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className={labelClass}>Tipo de clube</p>
+                        <span className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[10px] text-white/65">
+                          {padelClubMode === "PARTNER" ? "Parceiro" : "Próprio"}
+                        </span>
+                      </div>
+                      <div className="inline-flex rounded-full border border-white/15 bg-black/40 p-1 text-[12px]">
+                        {[
+                          { key: "OWN" as const, label: "Tenho clube" },
+                          { key: "PARTNER" as const, label: "Clube parceiro" },
+                        ].map((opt) => (
+                          <button
+                            key={opt.key}
+                            type="button"
+                            onClick={() => handlePadelClubModeChange(opt.key)}
+                            className={`rounded-full px-3 py-1 transition ${
+                              padelClubMode === opt.key
+                                ? "bg-white text-black font-semibold shadow"
+                                : "text-white/70 hover:bg-white/10"
+                            }`}
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+                      <p className="text-[11px] text-white/60">
+                        {padelClubMode === "PARTNER"
+                          ? "Usa um clube de terceiros. Procura no diretorio e confirma o staff local."
+                          : "Usa um clube da tua organização para gerir courts e staff."}
+                      </p>
+                      {padelClubMode === "PARTNER" && (
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              clearErrorsForFields(["padel"]);
+                              setPadelClubSource("DIRECTORY");
+                              setPadelClubSourceTouched(true);
+                              setPadelDirectoryError(null);
+                              openPadelOperation();
+                            }}
+                            className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:border-white/40"
+                          >
+                            Abrir diretorio
+                          </button>
+                          <Link
+                            href="/organizacao/torneios?section=padel-hub&padel=clubs"
+                            className="rounded-full border border-white/15 px-3 py-1 text-[11px] text-white/70 hover:border-white/30"
+                          >
+                            Criar clube rapido
+                          </Link>
+                        </div>
+                      )}
+                      {padelClubMode === "OWN" && !padelClubs?.items?.length && (
+                        <div className="rounded-xl border border-amber-400/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-50">
+                          <p className="font-semibold">Sem clubes ativos</p>
+                          <p className="text-amber-50/80">Adiciona um clube ou muda para clube parceiro.</p>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="space-y-3 rounded-2xl border border-white/12 bg-white/5 p-4">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className={labelClass}>Checklist</p>
+                        <span className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[10px] text-white/65">
+                          {padelChecklistComplete}/{padelChecklistTotal}
+                        </span>
+                      </div>
+                      <div className="space-y-2">
+                        {padelChecklist.map((item) => {
+                          const statusLabel =
+                            item.status === "ok" ? "OK" : item.status === "optional" ? "Opcional" : "Em falta";
+                          const statusClass =
+                            item.status === "ok"
+                              ? "border-emerald-400/50 bg-emerald-500/10 text-emerald-50"
+                              : item.status === "optional"
+                                ? "border-white/15 bg-white/5 text-white/65"
+                                : "border-amber-400/40 bg-amber-500/10 text-amber-50";
+                          return (
+                            <div
+                              key={item.key}
+                              className="flex items-start justify-between gap-3 rounded-xl border border-white/10 bg-black/30 px-3 py-2"
+                            >
+                              <div>
+                                <p className="text-[12px] font-semibold text-white">{item.label}</p>
+                                <p className="text-[11px] text-white/60">{item.detail}</p>
+                              </div>
+                              <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${statusClass}`}>
+                                {statusLabel}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <div className="flex flex-wrap gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => scrollToPadelTarget(padelCategoriesRef)}
+                          className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[11px] text-white/70 hover:border-white/30"
+                        >
+                          Categorias
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => scrollToPadelTarget(padelTicketsRef)}
+                          className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[11px] text-white/70 hover:border-white/30"
+                        >
+                          Inscrições
+                        </button>
+                        <button
+                          type="button"
+                          onClick={openPadelOperation}
+                          className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[11px] text-white/70 hover:border-white/30"
+                        >
+                          Operação
+                        </button>
+                      </div>
+                    </div>
                   </div>
 
                   <div className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
@@ -4140,7 +4880,7 @@ export default function NewOrganizationEventPage({
                     {renderTicketsPanel()}
                   </div>
 
-                  <div className="rounded-2xl border border-white/12 bg-white/5">
+                  <div ref={padelOperationRef} className="rounded-2xl border border-white/12 bg-white/5">
                     <button
                       type="button"
                       onClick={() => setPadelRulesOpen((prev) => !prev)}

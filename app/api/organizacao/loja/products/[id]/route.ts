@@ -73,7 +73,7 @@ async function getOrganizationContext(req: NextRequest, userId: string, options?
   return { ok: true as const, organization, store };
 }
 
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     if (!isStoreFeatureEnabled()) {
       return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
@@ -91,7 +91,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       return NextResponse.json({ ok: false, error: "Catalogo bloqueado." }, { status: 403 });
     }
 
-    const productId = Number(params.id);
+    const resolvedParams = await params;
+    const productId = Number(resolvedParams.id);
     if (!Number.isFinite(productId)) {
       return NextResponse.json({ ok: false, error: "ID invalido." }, { status: 400 });
     }
@@ -192,7 +193,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   }
 }
 
-export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     if (!isStoreFeatureEnabled()) {
       return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
@@ -210,7 +211,8 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
       return NextResponse.json({ ok: false, error: "Catalogo bloqueado." }, { status: 403 });
     }
 
-    const productId = Number(params.id);
+    const resolvedParams = await params;
+    const productId = Number(resolvedParams.id);
     if (!Number.isFinite(productId)) {
       return NextResponse.json({ ok: false, error: "ID invalido." }, { status: 400 });
     }

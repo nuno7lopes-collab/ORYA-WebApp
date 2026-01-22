@@ -35,21 +35,27 @@ const TYPE_LABEL: Record<string, string> = {
   FOLLOW_ACCEPT: "Pedido aceite",
   FOLLOWED_YOU: "Segue-te",
   MARKETING_PROMO_ALERT: "Marketing",
+  CRM_CAMPAIGN: "Campanha",
   SYSTEM_ANNOUNCE: "Sistema",
+  CHAT_OPEN: "Chat",
+  CHAT_ANNOUNCEMENT: "Chat",
+  CHAT_MESSAGE: "Mensagem de chat",
 };
 
 export function NotificationBell({ organizationId }: { organizationId?: number | null }) {
   const { user } = useUser();
   const [open, setOpen] = useState(false);
-  const [filter, setFilter] = useState<"all" | "sales" | "invites" | "system">("all");
+  const [filter, setFilter] = useState<"all" | "sales" | "invites" | "marketing" | "system">("all");
   const panelRef = useRef<HTMLDivElement | null>(null);
   const queryTypes =
     filter === "sales"
       ? "EVENT_SALE,EVENT_PAYOUT_STATUS"
       : filter === "invites"
         ? "ORGANIZATION_INVITE,CLUB_INVITE,ORGANIZATION_TRANSFER"
+        : filter === "marketing"
+          ? "MARKETING_PROMO_ALERT,CRM_CAMPAIGN"
         : filter === "system"
-          ? "STRIPE_STATUS,MARKETING_PROMO_ALERT,SYSTEM_ANNOUNCE,CHAT_OPEN,CHAT_ANNOUNCEMENT"
+          ? "STRIPE_STATUS,SYSTEM_ANNOUNCE,CHAT_OPEN,CHAT_ANNOUNCEMENT,CHAT_MESSAGE"
           : undefined;
   const queryParams = useMemo(() => {
     if (!user) return null;
@@ -96,6 +102,16 @@ export function NotificationBell({ organizationId }: { organizationId?: number |
     mutate();
   };
 
+  const markClick = (notificationId: string) => {
+    if (!notificationId) return;
+    fetch("/api/notifications/mark-click", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ notificationId }),
+      keepalive: true,
+    }).catch(() => null);
+  };
+
   const grouped = useMemo(() => {
     const groups: Record<string, NotificationDto[]> = {};
     for (const n of items) {
@@ -125,7 +141,7 @@ export function NotificationBell({ organizationId }: { organizationId?: number |
       {open && (
         <div
           ref={panelRef}
-          className="absolute right-0 mt-2 w-80 rounded-2xl border border-white/10 bg-[#0b0f18]/95 shadow-[0_20px_80px_rgba(0,0,0,0.6)] backdrop-blur-xl p-3 text-white/80 z-50"
+          className="absolute right-0 mt-2 w-80 rounded-2xl orya-menu-surface p-3 text-white/80 backdrop-blur-xl z-50"
         >
           <div className="mb-2 flex items-center justify-between text-xs">
             <span className="font-semibold text-white">
@@ -145,6 +161,7 @@ export function NotificationBell({ organizationId }: { organizationId?: number |
                 { key: "all", label: "Todas" },
                 { key: "sales", label: "Vendas" },
                 { key: "invites", label: "Convites" },
+                { key: "marketing", label: "Marketing" },
                 { key: "system", label: "Sistema" },
               ].map((item) => (
               <button
@@ -221,6 +238,7 @@ export function NotificationBell({ organizationId }: { organizationId?: number |
                           <Link
                             href={n.ctaUrl}
                             className="mt-2 inline-flex text-[11px] text-[#6BFFFF] hover:underline"
+                            onClick={() => markClick(n.id)}
                           >
                             {n.ctaLabel}
                           </Link>

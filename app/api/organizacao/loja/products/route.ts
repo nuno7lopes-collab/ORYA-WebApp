@@ -174,8 +174,8 @@ export async function POST(req: NextRequest) {
         requiresShipping: payload.requiresShipping ?? true,
         stockPolicy: payload.stockPolicy ?? StoreStockPolicy.NONE,
         stockQty: payload.stockQty ?? null,
-        status: payload.status ?? StoreProductStatus.DRAFT,
-        isVisible: payload.isVisible ?? false,
+        status: payload.status ?? StoreProductStatus.ACTIVE,
+        isVisible: payload.isVisible ?? true,
         tags: payload.tags ?? [],
       },
       select: {

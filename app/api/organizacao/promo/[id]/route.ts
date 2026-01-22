@@ -4,6 +4,7 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { isOrgAdminOrAbove } from "@/lib/organizationPermissions";
 import { resolveOrganizationIdFromParams } from "@/lib/organizationId";
+import { SaleSummaryStatus } from "@prisma/client";
 
 const resolveOrganizationId = (req: NextRequest) => {
   const orgParam = resolveOrganizationIdFromParams(req.nextUrl.searchParams);
@@ -90,9 +91,35 @@ export async function GET(
       return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
+    const purchaseIds = Array.from(
+      new Set(
+        promo.redemptions
+          .map((redemption) => redemption.purchaseId)
+          .filter((id): id is string => typeof id === "string" && id.trim().length > 0),
+      ),
+    );
+    const paidPurchaseIds = new Set<string>();
+    if (purchaseIds.length) {
+      const paidSummaries = await prisma.saleSummary.findMany({
+        where: {
+          purchaseId: { in: purchaseIds },
+          status: SaleSummaryStatus.PAID,
+          eventId: { in: eventIds },
+        },
+        select: { purchaseId: true },
+      });
+      paidSummaries.forEach((summary) => {
+        if (summary.purchaseId) paidPurchaseIds.add(summary.purchaseId);
+      });
+    }
+
+    const redemptions = purchaseIds.length
+      ? promo.redemptions.filter((redemption) => redemption.purchaseId && paidPurchaseIds.has(redemption.purchaseId))
+      : promo.redemptions;
+
     // Métrica simples de novos vs recorrentes: compara a data do primeiro sale_summary do user
     const firstRedemptionPerUser = new Map<string, Date>();
-    promo.redemptions.forEach((r) => {
+    redemptions.forEach((r) => {
       if (!r.userId) return;
       const prev = firstRedemptionPerUser.get(r.userId);
       if (!prev || r.usedAt < prev) {
@@ -107,6 +134,7 @@ export async function GET(
         where: {
           userId: { in: Array.from(firstRedemptionPerUser.keys()) },
           eventId: { in: eventIds },
+          status: SaleSummaryStatus.PAID,
         },
         _min: { createdAt: true },
       });
@@ -131,6 +159,7 @@ export async function GET(
       where: {
         eventId: { in: eventIds },
         OR: [{ promoCodeId: promo.id }, { promoCodeSnapshot: promo.code }],
+        saleSummary: { status: SaleSummaryStatus.PAID },
       },
       select: {
         quantity: true,
@@ -154,12 +183,12 @@ export async function GET(
     );
 
     const usersUnique = new Set<string>();
-    promo.redemptions.forEach((r) => {
+    redemptions.forEach((r) => {
       if (r.userId) usersUnique.add(r.userId);
       else if (r.guestEmail) usersUnique.add(r.guestEmail.toLowerCase());
     });
 
-    const history = promo.redemptions.map((r) => ({
+    const history = redemptions.map((r) => ({
       id: r.id,
       usedAt: r.usedAt,
       discountCents: 0,
@@ -204,18 +233,18 @@ export async function GET(
           updatedAt: promo.updatedAt,
         },
         stats: {
-        usesTotal: promo.redemptions.length,
-        usersUnique: usersUnique.size,
-        tickets: agg.tickets,
-        grossCents: agg.grossCents,
-        discountCents: agg.discountCents,
-        netCents: agg.netCents,
-        newUsers,
-        returningUsers,
+          usesTotal: redemptions.length,
+          usersUnique: usersUnique.size,
+          tickets: agg.tickets,
+          grossCents: agg.grossCents,
+          discountCents: agg.discountCents,
+          netCents: agg.netCents,
+          newUsers,
+          returningUsers,
+        },
+        topEvents,
+        history,
       },
-      topEvents,
-      history,
-    },
       { status: 200 },
     );
   } catch (err) {

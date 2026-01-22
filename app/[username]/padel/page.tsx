@@ -7,6 +7,7 @@ import { getProfileCoverUrl } from "@/lib/profileCover";
 import { getPadelOnboardingMissing, isPadelOnboardingComplete } from "@/domain/padelOnboarding";
 import { resolvePadelMatchStats } from "@/domain/padel/score";
 import PadelDisputeButton from "./PadelDisputeButton";
+import { getUserFollowCounts, isUserFollowing } from "@/domain/social/follows";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -282,20 +283,13 @@ export default async function PadelProfilePage({ params }: PageProps) {
   let followingCount = 0;
 
   if (prisma.follows) {
-    const [followers, following] = await Promise.all([
-      prisma.follows.count({ where: { following_id: resolvedProfile.id } }),
-      prisma.follows.count({ where: { follower_id: resolvedProfile.id } }),
-    ]);
-    followersCount = followers;
-    followingCount = following;
+    const counts = await getUserFollowCounts(resolvedProfile.id);
+    followersCount = counts.followersCount;
+    followingCount = counts.followingTotal;
 
     if (viewerId && !isOwner) {
-      const followRow = await prisma.follows.findFirst({
-        where: { follower_id: viewerId, following_id: resolvedProfile.id },
-        select: { id: true },
-      });
-      initialIsFollowing = Boolean(followRow);
-      isFollowing = Boolean(followRow);
+      isFollowing = await isUserFollowing(viewerId, resolvedProfile.id);
+      initialIsFollowing = isFollowing;
     }
   }
 

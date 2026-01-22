@@ -15,6 +15,9 @@ import { computeCombinedFees } from "@/lib/fees";
 import { getPlatformFees, getStripeBaseFees } from "@/lib/platformSettings";
 import { formatPaidSalesGateMessage, getPaidSalesGate } from "@/lib/organizationPayments";
 import { computeStoreShippingQuote } from "@/lib/store/shipping";
+import { validateStorePersonalization } from "@/lib/store/personalization";
+import { computeBundleTotals } from "@/lib/store/bundles";
+import { computePromoDiscountCents } from "@/lib/promoMath";
 
 const CART_SESSION_COOKIE = "orya_store_cart";
 
@@ -40,13 +43,8 @@ const checkoutSchema = z.object({
   shippingMethodId: z.number().int().positive().optional().nullable(),
   notes: z.string().trim().max(2000).optional().nullable(),
   purchaseId: z.string().trim().max(120).optional(),
+  promoCode: z.string().trim().max(60).optional().nullable(),
 });
-
-type PersonalizationSelection = {
-  optionId: number;
-  valueId?: number | null;
-  value?: string | number | boolean | null;
-};
 
 function parseStoreId(req: NextRequest) {
   const raw = req.nextUrl.searchParams.get("storeId");
@@ -77,69 +75,6 @@ async function resolveCart(storeId: number, userId: string | null, sessionId: st
   return { ok: false as const, error: "Carrinho nao encontrado." };
 }
 
-async function computePersonalizationDelta(params: {
-  productId: number;
-  personalization: unknown;
-}) {
-  const selections = Array.isArray((params.personalization as { selections?: unknown })?.selections)
-    ? ((params.personalization as { selections?: unknown }).selections as PersonalizationSelection[])
-    : [];
-
-  if (selections.length === 0) {
-    return { ok: true as const, deltaCents: 0 };
-  }
-
-  const optionIds = selections.map((selection) => selection.optionId).filter(Boolean);
-  const options = await prisma.storeProductOption.findMany({
-    where: { productId: params.productId, id: { in: optionIds } },
-    select: { id: true, optionType: true, priceDeltaCents: true },
-  });
-  const optionMap = new Map(options.map((option) => [option.id, option]));
-
-  for (const selection of selections) {
-    if (!optionMap.has(selection.optionId)) {
-      return { ok: false as const, error: "Opcao invalida." };
-    }
-  }
-
-  const valueIds = selections
-    .map((selection) => selection.valueId)
-    .filter((valueId): valueId is number => Boolean(valueId));
-  const values = valueIds.length
-    ? await prisma.storeProductOptionValue.findMany({
-        where: { id: { in: valueIds } },
-        select: { id: true, optionId: true, priceDeltaCents: true },
-      })
-    : [];
-  const valueMap = new Map(values.map((value) => [value.id, value]));
-
-  let deltaCents = 0;
-  for (const selection of selections) {
-    const option = optionMap.get(selection.optionId);
-    if (!option) continue;
-    if (option.optionType === "SELECT") {
-      if (!selection.valueId) {
-        return { ok: false as const, error: "Valor invalido." };
-      }
-      const value = valueMap.get(selection.valueId);
-      if (!value || value.optionId !== option.id) {
-        return { ok: false as const, error: "Valor invalido." };
-      }
-      deltaCents += value.priceDeltaCents;
-    } else if (option.optionType === "CHECKBOX") {
-      if (selection.value === true) {
-        deltaCents += option.priceDeltaCents;
-      }
-    } else {
-      if (selection.value !== undefined && selection.value !== null && String(selection.value).trim() !== "") {
-        deltaCents += option.priceDeltaCents;
-      }
-    }
-  }
-
-  return { ok: true as const, deltaCents };
-}
-
 function buildOrderNumber(storeId: number) {
   const stamp = Date.now().toString(36).toUpperCase();
   const rand = crypto.randomBytes(3).toString("hex").toUpperCase();
@@ -163,6 +98,7 @@ export async function POST(req: NextRequest) {
         id: true,
         status: true,
         checkoutEnabled: true,
+        showOnProfile: true,
         catalogLocked: true,
         currency: true,
         ownerOrganizationId: true,
@@ -200,6 +136,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "Carrinho vazio." }, { status: 409 });
     }
 
+    const bundleItems = cart.cart.items.filter((item) => item.bundleKey);
+    const standaloneItems = cart.cart.items.filter((item) => !item.bundleKey);
+
     const productIds = Array.from(new Set(cart.cart.items.map((item) => item.productId)));
     const products = await prisma.storeProduct.findMany({
       where: { id: { in: productIds }, storeId: store.id },
@@ -229,20 +168,72 @@ export async function POST(req: NextRequest) {
       : [];
     const variantMap = new Map(variants.map((variant) => [variant.id, variant]));
 
-    const lines: Array<{
+    const bundleIds = Array.from(
+      new Set(bundleItems.map((item) => item.bundleId).filter((id): id is number => Boolean(id))),
+    );
+    const bundleDefinitions = bundleIds.length
+      ? await prisma.storeBundle.findMany({
+          where: { id: { in: bundleIds }, storeId: store.id },
+          select: {
+            id: true,
+            name: true,
+            status: true,
+            isVisible: true,
+            pricingMode: true,
+            priceCents: true,
+            percentOff: true,
+            items: {
+              select: { productId: true, variantId: true, quantity: true },
+            },
+          },
+        })
+      : [];
+    const bundleMap = new Map(bundleDefinitions.map((bundle) => [bundle.id, bundle]));
+
+    type LineDraft = {
       productId: number;
       variantId: number | null;
       nameSnapshot: string;
       skuSnapshot: string | null;
       quantity: number;
       unitPriceCents: number;
+      discountCents: number;
       totalCents: number;
       requiresShipping: boolean;
       personalization: unknown;
-    }> = [];
+      bundleKey?: string | null;
+    };
 
-    let subtotalCents = 0;
+    type BundleDraft = {
+      bundleKey: string;
+      bundleId: number;
+      nameSnapshot: string;
+      pricingMode: typeof bundleDefinitions[number]["pricingMode"];
+      priceCents: number | null;
+      percentOff: number | null;
+      bundleQuantity: number;
+      totalCents: number;
+      items: Array<{
+        productId: number;
+        variantId: number | null;
+        quantity: number;
+        nameSnapshot: string;
+        skuSnapshot: string | null;
+      }>;
+    };
+
+    const lineDrafts: LineDraft[] = [];
+    const bundleDrafts: BundleDraft[] = [];
+    let baseSubtotalCents = 0;
+    let bundleDiscountCents = 0;
     let requiresShipping = false;
+    const requestedQtyMap = new Map<string, number>();
+    let totalQuantity = 0;
+
+    for (const item of cart.cart.items) {
+      const key = `${item.productId}:${item.variantId ?? "base"}`;
+      requestedQtyMap.set(key, (requestedQtyMap.get(key) ?? 0) + item.quantity);
+    }
 
     for (const item of cart.cart.items) {
       const product = productMap.get(item.productId);
@@ -263,13 +254,172 @@ export async function POST(req: NextRequest) {
       }
 
       if (product.stockPolicy === StoreStockPolicy.TRACKED) {
+        const key = `${item.productId}:${item.variantId ?? "base"}`;
+        const requestedQty = requestedQtyMap.get(key) ?? item.quantity;
         const available = variant ? variant.stockQty ?? 0 : product.stockQty ?? 0;
-        if (item.quantity > available) {
+        if (requestedQty > available) {
           return NextResponse.json({ ok: false, error: "Stock insuficiente." }, { status: 409 });
         }
       }
+    }
 
-      const personalizationDelta = await computePersonalizationDelta({
+    const bundleGroups = bundleItems.reduce((map, item) => {
+      const key = item.bundleKey ?? "unknown";
+      const current = map.get(key) ?? [];
+      current.push(item);
+      map.set(key, current);
+      return map;
+    }, new Map<string, typeof bundleItems>());
+
+    for (const [bundleKey, groupItems] of bundleGroups.entries()) {
+      const bundleId = groupItems[0]?.bundleId;
+      if (!bundleId) {
+        return NextResponse.json({ ok: false, error: "Bundle invalido." }, { status: 400 });
+      }
+      const bundle = bundleMap.get(bundleId);
+      if (!bundle || bundle.status !== "ACTIVE" || !bundle.isVisible) {
+        return NextResponse.json({ ok: false, error: "Bundle indisponivel." }, { status: 409 });
+      }
+
+      const definitionMap = new Map<string, number>();
+      bundle.items.forEach((item) => {
+        const mapKey = `${item.productId}:${item.variantId ?? "base"}`;
+        definitionMap.set(mapKey, item.quantity);
+      });
+
+      const bundleQuantity =
+        bundle.items.length > 0
+          ? Math.min(
+              ...bundle.items.map((item) => {
+                const match = groupItems.find(
+                  (entry) =>
+                    entry.productId === item.productId &&
+                    entry.variantId === (item.variantId ?? null),
+                );
+                if (!match || item.quantity <= 0) return 1;
+                return Math.max(1, Math.floor(match.quantity / item.quantity));
+              }),
+            )
+          : 1;
+
+      for (const item of bundle.items) {
+        const match = groupItems.find(
+          (entry) =>
+            entry.productId === item.productId &&
+            entry.variantId === (item.variantId ?? null),
+        );
+        if (!match || match.quantity % item.quantity !== 0) {
+          return NextResponse.json({ ok: false, error: "Bundle invalido." }, { status: 409 });
+        }
+      }
+
+      const baseCents = groupItems.reduce((sum, item) => sum + item.unitPriceCents * item.quantity, 0);
+      const totals = computeBundleTotals({
+        pricingMode: bundle.pricingMode,
+        priceCents: bundle.priceCents,
+        percentOff: bundle.percentOff,
+        baseCents,
+        bundleQuantity,
+      });
+      if (bundle.items.length < 2 || baseCents <= 0 || totals.totalCents >= baseCents) {
+        return NextResponse.json({ ok: false, error: "Bundle invalido." }, { status: 409 });
+      }
+
+      baseSubtotalCents += baseCents;
+      bundleDiscountCents += totals.discountCents;
+
+      const draftItems: BundleDraft["items"] = [];
+      for (const item of bundle.items) {
+        const product = productMap.get(item.productId);
+        const variant = item.variantId ? variantMap.get(item.variantId) : null;
+        if (!product) {
+          return NextResponse.json({ ok: false, error: "Produto indisponivel." }, { status: 409 });
+        }
+        if (item.variantId && !variant) {
+          return NextResponse.json({ ok: false, error: "Variante invalida." }, { status: 400 });
+        }
+        draftItems.push({
+          productId: item.productId,
+          variantId: item.variantId ?? null,
+          quantity: item.quantity * bundleQuantity,
+          nameSnapshot: variant ? `${product.name} - ${variant.label}` : product.name,
+          skuSnapshot: variant?.sku ?? product.sku ?? null,
+        });
+      }
+
+      bundleDrafts.push({
+        bundleKey,
+        bundleId: bundle.id,
+        nameSnapshot: bundle.name,
+        pricingMode: bundle.pricingMode,
+        priceCents: bundle.priceCents,
+        percentOff: bundle.percentOff,
+        bundleQuantity,
+        totalCents: totals.totalCents,
+        items: draftItems,
+      });
+
+      let remainingDiscount = totals.discountCents;
+      for (let index = 0; index < groupItems.length; index += 1) {
+        const item = groupItems[index];
+        const product = productMap.get(item.productId);
+        if (!product) {
+          return NextResponse.json({ ok: false, error: "Produto indisponivel." }, { status: 409 });
+        }
+        const variant = item.variantId ? variantMap.get(item.variantId) : null;
+        const personalizationDelta = await validateStorePersonalization({
+          productId: product.id,
+          personalization: item.personalization,
+        });
+        if (!personalizationDelta.ok) {
+          throw new Error(personalizationDelta.error);
+        }
+
+        const baseLineTotal = item.unitPriceCents * item.quantity;
+        const discountShare =
+          totals.discountCents > 0
+            ? index === groupItems.length - 1
+              ? remainingDiscount
+              : Math.round((baseLineTotal / baseCents) * totals.discountCents)
+            : 0;
+        remainingDiscount -= discountShare;
+
+        const lineTotal = Math.max(0, baseLineTotal - discountShare);
+        requiresShipping = requiresShipping || product.requiresShipping;
+
+        lineDrafts.push({
+          productId: product.id,
+          variantId: variant?.id ?? null,
+          nameSnapshot: variant ? `${product.name} - ${variant.label}` : product.name,
+          skuSnapshot: variant?.sku ?? product.sku ?? null,
+          quantity: item.quantity,
+          unitPriceCents: item.unitPriceCents,
+          discountCents: discountShare,
+          totalCents: lineTotal,
+          requiresShipping: product.requiresShipping,
+          personalization: personalizationDelta.normalized ?? {},
+          bundleKey,
+        });
+        totalQuantity += item.quantity;
+      }
+    }
+
+    for (const item of standaloneItems) {
+      const product = productMap.get(item.productId);
+      if (!product) {
+        return NextResponse.json({ ok: false, error: "Produto indisponivel." }, { status: 409 });
+      }
+
+      let variant: typeof variants[number] | null = null;
+      if (item.variantId) {
+        const found = variantMap.get(item.variantId);
+        if (!found || found.productId !== product.id || !found.isActive) {
+          return NextResponse.json({ ok: false, error: "Variante invalida." }, { status: 400 });
+        }
+        variant = found;
+      }
+
+      const personalizationDelta = await validateStorePersonalization({
         productId: product.id,
         personalization: item.personalization,
       });
@@ -277,24 +427,117 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: false, error: personalizationDelta.error }, { status: 400 });
       }
 
-      const basePrice = variant?.priceCents ?? product.priceCents;
-      const unitPriceCents = basePrice + personalizationDelta.deltaCents;
+      const unitPriceCents = item.unitPriceCents;
       const totalCents = unitPriceCents * item.quantity;
-      subtotalCents += totalCents;
+      baseSubtotalCents += totalCents;
       requiresShipping = requiresShipping || product.requiresShipping;
 
-      lines.push({
+      lineDrafts.push({
         productId: product.id,
         variantId: variant?.id ?? null,
         nameSnapshot: variant ? `${product.name} - ${variant.label}` : product.name,
         skuSnapshot: variant?.sku ?? product.sku ?? null,
         quantity: item.quantity,
         unitPriceCents,
+        discountCents: 0,
         totalCents,
         requiresShipping: product.requiresShipping,
-        personalization: item.personalization ?? {},
+        personalization: personalizationDelta.normalized ?? {},
       });
+      totalQuantity += item.quantity;
     }
+
+    const subtotalCents = Math.max(0, baseSubtotalCents - bundleDiscountCents);
+    let promoDiscountCents = 0;
+    let promoCodeId: number | null = null;
+    let promoCodeLabel: string | null = null;
+
+    const promoCodeInput = payload.promoCode?.trim();
+    if (promoCodeInput) {
+      const nowDate = new Date();
+      const promoScopes: Prisma.PromoCodeWhereInput[] = [];
+      if (store.ownerOrganizationId) {
+        promoScopes.push({ organizationId: store.ownerOrganizationId });
+      }
+      if (store.ownerUserId) {
+        promoScopes.push({ promoterUserId: store.ownerUserId });
+      }
+      promoScopes.push({ organizationId: null });
+
+      const promo = await prisma.promoCode.findFirst({
+        where: {
+          code: { equals: promoCodeInput, mode: "insensitive" },
+          active: true,
+          eventId: null,
+          ...(promoScopes.length ? { OR: promoScopes } : {}),
+        },
+        select: {
+          id: true,
+          code: true,
+          type: true,
+          value: true,
+          minQuantity: true,
+          minTotalCents: true,
+          maxUses: true,
+          perUserLimit: true,
+          validFrom: true,
+          validUntil: true,
+        },
+      });
+
+      if (!promo) {
+        return NextResponse.json({ ok: false, error: "Codigo promocional invalido." }, { status: 400 });
+      }
+      if (promo.validFrom && promo.validFrom > nowDate) {
+        return NextResponse.json({ ok: false, error: "Codigo promocional ainda nao esta ativo." }, { status: 400 });
+      }
+      if (promo.validUntil && promo.validUntil < nowDate) {
+        return NextResponse.json({ ok: false, error: "Codigo promocional expirado." }, { status: 400 });
+      }
+      if (promo.minQuantity !== null && totalQuantity < promo.minQuantity) {
+        return NextResponse.json({ ok: false, error: "Quantidade insuficiente para aplicar o codigo." }, { status: 400 });
+      }
+      if (promo.minTotalCents !== null && subtotalCents < promo.minTotalCents) {
+        return NextResponse.json({ ok: false, error: "Valor minimo nao atingido para aplicar o codigo." }, { status: 400 });
+      }
+      const totalUses = await prisma.promoRedemption.count({ where: { promoCodeId: promo.id } });
+      if (promo.maxUses !== null && totalUses >= promo.maxUses) {
+        return NextResponse.json({ ok: false, error: "Codigo promocional esgotado." }, { status: 400 });
+      }
+      if (promo.perUserLimit !== null) {
+        if (userId) {
+          const userUses = await prisma.promoRedemption.count({ where: { promoCodeId: promo.id, userId } });
+          if (userUses >= promo.perUserLimit) {
+            return NextResponse.json({ ok: false, error: "Ja usaste este codigo o maximo de vezes." }, { status: 400 });
+          }
+        } else if (payload.customer.email) {
+          const guestUses = await prisma.promoRedemption.count({
+            where: { promoCodeId: promo.id, guestEmail: { equals: payload.customer.email, mode: "insensitive" } },
+          });
+          if (guestUses >= promo.perUserLimit) {
+            return NextResponse.json({ ok: false, error: "Ja usaste este codigo o maximo de vezes." }, { status: 400 });
+          }
+        }
+      }
+
+      promoDiscountCents = computePromoDiscountCents({
+        promo: {
+          type: promo.type,
+          value: promo.value,
+          minQuantity: promo.minQuantity,
+          minTotalCents: promo.minTotalCents,
+        },
+        totalQuantity,
+        amountInCents: subtotalCents,
+      });
+      if (promoDiscountCents <= 0) {
+        return NextResponse.json({ ok: false, error: "Codigo promocional nao aplicavel." }, { status: 400 });
+      }
+      promoCodeId = promo.id;
+      promoCodeLabel = promo.code;
+    }
+
+    const orderDiscountCents = bundleDiscountCents + promoDiscountCents;
 
     if (requiresShipping && !payload.shippingAddress) {
       return NextResponse.json({ ok: false, error: "Morada obrigatoria." }, { status: 400 });
@@ -361,12 +604,12 @@ export async function POST(req: NextRequest) {
       shippingMethodId = quote.quote.methodId;
       shippingZoneId = quote.quote.zoneId;
     }
-    const discountCents = 0;
     const amountCents = subtotalCents + shippingCents;
+    const pricingDiscountCents = promoDiscountCents;
 
     const { feeBps: defaultFeeBps, feeFixedCents: defaultFeeFixed } = await getPlatformFees();
     const stripeBaseFees = await getStripeBaseFees();
-    const pricing = computePricing(amountCents, discountCents, {
+    const pricing = computePricing(amountCents, pricingDiscountCents, {
       platformDefaultFeeMode: "INCLUDED",
       organizationFeeMode: organization?.feeMode ?? undefined,
       organizationPlatformFeeBps: organization?.platformFeeBps ?? undefined,
@@ -377,7 +620,7 @@ export async function POST(req: NextRequest) {
     });
     const combinedFees = computeCombinedFees({
       amountCents,
-      discountCents,
+      discountCents: pricingDiscountCents,
       feeMode: pricing.feeMode,
       platformFeeBps: pricing.feeBpsApplied,
       platformFeeFixedCents: pricing.feeFixedApplied,
@@ -396,7 +639,7 @@ export async function POST(req: NextRequest) {
           orderNumber: buildOrderNumber(store.id),
           status: StoreOrderStatus.PENDING,
           subtotalCents,
-          discountCents,
+          discountCents: orderDiscountCents,
           shippingCents,
           shippingZoneId,
           shippingMethodId,
@@ -407,20 +650,6 @@ export async function POST(req: NextRequest) {
           customerPhone: payload.customer.phone ?? null,
           notes: payload.notes ?? null,
           purchaseId,
-          lines: {
-            create: lines.map((line) => ({
-              productId: line.productId,
-              variantId: line.variantId,
-              nameSnapshot: line.nameSnapshot,
-              skuSnapshot: line.skuSnapshot,
-              quantity: line.quantity,
-              unitPriceCents: line.unitPriceCents,
-              discountCents: 0,
-              totalCents: line.totalCents,
-              requiresShipping: line.requiresShipping,
-              personalization: line.personalization ?? {},
-            })),
-          },
           addresses: {
             create: [
               payload.shippingAddress
@@ -447,6 +676,52 @@ export async function POST(req: NextRequest) {
         select: { id: true, orderNumber: true },
       });
 
+      const bundleKeyToOrderBundleId = new Map<string, number>();
+      for (const bundle of bundleDrafts) {
+        const createdBundle = await tx.storeOrderBundle.create({
+          data: {
+            orderId: created.id,
+            bundleId: bundle.bundleId,
+            nameSnapshot: bundle.nameSnapshot,
+            pricingMode: bundle.pricingMode,
+            priceCents: bundle.priceCents,
+            percentOff: bundle.percentOff,
+            bundleQuantity: bundle.bundleQuantity,
+            totalCents: bundle.totalCents,
+            items: {
+              create: bundle.items.map((item) => ({
+                productId: item.productId,
+                variantId: item.variantId,
+                quantity: item.quantity,
+                nameSnapshot: item.nameSnapshot,
+                skuSnapshot: item.skuSnapshot,
+              })),
+            },
+          },
+          select: { id: true },
+        });
+        bundleKeyToOrderBundleId.set(bundle.bundleKey, createdBundle.id);
+      }
+
+      if (lineDrafts.length) {
+        await tx.storeOrderLine.createMany({
+          data: lineDrafts.map((line) => ({
+            orderId: created.id,
+            productId: line.productId,
+            variantId: line.variantId,
+            orderBundleId: line.bundleKey ? bundleKeyToOrderBundleId.get(line.bundleKey) ?? null : null,
+            nameSnapshot: line.nameSnapshot,
+            skuSnapshot: line.skuSnapshot,
+            quantity: line.quantity,
+            unitPriceCents: line.unitPriceCents,
+            discountCents: line.discountCents,
+            totalCents: line.totalCents,
+            requiresShipping: line.requiresShipping,
+            personalization: line.personalization ?? {},
+          })),
+        });
+      }
+
       await tx.storeCart.update({
         where: { id: cart.cart.id },
         data: { status: "CHECKOUT_LOCKED" },
@@ -462,6 +737,7 @@ export async function POST(req: NextRequest) {
           amount: totalCents,
           currency: store.currency.toLowerCase(),
           payment_method_types: ["card"],
+          receipt_email: payload.customer.email ?? undefined,
           metadata: {
             storeOrderId: String(order.id),
             storeId: String(store.id),
@@ -473,6 +749,9 @@ export async function POST(req: NextRequest) {
             platformFeeCents: String(pricing.platformFeeCents),
             feeMode: pricing.feeMode,
             payoutAmountCents: String(payoutAmountCents),
+            discountCents: String(orderDiscountCents),
+            promoCodeId: promoCodeId ? String(promoCodeId) : "",
+            promoCode: promoCodeLabel ?? "",
             recipientConnectAccountId: organization && !isPlatformOrg ? organization.stripeAccountId ?? "" : "",
             sourceType: "STORE_ORDER",
             sourceId: `store_order_${order.id}`,
@@ -506,6 +785,7 @@ export async function POST(req: NextRequest) {
       paymentIntentId: intent.id,
       clientSecret: intent.client_secret,
       amountCents: totalCents,
+      discountCents: orderDiscountCents,
       currency: store.currency,
       shippingCents,
       shippingZoneId,

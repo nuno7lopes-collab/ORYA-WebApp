@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import useSWR from "swr";
 import { useRouter } from "next/navigation";
 import { useUser } from "@/app/hooks/useUser";
 import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
 import { isValidPhone, sanitizePhone } from "@/lib/phone";
 import { ConfirmDestructiveActionDialog } from "@/app/components/ConfirmDestructiveActionDialog";
-import { CTA_DANGER, CTA_PRIMARY, CTA_SECONDARY } from "@/app/organizacao/dashboardUi";
+import { CTA_DANGER, CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
 import { cn } from "@/lib/utils";
 
 type OrganizationMeResponse = {

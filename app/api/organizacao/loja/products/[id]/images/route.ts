@@ -59,7 +59,7 @@ function resolveProductId(params: { id: string }) {
   return { ok: true as const, productId };
 }
 
-export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     if (!isStoreFeatureEnabled()) {
       return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
@@ -73,7 +73,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       return NextResponse.json({ ok: false, error: context.error }, { status: 403 });
     }
 
-    const resolved = resolveProductId(params);
+    const resolvedParams = await params;
+    const resolved = resolveProductId(resolvedParams);
     if (!resolved.ok) {
       return NextResponse.json({ ok: false, error: resolved.error }, { status: 400 });
     }
@@ -108,7 +109,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   }
 }
 
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     if (!isStoreFeatureEnabled()) {
       return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
@@ -126,7 +127,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       return NextResponse.json({ ok: false, error: "Catalogo bloqueado." }, { status: 403 });
     }
 
-    const resolved = resolveProductId(params);
+    const resolvedParams = await params;
+    const resolved = resolveProductId(resolvedParams);
     if (!resolved.ok) {
       return NextResponse.json({ ok: false, error: resolved.error }, { status: 400 });
     }

@@ -43,6 +43,13 @@ type UpdateEventBody = {
   locationName?: string | null;
   locationCity?: string | null;
   address?: string | null;
+  locationSource?: string | null;
+  locationProviderId?: string | null;
+  locationFormattedAddress?: string | null;
+  locationComponents?: Record<string, unknown> | null;
+  locationOverrides?: Record<string, unknown> | null;
+  latitude?: number | null;
+  longitude?: number | null;
   templateType?: string | null;
   isFree?: boolean;
   inviteOnly?: boolean;
@@ -375,10 +382,48 @@ export async function POST(req: NextRequest) {
     if (body.locationName !== undefined) dataUpdate.locationName = body.locationName ?? "";
     if (body.locationCity !== undefined) {
       const city = body.locationCity ?? "";
-    // Permitimos cidades fora da whitelist
+      // Permitimos cidades fora da whitelist
       dataUpdate.locationCity = city;
     }
     if (body.address !== undefined) dataUpdate.address = body.address ?? null;
+    if (body.locationSource !== undefined) {
+      const sourceRaw = typeof body.locationSource === "string" ? body.locationSource.toUpperCase() : null;
+      dataUpdate.locationSource = sourceRaw === "OSM" ? "OSM" : sourceRaw === "MANUAL" ? "MANUAL" : null;
+    }
+    if (body.locationProviderId !== undefined) {
+      dataUpdate.locationProviderId = body.locationProviderId?.trim() || null;
+    }
+    if (body.locationFormattedAddress !== undefined) {
+      dataUpdate.locationFormattedAddress = body.locationFormattedAddress?.trim() || null;
+    }
+    if (body.locationComponents !== undefined) {
+      dataUpdate.locationComponents =
+        body.locationComponents && typeof body.locationComponents === "object"
+          ? (body.locationComponents as Prisma.InputJsonValue)
+          : null;
+    }
+    if (body.locationOverrides !== undefined) {
+      const rawOverrides =
+        body.locationOverrides && typeof body.locationOverrides === "object"
+          ? (body.locationOverrides as Record<string, unknown>)
+          : null;
+      const overridesHouse =
+        typeof rawOverrides?.houseNumber === "string" ? rawOverrides.houseNumber.trim() || null : null;
+      const overridesPostal =
+        typeof rawOverrides?.postalCode === "string" ? rawOverrides.postalCode.trim() || null : null;
+      dataUpdate.locationOverrides =
+        overridesHouse || overridesPostal
+          ? ({ houseNumber: overridesHouse, postalCode: overridesPostal } as Prisma.InputJsonValue)
+          : null;
+    }
+    if (body.latitude !== undefined) {
+      const lat = typeof body.latitude === "number" || typeof body.latitude === "string" ? Number(body.latitude) : NaN;
+      dataUpdate.latitude = Number.isFinite(lat) ? lat : null;
+    }
+    if (body.longitude !== undefined) {
+      const lng = typeof body.longitude === "number" || typeof body.longitude === "string" ? Number(body.longitude) : NaN;
+      dataUpdate.longitude = Number.isFinite(lng) ? lng : null;
+    }
     if (body.templateType) {
       const tpl = body.templateType.toUpperCase();
       if (tpl === "SPORT") {

@@ -6,6 +6,7 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { ReactNode } from "react";
 import { AdminLayout } from "./components/AdminLayout";
+import AdminDataPurgeTools from "@/app/admin/components/AdminDataPurgeTools";
 
 export const dynamic = "force-dynamic";
 
@@ -335,6 +336,10 @@ export default async function AdminDashboardPage() {
             )}
           </SectionCard>
         </div>
+
+        <SectionCard title="Limpeza de dados">
+          <AdminDataPurgeTools />
+        </SectionCard>
       </section>
     </AdminLayout>
   );

@@ -67,7 +67,7 @@ export default function MobileProfileOverview({
   const [activeList, setActiveList] = useState<"followers" | "following">("followers");
   const [listLoading, setListLoading] = useState(false);
   const [listItems, setListItems] = useState<
-    Array<{ userId: string; username: string | null; fullName: string | null; avatarUrl: string | null }>
+    Array<{ userId: string; username: string | null; fullName: string | null; avatarUrl: string | null; kind?: "user" | "organization" }>
   >([]);
   const followers = followersCount ?? 0;
   const following = followingCount ?? 0;
@@ -85,10 +85,11 @@ export default function MobileProfileOverview({
 
   const fetchList = async (mode: "followers" | "following") => {
     if (!targetUserId) return [];
-    const res = await fetch(`/api/social/${mode}?userId=${targetUserId}&limit=50`);
+    const includeOrganizations = mode === "following" ? "&includeOrganizations=1" : "";
+    const res = await fetch(`/api/social/${mode}?userId=${targetUserId}&limit=50${includeOrganizations}`);
     const json = await res.json().catch(() => null);
     if (!res.ok || !json?.ok || !Array.isArray(json.items)) return [];
-    return json.items as Array<{ userId: string; username: string | null; fullName: string | null; avatarUrl: string | null }>;
+    return json.items as Array<{ userId: string; username: string | null; fullName: string | null; avatarUrl: string | null; kind?: "user" | "organization" }>;
   };
 
   const openList = async (mode: "followers" | "following") => {
@@ -367,30 +368,41 @@ export default function MobileProfileOverview({
                 </p>
               ) : (
                 <div className="max-h-[60vh] space-y-2 overflow-y-auto pr-1">
-                  {listItems.map((item) => (
-                    <Link
-                      key={item.userId}
-                      href={item.username ? `/${item.username}` : "/me"}
-                      className="flex items-center gap-3 rounded-xl border border-white/8 bg-white/5 px-3 py-2 hover:border-white/20 hover:bg-white/8 transition-colors"
-                      onClick={() => setIsFollowListOpen(false)}
-                    >
-                      <Avatar
-                        src={item.avatarUrl}
-                        name={item.fullName || item.username || "Utilizador ORYA"}
-                        className="h-10 w-10 border border-white/12"
-                        textClassName="text-[11px] font-semibold uppercase text-white/80"
-                        fallbackText="OR"
-                      />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-white truncate">
-                          {item.fullName || item.username || "Utilizador ORYA"}
-                        </p>
-                        {item.username && (
-                          <p className="text-[11px] text-white/65 truncate">@{item.username}</p>
+                  {listItems.map((item) => {
+                    const isOrganization = item.kind === "organization";
+                    const displayName =
+                      item.fullName || item.username || (isOrganization ? "Organização ORYA" : "Utilizador ORYA");
+                    const href = item.username ? `/${item.username}` : isOrganization ? "/organizacao" : "/me";
+                    return (
+                      <Link
+                        key={item.userId}
+                        href={href}
+                        className="flex items-center gap-3 rounded-xl border border-white/8 bg-white/5 px-3 py-2 hover:border-white/20 hover:bg-white/8 transition-colors"
+                        onClick={() => setIsFollowListOpen(false)}
+                      >
+                        <Avatar
+                          src={item.avatarUrl}
+                          name={displayName}
+                          className="h-10 w-10 border border-white/12"
+                          textClassName="text-[11px] font-semibold uppercase text-white/80"
+                          fallbackText="OR"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold text-white truncate">
+                            {displayName}
+                          </p>
+                          {item.username && (
+                            <p className="text-[11px] text-white/65 truncate">@{item.username}</p>
+                          )}
+                        </div>
+                        {isOrganization && (
+                          <span className="rounded-full border border-amber-300/35 bg-amber-400/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-amber-100">
+                            Org
+                          </span>
                         )}
-                      </div>
-                    </Link>
-                  ))}
+                      </Link>
+                    );
+                  })}
                 </div>
               )}
             </div>

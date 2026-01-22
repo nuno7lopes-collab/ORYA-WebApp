@@ -1,5 +1,5 @@
-// Middleware para manter a sessão do Supabase fresca em cada request.
-// Não faz redirect nem proteção de rotas — apenas refresh de sessão.
+// Middleware para manter a sessão do Supabase fresca e aplicar regras base de segurança.
+// Inclui redirects canónicos/HTTPS, proteção de admin e headers de cache para rotas sensíveis.
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
@@ -12,10 +12,26 @@ const ADMIN_ALLOWED_IPS = (process.env.ADMIN_ALLOWED_IPS ?? "")
   .split(",")
   .map((ip) => ip.trim())
   .filter(Boolean);
+const CANONICAL_HOST = (process.env.CANONICAL_HOST ?? "orya.pt").trim().toLowerCase();
+const CANONICAL_PROTOCOL = (process.env.CANONICAL_PROTOCOL ?? "https").trim().toLowerCase();
+const FORCE_HTTPS = process.env.FORCE_HTTPS !== "0";
 
-const IS_PROD = process.env.VERCEL_ENV === "production" || process.env.NODE_ENV === "production";
+const IS_PROD = process.env.VERCEL_ENV
+  ? process.env.VERCEL_ENV === "production"
+  : process.env.NODE_ENV === "production";
 const ALLOW_LOCAL_ADMIN = process.env.ALLOW_LOCAL_ADMIN === "1";
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1"]);
+const SENSITIVE_PATH_PREFIXES = [
+  "/admin",
+  "/api/admin",
+  "/me",
+  "/organizacao",
+  "/login",
+  "/signup",
+  "/auth",
+  "/reset-password",
+  "/api/auth",
+];
 
 function getHostname(req: NextRequest) {
   const raw =
@@ -29,6 +45,10 @@ function isAdminHost(hostname: string) {
   if (!hostname) return false;
   if (ADMIN_HOSTS.length > 0) return ADMIN_HOSTS.includes(hostname);
   return hostname.startsWith("admin.");
+}
+
+function isLocalHost(hostname: string) {
+  return LOCAL_HOSTS.has(hostname) || hostname.endsWith(".localhost");
 }
 
 function normalizeIp(raw: string) {
@@ -72,6 +92,28 @@ function getClientIp(req: NextRequest) {
   return normalizeIp(candidate);
 }
 
+function getForwardedProto(req: NextRequest) {
+  const raw = req.headers.get("x-forwarded-proto");
+  if (!raw) return "";
+  return raw.split(",")[0]?.trim().toLowerCase() ?? "";
+}
+
+function isSensitivePath(pathname: string) {
+  if (!pathname) return false;
+  for (const prefix of SENSITIVE_PATH_PREFIXES) {
+    if (pathname === prefix || pathname.startsWith(`${prefix}/`)) return true;
+  }
+  return false;
+}
+
+function buildRedirectUrl(req: NextRequest, protocol: string, host: string) {
+  const url = req.nextUrl.clone();
+  const normalizedProtocol = protocol.endsWith(":") ? protocol : `${protocol}:`;
+  url.protocol = normalizedProtocol;
+  url.host = host;
+  return url;
+}
+
 function isAllowedAdminIp(ip: string, hostname: string) {
   if (ADMIN_ALLOWED_IPS.length === 0) return true;
   if (!ip) {
@@ -96,6 +138,27 @@ export async function middleware(req: NextRequest) {
   const adminHost =
     isAdminHost(hostname) ||
     (ALLOW_LOCAL_ADMIN && (LOCAL_HOSTS.has(hostname) || hostname.endsWith(".localhost")));
+  const localHost = isLocalHost(hostname);
+  const forwardedProto = getForwardedProto(req);
+  const shouldForceHttps =
+    IS_PROD &&
+    !localHost &&
+    FORCE_HTTPS &&
+    forwardedProto === "http" &&
+    hostname;
+  const shouldRedirectCanonical =
+    IS_PROD &&
+    !localHost &&
+    CANONICAL_HOST &&
+    hostname &&
+    hostname !== CANONICAL_HOST &&
+    !adminHost;
+  if (shouldForceHttps || shouldRedirectCanonical) {
+    const redirectHost = shouldRedirectCanonical ? CANONICAL_HOST : hostname;
+    const redirectProtocol = shouldForceHttps ? "https" : CANONICAL_PROTOCOL || "https";
+    const redirectUrl = buildRedirectUrl(req, redirectProtocol, redirectHost);
+    return NextResponse.redirect(redirectUrl, 301);
+  }
 
   const url = req.nextUrl.clone();
   const shouldRewriteRoot = adminHost && url.pathname === "/";
@@ -123,8 +186,10 @@ export async function middleware(req: NextRequest) {
     ? NextResponse.rewrite(url)
     : NextResponse.next({ request: { headers: req.headers } });
 
-  if (isAdminRequest && adminHost) {
+  const sensitivePath = isSensitivePath(pathname);
+  if (sensitivePath) {
     res.headers.set("Cache-Control", "no-store");
+    res.headers.set("Pragma", "no-cache");
     res.headers.set("X-Robots-Tag", "noindex, nofollow");
   }
 
@@ -169,5 +234,5 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/", "/admin/:path*", "/api/admin/:path*", "/me/:path*", "/organizacao/:path*"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml).*)"],
 };

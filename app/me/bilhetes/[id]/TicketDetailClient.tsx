@@ -188,6 +188,7 @@ export default function TicketDetailClient({ entitlementId }: Props) {
     const map: Record<string, string> = {
       PAYMENT_REQUIRED: "Precisas de pagar para concluir este convite.",
       CATEGORY_GENDER_MISMATCH: "Esta dupla não cumpre os requisitos de género da categoria.",
+      CATEGORY_LEVEL_MISMATCH: "Esta dupla não cumpre os requisitos de nível da categoria.",
       GENDER_MISMATCH: "Esta dupla não cumpre os requisitos de género do torneio.",
       PADEL_ONBOARDING_REQUIRED: "Completa o perfil de padel para continuar.",
       PROFILE_INCOMPLETE: "Completa o perfil de padel para continuar.",

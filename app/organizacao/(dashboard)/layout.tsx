@@ -2,8 +2,11 @@ export const runtime = "nodejs";
 
 import type { ReactNode, CSSProperties } from "react";
 import OrganizationDashboardShell from "../OrganizationDashboardShell";
-import { createSupabaseServer } from "@/lib/supabaseServer";
-import { getActiveOrganizationForUser } from "@/lib/organizationContext";
+import { getCurrentUser } from "@/lib/supabaseServer";
+import {
+  getActiveOrganizationForUser,
+  ORG_ACTIVE_ACCESS_OPTIONS,
+} from "@/lib/organizationContext";
 import { prisma } from "@/lib/prisma";
 import { OrganizationLangSetter } from "../OrganizationLangSetter";
 import { OrganizationStatus } from "@prisma/client";
@@ -36,10 +39,7 @@ type OrganizationSwitcherOption = {
  * Busca o organization ativo no server para alimentar o switcher e reduzir fetches client.
  */
 export default async function OrganizationDashboardLayout({ children }: { children: ReactNode }) {
-  const supabase = await createSupabaseServer();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { user } = await getCurrentUser();
 
   let orgOptions: OrganizationSwitcherOption[] = [];
   let activeOrganization: OrganizationSwitcherOption["organization"] | null = null;
@@ -50,19 +50,27 @@ export default async function OrganizationDashboardLayout({ children }: { childr
     | null = null;
 
   if (user) {
-    try {
-      profile = await prisma.profile.findUnique({
-        where: { id: user.id },
-        select: { fullName: true, username: true, avatarUrl: true, updatedAt: true },
-      });
-    } catch {
-      profile = null;
-    }
+    const profilePromise = prisma.profile.findUnique({
+      where: { id: user.id },
+      select: { fullName: true, username: true, avatarUrl: true, updatedAt: true },
+    });
+    const activeOrgPromise = getActiveOrganizationForUser(user.id, ORG_ACTIVE_ACCESS_OPTIONS);
+    const membershipsPromise = prisma.organizationMember.findMany({
+      where: { userId: user.id },
+      include: { organization: true },
+      orderBy: [{ lastUsedAt: "desc" }, { createdAt: "asc" }],
+    });
 
-    try {
-      const { organization, membership } = await getActiveOrganizationForUser(user.id, {
-        allowedStatuses: [OrganizationStatus.ACTIVE, OrganizationStatus.SUSPENDED],
-      });
+    const [profileResult, activeOrgResult, membershipsResult] = await Promise.allSettled([
+      profilePromise,
+      activeOrgPromise,
+      membershipsPromise,
+    ]);
+
+    profile = profileResult.status === "fulfilled" ? profileResult.value : null;
+
+    if (activeOrgResult.status === "fulfilled") {
+      const { organization, membership } = activeOrgResult.value;
       if (organization && membership) {
         activeOrganization = {
           id: organization.id,
@@ -83,7 +91,6 @@ export default async function OrganizationDashboardLayout({ children }: { childr
         };
         activeRole = membership.role ?? null;
       }
-    } catch {
     }
 
     if (activeOrganization) {
@@ -99,14 +106,8 @@ export default async function OrganizationDashboardLayout({ children }: { childr
       }
     }
 
-    try {
-      const memberships = await prisma.organizationMember.findMany({
-        where: { userId: user.id },
-        include: { organization: true },
-        orderBy: [{ lastUsedAt: "desc" }, { createdAt: "asc" }],
-      });
-
-      orgOptions = memberships
+    if (membershipsResult.status === "fulfilled") {
+      orgOptions = membershipsResult.value
         .filter((m) => m.organization)
         .map((m) => ({
           organizationId: m.organizationId,
@@ -129,11 +130,15 @@ export default async function OrganizationDashboardLayout({ children }: { childr
             officialEmailVerifiedAt: (m.organization as { officialEmailVerifiedAt?: Date | null }).officialEmailVerifiedAt ?? null,
           },
         }));
-    } catch (err: unknown) {
+    } else {
       const msg =
-        typeof err === "object" && err && "message" in err ? String((err as { message?: unknown }).message) : "";
+        typeof membershipsResult.reason === "object" &&
+        membershipsResult.reason &&
+        "message" in membershipsResult.reason
+          ? String((membershipsResult.reason as { message?: unknown }).message)
+          : "";
       if (!(msg.includes("does not exist") || msg.includes("organization_members"))) {
-        throw err;
+        throw membershipsResult.reason;
       }
     }
   }

@@ -36,6 +36,9 @@ export async function shouldNotify(userId: string, type: NotificationType) {
     case "EVENT_REMINDER":
     case "NEW_EVENT_FROM_FOLLOWED_ORGANIZATION":
       return prefs.allowEventReminders;
+    case "CRM_CAMPAIGN":
+    case "MARKETING_PROMO_ALERT":
+      return prefs.allowMarketingCampaigns;
     default:
       return true;
   }
@@ -109,6 +112,7 @@ export async function getNotificationPrefs(userId: string) {
     allowFollowRequests: true,
     allowSalesAlerts: true,
     allowSystemAnnouncements: true,
+    allowMarketingCampaigns: true,
   };
 
   return prisma.notificationPreference.upsert({

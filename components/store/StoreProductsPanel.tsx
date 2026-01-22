@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ConfirmDestructiveActionDialog } from "@/app/components/ConfirmDestructiveActionDialog";
+import StoreImageCropperModal from "@/components/store/StoreImageCropperModal";
 import StorePanelModal from "@/components/store/StorePanelModal";
 
 type CategoryOption = {
@@ -37,6 +38,7 @@ type OptionItem = {
   id: number;
   optionType: string;
   label: string;
+  priceDeltaCents: number;
 };
 
 type StoreProductsPanelProps = {
@@ -61,6 +63,7 @@ type ProductFormState = {
   sizeSelections: SizeSelection[];
   personalizationEnabled: boolean;
   personalizationLabel: string;
+  personalizationPrice: string;
 };
 
 type SizeSelection = {
@@ -124,6 +127,7 @@ function createEmptyForm(): ProductFormState {
     sizeSelections: buildSizeSelections(),
     personalizationEnabled: false,
     personalizationLabel: "",
+    personalizationPrice: "",
   };
 }
 
@@ -177,6 +181,7 @@ export default function StoreProductsPanel({
   storeLocked,
   storeEnabled,
 }: StoreProductsPanelProps) {
+  const draftKey = useMemo(() => `orya_store_product_draft_${endpointBase}`, [endpointBase]);
   const [items, setItems] = useState<ProductItem[]>([]);
   const [categories, setCategories] = useState<CategoryOption[]>([]);
   const [loading, setLoading] = useState(false);
@@ -193,8 +198,11 @@ export default function StoreProductsPanel({
   const [newCategoryName, setNewCategoryName] = useState("");
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
+  const [cropFile, setCropFile] = useState<File | null>(null);
+  const [cropOpen, setCropOpen] = useState(false);
   const [digitalFile, setDigitalFile] = useState<File | null>(null);
   const [personalizationOptionId, setPersonalizationOptionId] = useState<number | null>(null);
+  const imageInputRef = useRef<HTMLInputElement | null>(null);
 
   const categoryMap = useMemo(() => {
     const map = new Map<number, string>();
@@ -213,6 +221,26 @@ export default function StoreProductsPanel({
     setImagePreviewUrl(url);
     return () => URL.revokeObjectURL(url);
   }, [imageFile]);
+
+  const closeCropper = () => {
+    setCropOpen(false);
+    setCropFile(null);
+  };
+
+  const handleImageSelect = (file: File | null) => {
+    if (!file || !canEdit) return;
+    if (!file.type.startsWith("image/")) {
+      setModalError("Formato de imagem invalido.");
+      return;
+    }
+    if (file.size > MAX_IMAGE_BYTES) {
+      setModalError("Imagem demasiado grande. Maximo 5MB.");
+      return;
+    }
+    setModalError(null);
+    setCropFile(file);
+    setCropOpen(true);
+  };
 
   const load = async () => {
     setLoading(true);
@@ -273,6 +301,7 @@ export default function StoreProductsPanel({
     sizeSelections: buildSizeSelections(),
     personalizationEnabled: false,
     personalizationLabel: "",
+    personalizationPrice: "",
   });
 
   const resetModalState = () => {
@@ -285,10 +314,44 @@ export default function StoreProductsPanel({
     setPersonalizationOptionId(null);
   };
 
+  const clearDraft = () => {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.removeItem(draftKey);
+    } catch {
+      return;
+    }
+  };
+
+  const loadDraft = () => {
+    if (typeof window === "undefined") return null;
+    try {
+      const raw = window.localStorage.getItem(draftKey);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as {
+        form?: ProductFormState;
+        categoryMode?: "select" | "create";
+        newCategoryName?: string;
+      };
+      return parsed ?? null;
+    } catch {
+      return null;
+    }
+  };
+
   const openCreateModal = () => {
     setModalMode("create");
-    setForm(createEmptyForm());
     resetModalState();
+    const draft = loadDraft();
+    if (draft?.form) {
+      setForm({ ...createEmptyForm(), ...draft.form });
+      setCategoryMode(draft.categoryMode ?? (categories.length === 0 ? "create" : "select"));
+      setNewCategoryName(draft.newCategoryName ?? "");
+    } else {
+      setForm(createEmptyForm());
+      setCategoryMode(categories.length === 0 ? "create" : "select");
+      setNewCategoryName("");
+    }
     setModalOpen(true);
   };
 
@@ -313,6 +376,7 @@ export default function StoreProductsPanel({
         sizeSelections: buildSizeSelections(variants),
         personalizationEnabled: Boolean(textOption),
         personalizationLabel: textOption?.label ?? "",
+        personalizationPrice: textOption ? formatPriceForInput(textOption.priceDeltaCents) : "",
       }));
       setPersonalizationOptionId(textOption?.id ?? null);
     } catch (err) {
@@ -335,6 +399,21 @@ export default function StoreProductsPanel({
     setModalError(null);
     setEditingId(null);
   };
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!modalOpen || modalMode !== "create") return;
+    const payload = {
+      form,
+      categoryMode,
+      newCategoryName,
+    };
+    try {
+      window.localStorage.setItem(draftKey, JSON.stringify(payload));
+    } catch {
+      return;
+    }
+  }, [form, categoryMode, newCategoryName, modalOpen, modalMode, draftKey]);
 
   const handleToggleSize = (label: string) => {
     setForm((prev) => {
@@ -460,6 +539,11 @@ export default function StoreProductsPanel({
     if (form.personalizationEnabled && !form.personalizationLabel.trim()) {
       return "Label de personalizacao obrigatoria.";
     }
+    if (form.personalizationEnabled && form.personalizationPrice.trim()) {
+      if (parsePriceInput(form.personalizationPrice) === null) {
+        return "Preco da personalizacao invalido.";
+      }
+    }
     if (form.stockTracked) {
       const enabledSizes = getEnabledSizes(form.sizeSelections);
       if (enabledSizes.length > 0) {
@@ -584,6 +668,12 @@ export default function StoreProductsPanel({
     if (!label) {
       throw new Error("Label de personalizacao obrigatoria.");
     }
+    const priceDeltaCents = form.personalizationPrice.trim()
+      ? parsePriceInput(form.personalizationPrice)
+      : 0;
+    if (priceDeltaCents === null) {
+      throw new Error("Preco da personalizacao invalido.");
+    }
 
     if (personalizationOptionId) {
       const patchRes = await fetch(`${endpointBase}/${productId}/options/${personalizationOptionId}`, {
@@ -593,6 +683,7 @@ export default function StoreProductsPanel({
           optionType: "TEXT",
           label,
           required: false,
+          priceDeltaCents,
         }),
       });
       await assertOk(patchRes, "Erro ao atualizar personalizacao.");
@@ -606,6 +697,7 @@ export default function StoreProductsPanel({
         optionType: "TEXT",
         label,
         required: false,
+        priceDeltaCents,
         sortOrder: 0,
       }),
     });
@@ -665,6 +757,7 @@ export default function StoreProductsPanel({
       }
 
       closeModal();
+      clearDraft();
     } catch (err) {
       const message = err instanceof Error ? err.message : "Erro inesperado.";
       if (created) {
@@ -792,6 +885,10 @@ export default function StoreProductsPanel({
   const categoryValid = categoryMode === "select" || newCategoryName.trim().length > 0;
   const imageValid = modalMode !== "create" || Boolean(imageFile);
   const personalizationValid = !form.personalizationEnabled || form.personalizationLabel.trim().length > 0;
+  const personalizationPriceValid =
+    !form.personalizationEnabled ||
+    !form.personalizationPrice.trim() ||
+    parsePriceInput(form.personalizationPrice) !== null;
   const enabledSizes = getEnabledSizes(form.sizeSelections);
   const sizeStockValid =
     !form.stockTracked ||
@@ -799,7 +896,15 @@ export default function StoreProductsPanel({
     enabledSizes.every((size) => parseStockInput(size.stockQty) !== null);
   const stockValid =
     !form.stockTracked || (enabledSizes.length > 0 ? sizeStockValid : parseStockInput(form.stockQty) !== null);
-  const canSubmit = nameValid && priceValid && compareValid && categoryValid && imageValid && personalizationValid && stockValid;
+  const canSubmit =
+    nameValid &&
+    priceValid &&
+    compareValid &&
+    categoryValid &&
+    imageValid &&
+    personalizationValid &&
+    personalizationPriceValid &&
+    stockValid;
 
   const modal = (
     <StorePanelModal
@@ -811,6 +916,23 @@ export default function StoreProductsPanel({
       size="lg"
       footer={
         <div className="flex flex-wrap items-center justify-end gap-2">
+          {modalMode === "create" ? (
+            <button
+              type="button"
+              onClick={() => {
+                setForm(createEmptyForm());
+                setCategoryMode(categories.length === 0 ? "create" : "select");
+                setNewCategoryName("");
+                setImageFile(null);
+                setDigitalFile(null);
+                setPersonalizationOptionId(null);
+                clearDraft();
+              }}
+              className="rounded-full border border-white/15 px-4 py-2 text-xs text-white/60 hover:border-white/30"
+            >
+              Apagar tudo
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={closeModal}
@@ -973,22 +1095,14 @@ export default function StoreProductsPanel({
               accept="image/*"
               onChange={(e) => {
                 const file = e.target.files?.[0] ?? null;
-                if (file && !file.type.startsWith("image/")) {
-                  setModalError("Formato de imagem invalido.");
-                  setImageFile(null);
-                  return;
-                }
-                if (file && file.size > MAX_IMAGE_BYTES) {
-                  setModalError("Imagem demasiado grande. Maximo 5MB.");
-                  setImageFile(null);
-                  return;
-                }
-                setImageFile(file);
-                setModalError(null);
+                handleImageSelect(file);
+                if (imageInputRef.current) imageInputRef.current.value = "";
               }}
+              ref={imageInputRef}
               className="rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white file:mr-3 file:rounded-full file:border-0 file:bg-white/20 file:px-3 file:py-1 file:text-xs file:text-white"
             />
             <p className="text-[11px] text-white/50">PNG/JPG/WebP ate 5MB.</p>
+            <p className="text-[11px] text-white/50">A imagem e recortada a 1:1 antes do upload.</p>
             {imagePreviewUrl ? (
               <img src={imagePreviewUrl} alt="Preview" className="h-24 w-24 rounded-xl object-cover" />
             ) : null}
@@ -1010,6 +1124,7 @@ export default function StoreProductsPanel({
             className="min-h-[70px] rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
             placeholder="Frase rapida para descrever o produto."
           />
+          <p className="text-[11px] text-white/45">Aparece na listagem e nos cards da loja.</p>
         </label>
 
         <label className="flex flex-col gap-1 text-xs text-white/70">
@@ -1023,6 +1138,7 @@ export default function StoreProductsPanel({
             className="min-h-[110px] rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
             placeholder="Detalhes completos, materiais, instrucoes, etc."
           />
+          <p className="text-[11px] text-white/45">Aparece na pagina do produto.</p>
         </label>
 
         <div className="flex items-center gap-3 text-[11px] uppercase tracking-[0.22em] text-white/45">
@@ -1083,20 +1199,41 @@ export default function StoreProductsPanel({
               {renderFieldMeta("Opc.", "optional")}
             </div>
             {form.personalizationEnabled ? (
-              <label className="flex flex-col gap-1 text-xs text-white/70">
-                <span className="flex items-center justify-between text-xs font-medium text-white/70">
-                  <span>
-                    Label de personalizacao {requiredMark}
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="flex flex-col gap-1 text-xs text-white/70">
+                  <span className="flex items-center justify-between text-xs font-medium text-white/70">
+                    <span>
+                      Label de personalizacao {requiredMark}
+                    </span>
+                    {renderFieldMeta("Obrig.", "required")}
                   </span>
-                  {renderFieldMeta("Obrig.", "required")}
-                </span>
-                <input
-                  value={form.personalizationLabel}
-                  onChange={(e) => setForm((prev) => ({ ...prev, personalizationLabel: e.target.value }))}
-                  className="rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
-                  placeholder="Ex: Nome a estampar"
-                />
-              </label>
+                  <input
+                    value={form.personalizationLabel}
+                    onChange={(e) => setForm((prev) => ({ ...prev, personalizationLabel: e.target.value }))}
+                    className="rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+                    placeholder="Ex: Nome a estampar"
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-xs text-white/70">
+                  <span className="flex items-center justify-between text-xs font-medium text-white/70">
+                    <span>Preco da personalizacao (EUR)</span>
+                    {renderFieldMeta("Opc.", "optional")}
+                  </span>
+                  <input
+                    value={form.personalizationPrice}
+                    onChange={(e) => setForm((prev) => ({ ...prev, personalizationPrice: e.target.value }))}
+                    onBlur={(e) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        personalizationPrice: normalizePriceInput(e.target.value),
+                      }))
+                    }
+                    inputMode="decimal"
+                    className="rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+                    placeholder="0.00"
+                  />
+                </label>
+              </div>
             ) : null}
           </div>
         </div>
@@ -1393,6 +1530,18 @@ export default function StoreProductsPanel({
       )}
 
       {modal}
+
+      <StoreImageCropperModal
+        open={cropOpen}
+        file={cropFile}
+        title="Recortar imagem"
+        description="Formato 1:1. Ajusta antes de guardar."
+        onClose={closeCropper}
+        onConfirm={(cropped) => {
+          closeCropper();
+          setImageFile(cropped);
+        }}
+      />
 
       <ConfirmDestructiveActionDialog
         open={Boolean(confirmDeleteItem)}

@@ -63,7 +63,7 @@ async function getOrganizationContext(req: NextRequest, userId: string, options?
   return { ok: true as const, store };
 }
 
-export async function GET(req: NextRequest, { params }: { params: { methodId: string } }) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ methodId: string }> }) {
   try {
     if (!isStoreFeatureEnabled()) {
       return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
@@ -77,7 +77,8 @@ export async function GET(req: NextRequest, { params }: { params: { methodId: st
       return NextResponse.json({ ok: false, error: context.error }, { status: 403 });
     }
 
-    const methodId = parseId(params.methodId);
+    const resolvedParams = await params;
+    const methodId = parseId(resolvedParams.methodId);
     if (!methodId.ok) {
       return NextResponse.json({ ok: false, error: methodId.error }, { status: 400 });
     }
@@ -111,7 +112,7 @@ export async function GET(req: NextRequest, { params }: { params: { methodId: st
   }
 }
 
-export async function PATCH(req: NextRequest, { params }: { params: { methodId: string } }) {
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ methodId: string }> }) {
   try {
     if (!isStoreFeatureEnabled()) {
       return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
@@ -125,7 +126,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { methodId: 
       return NextResponse.json({ ok: false, error: context.error }, { status: 403 });
     }
 
-    const methodId = parseId(params.methodId);
+    const resolvedParams = await params;
+    const methodId = parseId(resolvedParams.methodId);
     if (!methodId.ok) {
       return NextResponse.json({ ok: false, error: methodId.error }, { status: 400 });
     }
@@ -229,7 +231,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { methodId: 
   }
 }
 
-export async function DELETE(req: NextRequest, { params }: { params: { methodId: string } }) {
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ methodId: string }> }) {
   try {
     if (!isStoreFeatureEnabled()) {
       return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
@@ -243,7 +245,8 @@ export async function DELETE(req: NextRequest, { params }: { params: { methodId:
       return NextResponse.json({ ok: false, error: context.error }, { status: 403 });
     }
 
-    const methodId = parseId(params.methodId);
+    const resolvedParams = await params;
+    const methodId = parseId(resolvedParams.methodId);
     if (!methodId.ok) {
       return NextResponse.json({ ok: false, error: methodId.error }, { status: 400 });
     }

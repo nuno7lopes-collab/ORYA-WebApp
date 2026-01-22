@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { CrmDeliveryStatus } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
 import { AuthRequiredError, requireUser } from "@/lib/auth/requireUser";
 
@@ -53,6 +54,25 @@ export async function POST(req: NextRequest) {
       where: { id: notificationId },
       data: { isRead: true, readAt: new Date() },
     });
+
+    if (notif.type === "CRM_CAMPAIGN") {
+      const delivery = await prisma.crmCampaignDelivery.findFirst({
+        where: { notificationId: notif.id },
+        select: { id: true, campaignId: true, openedAt: true },
+      });
+      if (delivery && !delivery.openedAt) {
+        await prisma.$transaction(async (tx) => {
+          await tx.crmCampaignDelivery.update({
+            where: { id: delivery.id },
+            data: { openedAt: new Date(), status: CrmDeliveryStatus.OPENED },
+          });
+          await tx.crmCampaign.update({
+            where: { id: delivery.campaignId },
+            data: { openedCount: { increment: 1 } },
+          });
+        });
+      }
+    }
 
     return NextResponse.json({ ok: true, updated: "single" });
   } catch (err) {

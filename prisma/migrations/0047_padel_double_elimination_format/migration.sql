@@ -1,0 +1,1 @@
+ALTER TYPE "app_v3"."padel_format" ADD VALUE IF NOT EXISTS 'DUPLA_ELIMINACAO';

@@ -240,15 +240,15 @@ export default function StoreAdminSubnav({ baseHref, variant = "page", className
                   ▾
                 </span>
               </Link>
-              <div className="pointer-events-none absolute left-0 top-full z-40 min-w-[200px] rounded-2xl border border-white/12 bg-[#060b15]/95 p-2 text-[12px] text-white/85 opacity-0 shadow-[0_18px_60px_rgba(0,0,0,0.55)] backdrop-blur-2xl transition before:absolute before:-top-2 before:left-0 before:right-0 before:h-2 before:content-[''] group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
-                <div className="grid gap-1">
+              <div className="pointer-events-none absolute left-0 top-full z-40 min-w-[200px] rounded-2xl orya-menu-surface p-2 text-[12px] text-white/85 opacity-0 backdrop-blur-2xl transition before:absolute before:-top-2 before:left-0 before:right-0 before:h-2 before:content-[''] group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
+                <div className="orya-menu-list">
                   {section.items?.map((item) => {
                     const itemActive = item.id === activeId;
                     if (item.disabled) {
                       return (
                         <div
                           key={item.id}
-                          className="flex items-center justify-between rounded-xl px-3 py-2 text-white/55"
+                          className="orya-menu-item pointer-events-none text-white/55"
                         >
                           <span>{item.label}</span>
                           {item.badge && (
@@ -264,8 +264,8 @@ export default function StoreAdminSubnav({ baseHref, variant = "page", className
                         key={item.id}
                         href={item.href}
                         className={cn(
-                          "flex items-center justify-between rounded-xl px-3 py-2 transition",
-                          itemActive ? "bg-white/15 text-white" : "hover:bg-white/10 text-white/80",
+                          "orya-menu-item text-[12px]",
+                          itemActive ? "bg-[var(--orya-menu-hover)] text-white" : "text-white/80",
                         )}
                       >
                         <span>{item.label}</span>
@@ -377,38 +377,38 @@ export default function StoreAdminSubnav({ baseHref, variant = "page", className
           >
             <div
               ref={dropdownRef}
-              className="min-w-[200px] rounded-2xl border border-white/12 bg-[#060b15]/95 p-2 text-[12px] text-white/85 shadow-[0_18px_60px_rgba(0,0,0,0.55)] backdrop-blur-2xl animate-popover"
+              className="min-w-[200px] rounded-2xl orya-menu-surface p-2 text-[12px] text-white/85 backdrop-blur-2xl animate-popover"
             >
-              <div className="grid gap-1">
+              <div className="orya-menu-list">
                 {openSection.items.map((item) => {
                   const itemActive = item.id === activeId;
                   if (item.disabled) {
-                    return (
-                      <div
-                        key={item.id}
-                        className="flex items-center justify-between rounded-xl px-3 py-2 text-white/55"
-                      >
-                        <span>{item.label}</span>
-                        {item.badge && (
-                          <span className="rounded-full border border-white/25 px-2 py-0.5 text-[10px] uppercase tracking-[0.2em] text-white/60">
-                            {item.badge}
+                      return (
+                        <div
+                          key={item.id}
+                          className="orya-menu-item pointer-events-none text-white/55"
+                        >
+                          <span>{item.label}</span>
+                          {item.badge && (
+                            <span className="rounded-full border border-white/25 px-2 py-0.5 text-[10px] uppercase tracking-[0.2em] text-white/60">
+                              {item.badge}
                           </span>
                         )}
                       </div>
                     );
                   }
-                  return (
-                    <Link
-                      key={item.id}
-                      href={item.href}
-                      className={cn(
-                        "flex items-center justify-between rounded-xl px-3 py-2 transition",
-                        itemActive ? "bg-white/15 text-white" : "hover:bg-white/10 text-white/80",
-                      )}
-                      onClick={() => setOpenDropdownId(null)}
-                    >
-                      <span>{item.label}</span>
-                      {item.badge && (
+                    return (
+                      <Link
+                        key={item.id}
+                        href={item.href}
+                        className={cn(
+                          "orya-menu-item text-[12px]",
+                          itemActive ? "bg-[var(--orya-menu-hover)] text-white" : "text-white/80",
+                        )}
+                        onClick={() => setOpenDropdownId(null)}
+                      >
+                        <span>{item.label}</span>
+                        {item.badge && (
                         <span className="rounded-full border border-white/25 px-2 py-0.5 text-[10px] uppercase tracking-[0.2em] text-white/70">
                           {item.badge}
                         </span>

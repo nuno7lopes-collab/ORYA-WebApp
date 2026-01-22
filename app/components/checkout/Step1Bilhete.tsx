@@ -392,6 +392,8 @@ export default function Step1Bilhete() {
                 return "Já passou o prazo para pagamento dividido.";
               case "CATEGORY_GENDER_MISMATCH":
                 return "Esta categoria exige uma dupla compatível com o género definido.";
+              case "CATEGORY_LEVEL_MISMATCH":
+                return "O teu nível não é compatível com esta categoria.";
               case "GENDER_REQUIRED_FOR_TOURNAMENT":
                 return "Define o teu género para validar a elegibilidade.";
               default:

@@ -9,8 +9,32 @@ import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
 import { FilterChip } from "@/app/components/mobile/MobileFilters";
 import InterestIcon from "@/app/components/interests/InterestIcon";
 import { INTEREST_MAX_SELECTION, INTEREST_OPTIONS, normalizeInterestSelection, type InterestId } from "@/lib/interests";
+import {
+  getThemeDraftForMode,
+  loadThemeDraft,
+  resolveThemeMode,
+  saveThemeDraft,
+  type ThemeMode,
+} from "@/lib/theme/runtime";
 
 type Visibility = "PUBLIC" | "PRIVATE" | "FOLLOWERS";
+type ConsentTypeKey = "MARKETING" | "CONTACT_EMAIL" | "CONTACT_SMS";
+type ConsentItem = {
+  organization: {
+    id: number;
+    publicName?: string | null;
+    businessName?: string | null;
+    username?: string | null;
+    brandingAvatarUrl?: string | null;
+  };
+  consents: Record<ConsentTypeKey, boolean>;
+};
+
+const CONSENT_LABELS: Record<ConsentTypeKey, string> = {
+  MARKETING: "Marketing e campanhas",
+  CONTACT_EMAIL: "Contacto por email",
+  CONTACT_SMS: "Contacto por SMS",
+};
 function Card({ children }: { children: React.ReactNode }) {
   return (
     <section className="rounded-3xl border border-white/15 bg-white/5 p-5 shadow-[0_24px_60px_rgba(0,0,0,0.65)] backdrop-blur-2xl">
@@ -32,7 +56,13 @@ export default function SettingsPage() {
   const [allowFollowRequests, setAllowFollowRequests] = useState(true);
   const [allowSalesAlerts, setAllowSalesAlerts] = useState(true);
   const [allowSystemAnnouncements, setAllowSystemAnnouncements] = useState(true);
+  const [allowMarketingCampaigns, setAllowMarketingCampaigns] = useState(true);
+  const [themeMode, setThemeMode] = useState<ThemeMode>("dark");
   const [interests, setInterests] = useState<InterestId[]>([]);
+  const [consentItems, setConsentItems] = useState<ConsentItem[]>([]);
+  const [consentLoading, setConsentLoading] = useState(false);
+  const [consentSaving, setConsentSaving] = useState<Record<string, boolean>>({});
+  const [consentError, setConsentError] = useState<string | null>(null);
 
   const [savingSettings, setSavingSettings] = useState(false);
   const [savingInterests, setSavingInterests] = useState(false);
@@ -56,6 +86,9 @@ export default function SettingsPage() {
     if (typeof profile?.allowFollowRequests === "boolean") {
       setAllowFollowRequests(profile.allowFollowRequests);
     }
+    if (typeof profile?.allowMarketingCampaigns === "boolean") {
+      setAllowMarketingCampaigns(profile.allowMarketingCampaigns);
+    }
     if (Array.isArray(profile?.favouriteCategories)) {
       setInterests(normalizeInterestSelection(profile.favouriteCategories));
     }
@@ -63,10 +96,24 @@ export default function SettingsPage() {
     profile?.allowEmailNotifications,
     profile?.allowEventReminders,
     profile?.allowFollowRequests,
+    profile?.allowMarketingCampaigns,
     profile?.favouriteCategories,
     profile?.visibility,
     user?.email,
   ]);
+
+  useEffect(() => {
+    if (!user) return;
+    const stored = loadThemeDraft(user.id);
+    const resolved = resolveThemeMode(stored);
+    if (resolved !== "dark") {
+      const draft = getThemeDraftForMode("dark");
+      saveThemeDraft(draft, user.id);
+      setThemeMode("dark");
+      return;
+    }
+    setThemeMode("dark");
+  }, [user]);
 
   useEffect(() => {
     let cancelled = false;
@@ -80,12 +127,41 @@ export default function SettingsPage() {
           setAllowFollowRequests(Boolean(json.prefs.allowFollowRequests));
           setAllowSalesAlerts(Boolean(json.prefs.allowSalesAlerts));
           setAllowSystemAnnouncements(Boolean(json.prefs.allowSystemAnnouncements));
+          setAllowMarketingCampaigns(Boolean(json.prefs.allowMarketingCampaigns));
         }
       } catch (err) {
         console.warn("[settings] load prefs failed", err);
       }
     }
     if (user) loadPrefs();
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadConsents() {
+      setConsentLoading(true);
+      setConsentError(null);
+      try {
+        const res = await fetch("/api/me/consents");
+        const json = await res.json().catch(() => null);
+        if (!cancelled) {
+          if (!res.ok || !json?.ok) {
+            throw new Error(json?.error || "Erro ao carregar consentimentos.");
+          }
+          setConsentItems((json.items as ConsentItem[]) ?? []);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setConsentError(err instanceof Error ? err.message : "Erro ao carregar consentimentos.");
+        }
+      } finally {
+        if (!cancelled) setConsentLoading(false);
+      }
+    }
+    if (user) loadConsents();
     return () => {
       cancelled = true;
     };
@@ -108,6 +184,7 @@ export default function SettingsPage() {
           allowFollowRequests,
           allowSalesAlerts,
           allowSystemAnnouncements,
+          allowMarketingCampaigns,
         }),
       });
       const json = await res.json();
@@ -122,6 +199,7 @@ export default function SettingsPage() {
           allowFollowRequests,
           allowSalesAlerts,
           allowSystemAnnouncements,
+          allowMarketingCampaigns,
         }),
       });
 
@@ -132,6 +210,37 @@ export default function SettingsPage() {
       setErrorMsg("Não foi possível guardar as definições.");
     } finally {
       setSavingSettings(false);
+    }
+  }
+
+  async function handleConsentToggle(organizationId: number, type: ConsentTypeKey, granted: boolean) {
+    if (!user) return;
+    const key = `${organizationId}:${type}`;
+    setConsentSaving((prev) => ({ ...prev, [key]: true }));
+    setConsentError(null);
+    const previous = consentItems;
+    setConsentItems((prev) =>
+      prev.map((item) =>
+        item.organization.id === organizationId
+          ? { ...item, consents: { ...item.consents, [type]: granted } }
+          : item,
+      ),
+    );
+    try {
+      const res = await fetch("/api/me/consents", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ organizationId, type, granted }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.error || "Erro ao guardar consentimento.");
+      }
+    } catch (err) {
+      setConsentItems(previous);
+      setConsentError(err instanceof Error ? err.message : "Erro ao guardar consentimento.");
+    } finally {
+      setConsentSaving((prev) => ({ ...prev, [key]: false }));
     }
   }
 
@@ -159,6 +268,13 @@ export default function SettingsPage() {
       setSavingInterests(false);
     }
   }
+
+  const handleThemeModeChange = (next: ThemeMode) => {
+    if (!user || themeMode === next || next !== "dark") return;
+    const draft = getThemeDraftForMode(next);
+    saveThemeDraft(draft, user.id);
+    setThemeMode(next);
+  };
 
   async function handleEmailUpdate() {
     if (!email.trim()) {
@@ -283,6 +399,30 @@ export default function SettingsPage() {
           </div>
         )}
 
+        <Card>
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="space-y-1">
+              <h2 className="text-sm font-semibold text-white/90 tracking-[0.08em]">Tema da interface</h2>
+              <p className="text-xs text-white/65">Modo escuro ativo.</p>
+            </div>
+            <div className="flex items-center gap-2 rounded-full border border-white/15 bg-white/5 p-1">
+              <button
+                type="button"
+                onClick={() => handleThemeModeChange("dark")}
+                aria-pressed={themeMode === "dark"}
+                className={`flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold transition ${
+                  themeMode === "dark"
+                    ? "bg-white text-black shadow-[0_12px_30px_rgba(255,255,255,0.3)]"
+                    : "text-white/70 hover:text-white hover:bg-white/10"
+                }`}
+              >
+                <span aria-hidden="true">🌙</span>
+                Escuro
+              </button>
+            </div>
+          </div>
+        </Card>
+
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <Card>
             <div className="space-y-1">
@@ -401,6 +541,7 @@ export default function SettingsPage() {
               { value: allowEmailNotifications, setter: setAllowEmailNotifications, label: "Email de novidades e segurança" },
               { value: allowEventReminders, setter: setAllowEventReminders, label: "Lembretes de eventos" },
               { value: allowFollowRequests, setter: setAllowFollowRequests, label: "Pedidos para seguir e convites" },
+              { value: allowMarketingCampaigns, setter: setAllowMarketingCampaigns, label: "Campanhas in-app das organizações" },
               ...(isOrganizer
                 ? [{ value: allowSalesAlerts, setter: setAllowSalesAlerts, label: "Alertas de vendas e estado Stripe" }]
                 : []),
@@ -428,6 +569,70 @@ export default function SettingsPage() {
           >
             {savingSettings ? "A guardar..." : "Guardar definições"}
           </button>
+        </Card>
+
+        <Card>
+          <div className="space-y-1">
+            <h2 className="text-sm font-semibold text-white/90 tracking-[0.08em]">Consentimentos por organização</h2>
+            <p className="text-xs text-white/65">
+              Controla o que cada organização pode usar para comunicar contigo.
+            </p>
+          </div>
+          {consentError && (
+            <div className="mt-3 rounded-2xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-[12px] text-red-100">
+              {consentError}
+            </div>
+          )}
+          {consentLoading ? (
+            <p className="mt-3 text-sm text-white/70">A carregar consentimentos...</p>
+          ) : consentItems.length === 0 ? (
+            <p className="mt-3 text-sm text-white/70">Sem organizações associadas ainda.</p>
+          ) : (
+            <div className="mt-3 space-y-3">
+              {consentItems.map((item) => {
+                const label =
+                  item.organization.publicName ||
+                  item.organization.businessName ||
+                  item.organization.username ||
+                  "Organização";
+                return (
+                  <div
+                    key={item.organization.id}
+                    className="rounded-2xl border border-white/12 bg-white/5 px-4 py-3"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-[11px] uppercase tracking-[0.2em] text-white/55">Organização</p>
+                        <p className="text-sm font-semibold text-white/90">{label}</p>
+                      </div>
+                    </div>
+                    <div className="mt-3 grid gap-2 text-[13px] text-white/80">
+                      {(Object.keys(CONSENT_LABELS) as ConsentTypeKey[]).map((type) => {
+                        const key = `${item.organization.id}:${type}`;
+                        const isSaving = Boolean(consentSaving[key]);
+                        return (
+                          <label
+                            key={key}
+                            className="inline-flex items-center gap-2 rounded-xl border border-white/12 bg-white/5 px-3 py-2"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={item.consents[type]}
+                              onChange={(e) => handleConsentToggle(item.organization.id, type, e.target.checked)}
+                              disabled={isSaving}
+                              className="h-3 w-3 accent-[#6BFFFF]"
+                            />
+                            <span>{CONSENT_LABELS[type]}</span>
+                            {isSaving && <span className="text-[11px] text-white/45">A guardar...</span>}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </Card>
 
         <Card>

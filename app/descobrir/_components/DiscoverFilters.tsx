@@ -188,7 +188,7 @@ export default function DiscoverFilters({
           {isPriceOpen && (
             <div
               className={cn(
-                "absolute left-1/2 z-40 mt-2 w-[min(320px,calc(100vw-2rem))] -translate-x-1/2 rounded-2xl border border-white/12 bg-[#0b0f18]/95 p-4 shadow-[0_18px_60px_rgba(0,0,0,0.6)] backdrop-blur-xl sm:left-0 sm:w-[280px] sm:translate-x-0",
+                "absolute left-1/2 z-40 mt-2 w-[min(320px,calc(100vw-2rem))] -translate-x-1/2 rounded-2xl orya-menu-surface p-4 backdrop-blur-xl sm:left-0 sm:w-[280px] sm:translate-x-0",
               )}
             >
               <div className="mb-3 flex items-center justify-between text-[11px] text-white/70">

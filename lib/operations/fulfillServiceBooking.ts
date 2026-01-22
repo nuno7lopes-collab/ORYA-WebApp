@@ -5,6 +5,8 @@ import { getStripeBaseFees } from "@/lib/platformSettings";
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { confirmPendingBooking } from "@/lib/reservas/confirmBooking";
 import { refundBookingPayment } from "@/lib/reservas/bookingRefund";
+import { CrmInteractionSource, CrmInteractionType } from "@prisma/client";
+import { ingestCrmInteraction } from "@/lib/crm/ingest";
 
 function parseNumber(value: unknown) {
   const parsed = Number(value);
@@ -69,6 +71,10 @@ export async function fulfillServiceBookingIntent(
   if (stripeFeeCents == null) {
     stripeFeeCents = await estimateStripeFee(amountCents);
   }
+
+  let crmPayload:
+    | { organizationId: number; userId: string; bookingId: number; amountCents: number; currency: string }
+    | null = null;
 
   try {
     await prisma.$transaction(async (tx) => {
@@ -150,6 +156,13 @@ export async function fulfillServiceBookingIntent(
           },
         });
 
+        crmPayload = {
+          organizationId: booking.organizationId,
+          userId: userId ?? booking.userId,
+          bookingId: booking.id,
+          amountCents,
+          currency: (intent.currency ?? "eur").toUpperCase(),
+        };
         return;
       }
 
@@ -278,6 +291,16 @@ export async function fulfillServiceBookingIntent(
       });
     }
 
+    if (!isCancelled && (userId ?? booking.userId)) {
+      crmPayload = {
+        organizationId: booking.organizationId,
+        userId: userId ?? booking.userId,
+        bookingId: booking.id,
+        amountCents,
+        currency: (intent.currency ?? "eur").toUpperCase(),
+      };
+    }
+
     if (confirmedNow && (userId ?? booking.userId)) {
       await tx.userActivity.create({
         data: {
@@ -344,6 +367,24 @@ export async function fulfillServiceBookingIntent(
       return true;
     }
     throw err;
+  }
+
+  if (crmPayload) {
+    try {
+      await ingestCrmInteraction({
+        organizationId: crmPayload.organizationId,
+        userId: crmPayload.userId,
+        type: CrmInteractionType.BOOKING_CONFIRMED,
+        sourceType: CrmInteractionSource.BOOKING,
+        sourceId: String(crmPayload.bookingId),
+        occurredAt: new Date(),
+        amountCents: crmPayload.amountCents,
+        currency: crmPayload.currency,
+        metadata: { bookingId: crmPayload.bookingId },
+      });
+    } catch (err) {
+      console.warn("[fulfillServiceBooking] Falha ao criar interação CRM", err);
+    }
   }
 
   return true;

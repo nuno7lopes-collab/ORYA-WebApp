@@ -144,6 +144,15 @@ export async function POST(req: NextRequest) {
     if (!slug) {
       return NextResponse.json({ ok: false, error: "Slug invalido." }, { status: 400 });
     }
+    if (payload.status === StoreBundleStatus.ACTIVE || payload.isVisible) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "Adiciona pelo menos 2 produtos ao bundle antes de ativar ou mostrar na loja.",
+        },
+        { status: 409 },
+      );
+    }
 
     const existingSlug = await prisma.storeBundle.findFirst({
       where: { storeId: context.store.id, slug },

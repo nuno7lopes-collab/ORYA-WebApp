@@ -1,5 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import {
+  CrmInteractionSource,
+  CrmInteractionType,
   EntitlementStatus,
   EntitlementType,
   PadelPairingLifecycleStatus,
@@ -11,6 +13,7 @@ import {
 import crypto from "crypto";
 import { ensureEntriesForConfirmedPairing } from "@/domain/tournaments/ensureEntriesForConfirmedPairing";
 import { checkoutKey } from "@/lib/stripe/idempotency";
+import { ingestCrmInteraction } from "@/lib/crm/ingest";
 
 type IntentLike = {
   id: string;
@@ -62,6 +65,7 @@ export async function fulfillPadelFullIntent(intent: IntentLike): Promise<boolea
       locationName: true,
       startsAt: true,
       timezone: true,
+      organizationId: true,
     },
   });
   if (!event) return false;
@@ -102,6 +106,7 @@ export async function fulfillPadelFullIntent(intent: IntentLike): Promise<boolea
         totalPaidCents: ticketType.price,
         currency: ticketType.currency || intent.currency.toUpperCase(),
         stripePaymentIntentId: intent.id,
+        purchaseId: purchaseId ?? intent.id,
         status: "ACTIVE",
         qrSecret: qr1,
         rotatingSeed: rot1,
@@ -110,6 +115,7 @@ export async function fulfillPadelFullIntent(intent: IntentLike): Promise<boolea
         ownerIdentityId: ownerIdentityId ?? null,
         pairingId,
         padelSplitShareCents: ticketType.price,
+        emissionIndex: 0,
       },
     });
 
@@ -121,6 +127,7 @@ export async function fulfillPadelFullIntent(intent: IntentLike): Promise<boolea
         totalPaidCents: ticketType.price,
         currency: ticketType.currency || intent.currency.toUpperCase(),
         stripePaymentIntentId: intent.id,
+        purchaseId: purchaseId ?? intent.id,
         status: "ACTIVE",
         qrSecret: qr2,
         rotatingSeed: rot2,
@@ -128,6 +135,7 @@ export async function fulfillPadelFullIntent(intent: IntentLike): Promise<boolea
         padelSplitShareCents: ticketType.price,
         ownerUserId: ownerUserId ?? null,
         ownerIdentityId: ownerIdentityId ?? null,
+        emissionIndex: 1,
       },
     });
 
@@ -219,8 +227,8 @@ export async function fulfillPadelFullIntent(intent: IntentLike): Promise<boolea
           type: EntitlementType.PADEL_ENTRY,
         },
       },
-      update: entitlementBase,
-      create: { ...entitlementBase, lineItemIndex: 0 },
+      update: { ...entitlementBase, ticketId: ticketCaptain.id },
+      create: { ...entitlementBase, lineItemIndex: 0, ticketId: ticketCaptain.id },
     });
 
     await tx.entitlement.upsert({
@@ -233,8 +241,8 @@ export async function fulfillPadelFullIntent(intent: IntentLike): Promise<boolea
           type: EntitlementType.PADEL_ENTRY,
         },
       },
-      update: entitlementBase,
-      create: { ...entitlementBase, lineItemIndex: 1 },
+      update: { ...entitlementBase, ticketId: ticketPartner.id },
+      create: { ...entitlementBase, lineItemIndex: 1, ticketId: ticketPartner.id },
     });
 
     await tx.ticket.updateMany({
@@ -311,6 +319,28 @@ export async function fulfillPadelFullIntent(intent: IntentLike): Promise<boolea
 
   if (shouldEnsureEntries) {
     await ensureEntriesForConfirmedPairing(pairingId);
+  }
+
+  if (event.organizationId && userId) {
+    try {
+      await ingestCrmInteraction({
+        organizationId: event.organizationId,
+        userId,
+        type: CrmInteractionType.PADEL_MATCH_PAYMENT,
+        sourceType: CrmInteractionSource.TICKET,
+        sourceId: purchaseId ?? intent.id,
+        occurredAt: new Date(),
+        amountCents: intent.amount ?? ticketType.price * 2,
+        currency: ticketType.currency || intent.currency.toUpperCase(),
+        metadata: {
+          eventId,
+          pairingId,
+          ticketTypeId,
+        },
+      });
+    } catch (err) {
+      console.warn("[fulfillPadelFull] Falha ao criar interação CRM", err);
+    }
   }
 
   return true;

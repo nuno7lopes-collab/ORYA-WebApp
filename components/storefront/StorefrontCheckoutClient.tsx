@@ -16,6 +16,26 @@ type CartItem = {
   };
 };
 
+type BundleItem = {
+  id: number;
+  quantity: number;
+  perBundleQty: number;
+  unitPriceCents: number;
+  product: {
+    id: number;
+    name: string;
+    requiresShipping: boolean;
+  };
+};
+
+type BundleGroup = {
+  bundleKey: string;
+  name: string;
+  totalCents: number;
+  quantity: number;
+  items: BundleItem[];
+};
+
 type ShippingMethod = {
   id: number;
   zoneId: number;
@@ -33,6 +53,24 @@ type ShippingMethod = {
   methodFreeOverRemainingCents: number | null;
 };
 
+type CheckoutAddress = {
+  fullName: string;
+  line1: string;
+  line2: string | null;
+  city: string;
+  region: string | null;
+  postalCode: string;
+  country: string;
+  nif: string | null;
+};
+
+type CheckoutPrefillResponse = {
+  ok: boolean;
+  customer?: { name: string | null; email: string | null; phone: string | null };
+  shippingAddress?: CheckoutAddress | null;
+  billingAddress?: CheckoutAddress | null;
+};
+
 type CheckoutResponse = {
   ok?: boolean;
   clientSecret?: string;
@@ -41,11 +79,17 @@ type CheckoutResponse = {
   orderNumber?: string | null;
   amountCents?: number;
   currency?: string;
+  discountCents?: number;
   shippingCents?: number;
   shippingZoneId?: number | null;
   shippingMethodId?: number | null;
   error?: string;
 };
+
+const CHECKOUT_COUNTRIES = [
+  { code: "PT", label: "Portugal" },
+  { code: "disabled", label: "Mais paises em breve", disabled: true },
+];
 
 function formatMoney(cents: number, currency: string) {
   return new Intl.NumberFormat("pt-PT", { style: "currency", currency }).format(cents / 100);
@@ -103,12 +147,17 @@ export default function StorefrontCheckoutClient({
   cartHref: string;
 }) {
   const [items, setItems] = useState<CartItem[]>([]);
+  const [bundles, setBundles] = useState<BundleGroup[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [checkout, setCheckout] = useState<CheckoutResponse | null>(null);
   const [paymentSuccess, setPaymentSuccess] = useState(false);
   const [shippingMethods, setShippingMethods] = useState<ShippingMethod[]>([]);
   const [shippingLoading, setShippingLoading] = useState(false);
+  const [prefillLoaded, setPrefillLoaded] = useState(false);
+  const [promoInput, setPromoInput] = useState("");
+  const [promoCode, setPromoCode] = useState<string | null>(null);
+  const [promoError, setPromoError] = useState<string | null>(null);
 
   const [customer, setCustomer] = useState({ name: "", email: "", phone: "" });
   const [shipping, setShipping] = useState({
@@ -118,7 +167,7 @@ export default function StorefrontCheckoutClient({
     city: "",
     region: "",
     postalCode: "",
-    country: "",
+    country: "PT",
     nif: "",
   });
   const [billingSame, setBillingSame] = useState(true);
@@ -129,7 +178,7 @@ export default function StorefrontCheckoutClient({
     city: "",
     region: "",
     postalCode: "",
-    country: "",
+    country: "PT",
     nif: "",
   });
   const [notes, setNotes] = useState("");
@@ -141,13 +190,17 @@ export default function StorefrontCheckoutClient({
   }, []);
 
   const requiresShipping = useMemo(
-    () => items.some((item) => item.product.requiresShipping),
-    [items],
+    () =>
+      items.some((item) => item.product.requiresShipping) ||
+      bundles.some((bundle) => bundle.items.some((item) => item.product.requiresShipping)),
+    [items, bundles],
   );
 
   const subtotalCents = useMemo(
-    () => items.reduce((sum, item) => sum + item.unitPriceCents * item.quantity, 0),
-    [items],
+    () =>
+      items.reduce((sum, item) => sum + item.unitPriceCents * item.quantity, 0) +
+      bundles.reduce((sum, bundle) => sum + bundle.totalCents, 0),
+    [items, bundles],
   );
 
   const selectedMethod = useMemo(
@@ -157,6 +210,14 @@ export default function StorefrontCheckoutClient({
 
   const shippingCents = selectedMethod?.shippingCents ?? 0;
   const totalCents = subtotalCents + shippingCents;
+  const checkoutCurrency = checkout?.currency ?? currency;
+  const checkoutShippingCents = checkout?.shippingCents ?? shippingCents;
+  const checkoutDiscountCents = checkout?.discountCents ?? 0;
+  const checkoutTotalCents = checkout?.amountCents ?? totalCents;
+  const checkoutFeeCents =
+    checkout?.amountCents != null
+      ? Math.max(0, checkoutTotalCents - (subtotalCents + checkoutShippingCents - checkoutDiscountCents))
+      : 0;
 
   const freeShippingRemaining = useMemo(() => {
     if (!selectedMethod) return null;
@@ -183,11 +244,39 @@ export default function StorefrontCheckoutClient({
         throw new Error(json?.error || "Erro ao carregar carrinho.");
       }
       setItems(Array.isArray(json.cart?.items) ? json.cart.items : []);
+      setBundles(Array.isArray(json.cart?.bundles) ? json.cart.bundles : []);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro inesperado.");
     } finally {
       setLoading(false);
     }
+  };
+
+  const applyPrefill = (current: string, next?: string | null) => {
+    if (current.trim()) return current;
+    return next?.trim() ? next : "";
+  };
+
+  const resolveCountry = (value: string) => {
+    const normalized = value.trim().toUpperCase();
+    const allowed = CHECKOUT_COUNTRIES.find(
+      (country) => !country.disabled && country.code === normalized,
+    );
+    return allowed ? normalized : "PT";
+  };
+
+  const applyAddressPrefill = (current: typeof shipping, next?: CheckoutAddress | null, fallbackName?: string | null) => {
+    if (!next) return current;
+    return {
+      fullName: applyPrefill(current.fullName, next.fullName || fallbackName || null),
+      line1: applyPrefill(current.line1, next.line1),
+      line2: applyPrefill(current.line2, next.line2),
+      city: applyPrefill(current.city, next.city),
+      region: applyPrefill(current.region, next.region),
+      postalCode: applyPrefill(current.postalCode, next.postalCode),
+      country: resolveCountry(applyPrefill(current.country, next.country ? next.country.toUpperCase() : null)),
+      nif: applyPrefill(current.nif, next.nif),
+    };
   };
 
   const loadShippingMethods = async (country: string) => {
@@ -223,13 +312,40 @@ export default function StorefrontCheckoutClient({
   }, [storeId]);
 
   useEffect(() => {
+    if (prefillLoaded) return;
+    const loadPrefill = async () => {
+      try {
+        const res = await fetch(`/api/store/checkout/prefill?storeId=${storeId}`, { cache: "no-store" });
+        const json = (await res.json().catch(() => null)) as CheckoutPrefillResponse | null;
+        if (!res.ok || !json?.ok) {
+          setPrefillLoaded(true);
+          return;
+        }
+        const customerData = json.customer ?? {};
+        setCustomer((prev) => ({
+          name: applyPrefill(prev.name, customerData.name),
+          email: applyPrefill(prev.email, customerData.email),
+          phone: applyPrefill(prev.phone, customerData.phone),
+        }));
+        setShipping((prev) => applyAddressPrefill(prev, json.shippingAddress, customerData.name));
+        setBilling((prev) => applyAddressPrefill(prev, json.billingAddress, customerData.name));
+      } catch {
+        return;
+      } finally {
+        setPrefillLoaded(true);
+      }
+    };
+    void loadPrefill();
+  }, [storeId, prefillLoaded]);
+
+  useEffect(() => {
     if (!requiresShipping) return;
     if (!shipping.country.trim()) return;
     void loadShippingMethods(shipping.country.trim());
   }, [shipping.country, requiresShipping, subtotalCents]);
 
   const handleStartCheckout = async () => {
-    if (!items.length) {
+    if (!items.length && !bundles.length) {
       setError("Carrinho vazio.");
       return;
     }
@@ -264,6 +380,7 @@ export default function StorefrontCheckoutClient({
 
     setLoading(true);
     setError(null);
+    setPromoError(null);
     try {
       const res = await fetch(`/api/store/checkout?storeId=${storeId}`, {
         method: "POST",
@@ -301,10 +418,14 @@ export default function StorefrontCheckoutClient({
                 },
           shippingMethodId: requiresShipping ? selectedShippingMethodId : null,
           notes: notes || null,
+          promoCode: promoCode?.trim() || null,
         }),
       });
       const json = (await res.json().catch(() => null)) as CheckoutResponse | null;
       if (!res.ok || !json?.ok || !json.clientSecret) {
+        if (promoCode && json?.error) {
+          setPromoError(json.error);
+        }
         throw new Error(json?.error || "Erro ao iniciar checkout.");
       }
       setCheckout(json);
@@ -401,12 +522,17 @@ export default function StorefrontCheckoutClient({
                   className="rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
                   placeholder="Codigo postal"
                 />
-                <input
+                <select
                   value={shipping.country}
-                  onChange={(e) => setShipping((prev) => ({ ...prev, country: e.target.value.toUpperCase() }))}
+                  onChange={(e) => setShipping((prev) => ({ ...prev, country: e.target.value }))}
                   className="rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
-                  placeholder="Pais (ISO)"
-                />
+                >
+                  {CHECKOUT_COUNTRIES.map((country) => (
+                    <option key={country.code} value={country.code} disabled={country.disabled}>
+                      {country.label}
+                    </option>
+                  ))}
+                </select>
                 <input
                   value={shipping.nif}
                   onChange={(e) => setShipping((prev) => ({ ...prev, nif: e.target.value }))}
@@ -466,12 +592,17 @@ export default function StorefrontCheckoutClient({
                     className="rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
                     placeholder="Codigo postal"
                   />
-                  <input
+                  <select
                     value={billing.country}
-                    onChange={(e) => setBilling((prev) => ({ ...prev, country: e.target.value.toUpperCase() }))}
+                    onChange={(e) => setBilling((prev) => ({ ...prev, country: e.target.value }))}
                     className="rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
-                    placeholder="Pais (ISO)"
-                  />
+                  >
+                    {CHECKOUT_COUNTRIES.map((country) => (
+                      <option key={country.code} value={country.code} disabled={country.disabled}>
+                        {country.label}
+                      </option>
+                    ))}
+                  </select>
                   <input
                     value={billing.nif}
                     onChange={(e) => setBilling((prev) => ({ ...prev, nif: e.target.value }))}
@@ -489,7 +620,9 @@ export default function StorefrontCheckoutClient({
               {shippingLoading ? (
                 <p className="text-xs text-white/60">A carregar metodos...</p>
               ) : shippingMethods.length === 0 ? (
-                <p className="text-xs text-white/60">Seleciona o pais para ver metodos.</p>
+                <p className="text-xs text-white/60">
+                  {shipping.country.trim() ? "Sem metodos para o pais selecionado." : "Seleciona o pais para ver metodos."}
+                </p>
               ) : (
                 <div className="space-y-2">
                   {shippingMethods.map((method) => (
@@ -559,6 +692,14 @@ export default function StorefrontCheckoutClient({
           <div className="rounded-2xl border border-white/10 bg-black/30 px-4 py-4 space-y-3">
             <p className="text-xs uppercase tracking-[0.3em] text-white/50">Resumo</p>
             <div className="space-y-2">
+              {bundles.map((bundle) => (
+                <div key={bundle.bundleKey} className="flex items-center justify-between text-xs text-white/60">
+                  <span>
+                    {bundle.name} × {bundle.quantity}
+                  </span>
+                  <span>{formatMoney(bundle.totalCents, currency)}</span>
+                </div>
+              ))}
               {items.map((item) => (
                 <div key={item.id} className="flex items-center justify-between text-xs text-white/60">
                   <span>
@@ -572,6 +713,12 @@ export default function StorefrontCheckoutClient({
               <span>Subtotal</span>
               <span className="text-white">{formatMoney(subtotalCents, currency)}</span>
             </div>
+            {promoCode ? (
+              <div className="flex items-center justify-between text-xs text-white/60">
+                <span>Codigo aplicado</span>
+                <span className="text-white/70">{promoCode}</span>
+              </div>
+            ) : null}
             <div className="flex items-center justify-between text-sm text-white/70">
               <span>Portes</span>
               <span className="text-white">{formatMoney(shippingCents, currency)}</span>
@@ -579,6 +726,51 @@ export default function StorefrontCheckoutClient({
             <div className="flex items-center justify-between text-base text-white">
               <span>Total</span>
               <span className="font-semibold">{formatMoney(totalCents, currency)}</span>
+            </div>
+            {promoError ? (
+              <div className="rounded-xl border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-xs text-rose-100">
+                {promoError}
+              </div>
+            ) : null}
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                value={promoInput}
+                onChange={(e) => {
+                  setPromoInput(e.target.value);
+                  if (promoError) setPromoError(null);
+                }}
+                className="flex-1 rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
+                placeholder="Codigo promocional"
+              />
+              {promoCode ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPromoCode(null);
+                    setPromoInput("");
+                    setPromoError(null);
+                  }}
+                  className="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-xs text-white/70 hover:border-white/40"
+                >
+                  Remover
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const normalized = promoInput.trim().toUpperCase();
+                    if (!normalized) {
+                      setPromoError("Insere um codigo.");
+                      return;
+                    }
+                    setPromoCode(normalized);
+                    setPromoError(null);
+                  }}
+                  className="rounded-full border border-white/20 bg-white/90 px-4 py-2 text-xs font-semibold text-black shadow-[0_8px_20px_rgba(255,255,255,0.18)]"
+                >
+                  Aplicar
+                </button>
+              )}
             </div>
             <textarea
               value={notes}
@@ -607,14 +799,61 @@ export default function StorefrontCheckoutClient({
       ) : null}
 
       {checkout && stripePromise && !paymentSuccess ? (
-        <Elements stripe={stripePromise} options={{ clientSecret: checkout.clientSecret, appearance }}>
-          <div className="rounded-2xl border border-white/10 bg-black/30 px-4 py-5">
-            <p className="text-xs uppercase tracking-[0.3em] text-white/50">Pagamento</p>
-            <div className="mt-4">
-              <PaymentForm onSuccess={() => setPaymentSuccess(true)} />
+        <div className="space-y-4">
+          <div className="rounded-2xl border border-white/10 bg-black/30 px-4 py-4 space-y-3">
+            <p className="text-xs uppercase tracking-[0.3em] text-white/50">Resumo final</p>
+            <div className="space-y-2">
+              {bundles.map((bundle) => (
+                <div key={bundle.bundleKey} className="flex items-center justify-between text-xs text-white/60">
+                  <span>
+                    {bundle.name} × {bundle.quantity}
+                  </span>
+                  <span>{formatMoney(bundle.totalCents, checkoutCurrency)}</span>
+                </div>
+              ))}
+              {items.map((item) => (
+                <div key={item.id} className="flex items-center justify-between text-xs text-white/60">
+                  <span>
+                    {item.product.name} × {item.quantity}
+                  </span>
+                  <span>{formatMoney(item.unitPriceCents * item.quantity, checkoutCurrency)}</span>
+                </div>
+              ))}
+            </div>
+            <div className="flex items-center justify-between text-sm text-white/70">
+              <span>Subtotal</span>
+              <span className="text-white">{formatMoney(subtotalCents, checkoutCurrency)}</span>
+            </div>
+            {checkoutDiscountCents > 0 ? (
+              <div className="flex items-center justify-between text-sm text-white/70">
+                <span>Desconto</span>
+                <span className="text-emerald-200">-{formatMoney(checkoutDiscountCents, checkoutCurrency)}</span>
+              </div>
+            ) : null}
+            <div className="flex items-center justify-between text-sm text-white/70">
+              <span>Portes</span>
+              <span className="text-white">{formatMoney(checkoutShippingCents, checkoutCurrency)}</span>
+            </div>
+            {checkoutFeeCents > 0 ? (
+              <div className="flex items-center justify-between text-sm text-white/70">
+                <span>Taxa de servico</span>
+                <span className="text-white">{formatMoney(checkoutFeeCents, checkoutCurrency)}</span>
+              </div>
+            ) : null}
+            <div className="flex items-center justify-between text-base text-white">
+              <span>Total a pagar</span>
+              <span className="font-semibold">{formatMoney(checkoutTotalCents, checkoutCurrency)}</span>
             </div>
           </div>
-        </Elements>
+          <Elements stripe={stripePromise} options={{ clientSecret: checkout.clientSecret, appearance }}>
+            <div className="rounded-2xl border border-white/10 bg-black/30 px-4 py-5">
+              <p className="text-xs uppercase tracking-[0.3em] text-white/50">Pagamento</p>
+              <div className="mt-4">
+                <PaymentForm onSuccess={() => setPaymentSuccess(true)} />
+              </div>
+            </div>
+          </Elements>
+        </div>
       ) : null}
 
       {paymentSuccess ? (
@@ -623,12 +862,29 @@ export default function StorefrontCheckoutClient({
             Pagamento confirmado{checkout?.orderNumber ? ` (${checkout.orderNumber})` : ""}. Vais receber a confirmacao por email.
           </p>
           <p className="mt-2 text-xs text-emerald-100/80">
-            Se compraste um produto digital, podes descarregar em{" "}
-            <Link href={`${storeBaseHref}/descargas`} className="underline">
-              {storeBaseHref}/descargas
+            Podes acompanhar a encomenda e descarregar produtos digitais em{" "}
+            <Link href="/me/compras/loja" className="underline">
+              /me/compras/loja
             </Link>
             .
           </p>
+          <p className="mt-2 text-xs text-emerald-100/80">
+            Compraste sem conta? Segue o pedido em{" "}
+            <Link href="/loja/seguimento" className="underline">
+              /loja/seguimento
+            </Link>
+            .
+          </p>
+          {checkout?.orderId ? (
+            <div className="mt-3">
+              <Link
+                href={`/me/compras/loja/${checkout.orderId}`}
+                className="inline-flex items-center justify-center rounded-full border border-emerald-200/40 bg-emerald-200/10 px-4 py-2 text-xs text-emerald-50"
+              >
+                Ver pedido
+              </Link>
+            </div>
+          ) : null}
         </div>
       ) : null}
 

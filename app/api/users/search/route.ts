@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
+import { getUserFollowingSet, getUserFollowRequestSet } from "@/domain/social/follows";
 
 export const runtime = "nodejs";
 
@@ -45,21 +46,15 @@ export async function GET(req: NextRequest) {
       take: limit,
     });
 
-    const followingSet = new Set<string>();
-    const requestSet = new Set<string>();
+    let followingSet = new Set<string>();
+    let requestSet = new Set<string>();
 
     if (user && results.length > 0) {
-      const followingRows = await prisma.follows.findMany({
-        where: { follower_id: user.id, following_id: { in: results.map((r) => r.id) } },
-        select: { following_id: true },
-      });
-      followingRows.forEach((row) => followingSet.add(row.following_id));
-
-      const requestRows = await prisma.follow_requests.findMany({
-        where: { requester_id: user.id, target_id: { in: results.map((r) => r.id) } },
-        select: { target_id: true },
-      });
-      requestRows.forEach((row) => requestSet.add(row.target_id));
+      const ids = results.map((r) => r.id);
+      [followingSet, requestSet] = await Promise.all([
+        getUserFollowingSet(user.id, ids),
+        getUserFollowRequestSet(user.id, ids),
+      ]);
     }
 
     const mapped = results.map((r) => ({

@@ -15,7 +15,10 @@ import {
 import { RoleBadge } from "@/app/organizacao/RoleBadge";
 import { NotificationBell } from "@/app/components/notifications/NotificationBell";
 import ObjectiveSubnav from "@/app/organizacao/ObjectiveSubnav";
+import CrmSubnav from "@/app/organizacao/(dashboard)/crm/CrmSubnav";
 import { type ObjectiveTab } from "@/app/organizacao/objectiveNav";
+import { hasModuleAccess, resolveModuleAccess } from "@/lib/organizationRbac";
+import { OrganizationMemberRole, OrganizationModule } from "@prisma/client";
 import StoreAdminSubnav from "@/components/store/StoreAdminSubnav";
 import { ORG_SHELL_GUTTER } from "@/app/organizacao/layoutTokens";
 import { ModuleIcon } from "@/app/organizacao/moduleIcons";
@@ -64,6 +67,12 @@ type OrganizationMeResponse = {
     officialEmail?: string | null;
     officialEmailVerifiedAt?: string | null;
   } | null;
+  modulePermissions?: Array<{
+    moduleKey: OrganizationModule;
+    accessLevel: string;
+    scopeType?: string | null;
+    scopeId?: string | null;
+  }>;
   paymentsStatus?: "NO_STRIPE" | "PENDING" | "READY";
   paymentsMode?: "CONNECT" | "PLATFORM";
 };
@@ -71,17 +80,19 @@ type OrganizationMeResponse = {
 const OPERATION_LABELS: Record<OperationModule, string> = {
   EVENTOS: "Eventos",
   RESERVAS: "Reservas",
-  TORNEIOS: "Padel",
+  TORNEIOS: "Padel e torneios",
 };
 
 const MODULE_ICON_GRADIENTS: Record<string, string> = {
   EVENTOS: "from-[#FF7AD1]/45 via-[#7FE0FF]/35 to-[#6A7BFF]/45",
   RESERVAS: "from-[#6BFFFF]/40 via-[#6A7BFF]/30 to-[#0EA5E9]/40",
   TORNEIOS: "from-[#F59E0B]/35 via-[#FF7AD1]/35 to-[#6A7BFF]/35",
+  CHECKIN: "from-[#22D3EE]/35 via-[#60A5FA]/30 to-[#A78BFA]/35",
   INSCRICOES: "from-[#34D399]/35 via-[#6BFFFF]/30 to-[#7FE0FF]/35",
   MENSAGENS: "from-[#A78BFA]/35 via-[#7FE0FF]/30 to-[#34D399]/35",
   STAFF: "from-[#60A5FA]/35 via-[#7FE0FF]/30 to-[#F59E0B]/35",
   FINANCEIRO: "from-[#F97316]/35 via-[#F59E0B]/30 to-[#FF7AD1]/35",
+  CRM: "from-[#F97316]/35 via-[#38BDF8]/30 to-[#22D3EE]/35",
   MARKETING: "from-[#FF7AD1]/35 via-[#FB7185]/30 to-[#F59E0B]/35",
   LOJA: "from-[#F97316]/35 via-[#FB7185]/30 to-[#F59E0B]/35",
   PERFIL_PUBLICO: "from-[#22D3EE]/35 via-[#60A5FA]/30 to-[#A78BFA]/35",
@@ -133,10 +144,10 @@ export default function OrganizationTopBar({
       if (tabParam === "manage") {
         if (sectionParam === "inscricoes") return setApp("Formulários", "INSCRICOES");
         if (sectionParam === "reservas") return setApp("Reservas", "RESERVAS");
-        if (sectionParam === "padel-hub") return setApp("Padel", "TORNEIOS");
+        if (sectionParam === "padel-hub") return setApp("Padel e torneios", "TORNEIOS");
         return setApp(OPERATION_LABELS[moduleState.primary], moduleState.primary);
       }
-      if (tabParam === "promote") return setApp("Marketing", "MARKETING");
+      if (tabParam === "promote") return setApp("Promoções", "MARKETING");
       if (tabParam === "analyze") return setApp("Finanças", "FINANCEIRO");
       if (tabParam === "profile") return setApp("Perfil público", "PERFIL_PUBLICO");
       return setApp("Dashboard", null);
@@ -147,11 +158,15 @@ export default function OrganizationTopBar({
       pathname?.startsWith("/organizacao/padel") ||
       pathname?.startsWith("/organizacao/tournaments")
     ) {
-      return setApp("Padel", "TORNEIOS");
+      return setApp("Padel e torneios", "TORNEIOS");
     }
     if (pathname?.startsWith("/organizacao/reservas")) return setApp("Reservas", "RESERVAS");
     if (pathname?.startsWith("/organizacao/inscricoes")) return setApp("Formulários", "INSCRICOES");
-    if (pathname?.startsWith("/organizacao/mensagens")) return setApp("Mensagens", "MENSAGENS");
+    if (pathname?.startsWith("/organizacao/chat") || pathname?.startsWith("/organizacao/mensagens")) {
+      return setApp("Chat interno", "MENSAGENS");
+    }
+    if (pathname?.startsWith("/organizacao/scan")) return setApp("Check-in", "CHECKIN");
+    if (pathname?.startsWith("/organizacao/crm")) return setApp("CRM", "CRM");
     if (pathname?.startsWith("/organizacao/loja")) return setApp("Loja", "LOJA");
     if (pathname?.startsWith("/organizacao/staff") || pathname?.startsWith("/organizacao/treinadores")) {
       return setApp("Equipa", "STAFF");
@@ -185,7 +200,9 @@ export default function OrganizationTopBar({
       pathname?.startsWith("/organizacao/torneios") ||
       pathname?.startsWith("/organizacao/reservas") ||
       pathname?.startsWith("/organizacao/padel") ||
-      pathname?.startsWith("/organizacao/tournaments")
+      pathname?.startsWith("/organizacao/tournaments") ||
+      pathname?.startsWith("/organizacao/scan") ||
+      pathname?.startsWith("/organizacao/crm")
     ) {
       return "manage";
     }
@@ -205,6 +222,12 @@ export default function OrganizationTopBar({
     const eventIdParam = searchParams?.get("eventId");
     const hasEventId = eventIdParam ? Number.isFinite(Number(eventIdParam)) : false;
     const padelFallback = hasEventId ? "calendar" : "clubs";
+    if (pathname?.startsWith("/organizacao/crm")) {
+      if (pathname?.startsWith("/organizacao/crm/segmentos")) return "crm-segmentos";
+      if (pathname?.startsWith("/organizacao/crm/campanhas")) return "crm-campanhas";
+      if (pathname?.startsWith("/organizacao/crm/loyalty")) return "crm-loyalty";
+      return "crm-clientes";
+    }
     if (sectionParam && sectionParam !== "padel-hub") return sectionParam;
     if (!activeObjective) return null;
     if (activeObjective === "manage") {
@@ -225,6 +248,7 @@ export default function OrganizationTopBar({
         if (formTab === "definicoes") return "definicoes";
         return "inscricoes";
       }
+      if (pathname?.startsWith("/organizacao/scan")) return "checkin";
       if (pathname?.startsWith("/organizacao/padel")) return padelParam ?? padelFallback;
       if (pathname?.startsWith("/organizacao/eventos/novo")) return "create";
       if (pathname?.startsWith("/organizacao/torneios/novo")) return "torneios-criar";
@@ -241,6 +265,7 @@ export default function OrganizationTopBar({
   }, [activeObjective, moduleState.primary, pathname, searchParams]);
   const isDashboardOverview = pathname === "/organizacao" && (!searchParams?.get("tab") || searchParams?.get("tab") === "overview");
   const isStoreRoute = pathname?.startsWith("/organizacao/loja");
+  const isCrmRoute = pathname?.startsWith("/organizacao/crm");
 
   const objectiveModules = useMemo(() => {
     const rawModules = Array.isArray(activeOrg?.modules) ? activeOrg?.modules : [];
@@ -254,11 +279,61 @@ export default function OrganizationTopBar({
     ? MODULE_ICON_GRADIENTS[currentApp.moduleKey] ?? "from-white/15 via-white/5 to-white/10"
     : null;
 
-  const { data: orgData, error: orgDataError } = useSWR<OrganizationMeResponse>(
+  const { data: orgData, error: orgDataError, mutate: mutateOrgData } = useSWR<OrganizationMeResponse>(
     activeOrg ? "/api/organizacao/me" : null,
     fetcher,
   );
+  const moduleOverrides = useMemo(() => {
+    if (!orgData?.modulePermissions) return [];
+    return orgData.modulePermissions
+      .filter((item) => item && item.moduleKey)
+      .map((item) => ({
+        moduleKey: item.moduleKey,
+        accessLevel: item.accessLevel,
+        scopeType: item.scopeType ?? null,
+        scopeId: item.scopeId ?? null,
+      }));
+  }, [orgData?.modulePermissions]);
+  const moduleAccess = useMemo(() => {
+    if (!role) return null;
+    if (!Object.values(OrganizationMemberRole).includes(role as OrganizationMemberRole)) return null;
+    return resolveModuleAccess(role as OrganizationMemberRole, moduleOverrides);
+  }, [moduleOverrides, role]);
+  const objectiveModulesWithAccess = useMemo(() => {
+    if (!moduleAccess) return objectiveModules.modules;
+    return objectiveModules.modules.filter((moduleKey) => {
+      if (!Object.values(OrganizationModule).includes(moduleKey as OrganizationModule)) return true;
+      return hasModuleAccess(moduleAccess, moduleKey as OrganizationModule, "VIEW");
+    });
+  }, [moduleAccess, objectiveModules.modules]);
   const isOrgDataLoading = Boolean(activeOrg) && !orgData && !orgDataError;
+  const shouldAutoRefreshOrg = useMemo(() => {
+    if (!orgData) return false;
+    const emailVerified = Boolean(orgData.organization?.officialEmailVerifiedAt);
+    const paymentsMode = orgData.paymentsMode ?? null;
+    const paymentsStatus = orgData.paymentsStatus ?? null;
+    const paymentsReady = paymentsMode === "PLATFORM" || paymentsStatus === "READY";
+    return !emailVerified || !paymentsReady;
+  }, [orgData]);
+
+  useEffect(() => {
+    if (!shouldAutoRefreshOrg) return;
+    let cancelled = false;
+    const tick = async () => {
+      if (cancelled) return;
+      try {
+        await mutateOrgData();
+      } catch (err) {
+        console.warn("[org/topbar] auto-refresh falhou", err);
+      }
+    };
+    tick();
+    const interval = setInterval(tick, 4000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [shouldAutoRefreshOrg, mutateOrgData]);
 
   const activationItems = useMemo(() => {
     if (!orgData) return [];
@@ -447,13 +522,15 @@ export default function OrganizationTopBar({
                 variant="topbar"
                 className="w-full max-w-full"
               />
+            ) : isCrmRoute ? (
+              <CrmSubnav variant="topbar" className="max-w-full" />
             ) : activeObjective && !isDashboardOverview ? (
               <ObjectiveSubnav
                 objective={activeObjective}
                 activeId={activeObjectiveSection ?? undefined}
                 focusSectionId={subnavFocusId ?? undefined}
                 primaryModule={objectiveModules.primary}
-                modules={objectiveModules.modules}
+                modules={objectiveModulesWithAccess}
                 mode="dashboard"
                 variant="topbar"
                 className="w-full max-w-full"
@@ -501,9 +578,9 @@ export default function OrganizationTopBar({
                 <span className="text-white/50 hidden md:inline">▾</span>
               </div>
             </summary>
-            <div className="absolute right-0 mt-2 w-64 rounded-2xl border border-white/15 bg-[#060b15]/98 p-2 shadow-[0_18px_60px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
+            <div className="absolute right-0 mt-2 w-64 rounded-2xl orya-menu-surface p-2 backdrop-blur-2xl">
               <p className="px-2 pb-2 text-[10px] uppercase tracking-[0.24em] text-white/50">Organizações</p>
-              <div className="grid gap-1">
+              <div className="orya-menu-list">
                 {orgOptions.map((item) => {
                   const label =
                     item.organization.publicName ||
@@ -518,8 +595,8 @@ export default function OrganizationTopBar({
                       onClick={() => switchOrg(item.organizationId)}
                       disabled={switchingOrgId === item.organizationId}
                       className={cn(
-                        "flex items-center justify-between rounded-xl px-3 py-2 text-[12px] text-white/80 transition",
-                        isActive ? "bg-white/10" : "hover:bg-white/10",
+                        "orya-menu-item text-[12px]",
+                        isActive && "bg-[var(--orya-menu-hover)]",
                       )}
                     >
                       <span className="truncate">{label}</span>
@@ -528,19 +605,22 @@ export default function OrganizationTopBar({
                   );
                 })}
               </div>
-              <div className="mt-2 border-t border-white/10 pt-2">
-                <Link
-                  href="/organizacao/become"
-                  className="block rounded-xl px-3 py-2 text-[12px] text-white/70 hover:bg-white/10"
-                >
-                  Criar organização
-                </Link>
-                <Link
-                  href="/organizacao/organizations"
-                  className="mt-1 block rounded-xl px-3 py-2 text-[12px] text-white/70 hover:bg-white/10"
-                >
-                  Gerir organizações
-                </Link>
+              <div className="mt-2 pt-2">
+                <div className="orya-menu-divider mb-2" />
+                <div className="orya-menu-list">
+                  <Link
+                    href="/organizacao/become"
+                    className="orya-menu-item text-[12px] text-white/70"
+                  >
+                    Criar organização
+                  </Link>
+                  <Link
+                    href="/organizacao/organizations"
+                    className="orya-menu-item text-[12px] text-white/70"
+                  >
+                    Gerir organizações
+                  </Link>
+                </div>
               </div>
             </div>
           </details>
@@ -563,20 +643,20 @@ export default function OrganizationTopBar({
                 <span className="text-white/50 hidden md:inline">▾</span>
               </div>
             </summary>
-            <div className="absolute right-0 mt-2 w-56 rounded-2xl border border-white/15 bg-[#060b15]/98 p-2 shadow-[0_18px_60px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
+            <div className="absolute right-0 mt-2 w-56 rounded-2xl orya-menu-surface p-2 backdrop-blur-2xl">
               <p className="px-2 pb-2 text-[10px] uppercase tracking-[0.24em] text-white/50">Conta</p>
-              <div className="grid gap-1">
+              <div className="orya-menu-list">
                 <button
                   type="button"
                   onClick={goUserMode}
-                  className="flex items-center justify-between rounded-xl px-3 py-2 text-[12px] text-white/80 transition hover:bg-white/10"
+                  className="orya-menu-item text-[12px]"
                 >
                   <span>Voltar a utilizador</span>
                   <span className="text-[10px] text-white/50">↺</span>
                 </button>
                 <Link
                   href="/me/settings"
-                  className="flex items-center justify-between rounded-xl px-3 py-2 text-[12px] text-white/80 transition hover:bg-white/10"
+                  className="orya-menu-item text-[12px]"
                 >
                   <span>Definições pessoais</span>
                   <span className="text-[10px] text-white/50">↗</span>
@@ -584,7 +664,7 @@ export default function OrganizationTopBar({
                 <button
                   type="button"
                   onClick={signOut}
-                  className="flex items-center justify-between rounded-xl px-3 py-2 text-[12px] text-rose-100 transition hover:bg-rose-500/15"
+                  className="orya-menu-item text-[12px] text-rose-100 hover:bg-rose-500/15"
                 >
                   <span>Terminar sessão</span>
                   <span className="text-[10px] text-rose-200">×</span>

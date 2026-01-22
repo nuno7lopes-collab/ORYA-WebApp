@@ -29,6 +29,7 @@ export async function POST(req: Request) {
     "allowFollowRequests",
     "allowSalesAlerts",
     "allowSystemAnnouncements",
+    "allowMarketingCampaigns",
   ];
   allowed.forEach((key) => {
     if (typeof body?.[key] === "boolean") updates[key] = body[key];

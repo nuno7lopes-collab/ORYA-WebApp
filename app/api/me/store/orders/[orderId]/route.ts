@@ -34,7 +34,7 @@ async function getStoreContext(userId: string) {
   return { ok: true as const, store };
 }
 
-export async function GET(req: NextRequest, { params }: { params: { orderId: string } }) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ orderId: string }> }) {
   try {
     if (!isStoreFeatureEnabled()) {
       return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
@@ -48,7 +48,8 @@ export async function GET(req: NextRequest, { params }: { params: { orderId: str
       return NextResponse.json({ ok: false, error: context.error }, { status: 403 });
     }
 
-    const orderId = parseId(params.orderId);
+    const resolvedParams = await params;
+    const orderId = parseId(resolvedParams.orderId);
     if (!orderId.ok) {
       return NextResponse.json({ ok: false, error: orderId.error }, { status: 400 });
     }
@@ -130,7 +131,7 @@ export async function GET(req: NextRequest, { params }: { params: { orderId: str
   }
 }
 
-export async function PATCH(req: NextRequest, { params }: { params: { orderId: string } }) {
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ orderId: string }> }) {
   try {
     if (!isStoreFeatureEnabled()) {
       return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
@@ -144,7 +145,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { orderId: s
       return NextResponse.json({ ok: false, error: context.error }, { status: 403 });
     }
 
-    const orderId = parseId(params.orderId);
+    const resolvedParams = await params;
+    const orderId = parseId(resolvedParams.orderId);
     if (!orderId.ok) {
       return NextResponse.json({ ok: false, error: orderId.error }, { status: 400 });
     }

@@ -3,6 +3,11 @@
  *
  * Usage:
  *   TS_NODE_COMPILER_OPTIONS='{"allowImportingTsExtensions":true}' USER_ID_TEST=... npx ts-node scripts/seed_padel.ts
+ *
+ * Opcional:
+ *   ORG_ID=8
+ *   PADEL_TOTAL_PLAYERS=40
+ *   PADEL_LEVELS=M3,M4
  */
 
 import fs from "fs";
@@ -19,6 +24,7 @@ import {
   PadelPairingSlotStatus,
   PadelPairingStatus,
   PadelPaymentMode,
+  PadelPreferredSide,
   PayoutMode,
   Prisma,
   PrismaClient,
@@ -82,6 +88,41 @@ const DEFAULT_BUFFER_MINUTES = 5;
 const DEFAULT_REST_MINUTES = 10;
 
 const randomSuffix = () => Math.random().toString(36).slice(2, 8);
+
+const parseNumberEnv = (key: string) => {
+  const raw = process.env[key];
+  if (!raw) return null;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const ORG_ID = parseNumberEnv("ORG_ID");
+if (process.env.ORG_ID && ORG_ID === null) {
+  throw new Error("ORG_ID invalido.");
+}
+
+const TOTAL_PLAYERS = parseNumberEnv("PADEL_TOTAL_PLAYERS") ?? 40;
+if (!Number.isFinite(TOTAL_PLAYERS) || TOTAL_PLAYERS < 2 || TOTAL_PLAYERS % 2 !== 0) {
+  throw new Error("PADEL_TOTAL_PLAYERS invalido (precisa ser par e >= 2).");
+}
+
+const CATEGORY_LEVELS = (process.env.PADEL_LEVELS ?? "M3,M4")
+  .split(",")
+  .map((level) => level.trim())
+  .filter(Boolean);
+
+if (!CATEGORY_LEVELS.length) {
+  throw new Error("PADEL_LEVELS vazio.");
+}
+
+if (TOTAL_PLAYERS % CATEGORY_LEVELS.length !== 0) {
+  throw new Error("PADEL_TOTAL_PLAYERS deve ser divisivel pelo numero de niveis em PADEL_LEVELS.");
+}
+
+const PLAYERS_PER_LEVEL = TOTAL_PLAYERS / CATEGORY_LEVELS.length;
+if (PLAYERS_PER_LEVEL % 2 !== 0) {
+  throw new Error("Cada nivel precisa de um numero par de jogadores.");
+}
 
 const buildEventWindow = (daysAhead = 14, startHour = 9, durationHours = 8) => {
   const start = new Date();
@@ -251,14 +292,39 @@ const ensureCategory = async ({
   });
 };
 
-const seedPlayers = async (organizationId: number) => {
-  const playersData = Array.from({ length: 16 }).map((_, idx) => {
+const seedPlayers = async ({
+  organizationId,
+  totalPlayers,
+  levels,
+  clubNames,
+}: {
+  organizationId: number;
+  totalPlayers: number;
+  levels: string[];
+  clubNames: string[];
+}) => {
+  const playersData = Array.from({ length: totalPlayers }).map((_, idx) => {
     const num = idx + 1;
-    const level = num <= 8 ? "M3" : "M4";
+    const numLabel = String(num).padStart(3, "0");
+    const level = levels[idx % levels.length];
+    const preferredSide =
+      idx % 3 === 0
+        ? PadelPreferredSide.ESQUERDA
+        : idx % 3 === 1
+          ? PadelPreferredSide.DIREITA
+          : PadelPreferredSide.QUALQUER;
+    const birthYear = 1982 + (idx % 18);
     return {
-      fullName: `Player ${num}`,
-      email: `padel.player${String(num).padStart(2, "0")}@example.com`,
+      fullName: `Jogador ${numLabel}`,
+      displayName: `J${numLabel}`,
+      email: `padel.org${organizationId}.player${numLabel}@example.com`,
+      phone: `+3519${String(10000000 + idx).slice(-8)}`,
+      gender: "MALE",
       level,
+      preferredSide,
+      clubName: clubNames[idx % clubNames.length],
+      birthDate: new Date(birthYear, idx % 12, (idx % 28) + 1),
+      notes: `Seed org ${organizationId} - ${level}`,
     };
   });
   const players = [] as Awaited<ReturnType<typeof prisma.padelPlayerProfile.create>>[];
@@ -272,6 +338,13 @@ const seedPlayers = async (organizationId: number) => {
         data: {
           fullName: player.fullName,
           level: player.level,
+          displayName: player.displayName,
+          phone: player.phone,
+          gender: player.gender,
+          preferredSide: player.preferredSide,
+          clubName: player.clubName,
+          birthDate: player.birthDate,
+          notes: player.notes,
         },
       });
       players.push(updated);
@@ -282,6 +355,13 @@ const seedPlayers = async (organizationId: number) => {
           fullName: player.fullName,
           email: player.email,
           level: player.level,
+          displayName: player.displayName,
+          phone: player.phone,
+          gender: player.gender,
+          preferredSide: player.preferredSide,
+          clubName: player.clubName,
+          birthDate: player.birthDate,
+          notes: player.notes,
         },
       });
       players.push(created);
@@ -353,32 +433,40 @@ async function main() {
     throw new Error(`Utilizador não encontrado para USER_ID_TEST=${userId}.`);
   }
 
-  const existingOrganization = await prisma.organization.findFirst({
-    where: { username: ORGANIZATION_USERNAME },
-  });
-  const organization = existingOrganization
-    ? await prisma.organization.update({
-        where: { id: existingOrganization.id },
-        data: {
-          publicName: ORGANIZATION_PUBLIC_NAME,
-          businessName: ORGANIZATION_PUBLIC_NAME,
-          city: ORGANIZATION_CITY,
-          entityType: "CLUBE",
-          status: OrganizationStatus.ACTIVE,
-          primaryModule: OrganizationModule.TORNEIOS,
-        },
-      })
-    : await prisma.organization.create({
-        data: {
-          username: ORGANIZATION_USERNAME,
-          publicName: ORGANIZATION_PUBLIC_NAME,
-          businessName: ORGANIZATION_PUBLIC_NAME,
-          city: ORGANIZATION_CITY,
-          entityType: "CLUBE",
-          status: OrganizationStatus.ACTIVE,
-          primaryModule: OrganizationModule.TORNEIOS,
-        },
-      });
+  let organization: Awaited<ReturnType<typeof prisma.organization.findUnique>>;
+  if (ORG_ID) {
+    organization = await prisma.organization.findUnique({ where: { id: ORG_ID } });
+  } else {
+    const existingOrganization = await prisma.organization.findFirst({
+      where: { username: ORGANIZATION_USERNAME },
+    });
+    organization = existingOrganization
+      ? await prisma.organization.update({
+          where: { id: existingOrganization.id },
+          data: {
+            publicName: ORGANIZATION_PUBLIC_NAME,
+            businessName: ORGANIZATION_PUBLIC_NAME,
+            city: ORGANIZATION_CITY,
+            entityType: "CLUBE",
+            status: OrganizationStatus.ACTIVE,
+            primaryModule: OrganizationModule.TORNEIOS,
+          },
+        })
+      : await prisma.organization.create({
+          data: {
+            username: ORGANIZATION_USERNAME,
+            publicName: ORGANIZATION_PUBLIC_NAME,
+            businessName: ORGANIZATION_PUBLIC_NAME,
+            city: ORGANIZATION_CITY,
+            entityType: "CLUBE",
+            status: OrganizationStatus.ACTIVE,
+            primaryModule: OrganizationModule.TORNEIOS,
+          },
+        });
+  }
+  if (!organization) {
+    throw new Error(ORG_ID ? `Organizacao nao encontrada para ORG_ID=${ORG_ID}.` : "Organizacao nao encontrada.");
+  }
 
   const memberExists = await prisma.organizationMember.findFirst({
     where: { organizationId: organization.id, userId },
@@ -401,11 +489,16 @@ async function main() {
     });
   }
 
+  const organizationCity = organization.city ?? ORGANIZATION_CITY;
+
+  const mainClubSlug = ORG_ID ? `padel-org-${organization.id}-main` : MAIN_CLUB_SLUG;
+  const partnerClubSlug = ORG_ID ? `padel-org-${organization.id}-partner` : PARTNER_CLUB_SLUG;
+
   const mainClub = await ensureClub({
     organizationId: organization.id,
     name: MAIN_CLUB_NAME,
-    slug: MAIN_CLUB_SLUG,
-    city: ORGANIZATION_CITY,
+    slug: mainClubSlug,
+    city: organizationCity,
     address: "Rua do Padel, 123",
     courtsCount: MAIN_COURTS_COUNT,
     isDefault: true,
@@ -414,8 +507,8 @@ async function main() {
   const partnerClub = await ensureClub({
     organizationId: organization.id,
     name: PARTNER_CLUB_NAME,
-    slug: PARTNER_CLUB_SLUG,
-    city: ORGANIZATION_CITY,
+    slug: partnerClubSlug,
+    city: organizationCity,
     address: "Avenida Parceiro, 45",
     courtsCount: PARTNER_COURTS_COUNT,
     isDefault: false,
@@ -446,20 +539,17 @@ async function main() {
     data: { courtsCount: partnerCourts.length },
   });
 
-  const categoryM3 = await ensureCategory({
-    organizationId: organization.id,
-    label: "M3",
-    minLevel: "M3",
-    maxLevel: "M3",
-    genderRestriction: "MALE",
-  });
-  const categoryM4 = await ensureCategory({
-    organizationId: organization.id,
-    label: "M4",
-    minLevel: "M4",
-    maxLevel: "M4",
-    genderRestriction: "MALE",
-  });
+  const categories = [] as Awaited<ReturnType<typeof ensureCategory>>[];
+  for (const level of CATEGORY_LEVELS) {
+    const category = await ensureCategory({
+      organizationId: organization.id,
+      label: level,
+      minLevel: level,
+      maxLevel: level,
+      genderRestriction: "MALE",
+    });
+    categories.push(category);
+  }
 
   const { start: eventStart, end: eventEnd } = buildEventWindow();
   const eventSlug = `padel-seed-${randomSuffix()}`;
@@ -468,7 +558,7 @@ async function main() {
     data: {
       slug: eventSlug,
       title: "Torneio Padel Demo",
-      description: "Seed de teste Padel",
+      description: `Seed de teste Padel (${TOTAL_PLAYERS} jogadores)`,
       type: "ORGANIZATION_EVENT",
       templateType: EventTemplateType.PADEL,
       ownerUserId: userId,
@@ -476,7 +566,7 @@ async function main() {
       startsAt: eventStart,
       endsAt: eventEnd,
       locationName: MAIN_CLUB_NAME,
-      locationCity: ORGANIZATION_CITY,
+      locationCity: organizationCity,
       isFree: true,
       status: "PUBLISHED",
       resaleMode: ResaleMode.ALWAYS,
@@ -501,7 +591,7 @@ async function main() {
       padelV2Enabled: true,
       padelClubId: mainClub.id,
       partnerClubIds: [partnerClub.id],
-      defaultCategoryId: categoryM3.id,
+      defaultCategoryId: categories[0]?.id ?? null,
       advancedSettings: {
         courtsFromClubs,
         courtIds: allCourts.map((court) => court.id),
@@ -519,50 +609,34 @@ async function main() {
     },
   });
 
-  const linkM3 = await prisma.padelEventCategoryLink.findFirst({
-    where: { eventId: event.id, padelCategoryId: categoryM3.id },
-  });
-  if (linkM3) {
-    await prisma.padelEventCategoryLink.update({
-      where: { id: linkM3.id },
-      data: { format: padel_format.GRUPOS_ELIMINATORIAS, isEnabled: true },
+  const capacityTeams = PLAYERS_PER_LEVEL / 2;
+  const categoryLinks: Array<{ id: number; label: string; padelCategoryId: number }> = [];
+
+  for (const category of categories) {
+    const existingLink = await prisma.padelEventCategoryLink.findFirst({
+      where: { eventId: event.id, padelCategoryId: category.id },
     });
-  } else {
-    await prisma.padelEventCategoryLink.create({
-      data: {
-        eventId: event.id,
-        padelCategoryId: categoryM3.id,
-        format: padel_format.GRUPOS_ELIMINATORIAS,
-        capacityTeams: 8,
-        isEnabled: true,
-      },
-    });
+    const link = existingLink
+      ? await prisma.padelEventCategoryLink.update({
+          where: { id: existingLink.id },
+          data: { format: padel_format.GRUPOS_ELIMINATORIAS, isEnabled: true, capacityTeams },
+        })
+      : await prisma.padelEventCategoryLink.create({
+          data: {
+            eventId: event.id,
+            padelCategoryId: category.id,
+            format: padel_format.GRUPOS_ELIMINATORIAS,
+            capacityTeams,
+            isEnabled: true,
+          },
+        });
+    categoryLinks.push({ id: link.id, label: category.label, padelCategoryId: category.id });
   }
 
-  const linkM4 = await prisma.padelEventCategoryLink.findFirst({
-    where: { eventId: event.id, padelCategoryId: categoryM4.id },
-  });
-  if (linkM4) {
-    await prisma.padelEventCategoryLink.update({
-      where: { id: linkM4.id },
-      data: { format: padel_format.GRUPOS_ELIMINATORIAS, isEnabled: true },
-    });
-  } else {
-    await prisma.padelEventCategoryLink.create({
-      data: {
-        eventId: event.id,
-        padelCategoryId: categoryM4.id,
-        format: padel_format.GRUPOS_ELIMINATORIAS,
-        capacityTeams: 8,
-        isEnabled: true,
-      },
-    });
-  }
-
-  const ticketDefs: Array<{ name: string; linkId: number | null }> = [
-    { name: "Entrada gratuita M3", linkId: linkM3?.id ?? null },
-    { name: "Entrada gratuita M4", linkId: linkM4?.id ?? null },
-  ];
+  const ticketDefs: Array<{ name: string; linkId: number | null }> = categoryLinks.map((link) => ({
+    name: `Entrada gratuita ${link.label}`,
+    linkId: link.id,
+  }));
   for (const ticket of ticketDefs) {
     const existingTicket = await prisma.ticketType.findFirst({
       where: {
@@ -590,30 +664,42 @@ async function main() {
     }
   }
 
-  const players = await seedPlayers(organization.id);
-  const playersM3 = players.filter((player) => player.level === "M3");
-  const playersM4 = players.filter((player) => player.level === "M4");
+  const players = await seedPlayers({
+    organizationId: organization.id,
+    totalPlayers: TOTAL_PLAYERS,
+    levels: CATEGORY_LEVELS,
+    clubNames: [MAIN_CLUB_NAME, PARTNER_CLUB_NAME],
+  });
 
-  const pairingsM3 = await createPairings({
-    eventId: event.id,
-    organizationId: organization.id,
-    categoryId: categoryM3.id,
-    players: playersM3,
-    createdByUserId: userId,
+  const playersByLevel = new Map<string, typeof players>();
+  CATEGORY_LEVELS.forEach((level) => {
+    playersByLevel.set(
+      level,
+      players.filter((player) => player.level === level),
+    );
   });
-  const pairingsM4 = await createPairings({
-    eventId: event.id,
-    organizationId: organization.id,
-    categoryId: categoryM4.id,
-    players: playersM4,
-    createdByUserId: userId,
-  });
+
+  const pairingsByCategory: Array<{ categoryId: number; pairingIds: number[] }> = [];
+  for (const category of categories) {
+    const levelPlayers = playersByLevel.get(category.label) ?? [];
+    if (levelPlayers.length < 2) {
+      throw new Error(`Nivel ${category.label} sem jogadores suficientes.`);
+    }
+    if (levelPlayers.length % 2 !== 0) {
+      throw new Error(`Nivel ${category.label} precisa de um numero par de jogadores.`);
+    }
+    const pairings = await createPairings({
+      eventId: event.id,
+      organizationId: organization.id,
+      categoryId: category.id,
+      players: levelPlayers,
+      createdByUserId: userId,
+    });
+    pairingsByCategory.push({ categoryId: category.id, pairingIds: pairings.map((p) => p.id) });
+  }
 
   const matchCreateData: Prisma.PadelMatchCreateManyInput[] = [];
-  const groupedPairings = [
-    { categoryId: categoryM3.id, pairingIds: pairingsM3.map((p) => p.id) },
-    { categoryId: categoryM4.id, pairingIds: pairingsM4.map((p) => p.id) },
-  ];
+  const groupedPairings = pairingsByCategory;
 
   groupedPairings.forEach((group) => {
     const pairingIds = group.pairingIds;
@@ -751,7 +837,9 @@ async function main() {
     mainClubId: mainClub.id,
     partnerClubId: partnerClub.id,
     courts: allCourts.length,
-    pairings: pairingsM3.length + pairingsM4.length,
+    pairings: pairingsByCategory.reduce((sum, group) => sum + group.pairingIds.length, 0),
+    totalPlayers: TOTAL_PLAYERS,
+    categories: CATEGORY_LEVELS,
     matches: matchCreateData.length,
     scheduled: scheduleResult.scheduled.length,
     skipped: scheduleResult.skipped.length,

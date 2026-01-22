@@ -1,0 +1,96 @@
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+import { ensureCrmModuleAccess } from "@/lib/crm/access";
+import { sendCrmCampaign } from "@/lib/crm/campaignSend";
+import { CrmCampaignStatus } from "@prisma/client";
+
+const CRON_HEADER = "X-ORYA-CRON-SECRET";
+const DEFAULT_LIMIT = 10;
+const MAX_LIMIT = 50;
+
+function parseLimit(value: string | null) {
+  if (!value) return DEFAULT_LIMIT;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return DEFAULT_LIMIT;
+  return Math.min(Math.floor(parsed), MAX_LIMIT);
+}
+
+export async function POST(req: NextRequest) {
+  try {
+    const secret = req.headers.get(CRON_HEADER);
+    const expected = process.env.ORYA_CRON_SECRET;
+    if (!expected || !secret || secret !== expected) {
+      return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
+    }
+
+    const limit = parseLimit(req.nextUrl.searchParams.get("limit"));
+    const now = new Date();
+    const campaigns = await prisma.crmCampaign.findMany({
+      where: {
+        status: CrmCampaignStatus.SCHEDULED,
+        scheduledAt: { lte: now },
+      },
+      orderBy: { scheduledAt: "asc" },
+      take: limit,
+      select: {
+        id: true,
+        organization: { select: { id: true, primaryModule: true } },
+      },
+    });
+
+    const results: Array<{
+      id: string;
+      organizationId: number | null;
+      ok: boolean;
+      error?: string;
+      sentCount?: number;
+      failedCount?: number;
+      totalEligible?: number;
+    }> = [];
+
+    for (const campaign of campaigns) {
+      const organization = campaign.organization;
+      if (!organization) {
+        results.push({ id: campaign.id, organizationId: null, ok: false, error: "ORGANIZATION_NOT_FOUND" });
+        continue;
+      }
+
+      const crmAccess = await ensureCrmModuleAccess(organization);
+      if (!crmAccess.ok) {
+        results.push({ id: campaign.id, organizationId: organization.id, ok: false, error: crmAccess.error });
+        continue;
+      }
+
+      const result = await sendCrmCampaign({
+        organizationId: organization.id,
+        campaignId: campaign.id,
+        allowedStatuses: [CrmCampaignStatus.SCHEDULED],
+      });
+
+      if (!result.ok) {
+        results.push({ id: campaign.id, organizationId: organization.id, ok: false, error: result.message });
+        continue;
+      }
+
+      results.push({
+        id: campaign.id,
+        organizationId: organization.id,
+        ok: true,
+        sentCount: result.sentCount,
+        failedCount: result.failedCount,
+        totalEligible: result.totalEligible,
+      });
+    }
+
+    const sent = results.filter((item) => item.ok).length;
+    console.info("[crm][campanhas] cron", { processed: results.length, sent });
+
+    return NextResponse.json({ ok: true, processed: results.length, sent, results }, { status: 200 });
+  } catch (err) {
+    console.error("[crm][campanhas] cron error", err);
+    return NextResponse.json({ ok: false, error: "Internal error" }, { status: 500 });
+  }
+}

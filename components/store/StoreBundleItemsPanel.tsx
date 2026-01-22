@@ -24,8 +24,8 @@ type BundleItem = {
   productId: number;
   variantId: number | null;
   quantity: number;
-  product?: { name: string };
-  variant?: { label: string | null };
+  product?: { name: string; priceCents: number; currency: string };
+  variant?: { label: string | null; priceCents: number | null };
 };
 
 type StoreBundleItemsPanelProps = {
@@ -47,6 +47,10 @@ function createEmptyForm(): BundleItemFormState {
     variantId: "",
     quantity: "1",
   };
+}
+
+function formatMoney(cents: number, currency: string) {
+  return new Intl.NumberFormat("pt-PT", { style: "currency", currency }).format(cents / 100);
 }
 
 export default function StoreBundleItemsPanel({
@@ -83,6 +87,16 @@ export default function StoreBundleItemsPanel({
   const quantityValue = form.quantity.trim() ? Number(form.quantity) : 1;
   const quantityValid = Number.isFinite(quantityValue) && quantityValue >= 1;
   const canSubmit = Boolean(bundleId) && productValid && quantityValid;
+
+  const bundleCurrency = items[0]?.product?.currency ?? "EUR";
+  const bundleBaseCents = useMemo(
+    () =>
+      items.reduce((sum, item) => {
+        const unit = item.variant?.priceCents ?? item.product?.priceCents ?? 0;
+        return sum + unit * item.quantity;
+      }, 0),
+    [items],
+  );
 
   const renderBadge = (label: string, tone: "required" | "optional") => (
     <span
@@ -490,7 +504,8 @@ export default function StoreBundleItemsPanel({
             <thead className="text-[11px] uppercase tracking-[0.2em] text-white/50">
               <tr>
                 <th className="px-4 py-3 text-left">Item</th>
-                <th className="px-4 py-3 text-left">Quantidade</th>
+                <th className="px-4 py-3 text-left">Qtd. no bundle</th>
+                <th className="px-4 py-3 text-left">Preco base</th>
                 <th className="px-4 py-3 text-right">Acoes</th>
               </tr>
             </thead>
@@ -504,6 +519,9 @@ export default function StoreBundleItemsPanel({
                     </div>
                   </td>
                   <td className="px-4 py-3 text-xs text-white/70">{item.quantity}</td>
+                  <td className="px-4 py-3 text-xs text-white/70">
+                    {formatMoney(item.variant?.priceCents ?? item.product?.priceCents ?? 0, bundleCurrency)}
+                  </td>
                   <td className="px-4 py-3 text-right">
                     <div className="flex flex-wrap items-center justify-end gap-2">
                       <button
@@ -530,6 +548,15 @@ export default function StoreBundleItemsPanel({
           </table>
         </div>
       )}
+
+      {bundleId && items.length > 0 ? (
+        <div className="rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white/75">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <span>Total base dos itens</span>
+            <span className="font-semibold text-white">{formatMoney(bundleBaseCents, bundleCurrency)}</span>
+          </div>
+        </div>
+      ) : null}
 
       {modal}
 

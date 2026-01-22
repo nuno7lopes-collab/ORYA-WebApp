@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
+import { ingestCrmInteraction } from "@/lib/crm/ingest";
+import { CrmInteractionSource, CrmInteractionType } from "@prisma/client";
 
 const HOLD_MINUTES = 10;
 const COMPLETION_GRACE_HOURS = 2;
@@ -67,10 +69,20 @@ export async function GET(req: NextRequest) {
         status: "CONFIRMED",
         startsAt: { lt: completionCutoff },
       },
-      select: { id: true, startsAt: true, durationMinutes: true, organizationId: true, serviceId: true },
+      select: {
+        id: true,
+        startsAt: true,
+        durationMinutes: true,
+        organizationId: true,
+        serviceId: true,
+        userId: true,
+        price: true,
+        currency: true,
+      },
     });
 
     let completed = 0;
+    const completedBookings: typeof candidates = [];
     for (const booking of candidates) {
       const endAt = new Date(booking.startsAt.getTime() + booking.durationMinutes * 60 * 1000);
       if (endAt.getTime() + COMPLETION_GRACE_HOURS * 60 * 60 * 1000 <= now.getTime()) {
@@ -79,6 +91,25 @@ export async function GET(req: NextRequest) {
           data: { status: "COMPLETED" },
         });
         completed += 1;
+        completedBookings.push(booking);
+      }
+    }
+
+    for (const booking of completedBookings) {
+      try {
+        await ingestCrmInteraction({
+          organizationId: booking.organizationId,
+          userId: booking.userId,
+          type: CrmInteractionType.BOOKING_COMPLETED,
+          sourceType: CrmInteractionSource.BOOKING,
+          sourceId: String(booking.id),
+          occurredAt: now,
+          amountCents: booking.price,
+          currency: booking.currency,
+          metadata: { bookingId: booking.id, serviceId: booking.serviceId },
+        });
+      } catch (err) {
+        console.warn("[cron][bookings] falha ao criar interacao CRM", err);
       }
     }
 

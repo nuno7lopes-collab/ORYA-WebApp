@@ -47,7 +47,7 @@ const steps: Step[] = [
   },
   {
     id: "marketing",
-    title: "Marketing & códigos",
+    title: "Promoções & códigos",
     body: "Códigos promocionais, boosts e partilha de links para vender mais rápido.",
     anchor: "[data-tour='marketing']",
     ctaLabel: "Seguinte",

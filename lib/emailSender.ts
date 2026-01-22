@@ -7,6 +7,8 @@ import {
   renderTournamentScheduleEmail,
   renderOwnerTransferEmail,
   renderOfficialEmailVerificationEmail,
+  renderCrmCampaignEmail,
+  renderStoreOrderConfirmationEmail,
 } from "@/lib/emailTemplates";
 import { format } from "date-fns";
 
@@ -17,6 +19,12 @@ type PurchaseEmailInput = {
   startsAt?: string | null;
   endsAt?: string | null;
   locationName?: string | null;
+  locationCity?: string | null;
+  address?: string | null;
+  locationSource?: "OSM" | "MANUAL" | null;
+  locationFormattedAddress?: string | null;
+  locationComponents?: Record<string, unknown> | null;
+  locationOverrides?: Record<string, unknown> | null;
   ticketsCount: number;
   ticketUrl: string;
 };
@@ -29,6 +37,12 @@ export async function sendPurchaseConfirmationEmail(input: PurchaseEmailInput) {
     startsAt: input.startsAt,
     endsAt: input.endsAt,
     locationName: input.locationName,
+    locationCity: input.locationCity,
+    address: input.address,
+    locationSource: input.locationSource,
+    locationFormattedAddress: input.locationFormattedAddress,
+    locationComponents: input.locationComponents,
+    locationOverrides: input.locationOverrides,
     ticketsCount: input.ticketsCount,
     ticketUrl: input.ticketUrl,
   });
@@ -38,6 +52,41 @@ export async function sendPurchaseConfirmationEmail(input: PurchaseEmailInput) {
     subject,
     html,
     text,
+  });
+}
+
+type StoreOrderEmailInput = {
+  to: string;
+  storeName: string;
+  orderNumber: string;
+  orderTotal: string;
+  items: Array<{ name: string; quantity: number }>;
+  trackingUrl: string;
+  orderUrl?: string | null;
+  supportEmail?: string | null;
+  supportPhone?: string | null;
+  replyTo?: string | null;
+};
+
+export async function sendStoreOrderConfirmationEmail(input: StoreOrderEmailInput) {
+  assertResendReady();
+  const { subject, html, text } = renderStoreOrderConfirmationEmail({
+    storeName: input.storeName,
+    orderNumber: input.orderNumber,
+    orderTotal: input.orderTotal,
+    items: input.items,
+    trackingUrl: input.trackingUrl,
+    orderUrl: input.orderUrl ?? null,
+    supportEmail: input.supportEmail ?? null,
+    supportPhone: input.supportPhone ?? null,
+  });
+
+  return sendEmail({
+    to: input.to,
+    subject,
+    html,
+    text,
+    replyTo: input.replyTo ?? undefined,
   });
 }
 
@@ -218,5 +267,37 @@ export async function sendOfficialEmailVerificationEmail(input: OfficialEmailVer
     subject,
     html,
     text,
+  });
+}
+
+type CrmCampaignEmailInput = {
+  to: string;
+  subject: string;
+  organizationName: string;
+  title: string;
+  body?: string | null;
+  ctaLabel?: string | null;
+  ctaUrl?: string | null;
+  previewText?: string | null;
+  replyTo?: string | null;
+};
+
+export async function sendCrmCampaignEmail(input: CrmCampaignEmailInput) {
+  assertResendReady();
+  const { html, text } = renderCrmCampaignEmail({
+    organizationName: input.organizationName,
+    title: input.title,
+    body: input.body,
+    ctaLabel: input.ctaLabel,
+    ctaUrl: input.ctaUrl,
+    previewText: input.previewText,
+  });
+
+  return sendEmail({
+    to: input.to,
+    subject: input.subject,
+    html,
+    text,
+    replyTo: input.replyTo ?? undefined,
   });
 }

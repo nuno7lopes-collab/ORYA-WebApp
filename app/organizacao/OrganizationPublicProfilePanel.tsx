@@ -48,7 +48,7 @@ const MODULE_LABELS: Record<
   FORMULARIOS: { title: "Formulários", description: "Inscrições e contacto." },
   AVALIACOES: { title: "Avaliações", description: "Prova social e ratings." },
   SOBRE: { title: "Sobre", description: "Descrição e links úteis." },
-  LOJA: { title: "Loja", description: "Módulo em preparação." },
+  LOJA: { title: "Loja", description: "Produtos e checkout da organização." },
 };
 
 const OPERATION_META: Record<
@@ -138,6 +138,14 @@ function formatTimeLabel(date: Date | null, timezone: string) {
     minute: "2-digit",
     timeZone: timezone,
   }).format(date);
+}
+
+function formatMoney(cents: number, currency: string) {
+  return new Intl.NumberFormat("pt-PT", {
+    style: "currency",
+    currency,
+    minimumFractionDigits: 2,
+  }).format(cents / 100);
 }
 
 function buildAgendaGroups(
@@ -321,6 +329,36 @@ type ResourceOption = {
   label: string;
   capacity: number;
   isActive?: boolean;
+};
+
+type StorePreviewProduct = {
+  id: number;
+  name: string;
+  priceCents: number;
+  currency: string;
+  slug: string;
+  status: string;
+  isVisible: boolean;
+  imageUrl: string | null;
+};
+
+type StorePreviewResponse = {
+  ok: boolean;
+  store?: {
+    id: number;
+    status: string;
+    showOnProfile: boolean | null;
+    catalogLocked: boolean | null;
+    currency: string;
+  };
+  counts?: {
+    total: number;
+    public: number;
+    draft: number;
+  };
+  publicProducts?: StorePreviewProduct[];
+  draftProducts?: StorePreviewProduct[];
+  error?: string;
 };
 
 type AgendaEvent = {
@@ -519,6 +557,7 @@ export default function OrganizationPublicProfilePanel({
   const shouldLoadProfessionals = Boolean(user && moduleAvailability.SERVICOS);
   const shouldLoadResources = Boolean(user && moduleAvailability.SERVICOS);
   const shouldLoadReviews = Boolean(user && moduleAvailability.AVALIACOES);
+  const shouldLoadStore = Boolean(user && moduleAvailability.LOJA);
   const { data: formsData } = useSWR<{ ok: boolean; items: FormPreviewItem[] }>(
     shouldLoadForms ? "/api/organizacao/inscricoes" : null,
     fetcher,
@@ -533,6 +572,10 @@ export default function OrganizationPublicProfilePanel({
   );
   const { data: reviewsData } = useSWR<{ ok: boolean; items: ReviewItem[] }>(
     shouldLoadReviews ? "/api/organizacao/avaliacoes" : null,
+    fetcher,
+  );
+  const { data: storePreviewData } = useSWR<StorePreviewResponse>(
+    shouldLoadStore ? "/api/organizacao/loja/preview" : null,
     fetcher,
   );
   const formsList = useMemo<FormPreview[]>(() => {
@@ -570,6 +613,21 @@ export default function OrganizationPublicProfilePanel({
     [resourcesData],
   );
   const reviewsList = useMemo(() => reviewsData?.items ?? [], [reviewsData]);
+  const storePreview = storePreviewData?.ok ? storePreviewData : null;
+  const storePreviewError =
+    storePreviewData && !storePreviewData.ok
+      ? storePreviewData.error || "Loja indisponivel."
+      : null;
+  const storePublicProducts = storePreview?.publicProducts ?? [];
+  const storeDraftProducts = storePreview?.draftProducts ?? [];
+  const storePublicCount = storePreview?.counts?.public ?? 0;
+  const storeDraftCount = storePreview?.counts?.draft ?? 0;
+  const storeStatus = storePreview?.store?.status ?? null;
+  const storeShowOnProfile = Boolean(storePreview?.store?.showOnProfile);
+  const storeLocked = Boolean(storePreview?.store?.catalogLocked);
+  const storeIsOpen = storeStatus === "OPEN";
+  const storeIsPublic = storeIsOpen && storeShowOnProfile;
+  const storePublicHref = organization?.username ? `/${organization.username}/loja` : null;
   const agendaEvents = useMemo<AgendaEvent[]>(() => {
     const items = events ?? [];
     return items
@@ -1107,6 +1165,9 @@ export default function OrganizationPublicProfilePanel({
   const showFormsModule = hasInscricoesTool && publicForms.length > 0;
   const showReviewsModule = hasReservasTool && reviewsCount > 0;
   const showAboutModule = Boolean(displayBio.trim());
+  const showStoreModule =
+    hasLojaTool &&
+    (storePublicCount > 0 || (canEdit && (storePreview?.store || storePreviewError)));
 
   const servicesModuleContent = showServicesModule ? (
     <section className="space-y-5 sm:space-y-6">
@@ -1277,13 +1338,154 @@ export default function OrganizationPublicProfilePanel({
     </section>
   ) : null;
 
+  const storeVisibilityNote = storePreviewError
+    ? storePreviewError
+    : !storeIsOpen
+      ? "A loja esta fechada. Abre-a para aparecer no perfil."
+      : !storeShowOnProfile
+        ? "A loja esta escondida no perfil publico."
+        : null;
+
+  const storeModuleContent = showStoreModule ? (
+    <section className="rounded-3xl border border-white/12 bg-white/5 p-4 sm:p-5 shadow-[0_24px_70px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">Loja</p>
+          <h3 className="text-lg font-semibold text-white">Produtos em destaque</h3>
+          <p className="text-[12px] text-white/60">Compra direta com checkout ORYA.</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 text-[10px] text-white/70">
+          <span
+            className={`rounded-full border px-2 py-1 ${
+              storeIsPublic
+                ? "border-emerald-400/40 bg-emerald-400/10 text-emerald-100"
+                : "border-white/15 bg-white/5 text-white/60"
+            }`}
+          >
+            {storeIsOpen ? (storeShowOnProfile ? "Publica" : "Oculta") : "Fechada"}
+          </span>
+          {storeLocked && (
+            <span className="rounded-full border border-amber-400/40 bg-amber-400/10 px-2 py-1 text-[10px] text-amber-100">
+              Catalogo bloqueado
+            </span>
+          )}
+        </div>
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2 text-[10px] text-white/60">
+        <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1">
+          {storePublicCount} publicados
+        </span>
+        {storeDraftCount > 0 && (
+          <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1">
+            {storeDraftCount} rascunhos
+          </span>
+        )}
+      </div>
+
+      {storeVisibilityNote && (
+        <div className="mt-3 rounded-2xl border border-amber-400/40 bg-amber-400/10 px-4 py-3 text-[12px] text-amber-100">
+          {storeVisibilityNote}
+        </div>
+      )}
+
+      {storePublicProducts.length > 0 ? (
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          {storePublicProducts.map((product) => (
+            <div
+              key={product.id}
+              className="rounded-2xl border border-white/10 bg-black/40 p-3 transition hover:border-white/30"
+            >
+              <div className="aspect-square w-full overflow-hidden rounded-xl border border-white/10 bg-black/60">
+                {product.imageUrl ? (
+                  <img
+                    src={product.imageUrl}
+                    alt={product.name}
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center text-xs text-white/40">
+                    Sem imagem
+                  </div>
+                )}
+              </div>
+              <div className="mt-3 space-y-1">
+                <p className="line-clamp-2 text-sm font-semibold text-white">{product.name}</p>
+                <p className="text-[11px] text-white/65">
+                  {formatMoney(product.priceCents, product.currency)}
+                </p>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : storeDraftCount > 0 ? (
+        <div className="mt-4 space-y-3">
+          <div className="rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-[12px] text-white/70">
+            Tens produtos em rascunho ou invisiveis. Publica-os para aparecerem no perfil.
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {storeDraftProducts.map((product) => (
+              <div
+                key={product.id}
+                className="rounded-2xl border border-white/10 bg-black/40 p-3"
+              >
+                <div className="aspect-square w-full overflow-hidden rounded-xl border border-white/10 bg-black/60">
+                  {product.imageUrl ? (
+                    <img
+                      src={product.imageUrl}
+                      alt={product.name}
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center text-xs text-white/40">
+                      Sem imagem
+                    </div>
+                  )}
+                </div>
+                <div className="mt-3 flex items-center justify-between gap-2">
+                  <p className="line-clamp-2 text-sm font-semibold text-white">{product.name}</p>
+                  <span className="rounded-full border border-white/15 bg-white/5 px-2 py-1 text-[10px] text-white/60">
+                    Rascunho
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div className="mt-4 rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-[12px] text-white/70">
+          Ainda nao ha produtos publicados.
+        </div>
+      )}
+
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        {storePublicHref && storeIsPublic && storePublicProducts.length > 0 ? (
+          <Link
+            href={storePublicHref}
+            className="rounded-full bg-white px-4 py-2 text-[12px] font-semibold text-black shadow-[0_10px_30px_rgba(255,255,255,0.25)]"
+          >
+            Visitar loja
+          </Link>
+        ) : null}
+        {canEdit && (
+          <Link
+            href="/organizacao/loja?view=catalog&sub=products"
+            className="rounded-full border border-white/15 bg-white/10 px-4 py-2 text-[12px] font-semibold text-white/80"
+          >
+            Gerir produtos
+          </Link>
+        )}
+      </div>
+    </section>
+  ) : null;
+
   const moduleContentByType: Record<PublicProfileModuleType, JSX.Element | null> = {
     SERVICOS: servicesModuleContent,
     AGENDA: agendaModuleContent,
     FORMULARIOS: formsModuleContent,
     AVALIACOES: reviewsModuleContent,
     SOBRE: aboutModuleContent,
-    LOJA: null,
+    LOJA: storeModuleContent,
   };
 
   const visibleModules = useMemo(
@@ -1298,9 +1500,16 @@ export default function OrganizationPublicProfilePanel({
         FORMULARIOS: publicForms.length,
         AVALIACOES: reviewsCount,
         SOBRE: showAboutModule ? 1 : 0,
-        LOJA: 0,
+        LOJA: storePublicCount,
       }) as Record<PublicProfileModuleType, number>,
-    [activeServices.length, agendaTotal, publicForms.length, reviewsCount, showAboutModule],
+    [
+      activeServices.length,
+      agendaTotal,
+      publicForms.length,
+      reviewsCount,
+      showAboutModule,
+      storePublicCount,
+    ],
   );
   const enabledModuleIndexByType = useMemo(
     () => new Map(enabledModules.map((module, index) => [module.type, index])),
@@ -2111,12 +2320,23 @@ export default function OrganizationPublicProfilePanel({
                       const labels = MODULE_LABELS[type] ?? { title: type, description: "" };
                       const config = profileLayout.modules.find((module) => module.type === type);
                       const isEnabled = config?.enabled ?? false;
+                      const isStoreModule = type === "LOJA";
                       const itemsCount = moduleStats[type] ?? 0;
                       const hasContent = itemsCount > 0;
+                      const draftCount = isStoreModule ? storeDraftCount : 0;
+                      const storeStatusLabel = !storeIsOpen
+                        ? "Fechada"
+                        : !storeShowOnProfile
+                          ? "Oculta"
+                          : "No perfil";
                       const statusLabel = isEnabled
                         ? hasContent
-                          ? "No perfil"
-                          : "Sem conteúdo"
+                          ? isStoreModule
+                            ? storeStatusLabel
+                            : "No perfil"
+                          : draftCount > 0
+                            ? "Rascunhos"
+                            : "Sem conteúdo"
                         : "Disponível";
                       return (
                         <div
@@ -2154,6 +2374,11 @@ export default function OrganizationPublicProfilePanel({
                             <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5">
                               {itemsCount} itens
                             </span>
+                            {isStoreModule && draftCount > 0 && (
+                              <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5">
+                                {draftCount} rascunhos
+                              </span>
+                            )}
                             {isEnabled ? (
                               <button
                                 type="button"
@@ -2420,7 +2645,7 @@ export default function OrganizationPublicProfilePanel({
                           )}
                           {selected.type === "LOJA" && (
                             <p className="text-[12px] text-white/60">
-                              A Loja fica disponível quando o módulo estiver ativo.
+                              A Loja aparece no perfil quando estiver aberta e com produtos publicados.
                             </p>
                           )}
                         </div>

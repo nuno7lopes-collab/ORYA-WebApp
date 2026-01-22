@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { resolveConnectStatus } from "@/domain/finance/stripeConnectStatus";
-import { PendingPayoutStatus } from "@prisma/client";
+import { PendingPayoutStatus, SaleSummaryStatus } from "@prisma/client";
 
 export async function GET(_req: NextRequest) {
   const supabase = await createSupabaseServer();
@@ -28,7 +28,7 @@ export async function GET(_req: NextRequest) {
 
   const sales = await prisma.saleSummary.groupBy({
     by: ["eventId"],
-    where: { eventId: { in: events.map((e) => e.id) } },
+    where: { eventId: { in: events.map((e) => e.id) }, status: SaleSummaryStatus.PAID },
     _sum: { totalCents: true, netCents: true, platformFeeCents: true },
     _count: { _all: true },
   });

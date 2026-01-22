@@ -106,6 +106,24 @@ const jobs = [
     path: "/api/cron/payouts/release",
     intervalMs: getInterval("CRON_PAYOUTS_INTERVAL_MS", 300000),
   },
+  {
+    name: "crm-rebuild",
+    method: "POST",
+    path: "/api/cron/crm/rebuild",
+    intervalMs: getInterval("CRON_CRM_REBUILD_INTERVAL_MS", 86400000),
+  },
+  {
+    name: "crm-campanhas",
+    method: "POST",
+    path: "/api/cron/crm/campanhas",
+    intervalMs: getInterval("CRON_CRM_CAMPAIGNS_INTERVAL_MS", 60000),
+  },
+  {
+    name: "loyalty-expire",
+    method: "POST",
+    path: "/api/cron/loyalty/expire",
+    intervalMs: getInterval("CRON_LOYALTY_EXPIRE_INTERVAL_MS", 86400000),
+  },
 ];
 
 const only = new Set(parseList(process.env.CRON_ONLY));

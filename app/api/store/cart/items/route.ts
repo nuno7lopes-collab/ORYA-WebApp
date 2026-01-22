@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { isStoreFeatureEnabled, isStorePublic } from "@/lib/storeAccess";
 import { StoreStockPolicy } from "@prisma/client";
+import { validateStorePersonalization } from "@/lib/store/personalization";
 import { z } from "zod";
 
 const CART_SESSION_COOKIE = "orya_store_cart";
@@ -14,12 +15,6 @@ const addItemSchema = z.object({
   quantity: z.number().int().positive().optional(),
   personalization: z.any().optional(),
 });
-
-type PersonalizationSelection = {
-  optionId: number;
-  valueId?: number | null;
-  value?: string | number | boolean | null;
-};
 
 function parseStoreId(req: NextRequest) {
   const raw = req.nextUrl.searchParams.get("storeId");
@@ -33,7 +28,7 @@ function parseStoreId(req: NextRequest) {
 async function resolveStore(storeId: number) {
   const store = await prisma.store.findFirst({
     where: { id: storeId },
-    select: { id: true, status: true, catalogLocked: true, currency: true },
+    select: { id: true, status: true, showOnProfile: true, catalogLocked: true, currency: true },
   });
   if (!store) {
     return { ok: false as const, error: "Store nao encontrada." };
@@ -79,69 +74,6 @@ async function resolveCart(params: {
     include: { items: true },
   });
   return { ok: true as const, cart, created: true };
-}
-
-async function computePersonalizationDelta(params: {
-  productId: number;
-  personalization: unknown;
-}) {
-  const selections = Array.isArray((params.personalization as { selections?: unknown })?.selections)
-    ? ((params.personalization as { selections?: unknown }).selections as PersonalizationSelection[])
-    : [];
-
-  if (selections.length === 0) {
-    return { ok: true as const, deltaCents: 0 };
-  }
-
-  const optionIds = selections.map((selection) => selection.optionId).filter(Boolean);
-  const options = await prisma.storeProductOption.findMany({
-    where: { productId: params.productId, id: { in: optionIds } },
-    select: { id: true, optionType: true, priceDeltaCents: true },
-  });
-  const optionMap = new Map(options.map((option) => [option.id, option]));
-
-  for (const selection of selections) {
-    if (!optionMap.has(selection.optionId)) {
-      return { ok: false as const, error: "Opcao invalida." };
-    }
-  }
-
-  const valueIds = selections
-    .map((selection) => selection.valueId)
-    .filter((valueId): valueId is number => Boolean(valueId));
-  const values = valueIds.length
-    ? await prisma.storeProductOptionValue.findMany({
-        where: { id: { in: valueIds } },
-        select: { id: true, optionId: true, priceDeltaCents: true },
-      })
-    : [];
-  const valueMap = new Map(values.map((value) => [value.id, value]));
-
-  let deltaCents = 0;
-  for (const selection of selections) {
-    const option = optionMap.get(selection.optionId);
-    if (!option) continue;
-    if (option.optionType === "SELECT") {
-      if (!selection.valueId) {
-        return { ok: false as const, error: "Valor invalido." };
-      }
-      const value = valueMap.get(selection.valueId);
-      if (!value || value.optionId !== option.id) {
-        return { ok: false as const, error: "Valor invalido." };
-      }
-      deltaCents += value.priceDeltaCents;
-    } else if (option.optionType === "CHECKBOX") {
-      if (selection.value === true) {
-        deltaCents += option.priceDeltaCents;
-      }
-    } else {
-      if (selection.value !== undefined && selection.value !== null && String(selection.value).trim() !== "") {
-        deltaCents += option.priceDeltaCents;
-      }
-    }
-  }
-
-  return { ok: true as const, deltaCents };
 }
 
 export async function POST(req: NextRequest) {
@@ -206,14 +138,7 @@ export async function POST(req: NextRequest) {
       variantStockQty = variant.stockQty ?? null;
     }
 
-    if (product.stockPolicy === StoreStockPolicy.TRACKED) {
-      const available = payload.variantId ? variantStockQty ?? 0 : product.stockQty ?? 0;
-      if (quantity > available) {
-        return NextResponse.json({ ok: false, error: "Stock insuficiente." }, { status: 409 });
-      }
-    }
-
-    const personalizationDelta = await computePersonalizationDelta({
+    const personalizationDelta = await validateStorePersonalization({
       productId: product.id,
       personalization: payload.personalization,
     });
@@ -238,13 +163,25 @@ export async function POST(req: NextRequest) {
       sessionId,
     });
 
-    const personalization = payload.personalization ?? null;
+    if (product.stockPolicy === StoreStockPolicy.TRACKED) {
+      const available = payload.variantId ? variantStockQty ?? 0 : product.stockQty ?? 0;
+      const existingQty = resolved.cart.items
+        .filter((item) => item.productId === payload.productId && item.variantId === (payload.variantId ?? null))
+        .reduce((sum, item) => sum + item.quantity, 0);
+      const nextQty = existingQty + quantity;
+      if (nextQty > available) {
+        return NextResponse.json({ ok: false, error: "Stock insuficiente." }, { status: 409 });
+      }
+    }
+
+    const personalization = personalizationDelta.normalized;
     const personalizationKey = JSON.stringify(personalization ?? {});
     const existingItem = resolved.cart.items.find((item) => {
       const itemKey = JSON.stringify(item.personalization ?? {});
       return (
         item.productId === payload.productId &&
         item.variantId === (payload.variantId ?? null) &&
+        !item.bundleKey &&
         itemKey === personalizationKey
       );
     });

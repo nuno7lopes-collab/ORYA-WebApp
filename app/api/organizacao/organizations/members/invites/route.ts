@@ -11,6 +11,13 @@ import { sanitizeProfileVisibility } from "@/lib/profileVisibility";
 import { sendEmail } from "@/lib/resendClient";
 import { parseOrganizationId, resolveOrganizationIdFromParams } from "@/lib/organizationId";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
+import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
+
+const resolveIp = (req: NextRequest) => {
+  const forwarded = req.headers.get("x-forwarded-for");
+  if (forwarded) return forwarded.split(",")[0]?.trim() ?? null;
+  return null;
+};
 
 const INVITE_EXPIRY_DAYS = 14;
 
@@ -346,6 +353,16 @@ export async function POST(req: NextRequest) {
       },
     });
 
+    await recordOrganizationAuditSafe({
+      organizationId,
+      actorUserId: user.id,
+      action: "INVITE_CREATED",
+      toUserId: targetUserId,
+      metadata: { inviteId: invite.id, role: invite.role, target: invite.targetIdentifier },
+      ip: resolveIp(req),
+      userAgent: req.headers.get("user-agent"),
+    });
+
     const viewer = {
       id: user.id,
       username: viewerProfile?.username ?? null,
@@ -656,6 +673,23 @@ export async function PATCH(req: NextRequest) {
     if (!updated) {
       return NextResponse.json({ ok: false, error: "INVITE_NOT_FOUND" }, { status: 404 });
     }
+
+    await recordOrganizationAuditSafe({
+      organizationId,
+      actorUserId: user.id,
+      action:
+        action === "CANCEL"
+          ? "INVITE_CANCELLED"
+          : action === "RESEND"
+            ? "INVITE_RESENT"
+            : action === "ACCEPT"
+              ? "INVITE_ACCEPTED"
+              : "INVITE_DECLINED",
+      toUserId: updated.targetUserId ?? null,
+      metadata: { inviteId: updated.id, role: updated.role, target: updated.targetIdentifier },
+      ip: resolveIp(req),
+      userAgent: req.headers.get("user-agent"),
+    });
 
     if (action === "ACCEPT") {
       // Evitar propagação de erros de transação

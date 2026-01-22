@@ -120,7 +120,18 @@ export async function POST(req: NextRequest) {
       : undefined;
   const scoreRaw = body.score;
   const startAtRaw = body.startAt ? new Date(String(body.startAt)) : undefined;
-  const courtIdRaw = typeof body.courtId === "number" ? body.courtId : undefined;
+  const courtIdRaw =
+    typeof body.courtId === "number"
+      ? body.courtId
+      : typeof body.courtId === "string"
+        ? Number(body.courtId)
+        : undefined;
+  const courtNumberRaw =
+    typeof body.courtNumber === "number"
+      ? body.courtNumber
+      : typeof body.courtNumber === "string"
+        ? Number(body.courtNumber)
+        : undefined;
 
   if (!Number.isFinite(matchId)) return NextResponse.json({ ok: false, error: "INVALID_ID" }, { status: 400 });
   if (startAtRaw && Number.isNaN(startAtRaw.getTime())) {
@@ -214,6 +225,25 @@ export async function POST(req: NextRequest) {
     : shouldSetScoreSetsFromStats
       ? (stats?.sets as Prisma.InputJsonValue)
       : (match.scoreSets as Prisma.InputJsonValue | Prisma.NullableJsonNullValueInput | undefined);
+  let courtIdValue: number | undefined;
+  let courtNumberValue: number | undefined;
+  if (Number.isFinite(courtIdRaw)) {
+    const courtIdCandidate = Math.floor(courtIdRaw as number);
+    const courtExists = await prisma.padelClubCourt.findFirst({
+      where: { id: courtIdCandidate, club: { organizationId: match.event.organizationId } },
+      select: { id: true },
+    });
+    if (courtExists) {
+      courtIdValue = courtIdCandidate;
+    } else {
+      // Backwards compatibility: treat non-matching courtId as display number.
+      courtNumberValue = courtIdCandidate;
+    }
+  }
+  if (Number.isFinite(courtNumberRaw)) {
+    courtNumberValue = Math.floor(courtNumberRaw as number);
+  }
+
   const updated = await prisma.padelMatch.update({
     where: { id: matchId },
     data: {
@@ -222,7 +252,8 @@ export async function POST(req: NextRequest) {
       scoreSets: scoreSetsValue,
       winnerPairingId: shouldSetWinner ? winnerPairingId ?? match.winnerPairingId : match.winnerPairingId,
       startTime: startAtRaw ?? match.startTime,
-      courtNumber: courtIdRaw ?? match.courtNumber,
+      courtId: courtIdValue ?? match.courtId,
+      ...(typeof courtNumberValue === "number" ? { courtNumber: courtNumberValue } : {}),
     },
     include: {
       pairingA: { include: { slots: { include: { playerProfile: true } } } },
@@ -270,11 +301,12 @@ export async function POST(req: NextRequest) {
   ];
 
   // Notificações: mudança de horário/court
+  const matchCourtId = updated.courtId ?? updated.courtNumber ?? null;
   await queueMatchChanged({
     userIds: involvedUserIds,
     matchId: updated.id,
     startAt: updated.startTime ?? null,
-    courtId: updated.courtNumber ?? null,
+    courtId: matchCourtId,
   });
 
   // Notificações de resultado + próximo adversário
@@ -298,21 +330,66 @@ export async function POST(req: NextRequest) {
         select: { id: true, roundLabel: true, pairingAId: true, pairingBId: true, winnerPairingId: true },
         orderBy: [{ roundLabel: "asc" }, { id: "asc" }],
       });
+      const isDoubleElim = config?.format === "DUPLA_ELIMINACAO";
+      const isGrandFinalLabel = (label?: string | null) => {
+        if (!label) return false;
+        const trimmed = label.trim();
+        const base = trimmed.startsWith("A ") || trimmed.startsWith("B ") ? trimmed.slice(2).trim() : trimmed;
+        return /^GF$|^GRAND_FINAL$|^GRAND FINAL$/i.test(base);
+      };
+      const isGrandFinalResetLabel = (label?: string | null) => {
+        if (!label) return false;
+        const trimmed = label.trim();
+        const base = trimmed.startsWith("A ") || trimmed.startsWith("B ") ? trimmed.slice(2).trim() : trimmed;
+        return /^GF2$|^GRAND_FINAL_RESET$|^GRAND FINAL 2$/i.test(base);
+      };
+      const isGrandFinalAnyLabel = (label?: string | null) =>
+        isGrandFinalLabel(label) || isGrandFinalResetLabel(label);
       const bracketPrefix = extractBracketPrefix(updated.roundLabel);
       const bracketMatches = koMatches.filter((m) => extractBracketPrefix(m.roundLabel) === bracketPrefix);
       const roundOrder = sortRoundsBySize(bracketMatches);
+      const aMatches = koMatches.filter((m) => extractBracketPrefix(m.roundLabel) === "A ");
+      const bMatches = koMatches.filter((m) => extractBracketPrefix(m.roundLabel) === "B ");
+      const aRoundOrder = sortRoundsBySize(aMatches);
+      const aRoundOrderNoGF = aRoundOrder.filter((label) => !isGrandFinalAnyLabel(label));
+      const bRoundOrder = sortRoundsBySize(bMatches);
+      const getRoundMatches = (matches: typeof koMatches, label: string | null) =>
+        matches.filter((m) => (m.roundLabel || "?") === (label || "?")).sort((a, b) => a.id - b.id);
+      const parseLoserRoundIndex = (label?: string | null) => {
+        if (!label) return null;
+        const trimmed = label.trim();
+        const base = trimmed.startsWith("A ") || trimmed.startsWith("B ") ? trimmed.slice(2).trim() : trimmed;
+        if (!/^L\\d+$/i.test(base)) return null;
+        const parsed = Number(base.slice(1));
+        return Number.isFinite(parsed) ? parsed : null;
+      };
+      const grandFinal = isDoubleElim ? aMatches.find((m) => isGrandFinalLabel(m.roundLabel)) : null;
+      const grandFinalReset = isDoubleElim ? aMatches.find((m) => isGrandFinalResetLabel(m.roundLabel)) : null;
 
-      await advancePadelKnockoutWinner({
-        matches: koMatches,
-        updateMatch: (matchId, data) =>
-          prisma.padelMatch.update({
-            where: { id: matchId },
-            data,
-            select: { id: true, roundLabel: true, pairingAId: true, pairingBId: true, winnerPairingId: true },
-          }),
-        winnerMatchId: updated.id,
-        winnerPairingId: resolvedWinnerPairingId,
-      });
+      const isGrandFinal = isDoubleElim && isGrandFinalLabel(updated.roundLabel);
+      const isGrandFinalReset = isDoubleElim && isGrandFinalResetLabel(updated.roundLabel);
+      const shouldAutoAdvance = !(isDoubleElim && (isGrandFinal || isGrandFinalReset));
+
+      if (shouldAutoAdvance) {
+        await advancePadelKnockoutWinner({
+          matches: koMatches,
+          updateMatch: (matchId, data) =>
+            prisma.padelMatch.update({
+              where: { id: matchId },
+              data,
+              select: { id: true, roundLabel: true, pairingAId: true, pairingBId: true, winnerPairingId: true },
+            }),
+          winnerMatchId: updated.id,
+          winnerPairingId: resolvedWinnerPairingId,
+        });
+      }
+
+      const loserPairingId =
+        resolvedWinnerPairingId && updated.pairingAId && updated.pairingBId
+          ? resolvedWinnerPairingId === updated.pairingAId
+            ? updated.pairingBId
+            : updated.pairingAId
+          : null;
 
       if (
         config?.format === "QUADRO_AB" &&
@@ -322,10 +399,8 @@ export async function POST(req: NextRequest) {
         roundOrder.length > 0 &&
         (updated.roundLabel || "") === roundOrder[0]
       ) {
-        const loser =
-          resolvedWinnerPairingId === updated.pairingAId ? updated.pairingBId : updated.pairingAId;
         const bMatches = koMatches.filter((m) => extractBracketPrefix(m.roundLabel) === "B ");
-        if (bMatches.length > 0 && loser) {
+        if (bMatches.length > 0 && loserPairingId) {
           const bRoundOrder = sortRoundsBySize(bMatches);
           const bFirstRound = bRoundOrder[0];
           if (bFirstRound) {
@@ -343,11 +418,11 @@ export async function POST(req: NextRequest) {
               if (target) {
                 const updateTarget: Record<string, number> = {};
                 if (aIndex % 2 === 0) {
-                  if (!target.pairingAId) updateTarget.pairingAId = loser;
-                  else if (!target.pairingBId) updateTarget.pairingBId = loser;
+                  if (!target.pairingAId) updateTarget.pairingAId = loserPairingId;
+                  else if (!target.pairingBId) updateTarget.pairingBId = loserPairingId;
                 } else {
-                  if (!target.pairingBId) updateTarget.pairingBId = loser;
-                  else if (!target.pairingAId) updateTarget.pairingAId = loser;
+                  if (!target.pairingBId) updateTarget.pairingBId = loserPairingId;
+                  else if (!target.pairingAId) updateTarget.pairingAId = loserPairingId;
                 }
                 if (Object.keys(updateTarget).length > 0) {
                   await prisma.padelMatch.update({
@@ -361,16 +436,131 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      const loserPairingId =
-        resolvedWinnerPairingId && updated.pairingAId && updated.pairingBId
-          ? resolvedWinnerPairingId === updated.pairingAId
-            ? updated.pairingBId
-            : updated.pairingAId
-          : null;
+      if (isDoubleElim && bracketPrefix === "A " && loserPairingId && aRoundOrderNoGF.length > 0 && bMatches.length > 0) {
+        const currentLabel = updated.roundLabel ?? aRoundOrderNoGF[0];
+        const wIndex = currentLabel ? aRoundOrderNoGF.findIndex((label) => label === currentLabel) : -1;
+        if (wIndex >= 0) {
+          const loserRoundIndex = wIndex === 0 ? 1 : 2 * (wIndex + 1) - 2;
+          const loserRoundLabel = `B L${loserRoundIndex}`;
+          const aRoundMatches = getRoundMatches(aMatches, currentLabel);
+          const bRoundMatches = getRoundMatches(bMatches, loserRoundLabel);
+          const aIndex = aRoundMatches.findIndex((m) => m.id === updated.id);
+          if (aIndex !== -1 && bRoundMatches.length > 0) {
+            const targetIdx = wIndex === 0 ? Math.floor(aIndex / 2) : aIndex;
+            const target = bRoundMatches[targetIdx];
+            if (target) {
+              const updateTarget: Record<string, number> = {};
+              if (wIndex === 0) {
+                if (aIndex % 2 === 0) {
+                  if (!target.pairingAId) updateTarget.pairingAId = loserPairingId;
+                  else if (!target.pairingBId) updateTarget.pairingBId = loserPairingId;
+                } else {
+                  if (!target.pairingBId) updateTarget.pairingBId = loserPairingId;
+                  else if (!target.pairingAId) updateTarget.pairingAId = loserPairingId;
+                }
+              } else {
+                if (!target.pairingBId) updateTarget.pairingBId = loserPairingId;
+                else if (!target.pairingAId) updateTarget.pairingAId = loserPairingId;
+              }
+              if (Object.keys(updateTarget).length > 0) {
+                await prisma.padelMatch.update({
+                  where: { id: target.id },
+                  data: updateTarget,
+                });
+              }
+            }
+          }
+        }
+      }
+
+      if (isDoubleElim && bracketPrefix === "B " && resolvedWinnerPairingId && bRoundOrder.length > 0) {
+        const currentLoserRound = parseLoserRoundIndex(updated.roundLabel);
+        const lastLoserRound = Math.max(
+          ...bRoundOrder.map((label) => parseLoserRoundIndex(label) ?? 0),
+        );
+        if (currentLoserRound && lastLoserRound && currentLoserRound === lastLoserRound) {
+          if (grandFinal) {
+            const updateTarget: Record<string, number> = {};
+            if (!grandFinal.pairingAId) updateTarget.pairingAId = resolvedWinnerPairingId;
+            else if (!grandFinal.pairingBId) updateTarget.pairingBId = resolvedWinnerPairingId;
+            if (Object.keys(updateTarget).length > 0) {
+              await prisma.padelMatch.update({
+                where: { id: grandFinal.id },
+                data: updateTarget,
+              });
+            }
+          }
+        }
+      }
+
+      let gfResetNeeded: boolean | null = null;
+      if (isDoubleElim && isGrandFinal && resolvedWinnerPairingId) {
+        const winnersFinalLabel =
+          aRoundOrderNoGF.length > 0 ? aRoundOrderNoGF[aRoundOrderNoGF.length - 1] : null;
+        const winnersFinal = winnersFinalLabel ? getRoundMatches(aMatches, winnersFinalLabel)[0] : null;
+        const winnersFinalWinner = winnersFinal?.winnerPairingId ?? null;
+
+        const lastLoserRoundLabel = bRoundOrder.length > 0 ? bRoundOrder[bRoundOrder.length - 1] : null;
+        const lastLoserMatch = lastLoserRoundLabel ? getRoundMatches(bMatches, lastLoserRoundLabel)[0] : null;
+        const losersFinalWinner = lastLoserMatch?.winnerPairingId ?? null;
+
+        if (losersFinalWinner) {
+          gfResetNeeded = resolvedWinnerPairingId === losersFinalWinner;
+        } else if (winnersFinalWinner) {
+          gfResetNeeded = resolvedWinnerPairingId !== winnersFinalWinner;
+        }
+
+        if (grandFinalReset && gfResetNeeded !== null) {
+          if (gfResetNeeded) {
+            const pairingAId = grandFinal?.pairingAId ?? winnersFinalWinner ?? null;
+            const pairingBId = grandFinal?.pairingBId ?? resolvedWinnerPairingId ?? null;
+            await prisma.padelMatch.update({
+              where: { id: grandFinalReset.id },
+              data: {
+                pairingAId,
+                pairingBId,
+                winnerPairingId: null,
+                status: "PENDING",
+                score: {},
+                scoreSets: null,
+              },
+            });
+          } else {
+            await prisma.padelMatch.update({
+              where: { id: grandFinalReset.id },
+              data: {
+                pairingAId: null,
+                pairingBId: null,
+                winnerPairingId: null,
+                status: "CANCELLED",
+                score: {},
+                scoreSets: null,
+              },
+            });
+          }
+        }
+      }
+
       const isFirstRound = roundOrder.length > 0 && (updated.roundLabel || "") === roundOrder[0];
-      const shouldNotifyEliminated =
-        Boolean(loserPairingId) &&
-        (config?.format !== "QUADRO_AB" || bracketPrefix === "B " || !isFirstRound);
+      const finalRound = roundOrder[roundOrder.length - 1];
+      const isFinal = finalRound && (updated.roundLabel || "") === finalRound;
+      const isMainBracket = bracketPrefix !== "B ";
+      const hasGrandFinal = isDoubleElim && aMatches.some((m) => isGrandFinalLabel(m.roundLabel));
+      let shouldNotifyEliminated = false;
+      if (isDoubleElim) {
+        if (bracketPrefix === "B ") {
+          shouldNotifyEliminated = Boolean(loserPairingId);
+        } else if (isGrandFinalReset) {
+          shouldNotifyEliminated = Boolean(loserPairingId);
+        } else if (isGrandFinal) {
+          shouldNotifyEliminated = Boolean(loserPairingId) && gfResetNeeded === false;
+        } else if (!hasGrandFinal && isFinal && isMainBracket) {
+          shouldNotifyEliminated = Boolean(loserPairingId);
+        }
+      } else {
+        shouldNotifyEliminated =
+          Boolean(loserPairingId) && (config?.format !== "QUADRO_AB" || bracketPrefix === "B " || !isFirstRound);
+      }
       if (shouldNotifyEliminated && loserPairingId) {
         const loserPairing =
           loserPairingId === updated.pairingAId
@@ -386,10 +576,19 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      const finalRound = roundOrder[roundOrder.length - 1];
-      const isFinal = finalRound && (updated.roundLabel || "") === finalRound;
-      const isMainBracket = bracketPrefix !== "B ";
-      if (isFinal && isMainBracket && resolvedWinnerPairingId) {
+      let shouldNotifyChampion = false;
+      if (isDoubleElim) {
+        if (isGrandFinalReset && resolvedWinnerPairingId) {
+          shouldNotifyChampion = true;
+        } else if (isGrandFinal && resolvedWinnerPairingId && gfResetNeeded === false) {
+          shouldNotifyChampion = true;
+        } else if (!hasGrandFinal && isFinal && isMainBracket && resolvedWinnerPairingId) {
+          shouldNotifyChampion = true;
+        }
+      } else {
+        shouldNotifyChampion = Boolean(resolvedWinnerPairingId) && isFinal && isMainBracket;
+      }
+      if (shouldNotifyChampion && resolvedWinnerPairingId) {
         const winnerPairing =
           resolvedWinnerPairingId === updated.pairingAId
             ? updated.pairingA

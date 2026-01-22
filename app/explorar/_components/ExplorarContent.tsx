@@ -24,6 +24,7 @@ import {
   PuzzleIcon,
   TicketIcon,
 } from "./WorldIcons";
+import { formatEventLocationLabel } from "@/lib/location/eventLocation";
 
 type ExploreItem = {
   id: number;
@@ -36,8 +37,13 @@ type ExploreItem = {
   location: {
     name: string | null;
     city: string | null;
+    address: string | null;
     lat: number | null;
     lng: number | null;
+    formattedAddress: string | null;
+    source: "OSM" | "MANUAL" | null;
+    components: Record<string, unknown> | null;
+    overrides: Record<string, unknown> | null;
   };
   coverImageUrl: string | null;
   isFree: boolean;
@@ -203,6 +209,7 @@ const PADEL_FORMAT_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "QUADRO_ELIMINATORIO", label: "Quadro eliminatório" },
   { value: "GRUPOS_ELIMINATORIAS", label: "Grupos + eliminatórias" },
   { value: "QUADRO_AB", label: "Quadro A/B" },
+  { value: "DUPLA_ELIMINACAO", label: "Dupla eliminação" },
   { value: "NON_STOP", label: "Non-stop" },
   { value: "CAMPEONATO_LIGA", label: "Campeonato/Liga" },
 ];
@@ -1177,6 +1184,7 @@ export function ExplorarContent({ initialWorld, hideWorldTabs = false }: Explora
           INSCRIPTIONS_CLOSED: "As inscrições já fecharam.",
           TOURNAMENT_STARTED: "O torneio já começou.",
           CATEGORY_GENDER_MISMATCH: "Esta categoria exige uma dupla compatível com o género definido.",
+          CATEGORY_LEVEL_MISMATCH: "O teu nível não é compatível com esta categoria.",
         };
         const detail = data?.error ? errorMap[data.error] ?? data.error : null;
         throw new Error(detail || "Não foi possível entrar na dupla.");
@@ -2210,7 +2218,20 @@ function BaseCard({
   const router = useRouter();
   const status = statusTag(item.status);
   const dateLabel = formatDateRange(item.startsAt, item.endsAt);
-  const venueLabel = item.location.name || item.location.city || "Local a anunciar";
+  const venueLabel = formatEventLocationLabel(
+    {
+      locationName: item.location.name,
+      locationCity: item.location.city,
+      address: item.location.address,
+      locationFormattedAddress: item.location.formattedAddress,
+      locationSource: item.location.source,
+      locationComponents: item.location.components,
+      locationOverrides: item.location.overrides,
+      latitude: item.location.lat,
+      longitude: item.location.lng,
+    },
+    "Local a anunciar",
+  );
   const isEvent = badge === "Evento";
   const badgeGrad = isEvent
     ? "from-white/12 via-white/9 to-white/6"

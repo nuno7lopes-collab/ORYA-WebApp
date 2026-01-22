@@ -23,6 +23,9 @@ export async function GET(req: NextRequest) {
 
   const club = await prisma.padelClub.findFirst({ where: { id: clubId, organizationId: organization.id, deletedAt: null } });
   if (!club) return NextResponse.json({ ok: false, error: "CLUB_NOT_FOUND" }, { status: 404 });
+  if (club.kind === "PARTNER") {
+    return NextResponse.json({ ok: false, error: "CLUB_READ_ONLY" }, { status: 403 });
+  }
 
   const courts = await prisma.padelClubCourt.findMany({
     where: { padelClubId: club.id },
@@ -48,6 +51,9 @@ export async function POST(req: NextRequest) {
 
   const club = await prisma.padelClub.findFirst({ where: { id: clubId, organizationId: organization.id, deletedAt: null } });
   if (!club) return NextResponse.json({ ok: false, error: "CLUB_NOT_FOUND" }, { status: 404 });
+  if (club.kind === "PARTNER") {
+    return NextResponse.json({ ok: false, error: "CLUB_READ_ONLY" }, { status: 403 });
+  }
 
   const courtId = typeof body.id === "number" ? body.id : null;
   const name = typeof body.name === "string" ? body.name.trim() : "";

@@ -1,12 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
+import { isOrganizationFollowed } from "@/domain/social/follows";
 import { OrganizationMemberRole } from "@prisma/client";
 import { resolveLiveHubModules } from "@/lib/liveHubConfig";
 import { summarizeMatchStatus, computeStandingsForGroup } from "@/domain/tournaments/structure";
 import { type TieBreakRule } from "@/domain/tournaments/standings";
 import { getTournamentStructure } from "@/domain/tournaments/structureData";
 import { getWinnerSideFromScore, type MatchScorePayload } from "@/domain/tournaments/matchRules";
+import {
+  computePadelStandingsByGroup,
+  normalizePadelPointsTable,
+  normalizePadelTieBreakRules,
+} from "@/domain/padel/standings";
+import { extractBracketPrefix, sortRoundsBySize } from "@/domain/padel/knockoutAdvance";
 import { canScanTickets } from "@/lib/organizationAccess";
 import { normalizeEmail } from "@/lib/utils/email";
 import { sanitizeUsername } from "@/lib/username";
@@ -22,6 +29,40 @@ function slugify(input: string): string {
 
 function pickDisplayName(profile: { fullName: string | null; username: string | null } | null) {
   return profile?.fullName || (profile?.username ? `@${profile.username}` : null);
+}
+
+function normalizePadelSets(raw: unknown) {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((item) => {
+      if (!item || typeof item !== "object") return null;
+      const entry = item as { teamA?: unknown; teamB?: unknown; a?: unknown; b?: unknown };
+      const aRaw = typeof entry.teamA !== "undefined" ? entry.teamA : entry.a;
+      const bRaw = typeof entry.teamB !== "undefined" ? entry.teamB : entry.b;
+      const a = typeof aRaw === "number" ? aRaw : Number(aRaw);
+      const b = typeof bRaw === "number" ? bRaw : Number(bRaw);
+      if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
+      return { a, b };
+    })
+    .filter(Boolean) as Array<{ a: number; b: number }>;
+}
+
+function resolvePadelMatchStatus(status: string, score: Record<string, unknown>) {
+  if (score.disputeStatus === "OPEN") {
+    return { status: "DISPUTED", label: "Em disputa" };
+  }
+  if (status === "IN_PROGRESS") return { status, label: "Em jogo" };
+  if (status === "DONE") return { status, label: "Terminado" };
+  if (status === "CANCELLED") return { status, label: "Cancelado" };
+  return { status: "PENDING", label: "Pendente" };
+}
+
+function resolvePadelRoundNumber(label: string | null) {
+  if (!label) return null;
+  const match = label.match(/(\d+)/);
+  if (!match) return null;
+  const value = Number(match[1]);
+  return Number.isFinite(value) ? value : null;
 }
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ slug: string }> }) {
@@ -43,6 +84,11 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ slu
         status: true,
         locationName: true,
         locationCity: true,
+        address: true,
+        locationSource: true,
+        locationFormattedAddress: true,
+        locationComponents: true,
+        locationOverrides: true,
         coverImageUrl: true,
         organizationId: true,
         liveHubVisibility: true,
@@ -89,6 +135,11 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ slu
             status: true,
             locationName: true,
             locationCity: true,
+            address: true,
+            locationSource: true,
+            locationFormattedAddress: true,
+            locationComponents: true,
+            locationOverrides: true,
             coverImageUrl: true,
             organizationId: true,
             liveHubVisibility: true,
@@ -133,7 +184,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ slu
           status: "ACTIVE",
           OR: [{ userId }, { ownerUserId: userId }],
         },
-        select: { id: true, ticketTypeId: true, tournamentEntryId: true },
+        select: { id: true, ticketTypeId: true, tournamentEntryId: true, pairingId: true },
       })
     : [];
 
@@ -226,7 +277,295 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ slu
     }
   > = {};
 
-  if (event.tournament) {
+  if (event.templateType === "PADEL") {
+    const [padelConfig, padelMatches] = await Promise.all([
+      prisma.padelTournamentConfig.findUnique({
+        where: { eventId: event.id },
+        select: {
+          format: true,
+          advancedSettings: true,
+          ruleSet: { select: { tieBreakRules: true, pointsTable: true } },
+        },
+      }),
+      prisma.padelMatch.findMany({
+        where: { eventId: event.id },
+        select: {
+          id: true,
+          categoryId: true,
+          category: { select: { label: true } },
+          roundType: true,
+          groupLabel: true,
+          roundLabel: true,
+          pairingAId: true,
+          pairingBId: true,
+          winnerPairingId: true,
+          courtId: true,
+          courtNumber: true,
+          startTime: true,
+          plannedStartAt: true,
+          status: true,
+          score: true,
+          scoreSets: true,
+          updatedAt: true,
+        },
+        orderBy: [
+          { roundType: "asc" },
+          { groupLabel: "asc" },
+          { startTime: "asc" },
+          { id: "asc" },
+        ],
+      }),
+    ]);
+
+    const advancedSettings = (padelConfig?.advancedSettings as Record<string, unknown> | null) ?? {};
+    const liveSponsors = (advancedSettings.liveSponsors as Record<string, unknown> | null) ?? null;
+    const featuredMatchId =
+      typeof advancedSettings.featuredMatchId === "number" ? (advancedSettings.featuredMatchId as number) : null;
+    const goalLimits = (advancedSettings as Record<string, unknown>).goalLimits ?? null;
+    const pointsTable = normalizePadelPointsTable(padelConfig?.ruleSet?.pointsTable);
+    const tieBreakRules = normalizePadelTieBreakRules(padelConfig?.ruleSet?.tieBreakRules);
+
+    const buildPadelMatch = (
+      match: (typeof padelMatches)[number],
+      params: { stageId: number; groupId?: number | null; round?: number | null },
+    ) => {
+      const scoreObj =
+        match.score && typeof match.score === "object" ? (match.score as Record<string, unknown>) : {};
+      const rawSets = Array.isArray(match.scoreSets)
+        ? match.scoreSets
+        : Array.isArray((scoreObj as { sets?: unknown }).sets)
+          ? (scoreObj as { sets?: unknown }).sets
+          : [];
+      const normalizedSets = normalizePadelSets(rawSets);
+      const scorePayload = {
+        ...scoreObj,
+        ...(normalizedSets.length ? { sets: normalizedSets } : {}),
+      };
+      const statusInfo = resolvePadelMatchStatus(match.status, scoreObj);
+      return {
+        id: match.id,
+        stageId: params.stageId,
+        groupId: params.groupId ?? null,
+        pairing1Id: match.pairingAId ?? null,
+        pairing2Id: match.pairingBId ?? null,
+        courtId: match.courtNumber ?? match.courtId ?? null,
+        round: params.round ?? resolvePadelRoundNumber(match.roundLabel) ?? null,
+        roundLabel: match.roundLabel,
+        startAt: match.startTime ?? match.plannedStartAt ?? null,
+        status: statusInfo.status,
+        statusLabel: statusInfo.label,
+        score: Object.keys(scorePayload).length ? scorePayload : null,
+        updatedAt: match.updatedAt,
+      };
+    };
+
+    let userPairingId: number | null = null;
+    if (userId) {
+      const pairing = await prisma.padelPairing.findFirst({
+        where: { eventId: event.id, OR: [{ player1UserId: userId }, { player2UserId: userId }] },
+        select: { id: true },
+      });
+      if (pairing?.id) {
+        userPairingId = pairing.id;
+      } else {
+        const ticketPairingId = tickets.find((t) => Number.isFinite(t.pairingId))?.pairingId ?? null;
+        if (ticketPairingId) {
+          userPairingId = ticketPairingId;
+        }
+      }
+    }
+
+    const matchesByCategory = new Map<number | null, (typeof padelMatches)[number][]>();
+    padelMatches.forEach((match) => {
+      const key = match.categoryId ?? null;
+      if (!matchesByCategory.has(key)) matchesByCategory.set(key, []);
+      matchesByCategory.get(key)!.push(match);
+    });
+
+    const stages: Array<{
+      id: number;
+      name: string | null;
+      stageType: string;
+      order: number;
+      groups: Array<{ id: number; name: string | null; standings: unknown[]; matches: unknown[] }>;
+      matches: unknown[];
+    }> = [];
+    let stageId = 1;
+    let groupId = 1;
+    let stageOrder = 1;
+
+    const categoryEntries = Array.from(matchesByCategory.entries())
+      .map(([categoryId, matches]) => {
+        const label =
+          matches.find((m) => m.category?.label)?.category?.label ||
+          (categoryId ? `Categoria ${categoryId}` : "Categoria");
+        return { categoryId, label, matches };
+      })
+      .sort((a, b) => a.label.localeCompare(b.label));
+
+    categoryEntries.forEach((entry) => {
+      const { label, matches } = entry;
+      const groupMatches = matches.filter((m) => m.roundType === "GROUPS");
+      const knockoutMatches = matches.filter((m) => m.roundType === "KNOCKOUT");
+
+      if (groupMatches.length > 0) {
+        const standingsByGroup = computePadelStandingsByGroup(
+          groupMatches.map((m) => ({
+            pairingAId: m.pairingAId ?? null,
+            pairingBId: m.pairingBId ?? null,
+            scoreSets: m.scoreSets,
+            score: m.score,
+            status: m.status,
+            groupLabel: m.groupLabel,
+          })),
+          pointsTable,
+          tieBreakRules,
+        );
+        const matchesByGroup = groupMatches.reduce<Record<string, (typeof groupMatches)[number][]>>((acc, m) => {
+          const group = m.groupLabel || "A";
+          acc[group] = acc[group] || [];
+          acc[group].push(m);
+          return acc;
+        }, {});
+        const groupLabels = Array.from(
+          new Set([...Object.keys(standingsByGroup), ...Object.keys(matchesByGroup)]),
+        ).sort();
+        const groups = groupLabels.map((groupLabel) => {
+          const currentGroupId = groupId++;
+          const groupMatchesList = matchesByGroup[groupLabel] ?? [];
+          return {
+            id: currentGroupId,
+            name: groupLabel ? `Grupo ${groupLabel}` : "Grupo",
+            standings: standingsByGroup[groupLabel] ?? [],
+            matches: groupMatchesList.map((m) =>
+              buildPadelMatch(m, { stageId, groupId: currentGroupId, round: resolvePadelRoundNumber(m.roundLabel) }),
+            ),
+          };
+        });
+        stages.push({
+          id: stageId++,
+          name: label ? `${label} · Grupos` : "Grupos",
+          stageType: "GROUPS",
+          order: stageOrder++,
+          groups,
+          matches: [],
+        });
+      }
+
+      if (knockoutMatches.length > 0) {
+        const prefixes = new Map<"" | "A " | "B ", (typeof knockoutMatches)[number][]>();
+        knockoutMatches.forEach((match) => {
+          const prefix = extractBracketPrefix(match.roundLabel);
+          if (!prefixes.has(prefix)) prefixes.set(prefix, []);
+          prefixes.get(prefix)!.push(match);
+        });
+
+        prefixes.forEach((matchesForPrefix, prefix) => {
+          const roundOrder = sortRoundsBySize(matchesForPrefix);
+          const roundIndex = new Map(roundOrder.map((label, idx) => [label, idx + 1]));
+          const matchesPayload = matchesForPrefix.map((m) =>
+            buildPadelMatch(m, { stageId, round: roundIndex.get(m.roundLabel ?? "?") ?? null }),
+          );
+          const prefixName = prefix === "A " ? "Quadro A" : prefix === "B " ? "Quadro B" : "Quadro";
+          stages.push({
+            id: stageId++,
+            name: label ? `${label} · ${prefixName}` : prefixName,
+            stageType: "PLAYOFF",
+            order: stageOrder++,
+            groups: [],
+            matches: matchesPayload,
+          });
+        });
+      }
+    });
+
+    const flatMatches = stages.flatMap((s) => [...s.matches, ...s.groups.flatMap((g) => g.matches)]) as Array<{
+      pairing1Id?: number | null;
+      pairing2Id?: number | null;
+      status: string;
+      startAt?: string | Date | null;
+      updatedAt?: string | Date | null;
+    }>;
+
+    const nextMatch =
+      userPairingId !== null
+        ? flatMatches
+            .filter((m) => (m.pairing1Id === userPairingId || m.pairing2Id === userPairingId) && m.status !== "DONE")
+            .sort((a, b) =>
+              a.startAt && b.startAt ? new Date(a.startAt).getTime() - new Date(b.startAt).getTime() : 0,
+            )[0] ?? null
+        : null;
+
+    const lastMatch =
+      userPairingId !== null
+        ? flatMatches
+            .filter((m) => (m.pairing1Id === userPairingId || m.pairing2Id === userPairingId) && m.status === "DONE")
+            .sort((a, b) =>
+              a.startAt && b.startAt ? new Date(b.startAt).getTime() - new Date(a.startAt).getTime() : 0,
+            )[0] ?? null
+        : null;
+
+    const pairingIds = new Set<number>();
+    for (const match of flatMatches) {
+      if (typeof match.pairing1Id === "number") pairingIds.add(match.pairing1Id);
+      if (typeof match.pairing2Id === "number") pairingIds.add(match.pairing2Id);
+    }
+    if (userPairingId) pairingIds.add(userPairingId);
+
+    const pairingIdsList = Array.from(pairingIds);
+    if (pairingIdsList.length > 0) {
+      const padelPairings = await prisma.padelPairing.findMany({
+        where: { id: { in: pairingIdsList } },
+        select: {
+          id: true,
+          player1: { select: { fullName: true, username: true, avatarUrl: true } },
+          player2: { select: { fullName: true, username: true, avatarUrl: true } },
+        },
+      });
+
+      for (const pairing of padelPairings) {
+        const p1 = pickDisplayName(pairing.player1);
+        const p2 = pickDisplayName(pairing.player2);
+        const label = p1 && p2 ? `${p1} & ${p2}` : `Dupla #${pairing.id}`;
+        const subLabel = p1 && p2 ? "Dupla" : null;
+        pairings[pairing.id] = {
+          id: pairing.id,
+          label,
+          subLabel,
+          avatarUrl: pairing.player1?.avatarUrl || pairing.player2?.avatarUrl || null,
+        };
+      }
+    }
+
+    const finalCandidates = padelMatches.filter((match) => {
+      if (match.roundType !== "KNOCKOUT") return false;
+      const scoreObj =
+        match.score && typeof match.score === "object" ? (match.score as Record<string, unknown>) : {};
+      if (scoreObj.disputeStatus === "OPEN") return false;
+      if (match.status !== "DONE") return false;
+      const rawLabel = match.roundLabel ?? "";
+      const baseLabel = rawLabel.replace(/^[AB]\s+/, "");
+      return baseLabel === "FINAL" && extractBracketPrefix(match.roundLabel) !== "B ";
+    });
+    const championMatch = finalCandidates
+      .sort((a, b) => new Date(b.updatedAt ?? 0).getTime() - new Date(a.updatedAt ?? 0).getTime())[0];
+    const championPairingId = championMatch?.winnerPairingId ?? null;
+
+    tournamentPayload = {
+      id: event.id,
+      eventId: event.id,
+      source: "PADEL",
+      format: padelConfig?.format ?? null,
+      stages,
+      userPairingId,
+      nextMatch,
+      lastMatch,
+      championPairingId,
+      featuredMatchId,
+      sponsors: liveSponsors,
+      goalLimits,
+    };
+  } else if (event.tournament) {
     const structure = await getTournamentStructure(event.tournament.id);
     const configRes = await prisma.tournament.findUnique({
       where: { id: event.tournament.id },
@@ -424,16 +763,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ slu
 
   let organizationFollowed = false;
   if (userId && event.organization?.id) {
-    const follow = await prisma.organization_follows.findUnique({
-      where: {
-        follower_id_organization_id: {
-          follower_id: userId,
-          organization_id: event.organization.id,
-        },
-      },
-      select: { organization_id: true },
-    });
-    organizationFollowed = Boolean(follow);
+    organizationFollowed = await isOrganizationFollowed(userId, event.organization.id);
   }
 
     const res = NextResponse.json(
@@ -450,6 +780,17 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ slu
           status: event.status,
           locationName: event.locationName,
           locationCity: event.locationCity,
+          address: event.address,
+          locationSource: event.locationSource,
+          locationFormattedAddress: event.locationFormattedAddress,
+          locationComponents:
+            event.locationComponents && typeof event.locationComponents === "object"
+              ? (event.locationComponents as Record<string, unknown>)
+              : null,
+          locationOverrides:
+            event.locationOverrides && typeof event.locationOverrides === "object"
+              ? (event.locationOverrides as Record<string, unknown>)
+              : null,
           coverImageUrl: event.coverImageUrl,
           liveStreamUrl: event.liveStreamUrl,
           timezone: event.timezone,

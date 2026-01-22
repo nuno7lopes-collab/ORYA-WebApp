@@ -1,9 +1,17 @@
+import { formatEventLocationLabel } from "@/lib/location/eventLocation";
+
 type PurchaseEmailPayload = {
   eventTitle: string;
   eventSlug: string;
   startsAt?: string | null;
   endsAt?: string | null;
   locationName?: string | null;
+  locationCity?: string | null;
+  address?: string | null;
+  locationSource?: "OSM" | "MANUAL" | null;
+  locationFormattedAddress?: string | null;
+  locationComponents?: Record<string, unknown> | null;
+  locationOverrides?: Record<string, unknown> | null;
   ticketsCount: number;
   ticketUrl: string;
 };
@@ -20,6 +28,26 @@ type OfficialEmailVerificationPayload = {
   confirmUrl: string;
   expiresAt?: Date | null;
   pendingEmail: string;
+};
+
+type CrmCampaignEmailPayload = {
+  organizationName: string;
+  title: string;
+  body?: string | null;
+  ctaLabel?: string | null;
+  ctaUrl?: string | null;
+  previewText?: string | null;
+};
+
+type StoreOrderEmailPayload = {
+  storeName: string;
+  orderNumber: string;
+  orderTotal: string;
+  items: Array<{ name: string; quantity: number }>;
+  trackingUrl: string;
+  orderUrl?: string | null;
+  supportEmail?: string | null;
+  supportPhone?: string | null;
 };
 
 export function renderPurchaseConfirmationEmail(payload: PurchaseEmailPayload) {
@@ -42,7 +70,18 @@ export function renderPurchaseConfirmationEmail(payload: PurchaseEmailPayload) {
       : startStr
     : "Data a anunciar";
 
-  const whereLine = payload.locationName?.trim() || "Local a anunciar";
+  const whereLine = formatEventLocationLabel(
+    {
+      locationName: payload.locationName,
+      locationCity: payload.locationCity,
+      address: payload.address,
+      locationSource: payload.locationSource,
+      locationFormattedAddress: payload.locationFormattedAddress,
+      locationComponents: payload.locationComponents,
+      locationOverrides: payload.locationOverrides,
+    },
+    "Local a anunciar",
+  );
 
   return {
     subject: `🎟️ Bilhetes confirmados – ${payload.eventTitle}`,
@@ -150,6 +189,75 @@ ${expiresLine}`;
 
   return {
     subject: `📧 Verifica o email oficial – ${payload.organizationName}`,
+    html,
+    text,
+  };
+}
+
+export function renderCrmCampaignEmail(payload: CrmCampaignEmailPayload) {
+  const headline = payload.title || `Novidades de ${payload.organizationName}`;
+  const previewLine = payload.previewText ? `<p style="color:#6b7280;">${payload.previewText}</p>` : "";
+  const body = payload.body ? `<p>${payload.body}</p>` : "";
+  const ctaLabel = payload.ctaLabel || "Ver detalhes";
+  const ctaLink = payload.ctaUrl
+    ? `<p style="margin:18px 0;"><a href="${payload.ctaUrl}" style="background:#111827;color:#ffffff;padding:12px 18px;border-radius:10px;text-decoration:none;font-weight:bold;">${ctaLabel}</a></p>`
+    : "";
+  const html = `
+    <div style="font-family: Arial, sans-serif; color: #0f172a;">
+      <p style="text-transform: uppercase; letter-spacing: 0.2em; font-size: 11px; color: #64748b;">${payload.organizationName}</p>
+      <h2 style="color:#111827;">${headline}</h2>
+      ${previewLine}
+      ${body}
+      ${ctaLink}
+      <p style="margin-top:24px; font-size:12px; color:#94a3b8;">Recebeste esta mensagem porque aceitaste comunicações de marketing.</p>
+    </div>
+  `;
+
+  const text = `${payload.organizationName}\n${headline}\n\n${payload.body ?? ""}\n${payload.ctaUrl ? `${ctaLabel}: ${payload.ctaUrl}` : ""}`.trim();
+
+  return { html, text };
+}
+
+export function renderStoreOrderConfirmationEmail(payload: StoreOrderEmailPayload) {
+  const itemsHtml = payload.items
+    .map((item) => `<li>${item.quantity}x ${item.name}</li>`)
+    .join("");
+  const itemsText = payload.items.map((item) => `- ${item.quantity}x ${item.name}`).join("\n");
+  const supportLine =
+    payload.supportEmail || payload.supportPhone
+      ? `Suporte: ${payload.supportEmail ?? ""}${payload.supportEmail && payload.supportPhone ? " · " : ""}${payload.supportPhone ?? ""}`
+      : "";
+
+  const html = `
+    <div style="font-family: Arial, sans-serif; color: #0f172a;">
+      <h2 style="color:#111827;">Compra confirmada – ${payload.storeName}</h2>
+      <p>A tua encomenda <strong>${payload.orderNumber}</strong> foi confirmada.</p>
+      <p><strong>Total:</strong> ${payload.orderTotal}</p>
+      <p><strong>Artigos:</strong></p>
+      <ul>${itemsHtml}</ul>
+      <p>Acompanha a encomenda e descarrega faturas aqui:</p>
+      <p><a href="${payload.trackingUrl}" style="color:#2563eb;font-weight:bold;">Abrir seguimento</a></p>
+      ${
+        payload.orderUrl
+          ? `<p>Se tens conta ORYA, podes ver o pedido aqui: <a href="${payload.orderUrl}" style="color:#2563eb;font-weight:bold;">Ver pedido</a></p>`
+          : ""
+      }
+      ${supportLine ? `<p style="margin-top:16px; font-size:12px; color:#6b7280;">${supportLine}</p>` : ""}
+    </div>
+  `;
+
+  const text = `Compra confirmada – ${payload.storeName}
+Encomenda: ${payload.orderNumber}
+Total: ${payload.orderTotal}
+Artigos:
+${itemsText}
+
+Seguimento: ${payload.trackingUrl}
+${payload.orderUrl ? `Pedido ORYA: ${payload.orderUrl}` : ""}
+${supportLine ? `\n${supportLine}` : ""}`;
+
+  return {
+    subject: `🧾 Compra confirmada – ${payload.storeName}`,
     html,
     text,
   };

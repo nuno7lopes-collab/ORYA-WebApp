@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
 import { cn } from "@/lib/utils";
 
@@ -16,10 +16,36 @@ export default function OrganizationFollowClient({
   onChange,
 }: OrganizationFollowClientProps) {
   const [isFollowing, setIsFollowing] = useState(initialIsFollowing);
+  const hasInteractedRef = useRef(false);
   const [isPending, startTransition] = useTransition();
+
+  useEffect(() => {
+    setIsFollowing(initialIsFollowing);
+    hasInteractedRef.current = false;
+  }, [initialIsFollowing, organizationId]);
+
+  useEffect(() => {
+    let mounted = true;
+    const loadStatus = async () => {
+      try {
+        const res = await fetch(`/api/social/organization-follow-status?organizationId=${organizationId}`);
+        const json = await res.json().catch(() => null);
+        if (mounted && res.ok && json?.ok && !hasInteractedRef.current) {
+          setIsFollowing(Boolean(json.isFollowing));
+        }
+      } catch {
+        // ignore
+      }
+    };
+    loadStatus();
+    return () => {
+      mounted = false;
+    };
+  }, [organizationId]);
 
   const toggleFollow = () => {
     const next = !isFollowing;
+    hasInteractedRef.current = true;
     setIsFollowing(next);
     onChange?.(next);
     startTransition(async () => {

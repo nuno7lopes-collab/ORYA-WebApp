@@ -2,10 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { EntitlementStatus, CheckinResultCode } from "@prisma/client";
+import { CheckinResultCode, CrmInteractionSource, CrmInteractionType, EntitlementStatus } from "@prisma/client";
 import { buildDefaultCheckinWindow, isOutsideWindow } from "@/lib/checkin/policy";
 import { canManageEvents } from "@/lib/organizationPermissions";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
+import { ingestCrmInteraction } from "@/lib/crm/ingest";
 
 type Body = { qrToken?: string; eventId?: number; deviceId?: string };
 
@@ -91,7 +92,7 @@ export async function POST(req: NextRequest) {
   const ent = tokenRow.entitlement;
   const event = await prisma.event.findUnique({
     where: { id: eventId },
-    select: { startsAt: true, endsAt: true },
+    select: { startsAt: true, endsAt: true, organizationId: true },
   });
   const window = buildDefaultCheckinWindow(event?.startsAt ?? null, event?.endsAt ?? null);
   if (isOutsideWindow(window)) {
@@ -150,6 +151,26 @@ export async function POST(req: NextRequest) {
 
       return CheckinResultCode.OK;
     });
+
+    if (result === CheckinResultCode.OK && event?.organizationId && ent.ownerUserId) {
+      try {
+        await ingestCrmInteraction({
+          organizationId: event.organizationId,
+          userId: ent.ownerUserId,
+          type: CrmInteractionType.EVENT_CHECKIN,
+          sourceType: CrmInteractionSource.CHECKIN,
+          sourceId: ent.id,
+          occurredAt: new Date(),
+          metadata: {
+            eventId,
+            entitlementId: ent.id,
+            purchaseId: ent.purchaseId,
+          },
+        });
+      } catch (err) {
+        console.warn("[organização/checkin] Falha ao criar interação CRM", err);
+      }
+    }
 
     return NextResponse.json({ code: result }, { status: 200 });
   } catch (err: any) {

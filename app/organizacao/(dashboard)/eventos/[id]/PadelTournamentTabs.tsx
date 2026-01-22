@@ -250,6 +250,11 @@ export default function PadelTournamentTabs({
   const pairings: Pairing[] = pairingsRes?.pairings ?? [];
   const matches: Match[] = Array.isArray(matchesRes?.items) ? (matchesRes.items as Match[]) : emptyMatches;
   const standings: Standings = standingsRes?.standings ?? {};
+  const pairingsById = useMemo(() => new Map(pairings.map((pairing) => [pairing.id, pairing])), [pairings]);
+  const standingsGroups = useMemo(() => {
+    const entries = Object.entries(standings);
+    return entries.sort((a, b) => a[0].localeCompare(b[0], "pt-PT", { numeric: true }));
+  }, [standings]);
   const waitlistItems = Array.isArray(waitlistRes?.items) ? (waitlistRes.items as Array<any>) : [];
   const advanced = (configRes?.config?.advancedSettings || {}) as Record<string, any>;
   const ruleSets = Array.isArray(ruleSetsRes?.items) ? (ruleSetsRes.items as PadelRuleSetSummary[]) : [];
@@ -309,7 +314,7 @@ export default function PadelTournamentTabs({
       : null;
   const generationFormat = formatRequested || formatEffective || configRes?.config?.format || "GRUPOS_ELIMINATORIAS";
   const supportsGroups = generationFormat === "GRUPOS_ELIMINATORIAS";
-  const supportsKnockout = ["GRUPOS_ELIMINATORIAS", "QUADRO_ELIMINATORIO", "QUADRO_AB"].includes(
+  const supportsKnockout = ["GRUPOS_ELIMINATORIAS", "QUADRO_ELIMINATORIO", "QUADRO_AB", "DUPLA_ELIMINACAO"].includes(
     generationFormat,
   );
 
@@ -396,7 +401,15 @@ export default function PadelTournamentTabs({
       const prefix = label.startsWith("A ") ? "A" : label.startsWith("B ") ? "B" : "";
       const base = prefix ? label.slice(2) : label;
       let size: number | null = null;
-      if (base.startsWith("R")) {
+      let order: number | null = null;
+      if (/^L\\d+$/i.test(base)) {
+        const parsed = Number(base.slice(1));
+        order = Number.isFinite(parsed) ? parsed : null;
+      } else if (/^GF2$|^GRAND_FINAL_RESET$|^GRAND FINAL 2$/i.test(base)) {
+        order = Number.MAX_SAFE_INTEGER;
+      } else if (/^GF$|^GRAND_FINAL$|^GRAND FINAL$/i.test(base)) {
+        order = Number.MAX_SAFE_INTEGER - 1;
+      } else if (base.startsWith("R")) {
         const parsed = Number(base.slice(1));
         size = Number.isFinite(parsed) ? parsed : null;
       }
@@ -405,7 +418,7 @@ export default function PadelTournamentTabs({
         else if (base === "SEMIFINAL") size = 4;
         else if (base === "FINAL") size = 2;
       }
-      return { prefix, base, size };
+      return { prefix, base, size, order };
     };
     return Array.from(rounds.entries()).sort((a, b) => {
       const aMeta = parseLabel(a[0]);
@@ -414,11 +427,9 @@ export default function PadelTournamentTabs({
       if (prefixOrder(aMeta.prefix) !== prefixOrder(bMeta.prefix)) {
         return prefixOrder(aMeta.prefix) - prefixOrder(bMeta.prefix);
       }
-      if (aMeta.size !== null && bMeta.size !== null && aMeta.size !== bMeta.size) {
-        return bMeta.size - aMeta.size;
-      }
-      if (aMeta.size !== null && bMeta.size === null) return -1;
-      if (aMeta.size === null && bMeta.size !== null) return 1;
+      const aOrder = aMeta.order ?? (aMeta.size !== null ? -aMeta.size : Number.MAX_SAFE_INTEGER - 1);
+      const bOrder = bMeta.order ?? (bMeta.size !== null ? -bMeta.size : Number.MAX_SAFE_INTEGER - 1);
+      if (aOrder !== bOrder) return aOrder - bOrder;
       return aMeta.base.localeCompare(bMeta.base);
     });
   }, [matches, pairingNameById]);
@@ -572,11 +583,29 @@ export default function PadelTournamentTabs({
         return "Campeonato/Liga";
       case "QUADRO_AB":
         return "Quadro A/B";
+      case "DUPLA_ELIMINACAO":
+        return "Dupla eliminação";
       case "NON_STOP":
         return "Non-stop";
       default:
         return value;
     }
+  };
+
+  const formatRoundLabel = (value: string) => {
+    const trimmed = value.trim();
+    const prefix = trimmed.startsWith("A ") ? "A " : trimmed.startsWith("B ") ? "B " : "";
+    const base = prefix ? trimmed.slice(2).trim() : trimmed;
+    if (/^L\\d+$/i.test(base)) {
+      return `${prefix}Ronda ${base.slice(1)}`;
+    }
+    if (/^GF2$|^GRAND_FINAL_RESET$|^GRAND FINAL 2$/i.test(base)) {
+      return `${prefix}Grande Final 2`;
+    }
+    if (/^GF$|^GRAND_FINAL$|^GRAND FINAL$/i.test(base)) {
+      return `${prefix}Grande Final`;
+    }
+    return value;
   };
 
   const getDisputeInfo = (match: Match) => {
@@ -651,14 +680,33 @@ export default function PadelTournamentTabs({
   };
 
   const championName = useMemo(() => {
+    const isGrandFinalKey = (key: string) => {
+      const trimmed = key.trim();
+      const base = trimmed.startsWith("A ") || trimmed.startsWith("B ") ? trimmed.slice(2).trim() : trimmed;
+      return /^GF$|^GRAND_FINAL$|^GRAND FINAL$/i.test(base);
+    };
+    const isGrandFinalResetKey = (key: string) => {
+      const trimmed = key.trim();
+      const base = trimmed.startsWith("A ") || trimmed.startsWith("B ") ? trimmed.slice(2).trim() : trimmed;
+      return /^GF2$|^GRAND_FINAL_RESET$|^GRAND FINAL 2$/i.test(base);
+    };
+    const resolveWinner = (round?: [string, Array<{ teamA: string; teamB: string; winner: "A" | "B" | null }>] | null) => {
+      if (!round) return null;
+      const [, games] = round;
+      const final = games[0];
+      if (!final) return null;
+      if (final.winner === "A") return final.teamA;
+      if (final.winner === "B") return final.teamB;
+      return null;
+    };
+    const grandFinalReset = koRounds.find(([key]) => isGrandFinalResetKey(key));
+    const gfResetWinner = resolveWinner(grandFinalReset ?? null);
+    if (gfResetWinner) return gfResetWinner;
+    const grandFinal = koRounds.find(([key]) => isGrandFinalKey(key));
+    const gfWinner = resolveWinner(grandFinal ?? null);
+    if (gfWinner) return gfWinner;
     const finalRound = koRounds.find(([key]) => key === "FINAL") || koRounds[koRounds.length - 1];
-    if (!finalRound) return null;
-    const [, games] = finalRound;
-    const final = games[0];
-    if (!final) return null;
-    if (final.winner === "A") return final.teamA;
-    if (final.winner === "B") return final.teamB;
-    return null;
+    return resolveWinner(finalRound ?? null);
   }, [koRounds]);
 
   async function saveGroupsConfig(
@@ -1746,6 +1794,22 @@ export default function PadelTournamentTabs({
           Resultados (Excel)
         </a>
         <a
+          href={`/api/organizacao/padel/exports/bracket?eventId=${eventId}&format=pdf`}
+          target="_blank"
+          rel="noreferrer"
+          className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10"
+        >
+          Bracket (PDF)
+        </a>
+        <a
+          href={`/api/organizacao/padel/exports/bracket?eventId=${eventId}&format=html`}
+          target="_blank"
+          rel="noreferrer"
+          className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10"
+        >
+          Bracket (Poster)
+        </a>
+        <a
           href={`/api/organizacao/padel/exports/calendario?eventId=${eventId}&format=pdf`}
           target="_blank"
           rel="noreferrer"
@@ -2333,6 +2397,44 @@ export default function PadelTournamentTabs({
 
       {tab === "grupos" && (
         <div className="space-y-3">
+          {standingsGroups.length > 0 ? (
+            <div className="grid gap-3">
+              {standingsGroups.map(([groupLabel, rows]) => (
+                <div key={`standings-${groupLabel}`} className="rounded-xl border border-white/12 bg-white/5 p-3 text-sm space-y-2">
+                  <div className="flex items-center justify-between">
+                    <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">
+                      Classificações · Grupo {groupLabel || "?"}
+                    </p>
+                    <span className="text-[11px] text-white/50">{rows.length} duplas</span>
+                  </div>
+                  <div className="space-y-2">
+                    {rows.map((row, index) => {
+                      const pairing = pairingsById.get(row.pairingId) ?? null;
+                      const setDiff = row.setsFor - row.setsAgainst;
+                      return (
+                        <div key={`stand-${row.pairingId}`} className="flex items-center justify-between gap-2 text-[12px]">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] text-white/50">#{index + 1}</span>
+                            <span className="font-semibold text-white">{nameFromSlots(pairing)}</span>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2 text-[10px] text-white/60">
+                            <span>{row.points} pts</span>
+                            <span>{row.wins}V-{row.losses}D</span>
+                            <span>Sets {row.setsFor}-{row.setsAgainst}</span>
+                            <span>{setDiff >= 0 ? `+${setDiff}` : setDiff}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-xl border border-white/12 bg-white/5 p-3 text-[12px] text-white/70">
+              Sem classificações calculadas ainda.
+            </div>
+          )}
           {matches.filter((m) => m.roundType === "GROUPS").length === 0 && <p className="text-sm text-white/70">Sem jogos.</p>}
           {matches
             .filter((m) => m.roundType === "GROUPS")
@@ -2446,7 +2548,9 @@ export default function PadelTournamentTabs({
                     className="relative min-w-[220px] rounded-2xl border border-white/10 bg-gradient-to-br from-white/10 via-[#0a0f1f]/60 to-[#05070f]/70 p-3 space-y-2 shadow-[0_15px_35px_rgba(0,0,0,0.35)]"
                   >
                     {!isLast && <div className="absolute top-3 right-[-12px] h-[90%] w-px bg-white/10 hidden lg:block" />}
-                    <p className="text-[11px] uppercase tracking-[0.18em] text-white/60">{roundKey}</p>
+                    <p className="text-[11px] uppercase tracking-[0.18em] text-white/60">
+                      {formatRoundLabel(roundKey)}
+                    </p>
                     {games.map((g) => {
                       const fullMatch = matches.find((m) => m.id === g.id);
                       const roundLabel = fullMatch?.roundLabel || roundKey;

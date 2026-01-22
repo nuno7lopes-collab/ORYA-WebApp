@@ -1,8 +1,17 @@
 import { prisma } from "@/lib/prisma";
 import { generateAndPersistTournamentStructure, getConfirmedPairings } from "@/domain/tournaments/generation";
 import { autoGeneratePadelMatches } from "@/domain/padel/autoGenerateMatches";
-import { Prisma, padel_format, NotificationType, TournamentEntryStatus, TournamentEntryRole } from "@prisma/client";
+import {
+  CrmInteractionSource,
+  CrmInteractionType,
+  Prisma,
+  padel_format,
+  NotificationType,
+  TournamentEntryStatus,
+  TournamentEntryRole,
+} from "@prisma/client";
 import { createNotification } from "@/lib/notifications";
+import { ingestCrmInteraction } from "@/lib/crm/ingest";
 
 export async function ensureEntriesForConfirmedPairing(pairingId: number) {
   const pairing = await prisma.padelPairing.findUnique({
@@ -13,7 +22,7 @@ export async function ensureEntriesForConfirmedPairing(pairingId: number) {
       categoryId: true,
       player1UserId: true,
       player2UserId: true,
-      event: { select: { title: true, slug: true } },
+      event: { select: { title: true, slug: true, organizationId: true } },
     },
   });
   if (!pairing) return;
@@ -68,6 +77,33 @@ export async function ensureEntriesForConfirmedPairing(pairingId: number) {
   );
   if (ticketUpdates.length) {
     await Promise.all(ticketUpdates);
+  }
+
+  const organizationId = pairing.event?.organizationId ?? null;
+  if (organizationId) {
+    const now = new Date();
+    const entries = Object.entries(entryIdsByUser);
+    const results = await Promise.allSettled(
+      entries.map(([userId, entryId]) =>
+        ingestCrmInteraction({
+          organizationId,
+          userId,
+          type: CrmInteractionType.PADEL_TOURNAMENT_ENTRY,
+          sourceType: CrmInteractionSource.TOURNAMENT_ENTRY,
+          sourceId: String(entryId),
+          occurredAt: now,
+          metadata: {
+            eventId: pairing.eventId,
+            pairingId: pairing.id,
+            entryId,
+          },
+        }),
+      ),
+    );
+    const failures = results.filter((result) => result.status === "rejected");
+    if (failures.length > 0) {
+      console.warn("[padel][crm] falha ao criar interacao de torneio", failures.length);
+    }
   }
 
   const eventTitle = pairing.event?.title?.trim() || "torneio";

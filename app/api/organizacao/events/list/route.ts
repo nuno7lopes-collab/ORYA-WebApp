@@ -89,7 +89,7 @@ export async function GET(req: NextRequest) {
       },
       include: {
         padelTournamentConfig: {
-          select: { padelClubId: true, partnerClubIds: true },
+          select: { padelClubId: true, partnerClubIds: true, advancedSettings: true },
         },
         tournament: {
           select: { id: true },
@@ -99,6 +99,7 @@ export async function GET(req: NextRequest) {
     });
 
     const eventIds = events.map((e) => e.id);
+    const padelEventIds = events.filter((e) => e.templateType === "PADEL").map((e) => e.id);
     const capacityAgg =
       eventIds.length > 0
         ? await prisma.ticketType.groupBy({
@@ -146,6 +147,65 @@ export async function GET(req: NextRequest) {
       });
     });
 
+    const padelPairingStats =
+      padelEventIds.length > 0
+        ? await prisma.padelPairing.groupBy({
+            by: ["eventId"],
+            where: {
+              eventId: { in: padelEventIds },
+              pairingStatus: { not: "CANCELLED" },
+              lifecycleStatus: { not: "CANCELLED_INCOMPLETE" },
+            },
+            _count: { _all: true },
+          })
+        : [];
+    const padelPairingMap = new Map<number, number>();
+    padelPairingStats.forEach((row) => {
+      padelPairingMap.set(row.eventId, row._count._all);
+    });
+
+    const padelCategoryLinks =
+      padelEventIds.length > 0
+        ? await prisma.padelEventCategoryLink.findMany({
+            where: { eventId: { in: padelEventIds }, isEnabled: true },
+            select: { eventId: true, capacityTeams: true, capacityPlayers: true },
+          })
+        : [];
+    const padelCapacityBuckets = new Map<number, Array<number | null>>();
+    padelCategoryLinks.forEach((link) => {
+      const capacity = link.capacityTeams ?? link.capacityPlayers ?? null;
+      const current = padelCapacityBuckets.get(link.eventId) ?? [];
+      current.push(capacity);
+      padelCapacityBuckets.set(link.eventId, current);
+    });
+
+    const padelCapacityMap = new Map<number, number | null>();
+    events.forEach((event) => {
+      if (event.templateType !== "PADEL") return;
+      const advancedSettings = (event.padelTournamentConfig?.advancedSettings ?? {}) as {
+        maxEntriesTotal?: number | null;
+      };
+      const maxEntriesTotal =
+        typeof advancedSettings.maxEntriesTotal === "number" && Number.isFinite(advancedSettings.maxEntriesTotal)
+          ? Math.floor(advancedSettings.maxEntriesTotal)
+          : null;
+      if (maxEntriesTotal && maxEntriesTotal > 0) {
+        padelCapacityMap.set(event.id, maxEntriesTotal);
+        return;
+      }
+      const capacities = padelCapacityBuckets.get(event.id) ?? [];
+      if (capacities.length === 0) {
+        padelCapacityMap.set(event.id, null);
+        return;
+      }
+      if (capacities.some((cap) => cap === null)) {
+        padelCapacityMap.set(event.id, null);
+        return;
+      }
+      const total = capacities.reduce((sum, cap) => sum + (cap ?? 0), 0);
+      padelCapacityMap.set(event.id, total);
+    });
+
     const padelClubIds = new Set<number>();
     events.forEach((ev) => {
       const cfg = ev.padelTournamentConfig;
@@ -176,11 +236,17 @@ export async function GET(req: NextRequest) {
       tournamentId: event.tournament?.id ?? null,
       isFree: event.isFree,
       coverImageUrl: event.coverImageUrl ?? null,
-      ticketsSold: statsMap.get(event.id)?.tickets ?? 0,
+      ticketsSold:
+        event.templateType === "PADEL"
+          ? padelPairingMap.get(event.id) ?? 0
+          : statsMap.get(event.id)?.tickets ?? 0,
       revenueCents: statsMap.get(event.id)?.revenueCents ?? 0,
       totalPaidCents: statsMap.get(event.id)?.totalPaidCents ?? 0,
       platformFeeCents: statsMap.get(event.id)?.platformFeeCents ?? 0,
-      capacity: capacityMap.get(event.id) ?? null,
+      capacity:
+        event.templateType === "PADEL"
+          ? padelCapacityMap.get(event.id) ?? null
+          : capacityMap.get(event.id) ?? null,
       padelClubId: event.padelTournamentConfig?.padelClubId ?? null,
       padelPartnerClubIds: event.padelTournamentConfig?.partnerClubIds ?? [],
       padelClubName: event.padelTournamentConfig?.padelClubId ? padelClubMap.get(event.padelTournamentConfig.padelClubId) ?? null : null,

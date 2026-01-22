@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
+import { getOrganizationFollowingSet } from "@/domain/social/follows";
 
 export const runtime = "nodejs";
 
@@ -49,13 +50,10 @@ export async function GET(req: NextRequest) {
       take: limit,
     });
 
-    const followingSet = new Set<number>();
+    let followingSet = new Set<number>();
     if (user && results.length > 0) {
-      const rows = await prisma.organization_follows.findMany({
-        where: { follower_id: user.id, organization_id: { in: results.map((r) => r.id) } },
-        select: { organization_id: true },
-      });
-      rows.forEach((row) => followingSet.add(row.organization_id));
+      const ids = results.map((r) => r.id);
+      followingSet = await getOrganizationFollowingSet(user.id, ids);
     }
 
     const mapped = results.map((r) => ({

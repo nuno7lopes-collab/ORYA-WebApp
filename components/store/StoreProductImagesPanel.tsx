@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ConfirmDestructiveActionDialog } from "@/app/components/ConfirmDestructiveActionDialog";
+import StoreImageCropperModal from "@/components/store/StoreImageCropperModal";
 import StorePanelModal from "@/components/store/StorePanelModal";
 
 type ProductOption = {
@@ -29,6 +30,8 @@ type ImageFormState = {
   sortOrder: string;
   isPrimary: boolean;
 };
+
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
 function createEmptyForm(): ImageFormState {
   return {
@@ -58,6 +61,9 @@ export default function StoreProductImagesPanel({
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState<ImageFormState>(createEmptyForm());
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
+  const [cropFile, setCropFile] = useState<File | null>(null);
+  const [cropOpen, setCropOpen] = useState(false);
+  const uploadInputRef = useRef<HTMLInputElement | null>(null);
 
   const productId = useMemo(() => {
     const parsed = Number(selectedProductId);
@@ -134,6 +140,26 @@ export default function StoreProductImagesPanel({
     } finally {
       setUploading(false);
     }
+  };
+
+  const closeCropper = () => {
+    setCropOpen(false);
+    setCropFile(null);
+  };
+
+  const handleSelectUpload = (file: File | null) => {
+    if (!file || !canEdit) return;
+    if (!file.type.startsWith("image/")) {
+      setModalError("Formato de imagem invalido.");
+      return;
+    }
+    if (file.size > MAX_IMAGE_BYTES) {
+      setModalError("Imagem demasiado grande. Maximo 5MB.");
+      return;
+    }
+    setModalError(null);
+    setCropFile(file);
+    setCropOpen(true);
   };
 
   const openCreateModal = () => {
@@ -314,17 +340,20 @@ export default function StoreProductImagesPanel({
           <label className="flex flex-col gap-1 text-xs text-white/70">
             Upload direto
             <input
+              ref={uploadInputRef}
               type="file"
               accept="image/*"
               onChange={(e) => {
                 const file = e.target.files?.[0];
-                if (file) void handleUpload(file);
+                if (file) handleSelectUpload(file);
+                if (uploadInputRef.current) uploadInputRef.current.value = "";
               }}
               disabled={!canEdit || uploading}
               className="rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white file:mr-3 file:rounded-full file:border file:border-white/20 file:bg-white/10 file:px-3 file:py-1 file:text-xs file:text-white/80"
             />
           </label>
         </div>
+        <p className="text-[11px] text-white/50">As imagens enviadas sao recortadas a 1:1.</p>
 
         {form.url ? (
           <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-black/30 px-3 py-2">
@@ -498,6 +527,18 @@ export default function StoreProductImagesPanel({
       )}
 
       {modal}
+
+      <StoreImageCropperModal
+        open={cropOpen}
+        file={cropFile}
+        title="Recortar imagem"
+        description="Formato 1:1. Ajusta antes de enviar."
+        onClose={closeCropper}
+        onConfirm={(cropped) => {
+          closeCropper();
+          void handleUpload(cropped);
+        }}
+      />
 
       <ConfirmDestructiveActionDialog
         open={Boolean(confirmDeleteItem)}

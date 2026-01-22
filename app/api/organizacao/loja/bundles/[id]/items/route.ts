@@ -69,7 +69,7 @@ async function ensureBundle(storeId: number, bundleId: number) {
   return { ok: true as const, bundle };
 }
 
-export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     if (!isStoreFeatureEnabled()) {
       return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
@@ -83,7 +83,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       return NextResponse.json({ ok: false, error: context.error }, { status: 403 });
     }
 
-    const bundleId = parseId(params.id);
+    const resolvedParams = await params;
+    const bundleId = parseId(resolvedParams.id);
     if (!bundleId.ok) {
       return NextResponse.json({ ok: false, error: bundleId.error }, { status: 400 });
     }
@@ -101,8 +102,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
         productId: true,
         variantId: true,
         quantity: true,
-        product: { select: { name: true } },
-        variant: { select: { label: true } },
+        product: { select: { name: true, priceCents: true, currency: true } },
+        variant: { select: { label: true, priceCents: true } },
       },
     });
 
@@ -116,7 +117,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   }
 }
 
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     if (!isStoreFeatureEnabled()) {
       return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
@@ -134,7 +135,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       return NextResponse.json({ ok: false, error: "Catalogo bloqueado." }, { status: 403 });
     }
 
-    const bundleId = parseId(params.id);
+    const resolvedParams = await params;
+    const bundleId = parseId(resolvedParams.id);
     if (!bundleId.ok) {
       return NextResponse.json({ ok: false, error: bundleId.error }, { status: 400 });
     }
@@ -181,8 +183,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         productId: true,
         variantId: true,
         quantity: true,
-        product: { select: { name: true } },
-        variant: { select: { label: true } },
+        product: { select: { name: true, priceCents: true, currency: true } },
+        variant: { select: { label: true, priceCents: true } },
       },
     });
 

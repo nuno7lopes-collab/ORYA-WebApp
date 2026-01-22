@@ -1,5 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import {
+  CrmInteractionSource,
+  CrmInteractionType,
   EntitlementStatus,
   EntitlementType,
   PadelPairingLifecycleStatus,
@@ -13,6 +15,7 @@ import crypto from "crypto";
 import { ensureEntriesForConfirmedPairing } from "@/domain/tournaments/ensureEntriesForConfirmedPairing";
 import { queuePartnerPaid } from "@/domain/notifications/splitPayments";
 import { checkoutKey } from "@/lib/stripe/idempotency";
+import { ingestCrmInteraction } from "@/lib/crm/ingest";
 
 type IntentLike = {
   id: string;
@@ -149,6 +152,7 @@ export async function fulfillPadelSplitIntent(intent: IntentLike, stripeFeeForIn
       locationName: true,
       startsAt: true,
       timezone: true,
+      organizationId: true,
     },
   });
   if (!event) return false;
@@ -199,6 +203,7 @@ export async function fulfillPadelSplitIntent(intent: IntentLike, stripeFeeForIn
           ownerIdentityId: ownerIdentityId ?? null,
           pairingId: pairingId ?? undefined,
           padelSplitShareCents: ticketType.price,
+          emissionIndex: 0,
         },
       });
       ticketId = ticket.id;
@@ -296,6 +301,7 @@ export async function fulfillPadelSplitIntent(intent: IntentLike, stripeFeeForIn
         snapshotVenueName: event.locationName,
         snapshotStartAt: event.startsAt,
         snapshotTimezone: event.timezone,
+        ticketId: ticketId ?? null,
       },
       create: {
         purchaseId: entitlementPurchaseId,
@@ -312,6 +318,7 @@ export async function fulfillPadelSplitIntent(intent: IntentLike, stripeFeeForIn
         snapshotVenueName: event.locationName,
         snapshotStartAt: event.startsAt,
         snapshotTimezone: event.timezone,
+        ticketId: ticketId ?? null,
       },
     });
 
@@ -425,6 +432,29 @@ export async function fulfillPadelSplitIntent(intent: IntentLike, stripeFeeForIn
       },
     });
   });
+
+  if (event.organizationId && userId) {
+    try {
+      await ingestCrmInteraction({
+        organizationId: event.organizationId,
+        userId,
+        type: CrmInteractionType.PADEL_MATCH_PAYMENT,
+        sourceType: CrmInteractionSource.TICKET,
+        sourceId: purchaseId ?? intent.id,
+        occurredAt: new Date(),
+        amountCents: intent.amount ?? ticketType.price,
+        currency: ticketType.currency || intent.currency.toUpperCase(),
+        metadata: {
+          eventId,
+          pairingId,
+          slotId,
+          ticketTypeId,
+        },
+      });
+    } catch (err) {
+      console.warn("[fulfillPadelSplit] Falha ao criar interação CRM", err);
+    }
+  }
 
   return true;
 }

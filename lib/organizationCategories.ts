@@ -5,6 +5,7 @@ export const ORGANIZATION_MODULES = [
   "STAFF",
   "FINANCEIRO",
   "MENSAGENS",
+  "CRM",
   "MARKETING",
   "LOJA",
   "ANALYTICS",

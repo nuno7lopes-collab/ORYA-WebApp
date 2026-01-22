@@ -96,6 +96,7 @@ export default function OrganizationDashboardShell({
   const router = useRouter();
   const isSettingsRoute =
     pathname?.startsWith("/organizacao/settings") || pathname?.startsWith("/organizacao/owner/confirm");
+  const isChatRoute = pathname?.startsWith("/organizacao/chat");
   const emailGateActive = Boolean(emailVerification && !emailVerification.isVerified);
   const [emailGateDismissed, setEmailGateDismissed] = useState(false);
   const showEmailGate = emailGateActive && !emailGateDismissed && !isSettingsRoute;
@@ -103,7 +104,8 @@ export default function OrganizationDashboardShell({
   useEffect(() => {
     if (!emailGateActive || isSettingsRoute) return;
     let isMounted = true;
-    const timer = setTimeout(async () => {
+    let interval: ReturnType<typeof setInterval> | null = null;
+    const checkEmailVerification = async () => {
       try {
         const res = await fetch("/api/organizacao/me", { cache: "no-store" });
         const json = await res.json().catch(() => null);
@@ -113,15 +115,22 @@ export default function OrganizationDashboardShell({
         if (isMounted && verified) {
           setEmailGateDismissed(true);
           router.refresh();
+          if (interval) {
+            clearInterval(interval);
+            interval = null;
+          }
         }
       } catch {
         // Sem ação: mantém o gate até próxima navegação.
       }
-    }, 800);
+    };
+
+    checkEmailVerification();
+    interval = setInterval(checkEmailVerification, 3000);
 
     return () => {
       isMounted = false;
-      clearTimeout(timer);
+      if (interval) clearInterval(interval);
     };
   }, [emailGateActive, isSettingsRoute, router]);
 
@@ -129,10 +138,18 @@ export default function OrganizationDashboardShell({
     <div className="flex min-h-screen w-full min-w-0 flex-col text-white">
       <OrganizationTopBar activeOrg={activeOrg} orgOptions={orgOptions} user={user} role={role} />
       <main
-        className="relative z-0 min-h-0 w-full flex-1 overflow-y-auto pb-0 pt-[var(--org-topbar-height)]"
+        className={cn(
+          "relative z-0 min-h-0 w-full flex-1 pb-0 pt-[var(--org-topbar-height)]",
+          isChatRoute ? "overflow-hidden" : "overflow-y-auto",
+        )}
         data-org-scroll
       >
-        <div className={cn("py-4 md:py-6", ORG_SHELL_GUTTER)}>
+        <div
+          className={cn(
+            isChatRoute ? "h-[calc(100vh-var(--org-topbar-height))] min-h-0 py-0" : "py-4 md:py-6",
+            ORG_SHELL_GUTTER,
+          )}
+        >
           {isSuspended ? (
             <div className="mb-4 rounded-2xl border border-amber-400/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-50">
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -175,6 +192,7 @@ export default function OrganizationDashboardShell({
             <div
               className={cn(
                 "relative isolate overflow-hidden",
+                isChatRoute && "h-full min-h-0",
                 isSuspended && "pointer-events-none select-none opacity-80",
               )}
               aria-disabled={isSuspended || undefined}

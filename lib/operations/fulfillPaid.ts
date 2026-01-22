@@ -1,9 +1,11 @@
+import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { normalizePaymentScenario } from "@/lib/paymentScenario";
-import { EntitlementType, EntitlementStatus } from "@prisma/client";
+import { CrmInteractionSource, CrmInteractionType, EntitlementType, EntitlementStatus } from "@prisma/client";
 import { enqueueOperation } from "@/lib/operations/enqueue";
 import { normalizeEmail } from "@/lib/utils/email";
 import { checkoutKey } from "@/lib/stripe/idempotency";
+import { ingestCrmInteraction } from "@/lib/crm/ingest";
 
 function buildOwnerKey(params: { ownerUserId?: string | null; ownerIdentityId?: string | null; guestEmail?: string | null }) {
   if (params.ownerUserId) return `user:${params.ownerUserId}`;
@@ -104,28 +106,6 @@ export async function fulfillPaidIntent(intent: IntentLike, stripeEventId?: stri
   });
   if (!event) return false;
 
-  const existingTicket = await prisma.ticket.findFirst({
-    where: { stripePaymentIntentId: intent.id },
-  });
-  if (existingTicket) {
-    await prisma.paymentEvent.updateMany({
-      where: { stripePaymentIntentId: intent.id },
-      data: {
-        status: "OK",
-        purchaseId,
-        stripeEventId: stripeEventId ?? undefined,
-        source: "WEBHOOK",
-        dedupeKey: paymentDedupeKey,
-        attempt: { increment: 1 },
-        updatedAt: new Date(),
-        errorMessage: null,
-        mode: intent.livemode ? "LIVE" : "TEST",
-        isTest: !intent.livemode,
-      },
-    });
-    return true;
-  }
-
   const ticketTypeMap = new Map(event.ticketTypes.map((t) => [t.id, t]));
 
   await prisma.$transaction(async (tx) => {
@@ -173,6 +153,28 @@ export async function fulfillPaidIntent(intent: IntentLike, stripeEventId?: stri
           },
         });
 
+    const existingTickets = await tx.ticket.findMany({
+      where: {
+        eventId: event.id,
+        OR: [{ purchaseId }, { stripePaymentIntentId: intent.id }],
+      },
+      select: {
+        id: true,
+        ticketTypeId: true,
+        emissionIndex: true,
+        saleSummaryId: true,
+        purchaseId: true,
+      },
+    });
+
+    const ticketsByType = new Map<number, Map<number, typeof existingTickets[number]>>();
+    for (const ticket of existingTickets) {
+      const index = ticket.emissionIndex ?? 0;
+      const typeMap = ticketsByType.get(ticket.ticketTypeId) ?? new Map();
+      typeMap.set(index, ticket);
+      ticketsByType.set(ticket.ticketTypeId, typeMap);
+    }
+
     await tx.saleLine.deleteMany({ where: { saleSummaryId: saleSummary.id } });
     for (const line of breakdown.lines) {
       const saleLine = await tx.saleLine.create({
@@ -185,7 +187,13 @@ export async function fulfillPaidIntent(intent: IntentLike, stripeEventId?: stri
           unitPriceCents: line.unitPriceCents,
           discountPerUnitCents: line.discountPerUnitCents ?? 0,
           grossCents: line.lineTotalCents ?? line.unitPriceCents * line.quantity,
-          netCents: line.lineNetCents ?? Math.max(0, (line.lineTotalCents ?? line.unitPriceCents * line.quantity) - (line.discountPerUnitCents ?? 0) * line.quantity),
+          netCents:
+            line.lineNetCents ??
+            Math.max(
+              0,
+              (line.lineTotalCents ?? line.unitPriceCents * line.quantity) -
+                (line.discountPerUnitCents ?? 0) * line.quantity,
+            ),
           platformFeeCents: line.platformFeeCents ?? 0,
         },
         select: { id: true },
@@ -195,7 +203,75 @@ export async function fulfillPaidIntent(intent: IntentLike, stripeEventId?: stri
       if (!tt) continue;
       const qty = Math.max(1, Number(line.quantity ?? 0));
       const ownerKey = buildOwnerKey({ ownerUserId: userId, ownerIdentityId, guestEmail: ownerEmail });
+      const lineNetCents = line.lineNetCents ?? line.lineTotalCents ?? line.unitPriceCents * qty;
+      const pricePerTicketCents = Math.round(lineNetCents / Math.max(1, qty));
+      const totalPlatformFeeCents = line.platformFeeCents ?? 0;
+      const basePlatformFee = Math.floor(totalPlatformFeeCents / Math.max(1, qty));
+      let feeRemainder = totalPlatformFeeCents - basePlatformFee * Math.max(1, qty);
+
+      const typeTickets = ticketsByType.get(line.ticketTypeId) ?? new Map();
+      let createdCount = 0;
+
       for (let i = 0; i < qty; i++) {
+        let ticket = typeTickets.get(i);
+        if (!ticket) {
+          const feeForTicket = basePlatformFee + (feeRemainder > 0 ? 1 : 0);
+          if (feeRemainder > 0) feeRemainder -= 1;
+
+          const created = await tx.ticket.create({
+            data: {
+              userId: userId ?? null,
+              ownerUserId: userId ?? null,
+              ownerIdentityId: ownerIdentityId ?? null,
+              eventId: event.id,
+              ticketTypeId: line.ticketTypeId,
+              status: "ACTIVE",
+              purchasedAt: new Date(),
+              qrSecret: crypto.randomUUID(),
+              pricePaid: pricePerTicketCents,
+              currency: tt.currency ?? (breakdown.currency ?? intent.currency ?? "EUR").toUpperCase(),
+              platformFeeCents: feeForTicket,
+              totalPaidCents: pricePerTicketCents + feeForTicket,
+              stripePaymentIntentId: intent.id,
+              purchaseId,
+              saleSummaryId: saleSummary.id,
+              emissionIndex: i,
+            },
+            select: { id: true, ticketTypeId: true, emissionIndex: true, saleSummaryId: true, purchaseId: true },
+          });
+          ticket = created;
+          typeTickets.set(i, ticket);
+          createdCount += 1;
+        } else {
+          if (ticket.saleSummaryId !== saleSummary.id) {
+            await tx.ticket.update({
+              where: { id: ticket.id },
+              data: { saleSummaryId: saleSummary.id },
+            });
+          }
+          if (!ticket.purchaseId && purchaseId) {
+            await tx.ticket.update({
+              where: { id: ticket.id },
+              data: { purchaseId },
+            });
+          }
+        }
+
+        if (!userId && ownerEmail) {
+          await tx.guestTicketLink.upsert({
+            where: { ticketId: ticket.id },
+            update: {
+              guestEmail: ownerEmail,
+              guestName: "Convidado",
+            },
+            create: {
+              ticketId: ticket.id,
+              guestEmail: ownerEmail,
+              guestName: "Convidado",
+            },
+          });
+        }
+
         // Entitlement (SSOT)
         await tx.entitlement.upsert({
           where: {
@@ -217,6 +293,7 @@ export async function fulfillPaidIntent(intent: IntentLike, stripeEventId?: stri
             snapshotVenueName: event.locationName,
             snapshotStartAt: event.startsAt,
             snapshotTimezone: event.timezone,
+            ticketId: ticket.id,
           },
           create: {
             purchaseId,
@@ -233,15 +310,19 @@ export async function fulfillPaidIntent(intent: IntentLike, stripeEventId?: stri
             snapshotVenueName: event.locationName,
             snapshotStartAt: event.startsAt,
             snapshotTimezone: event.timezone,
+            ticketId: ticket.id,
           },
         });
-
       }
 
-      await tx.ticketType.update({
-        where: { id: tt.id },
-        data: { soldQuantity: { increment: qty } },
-      });
+      ticketsByType.set(line.ticketTypeId, typeTickets);
+
+      if (createdCount > 0) {
+        await tx.ticketType.update({
+          where: { id: tt.id },
+          data: { soldQuantity: { increment: createdCount } },
+        });
+      }
     }
 
     await tx.paymentEvent.updateMany({
@@ -255,6 +336,8 @@ export async function fulfillPaidIntent(intent: IntentLike, stripeEventId?: stri
         source: "WEBHOOK",
         dedupeKey: paymentDedupeKey,
         attempt: { increment: 1 },
+        mode: intent.livemode ? "LIVE" : "TEST",
+        isTest: !intent.livemode,
       },
     });
   });
@@ -301,6 +384,29 @@ export async function fulfillPaidIntent(intent: IntentLike, stripeEventId?: stri
       });
     } catch (err) {
       console.warn("[fulfillPaidIntent] Falha ao enfileirar APPLY_PROMO_REDEMPTION", err);
+    }
+  }
+
+  if (event.organizationId && ownerUserId) {
+    try {
+      const ticketCount = breakdown.lines.reduce((sum, line) => sum + (line.quantity ?? 0), 0);
+      await ingestCrmInteraction({
+        organizationId: event.organizationId,
+        userId: ownerUserId,
+        type: CrmInteractionType.EVENT_TICKET,
+        sourceType: CrmInteractionSource.TICKET,
+        sourceId: purchaseId,
+        occurredAt: new Date(),
+        amountCents: breakdown.totalCents ?? intent.amount_received ?? intent.amount ?? 0,
+        currency: breakdown.currency ?? intent.currency ?? "EUR",
+        metadata: {
+          eventId: event.id,
+          purchaseId,
+          ticketCount,
+        },
+      });
+    } catch (err) {
+      console.warn("[fulfillPaidIntent] Falha ao criar interação CRM", err);
     }
   }
 

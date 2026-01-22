@@ -40,17 +40,10 @@ function formatCurrencyInput(cents: number | null | undefined) {
   return (cents / 100).toFixed(2);
 }
 
-function parseCountriesInput(value: string) {
-  const parts = value.split(/[,;\n]/g);
-  const normalized = parts
-    .map((entry) => entry.trim().toUpperCase())
-    .filter((entry) => entry.length >= 2 && entry.length <= 3);
-  return Array.from(new Set(normalized));
-}
-
-function formatCountries(countries: string[]) {
-  return countries.join(", ");
-}
+const SUPPORTED_COUNTRIES = [
+  { code: "PT", label: "Portugal" },
+  { code: "disabled", label: "Mais paises em breve", disabled: true },
+];
 
 async function assertJsonOk(res: Response, fallback: string) {
   const json = await res.json().catch(() => null);
@@ -68,7 +61,7 @@ export default function StoreShippingSettingsPanel({
   const [zoneId, setZoneId] = useState<number | null>(null);
   const [methodId, setMethodId] = useState<number | null>(null);
   const [form, setForm] = useState({
-    countries: "",
+    countries: "PT",
     baseRate: "",
     freeShippingThreshold: "",
   });
@@ -78,12 +71,15 @@ export default function StoreShippingSettingsPanel({
 
   const renderBadge = (label: string, tone: "required" | "optional") => (
     <span
-      className={`ml-2 inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] ${
+      className={`ml-2 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[9px] uppercase tracking-[0.2em] ${
         tone === "required"
           ? "border-emerald-400/40 bg-emerald-400/10 text-emerald-100"
           : "border-white/15 bg-white/5 text-white/50"
       }`}
     >
+      <span
+        className={`h-1.5 w-1.5 rounded-full ${tone === "required" ? "bg-emerald-300" : "bg-white/40"}`}
+      />
       {label}
     </span>
   );
@@ -126,8 +122,13 @@ export default function StoreShippingSettingsPanel({
         setMethodId(null);
       }
 
+      const resolvedCountry =
+        SUPPORTED_COUNTRIES.find(
+          (country) => !country.disabled && country.code === (zone?.countries?.[0] ?? ""),
+        )?.code ?? "PT";
+
       setForm({
-        countries: zone ? formatCountries(zone.countries ?? []) : "",
+        countries: resolvedCountry,
         baseRate: formatCurrencyInput(method?.baseRateCents ?? null),
         freeShippingThreshold: formatCurrencyInput(nextSettings.freeShippingThresholdCents),
       });
@@ -232,7 +233,7 @@ export default function StoreShippingSettingsPanel({
 
   const handleSave = async () => {
     if (!storeEnabled) return;
-    const countries = parseCountriesInput(form.countries);
+    const countries = form.countries ? [form.countries] : [];
     if (countries.length === 0) {
       setError("Indica pelo menos um pais.");
       return;
@@ -303,12 +304,17 @@ export default function StoreShippingSettingsPanel({
         <div className="grid gap-4 md:grid-cols-3">
           <label className="flex flex-col gap-1 text-xs text-white/70">
             Paises de envio {renderBadge("Obrigatorio", "required")}
-            <input
+            <select
               value={form.countries}
               onChange={(e) => setForm((prev) => ({ ...prev, countries: e.target.value }))}
               className="rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
-              placeholder="PT, ES"
-            />
+            >
+              {SUPPORTED_COUNTRIES.map((country) => (
+                <option key={country.code} value={country.code} disabled={country.disabled}>
+                  {country.label}
+                </option>
+              ))}
+            </select>
           </label>
           <label className="flex flex-col gap-1 text-xs text-white/70">
             Portes base (EUR) {renderBadge("Obrigatorio", "required")}

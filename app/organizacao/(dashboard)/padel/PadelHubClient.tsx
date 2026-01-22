@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import { ConfirmDestructiveActionDialog } from "@/app/components/ConfirmDestructiveActionDialog";
 import { trackEvent } from "@/lib/analytics";
 import { formatCurrency } from "@/lib/i18n";
+import { fetchGeoAutocomplete, fetchGeoDetails } from "@/lib/geo/client";
+import type { GeoAutocompleteItem, GeoDetailsItem } from "@/lib/geo/provider";
 import { Avatar } from "@/components/ui/avatar";
 import { CTA_PRIMARY, CTA_SECONDARY } from "@/app/organizacao/dashboardUi";
 import { PORTUGAL_CITIES } from "@/config/cities";
@@ -21,6 +23,14 @@ type PadelClub = {
   name: string;
   city: string | null;
   address: string | null;
+  kind?: "OWN" | "PARTNER" | null;
+  sourceClubId?: number | null;
+  locationSource?: "OSM" | "MANUAL" | null;
+  locationProviderId?: string | null;
+  locationFormattedAddress?: string | null;
+  locationComponents?: Record<string, unknown> | null;
+  latitude?: number | null;
+  longitude?: number | null;
   courtsCount: number;
   slug?: string | null;
   isActive: boolean;
@@ -247,11 +257,18 @@ const DEFAULT_FORM = {
   name: "",
   city: "",
   address: "",
+  locationSource: "MANUAL" as "OSM" | "MANUAL",
+  locationProviderId: "",
+  locationFormattedAddress: "",
+  locationComponents: null as Record<string, unknown> | null,
+  latitude: null as number | null,
+  longitude: null as number | null,
   courtsCount: "1",
   isActive: true,
   slug: "",
   isDefault: false,
   kind: "OWN" as ClubKind,
+  sourceClubId: null as number | null,
 };
 
 const DEFAULT_COURT_FORM = {
@@ -940,6 +957,15 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
   const [savingClub, setSavingClub] = useState(false);
   const [clubError, setClubError] = useState<string | null>(null);
   const [clubMessage, setClubMessage] = useState<string | null>(null);
+  const [clubLocationMode, setClubLocationMode] = useState<"OSM" | "MANUAL">("MANUAL");
+  const [clubLocationQuery, setClubLocationQuery] = useState("");
+  const [clubLocationSuggestions, setClubLocationSuggestions] = useState<GeoAutocompleteItem[]>([]);
+  const [clubLocationSearchLoading, setClubLocationSearchLoading] = useState(false);
+  const [clubLocationSearchError, setClubLocationSearchError] = useState<string | null>(null);
+  const [clubLocationDetailsLoading, setClubLocationDetailsLoading] = useState(false);
+  const [clubLocationConfirmed, setClubLocationConfirmed] = useState(true);
+  const clubLocationSearchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clubLocationDetailsSeq = useRef(0);
 
   const [drawerClubId, setDrawerClubId] = useState<number | null>(initialClubs[0]?.id ?? null);
   const [courts, setCourts] = useState<PadelClubCourt[]>([]);
@@ -1165,6 +1191,7 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
   }, [clubs]);
 
   const selectedClub = useMemo(() => clubs.find((c) => c.id === drawerClubId) || null, [clubs, drawerClubId]);
+  const selectedClubIsPartner = selectedClub?.kind === "PARTNER";
 
   const padelEvents = useMemo(() => {
     if (!padelEventsRes?.ok || !Array.isArray(padelEventsRes.items)) return [];
@@ -1683,7 +1710,7 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
   }, []);
 
   const persistCourtOrder = async (list: PadelClubCourt[]) => {
-    if (!selectedClub) return;
+    if (!selectedClub || selectedClubIsPartner) return;
     const payload = renumberCourts(list);
     const updates = payload.map((c) =>
       fetch(`/api/padel/clubs/${selectedClub.id}/courts`, {
@@ -1721,33 +1748,62 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
 
   const openNewClubModal = () => {
     const nextKind: ClubKind = operationMode === "CLUB_OWNER" ? "OWN" : "PARTNER";
+    const nextLocationMode = nextKind === "OWN" ? "OSM" : "MANUAL";
     setClubForm({
       ...DEFAULT_FORM,
       kind: nextKind,
       courtsCount: nextKind === "OWN" ? "2" : "1",
+      locationSource: nextLocationMode,
     });
     setClubError(null);
     setClubMessage(null);
     setSlugError(null);
+    setClubLocationMode(nextLocationMode);
+    setClubLocationQuery("");
+    setClubLocationSuggestions([]);
+    setClubLocationSearchError(null);
+    setClubLocationConfirmed(nextKind !== "OWN");
     setClubModalOpen(true);
   };
 
   const openEditClubModal = (club: PadelClub) => {
-    const inferredKind: ClubKind = club.isDefault ? "OWN" : operationMode === "CLUB_OWNER" ? "OWN" : "PARTNER";
+    const inferredKind: ClubKind = club.kind === "PARTNER"
+      ? "PARTNER"
+      : club.isDefault
+        ? "OWN"
+        : operationMode === "CLUB_OWNER"
+          ? "OWN"
+          : "PARTNER";
+    const resolvedLocationSource =
+      club.locationSource === "OSM" || club.locationSource === "MANUAL" ? club.locationSource : "MANUAL";
+    const isOwnClub = inferredKind === "OWN";
+    const normalizedSource = isOwnClub ? "OSM" : resolvedLocationSource;
     setClubForm({
       id: club.id,
       name: club.name,
       city: club.city || "",
       address: club.address || "",
+      locationSource: normalizedSource,
+      locationProviderId: club.locationProviderId || "",
+      locationFormattedAddress: club.locationFormattedAddress || "",
+      locationComponents: club.locationComponents ?? null,
+      latitude: typeof club.latitude === "number" ? club.latitude : null,
+      longitude: typeof club.longitude === "number" ? club.longitude : null,
       courtsCount: club.courtsCount ? String(club.courtsCount) : "1",
       isActive: club.isActive,
       slug: club.slug || "",
       isDefault: Boolean(club.isDefault),
       kind: inferredKind,
+      sourceClubId: club.sourceClubId ?? null,
     });
     setClubError(null);
     setClubMessage(null);
     setSlugError(null);
+    setClubLocationMode(normalizedSource);
+    setClubLocationQuery(club.locationFormattedAddress || club.address || "");
+    setClubLocationSuggestions([]);
+    setClubLocationSearchError(null);
+    setClubLocationConfirmed(!isOwnClub || (resolvedLocationSource === "OSM" && Boolean(club.locationProviderId)));
     setClubModalOpen(true);
   };
 
@@ -1780,6 +1836,114 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
     }
   };
 
+  const buildClubFormattedAddress = (nextAddress?: string, nextCity?: string) => {
+    const addressValue = (nextAddress ?? clubForm.address).trim();
+    const cityValue = (nextCity ?? clubForm.city).trim();
+    return [addressValue, cityValue].filter(Boolean).join(", ");
+  };
+
+  const applyClubGeoDetails = (details: GeoDetailsItem | null, fallbackLabel?: string | null) => {
+    if (!details) return;
+    const nextAddress = details.address || clubForm.address;
+    const nextCity = details.city || clubForm.city;
+    setClubForm((prev) => ({
+      ...prev,
+      address: nextAddress || prev.address,
+      city: nextCity || prev.city,
+      locationSource: "OSM",
+      locationProviderId: prev.locationProviderId,
+      locationFormattedAddress: details.formattedAddress || fallbackLabel || prev.locationFormattedAddress,
+      locationComponents: details.components ?? prev.locationComponents,
+      latitude: Number.isFinite(details.lat ?? NaN) ? details.lat ?? prev.latitude : prev.latitude,
+      longitude: Number.isFinite(details.lng ?? NaN) ? details.lng ?? prev.longitude : prev.longitude,
+    }));
+  };
+
+  useEffect(() => {
+    if (clubLocationMode !== "OSM") {
+      setClubLocationSuggestions([]);
+      setClubLocationSearchLoading(false);
+      setClubLocationSearchError(null);
+      return;
+    }
+    const query = clubLocationQuery.trim();
+    if (query.length < 2) {
+      setClubLocationSuggestions([]);
+      setClubLocationSearchError(null);
+      return;
+    }
+    if (clubLocationSearchTimeout.current) {
+      clearTimeout(clubLocationSearchTimeout.current);
+    }
+    setClubLocationSearchError(null);
+    clubLocationSearchTimeout.current = setTimeout(async () => {
+      setClubLocationSearchLoading(true);
+      try {
+        const items = await fetchGeoAutocomplete(query);
+        setClubLocationSuggestions(items);
+      } catch (err) {
+        console.warn("[padel/club] autocomplete falhou", err);
+        setClubLocationSuggestions([]);
+        setClubLocationSearchError(err instanceof Error ? err.message : "Falha ao obter sugestões.");
+      } finally {
+        setClubLocationSearchLoading(false);
+      }
+    }, 240);
+
+    return () => {
+      if (clubLocationSearchTimeout.current) {
+        clearTimeout(clubLocationSearchTimeout.current);
+      }
+    };
+  }, [clubLocationMode, clubLocationQuery]);
+
+  const handleSelectClubLocationSuggestion = async (item: GeoAutocompleteItem) => {
+    setClubLocationMode("OSM");
+    setClubLocationConfirmed(false);
+    setClubForm((prev) => ({
+      ...prev,
+      locationSource: "OSM",
+      locationProviderId: item.providerId,
+      locationFormattedAddress: item.label,
+      locationComponents: null,
+      latitude: Number.isFinite(item.lat ?? NaN) ? item.lat ?? null : null,
+      longitude: Number.isFinite(item.lng ?? NaN) ? item.lng ?? null : null,
+      address: item.address || prev.address,
+      city: item.city || prev.city,
+    }));
+    setClubLocationQuery(item.label);
+    setClubLocationSuggestions([]);
+    setClubLocationSearchError(null);
+    const seq = ++clubLocationDetailsSeq.current;
+    setClubLocationDetailsLoading(true);
+    try {
+      const details = await fetchGeoDetails(item.providerId);
+      if (clubLocationDetailsSeq.current !== seq) return;
+      applyClubGeoDetails(details, item.label);
+    } catch (err) {
+      console.warn("[padel/club] detalhes falharam", err);
+    } finally {
+      if (clubLocationDetailsSeq.current === seq) {
+        setClubLocationDetailsLoading(false);
+      }
+    }
+  };
+
+  const enableClubOsmLocation = () => {
+    setClubLocationMode("OSM");
+    setClubLocationConfirmed(false);
+    setClubLocationSearchError(null);
+    if (!clubLocationQuery) {
+      const fallback = buildClubFormattedAddress() || clubForm.name.trim();
+      if (fallback) setClubLocationQuery(fallback);
+    }
+    setClubForm((prev) => ({
+      ...prev,
+      locationSource: "OSM",
+      locationProviderId: prev.locationProviderId || "",
+    }));
+  };
+
   const handleSubmitClub = async () => {
     setClubError(null);
     setSlugError(null);
@@ -1797,8 +1961,21 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
       setClubError("Morada obrigatória para clube principal.");
       return;
     }
+    if (isOwnClub && clubForm.locationSource !== "OSM") {
+      setClubError("Seleciona uma morada normalizada antes de guardar.");
+      return;
+    }
+    if (isOwnClub && !clubForm.locationProviderId.trim()) {
+      setClubError("Seleciona uma morada normalizada antes de guardar.");
+      return;
+    }
+    if (isOwnClub && !clubLocationConfirmed) {
+      setClubError("Confirma a morada antes de guardar.");
+      return;
+    }
     const courtsNum = Number(clubForm.courtsCount);
     const courtsCount = Number.isFinite(courtsNum) ? Math.min(1000, Math.max(1, Math.floor(courtsNum))) : 1;
+    const formattedAddress = (clubForm.locationFormattedAddress || buildClubFormattedAddress()).trim();
     setSavingClub(true);
     const slugCandidates = buildSlugCandidates(clubForm.slug || clubForm.name, 15);
     let savedClub: PadelClub | null = null;
@@ -1814,6 +1991,14 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
             name: clubForm.name.trim(),
             city: clubForm.city.trim(),
             address: clubForm.address.trim(),
+            kind: clubForm.kind,
+            sourceClubId: clubForm.sourceClubId,
+            locationSource: clubForm.locationSource,
+            locationProviderId: clubForm.locationProviderId || null,
+            locationFormattedAddress: formattedAddress || null,
+            locationComponents: clubForm.locationComponents,
+            latitude: clubForm.latitude,
+            longitude: clubForm.longitude,
             courtsCount,
             isActive: clubForm.isActive,
             slug: candidate,
@@ -1848,6 +2033,11 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
       setClubMessage(clubForm.id ? "Clube atualizado." : "Clube criado.");
       setClubModalOpen(false);
       setClubForm({ ...DEFAULT_FORM, courtsCount: String(courtsCount) });
+      setClubLocationMode("MANUAL");
+      setClubLocationQuery("");
+      setClubLocationSuggestions([]);
+      setClubLocationSearchError(null);
+      setClubLocationConfirmed(true);
       setDrawerClubId(club.id);
       trackEvent(clubForm.id ? "padel_club_updated" : "padel_club_created", { clubId: club.id });
 
@@ -1882,6 +2072,10 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
   const markDefaultClub = async (club: PadelClub) => {
     setClubError(null);
     setClubMessage(null);
+    if (club.kind === "PARTNER") {
+      setClubError("Clubes parceiros não podem ser definidos como principal.");
+      return;
+    }
     try {
       const res = await fetch("/api/padel/clubs", {
         method: "POST",
@@ -1892,6 +2086,13 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
           name: club.name,
           city: club.city,
           address: club.address,
+          kind: club.kind ?? "OWN",
+          locationSource: club.locationSource ?? "MANUAL",
+          locationProviderId: club.locationProviderId ?? null,
+          locationFormattedAddress: club.locationFormattedAddress ?? null,
+          locationComponents: club.locationComponents ?? null,
+          latitude: club.latitude ?? null,
+          longitude: club.longitude ?? null,
           courtsCount: club.courtsCount,
           isActive: club.isActive,
           slug: club.slug,
@@ -1920,6 +2121,10 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
   };
 
   const handleEditCourt = (court: PadelClubCourt) => {
+    if (selectedClubIsPartner) {
+      setCourtError("Clube parceiro é apenas leitura.");
+      return;
+    }
     setCourtForm({
       id: court.id,
       name: court.name,
@@ -1932,6 +2137,10 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
 
   const handleSubmitCourt = async () => {
     if (!selectedClub) return;
+    if (selectedClubIsPartner) {
+      setCourtError("Clube parceiro é apenas leitura.");
+      return;
+    }
     const fallbackName = courtForm.name.trim() || `Campo ${courts.length + 1}`;
     const desiredOrder = Number.isFinite(courtForm.displayOrder) ? Math.max(1, Math.floor(courtForm.displayOrder)) : 1;
     const maxOrder = Math.max(1, activeCourtsCount + (courtForm.id ? 0 : courtForm.isActive ? 1 : 0));
@@ -2052,6 +2261,10 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
 
   const handleToggleCourtActive = async (court: PadelClubCourt, next: boolean) => {
     if (!selectedClub) return;
+    if (selectedClubIsPartner) {
+      setCourtError("Clube parceiro é apenas leitura.");
+      return;
+    }
     setSavingCourt(true);
     try {
       const res = await fetch(`/api/padel/clubs/${selectedClub.id}/courts`, {
@@ -2077,6 +2290,10 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
 
   const handleDeleteCourt = async (court: PadelClubCourt) => {
     if (!selectedClub) return;
+    if (selectedClubIsPartner) {
+      setCourtError("Clube parceiro é apenas leitura.");
+      return;
+    }
     setSavingCourt(true);
     try {
       const res = await fetch(`/api/padel/clubs/${selectedClub.id}/courts?courtId=${court.id}`, {
@@ -2193,7 +2410,7 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
   };
 
   const compactAddress = (club: PadelClub) => {
-    const bits = [club.city, club.address].filter(Boolean);
+    const bits = [club.locationFormattedAddress, club.address, club.city].filter(Boolean);
     return bits.join(" · ") || "Local por definir";
   };
 
@@ -2206,6 +2423,7 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
   const totalActiveCourts = useMemo(() => clubs.reduce((acc, c) => acc + (c.courtsCount || 0), 0), [clubs]);
   const isClubOwnerMode = operationMode === "CLUB_OWNER";
   const isOwnClubForm = clubForm.kind === "OWN" || clubForm.isDefault;
+  const isPartnerClubForm = clubForm.kind === "PARTNER";
   const isClubsTab = activeTab === "clubs";
   const isCourtsTab = activeTab === "courts";
   const showCourtsPanel = isClubsTab || isCourtsTab;
@@ -3952,6 +4170,7 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
                         >
                           {club.isActive ? "Ativo" : "Inativo"}
                         </span>
+                        {club.kind === "PARTNER" && <span className={badge("amber")}>Parceiro</span>}
                         {club.isDefault && <span className={badge("slate")}>Principal</span>}
                       </div>
                     </div>
@@ -3974,7 +4193,7 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
                       >
                         Editar
                       </button>
-                      {!club.isDefault && (
+                      {!club.isDefault && club.kind !== "PARTNER" && (
                         <button
                           type="button"
                           onClick={() => markDefaultClub(club)}
@@ -4071,17 +4290,22 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
                     <p className="text-sm font-semibold text-white">Campos do clube</p>
                     <span className={badge("slate")}>{courts.filter((c) => c.isActive).length} ativos</span>
                   </div>
+                  {selectedClubIsPartner && (
+                    <p className="text-[11px] text-amber-200">Clube parceiro é apenas leitura.</p>
+                  )}
                   <div className="grid gap-2 sm:grid-cols-2">
                     <input
                       value={courtForm.name}
                       onChange={(e) => setCourtForm((p) => ({ ...p, name: e.target.value }))}
-                      className="rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
+                      disabled={selectedClubIsPartner}
+                      className="rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF] disabled:opacity-60"
                       placeholder="Nome do campo"
                     />
                     <input
                       value={courtForm.description}
                       onChange={(e) => setCourtForm((p) => ({ ...p, description: e.target.value }))}
-                      className="rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
+                      disabled={selectedClubIsPartner}
+                      className="rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF] disabled:opacity-60"
                       placeholder="Descrição / patrocinador (opcional)"
                     />
                     <div className="col-span-2 flex flex-wrap items-center gap-2 text-sm text-white/80">
@@ -4100,6 +4324,7 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
                                 ? "bg-white text-black font-semibold shadow"
                                 : "text-white/75 hover:bg-white/5"
                             }`}
+                            disabled={selectedClubIsPartner}
                           >
                             {opt.label}
                           </button>
@@ -4121,6 +4346,7 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
                                   : "bg-white text-black font-semibold"
                                 : "text-white/75 hover:bg-white/5"
                             }`}
+                            disabled={selectedClubIsPartner}
                           >
                             {opt.label}
                           </button>
@@ -4132,8 +4358,8 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
                     <button
                       type="button"
                       onClick={handleSubmitCourt}
-                      disabled={savingCourt}
-                      className={CTA_PAD_PRIMARY_SM}
+                      disabled={savingCourt || selectedClubIsPartner}
+                      className={`${CTA_PAD_PRIMARY_SM} disabled:opacity-60 disabled:cursor-not-allowed`}
                     >
                       {savingCourt ? "A guardar…" : courtForm.id ? "Atualizar campo" : "Guardar campo"}
                     </button>
@@ -4141,7 +4367,8 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
                       <button
                         type="button"
                         onClick={resetCourtForm}
-                        className="rounded-full border border-white/20 px-3 py-1.5 text-[12px] text-white hover:border-white/35"
+                        disabled={selectedClubIsPartner}
+                        className="rounded-full border border-white/20 px-3 py-1.5 text-[12px] text-white hover:border-white/35 disabled:opacity-60"
                       >
                         Cancelar
                       </button>
@@ -4155,11 +4382,12 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
                     {courts.map((c, idx) => (
                       <div
                         key={c.id}
-                        draggable
+                        draggable={!selectedClubIsPartner}
                         onDragStart={() => setDraggingCourtId(c.id)}
                         onDragOver={(e) => e.preventDefault()}
                         onDrop={(e) => {
                           e.preventDefault();
+                          if (selectedClubIsPartner) return;
                           const updated = reorderCourts(c.id);
                           if (updated) {
                             persistCourtOrder(updated);
@@ -4194,14 +4422,16 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
                           <button
                             type="button"
                             onClick={() => handleEditCourt(c)}
-                            className="rounded-full border border-white/15 px-2 py-1 text-[11px] text-white hover:border-white/30"
+                            disabled={selectedClubIsPartner}
+                            className="rounded-full border border-white/15 px-2 py-1 text-[11px] text-white hover:border-white/30 disabled:opacity-60"
                           >
                             Editar
                           </button>
                           <button
                             type="button"
                             onClick={() => setCourtDialog({ court: c, nextActive: !c.isActive })}
-                            className={`rounded-full border px-2 py-1 text-[11px] ${
+                            disabled={selectedClubIsPartner}
+                            className={`rounded-full border px-2 py-1 text-[11px] disabled:opacity-60 ${
                               c.isActive
                                 ? "border-amber-300/60 bg-amber-400/15 text-amber-50 hover:border-amber-200/80"
                                 : "border-emerald-400/60 bg-emerald-500/15 text-emerald-50 hover:border-emerald-300/80"
@@ -4213,7 +4443,8 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
                             <button
                               type="button"
                               onClick={() => setDeleteCourtDialog(c)}
-                              className="rounded-full border border-red-400/60 bg-red-500/15 px-2 py-1 text-[11px] text-red-50 hover:border-red-300/80"
+                              disabled={selectedClubIsPartner}
+                              className="rounded-full border border-red-400/60 bg-red-500/15 px-2 py-1 text-[11px] text-red-50 hover:border-red-300/80 disabled:opacity-60"
                             >
                               Apagar
                             </button>
@@ -5177,6 +5408,9 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
                     ? "Completa morada e campos para o wizard."
                     : "Regista so o necessario e afina depois."}
                 </p>
+                {isPartnerClubForm && clubForm.id && (
+                  <p className="text-[11px] text-amber-200">Clube parceiro é sincronizado e não permite alterações base.</p>
+                )}
               </div>
               <button
                 type="button"
@@ -5199,7 +5433,16 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
                       <button
                         key={opt.key}
                         type="button"
-                        onClick={() => setClubForm((prev) => ({ ...prev, kind: opt.key }))}
+                        onClick={() => {
+                          const nextMode = opt.key === "OWN" ? "OSM" : "MANUAL";
+                          setClubForm((prev) => ({
+                            ...prev,
+                            kind: opt.key,
+                            locationSource: nextMode,
+                          }));
+                          setClubLocationMode(nextMode);
+                          setClubLocationConfirmed(opt.key !== "OWN");
+                        }}
                         className={`rounded-full px-3 py-1 transition ${
                           clubForm.kind === opt.key
                             ? "bg-white text-black font-semibold shadow"
@@ -5216,16 +5459,107 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
                 value={clubForm.name}
                 onChange={(e) => setClubForm((p) => ({ ...p, name: e.target.value }))}
                 placeholder="Nome do clube"
-                className="w-full rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
+                disabled={isPartnerClubForm && Boolean(clubForm.id)}
+                className="w-full rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF] disabled:opacity-60"
               />
+              {isOwnClubForm && (
+                <div className="rounded-xl border border-white/12 bg-black/35 p-3 space-y-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-[11px] uppercase tracking-[0.18em] text-white/60">Morada normalizada</p>
+                    <div className="inline-flex rounded-full border border-white/15 bg-black/60 p-1 text-[11px]">
+                      <button
+                        type="button"
+                        onClick={enableClubOsmLocation}
+                        className={`rounded-full px-3 py-1 transition ${
+                          clubLocationMode === "OSM"
+                            ? "bg-white text-black font-semibold shadow"
+                            : "text-white/70 hover:bg-white/10"
+                        }`}
+                      >
+                        Auto (OSM)
+                      </button>
+                    </div>
+                  </div>
+                  {clubLocationMode === "OSM" && (
+                    <div className="space-y-2">
+                      <input
+                        value={clubLocationQuery}
+                        onChange={(e) => {
+                          setClubLocationQuery(e.target.value);
+                          setClubLocationConfirmed(false);
+                        }}
+                        placeholder="Pesquisar morada"
+                        className="w-full rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
+                      />
+                      {clubLocationSearchError && (
+                        <p className="text-[11px] text-rose-200">{clubLocationSearchError}</p>
+                      )}
+                      {clubLocationSearchLoading ? (
+                        <p className="text-[11px] text-white/60">A procurar moradas...</p>
+                      ) : clubLocationSuggestions.length === 0 ? (
+                        <p className="text-[11px] text-white/60">Sugestões aparecem aqui.</p>
+                      ) : (
+                        <div className="max-h-40 space-y-2 overflow-auto">
+                          {clubLocationSuggestions.map((item) => (
+                            <button
+                              key={item.providerId}
+                              type="button"
+                              onClick={() => handleSelectClubLocationSuggestion(item)}
+                              className="w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-left text-[12px] text-white/80 hover:border-cyan-300/50"
+                            >
+                              {item.label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      {clubLocationDetailsLoading && (
+                        <p className="text-[11px] text-white/50">A validar morada...</p>
+                      )}
+                      {!clubLocationConfirmed && clubForm.address.trim() && clubForm.city.trim() && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const formatted = buildClubFormattedAddress();
+                            setClubForm((prev) => ({
+                              ...prev,
+                              locationFormattedAddress: formatted,
+                            }));
+                            setClubLocationConfirmed(true);
+                          }}
+                          className="rounded-full border border-emerald-300/50 bg-emerald-400/10 px-3 py-1 text-[11px] text-emerald-100 hover:border-emerald-200/70"
+                        >
+                          Confirmar morada
+                        </button>
+                      )}
+                      {clubLocationConfirmed && clubForm.locationFormattedAddress && (
+                        <p className="text-[11px] text-emerald-200">
+                          Confirmado: {clubForm.locationFormattedAddress}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="relative">
                   <input
                     list="pt-cities"
                     value={clubForm.city}
-                    onChange={(e) => setClubForm((p) => ({ ...p, city: e.target.value }))}
+                    onChange={(e) => {
+                      const nextCity = e.target.value;
+                      setClubForm((prev) => {
+                        const formatted = [prev.address.trim(), nextCity.trim()].filter(Boolean).join(", ");
+                        return {
+                          ...prev,
+                          city: nextCity,
+                          locationFormattedAddress: formatted || prev.locationFormattedAddress,
+                        };
+                      });
+                      if (isOwnClubForm) setClubLocationConfirmed(false);
+                    }}
                     placeholder={isOwnClubForm ? "Cidade" : "Cidade (opcional)"}
-                    className="w-full rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
+                    disabled={isPartnerClubForm && Boolean(clubForm.id)}
+                    className="w-full rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF] disabled:opacity-60"
                   />
                   <datalist id="pt-cities">
                     {PORTUGAL_CITIES.map((city) => (
@@ -5235,9 +5569,21 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
                 </div>
                 <input
                   value={clubForm.address}
-                  onChange={(e) => setClubForm((p) => ({ ...p, address: e.target.value }))}
+                  onChange={(e) => {
+                    const nextAddress = e.target.value;
+                    setClubForm((prev) => {
+                      const formatted = [nextAddress.trim(), prev.city.trim()].filter(Boolean).join(", ");
+                      return {
+                        ...prev,
+                        address: nextAddress,
+                        locationFormattedAddress: formatted || prev.locationFormattedAddress,
+                      };
+                    });
+                    if (isOwnClubForm) setClubLocationConfirmed(false);
+                  }}
                   placeholder={isOwnClubForm ? "Morada" : "Morada (opcional)"}
-                  className="rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
+                  disabled={isPartnerClubForm && Boolean(clubForm.id)}
+                  className="rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF] disabled:opacity-60"
                 />
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
@@ -5248,7 +5594,8 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
                     setClubForm((prev) => ({ ...prev, slug: e.target.value }));
                   }}
                   placeholder="Slug / código curto (opcional)"
-                  className="rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
+                  disabled={isPartnerClubForm && Boolean(clubForm.id)}
+                  className="rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF] disabled:opacity-60"
                 />
                 {slugError && <p className="mt-1 text-[12px] font-semibold text-red-300">{slugError}</p>}
                 <input
@@ -5258,7 +5605,8 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
                   value={clubForm.courtsCount}
                   onChange={(e) => setClubForm((p) => ({ ...p, courtsCount: e.target.value }))}
                   placeholder={isOwnClubForm ? "Nº de campos" : "Nº de campos (estimado)"}
-                  className="rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
+                  disabled={isPartnerClubForm && Boolean(clubForm.id)}
+                  className="rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF] disabled:opacity-60"
                 />
               </div>
               <label className="flex items-center gap-2 text-sm text-white/80">

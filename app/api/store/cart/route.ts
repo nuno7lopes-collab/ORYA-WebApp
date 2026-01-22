@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@prisma/client";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { isStoreFeatureEnabled, isStorePublic } from "@/lib/storeAccess";
+import { computeBundleTotals } from "@/lib/store/bundles";
 
 const CART_SESSION_COOKIE = "orya_store_cart";
 
@@ -18,7 +20,7 @@ function parseStoreId(req: NextRequest) {
 async function resolveStore(storeId: number) {
   const store = await prisma.store.findFirst({
     where: { id: storeId },
-    select: { id: true, status: true, catalogLocked: true, currency: true },
+    select: { id: true, status: true, showOnProfile: true, catalogLocked: true, currency: true },
   });
   if (!store) {
     return { ok: false as const, error: "Store nao encontrada." };
@@ -96,35 +98,182 @@ export async function GET(req: NextRequest) {
       sessionId,
     });
 
-    const items = await prisma.storeCartItem.findMany({
-      where: { cartId: resolved.cart.id },
-      orderBy: [{ createdAt: "asc" }],
-      select: {
-        id: true,
-        productId: true,
-        variantId: true,
-        quantity: true,
-        unitPriceCents: true,
-        personalization: true,
-        product: {
+    let items = [] as Awaited<ReturnType<typeof prisma.storeCartItem.findMany>>;
+    try {
+      items = await prisma.storeCartItem.findMany({
+        where: { cartId: resolved.cart.id },
+        orderBy: [{ createdAt: "asc" }],
+        select: {
+          id: true,
+          productId: true,
+          variantId: true,
+          bundleId: true,
+          bundleKey: true,
+          quantity: true,
+          unitPriceCents: true,
+          personalization: true,
+          product: {
+            select: {
+              id: true,
+              name: true,
+              slug: true,
+              priceCents: true,
+              compareAtPriceCents: true,
+              currency: true,
+              requiresShipping: true,
+              images: {
+                select: { url: true, altText: true, isPrimary: true, sortOrder: true },
+                orderBy: [{ isPrimary: "desc" }, { sortOrder: "asc" }],
+              },
+            },
+          },
+          variant: {
+            select: { id: true, label: true, priceCents: true },
+          },
+        },
+      });
+    } catch (err) {
+      if (!(err instanceof Prisma.PrismaClientValidationError)) {
+        throw err;
+      }
+      items = await prisma.storeCartItem.findMany({
+        where: { cartId: resolved.cart.id },
+        orderBy: [{ createdAt: "asc" }],
+        select: {
+          id: true,
+          productId: true,
+          variantId: true,
+          bundleKey: true,
+          quantity: true,
+          unitPriceCents: true,
+          personalization: true,
+          product: {
+            select: {
+              id: true,
+              name: true,
+              slug: true,
+              priceCents: true,
+              compareAtPriceCents: true,
+              currency: true,
+              requiresShipping: true,
+              images: {
+                select: { url: true, altText: true, isPrimary: true, sortOrder: true },
+                orderBy: [{ isPrimary: "desc" }, { sortOrder: "asc" }],
+              },
+            },
+          },
+          variant: {
+            select: { id: true, label: true, priceCents: true },
+          },
+        },
+      });
+    }
+
+    const bundleItems = items.filter((item) => item.bundleKey);
+    const standaloneItems = items.filter((item) => !item.bundleKey);
+    const bundleIds = Array.from(
+      new Set(
+        bundleItems
+          .map((item) => ("bundleId" in item ? (item.bundleId as number | null) : null))
+          .filter((id): id is number => Boolean(id)),
+      ),
+    );
+
+    const bundleDefinitions = bundleIds.length
+      ? await prisma.storeBundle.findMany({
+          where: { id: { in: bundleIds }, storeId: store.store.id },
           select: {
             id: true,
             name: true,
-            slug: true,
+            description: true,
+            pricingMode: true,
             priceCents: true,
-            compareAtPriceCents: true,
-            currency: true,
-            requiresShipping: true,
-            images: {
-              select: { url: true, altText: true, isPrimary: true, sortOrder: true },
-              orderBy: [{ isPrimary: "desc" }, { sortOrder: "asc" }],
+            percentOff: true,
+            items: {
+              select: { productId: true, variantId: true, quantity: true },
             },
           },
-        },
-        variant: {
-          select: { id: true, label: true, priceCents: true },
-        },
-      },
+        })
+      : [];
+
+    const bundleMap = new Map(bundleDefinitions.map((bundle) => [bundle.id, bundle]));
+
+    const bundles = Array.from(
+      bundleItems.reduce((map, item) => {
+        const key = item.bundleKey ?? "unknown";
+        const current = map.get(key) ?? [];
+        current.push(item);
+        map.set(key, current);
+        return map;
+      }, new Map<string, typeof bundleItems>()),
+    ).map(([bundleKey, groupItems]) => {
+      const bundleId = groupItems[0]?.bundleId ?? null;
+      const bundle = bundleId ? bundleMap.get(bundleId) : null;
+      const baseCents = groupItems.reduce((sum, item) => sum + item.unitPriceCents * item.quantity, 0);
+      const definitionMap = new Map<string, number>();
+
+      if (bundle) {
+        bundle.items.forEach((item) => {
+          const mapKey = `${item.productId}:${item.variantId ?? "base"}`;
+          definitionMap.set(mapKey, item.quantity);
+        });
+      }
+
+      const bundleQuantity =
+        bundle && bundle.items.length
+          ? Math.min(
+              ...bundle.items.map((item) => {
+                const match = groupItems.find(
+                  (entry) =>
+                    entry.productId === item.productId &&
+                    entry.variantId === (item.variantId ?? null),
+                );
+                if (!match || item.quantity <= 0) return 1;
+                return Math.max(1, Math.floor(match.quantity / item.quantity));
+              }),
+            )
+          : 1;
+
+      let totals = bundle
+        ? computeBundleTotals({
+            pricingMode: bundle.pricingMode,
+            priceCents: bundle.priceCents,
+            percentOff: bundle.percentOff,
+            baseCents,
+            bundleQuantity,
+          })
+        : { totalCents: baseCents, discountCents: 0 };
+      if (bundle && (bundle.items.length < 2 || baseCents <= 0 || totals.totalCents >= baseCents)) {
+        totals = { totalCents: baseCents, discountCents: 0 };
+      }
+
+      return {
+        bundleKey,
+        bundleId,
+        name: bundle?.name ?? "Bundle",
+        description: bundle?.description ?? null,
+        pricingMode: bundle?.pricingMode ?? "FIXED",
+        priceCents: bundle?.priceCents ?? null,
+        percentOff: bundle?.percentOff ?? null,
+        baseCents,
+        totalCents: totals.totalCents,
+        discountCents: totals.discountCents,
+        quantity: bundleQuantity,
+        items: groupItems.map((item) => {
+          const itemKey = `${item.productId}:${item.variantId ?? "base"}`;
+          const perBundleQty = definitionMap.get(itemKey) ?? item.quantity;
+          return {
+            id: item.id,
+            productId: item.productId,
+            variantId: item.variantId,
+            quantity: item.quantity,
+            perBundleQty,
+            unitPriceCents: item.unitPriceCents,
+            product: item.product,
+            variant: item.variant,
+          };
+        }),
+      };
     });
 
     const response = NextResponse.json({
@@ -133,7 +282,8 @@ export async function GET(req: NextRequest) {
         id: resolved.cart.id,
         storeId: resolved.cart.storeId,
         currency: resolved.cart.currency,
-        items,
+        items: standaloneItems,
+        bundles,
       },
     });
 

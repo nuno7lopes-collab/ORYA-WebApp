@@ -8,6 +8,7 @@ import { ensureLojaModuleAccess } from "@/lib/loja/access";
 import { isStoreFeatureEnabled } from "@/lib/storeAccess";
 import { OrganizationMemberRole, StoreBundlePricingMode, StoreBundleStatus } from "@prisma/client";
 import { z } from "zod";
+import { computeBundleTotals } from "@/lib/store/bundles";
 
 const ALLOWED_ROLES: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -74,7 +75,24 @@ function parseId(value: string) {
   return { ok: true as const, id };
 }
 
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+async function loadBundlePricing(storeId: number, bundleId: number) {
+  const items = await prisma.storeBundleItem.findMany({
+    where: { bundleId },
+    select: {
+      quantity: true,
+      product: { select: { priceCents: true, storeId: true } },
+      variant: { select: { priceCents: true } },
+    },
+  });
+  const validItems = items.filter((item) => item.product.storeId === storeId);
+  const baseCents = validItems.reduce((sum, item) => {
+    const unitPrice = item.variant?.priceCents ?? item.product.priceCents;
+    return sum + unitPrice * item.quantity;
+  }, 0);
+  return { itemCount: validItems.length, baseCents };
+}
+
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     if (!isStoreFeatureEnabled()) {
       return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
@@ -92,7 +110,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       return NextResponse.json({ ok: false, error: "Catalogo bloqueado." }, { status: 403 });
     }
 
-    const bundleId = parseId(params.id);
+    const resolvedParams = await params;
+    const bundleId = parseId(resolvedParams.id);
     if (!bundleId.ok) {
       return NextResponse.json({ ok: false, error: bundleId.error }, { status: 400 });
     }
@@ -165,6 +184,33 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       data.priceCents = null;
     }
 
+    const nextStatus = data.status ?? existing.status;
+    const nextVisible = data.isVisible ?? existing.isVisible;
+    const pricingSnapshot = await loadBundlePricing(context.store.id, bundleId.id);
+    if ((nextStatus === StoreBundleStatus.ACTIVE || nextVisible) && pricingSnapshot.itemCount < 2) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "Adiciona pelo menos 2 produtos ao bundle antes de ativar ou mostrar na loja.",
+        },
+        { status: 409 },
+      );
+    }
+    if (pricingSnapshot.itemCount >= 2) {
+      const totals = computeBundleTotals({
+        pricingMode: nextPricingMode,
+        priceCents: nextPriceCents,
+        percentOff: nextPercentOff,
+        baseCents: pricingSnapshot.baseCents,
+      });
+      if (pricingSnapshot.baseCents <= 0 || totals.totalCents >= pricingSnapshot.baseCents) {
+        return NextResponse.json(
+          { ok: false, error: "O preco do bundle tem de ser inferior ao total dos itens." },
+          { status: 409 },
+        );
+      }
+    }
+
     const updated = await prisma.storeBundle.update({
       where: { id: bundleId.id },
       data,
@@ -191,7 +237,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   }
 }
 
-export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     if (!isStoreFeatureEnabled()) {
       return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
@@ -209,7 +255,8 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
       return NextResponse.json({ ok: false, error: "Catalogo bloqueado." }, { status: 403 });
     }
 
-    const bundleId = parseId(params.id);
+    const resolvedParams = await params;
+    const bundleId = parseId(resolvedParams.id);
     if (!bundleId.ok) {
       return NextResponse.json({ ok: false, error: bundleId.error }, { status: 400 });
     }

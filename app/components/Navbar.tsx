@@ -41,6 +41,7 @@ type SearchUser = {
   fullName: string | null;
   avatarUrl: string | null;
   isFollowing?: boolean;
+  isRequested?: boolean;
 };
 
 type SearchTab = "all" | "events" | "organizations" | "users";
@@ -436,10 +437,10 @@ export function Navbar() {
     setFollowPending((prev) => ({ ...prev, [key]: value }));
   };
 
-  const updateUserFollowState = (targetId: string, next: boolean) => {
+  const updateUserFollowState = (targetId: string, nextFollowing: boolean, nextRequested: boolean) => {
     setUserResults((prev) =>
       prev.map((item) =>
-        item.id === targetId ? { ...item, isFollowing: next } : item,
+        item.id === targetId ? { ...item, isFollowing: nextFollowing, isRequested: nextRequested } : item,
       ),
     );
   };
@@ -459,22 +460,58 @@ export function Navbar() {
     return false;
   };
 
-  const toggleUserFollow = async (targetId: string, next: boolean) => {
+  const toggleUserFollow = async (targetId: string, status: "following" | "requested" | "none") => {
     if (!ensureAuthForFollow()) return;
     const key = `user_${targetId}`;
     setFollowPendingFlag(key, true);
-    updateUserFollowState(targetId, next);
     try {
-      const res = await fetch(next ? "/api/social/follow" : "/api/social/unfollow", {
+      if (status === "following") {
+        const res = await fetch("/api/social/unfollow", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ targetUserId: targetId }),
+        });
+        const json = await res.json().catch(() => null);
+        if (res.ok && json?.ok) {
+          updateUserFollowState(targetId, false, false);
+        } else {
+          updateUserFollowState(targetId, true, false);
+        }
+        return;
+      }
+
+      if (status === "requested") {
+        const res = await fetch("/api/social/follow-requests/cancel", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ targetUserId: targetId }),
+        });
+        const json = await res.json().catch(() => null);
+        if (res.ok && json?.ok) {
+          updateUserFollowState(targetId, false, false);
+        } else {
+          updateUserFollowState(targetId, false, true);
+        }
+        return;
+      }
+
+      const res = await fetch("/api/social/follow", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ targetUserId: targetId }),
       });
-      if (!res.ok) {
-        updateUserFollowState(targetId, !next);
+      const json = await res.json().catch(() => null);
+      if (res.ok && json?.ok) {
+        if (json.status === "REQUESTED") {
+          updateUserFollowState(targetId, false, true);
+        } else if (json.status === "FOLLOWING") {
+          updateUserFollowState(targetId, true, false);
+        }
+      } else {
+        updateUserFollowState(targetId, false, false);
       }
     } catch {
-      updateUserFollowState(targetId, !next);
+      updateUserFollowState(targetId, status === "following", status === "requested");
     } finally {
       setFollowPendingFlag(key, false);
     }
@@ -677,56 +714,58 @@ export function Navbar() {
 
                 {isProfileMenuOpen && (
                   <div
-                    className="absolute right-0 top-full mt-3 w-60 origin-top-right rounded-2xl border border-white/16 bg-[linear-gradient(135deg,rgba(3,4,10,0.97),rgba(8,10,18,0.98))] p-2 text-[11px] text-white/90 shadow-[0_28px_80px_rgba(0,0,0,0.88)] backdrop-blur-3xl"
+                    className="absolute right-0 top-full mt-3 w-60 origin-top-right rounded-2xl orya-menu-surface p-2 text-[11px] backdrop-blur-3xl"
                     role="menu"
                     aria-label="Menu de conta ORYA"
                   >
-                    <Link
-                      href="/me"
-                      onClick={() => setIsProfileMenuOpen(false)}
-                      className="flex w-full items-center justify-between rounded-xl px-2.5 py-2 text-left hover:bg-white/8"
-                    >
-                      <span className="font-semibold text-white">Perfil</span>
-                    </Link>
-                    <Link
-                      href="/me/carteira"
-                      onClick={() => setIsProfileMenuOpen(false)}
-                      className="flex w-full items-center justify-between rounded-xl px-2.5 py-2 text-left hover:bg-white/8"
-                    >
-                      <span>Carteira</span>
-                    </Link>
-                    <Link
-                      href="/me/compras"
-                      onClick={() => setIsProfileMenuOpen(false)}
-                      className="flex w-full items-center justify-between rounded-xl px-2.5 py-2 text-left hover:bg-white/8"
-                    >
-                      <span>Compras</span>
-                    </Link>
-                    <Link
-                      href="/me/settings"
-                      onClick={() => setIsProfileMenuOpen(false)}
-                      className="flex w-full items-center justify-between rounded-xl px-2.5 py-2 text-left hover:bg-white/8"
-                    >
-                      <span>Definições</span>
-                    </Link>
-                    {pathname?.startsWith("/organizacao") && (
+                    <div className="orya-menu-list">
                       <Link
                         href="/me"
                         onClick={() => setIsProfileMenuOpen(false)}
-                        className="flex w-full items-center justify-between rounded-xl px-2.5 py-2 text-left hover:bg-white/8"
+                        className="orya-menu-item font-semibold"
                       >
-                        <span>Voltar a utilizador</span>
+                        <span className="font-semibold">Perfil</span>
                       </Link>
-                    )}
-                    {/* Dashboard de organização removido do dropdown: já está acessível na nav */}
-                    <div className="my-1 h-px w-full bg-white/10" />
-                    <button
-                      type="button"
-                      onClick={handleLogout}
-                      className="mt-1 w-full rounded-xl bg-white/10 px-3 py-2 text-left font-semibold text-red-100 hover:bg-white/15"
-                    >
-                      Terminar sessão
-                    </button>
+                      <Link
+                        href="/me/carteira"
+                        onClick={() => setIsProfileMenuOpen(false)}
+                        className="orya-menu-item"
+                      >
+                        <span>Carteira</span>
+                      </Link>
+                      <Link
+                        href="/me/compras"
+                        onClick={() => setIsProfileMenuOpen(false)}
+                        className="orya-menu-item"
+                      >
+                        <span>Compras</span>
+                      </Link>
+                      <Link
+                        href="/me/settings"
+                        onClick={() => setIsProfileMenuOpen(false)}
+                        className="orya-menu-item"
+                      >
+                        <span>Definições</span>
+                      </Link>
+                      {pathname?.startsWith("/organizacao") && (
+                        <Link
+                          href="/me"
+                          onClick={() => setIsProfileMenuOpen(false)}
+                          className="orya-menu-item"
+                        >
+                          <span>Voltar a utilizador</span>
+                        </Link>
+                      )}
+                      {/* Dashboard de organização removido do dropdown: já está acessível na nav */}
+                      <div className="my-1 orya-menu-divider" />
+                      <button
+                        type="button"
+                        onClick={handleLogout}
+                        className="orya-menu-item font-semibold text-red-100 hover:bg-rose-500/10"
+                      >
+                        Terminar sessão
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
@@ -740,7 +779,7 @@ export function Navbar() {
           className={`fixed inset-0 z-40 ${
             isAtTop
               ? "bg-transparent backdrop-blur-[6px]"
-              : "bg-[linear-gradient(120deg,rgba(8,10,20,0.38),rgba(8,10,20,0.52))] backdrop-blur-[18px]"
+              : "bg-white/5 backdrop-blur-[18px]"
           }`}
           role="dialog"
           aria-modal="true"
@@ -752,12 +791,12 @@ export function Navbar() {
         >
           <div ref={searchPanelRef} className="mx-auto mt-24 md:mt-28 max-w-3xl px-4">
             <div
-              className="rounded-3xl border border-white/18 bg-[radial-gradient(circle_at_12%_0%,rgba(255,0,200,0.14),transparent_40%),radial-gradient(circle_at_88%_0%,rgba(107,255,255,0.14),transparent_36%),linear-gradient(120deg,rgba(8,10,20,0.62),rgba(8,10,20,0.52),rgba(8,10,20,0.6))] p-4 shadow-[0_28px_80px_rgba(0,0,0,0.75)] backdrop-blur-2xl"
+              className="rounded-3xl border border-white/18 bg-white/6 p-4 shadow-[0_28px_80px_rgba(0,0,0,0.75)] backdrop-blur-2xl"
               aria-label="Pesquisa de eventos ORYA"
             >
               <form
                 onSubmit={handleSubmitSearch}
-                className="flex items-center gap-3 rounded-2xl border border-white/20 bg-[linear-gradient(120deg,rgba(255,0,200,0.08),rgba(107,255,255,0.08)),rgba(8,10,20,0.3)] px-4 py-2.5 shadow-[0_12px_32px_rgba(0,0,0,0.45)] backdrop-blur-2xl"
+                className="flex items-center gap-3 rounded-2xl border border-white/20 bg-white/8 px-4 py-2.5 shadow-[0_12px_32px_rgba(0,0,0,0.45)] backdrop-blur-2xl"
               >
                 <span className="flex h-6 w-6 items-center justify-center rounded-full border border-white/30 text-[12px] text-white/80">
                   ⌕
@@ -802,7 +841,7 @@ export function Navbar() {
                   ))}
                 </div>
 
-                <div className="mt-4 rounded-2xl border border-white/16 bg-[linear-gradient(140deg,rgba(255,255,255,0.08),rgba(255,255,255,0.04))] p-3 shadow-[0_18px_60px_rgba(0,0,0,0.5)]">
+                <div className="mt-4 rounded-2xl border border-white/16 bg-white/6 p-3 shadow-[0_18px_60px_rgba(0,0,0,0.5)]">
                   <div className="flex items-center justify-between text-[11px] text-white/75">
                     <span>Resultados</span>
                     {isSuggestLoading && (
@@ -851,9 +890,9 @@ export function Navbar() {
                                   key={`event-${item.id}`}
                                   type="button"
                                   onClick={() => goTo(buildEventHref(item.slug))}
-                                  className="w-full rounded-xl border border-white/12 bg-[linear-gradient(120deg,rgba(255,255,255,0.04),rgba(8,10,22,0.7))] p-2.5 text-left hover:border-white/20 hover:bg-white/8 transition flex gap-3"
+                                  className="w-full rounded-xl border border-white/12 bg-white/5 p-2.5 text-left hover:border-white/20 hover:bg-white/8 transition flex gap-3"
                                 >
-                                  <div className="h-12 w-12 overflow-hidden rounded-lg border border-white/10 bg-[radial-gradient(circle_at_30%_30%,rgba(255,0,200,0.14),transparent_45%),radial-gradient(circle_at_70%_70%,rgba(107,255,255,0.14),transparent_50%),#0b0f1b]">
+                                  <div className="h-12 w-12 overflow-hidden rounded-lg border border-white/10 bg-white/5">
                                     {/* eslint-disable-next-line @next/next/no-img-element */}
                                     <img
                                       src={coverSrc}
@@ -918,7 +957,7 @@ export function Navbar() {
                               return (
                                 <div
                                   key={`org-${item.id}`}
-                                  className="flex items-center gap-3 rounded-xl border border-white/12 bg-[linear-gradient(120deg,rgba(255,255,255,0.04),rgba(8,10,22,0.7))] p-2.5"
+                                  className="flex items-center gap-3 rounded-xl border border-white/12 bg-white/5 p-2.5"
                                 >
                                   <button
                                     type="button"
@@ -978,13 +1017,19 @@ export function Navbar() {
                           <div className="mt-2 space-y-2">
                             {userResults.slice(0, 3).map((item) => {
                               const isFollowing = Boolean(item.isFollowing);
+                              const isRequested = Boolean(item.isRequested);
+                              const followStatus: "following" | "requested" | "none" = isFollowing
+                                ? "following"
+                                : isRequested
+                                  ? "requested"
+                                  : "none";
                               const pending = followPending[`user_${item.id}`];
                               const displayName =
                                 item.fullName?.trim() || item.username || "Utilizador ORYA";
                               return (
                                 <div
                                   key={`user-${item.id}`}
-                                  className="flex items-center gap-3 rounded-xl border border-white/12 bg-[linear-gradient(120deg,rgba(255,255,255,0.04),rgba(8,10,22,0.7))] p-2.5"
+                                  className="flex items-center gap-3 rounded-xl border border-white/12 bg-white/5 p-2.5"
                                 >
                                   <button
                                     type="button"
@@ -1010,14 +1055,20 @@ export function Navbar() {
                                   <button
                                     type="button"
                                     disabled={pending}
-                                    onClick={() => toggleUserFollow(item.id, !isFollowing)}
+                                    onClick={() => toggleUserFollow(item.id, followStatus)}
                                     className={`rounded-full px-3 py-1 text-[10px] font-semibold transition ${
-                                      isFollowing
+                                      followStatus !== "none"
                                         ? "border border-emerald-300/40 bg-emerald-400/15 text-emerald-100"
                                         : "border border-white/20 bg-white/10 text-white/80 hover:bg-white/15"
                                     } ${pending ? "opacity-60" : ""}`}
                                   >
-                                    {pending ? "…" : isFollowing ? "A seguir" : "Seguir"}
+                                    {pending
+                                      ? "…"
+                                      : followStatus === "following"
+                                        ? "A seguir"
+                                        : followStatus === "requested"
+                                          ? "Pedido enviado"
+                                          : "Seguir"}
                                   </button>
                                 </div>
                               );
@@ -1044,9 +1095,9 @@ export function Navbar() {
                               key={`event-tab-${item.id}`}
                               type="button"
                               onClick={() => goTo(buildEventHref(item.slug))}
-                              className="w-full rounded-xl border border-white/12 bg-[linear-gradient(120deg,rgba(255,255,255,0.04),rgba(8,10,22,0.7))] p-2.5 text-left hover:border-white/20 hover:bg-white/8 transition flex gap-3"
+                              className="w-full rounded-xl border border-white/12 bg-white/5 p-2.5 text-left hover:border-white/20 hover:bg-white/8 transition flex gap-3"
                             >
-                              <div className="h-12 w-12 overflow-hidden rounded-lg border border-white/10 bg-[radial-gradient(circle_at_30%_30%,rgba(255,0,200,0.14),transparent_45%),radial-gradient(circle_at_70%_70%,rgba(107,255,255,0.14),transparent_50%),#0b0f1b]">
+                              <div className="h-12 w-12 overflow-hidden rounded-lg border border-white/10 bg-white/5">
                                 {/* eslint-disable-next-line @next/next/no-img-element */}
                                 <img
                                   src={coverSrc}
@@ -1099,7 +1150,7 @@ export function Navbar() {
                           return (
                             <div
                               key={`org-tab-${item.id}`}
-                              className="flex items-center gap-3 rounded-xl border border-white/12 bg-[linear-gradient(120deg,rgba(255,255,255,0.04),rgba(8,10,22,0.7))] p-2.5"
+                              className="flex items-center gap-3 rounded-xl border border-white/12 bg-white/5 p-2.5"
                             >
                               <button
                                 type="button"
@@ -1147,13 +1198,19 @@ export function Navbar() {
                       <div className="space-y-2">
                         {userResults.map((item) => {
                           const isFollowing = Boolean(item.isFollowing);
+                          const isRequested = Boolean(item.isRequested);
+                          const followStatus: "following" | "requested" | "none" = isFollowing
+                            ? "following"
+                            : isRequested
+                              ? "requested"
+                              : "none";
                           const pending = followPending[`user_${item.id}`];
                           const displayName =
                             item.fullName?.trim() || item.username || "Utilizador ORYA";
                           return (
                             <div
                               key={`user-tab-${item.id}`}
-                              className="flex items-center gap-3 rounded-xl border border-white/12 bg-[linear-gradient(120deg,rgba(255,255,255,0.04),rgba(8,10,22,0.7))] p-2.5"
+                              className="flex items-center gap-3 rounded-xl border border-white/12 bg-white/5 p-2.5"
                             >
                               <button
                                 type="button"
@@ -1179,14 +1236,20 @@ export function Navbar() {
                               <button
                                 type="button"
                                 disabled={pending}
-                                onClick={() => toggleUserFollow(item.id, !isFollowing)}
+                                onClick={() => toggleUserFollow(item.id, followStatus)}
                                 className={`rounded-full px-3 py-1 text-[10px] font-semibold transition ${
-                                  isFollowing
+                                  followStatus !== "none"
                                     ? "border border-emerald-300/40 bg-emerald-400/15 text-emerald-100"
                                     : "border border-white/20 bg-white/10 text-white/80 hover:bg-white/15"
                                 } ${pending ? "opacity-60" : ""}`}
                               >
-                                {pending ? "…" : isFollowing ? "A seguir" : "Seguir"}
+                                {pending
+                                  ? "…"
+                                  : followStatus === "following"
+                                    ? "A seguir"
+                                    : followStatus === "requested"
+                                      ? "Pedido enviado"
+                                      : "Seguir"}
                               </button>
                             </div>
                           );

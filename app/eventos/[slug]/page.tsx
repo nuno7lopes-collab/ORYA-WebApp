@@ -25,6 +25,7 @@ import InviteGateClient from "./InviteGateClient";
 import { Avatar } from "@/components/ui/avatar";
 import { CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
 import { getTicketCopy } from "@/app/components/checkout/checkoutCopy";
+import { resolveEventLocation } from "@/lib/location/eventLocation";
 
 type EventPageParams = { slug: string };
 type EventPageParamsInput = EventPageParams | Promise<EventPageParams>;
@@ -405,8 +406,22 @@ export default async function EventPage({
   const liveHref = `/eventos/${slug}/live`;
   const liveInlineHref = `/eventos/${slug}?view=live`;
 
-  // Buscar bilhetes ligados a este evento (para contagem de pessoas)
-  const safeLocationName = event.locationName || "Local a anunciar";
+  const resolvedLocation = resolveEventLocation({
+    locationName: event.locationName,
+    locationCity: event.locationCity,
+    address: event.address,
+    locationSource: event.locationSource,
+    locationFormattedAddress: event.locationFormattedAddress,
+    locationComponents: event.locationComponents as Record<string, unknown> | null,
+    locationOverrides: event.locationOverrides as Record<string, unknown> | null,
+    latitude: event.latitude,
+    longitude: event.longitude,
+  });
+  const safeLocationName = resolvedLocation.name || "Local a anunciar";
+  const safeLocationAddress = resolvedLocation.displayAddress || "Morada a anunciar";
+  const googleMapsUrl = resolvedLocation.mapQuery
+    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(resolvedLocation.mapQuery)}`
+    : null;
   const safeTimezone = event.timezone || "Europe/Lisbon";
   const organizationDisplay =
     event.organization?.publicName ||
@@ -940,6 +955,16 @@ export default async function EventPage({
                 <p className="text-xs text-white/60">
                   {event.locationCity || "Cidade a anunciar"}
                 </p>
+                {googleMapsUrl && (
+                  <a
+                    href={googleMapsUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-2 inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/5 px-3 py-1 text-[11px] font-semibold text-white/80 hover:bg-white/10"
+                  >
+                    Abrir no Google Maps
+                  </a>
+                )}
               </div>
               <div className="rounded-2xl border border-white/10 bg-black/45 px-4 py-3 shadow-[0_12px_30px_rgba(0,0,0,0.4)] backdrop-blur">
                 <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">
@@ -1124,7 +1149,7 @@ export default async function EventPage({
                         {safeLocationName}
                       </p>
                       <p className="text-xs text-white/60">
-                        {event.address || "Morada a anunciar"}
+                        {safeLocationAddress}
                       </p>
                     </div>
                   </div>

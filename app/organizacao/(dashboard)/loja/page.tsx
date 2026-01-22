@@ -206,7 +206,7 @@ export default async function LojaPage({ searchParams }: PageProps) {
         ) : view === "marketing" ? (
           <section className="mt-6 space-y-4">
             <header className="space-y-1">
-              <p className="text-xs uppercase tracking-[0.26em] text-white/55">Marketing</p>
+              <p className="text-xs uppercase tracking-[0.26em] text-white/55">Promoções</p>
               <h2 className="text-xl font-semibold text-white">Packs e descontos</h2>
               <p className="text-sm text-white/65">Promocoes simples para a loja.</p>
             </header>

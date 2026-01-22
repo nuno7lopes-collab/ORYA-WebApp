@@ -3,7 +3,7 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 import { ReactNode } from "react";
-import { createSupabaseServer } from "@/lib/supabaseServer";
+import { getCurrentUser } from "@/lib/supabaseServer";
 import { AuthGate } from "@/app/components/autenticação/AuthGate";
 
 /**
@@ -11,10 +11,7 @@ import { AuthGate } from "@/app/components/autenticação/AuthGate";
  * O shell do dashboard vive em app/organizacao/(dashboard)/layout.tsx.
  */
 export default async function OrganizationLayout({ children }: { children: ReactNode }) {
-  const supabase = await createSupabaseServer();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { user } = await getCurrentUser();
 
   if (!user) {
     return <AuthGate />;

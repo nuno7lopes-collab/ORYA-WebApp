@@ -16,8 +16,13 @@ import { trackEvent } from "@/lib/analytics";
 import { useUser } from "@/app/hooks/useUser";
 import { AuthModalProvider } from "@/app/components/autenticação/AuthModalContext";
 import PromoCodesPage from "./promo/PromoCodesClient";
+import MarketingContentKit from "./promo/MarketingContentKit";
 import { SalesAreaChart } from "@/app/components/charts/SalesAreaChart";
 import InvoicesClient from "./pagamentos/invoices/invoices-client";
+import PayoutsPanel from "./pagamentos/PayoutsPanel";
+import RefundsPanel from "./pagamentos/RefundsPanel";
+import ReconciliationPanel from "./pagamentos/ReconciliationPanel";
+import FinanceAlertsPanel from "./pagamentos/FinanceAlertsPanel";
 import PadelHubSection from "./(dashboard)/padel/PadelHubSection";
 import ReservasDashboardPage from "./(dashboard)/reservas/page";
 import {
@@ -32,6 +37,8 @@ import InscricoesPage from "./(dashboard)/inscricoes/page";
 import { getEventCoverSuggestionIds, getEventCoverUrl } from "@/lib/eventCover";
 import { getProfileCoverUrl } from "@/lib/profileCover";
 import { getOrganizationRoleFlags } from "@/lib/organizationUiPermissions";
+import { hasModuleAccess, resolveModuleAccess } from "@/lib/organizationRbac";
+import type { OrganizationMemberRole, OrganizationModule } from "@prisma/client";
 import { ModuleIcon } from "./moduleIcons";
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
@@ -247,6 +254,9 @@ type OrganizationLite = {
   stripeAccountId?: string | null;
   stripeChargesEnabled?: boolean | null;
   stripePayoutsEnabled?: boolean | null;
+  alertsEmail?: string | null;
+  alertsSalesEnabled?: boolean | null;
+  alertsPayoutEnabled?: boolean | null;
   primaryModule?: string | null;
   organizationKind?: string | null;
   username?: string | null;
@@ -292,18 +302,30 @@ type OperationModule = (typeof OPERATION_MODULES)[number];
 const OPERATION_LABELS: Record<OperationModule, string> = {
   EVENTOS: "Eventos",
   RESERVAS: "Reservas",
-  TORNEIOS: "Padel",
+  TORNEIOS: "Padel e torneios",
 };
 
-const OPTIONAL_MODULES = ["INSCRICOES", "MENSAGENS", "LOJA"] as const;
+const OPTIONAL_MODULES = ["INSCRICOES", "MENSAGENS", "LOJA", "CRM"] as const;
 type OptionalModule = (typeof OPTIONAL_MODULES)[number];
+const PRIMARY_TOOL_KEYS = new Set<string>([
+  "EVENTOS",
+  "RESERVAS",
+  "TORNEIOS",
+  "CHECKIN",
+  "FINANCEIRO",
+  "STAFF",
+  "PERFIL_PUBLICO",
+  "DEFINICOES",
+]);
 const MODULE_ICON_GRADIENTS: Record<string, string> = {
   EVENTOS: "from-[#FF7AD1]/45 via-[#7FE0FF]/35 to-[#6A7BFF]/45",
   RESERVAS: "from-[#6BFFFF]/40 via-[#6A7BFF]/30 to-[#0EA5E9]/40",
   TORNEIOS: "from-[#F59E0B]/35 via-[#FF7AD1]/35 to-[#6A7BFF]/35",
+  CHECKIN: "from-[#22D3EE]/35 via-[#60A5FA]/30 to-[#A78BFA]/35",
   INSCRICOES: "from-[#34D399]/35 via-[#6BFFFF]/30 to-[#7FE0FF]/35",
   MENSAGENS: "from-[#A78BFA]/35 via-[#7FE0FF]/30 to-[#34D399]/35",
   LOJA: "from-[#F97316]/35 via-[#FB7185]/30 to-[#F59E0B]/35",
+  CRM: "from-[#22D3EE]/35 via-[#38BDF8]/30 to-[#F97316]/35",
   STAFF: "from-[#60A5FA]/35 via-[#7FE0FF]/30 to-[#F59E0B]/35",
   FINANCEIRO: "from-[#F97316]/35 via-[#F59E0B]/30 to-[#FF7AD1]/35",
   MARKETING: "from-[#FF7AD1]/35 via-[#FB7185]/30 to-[#F59E0B]/35",
@@ -485,6 +507,12 @@ function OrganizacaoPageInner({
       ok?: boolean;
       orgTransferEnabled?: boolean | null;
       membershipRole?: string | null;
+      modulePermissions?: Array<{
+        moduleKey: OrganizationModule;
+        accessLevel: string;
+        scopeType?: string | null;
+        scopeId?: string | null;
+      }>;
     }
   >(orgMeUrl, fetcher);
 
@@ -569,8 +597,47 @@ function OrganizacaoPageInner({
   const paymentsMode = organizationData?.paymentsMode ?? "CONNECT";
   const profileStatus = organizationData?.profileStatus ?? "MISSING_CONTACT";
   const membershipRole = organizationData?.membershipRole ?? null;
+  const moduleOverrides = useMemo(
+    () =>
+      Array.isArray(organizationData?.modulePermissions)
+        ? organizationData?.modulePermissions.map((item) => ({
+            moduleKey: item.moduleKey,
+            accessLevel: item.accessLevel,
+            scopeType: item.scopeType ?? null,
+            scopeId: item.scopeId ?? null,
+          }))
+        : [],
+    [organizationData?.modulePermissions],
+  );
+  const moduleAccess = useMemo(
+    () => resolveModuleAccess(membershipRole as OrganizationMemberRole | null, moduleOverrides),
+    [membershipRole, moduleOverrides],
+  );
+  const canAccessModule = useCallback(
+    (moduleKey: OrganizationModule) => hasModuleAccess(moduleAccess, moduleKey, "EDIT"),
+    [moduleAccess],
+  );
+  const canAccessFinance = canAccessModule("FINANCEIRO");
+  const canAccessEvents = canAccessModule("EVENTOS");
+  const canAccessReservas = canAccessModule("RESERVAS");
+  const canAccessTorneios = canAccessModule("TORNEIOS");
+  const canAccessInscricoes = canAccessModule("INSCRICOES");
+  const canAccessMensagens = canAccessModule("MENSAGENS");
+  const canAccessLoja = canAccessModule("LOJA");
+  const canAccessMarketing = canAccessModule("MARKETING");
+  const canAccessCrm = canAccessModule("CRM");
+  const canAccessStaff = canAccessModule("STAFF");
+  const canAccessProfile = canAccessModule("PERFIL_PUBLICO");
+  const canAccessSettings = canAccessModule("DEFINICOES");
   const roleFlags = useMemo(() => getOrganizationRoleFlags(membershipRole), [membershipRole]);
-  const canUseMarketing = roleFlags.canPromote && hasMarketingModule;
+  const canViewFinance = roleFlags.canViewFinance && canAccessFinance;
+  const canPromote = roleFlags.canPromote && canAccessMarketing;
+  const canManageMembers = roleFlags.canManageMembers && canAccessStaff;
+  const canEditOrgProfile = roleFlags.canEditOrg && canAccessProfile;
+  const canEditOrgSettings = roleFlags.canEditOrg && canAccessSettings;
+  const canEditFinanceAlerts =
+    membershipRole === "OWNER" || membershipRole === "CO_OWNER" || membershipRole === "ADMIN";
+  const canUseMarketing = canPromote && hasMarketingModule;
   const marketingTabs = useMemo(() => {
     if (!canUseMarketing) return [];
     if (roleFlags.isPromoterOnly) {
@@ -719,7 +786,7 @@ function OrganizacaoPageInner({
         ...(hasInscricoesModule ? ["inscricoes"] : []),
       ],
       promote: ["marketing"],
-      analyze: roleFlags.canViewFinance
+      analyze: canViewFinance
         ? ["overview", "vendas", "financas", "invoices"]
         : ["financas", "invoices"],
       profile: ["perfil"],
@@ -731,7 +798,7 @@ function OrganizacaoPageInner({
     if (target) {
       target.scrollIntoView({ behavior: "smooth", block: "start" });
     }
-  }, [scrollSection, activeObjective, hasInscricoesModule, roleFlags.canViewFinance, showPadelHub]);
+  }, [scrollSection, activeObjective, canViewFinance, hasInscricoesModule, showPadelHub]);
 
   useEffect(() => {
     if (scrollSection) return;
@@ -784,7 +851,7 @@ function OrganizacaoPageInner({
     }
   }, [organization, profile, businessName, city, entityType, payoutIban]);
 
-  const shouldLoadOverview = organization?.status === "ACTIVE" && roleFlags.canViewFinance;
+  const shouldLoadOverview = organization?.status === "ACTIVE" && canViewFinance;
   const { data: overview } = useSWR<OverviewResponse>(
     shouldLoadOverview
       ? `/api/organizacao/estatisticas/overview?range=30d${eventsScopeAmp}`
@@ -795,7 +862,7 @@ function OrganizacaoPageInner({
 
   const shouldLoadOverviewSeries =
     organization?.status === "ACTIVE" &&
-    roleFlags.canViewFinance &&
+    canViewFinance &&
     activeObjective === "analyze" &&
     normalizedSection === "overview";
 
@@ -839,7 +906,7 @@ function OrganizacaoPageInner({
 
   const shouldLoadSales =
     organization?.status === "ACTIVE" &&
-    roleFlags.canViewFinance &&
+    canViewFinance &&
     activeObjective === "analyze" &&
     normalizedSection === "vendas";
 
@@ -851,12 +918,12 @@ function OrganizacaoPageInner({
   }, [events, salesEventId, shouldLoadSales]);
 
   const { data: payoutSummary } = useSWR<PayoutSummaryResponse>(
-    organization?.status === "ACTIVE" && roleFlags.canViewFinance ? "/api/organizacao/payouts/summary" : null,
+    organization?.status === "ACTIVE" && canViewFinance ? "/api/organizacao/payouts/summary" : null,
     fetcher,
     { revalidateOnFocus: false }
   );
   const { data: financeOverview } = useSWR<FinanceOverviewResponse>(
-    organization?.status === "ACTIVE" && roleFlags.canViewFinance && activeObjective === "analyze"
+    organization?.status === "ACTIVE" && canViewFinance && activeObjective === "analyze"
       ? `/api/organizacao/finance/overview${eventsScopeSuffix}`
       : null,
     fetcher,
@@ -1685,7 +1752,10 @@ function OrganizacaoPageInner({
   const isInscricoesActive = optionalSelection.includes("INSCRICOES");
   const isMensagensActive = optionalSelection.includes("MENSAGENS");
   const isLojaActive = optionalSelection.includes("LOJA");
-  const isMarketingActive = activeModules.includes("MARKETING");
+  const isCrmActive = optionalSelection.includes("CRM");
+  const canUseCrm = canAccessCrm;
+  const canUseChatInterno = canAccessMensagens;
+  const canUseCheckin = (canAccessEvents || canAccessTorneios) && (isEventosActive || isTorneiosActive);
   const dashboardModules = useMemo<DashboardModuleCard[]>(
     () => [
       {
@@ -1694,13 +1764,13 @@ function OrganizacaoPageInner({
         title: "Eventos",
         summary: "Festas, sessões especiais, eventos públicos/privados.",
         bullets: ["Bilhetes e regras", "Participantes + check-in", "Live + chat + anúncios"],
-        status: roleFlags.canManageEvents ? (isEventosActive ? "active" : "optional") : "locked",
-        href: roleFlags.canManageEvents
+        status: canAccessEvents ? (isEventosActive ? "active" : "optional") : "locked",
+        href: canAccessEvents
           ? isEventosActive
             ? "/organizacao/eventos"
             : modulesSetupHref
           : undefined,
-        eyebrow: primarySelection === "EVENTOS" ? "Operação · Foco" : "Operação",
+        eyebrow: "Operações",
       },
       {
         id: "reservas",
@@ -1708,55 +1778,37 @@ function OrganizacaoPageInner({
         title: "Reservas",
         summary: "Serviços e marcações com chat 1:1.",
         bullets: ["Serviços + disponibilidade", "Marcações + estados", "Chat 1:1 + check-in"],
-        status: roleFlags.canManageEvents ? (isReservasActive ? "active" : "optional") : "locked",
-        href: roleFlags.canManageEvents
+        status: canAccessReservas ? (isReservasActive ? "active" : "optional") : "locked",
+        href: canAccessReservas
           ? isReservasActive
             ? "/organizacao/reservas"
             : modulesSetupHref
           : undefined,
-        eyebrow: primarySelection === "RESERVAS" ? "Operação · Foco" : "Operação",
+        eyebrow: "Operações",
       },
       {
         id: "torneios",
         moduleKey: "TORNEIOS",
-        title: "Padel",
+        title: "Padel e torneios",
         summary: "Torneios e ligas de padel num só lugar.",
         bullets: ["Inscrições + equipas", "Calendário de jogos", "Live + chat + anúncios"],
-        status: roleFlags.canManageEvents ? (isTorneiosActive ? "active" : "optional") : "locked",
-        href: roleFlags.canManageEvents
+        status: canAccessTorneios ? (isTorneiosActive ? "active" : "optional") : "locked",
+        href: canAccessTorneios
           ? isTorneiosActive
             ? "/organizacao/torneios"
             : modulesSetupHref
           : undefined,
-        eyebrow: primarySelection === "TORNEIOS" ? "Operação · Foco" : "Operação",
+        eyebrow: "Operações",
       },
       {
-        id: "inscricoes",
-        moduleKey: "INSCRICOES",
-        title: "Formulários",
-        summary: "Formulários e listas para inscrições e dados.",
-        bullets: ["Formulários rápidos", "Vagas + listas de espera", "Exportação de dados"],
-        status: roleFlags.canManageEvents
-          ? isInscricoesActive
-            ? "active"
-            : "optional"
-          : "locked",
-        href: roleFlags.canManageEvents
-          ? isInscricoesActive
-            ? "/organizacao/inscricoes"
-            : modulesSetupHref
-          : undefined,
-        eyebrow: "Operação",
-      },
-      {
-        id: "staff",
-        moduleKey: "STAFF",
-        title: "Equipa",
-        summary: "Gestão de equipa, roles e permissões.",
-        bullets: ["Owner / Admin / Staff / Scanner", "Permissões por módulo", "Log de ações"],
-        status: roleFlags.canManageMembers ? "core" : "locked",
-        href: roleFlags.canManageMembers ? "/organizacao/staff" : undefined,
-        eyebrow: "Equipa",
+        id: "checkin",
+        moduleKey: "CHECKIN",
+        title: "Check-in",
+        summary: "Scanner rápido para eventos e torneios.",
+        bullets: ["Leitor QR", "Confirmação explícita", "Histórico por evento"],
+        status: canUseCheckin ? "core" : "locked",
+        href: canUseCheckin ? "/organizacao/scan" : undefined,
+        eyebrow: "Operações",
       },
       {
         id: "financeiro",
@@ -1764,57 +1816,19 @@ function OrganizacaoPageInner({
         title: "Finanças",
         summary: "Receitas, indicadores e payouts num só lugar.",
         bullets: ["Visão geral + vendas", "Reembolsos + CSV", "Payouts Stripe"],
-        status: roleFlags.canViewFinance ? "core" : "locked",
-        href: roleFlags.canViewFinance ? "/organizacao?tab=analyze&section=financas" : undefined,
-        eyebrow: "Gestão",
+        status: canViewFinance ? "core" : "locked",
+        href: canViewFinance ? "/organizacao?tab=analyze&section=financas" : undefined,
+        eyebrow: "Financeiro",
       },
       {
-        id: "mensagens",
-        moduleKey: "MENSAGENS",
-        title: "Mensagens",
-        summary: "Broadcast e automations sem ruído.",
-        bullets: ["Segmentos por contexto", "Templates e histórico", "Automations essenciais"],
-        status: roleFlags.canManageEvents
-          ? isMensagensActive
-            ? "active"
-            : "optional"
-          : "locked",
-        href: roleFlags.canManageEvents
-          ? isMensagensActive
-            ? "/organizacao/mensagens"
-            : modulesSetupHref
-          : undefined,
-        eyebrow: "Comunicação",
-      },
-      {
-        id: "marketing",
-        moduleKey: "MARKETING",
-        title: "Marketing",
-        summary: "Promoções simples e partilha.",
-        bullets: ["Links + QR", "Destaques manuais", "Códigos promocionais"],
-        status: roleFlags.canPromote ? "core" : "locked",
-        href: roleFlags.canPromote
-          ? "/organizacao?tab=promote&section=marketing&marketing=overview"
-          : undefined,
-        eyebrow: "Promoção",
-      },
-      {
-        id: "loja",
-        moduleKey: "LOJA",
-        title: "Loja",
-        summary: "Produtos físicos e digitais num só checkout.",
-        bullets: ["Catálogo + imagens", "Portes + descontos", "Encomendas + envio"],
-        status: roleFlags.canManageEvents
-          ? isLojaActive
-            ? "active"
-            : "optional"
-          : "locked",
-        href: roleFlags.canManageEvents
-          ? isLojaActive
-            ? "/organizacao/loja"
-            : modulesSetupHref
-          : undefined,
-        eyebrow: "Vendas",
+        id: "staff",
+        moduleKey: "STAFF",
+        title: "Equipa",
+        summary: "Gestão de equipa, roles e permissões.",
+        bullets: ["Owner / Admin / Staff / Scanner", "Permissões por módulo", "Log de ações"],
+        status: canManageMembers ? "core" : "locked",
+        href: canManageMembers ? "/organizacao/staff" : undefined,
+        eyebrow: "Configuração",
       },
       {
         id: "perfil-publico",
@@ -1822,9 +1836,9 @@ function OrganizacaoPageInner({
         title: "Perfil público",
         summary: "Página e detalhes visíveis ao público.",
         bullets: ["Nome + bio", "Fotos e links", "Localização"],
-        status: roleFlags.canEditOrg ? "core" : "locked",
-        href: roleFlags.canEditOrg ? "/organizacao?tab=profile" : undefined,
-        eyebrow: "Presença",
+        status: canEditOrgProfile ? "core" : "locked",
+        href: canEditOrgProfile ? "/organizacao?tab=profile" : undefined,
+        eyebrow: "Crescimento",
       },
       {
         id: "settings",
@@ -1832,25 +1846,109 @@ function OrganizacaoPageInner({
         title: "Definições",
         summary: "Pagamentos, políticas e preferências.",
         bullets: ["Pagamentos e políticas", "Notificações globais", "Regras de chat"],
-        status: roleFlags.canEditOrg ? "core" : "locked",
-        href: roleFlags.canEditOrg ? "/organizacao/settings" : undefined,
-        eyebrow: "Organização",
+        status: canEditOrgSettings ? "core" : "locked",
+        href: canEditOrgSettings ? "/organizacao/settings" : undefined,
+        eyebrow: "Configuração",
+      },
+      {
+        id: "inscricoes",
+        moduleKey: "INSCRICOES",
+        title: "Formulários",
+        summary: "Formulários e listas para inscrições e dados.",
+        bullets: ["Formulários rápidos", "Vagas + listas de espera", "Exportação de dados"],
+        status: canAccessInscricoes
+          ? isInscricoesActive
+            ? "active"
+            : "optional"
+          : "locked",
+        href: canAccessInscricoes
+          ? isInscricoesActive
+            ? "/organizacao/inscricoes"
+            : modulesSetupHref
+          : undefined,
+        eyebrow: "Operações",
+      },
+      {
+        id: "mensagens",
+        moduleKey: "MENSAGENS",
+        title: "Chat interno",
+        summary: "Canal privado entre membros da organização.",
+        bullets: ["Conversas rápidas da equipa", "Canais internos simples", "Histórico básico (v1)"],
+        status: canUseChatInterno
+          ? isMensagensActive
+            ? "active"
+            : "optional"
+          : "locked",
+        href: canUseChatInterno
+          ? isMensagensActive
+            ? "/organizacao/chat"
+            : modulesSetupHref
+          : undefined,
+        eyebrow: "Operações",
+      },
+      {
+        id: "marketing",
+        moduleKey: "MARKETING",
+        title: "Promoções",
+        summary: "Códigos, parcerias e partilha.",
+        bullets: ["Códigos promocionais", "Promotores e parcerias", "Links + QR"],
+        status: canPromote ? "core" : "locked",
+        href: canPromote
+          ? "/organizacao?tab=promote&section=marketing&marketing=overview"
+          : undefined,
+        eyebrow: "Crescimento",
+      },
+      {
+        id: "crm",
+        moduleKey: "CRM",
+        title: "CRM",
+        summary: "Customer 360, segmentos e loyalty.",
+        bullets: ["Clientes + histórico", "Segmentos + campanhas", "Pontos + recompensas"],
+        status: canUseCrm ? (isCrmActive ? "active" : "optional") : "locked",
+        href: canUseCrm ? (isCrmActive ? "/organizacao/crm" : modulesSetupHref) : undefined,
+        eyebrow: "Crescimento",
+      },
+      {
+        id: "loja",
+        moduleKey: "LOJA",
+        title: "Loja",
+        summary: "Produtos físicos e digitais num só checkout.",
+        bullets: ["Catálogo + imagens", "Portes + descontos", "Encomendas + envio"],
+        status: canAccessLoja
+          ? isLojaActive
+            ? "active"
+            : "optional"
+          : "locked",
+        href: canAccessLoja
+          ? isLojaActive
+            ? "/organizacao/loja"
+            : modulesSetupHref
+          : undefined,
+        eyebrow: "Crescimento",
       },
     ],
     [
       primarySelection,
-      roleFlags.canEditOrg,
-      roleFlags.canManageMembers,
-      roleFlags.canManageEvents,
-      roleFlags.canPromote,
-      roleFlags.canViewFinance,
+      canEditOrgProfile,
+      canEditOrgSettings,
+      canManageMembers,
+      canPromote,
+      canAccessEvents,
+      canAccessReservas,
+      canAccessTorneios,
+      canAccessInscricoes,
+      canAccessLoja,
+      canViewFinance,
+      canUseCheckin,
       isEventosActive,
       isReservasActive,
       isTorneiosActive,
       isInscricoesActive,
       isMensagensActive,
       isLojaActive,
-      isMarketingActive,
+      isCrmActive,
+      canUseCrm,
+      canUseChatInterno,
       modulesSetupHref,
     ],
   );
@@ -1858,8 +1956,29 @@ function OrganizacaoPageInner({
     () => dashboardModules.filter((module) => module.status === "active" || module.status === "core"),
     [dashboardModules],
   );
+  const primaryDashboardModules = useMemo(
+    () => activeDashboardModules.filter((module) => PRIMARY_TOOL_KEYS.has(module.moduleKey)),
+    [activeDashboardModules],
+  );
+  const secondaryDashboardModules = useMemo(
+    () => activeDashboardModules.filter((module) => !PRIMARY_TOOL_KEYS.has(module.moduleKey)),
+    [activeDashboardModules],
+  );
+  const secondaryModuleGroups = useMemo(() => {
+    const groups = new Map<string, DashboardModuleCard[]>();
+    secondaryDashboardModules.forEach((module) => {
+      const key = module.eyebrow ?? "Mais";
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)?.push(module);
+    });
+    return Array.from(groups.entries()).map(([label, modules]) => ({ label, modules }));
+  }, [secondaryDashboardModules]);
   const inactiveDashboardModules = useMemo(
-    () => dashboardModules.filter((module) => module.status === "optional" || module.status === "locked"),
+    () =>
+      dashboardModules.filter(
+        (module) =>
+          (module.status === "optional" || module.status === "locked") && module.moduleKey !== "CHECKIN",
+      ),
     [dashboardModules],
   );
   const addableModules = useMemo(
@@ -1882,7 +2001,7 @@ function OrganizacaoPageInner({
       ...(showPadelHub ? ["padel-hub"] : []),
       ...(hasInscricoesModule ? ["inscricoes"] : []),
     ];
-    const analyzeSections = roleFlags.canViewFinance
+    const analyzeSections = canViewFinance
       ? ["overview", "vendas", "financas", "invoices"]
       : ["financas", "invoices"];
     const baseSections: Record<ObjectiveTab, string[]> = {
@@ -1908,7 +2027,7 @@ function OrganizacaoPageInner({
     normalizedSection,
     showPadelHub,
     hasInscricoesModule,
-    roleFlags.canViewFinance,
+    canViewFinance,
   ]);
 
   useEffect(() => {
@@ -2429,11 +2548,33 @@ function OrganizacaoPageInner({
                   +
                 </button>
               </div>
-              <div className="mt-4 grid gap-3 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6">
-                {activeDashboardModules.map((module) => renderModuleCard(module))}
+              <div className="mt-4 space-y-5">
+                <div>
+                  <p className="text-[10px] uppercase tracking-[0.24em] text-white/45">Topo</p>
+                  <div className="mt-2 grid gap-3 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6">
+                    {primaryDashboardModules.map((module) => renderModuleCard(module))}
+                  </div>
+                </div>
+                {secondaryModuleGroups.length > 0 && (
+                  <div className="space-y-4">
+                    <p className="text-[10px] uppercase tracking-[0.24em] text-white/45">Mais</p>
+                    {secondaryModuleGroups.map((group) => (
+                      <div key={`more-${group.label}`} className="space-y-2">
+                        <div className="flex items-center justify-between text-[11px] text-white/50">
+                          <span className="uppercase tracking-[0.22em]">{group.label}</span>
+                          <span>{group.modules.length} ferramentas</span>
+                        </div>
+                        <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6">
+                          {group.modules.map((module) => renderModuleCard(module))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           </div>
+
         </section>
       )}
 
@@ -2527,7 +2668,7 @@ function OrganizacaoPageInner({
                           Estado: {statusLabelMap[eventStatusFilter]} <span className="text-white/50">▾</span>
                         </button>
                         {manageFiltersOpen === "status" && (
-                          <div className="absolute left-0 z-[var(--z-popover)] mt-2 w-48 rounded-2xl border border-white/12 bg-[#070c16]/95 p-2 shadow-[0_18px_60px_rgba(0,0,0,0.5)] backdrop-blur-2xl animate-popover">
+                          <div className="absolute left-0 z-[var(--z-popover)] mt-2 w-48 rounded-2xl orya-menu-surface p-2 backdrop-blur-2xl animate-popover">
                             <p className="px-2 pb-1 text-[10px] uppercase tracking-[0.22em] text-white/50">Estado</p>
                             {(["all", "active", "ongoing", "finished", "draft", "archived"] as const).map((key) => (
                               <button
@@ -2538,8 +2679,8 @@ function OrganizacaoPageInner({
                                   setManageFiltersOpen(null);
                                 }}
                                 className={cn(
-                                  "flex w-full items-center justify-between rounded-xl px-2 py-2 text-left text-[12px] text-white/80 hover:bg-white/10",
-                                  eventStatusFilter === key && "bg-white/10 text-white",
+                                  "orya-menu-item text-[12px]",
+                                  eventStatusFilter === key ? "bg-[var(--orya-menu-hover)] text-white" : "text-white/80",
                                 )}
                               >
                                 {statusLabelMap[key]}
@@ -2563,7 +2704,7 @@ function OrganizacaoPageInner({
                           Período: {timeScopeLabels[timeScope]} <span className="text-white/50">▾</span>
                         </button>
                         {manageFiltersOpen === "period" && (
-                          <div className="absolute left-0 z-[var(--z-popover)] mt-2 w-44 rounded-2xl border border-white/12 bg-[#070c16]/95 p-2 shadow-[0_18px_60px_rgba(0,0,0,0.5)] backdrop-blur-2xl animate-popover">
+                          <div className="absolute left-0 z-[var(--z-popover)] mt-2 w-44 rounded-2xl orya-menu-surface p-2 backdrop-blur-2xl animate-popover">
                             <p className="px-2 pb-1 text-[10px] uppercase tracking-[0.22em] text-white/50">Período</p>
                             {(["all", "upcoming", "ongoing", "past"] as const).map((key) => (
                               <button
@@ -2574,8 +2715,8 @@ function OrganizacaoPageInner({
                                   setManageFiltersOpen(null);
                                 }}
                                 className={cn(
-                                  "flex w-full items-center justify-between rounded-xl px-2 py-2 text-left text-[12px] text-white/80 hover:bg-white/10",
-                                  timeScope === key && "bg-white/10 text-white",
+                                  "orya-menu-item text-[12px]",
+                                  timeScope === key ? "bg-[var(--orya-menu-hover)] text-white" : "text-white/80",
                                 )}
                               >
                                 {timeScopeLabels[key]}
@@ -2599,7 +2740,7 @@ function OrganizacaoPageInner({
                           Filtros{activeFilterCount > 0 ? ` (${activeFilterCount})` : ""} <span className="text-white/50">▾</span>
                         </button>
                         {manageFiltersOpen === "filters" && (
-                          <div className="absolute right-0 z-[var(--z-popover)] mt-2 w-[260px] rounded-2xl border border-white/12 bg-[#070c16]/95 p-3 shadow-[0_18px_60px_rgba(0,0,0,0.5)] backdrop-blur-2xl animate-popover">
+                          <div className="absolute right-0 z-[var(--z-popover)] mt-2 w-[260px] rounded-2xl orya-menu-surface p-3 backdrop-blur-2xl animate-popover">
                             <div className="flex items-center justify-between px-1 pb-2 text-[10px] uppercase tracking-[0.22em] text-white/50">
                               <span>Filtros</span>
                               {activeFilterCount > 0 && (
@@ -2631,8 +2772,10 @@ function OrganizacaoPageInner({
                                       setManageFiltersOpen(null);
                                     }}
                                     className={cn(
-                                      "flex w-full items-center justify-between rounded-xl px-2 py-2 text-left text-[12px] text-white/80 hover:bg-white/10",
-                                      eventCategoryFilter === "all" && "bg-white/10 text-white",
+                                      "orya-menu-item text-[12px]",
+                                      eventCategoryFilter === "all"
+                                        ? "bg-[var(--orya-menu-hover)] text-white"
+                                        : "text-white/80",
                                     )}
                                   >
                                     Todas
@@ -2650,8 +2793,10 @@ function OrganizacaoPageInner({
                                         setManageFiltersOpen(null);
                                       }}
                                       className={cn(
-                                        "flex w-full items-center justify-between rounded-xl px-2 py-2 text-left text-[12px] text-white/80 hover:bg-white/10",
-                                        eventCategoryFilter === cat && "bg-white/10 text-white",
+                                        "orya-menu-item text-[12px]",
+                                        eventCategoryFilter === cat
+                                          ? "bg-[var(--orya-menu-hover)] text-white"
+                                          : "text-white/80",
                                       )}
                                     >
                                       {cat}
@@ -2671,8 +2816,10 @@ function OrganizacaoPageInner({
                                       setManageFiltersOpen(null);
                                     }}
                                     className={cn(
-                                      "flex w-full items-center justify-between rounded-xl px-2 py-2 text-left text-[12px] text-white/80 hover:bg-white/10",
-                                      eventPartnerClubFilter === "all" && "bg-white/10 text-white",
+                                      "orya-menu-item text-[12px]",
+                                      eventPartnerClubFilter === "all"
+                                        ? "bg-[var(--orya-menu-hover)] text-white"
+                                        : "text-white/80",
                                     )}
                                   >
                                     Todos
@@ -2690,8 +2837,10 @@ function OrganizacaoPageInner({
                                         setManageFiltersOpen(null);
                                       }}
                                       className={cn(
-                                        "flex w-full items-center justify-between rounded-xl px-2 py-2 text-left text-[12px] text-white/80 hover:bg-white/10",
-                                        eventPartnerClubFilter === `${club.id}` && "bg-white/10 text-white",
+                                        "orya-menu-item text-[12px]",
+                                        eventPartnerClubFilter === `${club.id}`
+                                          ? "bg-[var(--orya-menu-hover)] text-white"
+                                          : "text-white/80",
                                       )}
                                     >
                                       {club.name}
@@ -3993,6 +4142,18 @@ function OrganizacaoPageInner({
               </div>
             )}
           </div>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <PayoutsPanel />
+            <RefundsPanel />
+          </div>
+
+          <ReconciliationPanel />
+          <FinanceAlertsPanel
+            organization={organization ?? null}
+            canEdit={canEditFinanceAlerts}
+            onSaved={mutateOrganization}
+          />
         </section>
       )}
 
@@ -4014,24 +4175,24 @@ function OrganizacaoPageInner({
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div className="space-y-1">
                 <h2 className="text-2xl sm:text-3xl font-semibold text-white drop-shadow-[0_12px_45px_rgba(0,0,0,0.6)]">
-                  Marketing
+                  Promoções
                 </h2>
                 <p className="text-sm text-white/70">Promoções e audiência.</p>
               </div>
             </div>
           </div>
 
-          {!roleFlags.canPromote && (
+          {!canPromote && (
             <div className="mt-4 rounded-2xl border border-white/12 bg-white/5 px-4 py-4 text-sm text-white/70">
-              Sem permissões para marketing.
+              Sem permissões para promoções.
             </div>
           )}
 
-          {roleFlags.canPromote && !hasMarketingModule && (
+          {canPromote && !hasMarketingModule && (
             <div className="mt-4 rounded-2xl border border-white/12 bg-white/5 px-4 py-4 text-sm text-white/70">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <p className="font-semibold text-white">Módulo de Marketing desativado.</p>
+                  <p className="font-semibold text-white">Módulo de Promoções desativado.</p>
                   <p className="text-[12px] text-white/60">Ativa a ferramenta para usar promoções e campanhas.</p>
                 </div>
                 <button
@@ -4051,12 +4212,12 @@ function OrganizacaoPageInner({
               {marketingOverview
                 ? [
                     {
-                      label: "Receita atribuída a marketing",
+                      label: "Receita atribuída a promoções",
                       value: marketingKpis.marketingRevenueCents ? `${(marketingKpis.marketingRevenueCents / 100).toFixed(2)} €` : "—",
                       hint: "Estimado via códigos.",
                     },
                     {
-                      label: `${salesUnitLabel} via marketing`,
+                      label: `${salesUnitLabel} via promoções`,
                       value: marketingKpis.ticketsWithPromo,
                       hint: "Usos de códigos.",
                     },
@@ -4193,7 +4354,7 @@ function OrganizacaoPageInner({
             <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#101b39]/60 to-[#050912]/90 p-4">
               <div className="flex items-center justify-between gap-2">
                 <div>
-                  <h4 className="text-lg font-semibold text-white">Funil de marketing (v1)</h4>
+                  <h4 className="text-lg font-semibold text-white">Funil de promoções (v1)</h4>
                   <p className="text-[12px] text-white/65">Totais vs promo vs convidados.</p>
                 </div>
                 <span className="rounded-full border border-white/15 bg-white/5 px-2 py-1 text-[11px] text-white/70">Baseado em códigos</span>
@@ -4316,11 +4477,16 @@ function OrganizacaoPageInner({
                 <h3 className="text-xl font-semibold text-white">Conteúdo &amp; Kits</h3>
                 <p className="text-[12px] text-white/65">Textos rápidos por {managePrimaryLabelLower}.</p>
               </div>
-              <span className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[11px] text-white/70">Em breve</span>
+              <span className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[11px] text-white/70">Kit ativo</span>
             </div>
-            <div className="rounded-3xl border border-white/10 bg-black/35 p-4 text-sm text-white/70">
-              Em breve: kits rápidos com botões de copiar.
-            </div>
+            <MarketingContentKit
+              events={
+                marketingOverview?.events && marketingOverview.events.length > 0
+                  ? marketingOverview.events
+                  : eventsList
+              }
+              promoCodes={marketingPromos}
+            />
           </div>
         )}
         </section>

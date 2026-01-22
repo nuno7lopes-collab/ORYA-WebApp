@@ -10,6 +10,8 @@ import { PORTUGAL_CITIES } from "@/config/cities";
 
 const readRoles: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
 const writeRoles: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
+const CLUB_KINDS = new Set(["OWN", "PARTNER"]);
+const LOCATION_SOURCES = new Set(["OSM", "MANUAL"]);
 
 function normalizeSlug(raw: string | null | undefined) {
   if (!raw) return "";
@@ -93,6 +95,35 @@ export async function POST(req: NextRequest) {
   const name = typeof body.name === "string" ? body.name.trim() : "";
   const city = typeof body.city === "string" ? body.city.trim() : "";
   const address = typeof body.address === "string" ? body.address.trim() : "";
+  const kindRaw = typeof body.kind === "string" ? body.kind.trim().toUpperCase() : "";
+  const requestedKind = CLUB_KINDS.has(kindRaw) ? kindRaw : null;
+  const sourceClubIdRaw =
+    typeof body.sourceClubId === "number"
+      ? body.sourceClubId
+      : typeof body.sourceClubId === "string"
+        ? Number(body.sourceClubId)
+        : null;
+  const locationSourceRaw = typeof body.locationSource === "string" ? body.locationSource.trim().toUpperCase() : "";
+  const locationSourceInput = LOCATION_SOURCES.has(locationSourceRaw) ? locationSourceRaw : null;
+  const locationProviderIdRaw = typeof body.locationProviderId === "string" ? body.locationProviderId.trim() : "";
+  const locationFormattedAddressRaw =
+    typeof body.locationFormattedAddress === "string" ? body.locationFormattedAddress.trim() : "";
+  const locationComponentsRaw =
+    body.locationComponents && typeof body.locationComponents === "object" && !Array.isArray(body.locationComponents)
+      ? (body.locationComponents as Record<string, unknown>)
+      : null;
+  const latitudeRaw =
+    typeof body.latitude === "number"
+      ? body.latitude
+      : typeof body.latitude === "string"
+        ? Number(body.latitude)
+        : null;
+  const longitudeRaw =
+    typeof body.longitude === "number"
+      ? body.longitude
+      : typeof body.longitude === "string"
+        ? Number(body.longitude)
+        : null;
   const courtsCountRaw =
     typeof body.courtsCount === "number"
       ? body.courtsCount
@@ -103,40 +134,135 @@ export async function POST(req: NextRequest) {
   const slugInput = typeof body.slug === "string" ? normalizeSlug(body.slug) : "";
   const isDefault = typeof body.isDefault === "boolean" ? body.isDefault : false;
 
-  if (!name || name.length < 3) {
+  const existing = id
+    ? await prisma.padelClub.findFirst({
+        where: { id, organizationId: organization.id, deletedAt: null },
+        select: {
+          id: true,
+          name: true,
+          city: true,
+          address: true,
+          kind: true,
+          sourceClubId: true,
+          locationSource: true,
+          locationProviderId: true,
+          locationFormattedAddress: true,
+          locationComponents: true,
+          latitude: true,
+          longitude: true,
+          isDefault: true,
+          isActive: true,
+        },
+      })
+    : null;
+  if (id && !existing) {
+    return NextResponse.json({ ok: false, error: "Clube não encontrado." }, { status: 404 });
+  }
+
+  const existingKind = existing?.kind ? String(existing.kind).toUpperCase() : null;
+  const kind = (existingKind && CLUB_KINDS.has(existingKind) ? existingKind : requestedKind) ?? "OWN";
+  const isPartner = kind === "PARTNER";
+  const resolvedName = name || existing?.name || "";
+  const resolvedCity = city || existing?.city || "";
+  const resolvedAddress = address || existing?.address || "";
+  const locationSource =
+    (locationSourceInput ?? (existing?.locationSource ? String(existing.locationSource).toUpperCase() : null)) ??
+    (isPartner ? "MANUAL" : "OSM");
+  const locationProviderId = locationProviderIdRaw || existing?.locationProviderId || null;
+  const composedFormatted = [resolvedAddress, resolvedCity].filter(Boolean).join(", ");
+  const locationFormattedAddress =
+    locationFormattedAddressRaw || composedFormatted || existing?.locationFormattedAddress || null;
+  const locationComponents = locationComponentsRaw ?? existing?.locationComponents ?? null;
+  const latitude =
+    typeof latitudeRaw === "number" && Number.isFinite(latitudeRaw) ? latitudeRaw : existing?.latitude ?? null;
+  const longitude =
+    typeof longitudeRaw === "number" && Number.isFinite(longitudeRaw) ? longitudeRaw : existing?.longitude ?? null;
+
+  if (!resolvedName || resolvedName.length < 3) {
     return NextResponse.json({ ok: false, error: "Nome do clube é obrigatório." }, { status: 400 });
   }
 
-  if (city && !PORTUGAL_CITIES.includes(city as (typeof PORTUGAL_CITIES)[number])) {
+  if (resolvedCity && !PORTUGAL_CITIES.includes(resolvedCity as (typeof PORTUGAL_CITIES)[number])) {
     return NextResponse.json(
       { ok: false, error: "Cidade inválida. Escolhe uma cidade da lista disponível na ORYA." },
       { status: 400 },
     );
   }
 
+  if (!isPartner && !resolvedCity.trim()) {
+    return NextResponse.json({ ok: false, error: "Cidade obrigatória para clube principal." }, { status: 400 });
+  }
+  if (!isPartner && !resolvedAddress.trim()) {
+    return NextResponse.json({ ok: false, error: "Morada obrigatória para clube principal." }, { status: 400 });
+  }
+  if (!isPartner && locationSource !== "OSM") {
+    return NextResponse.json(
+      { ok: false, error: "Morada normalizada obrigatória. Usa a pesquisa para confirmar." },
+      { status: 400 },
+    );
+  }
+  if (!isPartner && !locationProviderId) {
+    return NextResponse.json({ ok: false, error: "Seleciona uma morada normalizada antes de guardar." }, { status: 400 });
+  }
+  if (isPartner && sourceClubIdRaw && !Number.isFinite(sourceClubIdRaw)) {
+    return NextResponse.json({ ok: false, error: "Clube parceiro inválido." }, { status: 400 });
+  }
+
   const courtsCount = courtsCountRaw && Number.isFinite(courtsCountRaw)
     ? Math.min(1000, Math.max(1, Math.floor(courtsCountRaw)))
     : 1;
-  const baseSlug = slugInput || normalizeSlug(name);
+  const baseSlug = slugInput || normalizeSlug(resolvedName);
 
-  const safeIsDefault = isActive ? isDefault : false;
+  const safeIsDefault = !isPartner && isActive ? isDefault : false;
 
   try {
-    const slug = baseSlug ? await generateUniqueSlug(baseSlug, organization.id, id) : null;
+    if (isPartner && !existing && Number.isFinite(sourceClubIdRaw)) {
+      const source = await prisma.padelClub.findFirst({
+        where: { id: Math.floor(sourceClubIdRaw as number), deletedAt: null, isActive: true },
+        select: { id: true },
+      });
+      if (!source) {
+        return NextResponse.json(
+          { ok: false, error: "Clube parceiro indisponível ou inexistente." },
+          { status: 400 },
+        );
+      }
+    }
 
-    const data = {
-      organizationId: organization.id,
-      name,
-      shortName: name,
-      city: city || null,
-      address: address || null,
-      courtsCount,
-      hours: null,
-      favoriteCategoryIds: [],
-      isActive,
-      slug: slug || null,
-      isDefault: safeIsDefault,
-    };
+    const slug = baseSlug ? await generateUniqueSlug(baseSlug, organization.id, id) : null;
+    const sourceClubId =
+      isPartner && Number.isFinite(sourceClubIdRaw)
+        ? Math.floor(sourceClubIdRaw as number)
+        : isPartner
+          ? existing?.sourceClubId ?? null
+          : null;
+
+    const data = isPartner && existing
+      ? {
+          isActive,
+          isDefault: false,
+        }
+      : {
+          organizationId: organization.id,
+          name: resolvedName,
+          shortName: resolvedName,
+          city: resolvedCity || null,
+          address: resolvedAddress || null,
+          courtsCount,
+          hours: null,
+          favoriteCategoryIds: [],
+          isActive,
+          slug: slug || null,
+          isDefault: safeIsDefault,
+          kind,
+          sourceClubId,
+          locationSource,
+          locationProviderId,
+          locationFormattedAddress,
+          locationComponents,
+          latitude,
+          longitude,
+        };
 
     const club = await prisma.$transaction(async (tx) => {
       let saved = id
@@ -148,12 +274,13 @@ export async function POST(req: NextRequest) {
             data,
           });
 
-      if (isDefault) {
+      const allowDefault = !isPartner;
+      if (allowDefault && isDefault) {
         await tx.padelClub.updateMany({
           where: { organizationId: organization.id, NOT: { id: saved.id }, isDefault: true, deletedAt: null },
           data: { isDefault: false },
         });
-      } else {
+      } else if (allowDefault) {
         // Se não existir nenhum default, garante que o primeiro ativo fica default
         const defaults = await tx.padelClub.count({
           where: { organizationId: organization.id, isDefault: true, deletedAt: null, isActive: true },
@@ -164,6 +291,9 @@ export async function POST(req: NextRequest) {
       }
 
       if (!saved.isActive && saved.isDefault) {
+        saved = await tx.padelClub.update({ where: { id: saved.id }, data: { isDefault: false } });
+      }
+      if (isPartner && saved.isDefault) {
         saved = await tx.padelClub.update({ where: { id: saved.id }, data: { isDefault: false } });
       }
       return saved;

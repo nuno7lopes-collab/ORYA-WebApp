@@ -418,7 +418,7 @@ export default function PromoCodesClient() {
   return (
     <section className={cn("w-full py-8 space-y-6 text-white")}>
       <header className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-5 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl space-y-1">
-        <p className="text-[11px] uppercase tracking-[0.3em] text-white/70">Marketing</p>
+        <p className="text-[11px] uppercase tracking-[0.3em] text-white/70">Promoções</p>
         <h1 className="text-2xl font-semibold">Códigos promocionais</h1>
         <p className="text-sm text-white/70">
           Cria códigos de desconto por evento ou globais. Podes ativar/desativar ou definir auto-aplicação a qualquer momento.

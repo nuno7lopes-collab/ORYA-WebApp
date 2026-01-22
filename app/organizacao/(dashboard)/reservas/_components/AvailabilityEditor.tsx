@@ -520,7 +520,7 @@ export default function AvailabilityEditor({
       <div className="rounded-2xl border border-white/12 bg-[linear-gradient(165deg,rgba(255,255,255,0.08),rgba(255,255,255,0.01))] shadow-[0_30px_90px_rgba(3,8,20,0.55)] backdrop-blur-xl overflow-hidden">
         <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
           <div>
-            <h3 className="text-sm font-semibold text-white/90 tracking-[0.02em]">Calendario semanal</h3>
+            <h3 className="text-sm font-semibold text-white/90 tracking-[0.02em]">Calendário semanal</h3>
             <p className="text-[12px] text-white/60">
               Arrasta para criar blocos. Visível 09:00–19:00 (scroll para o resto do dia).
             </p>
@@ -565,20 +565,26 @@ export default function AvailabilityEditor({
 
             <div
               ref={scrollRef}
-              className="overflow-y-auto"
+              className="overflow-y-auto orya-scrollbar-hide"
               style={{ height: viewportHeight, maxHeight: "calc(100vh - 320px)" }}
             >
               <div className="grid gap-2" style={{ gridTemplateColumns: "72px minmax(0,1fr)" }}>
                 <div
                   className="sticky left-0 z-20 relative border-r border-white/8 bg-[rgba(6,10,20,0.7)] backdrop-blur-xl"
-                  style={{ height: gridHeight }}
+                  style={{
+                    height: gridHeight,
+                    backgroundImage:
+                      "linear-gradient(to bottom, rgba(255,255,255,0.03) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.06) 1px, transparent 1px)",
+                    backgroundSize: `100% ${slotHeight}px, 100% ${hourHeight}px`,
+                    backgroundPosition: "0 0, 0 0",
+                  }}
                 >
                   {Array.from({ length: 24 }).map((_, hour) => {
                     const top = hour * hourHeight;
                     const labelClass =
                       hour === 0
-                        ? "absolute left-0 text-[10px] font-mono tracking-[0.12em] text-white/40"
-                        : "absolute left-0 -translate-y-1/2 text-[10px] font-mono tracking-[0.12em] text-white/40";
+                        ? "absolute right-2 text-[10px] font-mono leading-none tracking-[0.12em] text-white/40"
+                        : "absolute right-2 -translate-y-1/2 text-[10px] font-mono leading-none tracking-[0.12em] text-white/40";
                     return (
                       <div
                         key={`availability-time-${hour}`}

@@ -118,6 +118,20 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "Paises invalidos." }, { status: 400 });
     }
 
+    if (payload.isActive ?? true) {
+      const overlapping = await prisma.storeShippingZone.findMany({
+        where: {
+          storeId: context.store.id,
+          isActive: true,
+          countries: { hasSome: countries },
+        },
+        select: { id: true },
+      });
+      if (overlapping.length > 0) {
+        return NextResponse.json({ ok: false, error: "Pais ja associado a outra zona ativa." }, { status: 409 });
+      }
+    }
+
     const created = await prisma.storeShippingZone.create({
       data: {
         storeId: context.store.id,

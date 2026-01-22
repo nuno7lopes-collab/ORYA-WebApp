@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
+import { getEventLocationDisplay } from "@/lib/location/eventLocation";
 
 type EventCard = {
   id: number;
@@ -13,6 +14,13 @@ type EventCard = {
   endsAt: string | null;
   locationName: string | null;
   locationCity: string | null;
+  address: string | null;
+  locationFormattedAddress: string | null;
+  locationSource: "OSM" | "MANUAL" | null;
+  locationComponents: Record<string, unknown> | null;
+  locationOverrides: Record<string, unknown> | null;
+  latitude: number | null;
+  longitude: number | null;
   isFree: boolean;
   priceFrom: number | null;
 };
@@ -52,6 +60,13 @@ export default function EventosFeedPage() {
             endsAt: ev.endDate ?? null,
             locationName: ev.venue?.name ?? ev.locationName ?? null,
             locationCity: ev.venue?.city ?? ev.locationCity ?? null,
+            address: ev.venue?.address ?? null,
+            locationFormattedAddress: ev.venue?.formattedAddress ?? null,
+            locationSource: ev.venue?.source ?? null,
+            locationComponents: ev.venue?.components ?? null,
+            locationOverrides: ev.venue?.overrides ?? null,
+            latitude: ev.venue?.lat ?? null,
+            longitude: ev.venue?.lng ?? null,
             isFree: Boolean(ev.isFree),
             priceFrom: ev.priceFrom ?? null,
           }))
@@ -150,12 +165,27 @@ export default function EventosFeedPage() {
               evento.
             </p>
           ) : (
-            events.map((ev) => (
-              <Link
-                key={ev.id}
-                href={`/eventos/${ev.slug}`}
-                className="group w-full rounded-2xl border border-white/10 bg-gradient-to-b from-white/5 via-black/70 to-black/90 overflow-hidden shadow-[0_18px_40px_rgba(0,0,0,0.7)] hover:border-[#6BFFFF]/60 hover:shadow-[0_0_40px_rgba(107,255,255,0.35)] transition"
-              >
+            events.map((ev) => {
+              const locationDisplay = getEventLocationDisplay(
+                {
+                  locationName: ev.locationName,
+                  locationCity: ev.locationCity,
+                  address: ev.address,
+                  locationFormattedAddress: ev.locationFormattedAddress,
+                  locationSource: ev.locationSource,
+                  locationComponents: ev.locationComponents,
+                  locationOverrides: ev.locationOverrides,
+                  latitude: ev.latitude,
+                  longitude: ev.longitude,
+                },
+                "Local a definir",
+              );
+              return (
+                <Link
+                  key={ev.id}
+                  href={`/eventos/${ev.slug}`}
+                  className="group w-full rounded-2xl border border-white/10 bg-gradient-to-b from-white/5 via-black/70 to-black/90 overflow-hidden shadow-[0_18px_40px_rgba(0,0,0,0.7)] hover:border-[#6BFFFF]/60 hover:shadow-[0_0_40px_rgba(107,255,255,0.35)] transition"
+                >
                 <div className="relative aspect-square overflow-hidden">
                   <div className="h-full w-full bg-[radial-gradient(circle_at_top,_#FF00C8_0,_#02020a_65%)] flex items-center justify-center text-xs text-white/60">
                     ORYA • Evento
@@ -193,18 +223,19 @@ export default function EventosFeedPage() {
                   <div className="flex items-center justify-between gap-2 mt-2">
                     <div className="flex flex-col gap-0.5">
                       <p className="text-[11px] text-white/70 line-clamp-1">
-                        {ev.locationName || "Local a definir"}
+                        {locationDisplay.primary}
                       </p>
-                      {ev.locationCity && (
+                      {locationDisplay.secondary && (
                         <p className="text-[10px] text-white/40 line-clamp-1">
-                          {ev.locationCity}
+                          {locationDisplay.secondary}
                         </p>
                       )}
                     </div>
                   </div>
                 </div>
               </Link>
-            ))
+              );
+            })
           )}
         </div>
       </section>

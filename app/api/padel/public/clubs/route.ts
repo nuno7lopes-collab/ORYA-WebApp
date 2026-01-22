@@ -31,6 +31,7 @@ export async function GET(req: NextRequest) {
     const where: Prisma.PadelClubWhereInput = {
       isActive: true,
       deletedAt: null,
+      kind: "OWN",
       ...(city && city.toLowerCase() !== "portugal" && PORTUGAL_CITIES.includes(city as (typeof PORTUGAL_CITIES)[number])
         ? { city }
         : {}),

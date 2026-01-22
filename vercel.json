@@ -1,3 +1,16 @@
 {
-  "headers": []
+  "headers": [],
+  "redirects": [
+    {
+      "source": "/:path*",
+      "has": [
+        {
+          "type": "host",
+          "value": "www.orya.pt"
+        }
+      ],
+      "destination": "https://orya.pt/:path*",
+      "statusCode": 301
+    }
+  ]
 }

@@ -13,6 +13,7 @@ type Body = {
   allowFollowRequests?: boolean;
   allowSalesAlerts?: boolean;
   allowSystemAnnouncements?: boolean;
+  allowMarketingCampaigns?: boolean;
   hardDelete?: boolean;
 };
 
@@ -112,6 +113,7 @@ export async function PATCH(req: NextRequest) {
     assign("allowFollowRequests", "allowFollowRequests");
     assign("allowSalesAlerts", "allowSalesAlerts");
     assign("allowSystemAnnouncements", "allowSystemAnnouncements");
+    assign("allowMarketingCampaigns", "allowMarketingCampaigns");
     if (Object.keys(notificationPrefsUpdate).length > 0) {
       await prisma.notificationPreference.upsert({
         where: { userId: user.id },
@@ -132,6 +134,7 @@ export async function PATCH(req: NextRequest) {
         allowFollowRequests: notificationPrefs?.allowFollowRequests ?? true,
         allowSalesAlerts: notificationPrefs?.allowSalesAlerts ?? true,
         allowSystemAnnouncements: notificationPrefs?.allowSystemAnnouncements ?? true,
+        allowMarketingCampaigns: notificationPrefs?.allowMarketingCampaigns ?? true,
       },
     });
   } catch (err) {

@@ -30,6 +30,9 @@ type ApiMeResponse = {
     allowEmailNotifications: boolean;
     allowEventReminders: boolean;
     allowFollowRequests: boolean;
+    allowSalesAlerts?: boolean;
+    allowSystemAnnouncements?: boolean;
+    allowMarketingCampaigns?: boolean;
     profileVisibility: "PUBLIC" | "PRIVATE" | "FOLLOWERS";
   } | null;
 };

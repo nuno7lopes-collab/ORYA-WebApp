@@ -642,7 +642,7 @@ export default function ServicoDetalhePage() {
         <div>
           <h2 className="text-base font-semibold text-white">Agenda central</h2>
           <p className={DASHBOARD_MUTED}>
-            A disponibilidade e as marcações são geridas no calendario principal.
+            A disponibilidade e as marcações são geridas no calendário principal.
           </p>
         </div>
         <button

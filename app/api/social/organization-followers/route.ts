@@ -3,6 +3,7 @@ export const runtime = "nodejs";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { parseOrganizationId } from "@/lib/organizationId";
+import { listOrganizationFollowers } from "@/domain/social/follows";
 
 export async function GET(req: NextRequest) {
   const organizationId = parseOrganizationId(req.nextUrl.searchParams.get("organizationId"));
@@ -21,26 +22,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
   }
 
-  const rows = await prisma.organization_follows.findMany({
-    where: { organization_id: organizationId },
-    select: {
-      follower_id: true,
-      profiles_organization_follows_follower_idToprofiles: {
-        select: { username: true, fullName: true, avatarUrl: true },
-      },
-    },
-    take: limit,
-    orderBy: { id: "desc" },
-  });
-
-  const items = rows
-    .map((row) => ({
-      userId: row.follower_id,
-      username: row.profiles_organization_follows_follower_idToprofiles?.username ?? null,
-      fullName: row.profiles_organization_follows_follower_idToprofiles?.fullName ?? null,
-      avatarUrl: row.profiles_organization_follows_follower_idToprofiles?.avatarUrl ?? null,
-    }))
-    .filter((item) => item.userId);
+  const items = await listOrganizationFollowers({ organizationId, limit });
 
   return NextResponse.json({ ok: true, items }, { status: 200 });
 }

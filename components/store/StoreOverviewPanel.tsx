@@ -113,13 +113,13 @@ export default function StoreOverviewPanel({ endpoint }: StoreOverviewPanelProps
                 Sem produtos ativos ainda. Usa o botao "Criar produto" no topo para começar.
               </div>
             ) : (
-              <div className="mt-3 flex gap-3 overflow-x-auto pb-2">
+              <div className="mt-3 flex gap-4 overflow-x-auto pb-3 -mx-1 px-1 snap-x snap-mandatory">
                 {products.map((product) => (
                   <div
                     key={product.id}
-                    className="min-w-[180px] rounded-2xl border border-white/10 bg-black/40 p-3"
+                    className="group flex w-[210px] flex-none snap-start flex-col gap-3 rounded-2xl border border-white/10 bg-black/40 p-3 transition hover:-translate-y-0.5 hover:border-white/30 hover:bg-white/10"
                   >
-                    <div className="h-28 w-full overflow-hidden rounded-xl border border-white/10 bg-black/60">
+                    <div className="relative aspect-square w-full overflow-hidden rounded-xl border border-white/10 bg-black/60">
                       {product.imageUrl ? (
                         <img
                           src={product.imageUrl}
@@ -131,9 +131,16 @@ export default function StoreOverviewPanel({ endpoint }: StoreOverviewPanelProps
                           Sem imagem
                         </div>
                       )}
+                      <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/45 via-transparent to-transparent opacity-0 transition group-hover:opacity-100" />
                     </div>
-                    <p className="mt-2 line-clamp-2 text-sm font-semibold text-white">{product.name}</p>
-                    <p className="text-xs text-white/60">{formatMoney(product.priceCents, product.currency)}</p>
+                    <div className="space-y-1">
+                      <p className="min-h-[2.5rem] line-clamp-2 text-sm font-semibold text-white">
+                        {product.name}
+                      </p>
+                      <p className="text-xs text-white/65">
+                        {formatMoney(product.priceCents, product.currency)}
+                      </p>
+                    </div>
                   </div>
                 ))}
               </div>

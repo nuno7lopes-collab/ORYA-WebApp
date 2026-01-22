@@ -19,6 +19,12 @@ function parseId(value: string) {
   return { ok: true as const, id };
 }
 
+function rangesOverlap(minA: number, maxA: number | null, minB: number, maxB: number | null) {
+  const aMax = maxA ?? Number.POSITIVE_INFINITY;
+  const bMax = maxB ?? Number.POSITIVE_INFINITY;
+  return minA <= bMax && minB <= aMax;
+}
+
 async function getStoreContext(userId: string) {
   const store = await prisma.store.findFirst({
     where: { ownerUserId: userId },
@@ -32,7 +38,7 @@ async function getStoreContext(userId: string) {
   return { ok: true as const, store };
 }
 
-export async function GET(req: NextRequest, { params }: { params: { methodId: string } }) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ methodId: string }> }) {
   try {
     if (!isStoreFeatureEnabled()) {
       return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
@@ -46,7 +52,8 @@ export async function GET(req: NextRequest, { params }: { params: { methodId: st
       return NextResponse.json({ ok: false, error: context.error }, { status: 403 });
     }
 
-    const methodId = parseId(params.methodId);
+    const resolvedParams = await params;
+    const methodId = parseId(resolvedParams.methodId);
     if (!methodId.ok) {
       return NextResponse.json({ ok: false, error: methodId.error }, { status: 400 });
     }
@@ -81,7 +88,7 @@ export async function GET(req: NextRequest, { params }: { params: { methodId: st
   }
 }
 
-export async function POST(req: NextRequest, { params }: { params: { methodId: string } }) {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ methodId: string }> }) {
   try {
     if (!isStoreFeatureEnabled()) {
       return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
@@ -95,7 +102,8 @@ export async function POST(req: NextRequest, { params }: { params: { methodId: s
       return NextResponse.json({ ok: false, error: context.error }, { status: 403 });
     }
 
-    const methodId = parseId(params.methodId);
+    const resolvedParams = await params;
+    const methodId = parseId(resolvedParams.methodId);
     if (!methodId.ok) {
       return NextResponse.json({ ok: false, error: methodId.error }, { status: 400 });
     }
@@ -119,6 +127,22 @@ export async function POST(req: NextRequest, { params }: { params: { methodId: s
       if (payload.maxSubtotalCents < payload.minSubtotalCents) {
         return NextResponse.json({ ok: false, error: "Intervalo invalido." }, { status: 400 });
       }
+    }
+
+    const existingTiers = await prisma.storeShippingTier.findMany({
+      where: { methodId: methodId.id },
+      select: { id: true, minSubtotalCents: true, maxSubtotalCents: true },
+    });
+    const overlap = existingTiers.some((tier) =>
+      rangesOverlap(
+        payload.minSubtotalCents,
+        payload.maxSubtotalCents ?? null,
+        tier.minSubtotalCents,
+        tier.maxSubtotalCents,
+      ),
+    );
+    if (overlap) {
+      return NextResponse.json({ ok: false, error: "Tier sobrepoe-se a outro intervalo." }, { status: 409 });
     }
 
     const created = await prisma.storeShippingTier.create({

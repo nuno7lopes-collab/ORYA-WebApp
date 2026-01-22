@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
 
     const store = await prisma.store.findFirst({
       where: { id: storeParsed.storeId },
-      select: { id: true, status: true, catalogLocked: true },
+      select: { id: true, status: true, showOnProfile: true, catalogLocked: true },
     });
     if (!store) {
       return NextResponse.json({ ok: false, error: "Store nao encontrada." }, { status: 404 });

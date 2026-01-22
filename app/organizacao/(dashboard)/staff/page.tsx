@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import useSWR from "swr";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -12,8 +12,11 @@ import { RoleBadge } from "../../RoleBadge";
 import { CTA_DANGER, CTA_GHOST, CTA_NEUTRAL, CTA_PRIMARY, CTA_SECONDARY, CTA_SUCCESS } from "@/app/organizacao/dashboardUi";
 import { Avatar } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
+import { ACCESS_LABELS, MODULE_LABELS, getDefaultModuleAccess, normalizeAccessLevel } from "@/lib/organizationRbac";
+import type { OrganizationModule } from "@prisma/client";
 
 type MemberRole = "OWNER" | "CO_OWNER" | "ADMIN" | "STAFF" | "TRAINER" | "PROMOTER";
+type StaffTabKey = "membros" | "convidados" | "permissoes" | "auditoria";
 
 type Member = {
   userId: string;
@@ -55,6 +58,35 @@ type InvitesResponse = {
   organizationId?: number | null;
   error?: string;
 };
+type MemberPermission = {
+  id: number;
+  userId: string;
+  moduleKey: OrganizationModule;
+  accessLevel: string;
+  scopeType: string | null;
+  scopeId: string | null;
+};
+type MemberPermissionsResponse = {
+  ok: boolean;
+  items: MemberPermission[];
+  organizationId?: number | null;
+  error?: string;
+};
+type AuditLogEntry = {
+  id: string;
+  action: string;
+  createdAt: string | null;
+  metadata: Record<string, unknown> | null;
+  actor: { id: string; fullName?: string | null; username?: string | null; avatarUrl?: string | null } | null;
+  fromUser: { id: string; fullName?: string | null; username?: string | null; avatarUrl?: string | null } | null;
+  toUser: { id: string; fullName?: string | null; username?: string | null; avatarUrl?: string | null } | null;
+};
+type AuditLogResponse = {
+  ok: boolean;
+  items: AuditLogEntry[];
+  organizationId?: number | null;
+  error?: string;
+};
 type TrainerItem = {
   userId: string;
   fullName: string | null;
@@ -90,6 +122,36 @@ const roleOrder: Record<MemberRole, number> = {
   STAFF: 3,
   TRAINER: 4,
   PROMOTER: 5,
+};
+
+const moduleOrder: OrganizationModule[] = [
+  "EVENTOS",
+  "RESERVAS",
+  "TORNEIOS",
+  "INSCRICOES",
+  "MENSAGENS",
+  "LOJA",
+  "MARKETING",
+  "CRM",
+  "FINANCEIRO",
+  "STAFF",
+  "PERFIL_PUBLICO",
+  "DEFINICOES",
+  "ANALYTICS",
+];
+
+const auditActionLabels: Record<string, string> = {
+  INVITE_CREATED: "Convite enviado",
+  INVITE_CANCELLED: "Convite cancelado",
+  INVITE_RESENT: "Convite reenviado",
+  INVITE_ACCEPTED: "Convite aceite",
+  INVITE_DECLINED: "Convite recusado",
+  MEMBER_ROLE_UPDATED: "Role atualizada",
+  MEMBER_REMOVED: "Membro removido",
+  OWNER_PROMOTED: "Owner promovido",
+  OWNER_DEMOTED: "Owner despromovido",
+  PERMISSION_UPDATED: "Permissao atualizada",
+  PERMISSION_CLEARED: "Permissao removida",
 };
 
 const statusTone: Record<InviteStatus, string> = {
@@ -139,6 +201,56 @@ function canAssignRole(actorRole: MemberRole | null, targetRole: MemberRole, des
     return allowed && targetRole !== "OWNER" && targetRole !== "CO_OWNER" && targetRole !== "ADMIN";
   }
   return false;
+}
+
+function resolveUserLabel(
+  user: { fullName?: string | null; username?: string | null } | null | undefined,
+  fallback: string,
+) {
+  if (!user) return fallback;
+  return user.fullName || user.username || fallback;
+}
+
+function formatAuditAction(action: string) {
+  return auditActionLabels[action] ?? action.replace(/_/g, " ");
+}
+
+function formatAuditMeta(metadata: Record<string, unknown> | null | undefined) {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return null;
+  const parts: string[] = [];
+  const fromRole = typeof metadata.fromRole === "string" ? metadata.fromRole : null;
+  const toRole = typeof metadata.toRole === "string" ? metadata.toRole : null;
+  const newRole = typeof metadata.newRole === "string" ? metadata.newRole : null;
+  if (fromRole || toRole) {
+    const fromLabel = roleLabels[fromRole as MemberRole] ?? fromRole ?? "";
+    const toLabel = roleLabels[toRole as MemberRole] ?? toRole ?? "";
+    if (fromLabel && toLabel) {
+      parts.push(`Role: ${fromLabel} → ${toLabel}`);
+    } else if (fromLabel || toLabel) {
+      parts.push(`Role: ${fromLabel || toLabel}`);
+    }
+  } else if (newRole) {
+    const newLabel = roleLabels[newRole as MemberRole] ?? newRole;
+    parts.push(`Role: ${newLabel}`);
+  }
+  const moduleKey = typeof metadata.moduleKey === "string" ? metadata.moduleKey : null;
+  if (moduleKey && Object.prototype.hasOwnProperty.call(MODULE_LABELS, moduleKey)) {
+    parts.push(`Modulo: ${MODULE_LABELS[moduleKey as OrganizationModule]}`);
+  }
+  const accessLevel = typeof metadata.accessLevel === "string" ? metadata.accessLevel : null;
+  const normalizedAccess = normalizeAccessLevel(accessLevel);
+  if (normalizedAccess) {
+    parts.push(`Acesso: ${ACCESS_LABELS[normalizedAccess]}`);
+  }
+  return parts.length > 0 ? parts.join(" · ") : null;
+}
+
+function formatAuditDate(value: string | null) {
+  if (!value) return "";
+  return new Date(value).toLocaleString("pt-PT", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
 }
 
 function InviteBadge({ status }: { status: InviteStatus }) {
@@ -197,6 +309,8 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
   const [reviewDialogOpen, setReviewDialogOpen] = useState(false);
   const [reviewTarget, setReviewTarget] = useState<TrainerItem | null>(null);
   const [reviewNote, setReviewNote] = useState("");
+  const [selectedPermissionUserId, setSelectedPermissionUserId] = useState<string>("");
+  const [permissionSavingKey, setPermissionSavingKey] = useState<string | null>(null);
 
   const [toasts, setToasts] = useState<Toast[]>([]);
 
@@ -209,7 +323,10 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
   const eventIdParam = searchParams?.get("eventId");
   const eventId = eventIdParam ? Number(eventIdParam) : null;
   const staffTabParam = searchParams?.get("staff");
-  const activeStaffTab = staffTabParam === "convidados" ? "convidados" : "membros";
+  const activeStaffTab: StaffTabKey =
+    staffTabParam === "convidados" || staffTabParam === "permissoes" || staffTabParam === "auditoria"
+      ? staffTabParam
+      : "membros";
   const organizationIdParam =
     searchParams?.get("organizationId") ?? (meData?.organization?.id ? String(meData.organization.id) : null);
   const organizationId = organizationIdParam ? Number(organizationIdParam) : null;
@@ -250,6 +367,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
   const viewerRole: MemberRole | null = membersData?.viewerRole ?? invitesData?.viewerRole ?? null;
   const resolvedOrganizationId = organizationId ?? membersData?.organizationId ?? invitesData?.organizationId ?? null;
   const canInvite = viewerRole === "OWNER" || viewerRole === "CO_OWNER" || viewerRole === "ADMIN";
+  const canManagePermissions = canInvite;
   const trainersKey = useMemo(() => {
     if (!user) return null;
     if (!resolvedOrganizationId) return null;
@@ -265,11 +383,69 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
   const trainers = trainersData?.items ?? [];
   const ownerCount = useMemo(() => members.filter((m) => m.role === "OWNER").length, [members]);
 
+  const permissionsKey = useMemo(() => {
+    if (!user || !resolvedOrganizationId || !canManagePermissions) return null;
+    if (activeStaffTab !== "permissoes") return null;
+    return `/api/organizacao/organizations/members/permissions?organizationId=${resolvedOrganizationId}`;
+  }, [activeStaffTab, canManagePermissions, resolvedOrganizationId, user]);
+  const { data: permissionsData, isLoading: isPermissionsLoading, mutate: mutatePermissions } =
+    useSWR<MemberPermissionsResponse>(permissionsKey, fetcher, { revalidateOnFocus: false });
+  const permissions = permissionsData?.items ?? [];
+
+  const auditKey = useMemo(() => {
+    if (!user || !resolvedOrganizationId || !canManagePermissions) return null;
+    if (activeStaffTab !== "auditoria") return null;
+    return `/api/organizacao/audit?organizationId=${resolvedOrganizationId}&limit=80`;
+  }, [activeStaffTab, canManagePermissions, resolvedOrganizationId, user]);
+  const { data: auditData, isLoading: isAuditLoading } = useSWR<AuditLogResponse>(auditKey, fetcher, {
+    revalidateOnFocus: false,
+  });
+  const auditLogs = useMemo(() => auditData?.items ?? [], [auditData?.items]);
+
   const sortedMembers = useMemo(() => {
     return [...members].sort((a, b) => {
       return (roleOrder[a.role] ?? 99) - (roleOrder[b.role] ?? 99);
     });
   }, [members]);
+
+  useEffect(() => {
+    if (sortedMembers.length === 0) {
+      if (selectedPermissionUserId) setSelectedPermissionUserId("");
+      return;
+    }
+    const hasSelected = sortedMembers.some((member) => member.userId === selectedPermissionUserId);
+    if (!selectedPermissionUserId || !hasSelected) {
+      setSelectedPermissionUserId(sortedMembers[0].userId);
+    }
+  }, [selectedPermissionUserId, sortedMembers]);
+
+  const permissionsByUser = useMemo(() => {
+    const map = new Map<string, MemberPermission[]>();
+    permissions.forEach((perm) => {
+      const list = map.get(perm.userId) ?? [];
+      list.push(perm);
+      map.set(perm.userId, list);
+    });
+    return map;
+  }, [permissions]);
+
+  const selectedMember = useMemo(
+    () => sortedMembers.find((member) => member.userId === selectedPermissionUserId) ?? null,
+    [selectedPermissionUserId, sortedMembers],
+  );
+  const selectedOverrides = useMemo(() => {
+    if (!selectedMember) return new Map<OrganizationModule, MemberPermission>();
+    const list = permissionsByUser.get(selectedMember.userId) ?? [];
+    const map = new Map<OrganizationModule, MemberPermission>();
+    list.forEach((perm) => {
+      map.set(perm.moduleKey, perm);
+    });
+    return map;
+  }, [permissionsByUser, selectedMember]);
+  const selectedDefaults = useMemo(
+    () => getDefaultModuleAccess(selectedMember?.role ?? null),
+    [selectedMember?.role],
+  );
 
   const isOrganizationProfile = profile?.roles?.includes("organization") ?? false;
   const hasMembership = !!viewerRole;
@@ -280,6 +456,37 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
     }, 4200);
+  };
+
+  const handlePermissionUpdate = async (
+    userId: string,
+    moduleKey: OrganizationModule,
+    accessLevel: string,
+  ) => {
+    if (!resolvedOrganizationId) return;
+    setPermissionSavingKey(`${userId}:${moduleKey}`);
+    try {
+      const res = await fetch("/api/organizacao/organizations/members/permissions", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          organizationId: resolvedOrganizationId,
+          userId,
+          moduleKey,
+          accessLevel,
+        }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || json?.ok === false) {
+        throw new Error(json?.error || "Erro ao guardar permissões.");
+      }
+      if (mutatePermissions) await mutatePermissions();
+      pushToast("Permissões atualizadas.", "success");
+    } catch (err) {
+      pushToast(err instanceof Error ? err.message : "Erro ao atualizar permissões.");
+    } finally {
+      setPermissionSavingKey(null);
+    }
   };
 
   const handleTrainerAction = async (trainer: TrainerItem, action: "APPROVE" | "REJECT" | "PUBLISH" | "HIDE", note?: string) => {
@@ -601,11 +808,17 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
   const wrapperClass = cn(
     embedded ? "space-y-6 text-white" : "w-full space-y-6 py-8 text-white",
   );
-  const staffTabs = [
+  const staffTabs: { key: StaffTabKey; label: string }[] = [
     { key: "membros", label: "Equipa" },
     { key: "convidados", label: "Convidados" },
+    ...(canManagePermissions
+      ? [
+          { key: "permissoes", label: "Permissões" },
+          { key: "auditoria", label: "Auditoria" },
+        ]
+      : []),
   ];
-  const setStaffTab = (next: "membros" | "convidados") => {
+  const setStaffTab = (next: StaffTabKey) => {
     const params = new URLSearchParams(searchParams?.toString());
     if (next === "membros") params.delete("staff");
     else params.set("staff", next);
@@ -679,7 +892,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
           <button
             key={tab.key}
             type="button"
-            onClick={() => setStaffTab(tab.key as "membros" | "convidados")}
+            onClick={() => setStaffTab(tab.key)}
             className={`rounded-xl px-3 py-2 font-semibold transition ${
               activeStaffTab === tab.key
                 ? "bg-gradient-to-r from-[#FF7AD1]/60 via-[#7FE0FF]/35 to-[#6A7BFF]/55 text-white shadow-[0_14px_36px_rgba(107,255,255,0.45)]"
@@ -702,7 +915,267 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
         </div>
       )}
 
-      <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
+      {activeStaffTab === "permissoes" && (
+        <>
+          {canManagePermissions ? (
+            <div className="grid gap-4 lg:grid-cols-[0.75fr_1.25fr]">
+              <section className="relative overflow-hidden rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1226]/75 to-[#050912]/90 p-4 space-y-3 shadow-[0_26px_90px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <h2 className="text-sm font-semibold">Permissões por membro</h2>
+                    <p className="text-[12px] text-white/60">Overrides por módulo e por role.</p>
+                  </div>
+                  <div className="text-[11px] text-white/60">
+                    {isMembersLoading
+                      ? "A carregar…"
+                      : `${sortedMembers.length} membro${sortedMembers.length === 1 ? "" : "s"}`}
+                  </div>
+                </div>
+
+                {isMembersLoading && (
+                  <div className="space-y-2">
+                    {Array.from({ length: 4 }).map((_, idx) => (
+                      <div
+                        key={idx}
+                        className="flex animate-pulse items-center justify-between rounded-xl border border-white/10 bg-white/5 p-3"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="h-9 w-9 rounded-full bg-white/10" />
+                          <div className="space-y-2">
+                            <div className="h-3 w-24 rounded bg-white/10" />
+                            <div className="h-3 w-16 rounded bg-white/5" />
+                          </div>
+                        </div>
+                        <div className="h-6 w-12 rounded-full bg-white/10" />
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {!isMembersLoading && sortedMembers.length === 0 && (
+                  <div className="rounded-lg border border-white/10 bg-white/5 p-4 text-sm text-white/70">
+                    Sem membros para configurar.
+                  </div>
+                )}
+
+                {sortedMembers.length > 0 && (
+                  <div className="space-y-2">
+                    {sortedMembers.map((member) => {
+                      const displayName = member.fullName || member.username || "Utilizador";
+                      const overridesCount = permissionsByUser.get(member.userId)?.length ?? 0;
+                      const isSelected = member.userId === selectedPermissionUserId;
+                      return (
+                        <button
+                          key={member.userId}
+                          type="button"
+                          onClick={() => setSelectedPermissionUserId(member.userId)}
+                          className={`w-full rounded-xl border px-3 py-2 text-left transition ${
+                            isSelected
+                              ? "border-cyan-200/60 bg-cyan-400/10 shadow-[0_12px_30px_rgba(34,211,238,0.25)]"
+                              : "border-white/10 bg-white/5 hover:border-white/20"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-3">
+                              <Avatar
+                                src={member.avatarUrl}
+                                name={displayName}
+                                className="h-9 w-9 border border-white/10"
+                                textClassName="text-xs font-semibold uppercase tracking-[0.16em] text-white/80"
+                                fallbackText="OR"
+                              />
+                              <div>
+                                <p className="text-sm font-semibold text-white">{displayName}</p>
+                                <div className="text-[11px] text-white/60">
+                                  <RoleBadge role={member.role} />
+                                </div>
+                              </div>
+                            </div>
+                            <span className="text-[11px] text-white/50">
+                              {overridesCount} override{overridesCount === 1 ? "" : "s"}
+                            </span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
+
+              <section className="relative overflow-hidden rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1226]/75 to-[#050912]/90 p-4 space-y-3 shadow-[0_26px_90px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <h2 className="text-sm font-semibold">Detalhe de permissões</h2>
+                    <p className="text-[12px] text-white/60">Define o acesso efetivo por módulo.</p>
+                  </div>
+                  <div className="text-[11px] text-white/60">
+                    {isPermissionsLoading ? "A carregar…" : "Atualiza e guarda"}
+                  </div>
+                </div>
+
+                {!selectedMember && (
+                  <div className="rounded-lg border border-white/10 bg-white/5 p-4 text-sm text-white/70">
+                    Seleciona um membro para gerir permissões.
+                  </div>
+                )}
+
+                {selectedMember && (
+                  <div className="space-y-3">
+                    <div className="flex flex-wrap items-center gap-3 rounded-xl border border-white/10 bg-white/5 p-3">
+                      <Avatar
+                        src={selectedMember.avatarUrl}
+                        name={selectedMember.fullName || selectedMember.username || "Utilizador"}
+                        className="h-10 w-10 border border-white/10"
+                        textClassName="text-xs font-semibold uppercase tracking-[0.16em] text-white/80"
+                        fallbackText="OR"
+                      />
+                      <div>
+                        <p className="text-sm font-semibold text-white">
+                          {selectedMember.fullName || selectedMember.username || "Utilizador"}
+                        </p>
+                        <div className="flex flex-wrap items-center gap-2 text-[11px] text-white/60">
+                          <RoleBadge role={selectedMember.role} />
+                        </div>
+                      </div>
+                    </div>
+
+                    {!canManageMember(viewerRole, selectedMember.role) && (
+                      <div className="rounded-lg border border-amber-300/30 bg-amber-500/10 p-3 text-[12px] text-amber-100">
+                        Sem permissões para alterar este papel.
+                      </div>
+                    )}
+
+                    {isPermissionsLoading ? (
+                      <div className="space-y-2">
+                        {Array.from({ length: 5 }).map((_, idx) => (
+                          <div key={idx} className="h-12 rounded-xl border border-white/10 bg-white/5" />
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {moduleOrder.map((moduleKey) => {
+                          const moduleLabel = MODULE_LABELS[moduleKey] ?? moduleKey;
+                          const override = selectedOverrides.get(moduleKey);
+                          const overrideLevel = normalizeAccessLevel(override?.accessLevel ?? null);
+                          const baseLevel = selectedDefaults[moduleKey];
+                          const effectiveLevel = overrideLevel ?? baseLevel;
+                          const isSaving = permissionSavingKey === `${selectedMember.userId}:${moduleKey}`;
+                          const canEdit = canManageMember(viewerRole, selectedMember.role);
+                          return (
+                            <div
+                              key={moduleKey}
+                              className="flex flex-col gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 md:flex-row md:items-center md:justify-between"
+                            >
+                              <div className="space-y-1">
+                                <p className="text-sm font-semibold text-white">{moduleLabel}</p>
+                                <p className="text-[11px] text-white/60">
+                                  Base: {ACCESS_LABELS[baseLevel]} · Atual: {ACCESS_LABELS[effectiveLevel]}
+                                </p>
+                              </div>
+                              <select
+                                value={overrideLevel ?? "DEFAULT"}
+                                disabled={!canEdit || isSaving}
+                                onChange={(e) =>
+                                  handlePermissionUpdate(selectedMember.userId, moduleKey, e.target.value)
+                                }
+                                className="rounded-full border border-white/15 bg-black/40 px-4 py-2 text-sm text-white shadow-[0_10px_30px_rgba(0,0,0,0.35)] outline-none focus:border-[#6BFFFF] focus:ring-2 focus:ring-[rgba(107,255,255,0.35)] disabled:opacity-60"
+                              >
+                                <option value="DEFAULT">Por defeito ({ACCESS_LABELS[baseLevel]})</option>
+                                <option value="NONE">Sem acesso</option>
+                                <option value="VIEW">Ver</option>
+                                <option value="EDIT">Editar</option>
+                              </select>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </section>
+            </div>
+          ) : (
+            <section className="rounded-3xl border border-white/12 bg-white/5 p-4 text-sm text-white/70">
+              Sem permissões para gerir acessos.
+            </section>
+          )}
+        </>
+      )}
+
+      {activeStaffTab === "auditoria" && (
+        <>
+          {canManagePermissions ? (
+            <section className="relative overflow-hidden rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1226]/75 to-[#050912]/90 p-4 space-y-3 shadow-[0_26px_90px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h2 className="text-sm font-semibold">Auditoria</h2>
+                  <p className="text-[12px] text-white/60">Últimas ações registadas.</p>
+                </div>
+                <div className="text-[11px] text-white/60">
+                  {isAuditLoading ? "A carregar…" : `${auditLogs.length} registo${auditLogs.length === 1 ? "" : "s"}`}
+                </div>
+              </div>
+
+              {isAuditLoading && (
+                <div className="space-y-2">
+                  {Array.from({ length: 4 }).map((_, idx) => (
+                    <div key={idx} className="h-14 rounded-xl border border-white/10 bg-white/5" />
+                  ))}
+                </div>
+              )}
+
+              {!isAuditLoading && auditLogs.length === 0 && (
+                <div className="rounded-lg border border-white/10 bg-white/5 p-4 text-sm text-white/70">
+                  Sem ações registadas recentemente.
+                </div>
+              )}
+
+              {auditLogs.length > 0 && (
+                <div className="space-y-2">
+                  {auditLogs.map((entry) => {
+                    const actorLabel = resolveUserLabel(entry.actor, "Sistema");
+                    const targetUser = entry.toUser ?? entry.fromUser;
+                    const targetLabel = targetUser ? resolveUserLabel(targetUser, "Utilizador") : null;
+                    const actionLabel = formatAuditAction(entry.action);
+                    const metaLabel = formatAuditMeta(entry.metadata);
+                    return (
+                      <div
+                        key={entry.id}
+                        className="flex flex-col gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 md:flex-row md:items-center md:justify-between"
+                      >
+                        <div className="flex items-center gap-3">
+                          <Avatar
+                            src={entry.actor?.avatarUrl ?? null}
+                            name={actorLabel}
+                            className="h-9 w-9 border border-white/10"
+                            textClassName="text-xs font-semibold uppercase tracking-[0.16em] text-white/80"
+                            fallbackText="AU"
+                          />
+                          <div>
+                            <p className="text-sm font-semibold text-white">{actionLabel}</p>
+                            <p className="text-[12px] text-white/60">
+                              {targetLabel ? `${actorLabel} → ${targetLabel}` : actorLabel}
+                            </p>
+                            {metaLabel && <p className="text-[11px] text-white/45">{metaLabel}</p>}
+                          </div>
+                        </div>
+                        <span className="text-[11px] text-white/50">{formatAuditDate(entry.createdAt)}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+          ) : (
+            <section className="rounded-3xl border border-white/12 bg-white/5 p-4 text-sm text-white/70">
+              Sem permissões para ver auditoria.
+            </section>
+          )}
+        </>
+      )}
+
+      {activeStaffTab !== "permissoes" && activeStaffTab !== "auditoria" && (
+        <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
         {activeStaffTab === "convidados" && canManageTrainers && (
           <section className="relative overflow-hidden rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1226]/75 to-[#050912]/90 p-4 space-y-3 shadow-[0_26px_90px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1069,7 +1542,8 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
             Sem permissões para gerir convidados.
           </section>
         )}
-      </div>
+        </div>
+      )}
 
       <ConfirmDestructiveActionDialog
         open={removeTarget !== null}

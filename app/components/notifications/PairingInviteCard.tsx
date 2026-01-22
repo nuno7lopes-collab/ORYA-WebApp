@@ -108,6 +108,7 @@ export default function PairingInviteCard({
     const code = raw.replace(/[^\w_]/g, "").trim();
     const map: Record<string, string> = {
       CATEGORY_GENDER_MISMATCH: "Esta dupla não cumpre os requisitos de género da categoria.",
+      CATEGORY_LEVEL_MISMATCH: "Esta dupla não cumpre os requisitos de nível da categoria.",
       GENDER_MISMATCH: "Esta dupla não cumpre os requisitos de género do torneio.",
       PADEL_ONBOARDING_REQUIRED: "Completa o perfil de padel para continuar.",
       PROFILE_INCOMPLETE: "Completa o perfil de padel para continuar.",

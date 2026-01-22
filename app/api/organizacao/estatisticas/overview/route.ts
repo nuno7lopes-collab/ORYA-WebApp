@@ -3,7 +3,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { EventStatus, Prisma } from "@prisma/client";
+import { EventStatus, Prisma, SaleSummaryStatus } from "@prisma/client";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { isOrgAdminOrAbove } from "@/lib/organizationPermissions";
@@ -59,6 +59,7 @@ export async function GET(req: NextRequest) {
       : excludeTemplateType
         ? { NOT: { templateType: excludeTemplateType } }
         : {};
+    const isPadelScope = templateType === "PADEL";
 
     const organizationId = resolveOrganizationIdFromRequest(req);
     const { organization, membership } = await getActiveOrganizationForUser(user.id, {
@@ -98,6 +99,7 @@ export async function GET(req: NextRequest) {
         ...(Object.keys(createdAtFilter).length > 0
           ? { createdAt: createdAtFilter }
           : {}),
+        status: SaleSummaryStatus.PAID,
         event: {
           organizationId: organization.id,
           ...eventTemplateFilter,
@@ -116,7 +118,7 @@ export async function GET(req: NextRequest) {
       },
     });
 
-    const totalTickets = summaries.reduce(
+    let totalTickets = summaries.reduce(
       (acc, s) => acc + s.lines.reduce((q, l) => q + (l.quantity ?? 0), 0),
       0,
     );
@@ -128,7 +130,28 @@ export async function GET(req: NextRequest) {
     );
     const netRevenueCents = summaries.reduce((acc, s) => acc + (s.netCents ?? 0), 0);
 
-    const eventsWithSalesCount = new Set(summaries.map((s) => s.eventId)).size;
+    let eventsWithSalesCount = new Set(summaries.map((s) => s.eventId)).size;
+    if (isPadelScope) {
+      const pairingCreatedFilter: Prisma.DateTimeFilter<"PadelPairing"> = {};
+      if (fromDate) pairingCreatedFilter.gte = fromDate;
+      if (toDate) pairingCreatedFilter.lte = toDate;
+      const pairings = await prisma.padelPairing.findMany({
+        where: {
+          pairingStatus: { not: "CANCELLED" },
+          lifecycleStatus: { not: "CANCELLED_INCOMPLETE" },
+          ...(Object.keys(pairingCreatedFilter).length > 0
+            ? { createdAt: pairingCreatedFilter }
+            : {}),
+          event: {
+            organizationId: organization.id,
+            ...eventTemplateFilter,
+          },
+        },
+        select: { eventId: true },
+      });
+      totalTickets = pairings.length;
+      eventsWithSalesCount = new Set(pairings.map((pairing) => pairing.eventId)).size;
+    }
 
     // Contar eventos publicados do organização (no geral, não só no período)
     const activeEventsCount = await prisma.event.count({

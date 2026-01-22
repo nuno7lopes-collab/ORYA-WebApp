@@ -12,6 +12,7 @@ const SUPPORTED_FORMATS = new Set<padel_format>([
   padel_format.QUADRO_ELIMINATORIO,
   padel_format.GRUPOS_ELIMINATORIAS,
   padel_format.QUADRO_AB,
+  padel_format.DUPLA_ELIMINACAO,
   padel_format.NON_STOP,
   padel_format.CAMPEONATO_LIGA,
 ]);

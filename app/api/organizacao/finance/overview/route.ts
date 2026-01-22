@@ -5,7 +5,7 @@ import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { isOrgAdminOrAbove } from "@/lib/organizationPermissions";
 import { getStripeBaseFees } from "@/lib/platformSettings";
-import { PendingPayoutStatus } from "@prisma/client";
+import { PendingPayoutStatus, SaleSummaryStatus } from "@prisma/client";
 
 type Aggregate = {
   grossCents: number;
@@ -42,6 +42,7 @@ export async function GET(req: NextRequest) {
       : excludeTemplateType
         ? { NOT: { templateType: excludeTemplateType } }
         : {};
+    const isPadelScope = templateType === "PADEL";
     const organizationId = resolveOrganizationIdFromRequest(req);
     const { organization, membership } = await getActiveOrganizationForUser(user.id, {
       organizationId: organizationId ?? undefined,
@@ -100,6 +101,7 @@ export async function GET(req: NextRequest) {
     const summaries = await prisma.saleSummary.findMany({
       where: {
         eventId: { in: eventIds },
+        status: SaleSummaryStatus.PAID,
       },
       select: {
         id: true,
@@ -167,6 +169,45 @@ export async function GET(req: NextRequest) {
       eventStats.set(s.eventId, current);
     }
 
+    const padelPairingStats = isPadelScope
+      ? await prisma.padelPairing.groupBy({
+          by: ["eventId"],
+          where: {
+            eventId: { in: eventIds },
+            pairingStatus: { not: "CANCELLED" },
+            lifecycleStatus: { not: "CANCELLED_INCOMPLETE" },
+          },
+          _count: { _all: true },
+        })
+      : [];
+    const padelPairingMap = new Map<number, number>();
+    padelPairingStats.forEach((row) => {
+      padelPairingMap.set(row.eventId, row._count._all);
+    });
+    if (isPadelScope) {
+      const padelLast7 = await prisma.padelPairing.count({
+        where: {
+          eventId: { in: eventIds },
+          createdAt: { gte: last7 },
+          pairingStatus: { not: "CANCELLED" },
+          lifecycleStatus: { not: "CANCELLED_INCOMPLETE" },
+        },
+      });
+      const padelLast30 = await prisma.padelPairing.count({
+        where: {
+          eventId: { in: eventIds },
+          createdAt: { gte: last30 },
+          pairingStatus: { not: "CANCELLED" },
+          lifecycleStatus: { not: "CANCELLED_INCOMPLETE" },
+        },
+      });
+      totals.tickets = padelPairingMap.size
+        ? Array.from(padelPairingMap.values()).reduce((sum, count) => sum + count, 0)
+        : 0;
+      agg7.tickets = padelLast7;
+      agg30.tickets = padelLast30;
+    }
+
     const eventsWithSales = Array.from(eventStats.keys()).length;
     const recipientConnectAccountId =
       organization.orgType === "PLATFORM" ? null : organization.stripeAccountId ?? null;
@@ -226,12 +267,13 @@ export async function GET(req: NextRequest) {
             feesCents: 0,
             tickets: 0,
           };
+          const ticketsSold = isPadelScope ? padelPairingMap.get(ev.id) ?? 0 : stats.tickets;
           return {
             ...ev,
             grossCents: stats.grossCents,
             netCents: stats.netCents,
             feesCents: stats.feesCents,
-            ticketsSold: stats.tickets,
+            ticketsSold,
           };
         }),
       },

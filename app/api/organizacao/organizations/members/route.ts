@@ -8,6 +8,12 @@ import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
 import { parseOrganizationId, resolveOrganizationIdFromParams, resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 
+const resolveIp = (req: NextRequest) => {
+  const forwarded = req.headers.get("x-forwarded-for");
+  if (forwarded) return forwarded.split(",")[0]?.trim() ?? null;
+  return null;
+};
+
 export async function GET(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
@@ -205,8 +211,20 @@ export async function PATCH(req: NextRequest) {
         action: "OWNER_DEMOTED",
         fromUserId: targetUserId,
         metadata: { newRole: role },
+        ip: resolveIp(req),
+        userAgent: req.headers.get("user-agent"),
       });
     }
+
+    await recordOrganizationAuditSafe({
+      organizationId,
+      actorUserId: user.id,
+      action: "MEMBER_ROLE_UPDATED",
+      toUserId: targetUserId,
+      metadata: { fromRole: targetMembership.role, toRole: role },
+      ip: resolveIp(req),
+      userAgent: req.headers.get("user-agent"),
+    });
 
     return NextResponse.json({ ok: true }, { status: 200 });
   } catch (err) {
@@ -294,8 +312,20 @@ export async function DELETE(req: NextRequest) {
         action: "OWNER_REMOVED",
         fromUserId: targetUserId,
         metadata: { via: "members.delete" },
+        ip: resolveIp(req),
+        userAgent: req.headers.get("user-agent"),
       });
     }
+
+    await recordOrganizationAuditSafe({
+      organizationId,
+      actorUserId: user.id,
+      action: "MEMBER_REMOVED",
+      toUserId: targetUserId,
+      metadata: { role: targetMembership.role },
+      ip: resolveIp(req),
+      userAgent: req.headers.get("user-agent"),
+    });
 
     return NextResponse.json({ ok: true }, { status: 200 });
   } catch (err) {

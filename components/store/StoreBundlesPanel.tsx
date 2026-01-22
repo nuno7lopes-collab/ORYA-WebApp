@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { ConfirmDestructiveActionDialog } from "@/app/components/ConfirmDestructiveActionDialog";
 import StorePanelModal from "@/components/store/StorePanelModal";
+import { computeBundleTotals } from "@/lib/store/bundles";
 
 type BundleItem = {
   id: number;
@@ -14,6 +15,12 @@ type BundleItem = {
   percentOff: number | null;
   status: string;
   isVisible: boolean;
+};
+
+type BundlePricingItem = {
+  quantity: number;
+  product: { priceCents: number; currency: string };
+  variant?: { priceCents: number | null } | null;
 };
 
 type StoreBundlesPanelProps = {
@@ -62,6 +69,10 @@ function formatCurrencyInput(cents: number | null | undefined) {
   return (cents / 100).toFixed(2);
 }
 
+function formatMoney(cents: number, currency: string) {
+  return new Intl.NumberFormat("pt-PT", { style: "currency", currency }).format(cents / 100);
+}
+
 export default function StoreBundlesPanel({
   endpointBase,
   storeLocked,
@@ -78,6 +89,8 @@ export default function StoreBundlesPanel({
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState<BundleFormState>(createEmptyForm());
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
+  const [bundleItems, setBundleItems] = useState<BundlePricingItem[]>([]);
+  const [bundleItemsLoading, setBundleItemsLoading] = useState(false);
 
   const canEdit = storeEnabled && !storeLocked;
   const nameValid = form.name.trim().length > 0;
@@ -85,7 +98,36 @@ export default function StoreBundlesPanel({
     form.pricingMode === "FIXED"
       ? parseCurrencyInput(form.price) !== null
       : Number.isFinite(form.percentOff.trim() ? Number(form.percentOff) : NaN);
-  const canSubmit = nameValid && priceValid;
+  const pricingInputCents = form.pricingMode === "FIXED" ? parseCurrencyInput(form.price) : null;
+  const rawPercent = form.percentOff.trim() ? Number(form.percentOff) : null;
+  const pricingPercent =
+    form.pricingMode === "PERCENT_DISCOUNT" && rawPercent !== null && Number.isFinite(rawPercent)
+      ? rawPercent
+      : null;
+  const bundleBaseCents = useMemo(
+    () =>
+      bundleItems.reduce((sum, item) => {
+        const unit = item.variant?.priceCents ?? item.product.priceCents;
+        return sum + unit * item.quantity;
+      }, 0),
+    [bundleItems],
+  );
+  const bundleCurrency = bundleItems[0]?.product.currency ?? "EUR";
+  const bundleTotals = useMemo(() => {
+    if (!bundleItems.length) return null;
+    return computeBundleTotals({
+      pricingMode: form.pricingMode as "FIXED" | "PERCENT_DISCOUNT",
+      priceCents: pricingInputCents,
+      percentOff: pricingPercent,
+      baseCents: bundleBaseCents,
+    });
+  }, [bundleItems, bundleBaseCents, form.pricingMode, pricingInputCents, pricingPercent]);
+  const bundleHasMinimumItems = bundleItems.length >= 2;
+  const bundlePriceValid =
+    bundleItems.length === 0 ? true : bundleTotals !== null && bundleTotals.totalCents < bundleBaseCents;
+  const publishIntent = form.status === "ACTIVE" || form.isVisible;
+  const publishValid = !publishIntent || (bundleHasMinimumItems && bundlePriceValid);
+  const canSubmit = nameValid && priceValid && bundlePriceValid && publishValid;
 
   const renderBadge = (label: string, tone: "required" | "optional") => (
     <span
@@ -160,7 +202,33 @@ export default function StoreBundlesPanel({
     setModalOpen(false);
     setModalError(null);
     setEditingId(null);
+    setBundleItems([]);
   };
+
+  const loadBundleItems = async (bundleId: number) => {
+    setBundleItemsLoading(true);
+    try {
+      const res = await fetch(`${endpointBase}/${bundleId}/items`, { cache: "no-store" });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.error || "Erro ao carregar items do bundle.");
+      }
+      const items = Array.isArray(json.items) ? (json.items as BundlePricingItem[]) : [];
+      setBundleItems(items);
+    } catch (err) {
+      setBundleItems([]);
+    } finally {
+      setBundleItemsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!modalOpen || editingId === null) {
+      setBundleItems([]);
+      return;
+    }
+    void loadBundleItems(editingId);
+  }, [modalOpen, editingId, endpointBase]);
 
   const buildPayload = () => {
     const name = form.name.trim();
@@ -305,6 +373,55 @@ export default function StoreBundlesPanel({
       }
     >
       <div className="grid gap-4">
+        <div className="rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white/70 space-y-2">
+          <p className="text-[11px] uppercase tracking-[0.22em] text-white/50">Preview do bundle</p>
+          {bundleItemsLoading ? (
+            <p className="text-xs text-white/60">A carregar items do bundle...</p>
+          ) : bundleItems.length === 0 ? (
+            <p className="text-xs text-white/60">
+              {modalMode === "create"
+                ? "Cria o bundle e adiciona pelo menos 2 produtos."
+                : "Sem items por agora. Adiciona pelo menos 2 produtos para ativar o bundle."}
+            </p>
+          ) : (
+            <div className="grid gap-2 text-xs text-white/70">
+              <div className="flex items-center justify-between">
+                <span>Total dos itens individuais</span>
+                <span className="text-white">{formatMoney(bundleBaseCents, bundleCurrency)}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span>Preco do bundle</span>
+                <span className="text-white">
+                  {bundleTotals ? formatMoney(bundleTotals.totalCents, bundleCurrency) : "-"}
+                </span>
+              </div>
+              {bundleTotals ? (
+                <div className="flex items-center justify-between">
+                  <span>Poupanca</span>
+                  <span className="text-emerald-200">
+                    {bundleTotals.discountCents > 0
+                      ? formatMoney(bundleTotals.discountCents, bundleCurrency)
+                      : formatMoney(0, bundleCurrency)}
+                  </span>
+                </div>
+              ) : null}
+              {bundleItems.length > 0 && !bundleHasMinimumItems ? (
+                <p className="text-xs text-amber-200">Adiciona pelo menos 2 produtos ao bundle.</p>
+              ) : null}
+              {bundleItems.length > 0 && bundleTotals && !bundlePriceValid ? (
+                <p className="text-xs text-rose-200">
+                  O preco do bundle tem de ser inferior ao total dos itens.
+                </p>
+              ) : null}
+              {publishIntent && !publishValid ? (
+                <p className="text-xs text-rose-200">
+                  Corrige os items ou preco antes de ativar/mostrar o bundle.
+                </p>
+              ) : null}
+            </div>
+          )}
+        </div>
+
         <div className="grid gap-4 md:grid-cols-2">
           <label className="flex flex-col gap-1 text-xs text-white/70">
             Nome {renderBadge("Obrigatorio", "required")}

@@ -28,13 +28,13 @@ export default function FollowClient({ targetUserId, initialIsFollowing, onChang
         const res = await fetch(`/api/social/follow-status?userId=${targetUserId}`);
         const json = await res.json();
         if (mounted && res.ok && json?.ok) {
-          const nextPrivate = json.targetVisibility && json.targetVisibility !== "PUBLIC";
+          const nextPrivate = json.targetVisibility === "PRIVATE";
           setIsPrivate(Boolean(nextPrivate));
           setIsFollower(Boolean(json.isFollower));
           onMutualChange?.(Boolean(json.isMutual));
           if (json.isFollowing) {
             setStatus("following");
-          } else if (json.requestPending) {
+          } else if (json.requestPending && nextPrivate) {
             setStatus("requested");
           } else {
             setStatus("none");

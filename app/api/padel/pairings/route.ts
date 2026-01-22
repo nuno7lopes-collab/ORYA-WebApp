@@ -31,7 +31,7 @@ import { upsertPadelWaitlistEntry } from "@/domain/padelWaitlist";
 import { checkPadelEventCapacity } from "@/domain/padelEventCapacity";
 import { parseOrganizationId } from "@/lib/organizationId";
 import { getPadelOnboardingMissing, isPadelOnboardingComplete } from "@/domain/padelOnboarding";
-import { validatePadelCategoryGender } from "@/domain/padelCategoryGender";
+import { validatePadelCategoryAccess } from "@/domain/padelCategoryAccess";
 import { resolveUserIdentifier } from "@/lib/userResolver";
 import { queuePairingInvite } from "@/domain/notifications/splitPayments";
 
@@ -130,7 +130,6 @@ export async function POST(req: NextRequest) {
   const paymentMode = typeof body?.paymentMode === "string" ? (body?.paymentMode as PadelPaymentMode) : null;
   const pairingJoinModeRaw = typeof body?.pairingJoinMode === "string" ? (body?.pairingJoinMode as PadelPairingJoinMode) : "INVITE_PARTNER";
   const createdByTicketId = typeof body?.createdByTicketId === "string" ? body?.createdByTicketId : null;
-  const inviteToken = typeof body?.inviteToken === "string" ? body?.inviteToken : null;
   const inviteExpiresAt = body?.inviteExpiresAt ? new Date(String(body.inviteExpiresAt)) : null;
   const lockedUntil = body?.lockedUntil ? new Date(String(body.lockedUntil)) : null;
   const isPublicOpen = Boolean(body?.isPublicOpen);
@@ -277,19 +276,22 @@ export async function POST(req: NextRequest) {
     where: { id: effectiveCategoryId },
     select: { genderRestriction: true, minLevel: true, maxLevel: true },
   });
-  const categoryGender = validatePadelCategoryGender(
-    category?.genderRestriction ?? null,
-    profile?.gender as Gender | null,
-    null,
-  );
-  if (!categoryGender.ok) {
-    if (categoryGender.code === "GENDER_REQUIRED_FOR_CATEGORY") {
+  const categoryAccess = validatePadelCategoryAccess({
+    genderRestriction: category?.genderRestriction ?? null,
+    minLevel: category?.minLevel ?? null,
+    maxLevel: category?.maxLevel ?? null,
+    playerGender: profile?.gender as Gender | null,
+    partnerGender: null,
+    playerLevel: profile?.padelLevel ?? null,
+  });
+  if (!categoryAccess.ok) {
+    if (categoryAccess.code === "GENDER_REQUIRED_FOR_CATEGORY" || categoryAccess.code === "LEVEL_REQUIRED_FOR_CATEGORY") {
       return NextResponse.json(
-        { ok: false, error: "PADEL_ONBOARDING_REQUIRED", missing: { gender: true } },
+        { ok: false, error: "PADEL_ONBOARDING_REQUIRED", missing: categoryAccess.missing },
         { status: 409 },
       );
     }
-    return NextResponse.json({ ok: false, error: categoryGender.code }, { status: 409 });
+    return NextResponse.json({ ok: false, error: categoryAccess.code }, { status: 409 });
   }
 
   // Invariante: 1 pairing ativo por evento+categoria+user
@@ -489,12 +491,15 @@ export async function POST(req: NextRequest) {
         profile?.gender as Gender | null,
       );
       if (!eligibility.ok) continue;
-      const categoryGenderCheck = validatePadelCategoryGender(
-        pairing.category?.genderRestriction ?? null,
-        pairing.player1?.gender as Gender | null,
-        profile?.gender as Gender | null,
-      );
-      if (!categoryGenderCheck.ok) continue;
+      const categoryAccess = validatePadelCategoryAccess({
+        genderRestriction: pairing.category?.genderRestriction ?? null,
+        minLevel: pairing.category?.minLevel ?? null,
+        maxLevel: pairing.category?.maxLevel ?? null,
+        playerGender: profile?.gender as Gender | null,
+        partnerGender: pairing.player1?.gender as Gender | null,
+        playerLevel: profile?.padelLevel ?? null,
+      });
+      if (!categoryAccess.ok) continue;
       matched = pairing;
       partnerSlotId = partnerSlot.id;
       break;
@@ -668,13 +673,14 @@ export async function POST(req: NextRequest) {
     if (paymentMode === "SPLIT" && deadlineAt.getTime() <= now.getTime()) {
       return NextResponse.json({ ok: false, error: "SPLIT_DEADLINE_PASSED" }, { status: 409 });
     }
-    const partnerLinkExpiresAtNormalized =
+    const inviteExpiresMinutes =
       inviteExpiresAt && !Number.isNaN(inviteExpiresAt.getTime())
-        ? inviteExpiresAt
-        : computePartnerLinkExpiresAt(now, undefined);
+        ? Math.round((inviteExpiresAt.getTime() - now.getTime()) / 60000)
+        : null;
+    const partnerLinkExpiresAtNormalized = computePartnerLinkExpiresAt(now, inviteExpiresMinutes);
     const partnerInviteToken =
       pairingJoinModeRaw === "INVITE_PARTNER"
-        ? inviteToken || randomUUID()
+        ? randomUUID()
         : null;
 
     const initialLifecycleStatus = captainPaid

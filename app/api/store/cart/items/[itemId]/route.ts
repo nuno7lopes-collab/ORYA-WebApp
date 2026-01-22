@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { isStoreFeatureEnabled, isStorePublic } from "@/lib/storeAccess";
 import { StoreStockPolicy } from "@prisma/client";
+import { validateStorePersonalization } from "@/lib/store/personalization";
 import { z } from "zod";
 
 const CART_SESSION_COOKIE = "orya_store_cart";
@@ -13,12 +14,6 @@ const updateItemSchema = z
     personalization: z.any().optional(),
   })
   .refine((data) => Object.keys(data).length > 0, { message: "Sem dados." });
-
-type PersonalizationSelection = {
-  optionId: number;
-  valueId?: number | null;
-  value?: string | number | boolean | null;
-};
 
 function parseStoreId(req: NextRequest) {
   const raw = req.nextUrl.searchParams.get("storeId");
@@ -40,7 +35,7 @@ function parseItemId(value: string) {
 async function resolveStore(storeId: number) {
   const store = await prisma.store.findFirst({
     where: { id: storeId },
-    select: { id: true, status: true, catalogLocked: true },
+    select: { id: true, status: true, showOnProfile: true, catalogLocked: true },
   });
   if (!store) {
     return { ok: false as const, error: "Store nao encontrada." };
@@ -74,74 +69,12 @@ async function resolveCart(storeId: number, userId: string | null, sessionId: st
   return { ok: false as const, error: "Carrinho nao encontrado." };
 }
 
-async function computePersonalizationDelta(params: {
-  productId: number;
-  personalization: unknown;
-}) {
-  const selections = Array.isArray((params.personalization as { selections?: unknown })?.selections)
-    ? ((params.personalization as { selections?: unknown }).selections as PersonalizationSelection[])
-    : [];
-
-  if (selections.length === 0) {
-    return { ok: true as const, deltaCents: 0 };
-  }
-
-  const optionIds = selections.map((selection) => selection.optionId).filter(Boolean);
-  const options = await prisma.storeProductOption.findMany({
-    where: { productId: params.productId, id: { in: optionIds } },
-    select: { id: true, optionType: true, priceDeltaCents: true },
-  });
-  const optionMap = new Map(options.map((option) => [option.id, option]));
-
-  for (const selection of selections) {
-    if (!optionMap.has(selection.optionId)) {
-      return { ok: false as const, error: "Opcao invalida." };
-    }
-  }
-
-  const valueIds = selections
-    .map((selection) => selection.valueId)
-    .filter((valueId): valueId is number => Boolean(valueId));
-  const values = valueIds.length
-    ? await prisma.storeProductOptionValue.findMany({
-        where: { id: { in: valueIds } },
-        select: { id: true, optionId: true, priceDeltaCents: true },
-      })
-    : [];
-  const valueMap = new Map(values.map((value) => [value.id, value]));
-
-  let deltaCents = 0;
-  for (const selection of selections) {
-    const option = optionMap.get(selection.optionId);
-    if (!option) continue;
-    if (option.optionType === "SELECT") {
-      if (!selection.valueId) {
-        return { ok: false as const, error: "Valor invalido." };
-      }
-      const value = valueMap.get(selection.valueId);
-      if (!value || value.optionId !== option.id) {
-        return { ok: false as const, error: "Valor invalido." };
-      }
-      deltaCents += value.priceDeltaCents;
-    } else if (option.optionType === "CHECKBOX") {
-      if (selection.value === true) {
-        deltaCents += option.priceDeltaCents;
-      }
-    } else {
-      if (selection.value !== undefined && selection.value !== null && String(selection.value).trim() !== "") {
-        deltaCents += option.priceDeltaCents;
-      }
-    }
-  }
-
-  return { ok: true as const, deltaCents };
-}
-
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { itemId: string } },
+  { params }: { params: Promise<{ itemId: string }> },
 ) {
   try {
+    const resolvedParams = await params;
     if (!isStoreFeatureEnabled()) {
       return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
     }
@@ -156,7 +89,7 @@ export async function PATCH(
       return NextResponse.json({ ok: false, error: store.error }, { status: 403 });
     }
 
-    const itemId = parseItemId(params.itemId);
+    const itemId = parseItemId(resolvedParams.itemId);
     if (!itemId.ok) {
       return NextResponse.json({ ok: false, error: itemId.error }, { status: 400 });
     }
@@ -182,6 +115,9 @@ export async function PATCH(
     const existing = cart.cart.items.find((item) => item.id === itemId.id);
     if (!existing) {
       return NextResponse.json({ ok: false, error: "Item nao encontrado." }, { status: 404 });
+    }
+    if (existing.bundleKey) {
+      return NextResponse.json({ ok: false, error: "Item pertence a um bundle." }, { status: 409 });
     }
 
     const payload = parsed.data;
@@ -211,14 +147,24 @@ export async function PATCH(
 
     if (product.stockPolicy === StoreStockPolicy.TRACKED) {
       const available = existing.variantId ? variantStockQty ?? 0 : product.stockQty ?? 0;
-      if (nextQuantity > available) {
+      const otherQty = cart.cart.items
+        .filter(
+          (item) =>
+            item.id !== existing.id &&
+            item.productId === existing.productId &&
+            item.variantId === (existing.variantId ?? null),
+        )
+        .reduce((sum, item) => sum + item.quantity, 0);
+      const nextTotal = otherQty + nextQuantity;
+      if (nextTotal > available) {
         return NextResponse.json({ ok: false, error: "Stock insuficiente." }, { status: 409 });
       }
     }
 
     let unitPriceCents = existing.unitPriceCents;
+    let nextPersonalization = existing.personalization;
     if (payload.personalization !== undefined) {
-      const personalizationDelta = await computePersonalizationDelta({
+      const personalizationDelta = await validateStorePersonalization({
         productId: product.id,
         personalization: payload.personalization,
       });
@@ -227,13 +173,14 @@ export async function PATCH(
       }
       const basePrice = variantPriceCents ?? product.priceCents;
       unitPriceCents = basePrice + personalizationDelta.deltaCents;
+      nextPersonalization = personalizationDelta.normalized;
     }
 
     const updated = await prisma.storeCartItem.update({
       where: { id: existing.id },
       data: {
         quantity: payload.quantity ?? existing.quantity,
-        personalization: payload.personalization !== undefined ? payload.personalization : existing.personalization,
+        personalization: payload.personalization !== undefined ? nextPersonalization : existing.personalization,
         unitPriceCents,
       },
       select: {
@@ -256,9 +203,10 @@ export async function PATCH(
 
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: { itemId: string } },
+  { params }: { params: Promise<{ itemId: string }> },
 ) {
   try {
+    const resolvedParams = await params;
     if (!isStoreFeatureEnabled()) {
       return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
     }
@@ -273,7 +221,7 @@ export async function DELETE(
       return NextResponse.json({ ok: false, error: store.error }, { status: 403 });
     }
 
-    const itemId = parseItemId(params.itemId);
+    const itemId = parseItemId(resolvedParams.itemId);
     if (!itemId.ok) {
       return NextResponse.json({ ok: false, error: itemId.error }, { status: 400 });
     }
@@ -293,6 +241,9 @@ export async function DELETE(
     const existing = cart.cart.items.find((item) => item.id === itemId.id);
     if (!existing) {
       return NextResponse.json({ ok: false, error: "Item nao encontrado." }, { status: 404 });
+    }
+    if (existing.bundleKey) {
+      return NextResponse.json({ ok: false, error: "Item pertence a um bundle." }, { status: 409 });
     }
 
     await prisma.storeCartItem.delete({ where: { id: existing.id } });

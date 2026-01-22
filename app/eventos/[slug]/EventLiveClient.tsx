@@ -10,6 +10,7 @@ import { getTicketCopy } from "@/app/components/checkout/checkoutCopy";
 import { useUser } from "@/app/hooks/useUser";
 import { Avatar } from "@/components/ui/avatar";
 import ChatThread from "@/components/chat/ChatThread";
+import { formatEventLocationLabel } from "@/lib/location/eventLocation";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 const LOCALE = "pt-PT";
@@ -35,6 +36,11 @@ type EventPayload = {
   status: string;
   locationName: string;
   locationCity: string | null;
+  address: string | null;
+  locationSource: "OSM" | "MANUAL" | null;
+  locationFormattedAddress: string | null;
+  locationComponents: Record<string, unknown> | null;
+  locationOverrides: Record<string, unknown> | null;
   coverImageUrl: string | null;
   liveStreamUrl: string | null;
   timezone?: string | null;
@@ -126,7 +132,18 @@ function formatCalendarDate(value: Date) {
 function buildCalendarLinks(event: EventPayload, timeZone: string) {
   const startsAt = new Date(event.startsAt);
   const endsAt = event.endsAt ? new Date(event.endsAt) : startsAt;
-  const location = [event.locationName, event.locationCity].filter(Boolean).join(" · ");
+  const location = formatEventLocationLabel(
+    {
+      locationName: event.locationName,
+      locationCity: event.locationCity,
+      address: event.address,
+      locationSource: event.locationSource,
+      locationFormattedAddress: event.locationFormattedAddress,
+      locationComponents: event.locationComponents,
+      locationOverrides: event.locationOverrides,
+    },
+    "Local a anunciar",
+  );
   const description = event.description?.trim() || `Evento ${event.title}`;
   const dtStart = formatCalendarDate(startsAt);
   const dtEnd = formatCalendarDate(endsAt);
@@ -186,6 +203,21 @@ function formatScore(score?: MatchPayload["score"]) {
   if (score?.goals) return `${score.goals.a}-${score.goals.b}`;
   if (score?.sets?.length) return score.sets.map((s) => `${s.a}-${s.b}`).join(" · ");
   return "—";
+}
+
+function formatPadelSetsText(score?: MatchPayload["score"]) {
+  if (!score?.sets?.length) return "";
+  return score.sets.map((s) => `${s.a}-${s.b}`).join(", ");
+}
+
+function parsePadelSetsText(value: string) {
+  return value
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((set) => set.split("-").map((entry) => Number(entry.trim())))
+    .filter((pair) => pair.length === 2 && Number.isFinite(pair[0]) && Number.isFinite(pair[1]))
+    .map(([teamA, teamB]) => ({ teamA, teamB }));
 }
 
 function getScoreSummary(score?: MatchPayload["score"]) {
@@ -885,6 +917,292 @@ function OrganizationMatchEditor({
   );
 }
 
+function PadelMatchEditor({
+  match,
+  eventId,
+  onUpdated,
+  locked = false,
+  lockedReason,
+  canResolveDispute = false,
+}: {
+  match: MatchPayload;
+  eventId: number;
+  onUpdated: () => void;
+  locked?: boolean;
+  lockedReason?: string | null;
+  canResolveDispute?: boolean;
+}) {
+  const [scoreText, setScoreText] = useState(() => formatPadelSetsText(match.score));
+  const [saving, setSaving] = useState(false);
+  const [undoing, setUndoing] = useState(false);
+  const [disputePending, setDisputePending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
+
+  useEffect(() => {
+    setScoreText(formatPadelSetsText(match.score));
+  }, [match.id, match.updatedAt, match.score?.sets]);
+
+  const ensureUnlocked = () => {
+    if (!locked) return true;
+    setError(lockedReason || "Este jogo está bloqueado.");
+    return false;
+  };
+
+  const saveScore = async (status: "IN_PROGRESS" | "DONE") => {
+    if (!ensureUnlocked()) return;
+    const trimmed = scoreText.trim();
+    const sets = parsePadelSetsText(trimmed);
+    if (trimmed && sets.length === 0) {
+      setError("Resultado inválido. Usa formato 6-4, 6-3.");
+      return;
+    }
+    if (status === "DONE" && sets.length === 0) {
+      setError("Indica o resultado final (ex: 6-3, 6-4).");
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    setInfo(null);
+    const score = sets.length ? { resultType: "NORMAL", sets } : undefined;
+    try {
+      const res = await fetch("/api/padel/matches", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: match.id,
+          status,
+          ...(score ? { score } : {}),
+        }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) {
+        const message =
+          json?.error === "MATCH_DISPUTED"
+            ? "Jogo em disputa. Apenas ADMIN pode editar."
+            : json?.error === "INVALID_SCORE"
+              ? "Resultado inválido. Confirma os sets."
+              : "Erro ao guardar resultado.";
+        setError(message);
+        return;
+      }
+      setInfo(status === "DONE" ? "Resultado guardado." : "Parcial atualizado.");
+      onUpdated();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const overrideWinner = async (side: "A" | "B") => {
+    if (!ensureUnlocked()) return;
+    const pairingId = side === "A" ? match.pairing1Id : match.pairing2Id;
+    if (!pairingId) {
+      setError("Sem dupla atribuída.");
+      return;
+    }
+    const confirmed = window.confirm("Confirmar override manual? Isto vai marcar o jogo como terminado.");
+    if (!confirmed) return;
+    setSaving(true);
+    setError(null);
+    setInfo(null);
+    try {
+      const res = await fetch("/api/padel/matches", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: match.id,
+          status: "DONE",
+          score: { resultType: "WALKOVER", winnerSide: side, walkover: true },
+        }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) {
+        setError(json?.error || "Falha ao aplicar override.");
+        return;
+      }
+      setInfo("Override aplicado.");
+      onUpdated();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const markDisputed = async () => {
+    if (!ensureUnlocked()) return;
+    if (saving || disputePending) return;
+    if (match.status !== "DONE") {
+      setError("Só podes disputar jogos terminados.");
+      return;
+    }
+    const reason = window.prompt("Motivo da disputa?")?.trim() ?? "";
+    if (reason.length < 5) {
+      setError("Indica um motivo com pelo menos 5 caracteres.");
+      return;
+    }
+    setDisputePending(true);
+    setError(null);
+    setInfo(null);
+    try {
+      const res = await fetch(`/api/padel/matches/${match.id}/dispute`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) {
+        setError(json?.error || "Falha ao marcar disputa.");
+        return;
+      }
+      setInfo("Jogo marcado como disputado.");
+      onUpdated();
+    } finally {
+      setDisputePending(false);
+    }
+  };
+
+  const resolveDispute = async () => {
+    if (saving || disputePending) return;
+    if (!canResolveDispute) {
+      setError("Apenas ADMIN pode resolver a disputa.");
+      return;
+    }
+    const confirmed = window.confirm("Resolver disputa?");
+    if (!confirmed) return;
+    const resolutionNote = window.prompt("Nota de resolução (opcional)")?.trim() ?? "";
+    setDisputePending(true);
+    setError(null);
+    setInfo(null);
+    try {
+      const res = await fetch(`/api/padel/matches/${match.id}/dispute`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(resolutionNote ? { resolutionNote } : {}),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) {
+        setError(json?.error || "Falha ao resolver disputa.");
+        return;
+      }
+      setInfo("Disputa resolvida.");
+      onUpdated();
+    } finally {
+      setDisputePending(false);
+    }
+  };
+
+  const undoLast = async () => {
+    if (undoing || saving) return;
+    setUndoing(true);
+    setError(null);
+    setInfo(null);
+    try {
+      const res = await fetch(`/api/padel/matches/${match.id}/undo`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ eventId }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) {
+        setError(json?.error || "Undo indisponível.");
+        return;
+      }
+      setInfo("Última ação desfeita.");
+      onUpdated();
+    } finally {
+      setUndoing(false);
+    }
+  };
+
+  return (
+    <div className="rounded-xl border border-white/10 bg-black/30 px-3 py-2">
+      <div className="flex items-center justify-between">
+        <span className="text-white text-sm">Sets</span>
+      </div>
+      <div className="mt-2 space-y-2 text-xs text-white/70">
+        <input
+          value={scoreText}
+          onChange={(e) => setScoreText(e.target.value)}
+          placeholder="6-4, 6-3"
+          className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
+          disabled={locked}
+        />
+        <p className="text-[11px] text-white/50">Formato: 6-4, 6-3</p>
+      </div>
+      {error && <p className="mt-2 text-[11px] text-rose-300">{error}</p>}
+      {info && <p className="mt-2 text-[11px] text-emerald-200">{info}</p>}
+      <div className="mt-3 flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => saveScore("IN_PROGRESS")}
+          disabled={saving || locked}
+          className="rounded-full border border-white/15 px-3 py-1 text-[11px] text-white/70 hover:border-white/40 disabled:opacity-60"
+        >
+          {saving ? "A guardar…" : "Guardar parcial"}
+        </button>
+        <button
+          type="button"
+          onClick={() => saveScore("DONE")}
+          disabled={saving || locked}
+          className="rounded-full border border-emerald-400/40 px-3 py-1 text-[11px] text-emerald-100 hover:border-emerald-200/70 disabled:opacity-60"
+        >
+          {saving ? "A guardar…" : "Finalizar"}
+        </button>
+        <button
+          type="button"
+          onClick={undoLast}
+          disabled={undoing || saving}
+          className="rounded-full border border-white/15 px-3 py-1 text-[11px] text-white/70 hover:border-white/40 disabled:opacity-60"
+        >
+          {undoing ? "A desfazer…" : "Undo (60s)"}
+        </button>
+        {match.status === "DISPUTED" ? (
+          <button
+            type="button"
+            onClick={resolveDispute}
+            disabled={disputePending || saving || !canResolveDispute}
+            className="rounded-full border border-amber-400/40 px-3 py-1 text-[11px] text-amber-100 hover:border-amber-200/70 disabled:opacity-60"
+          >
+            {disputePending ? "A resolver…" : canResolveDispute ? "Resolver disputa" : "Resolver disputa (ADMIN)"}
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={markDisputed}
+            disabled={disputePending || saving || locked || match.status !== "DONE"}
+            className="rounded-full border border-rose-400/40 px-3 py-1 text-[11px] text-rose-100 hover:border-rose-200/70 disabled:opacity-60"
+          >
+            {disputePending ? "A marcar…" : "Marcar disputa"}
+          </button>
+        )}
+      </div>
+      <details className="mt-3 rounded-lg border border-amber-400/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-100">
+        <summary className="cursor-pointer uppercase tracking-[0.18em] text-[11px]">Override manual</summary>
+        <div className="mt-2 space-y-2">
+          <p className="text-[11px] text-amber-100/80">Usa só em casos excecionais.</p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={saving || !match.pairing1Id}
+              onClick={() => overrideWinner("A")}
+              className="rounded-full border border-amber-400/40 px-3 py-1 text-[11px] text-amber-100 hover:border-amber-200/70 disabled:opacity-60"
+            >
+              Forçar {match.pairing1Id ? `Dupla #${match.pairing1Id}` : "Dupla A"}
+            </button>
+            <button
+              type="button"
+              disabled={saving || !match.pairing2Id}
+              onClick={() => overrideWinner("B")}
+              className="rounded-full border border-amber-400/40 px-3 py-1 text-[11px] text-amber-100 hover:border-amber-200/70 disabled:opacity-60"
+            >
+              Forçar {match.pairing2Id ? `Dupla #${match.pairing2Id}` : "Dupla B"}
+            </button>
+          </div>
+        </div>
+      </details>
+    </div>
+  );
+}
+
 function LiveHubTv({
   event,
   tournament,
@@ -1017,20 +1335,24 @@ function BracketRoundsView({
   pairings,
   isOrganizationEdit,
   tournamentId,
+  eventId,
   onUpdated,
   goalLimits,
   highlightPairingId,
   canResolveDispute,
+  scoreMode = "GOALS",
   view = "split",
 }: {
   matches: MatchPayload[];
   pairings: Record<number, PairingMeta>;
   isOrganizationEdit: boolean;
   tournamentId: number | null;
+  eventId?: number | null;
   onUpdated: () => void;
   goalLimits: GoalLimitsConfig;
   highlightPairingId?: number | null;
   canResolveDispute?: boolean;
+  scoreMode?: "GOALS" | "PADEL";
   view?: "split" | "full";
 }) {
   const [activeRound, setActiveRound] = useState<number | null>(null);
@@ -1223,17 +1545,28 @@ function BracketRoundsView({
             style={{ height: options.connectorHeight }}
           />
         )}
-        {isOrganizationEdit && tournamentId && (
+        {isOrganizationEdit && (scoreMode === "PADEL" ? Boolean(eventId) : Boolean(tournamentId)) && (
           <div className="pt-1">
-            <OrganizationMatchEditor
-              match={match}
-              tournamentId={tournamentId}
-              onUpdated={onUpdated}
-              goalLimit={resolveGoalLimit(match.round ?? null, goalLimits)}
-              locked={isLocked}
-              lockedReason={lockedReason}
-              canResolveDispute={canResolveDispute}
-            />
+            {scoreMode === "PADEL" ? (
+              <PadelMatchEditor
+                match={match}
+                eventId={eventId as number}
+                onUpdated={onUpdated}
+                locked={isLocked}
+                lockedReason={lockedReason}
+                canResolveDispute={canResolveDispute}
+              />
+            ) : (
+              <OrganizationMatchEditor
+                match={match}
+                tournamentId={tournamentId as number}
+                onUpdated={onUpdated}
+                goalLimit={resolveGoalLimit(match.round ?? null, goalLimits)}
+                locked={isLocked}
+                lockedReason={lockedReason}
+                canResolveDispute={canResolveDispute}
+              />
+            )}
           </div>
         )}
       </div>
@@ -1501,18 +1834,22 @@ function OneVOneBracket({
   eventStatus,
   isOrganizationEdit,
   tournamentId,
+  eventId,
   onUpdated,
   goalLimits,
   canResolveDispute,
+  scoreMode = "GOALS",
 }: {
   stage: { matches?: MatchPayload[]; name?: string | null } | null;
   pairings: Record<number, PairingMeta>;
   eventStatus: string;
   isOrganizationEdit: boolean;
   tournamentId: number | null;
+  eventId?: number | null;
   onUpdated: () => void;
   goalLimits: GoalLimitsConfig;
   canResolveDispute?: boolean;
+  scoreMode?: "GOALS" | "PADEL";
 }) {
   if (!stage || !stage.matches || stage.matches.length === 0) {
     return (
@@ -1538,9 +1875,11 @@ function OneVOneBracket({
         pairings={pairings}
         isOrganizationEdit={isOrganizationEdit}
         tournamentId={tournamentId}
+        eventId={eventId}
         onUpdated={onUpdated}
         goalLimits={goalLimits}
         canResolveDispute={canResolveDispute}
+        scoreMode={scoreMode}
       />
     </section>
   );
@@ -1612,7 +1951,18 @@ function OneVOneLiveLayout({
     : [];
   const firstRoundMatches = bracketStage?.matches?.filter((m: MatchPayload) => (m.round ?? 0) === 1) ?? [];
   const playerCount = firstRoundMatches.length ? firstRoundMatches.length * 2 : null;
-  const locationLabel = [event.locationCity, event.locationName].filter(Boolean).join(" · ");
+  const locationLabel = formatEventLocationLabel(
+    {
+      locationName: event.locationName,
+      locationCity: event.locationCity,
+      address: event.address,
+      locationSource: event.locationSource,
+      locationFormattedAddress: event.locationFormattedAddress,
+      locationComponents: event.locationComponents,
+      locationOverrides: event.locationOverrides,
+    },
+    "Local a anunciar",
+  );
 
   const nowLabelParts = nowMatch
     ? [pairingLabelPlain(nowMatch.pairing1Id, pairings), pairingLabelPlain(nowMatch.pairing2Id, pairings)].filter(Boolean)
@@ -1665,6 +2015,8 @@ function OneVOneLiveLayout({
   const nowScoreB = nowSummary ? nowSummary.b : 0;
   const overrideActive = Boolean(featuredMatchId && nowMatch?.id === featuredMatchId);
   const [featuredDraft, setFeaturedDraft] = useState<number | null>(featuredMatchId);
+  const isPadelLive = event.templateType === "PADEL";
+  const configFormat = typeof tournament?.format === "string" ? tournament.format : null;
 
   useEffect(() => {
     setStreamUrl(event.liveStreamUrl ?? "");
@@ -1683,15 +2035,31 @@ function OneVOneLiveLayout({
   }, [featuredMatchId]);
 
   const saveFeaturedMatch = async (matchId: number | null) => {
-    if (!tournament?.id) return;
     setSavingConfig(true);
     setConfigMessage(null);
     try {
-      await fetch(`/api/organizacao/tournaments/${tournament.id}/featured-match`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ matchId }),
-      });
+      if (isPadelLive) {
+        if (!organization?.id) {
+          setConfigMessage("Organização indisponível.");
+          return;
+        }
+        await fetch("/api/padel/tournaments/config", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            organizationId: organization.id,
+            eventId: event.id,
+            ...(configFormat ? { format: configFormat } : {}),
+            featuredMatchId: matchId,
+          }),
+        });
+      } else if (tournament?.id) {
+        await fetch(`/api/organizacao/tournaments/${tournament.id}/featured-match`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ matchId }),
+        });
+      }
       setConfigMessage(matchId ? "Override aplicado." : "Override removido.");
       onRefresh();
     } catch {
@@ -1716,7 +2084,31 @@ function OneVOneLiveLayout({
           }),
         });
       }
-      if (tournament?.id) {
+      if (isPadelLive) {
+        if (!organization?.id) {
+          setConfigMessage("Organização indisponível.");
+          return;
+        }
+        await fetch("/api/padel/tournaments/config", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            organizationId: organization.id,
+            eventId: event.id,
+            ...(configFormat ? { format: configFormat } : {}),
+            liveSponsors: {
+              hero: sponsorDraft?.hero ?? null,
+              sideA: sponsorDraft?.sideA ?? null,
+              sideB: sponsorDraft?.sideB ?? null,
+              nowPlaying: sponsorDraft?.nowPlaying ?? null,
+            },
+            goalLimits: {
+              defaultLimit: goalLimitsDraft?.defaultLimit ?? null,
+              roundLimits: goalLimitsDraft?.roundLimits ?? {},
+            },
+          }),
+        });
+      } else if (tournament?.id) {
         await fetch(`/api/organizacao/tournaments/${tournament.id}/sponsors`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1993,14 +2385,23 @@ function OneVOneLiveLayout({
             {activeTab === "stats" && "Stats do torneio em breve."}
             {activeTab === "rules" && (
               <ul className="space-y-1 text-sm text-white/70">
-                <li>Jogo a eliminar direto (1v1).</li>
-                <li>Vence quem atingir o limite.</li>
-                <li>Limite padrão: {goalDefaultLimit}.</li>
-                {goalRoundOverrides && (
-                  <li>Limites por ronda configurados.</li>
+                {isPadelLive ? (
+                  <>
+                    <li>Resultados por sets (ex: 6-4, 6-3).</li>
+                    <li>Desempates conforme regras configuradas.</li>
+                    <li>Fair play obrigatório.</li>
+                    <li>Decisões do staff são finais.</li>
+                  </>
+                ) : (
+                  <>
+                    <li>Jogo a eliminar direto (1v1).</li>
+                    <li>Vence quem atingir o limite.</li>
+                    <li>Limite padrão: {goalDefaultLimit}.</li>
+                    {goalRoundOverrides && <li>Limites por ronda configurados.</li>}
+                    <li>Fair play obrigatório.</li>
+                    <li>Decisões do staff são finais.</li>
+                  </>
                 )}
-                <li>Fair play obrigatório.</li>
-                <li>Decisões do staff são finais.</li>
               </ul>
             )}
           </div>
@@ -2015,9 +2416,11 @@ function OneVOneLiveLayout({
         eventStatus={eventStatus}
         isOrganizationEdit={isOrganizationEdit}
         tournamentId={tournament?.id ?? null}
+        eventId={event.id}
         onUpdated={onRefresh}
         goalLimits={tournament?.goalLimits as GoalLimitsConfig}
         canResolveDispute={canResolveDispute}
+        scoreMode={event.templateType === "PADEL" ? "PADEL" : "GOALS"}
       />
 
       {sideSponsors.length > 0 && (
@@ -2238,38 +2641,40 @@ function OneVOneLiveLayout({
                 })}
               </div>
 
-              <div className="rounded-2xl border border-white/10 bg-black/30 p-4 space-y-3">
-                <div>
-                  <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Regras de golos</p>
-                  <h4 className="text-sm font-semibold text-white">Limite por ronda</h4>
-                </div>
-                <div className="grid gap-2 sm:grid-cols-2">
-                  <label className="space-y-1 text-sm text-white/70">
-                    <span>Limite padrão</span>
-                    <input
-                      type="number"
-                      min={1}
-                      value={goalLimitsDraft?.defaultLimit ?? ""}
-                      onChange={(e) => updateDefaultLimit(e.target.value)}
-                      placeholder="Ex: 3"
-                      className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
-                    />
-                  </label>
-                  {roundNumbers.map((round) => (
-                    <label key={`round-limit-${round}`} className="space-y-1 text-sm text-white/70">
-                      <span>{roundLabelMap[round] || `Ronda ${round}`}</span>
+              {!isPadelLive && (
+                <div className="rounded-2xl border border-white/10 bg-black/30 p-4 space-y-3">
+                  <div>
+                    <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Regras de golos</p>
+                    <h4 className="text-sm font-semibold text-white">Limite por ronda</h4>
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <label className="space-y-1 text-sm text-white/70">
+                      <span>Limite padrão</span>
                       <input
                         type="number"
                         min={1}
-                        value={goalLimitsDraft?.roundLimits?.[String(round)] ?? ""}
-                        onChange={(e) => updateRoundLimit(round, e.target.value)}
-                        placeholder={`${goalDefaultLimit}`}
+                        value={goalLimitsDraft?.defaultLimit ?? ""}
+                        onChange={(e) => updateDefaultLimit(e.target.value)}
+                        placeholder="Ex: 3"
                         className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
                       />
                     </label>
-                  ))}
+                    {roundNumbers.map((round) => (
+                      <label key={`round-limit-${round}`} className="space-y-1 text-sm text-white/70">
+                        <span>{roundLabelMap[round] || `Ronda ${round}`}</span>
+                        <input
+                          type="number"
+                          min={1}
+                          value={goalLimitsDraft?.roundLimits?.[String(round)] ?? ""}
+                          onChange={(e) => updateRoundLimit(round, e.target.value)}
+                          placeholder={`${goalDefaultLimit}`}
+                          className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
+                        />
+                      </label>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
 
               <div className="flex items-center gap-3">
                 <button
@@ -2534,24 +2939,34 @@ export default function EventLiveClient({
       setStartMessage("Sem jogos completos para iniciar.");
       return;
     }
-    if (!firstPlayableMatch.updatedAt) {
+    if (event.templateType !== "PADEL" && !firstPlayableMatch.updatedAt) {
       setStartMessage("Sem versão do jogo.");
       return;
     }
     setStartingMatchId(firstPlayableMatch.id);
     setStartMessage(null);
     try {
-      const res = await fetch(
-        `/api/organizacao/tournaments/${tournamentView.id}/matches/${firstPlayableMatch.id}/result`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            status: "IN_PROGRESS",
-            expectedUpdatedAt: firstPlayableMatch.updatedAt,
-          }),
-        },
-      );
+      const res =
+        event.templateType === "PADEL"
+          ? await fetch("/api/padel/matches", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                id: firstPlayableMatch.id,
+                status: "IN_PROGRESS",
+              }),
+            })
+          : await fetch(
+              `/api/organizacao/tournaments/${tournamentView.id}/matches/${firstPlayableMatch.id}/result`,
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  status: "IN_PROGRESS",
+                  expectedUpdatedAt: firstPlayableMatch.updatedAt,
+                }),
+              },
+            );
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
         setStartMessage(json?.error || "Erro ao começar o jogo.");
@@ -2701,10 +3116,8 @@ export default function EventLiveClient({
                 <p className="text-[11px] uppercase tracking-[0.3em] text-white/60">LiveHub</p>
                 <h1 className="text-2xl font-semibold text-white md:text-3xl">{event.title}</h1>
                 <p className="text-white/70 text-sm">{formatDateRange(event.startsAt, event.endsAt, timeZone)}</p>
-                {event.locationName && (
-                  <p className="text-white/50 text-sm">
-                    {event.locationName}{event.locationCity ? ` · ${event.locationCity}` : ""}
-                  </p>
+                {locationLabel && (
+                  <p className="text-white/50 text-sm">{locationLabel}</p>
                 )}
                 {eventStatus === "Próximo" && countdownLabel && (
                   <p className="text-sm text-white/60">Começa em {countdownLabel}</p>
@@ -2962,10 +3375,12 @@ export default function EventLiveClient({
                         pairings={pairings}
                         isOrganizationEdit={isOrganizationEdit}
                         tournamentId={tournamentView?.id ?? null}
+                        eventId={event.id}
                         onUpdated={onRefresh}
                         goalLimits={goalLimits}
                         highlightPairingId={highlightPairingId}
                         canResolveDispute={canResolveDispute}
+                        scoreMode={event.templateType === "PADEL" ? "PADEL" : "GOALS"}
                         view={showFullBracket ? "full" : "split"}
                       />
                     </div>
@@ -3142,21 +3557,38 @@ export default function EventLiveClient({
               .map((match) => (
                 <div key={`edit-${match.id}`} className="space-y-2">
                   <MatchCard match={match} pairings={pairings} timeZone={timeZone} showCourt={showCourt} />
-                  <OrganizationMatchEditor
-                    match={match}
-                    tournamentId={tournamentView.id}
-                    onUpdated={() => mutate()}
-                    goalLimit={resolveGoalLimit(match.round ?? null, goalLimits)}
-                    locked={roundIsLockedGlobal(match.round ?? 0) || match.status === "DISPUTED"}
-                    lockedReason={
-                      match.status === "DISPUTED"
-                        ? "Jogo em disputa. Resolve antes de editar."
-                        : roundIsLockedGlobal(match.round ?? 0)
-                          ? "Esta fase ainda não está ativa."
-                          : null
-                    }
-                    canResolveDispute={canResolveDispute}
-                  />
+                  {event.templateType === "PADEL" ? (
+                    <PadelMatchEditor
+                      match={match}
+                      eventId={event.id}
+                      onUpdated={() => mutate()}
+                      locked={roundIsLockedGlobal(match.round ?? 0) || match.status === "DISPUTED"}
+                      lockedReason={
+                        match.status === "DISPUTED"
+                          ? "Jogo em disputa. Resolve antes de editar."
+                          : roundIsLockedGlobal(match.round ?? 0)
+                            ? "Esta fase ainda não está ativa."
+                            : null
+                      }
+                      canResolveDispute={canResolveDispute}
+                    />
+                  ) : (
+                    <OrganizationMatchEditor
+                      match={match}
+                      tournamentId={tournamentView.id}
+                      onUpdated={() => mutate()}
+                      goalLimit={resolveGoalLimit(match.round ?? null, goalLimits)}
+                      locked={roundIsLockedGlobal(match.round ?? 0) || match.status === "DISPUTED"}
+                      lockedReason={
+                        match.status === "DISPUTED"
+                          ? "Jogo em disputa. Resolve antes de editar."
+                          : roundIsLockedGlobal(match.round ?? 0)
+                            ? "Esta fase ainda não está ativa."
+                            : null
+                      }
+                      canResolveDispute={canResolveDispute}
+                    />
+                  )}
                 </div>
               ))}
             {flatMatches.filter((m) => m.status !== "DONE").length === 0 && (

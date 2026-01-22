@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { readNumericParam } from "@/lib/routeParams";
-import { PendingPayoutStatus } from "@prisma/client";
+import { PendingPayoutStatus, SaleSummaryStatus } from "@prisma/client";
 
 async function ensureOrganizationAccess(userId: string, eventId: number) {
   const evt = await prisma.event.findUnique({ where: { id: eventId }, select: { organizationId: true } });
@@ -42,7 +42,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
   const sales = await prisma.saleSummary.groupBy({
     by: ["eventId"],
-    where: { eventId: tournament.eventId },
+    where: { eventId: tournament.eventId, status: SaleSummaryStatus.PAID },
     _sum: { totalCents: true, netCents: true, platformFeeCents: true },
     _count: { _all: true },
   });
@@ -52,7 +52,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   };
 
   const recent = await prisma.saleSummary.findMany({
-    where: { eventId: tournament.eventId },
+    where: { eventId: tournament.eventId, status: SaleSummaryStatus.PAID },
     orderBy: { createdAt: "desc" },
     take: 20,
     select: {

@@ -15,7 +15,7 @@ import { checkPadelCategoryLimit } from "@/domain/padelCategoryLimit";
 import { checkPadelCategoryPlayerCapacity } from "@/domain/padelCategoryCapacity";
 import { readNumericParam } from "@/lib/routeParams";
 import { getPadelOnboardingMissing, isPadelOnboardingComplete } from "@/domain/padelOnboarding";
-import { validatePadelCategoryGender } from "@/domain/padelCategoryGender";
+import { validatePadelCategoryAccess } from "@/domain/padelCategoryAccess";
 
 // Apenas valida e delega criação de intent ao endpoint central (/api/payments/intent).
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -143,16 +143,22 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         select: { genderRestriction: true, minLevel: true, maxLevel: true },
       })
     : null;
-  const categoryGender = validatePadelCategoryGender(
-    category?.genderRestriction ?? null,
-    captainProfile?.gender as Gender | null,
-    partnerProfile?.gender as Gender | null,
-  );
-  if (!categoryGender.ok) {
-    return NextResponse.json(
-      { ok: false, error: categoryGender.code },
-      { status: 409 },
-    );
+  const categoryAccess = validatePadelCategoryAccess({
+    genderRestriction: category?.genderRestriction ?? null,
+    minLevel: category?.minLevel ?? null,
+    maxLevel: category?.maxLevel ?? null,
+    playerGender: partnerProfile?.gender as Gender | null,
+    partnerGender: captainProfile?.gender as Gender | null,
+    playerLevel: profile?.padelLevel ?? null,
+  });
+  if (!categoryAccess.ok) {
+    if (categoryAccess.code === "GENDER_REQUIRED_FOR_CATEGORY" || categoryAccess.code === "LEVEL_REQUIRED_FOR_CATEGORY") {
+      return NextResponse.json(
+        { ok: false, error: "PADEL_ONBOARDING_REQUIRED", missing: categoryAccess.missing },
+        { status: 409 },
+      );
+    }
+    return NextResponse.json({ ok: false, error: categoryAccess.code }, { status: 409 });
   }
 
   // Não permitir checkout se utilizador já tiver pairing ativo no torneio

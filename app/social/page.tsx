@@ -72,7 +72,7 @@ type FollowRequestItem = {
 
 type HubTab = "social" | "notifications";
 
-type NotificationFilter = "all" | "sales" | "invites" | "system" | "social";
+type NotificationFilter = "all" | "sales" | "invites" | "marketing" | "system" | "social";
 
 const SOCIAL_TYPES = new Set([
   "FOLLOWED_YOU",
@@ -86,7 +86,8 @@ const NOTIFICATION_FILTERS: Record<NotificationFilter, string[]> = {
   all: [],
   sales: ["EVENT_SALE", "EVENT_PAYOUT_STATUS"],
   invites: ["ORGANIZATION_INVITE", "CLUB_INVITE", "ORGANIZATION_TRANSFER", "PAIRING_INVITE"],
-  system: ["STRIPE_STATUS", "MARKETING_PROMO_ALERT", "SYSTEM_ANNOUNCE"],
+  marketing: ["MARKETING_PROMO_ALERT", "CRM_CAMPAIGN"],
+  system: ["STRIPE_STATUS", "SYSTEM_ANNOUNCE", "CHAT_OPEN", "CHAT_ANNOUNCEMENT", "CHAT_MESSAGE"],
   social: ["FOLLOWED_YOU", "FOLLOW_REQUEST", "FOLLOW_ACCEPT"],
 };
 
@@ -104,7 +105,11 @@ const NOTIFICATION_LABELS: Record<string, string> = {
   CHECKIN_READY: "Check-in",
   TICKET_SHARED: "Bilhete",
   MARKETING_PROMO_ALERT: "Marketing",
+  CRM_CAMPAIGN: "Campanha",
   SYSTEM_ANNOUNCE: "Sistema",
+  CHAT_OPEN: "Chat",
+  CHAT_ANNOUNCEMENT: "Chat",
+  CHAT_MESSAGE: "Mensagem de chat",
   FOLLOWED_YOU: "Segue-te",
   TICKET_TRANSFER_RECEIVED: "Transferencia",
   TICKET_TRANSFER_ACCEPTED: "Transferencia",
@@ -324,6 +329,17 @@ export default function SocialHubPage() {
     mutateNotifications();
   };
 
+  const markClick = (notificationId: string) => {
+    fetch("/api/notifications/mark-click", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ notificationId }),
+      keepalive: true,
+    })
+      .then(() => mutateNotifications())
+      .catch(() => null);
+  };
+
   const deleteNotification = async (notificationId: string) => {
     await fetch("/api/notifications", {
       method: "DELETE",
@@ -414,7 +430,12 @@ export default function SocialHubPage() {
             <SectionCard title="Atividade" subtitle="Atividade recente.">
               {activityItems.length === 0 && <EmptyLabel label="Sem atividade." />}
             {activityItems.map((item) => (
-              <NotificationRow key={item.id} item={item} onDelete={deleteNotification} />
+              <NotificationRow
+                key={item.id}
+                item={item}
+                onDelete={deleteNotification}
+                onCtaClick={markClick}
+              />
             ))}
             </SectionCard>
 
@@ -467,7 +488,12 @@ export default function SocialHubPage() {
                 );
               })}
               {requestItems.map((item) => (
-                <NotificationRow key={item.id} item={item} onDelete={deleteNotification} />
+                <NotificationRow
+                  key={item.id}
+                  item={item}
+                  onDelete={deleteNotification}
+                  onCtaClick={markClick}
+                />
               ))}
             </SectionCard>
           </div>
@@ -674,6 +700,7 @@ export default function SocialHubPage() {
               { key: "all", label: "Todas" },
               { key: "sales", label: "Vendas" },
               { key: "invites", label: "Convites" },
+              { key: "marketing", label: "Marketing" },
               { key: "system", label: "Sistema" },
               { key: "social", label: "Social" },
             ] as const).map((filter) => (
@@ -753,6 +780,7 @@ export default function SocialHubPage() {
                       <Link
                         href={item.ctaUrl}
                         className="mt-2 inline-flex text-[12px] text-[#6BFFFF] hover:underline"
+                        onClick={() => markClick(item.id)}
                       >
                         {item.ctaLabel}
                       </Link>
@@ -801,9 +829,11 @@ function EmptyLabel({ label }: { label: string }) {
 function NotificationRow({
   item,
   onDelete,
+  onCtaClick,
 }: {
   item: NotificationItem;
   onDelete?: (notificationId: string) => void;
+  onCtaClick?: (notificationId: string) => void;
 }) {
   return (
     <div
@@ -831,7 +861,11 @@ function NotificationRow({
       </div>
       {item.body && <p className="mt-1 text-[12px] text-white/70">{item.body}</p>}
       {item.ctaUrl && item.ctaLabel && (
-        <Link href={item.ctaUrl} className="mt-2 inline-flex text-[12px] text-[#6BFFFF] hover:underline">
+        <Link
+          href={item.ctaUrl}
+          className="mt-2 inline-flex text-[12px] text-[#6BFFFF] hover:underline"
+          onClick={() => onCtaClick?.(item.id)}
+        >
           {item.ctaLabel}
         </Link>
       )}

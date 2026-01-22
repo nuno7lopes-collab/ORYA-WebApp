@@ -29,6 +29,10 @@ export async function GET(req: NextRequest) {
       city: string | null;
       lat: number | null;
       lng: number | null;
+      formattedAddress: string | null;
+      source: string | null;
+      components: Record<string, unknown> | null;
+      overrides: Record<string, unknown> | null;
     };
     coverImageUrl: string | null;
     isFree: boolean;
@@ -81,7 +85,10 @@ export async function GET(req: NextRequest) {
         OR: [
           { title: { contains: q, mode: "insensitive" } },
           { description: { contains: q, mode: "insensitive" } },
+          { locationName: { contains: q, mode: "insensitive" } },
           { locationCity: { contains: q, mode: "insensitive" } },
+          { locationFormattedAddress: { contains: q, mode: "insensitive" } },
+          { address: { contains: q, mode: "insensitive" } },
         ],
       });
     }
@@ -145,6 +152,16 @@ export async function GET(req: NextRequest) {
           city: e.locationCity ?? null,
           lat: e.latitude ?? null,
           lng: e.longitude ?? null,
+          formattedAddress: e.locationFormattedAddress ?? null,
+          source: e.locationSource ?? null,
+          components:
+            e.locationComponents && typeof e.locationComponents === "object"
+              ? (e.locationComponents as Record<string, unknown>)
+              : null,
+          overrides:
+            e.locationOverrides && typeof e.locationOverrides === "object"
+              ? (e.locationOverrides as Record<string, unknown>)
+              : null,
         },
         coverImageUrl: e.coverImageUrl ?? null,
         isFree: e.isFree,

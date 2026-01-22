@@ -43,12 +43,21 @@ model Profile {
   notificationsSent                                                Notification[]          @relation("NotificationSender")
   notifications                                                    Notification[]
   notificationPreference                                           NotificationPreference?
+  crmCustomers                                                     CrmCustomer[]
+  crmInteractions                                                  CrmInteraction[]
+  crmCustomerNotesAuthored                                         CrmCustomerNote[]
+  crmSegmentsCreated                                               CrmSegment[]
+  crmCampaignsCreated                                              CrmCampaign[]
+  crmCampaignDeliveries                                            CrmCampaignDelivery[]
+  userConsents                                                     UserConsent[]
+  loyaltyLedgerEntries                                             LoyaltyLedger[]
   organizationInvitesSent                                             OrganizationMemberInvite[] @relation("OrganizationMemberInviteInviter")
   organizationInvitesReceived                                         OrganizationMemberInvite[] @relation("OrganizationMemberInviteTarget")
   eventInvitesSent                                                 EventInvite[]           @relation("EventInviteInviter")
   eventInvitesReceived                                             EventInvite[]           @relation("EventInviteTarget")
   organization_members_organization_members_invited_by_user_idToprofiles OrganizationMember[]       @relation("organization_members_invited_by_user_idToprofiles")
   organizationMembers                                                 OrganizationMember[]
+  organizationMemberPermissions                                       OrganizationMemberPermission[]
   userActivities                                                   UserActivity[]
   bookings                                                         Booking[]
   serviceCreditBalances                                             ServiceCreditBalance[]
@@ -76,6 +85,18 @@ model Profile {
   chatDeletedMessages                                              ChatMessage[]           @relation("ChatMessageDeletedBy")
   chatReadStates                                                   ChatReadState[]
   chatModerationLogs                                               ChatModerationLog[]
+  chatConversationsCreated                                        ChatConversation[]      @relation("ChatConversationCreator")
+  chatConversationMembers                                         ChatConversationMember[] @relation("ChatConversationMemberUser")
+  chatConversationMessages                                        ChatConversationMessage[] @relation("ChatConversationMessageSender")
+  chatMessageReportsAuthored                                      ChatMessageReport[]     @relation("ChatMessageReportReporter")
+  chatMessageReactions                                           ChatMessageReaction[]
+  chatMessagePins                                                ChatMessagePin[]
+  chatUserBlocks                                                  ChatUserBlock[]         @relation("ChatUserBlockBlocker")
+  chatUserBlockedBy                                               ChatUserBlock[]         @relation("ChatUserBlockBlocked")
+  chatUserPresence                                                ChatUserPresence?        @relation("ChatUserPresenceUser")
+  internalChatChannelsCreated                                      InternalChatChannel[]   @relation("InternalChatChannelCreator")
+  internalChatMessagesAuthored                                     InternalChatMessage[]   @relation("InternalChatMessageAuthor")
+  internalChatMessagesDeleted                                      InternalChatMessage[]   @relation("InternalChatMessageDeletedBy")
   store                                                            Store?
   storeCarts                                                       StoreCart[]
   storeOrders                                                      StoreOrder[]
@@ -148,6 +169,7 @@ model Organization {
   notifications           Notification[]                  @relation("NotificationOrganization")
   memberInvites           OrganizationMemberInvite[]
   members                 OrganizationMember[]
+  memberPermissions       OrganizationMemberPermission[]
   organizationModules     OrganizationModuleEntry[]
   organizationForms       OrganizationForm[]
   organizationAuditLogs   OrganizationAuditLog[]
@@ -170,10 +192,23 @@ model Organization {
   services                Service[]
   bookings                Booking[]
   chatThreads             ChatThread[]
+  chatConversations       ChatConversation[]
+  internalChatChannels    InternalChatChannel[]
+  internalChatMessages    InternalChatMessage[]
   weeklyAvailabilityTemplates WeeklyAvailabilityTemplate[]
   availabilityOverrides   AvailabilityOverride[]
   serviceReviews           ServiceReview[]
   transactions            Transaction[]
+  crmCustomers            CrmCustomer[]
+  crmCustomerNotes        CrmCustomerNote[]
+  crmInteractions         CrmInteraction[]
+  crmSegments             CrmSegment[]
+  crmSegmentMemberships   CrmSegmentMembership[]
+  crmCampaigns            CrmCampaign[]
+  crmCampaignDeliveries   CrmCampaignDelivery[]
+  userConsents            UserConsent[]
+  loyaltyProgram          LoyaltyProgram?
+  loyaltyLedger           LoyaltyLedger[]
   membershipPlans         MembershipPlan[]
   membershipSubscriptions MembershipSubscription[]
   store                   Store?
@@ -274,6 +309,7 @@ model StoreProduct {
   digitalAssets        StoreDigitalAsset[]
   cartItems            StoreCartItem[]
   orderLines           StoreOrderLine[]
+  orderBundleItems     StoreOrderBundleItem[]
   inventoryMovements   StoreInventoryMovement[]
 
   @@unique([storeId, slug], map: "store_products_store_slug_unique")
@@ -299,6 +335,7 @@ model StoreProductVariant {
   bundles      StoreBundleItem[]
   cartItems    StoreCartItem[]
   orderLines   StoreOrderLine[]
+  orderBundleItems StoreOrderBundleItem[]
   inventoryMovements StoreInventoryMovement[]
 
   @@unique([productId, label], map: "store_product_variants_product_label_unique")
@@ -409,6 +446,8 @@ model StoreBundle {
   updatedAt   DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   store       Store                @relation(fields: [storeId], references: [id], onDelete: Cascade)
   items       StoreBundleItem[]
+  orderBundles StoreOrderBundle[]
+  cartItems   StoreCartItem[]
 
   @@unique([storeId, slug], map: "store_bundles_store_slug_unique")
   @@index([storeId], map: "store_bundles_store_idx")
@@ -458,6 +497,8 @@ model StoreCartItem {
   cartId         String   @map("cart_id") @db.Uuid
   productId      Int      @map("product_id")
   variantId      Int?     @map("variant_id")
+  bundleId       Int?     @map("bundle_id")
+  bundleKey      String?  @map("bundle_key") @db.Text
   quantity       Int
   unitPriceCents Int      @map("unit_price_cents")
   personalization Json    @default("{}")
@@ -466,10 +507,13 @@ model StoreCartItem {
   cart           StoreCart @relation(fields: [cartId], references: [id], onDelete: Cascade)
   product        StoreProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
   variant        StoreProductVariant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
+  bundle         StoreBundle? @relation(fields: [bundleId], references: [id], onDelete: SetNull)
 
   @@index([cartId], map: "store_cart_items_cart_idx")
   @@index([productId], map: "store_cart_items_product_idx")
   @@index([variantId], map: "store_cart_items_variant_idx")
+  @@index([bundleId], map: "store_cart_items_bundle_idx")
+  @@index([bundleKey], map: "store_cart_items_bundle_key_idx")
   @@map("store_cart_items")
   @@schema("app_v3")
 }
@@ -500,6 +544,7 @@ model StoreOrder {
   shippingZone    StoreShippingZone?   @relation("StoreOrderShippingZone", fields: [shippingZoneId], references: [id], onDelete: SetNull)
   shippingMethod  StoreShippingMethod? @relation("StoreOrderShippingMethod", fields: [shippingMethodId], references: [id], onDelete: SetNull)
   lines           StoreOrderLine[]
+  bundles         StoreOrderBundle[]
   addresses       StoreOrderAddress[]
   shipments       StoreShipment[]
 
@@ -520,6 +565,7 @@ model StoreOrderLine {
   orderId          Int      @map("order_id")
   productId        Int?     @map("product_id")
   variantId        Int?     @map("variant_id")
+  orderBundleId    Int?     @map("order_bundle_id")
   nameSnapshot     String   @map("name_snapshot")
   skuSnapshot      String?  @map("sku_snapshot")
   quantity         Int
@@ -532,12 +578,56 @@ model StoreOrderLine {
   order            StoreOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
   product          StoreProduct? @relation(fields: [productId], references: [id], onDelete: SetNull)
   variant          StoreProductVariant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
+  orderBundle      StoreOrderBundle? @relation(fields: [orderBundleId], references: [id], onDelete: SetNull)
   digitalGrants    StoreDigitalGrant[]
 
   @@index([orderId], map: "store_order_lines_order_idx")
   @@index([productId], map: "store_order_lines_product_idx")
   @@index([variantId], map: "store_order_lines_variant_idx")
+  @@index([orderBundleId], map: "store_order_lines_bundle_idx")
   @@map("store_order_lines")
+  @@schema("app_v3")
+}
+
+model StoreOrderBundle {
+  id             Int                   @id @default(autoincrement())
+  orderId        Int                   @map("order_id")
+  bundleId       Int?                  @map("bundle_id")
+  nameSnapshot   String                @map("name_snapshot")
+  pricingMode    StoreBundlePricingMode @map("pricing_mode")
+  priceCents     Int?                  @map("price_cents")
+  percentOff     Int?                  @map("percent_off")
+  bundleQuantity Int                   @default(1) @map("bundle_quantity")
+  totalCents     Int                   @map("total_cents")
+  createdAt      DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  order          StoreOrder            @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  bundle         StoreBundle?          @relation(fields: [bundleId], references: [id], onDelete: SetNull)
+  items          StoreOrderBundleItem[]
+  orderLines     StoreOrderLine[]
+
+  @@index([orderId], map: "store_order_bundles_order_idx")
+  @@index([bundleId], map: "store_order_bundles_bundle_idx")
+  @@map("store_order_bundles")
+  @@schema("app_v3")
+}
+
+model StoreOrderBundleItem {
+  id            Int      @id @default(autoincrement())
+  orderBundleId Int      @map("order_bundle_id")
+  productId     Int?     @map("product_id")
+  variantId     Int?     @map("variant_id")
+  quantity      Int
+  nameSnapshot  String   @map("name_snapshot")
+  skuSnapshot   String?  @map("sku_snapshot")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  orderBundle   StoreOrderBundle @relation(fields: [orderBundleId], references: [id], onDelete: Cascade)
+  product       StoreProduct? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  variant       StoreProductVariant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
+
+  @@index([orderBundleId], map: "store_order_bundle_items_bundle_idx")
+  @@index([productId], map: "store_order_bundle_items_product_idx")
+  @@index([variantId], map: "store_order_bundle_items_variant_idx")
+  @@map("store_order_bundle_items")
   @@schema("app_v3")
 }
 
@@ -773,6 +863,7 @@ model Notification {
   invite      OrganizationMemberInvite? @relation("NotificationInvite", fields: [inviteId], references: [id], onUpdate: NoAction)
   organization   Organization?             @relation("NotificationOrganization", fields: [organizationId], references: [id], onUpdate: NoAction)
   ticket      Ticket?                @relation("NotificationTicket", fields: [ticketId], references: [id], onUpdate: NoAction)
+  crmCampaignDeliveries CrmCampaignDelivery[]
   user        Profile                @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, createdAt])
@@ -802,6 +893,7 @@ model NotificationPreference {
   allowFollowRequests      Boolean  @default(true) @map("allow_follow_requests")
   allowSalesAlerts         Boolean  @default(true) @map("allow_sales_alerts")
   allowSystemAnnouncements Boolean  @default(true) @map("allow_system_announcements")
+  allowMarketingCampaigns  Boolean  @default(true) @map("allow_marketing_campaigns")
   createdAt                DateTime @default(now()) @map("created_at")
   updatedAt                DateTime @default(now()) @updatedAt @map("updated_at")
   user                     Profile  @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -930,6 +1022,221 @@ model ChatModerationLog {
   @@schema("app_v3")
 }
 
+model InternalChatChannel {
+  id              String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId  Int           @map("organization_id")
+  name            String
+  description     String?
+  isArchived      Boolean       @default(false) @map("is_archived")
+  createdByUserId String?       @map("created_by_user_id") @db.Uuid
+  createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    Profile?              @relation("InternalChatChannelCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  messages     InternalChatMessage[]
+
+  @@unique([organizationId, name], map: "internal_chat_channels_org_name_unique")
+  @@index([organizationId, isArchived], map: "internal_chat_channels_org_archived_idx")
+  @@map("internal_chat_channels")
+  @@schema("app_v3")
+}
+
+model InternalChatMessage {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId   Int       @map("organization_id")
+  channelId        String    @map("channel_id") @db.Uuid
+  authorUserId     String?   @map("author_user_id") @db.Uuid
+  body             String    @db.Text
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  editedAt         DateTime? @map("edited_at") @db.Timestamptz(6)
+  deletedAt        DateTime? @map("deleted_at") @db.Timestamptz(6)
+  deletedByUserId  String?   @map("deleted_by_user_id") @db.Uuid
+
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  channel      InternalChatChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  author       Profile?       @relation("InternalChatMessageAuthor", fields: [authorUserId], references: [id], onDelete: SetNull)
+  deletedBy    Profile?       @relation("InternalChatMessageDeletedBy", fields: [deletedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, channelId, createdAt], map: "internal_chat_messages_org_channel_time_idx")
+  @@index([channelId], map: "internal_chat_messages_channel_idx")
+  @@map("internal_chat_messages")
+  @@schema("app_v3")
+}
+
+model ChatConversation {
+  id              String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId  Int                  @map("organization_id")
+  type            ChatConversationType
+  title           String?
+  description     String?
+  createdByUserId String?              @map("created_by_user_id") @db.Uuid
+  createdAt       DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  lastMessageAt   DateTime?            @map("last_message_at") @db.Timestamptz(6)
+  lastMessageId   String?              @unique @map("last_message_id") @db.Uuid
+
+  organization Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    Profile?                @relation("ChatConversationCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  lastMessage  ChatConversationMessage? @relation("ChatConversationLastMessage", fields: [lastMessageId], references: [id], onDelete: SetNull)
+  members      ChatConversationMember[]
+  messages     ChatConversationMessage[] @relation("ChatConversationMessages")
+
+  @@index([organizationId], map: "chat_conversations_org_idx")
+  @@index([lastMessageAt], map: "chat_conversations_last_message_idx")
+  @@map("chat_conversations")
+  @@schema("app_v3")
+}
+
+model ChatConversationMember {
+  conversationId    String                   @map("conversation_id") @db.Uuid
+  organizationId    Int                      @map("organization_id")
+  userId            String                   @map("user_id") @db.Uuid
+  role              ChatConversationMemberRole @default(MEMBER)
+  joinedAt          DateTime                 @default(now()) @map("joined_at") @db.Timestamptz(6)
+  mutedUntil        DateTime?                @map("muted_until") @db.Timestamptz(6)
+  notifLevel        ChatConversationNotificationLevel @default(ALL) @map("notif_level")
+  lastReadMessageId String?                  @map("last_read_message_id") @db.Uuid
+  lastReadAt        DateTime?                @map("last_read_at") @db.Timestamptz(6)
+
+  conversation   ChatConversation         @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user           Profile                  @relation("ChatConversationMemberUser", fields: [userId], references: [id], onDelete: Cascade)
+  lastReadMessage ChatConversationMessage? @relation("ChatConversationMemberLastRead", fields: [lastReadMessageId], references: [id], onDelete: SetNull)
+
+  @@id([conversationId, userId])
+  @@index([userId], map: "chat_conversation_members_user_idx")
+  @@index([conversationId], map: "chat_conversation_members_conversation_idx")
+  @@map("chat_conversation_members")
+  @@schema("app_v3")
+}
+
+model ChatConversationMessage {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  conversationId  String    @map("conversation_id") @db.Uuid
+  organizationId  Int       @map("organization_id")
+  senderId        String    @map("sender_id") @db.Uuid
+  body            String?   @db.Text
+  clientMessageId String    @map("client_message_id")
+  kind            ChatConversationMessageKind @default(TEXT)
+  metadata        Json?     @default("{}")
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  editedAt        DateTime? @map("edited_at") @db.Timestamptz(6)
+  deletedAt       DateTime? @map("deleted_at") @db.Timestamptz(6)
+  replyToId       String?   @map("reply_to_id") @db.Uuid
+
+  conversation ChatConversation       @relation("ChatConversationMessages", fields: [conversationId], references: [id], onDelete: Cascade)
+  sender       Profile                @relation("ChatConversationMessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+  replyTo      ChatConversationMessage? @relation("ChatConversationMessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies      ChatConversationMessage[] @relation("ChatConversationMessageReplies")
+  attachments  ChatConversationAttachment[]
+  reactions    ChatMessageReaction[]
+  pins         ChatMessagePin[]
+  lastReadByMembers ChatConversationMember[] @relation("ChatConversationMemberLastRead")
+  lastMessageOf ChatConversation?     @relation("ChatConversationLastMessage")
+  reports      ChatMessageReport[]
+
+  @@unique([conversationId, senderId, clientMessageId], map: "chat_conversation_messages_sender_client_unique")
+  @@index([conversationId, createdAt(sort: Desc)], map: "chat_conversation_messages_conversation_created_idx")
+  @@index([conversationId], map: "chat_conversation_messages_conversation_idx")
+  @@index([senderId], map: "chat_conversation_messages_sender_idx")
+  @@map("chat_conversation_messages")
+  @@schema("app_v3")
+}
+
+model ChatConversationAttachment {
+  id        String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  messageId String             @map("message_id") @db.Uuid
+  type      ChatAttachmentType
+  url       String             @db.Text
+  storagePath String?          @map("storage_path") @db.Text
+  mime      String             @db.Text
+  size      Int
+  width     Int?
+  height    Int?
+  metadata  Json?              @default("{}")
+  createdAt DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  message ChatConversationMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([messageId], map: "chat_conversation_attachments_message_idx")
+  @@map("chat_conversation_attachments")
+  @@schema("app_v3")
+}
+
+model ChatMessageReaction {
+  messageId String   @map("message_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  emoji     String
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  message ChatConversationMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user    Profile                @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([messageId, userId, emoji])
+  @@index([messageId], map: "chat_message_reactions_message_idx")
+  @@map("chat_message_reactions")
+  @@schema("app_v3")
+}
+
+model ChatMessagePin {
+  id       String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  messageId String  @map("message_id") @db.Uuid
+  pinnedBy  String  @map("pinned_by") @db.Uuid
+  pinnedAt  DateTime @default(now()) @map("pinned_at") @db.Timestamptz(6)
+
+  message ChatConversationMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user    Profile                 @relation(fields: [pinnedBy], references: [id], onDelete: Cascade)
+
+  @@unique([messageId], map: "chat_message_pins_message_unique")
+  @@index([messageId], map: "chat_message_pins_message_idx")
+  @@map("chat_message_pins")
+  @@schema("app_v3")
+}
+
+model ChatUserPresence {
+  userId     String   @id @map("user_id") @db.Uuid
+  lastSeenAt DateTime @map("last_seen_at") @db.Timestamptz(6)
+  updatedAt  DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user Profile @relation("ChatUserPresenceUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("chat_user_presence")
+  @@schema("app_v3")
+}
+
+model ChatMessageReport {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  messageId  String    @map("message_id") @db.Uuid
+  reporterId String    @map("reporter_id") @db.Uuid
+  reason     String?
+  metadata   Json?     @default("{}")
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  message  ChatConversationMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  reporter Profile                @relation("ChatMessageReportReporter", fields: [reporterId], references: [id], onDelete: Cascade)
+
+  @@index([messageId], map: "chat_message_reports_message_idx")
+  @@index([reporterId], map: "chat_message_reports_reporter_idx")
+  @@map("chat_message_reports")
+  @@schema("app_v3")
+}
+
+model ChatUserBlock {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  blockerId  String   @map("blocker_id") @db.Uuid
+  blockedId  String   @map("blocked_id") @db.Uuid
+  reason     String?
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  blocker Profile @relation("ChatUserBlockBlocker", fields: [blockerId], references: [id], onDelete: Cascade)
+  blocked Profile @relation("ChatUserBlockBlocked", fields: [blockedId], references: [id], onDelete: Cascade)
+
+  @@unique([blockerId, blockedId], map: "chat_user_blocks_unique")
+  @@index([blockedId], map: "chat_user_blocks_blocked_idx")
+  @@map("chat_user_blocks")
+  @@schema("app_v3")
+}
+
 model MatchNotification {
   id        Int      @id @default(autoincrement())
   matchId   Int      @map("match_id")
@@ -993,6 +1300,27 @@ model OrganizationMember {
   @@index([userId], map: "organization_members_user_idx")
   @@index([userId, lastUsedAt(sort: Desc), createdAt], map: "organization_members_user_last_used_idx")
   @@map("organization_members")
+  @@schema("app_v3")
+}
+
+model OrganizationMemberPermission {
+  id              Int                          @id @default(autoincrement())
+  organizationId  Int                          @map("organization_id")
+  userId          String                       @map("user_id") @db.Uuid
+  moduleKey       OrganizationModule           @map("module_key")
+  accessLevel     OrganizationPermissionLevel  @default(VIEW) @map("access_level")
+  scopeType       String?                      @map("scope_type")
+  scopeId         String?                      @map("scope_id")
+  createdAt       DateTime                     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime                     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization    Organization                 @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user            Profile                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId, moduleKey, scopeType, scopeId], map: "org_member_permission_unique")
+  @@index([organizationId, userId], map: "org_member_permissions_org_user_idx")
+  @@index([organizationId, moduleKey], map: "org_member_permissions_org_module_idx")
+  @@map("organization_member_permissions")
   @@schema("app_v3")
 }
 
@@ -1082,6 +1410,11 @@ model Event {
   locationName                      String                  @map("location_name")
   locationCity                      String?                 @map("location_city")
   address                           String?
+  locationSource                    LocationSource          @default(MANUAL) @map("location_source")
+  locationProviderId                String?                 @map("location_provider_id")
+  locationFormattedAddress          String?                 @map("location_formatted_address")
+  locationComponents                Json?                   @map("location_components")
+  locationOverrides                 Json?                   @map("location_overrides")
   latitude                          Float?                  @map("lat")
   longitude                         Float?                  @map("lng")
   isFree                            Boolean                 @default(false) @map("is_free")
@@ -1208,6 +1541,7 @@ model Ticket {
   notifications         Notification[]    @relation("NotificationTicket")
   pairingSlot           PadelPairingSlot? @relation("TicketPairingSlot")
   createdPadelPairings  PadelPairing[]    @relation("PadelPairingCreatedByTicket")
+  entitlement           Entitlement?      @relation("TicketEntitlement")
   resales               TicketResale[]
   event                 Event             @relation(fields: [eventId], references: [id], onDelete: Cascade)
   pairing               PadelPairing?     @relation("PairingTickets", fields: [pairingId], references: [id])
@@ -1538,6 +1872,14 @@ model PadelClub {
   shortName           String?                 @map("short_name")
   city                String?
   address             String?
+  kind                PadelClubKind           @default(OWN) @map("kind")
+  sourceClubId        Int?                    @map("source_club_id")
+  locationSource      LocationSource          @default(MANUAL) @map("location_source")
+  locationProviderId  String?                 @map("location_provider_id")
+  locationFormattedAddress String?            @map("location_formatted_address")
+  locationComponents  Json?                   @map("location_components")
+  latitude            Float?                  @map("lat")
+  longitude           Float?                  @map("lng")
   courtsCount         Int                     @default(1) @map("courts_count")
   hours               String?
   favoriteCategoryIds Int[]                   @default([]) @map("favorite_category_ids")
@@ -2188,6 +2530,7 @@ model Entitlement {
   ownerKey         String                @map("owner_key")
   purchaseId       String                @map("purchase_id") @db.Text
   saleLineId       Int                   @map("sale_line_id")
+  ticketId         String?               @unique @map("ticket_id")
   lineItemIndex    Int                   @default(0) @map("line_item_index")
   eventId          Int?                  @map("event_id")
   tournamentId     Int?                  @map("tournament_id")
@@ -2199,6 +2542,7 @@ model Entitlement {
   snapshotTimezone String                @map("snapshot_timezone")
   createdAt        DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt        DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  ticket           Ticket?               @relation("TicketEntitlement", fields: [ticketId], references: [id], onDelete: SetNull)
   checkins         EntitlementCheckin[]
   qrTokens         EntitlementQrToken[]
 
@@ -2732,6 +3076,292 @@ model PendingPayout {
   @@schema("app_v3")
 }
 
+model CrmCustomer {
+  id                 String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId     Int               @map("organization_id")
+  userId             String            @map("user_id") @db.Uuid
+  status             CrmCustomerStatus @default(ACTIVE)
+  displayName        String?           @map("display_name")
+  contactEmail       String?           @map("contact_email") @db.Citext
+  contactPhone       String?           @map("contact_phone")
+  marketingOptIn     Boolean           @default(false) @map("marketing_opt_in")
+  marketingOptInAt   DateTime?         @map("marketing_opt_in_at") @db.Timestamptz(6)
+  firstInteractionAt DateTime?         @map("first_interaction_at") @db.Timestamptz(6)
+  lastActivityAt     DateTime?         @map("last_activity_at") @db.Timestamptz(6)
+  lastPurchaseAt     DateTime?         @map("last_purchase_at") @db.Timestamptz(6)
+  totalSpentCents    Int               @default(0) @map("total_spent_cents")
+  totalOrders        Int               @default(0) @map("total_orders")
+  totalBookings      Int               @default(0) @map("total_bookings")
+  totalAttendances   Int               @default(0) @map("total_attendances")
+  totalTournaments   Int               @default(0) @map("total_tournaments")
+  totalStoreOrders   Int               @default(0) @map("total_store_orders")
+  tags               String[]          @default([])
+  notesCount         Int               @default(0) @map("notes_count")
+  createdAt          DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         Profile           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  notes        CrmCustomerNote[]
+  segmentMemberships CrmSegmentMembership[]
+
+  @@unique([organizationId, userId], map: "crm_customers_org_user_unique")
+  @@index([organizationId, lastActivityAt], map: "crm_customers_org_last_activity_idx")
+  @@index([organizationId, totalSpentCents], map: "crm_customers_org_spent_idx")
+  @@map("crm_customers")
+  @@schema("app_v3")
+}
+
+model CrmInteraction {
+  id             String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId Int                 @map("organization_id")
+  userId         String              @map("user_id") @db.Uuid
+  type           CrmInteractionType
+  sourceType     CrmInteractionSource @map("source_type")
+  sourceId       String?             @map("source_id") @db.Text
+  occurredAt     DateTime            @map("occurred_at") @db.Timestamptz(6)
+  amountCents    Int?                @map("amount_cents")
+  currency       String?             @default("EUR")
+  metadata       Json?               @default("{}")
+  createdAt      DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         Profile      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, sourceType, sourceId, type], map: "crm_interactions_org_source_type_unique")
+  @@index([organizationId, userId, occurredAt], map: "crm_interactions_org_user_time_idx")
+  @@index([organizationId, type, occurredAt], map: "crm_interactions_org_type_time_idx")
+  @@index([sourceType, sourceId], map: "crm_interactions_source_idx")
+  @@map("crm_interactions")
+  @@schema("app_v3")
+}
+
+model CrmCustomerNote {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId Int      @map("organization_id")
+  customerId     String   @map("customer_id") @db.Uuid
+  authorUserId   String   @map("author_user_id") @db.Uuid
+  body           String   @db.Text
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customer     CrmCustomer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  author       Profile      @relation(fields: [authorUserId], references: [id], onDelete: NoAction)
+
+  @@index([organizationId, customerId, createdAt], map: "crm_customer_notes_org_customer_idx")
+  @@map("crm_customer_notes")
+  @@schema("app_v3")
+}
+
+model CrmSegment {
+  id              String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId  Int               @map("organization_id")
+  name            String
+  description     String?
+  rules           Json              @default("{}")
+  status          CrmSegmentStatus  @default(ACTIVE)
+  sizeCache       Int?              @map("size_cache")
+  lastComputedAt  DateTime?         @map("last_computed_at") @db.Timestamptz(6)
+  createdByUserId String?           @map("created_by_user_id") @db.Uuid
+  createdAt       DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  creator      Profile?     @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
+  memberships  CrmSegmentMembership[]
+  campaigns    CrmCampaign[]
+
+  @@index([organizationId, status], map: "crm_segments_org_status_idx")
+  @@map("crm_segments")
+  @@schema("app_v3")
+}
+
+model CrmSegmentMembership {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId Int      @map("organization_id")
+  segmentId      String   @map("segment_id") @db.Uuid
+  customerId     String   @map("customer_id") @db.Uuid
+  computedAt     DateTime @map("computed_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  segment      CrmSegment   @relation(fields: [segmentId], references: [id], onDelete: Cascade)
+  customer     CrmCustomer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@unique([segmentId, customerId], map: "crm_segment_memberships_segment_customer_unique")
+  @@index([organizationId, segmentId], map: "crm_segment_memberships_org_segment_idx")
+  @@map("crm_segment_memberships")
+  @@schema("app_v3")
+}
+
+model CrmCampaign {
+  id              String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId  Int                @map("organization_id")
+  segmentId       String?            @map("segment_id") @db.Uuid
+  name            String
+  description     String?
+  channel         CrmCampaignChannel @default(IN_APP)
+  status          CrmCampaignStatus  @default(DRAFT)
+  payload         Json               @default("{}")
+  scheduledAt     DateTime?          @map("scheduled_at") @db.Timestamptz(6)
+  sentAt          DateTime?          @map("sent_at") @db.Timestamptz(6)
+  sentCount       Int                @default(0) @map("sent_count")
+  openedCount     Int                @default(0) @map("opened_count")
+  clickedCount    Int                @default(0) @map("clicked_count")
+  failedCount     Int                @default(0) @map("failed_count")
+  createdByUserId String?            @map("created_by_user_id") @db.Uuid
+  createdAt       DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  segment      CrmSegment?  @relation(fields: [segmentId], references: [id], onDelete: SetNull)
+  creator      Profile?     @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
+  deliveries   CrmCampaignDelivery[]
+
+  @@index([organizationId, status], map: "crm_campaigns_org_status_idx")
+  @@map("crm_campaigns")
+  @@schema("app_v3")
+}
+
+model CrmCampaignDelivery {
+  id             String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId Int               @map("organization_id")
+  campaignId     String            @map("campaign_id") @db.Uuid
+  userId         String            @map("user_id") @db.Uuid
+  notificationId String?           @map("notification_id") @db.Uuid
+  status         CrmDeliveryStatus @default(SENT)
+  sentAt         DateTime?         @map("sent_at") @db.Timestamptz(6)
+  openedAt       DateTime?         @map("opened_at") @db.Timestamptz(6)
+  clickedAt      DateTime?         @map("clicked_at") @db.Timestamptz(6)
+  errorCode      String?           @map("error_code")
+  errorMessage   String?           @map("error_message")
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  campaign     CrmCampaign   @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  user         Profile       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  notification Notification? @relation(fields: [notificationId], references: [id], onDelete: SetNull)
+
+  @@unique([campaignId, userId], map: "crm_campaign_deliveries_campaign_user_unique")
+  @@index([organizationId, campaignId], map: "crm_campaign_deliveries_org_campaign_idx")
+  @@map("crm_campaign_deliveries")
+  @@schema("app_v3")
+}
+
+model UserConsent {
+  id             String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId Int           @map("organization_id")
+  userId         String        @map("user_id") @db.Uuid
+  type           ConsentType
+  status         ConsentStatus
+  source         String?       @map("source")
+  grantedAt      DateTime?     @map("granted_at") @db.Timestamptz(6)
+  revokedAt      DateTime?     @map("revoked_at") @db.Timestamptz(6)
+  expiresAt      DateTime?     @map("expires_at") @db.Timestamptz(6)
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         Profile      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId, type], map: "user_consents_org_user_type_unique")
+  @@index([organizationId, type, status], map: "user_consents_org_type_status_idx")
+  @@map("user_consents")
+  @@schema("app_v3")
+}
+
+model LoyaltyProgram {
+  id               String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId   Int                  @map("organization_id")
+  status           LoyaltyProgramStatus @default(ACTIVE)
+  name             String               @default("Pontos ORYA")
+  pointsName       String               @default("Pontos")
+  pointsExpiryDays Int?                 @map("points_expiry_days")
+  termsUrl         String?              @map("terms_url")
+  createdAt        DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  rules        LoyaltyRule[]
+  rewards      LoyaltyReward[]
+  ledger       LoyaltyLedger[]
+
+  @@unique([organizationId], map: "loyalty_programs_org_unique")
+  @@map("loyalty_programs")
+  @@schema("app_v3")
+}
+
+model LoyaltyRule {
+  id               String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  programId        String             @map("program_id") @db.Uuid
+  name             String
+  trigger          LoyaltyRuleTrigger
+  points           Int
+  maxPointsPerDay  Int?               @map("max_points_per_day")
+  maxPointsPerUser Int?               @map("max_points_per_user")
+  conditions       Json?              @default("{}")
+  isActive         Boolean            @default(true) @map("is_active")
+  createdAt        DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  program LoyaltyProgram @relation(fields: [programId], references: [id], onDelete: Cascade)
+  ledgerEntries LoyaltyLedger[]
+
+  @@index([programId, trigger], map: "loyalty_rules_program_trigger_idx")
+  @@map("loyalty_rules")
+  @@schema("app_v3")
+}
+
+model LoyaltyReward {
+  id         String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  programId  String             @map("program_id") @db.Uuid
+  name       String
+  type       LoyaltyRewardType
+  pointsCost Int                @map("points_cost")
+  stock      Int?               @map("stock")
+  payload    Json?              @default("{}")
+  isActive   Boolean            @default(true) @map("is_active")
+  createdAt  DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  program LoyaltyProgram @relation(fields: [programId], references: [id], onDelete: Cascade)
+  ledgerEntries LoyaltyLedger[]
+
+  @@index([programId, isActive], map: "loyalty_rewards_program_active_idx")
+  @@map("loyalty_rewards")
+  @@schema("app_v3")
+}
+
+model LoyaltyLedger {
+  id             String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId Int               @map("organization_id")
+  programId      String            @map("program_id") @db.Uuid
+  userId         String            @map("user_id") @db.Uuid
+  ruleId         String?           @map("rule_id") @db.Uuid
+  entryType      LoyaltyEntryType  @map("entry_type")
+  points         Int
+  balanceAfter   Int?              @map("balance_after")
+  sourceType     LoyaltySourceType @map("source_type")
+  sourceId       String?           @map("source_id") @db.Text
+  rewardId       String?           @map("reward_id") @db.Uuid
+  dedupeKey      String?           @unique @map("dedupe_key")
+  note           String?           @db.Text
+  expiresAt      DateTime?         @map("expires_at") @db.Timestamptz(6)
+  createdAt      DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  program      LoyaltyProgram @relation(fields: [programId], references: [id], onDelete: Cascade)
+  user         Profile        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rule         LoyaltyRule?   @relation(fields: [ruleId], references: [id], onDelete: SetNull)
+  reward       LoyaltyReward? @relation(fields: [rewardId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, userId, createdAt], map: "loyalty_ledger_org_user_time_idx")
+  @@index([programId, createdAt], map: "loyalty_ledger_program_time_idx")
+  @@index([programId, ruleId], map: "loyalty_ledger_program_rule_idx")
+  @@index([sourceType, sourceId], map: "loyalty_ledger_source_idx")
+  @@map("loyalty_ledger")
+  @@schema("app_v3")
+}
+
 enum NotificationType {
   ORGANIZATION_INVITE
   ORGANIZATION_TRANSFER
@@ -2745,6 +3375,7 @@ enum NotificationType {
   CHECKIN_READY
   TICKET_SHARED
   MARKETING_PROMO_ALERT
+  CRM_CAMPAIGN
   SYSTEM_ANNOUNCE
   FOLLOWED_YOU
   TICKET_TRANSFER_RECEIVED
@@ -2754,6 +3385,7 @@ enum NotificationType {
   NEW_EVENT_FROM_FOLLOWED_ORGANIZATION
   CHAT_OPEN
   CHAT_ANNOUNCEMENT
+  CHAT_MESSAGE
 
   @@schema("app_v3")
 }
@@ -2786,6 +3418,44 @@ enum ChatMessageKind {
   USER
   ANNOUNCEMENT
   SYSTEM
+
+  @@schema("app_v3")
+}
+
+enum ChatConversationType {
+  DIRECT
+  GROUP
+  CHANNEL
+
+  @@schema("app_v3")
+}
+
+enum ChatConversationNotificationLevel {
+  ALL
+  MENTIONS_ONLY
+  OFF
+
+  @@schema("app_v3")
+}
+
+enum ChatConversationMessageKind {
+  TEXT
+  SYSTEM
+
+  @@schema("app_v3")
+}
+
+enum ChatConversationMemberRole {
+  MEMBER
+  ADMIN
+
+  @@schema("app_v3")
+}
+
+enum ChatAttachmentType {
+  IMAGE
+  VIDEO
+  FILE
 
   @@schema("app_v3")
 }
@@ -2823,6 +3493,14 @@ enum OrganizationMemberRole {
   TRAINER
   PROMOTER
   VIEWER
+
+  @@schema("app_v3")
+}
+
+enum OrganizationPermissionLevel {
+  NONE
+  VIEW
+  EDIT
 
   @@schema("app_v3")
 }
@@ -2874,6 +3552,13 @@ enum PadelPreferredSide {
   ESQUERDA
   DIREITA
   QUALQUER
+
+  @@schema("app_v3")
+}
+
+enum PadelClubKind {
+  OWN
+  PARTNER
 
   @@schema("app_v3")
 }
@@ -2936,6 +3621,13 @@ enum EventTemplateType {
   @@schema("app_v3")
 }
 
+enum LocationSource {
+  OSM
+  MANUAL
+
+  @@schema("app_v3")
+}
+
 
 enum OrganizationModule {
   EVENTOS
@@ -2944,6 +3636,7 @@ enum OrganizationModule {
   STAFF
   FINANCEIRO
   MENSAGENS
+  CRM
   MARKETING
   LOJA
   ANALYTICS
@@ -3355,6 +4048,7 @@ enum padel_format {
   GRUPOS_ELIMINATORIAS
   CAMPEONATO_LIGA
   QUADRO_AB
+  DUPLA_ELIMINACAO
   NON_STOP
 
   @@schema("app_v3")
@@ -3540,6 +4234,147 @@ enum PendingPayoutStatus {
   RELEASED
   BLOCKED
   CANCELLED
+
+  @@schema("app_v3")
+}
+
+enum CrmCustomerStatus {
+  ACTIVE
+  SUPPRESSED
+  DELETED
+
+  @@schema("app_v3")
+}
+
+enum CrmInteractionType {
+  EVENT_TICKET
+  EVENT_CHECKIN
+  PADEL_TOURNAMENT_ENTRY
+  PADEL_MATCH_PAYMENT
+  BOOKING_CONFIRMED
+  BOOKING_CANCELLED
+  BOOKING_COMPLETED
+  STORE_ORDER_PAID
+  STORE_ORDER_REFUNDED
+  MEMBERSHIP_STARTED
+  MEMBERSHIP_RENEWED
+  MEMBERSHIP_CANCELLED
+  MANUAL_ADJUSTMENT
+
+  @@schema("app_v3")
+}
+
+enum CrmInteractionSource {
+  EVENT
+  TICKET
+  CHECKIN
+  BOOKING
+  STORE_ORDER
+  TOURNAMENT_ENTRY
+  MEMBERSHIP
+  TRANSACTION
+  MANUAL
+
+  @@schema("app_v3")
+}
+
+enum CrmSegmentStatus {
+  ACTIVE
+  PAUSED
+  ARCHIVED
+
+  @@schema("app_v3")
+}
+
+enum CrmCampaignChannel {
+  IN_APP
+
+  @@schema("app_v3")
+}
+
+enum CrmCampaignStatus {
+  DRAFT
+  SCHEDULED
+  SENDING
+  SENT
+  PAUSED
+  CANCELLED
+
+  @@schema("app_v3")
+}
+
+enum CrmDeliveryStatus {
+  SENT
+  OPENED
+  CLICKED
+  FAILED
+
+  @@schema("app_v3")
+}
+
+enum ConsentType {
+  MARKETING
+  CONTACT_EMAIL
+  CONTACT_SMS
+  DATA_SHARING
+
+  @@schema("app_v3")
+}
+
+enum ConsentStatus {
+  GRANTED
+  REVOKED
+  EXPIRED
+
+  @@schema("app_v3")
+}
+
+enum LoyaltyProgramStatus {
+  ACTIVE
+  PAUSED
+  DISABLED
+
+  @@schema("app_v3")
+}
+
+enum LoyaltyRuleTrigger {
+  STORE_ORDER_PAID
+  BOOKING_COMPLETED
+  EVENT_CHECKIN
+  TOURNAMENT_PARTICIPATION
+  MEMBERSHIP_RENEWAL
+
+  @@schema("app_v3")
+}
+
+enum LoyaltyRewardType {
+  DISCOUNT
+  FREE_CLASS
+  FREE_EVENT
+  STORE_CREDIT
+  PRODUCT
+  EARLY_ACCESS
+
+  @@schema("app_v3")
+}
+
+enum LoyaltyEntryType {
+  EARN
+  SPEND
+  ADJUST
+  EXPIRE
+
+  @@schema("app_v3")
+}
+
+enum LoyaltySourceType {
+  ORDER
+  BOOKING
+  CHECKIN
+  TOURNAMENT
+  MEMBERSHIP
+  REWARD
+  MANUAL
 
   @@schema("app_v3")
 }

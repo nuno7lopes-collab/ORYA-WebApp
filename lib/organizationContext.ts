@@ -1,4 +1,5 @@
 import { OrganizationMemberRole, OrganizationStatus } from "@prisma/client";
+import { cache } from "react";
 import { prisma } from "@/lib/prisma";
 import { resolveOrganizationIdFromCookies } from "@/lib/organizationId";
 
@@ -10,7 +11,17 @@ type Options = {
   // Se quisermos forçar leitura de cookie, basta passar organizationId externamente
 };
 
-export async function getActiveOrganizationForUser(userId: string, opts: Options = {}) {
+export const ORG_ACTIVE_ALLOWED_STATUSES = [
+  OrganizationStatus.ACTIVE,
+  OrganizationStatus.SUSPENDED,
+] as const;
+
+export const ORG_ACTIVE_ACCESS_OPTIONS = {
+  allowedStatuses: ORG_ACTIVE_ALLOWED_STATUSES,
+} as const;
+
+export const getActiveOrganizationForUser = cache(
+  async (userId: string, opts: Options = {}) => {
   const { roles, allowFallback = false } = opts;
   const allowedStatuses = opts.allowedStatuses ?? [OrganizationStatus.ACTIVE];
   const directOrganizationId =
@@ -58,4 +69,5 @@ export async function getActiveOrganizationForUser(userId: string, opts: Options
   }
 
   return { organization: null, membership: null };
-}
+  },
+);

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { isStoreFeatureEnabled, isStorePublic } from "@/lib/storeAccess";
 import StorefrontHeader from "@/components/storefront/StorefrontHeader";
+import StorefrontCartOverlay from "@/components/storefront/StorefrontCartOverlay";
 import StorefrontProductClient from "@/components/storefront/StorefrontProductClient";
 
 export const dynamic = "force-dynamic";
@@ -38,12 +39,26 @@ export default async function StoreProductPage({ params }: PageProps) {
   const store = organization
     ? await prisma.store.findFirst({
         where: { ownerOrganizationId: organization.id },
-        select: { id: true, status: true, showOnProfile: true, catalogLocked: true, currency: true },
+        select: {
+          id: true,
+          status: true,
+          showOnProfile: true,
+          catalogLocked: true,
+          currency: true,
+          freeShippingThresholdCents: true,
+        },
       })
     : profile
       ? await prisma.store.findFirst({
           where: { ownerUserId: profile.id },
-          select: { id: true, status: true, showOnProfile: true, catalogLocked: true, currency: true },
+          select: {
+            id: true,
+            status: true,
+            showOnProfile: true,
+            catalogLocked: true,
+            currency: true,
+            freeShippingThresholdCents: true,
+          },
         })
       : null;
 
@@ -83,6 +98,9 @@ export default async function StoreProductPage({ params }: PageProps) {
       shortDescription: true,
       description: true,
       requiresShipping: true,
+      stockPolicy: true,
+      stockQty: true,
+      category: { select: { name: true } },
       images: {
         select: { url: true, altText: true, isPrimary: true, sortOrder: true },
         orderBy: [{ isPrimary: "desc" }, { sortOrder: "asc" }],
@@ -116,6 +134,15 @@ export default async function StoreProductPage({ params }: PageProps) {
     notFound();
   }
 
+  const defaultShipping = await prisma.storeShippingMethod.findFirst({
+    where: { zone: { storeId: store.id, isActive: true } },
+    orderBy: [{ isDefault: "desc" }, { id: "asc" }],
+    select: { etaMinDays: true, etaMaxDays: true },
+  });
+  const shippingEta = defaultShipping
+    ? { minDays: defaultShipping.etaMinDays, maxDays: defaultShipping.etaMaxDays }
+    : null;
+
   return (
     <main className="min-h-screen w-full text-white">
       <div className="orya-page-width px-4 pb-16 pt-10 space-y-6">
@@ -130,17 +157,37 @@ export default async function StoreProductPage({ params }: PageProps) {
         >
           ← Voltar a loja
         </Link>
-        <div className="rounded-3xl border border-white/12 bg-white/5 p-6 shadow-[0_18px_50px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
+        <div className="mx-auto w-full max-w-6xl rounded-3xl border border-white/12 bg-white/5 p-6 shadow-[0_18px_50px_rgba(0,0,0,0.55)] backdrop-blur-2xl lg:p-8">
           <StorefrontProductClient
             storeId={store.id}
             currency={store.currency}
-            product={product}
+            product={{
+              id: product.id,
+              name: product.name,
+              categoryName: product.category?.name ?? null,
+              priceCents: product.priceCents,
+              compareAtPriceCents: product.compareAtPriceCents,
+              shortDescription: product.shortDescription,
+              description: product.description,
+              requiresShipping: product.requiresShipping,
+              stockPolicy: product.stockPolicy,
+              stockQty: product.stockQty,
+              images: product.images,
+            }}
             variants={product.variants}
             options={product.options}
             cartHref={`/${username}/loja/carrinho`}
+            shippingEta={shippingEta}
           />
         </div>
       </div>
+      <StorefrontCartOverlay
+        storeId={store.id}
+        currency={store.currency}
+        freeShippingThresholdCents={store.freeShippingThresholdCents}
+        storeBaseHref={`/${username}/loja`}
+        checkoutHref={`/${username}/loja/checkout`}
+      />
     </main>
   );
 }

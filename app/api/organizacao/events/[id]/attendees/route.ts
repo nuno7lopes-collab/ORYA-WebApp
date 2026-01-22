@@ -145,6 +145,29 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       { id: "desc" },
     ],
     take: take + 1,
+    select: {
+      id: true,
+      status: true,
+      type: true,
+      ownerKey: true,
+      ownerUserId: true,
+      purchaseId: true,
+      ticketId: true,
+      snapshotTitle: true,
+      snapshotStartAt: true,
+      snapshotTimezone: true,
+      ticket: {
+        select: {
+          id: true,
+          guestLink: { select: { guestName: true, guestEmail: true } },
+        },
+      },
+      checkins: {
+        select: { checkedInAt: true },
+        orderBy: { checkedInAt: "desc" },
+        take: 1,
+      },
+    },
   });
 
   const pageItems = entitlements.slice(0, take);
@@ -155,6 +178,27 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         entitlementId: pageItems[pageItems.length - 1].id,
       })
     : null;
+
+  const ownerIds = Array.from(
+    new Set(pageItems.map((item) => item.ownerUserId).filter(Boolean) as string[]),
+  );
+  const profiles = ownerIds.length
+    ? await prisma.profile.findMany({
+        where: { id: { in: ownerIds } },
+        select: { id: true, fullName: true, username: true, email: true },
+      })
+    : [];
+  const profileMap = new Map(profiles.map((profile) => [profile.id, profile]));
+  const purchaseIds = Array.from(
+    new Set(pageItems.map((item) => item.purchaseId).filter(Boolean) as string[]),
+  );
+  const refunds = purchaseIds.length
+    ? await prisma.refund.findMany({
+        where: { purchaseId: { in: purchaseIds } },
+        select: { purchaseId: true, refundedAt: true },
+      })
+    : [];
+  const refundMap = new Map(refunds.map((refund) => [refund.purchaseId ?? "", refund.refundedAt ?? null]));
 
   const items = pageItems.map((e) => {
     const window = buildDefaultCheckinWindow(event?.startsAt ?? null, event?.endsAt ?? null);
@@ -168,10 +212,35 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       emailVerified: true,
       isGuestOwner: false,
     });
+    const profile = e.ownerUserId ? profileMap.get(e.ownerUserId) : null;
+    const guestName = e.ticket?.guestLink?.guestName?.trim();
+    const guestEmail = e.ticket?.guestLink?.guestEmail?.trim();
+    const holderName =
+      profile?.fullName?.trim() ||
+      profile?.username?.trim() ||
+      profile?.email?.trim() ||
+      guestName ||
+      guestEmail ||
+      (e.ownerKey.startsWith("email:") ? e.ownerKey.replace("email:", "") : null) ||
+      "Participante";
+    const holderEmail =
+      profile?.email?.trim() ||
+      guestEmail ||
+      (e.ownerKey.startsWith("email:") ? e.ownerKey.replace("email:", "") : null);
+
     return {
       entitlementId: e.id,
       status: e.status,
       holderKey: e.ownerKey,
+      holder: {
+        name: holderName,
+        email: holderEmail,
+        type: profile ? "USER" : guestName || guestEmail ? "GUEST" : "UNKNOWN",
+      },
+      purchaseId: e.purchaseId,
+      ticketId: e.ticketId,
+      checkedInAt: e.checkins?.[0]?.checkedInAt ?? null,
+      refundedAt: refundMap.get(e.purchaseId) ?? null,
       snapshot: {
         title: e.snapshotTitle,
         startAt: e.snapshotStartAt,

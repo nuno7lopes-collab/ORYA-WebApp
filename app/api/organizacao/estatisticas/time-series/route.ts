@@ -3,7 +3,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { Prisma } from "@prisma/client";
+import { Prisma, SaleSummaryStatus } from "@prisma/client";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { isOrgAdminOrAbove } from "@/lib/organizationPermissions";
@@ -100,6 +100,7 @@ export async function GET(req: NextRequest) {
       : excludeTemplateType
         ? { NOT: { templateType: excludeTemplateType } }
         : {};
+    const isPadelScope = templateType === "PADEL";
 
     let eventId: number | null = null;
     if (eventIdParam) {
@@ -134,6 +135,7 @@ export async function GET(req: NextRequest) {
         ...(Object.keys(createdAtFilter).length > 0
           ? { createdAt: createdAtFilter }
           : {}),
+        status: SaleSummaryStatus.PAID,
         event: {
           organizationId: organization.id,
           ...eventTemplateFilter,
@@ -180,12 +182,50 @@ export async function GET(req: NextRequest) {
           currency: s.currency ?? null,
         };
       }
-      const qty = s.lines.reduce((acc, l) => acc + (l.quantity ?? 0), 0);
-      buckets[key].tickets += qty;
+      if (!isPadelScope) {
+        const qty = s.lines.reduce((acc, l) => acc + (l.quantity ?? 0), 0);
+        buckets[key].tickets += qty;
+      }
       buckets[key].revenueCents += s.netCents ?? 0;
       buckets[key].grossCents += s.subtotalCents ?? 0;
       buckets[key].discountCents += s.discountCents ?? 0;
       buckets[key].platformFeeCents += s.platformFeeCents ?? 0;
+    }
+
+    if (isPadelScope) {
+      const pairingCreatedFilter: Prisma.DateTimeFilter<"PadelPairing"> = {};
+      if (from) pairingCreatedFilter.gte = from;
+      if (to) pairingCreatedFilter.lte = to;
+      const pairings = await prisma.padelPairing.findMany({
+        where: {
+          pairingStatus: { not: "CANCELLED" },
+          lifecycleStatus: { not: "CANCELLED_INCOMPLETE" },
+          ...(Object.keys(pairingCreatedFilter).length > 0
+            ? { createdAt: pairingCreatedFilter }
+            : {}),
+          ...(eventId ? { eventId } : {}),
+          event: {
+            organizationId: organization.id,
+            ...eventTemplateFilter,
+          },
+        },
+        select: { createdAt: true },
+      });
+      pairings.forEach((pairing) => {
+        const key = formatDayKey(pairing.createdAt);
+        if (!buckets[key]) {
+          buckets[key] = {
+            date: key,
+            tickets: 0,
+            revenueCents: 0,
+            grossCents: 0,
+            discountCents: 0,
+            platformFeeCents: 0,
+            currency: null,
+          };
+        }
+        buckets[key].tickets += 1;
+      });
     }
 
     const points = Object.values(buckets).sort((a, b) =>

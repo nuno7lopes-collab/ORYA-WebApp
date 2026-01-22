@@ -49,7 +49,7 @@ export default function RecursoDisponibilidadePage() {
       <div className="rounded-2xl border border-white/10 bg-white/5 p-5 space-y-3">
         <h2 className="text-base font-semibold text-white">Agenda central</h2>
         <p className={DASHBOARD_MUTED}>
-          A disponibilidade do recurso é gerida no calendario principal, usando o filtro de recursos.
+          A disponibilidade do recurso é gerida no calendário principal, usando o filtro de recursos.
         </p>
         <Link
           href={`/organizacao/reservas?tab=availability&resourceId=${resourceId}`}

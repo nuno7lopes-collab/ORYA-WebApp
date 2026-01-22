@@ -58,7 +58,15 @@ const parseRoundMeta = (label: string) => {
   const prefix = label.startsWith("A ") ? "A " : label.startsWith("B ") ? "B " : "";
   const base = prefix ? label.slice(2) : label;
   let size: number | null = null;
-  if (base.startsWith("R")) {
+  let order: number | null = null;
+  if (/^L\\d+$/i.test(base)) {
+    const parsed = Number(base.slice(1));
+    order = Number.isFinite(parsed) ? parsed : null;
+  } else if (/^GF2$|^GRAND_FINAL_RESET$|^GRAND FINAL 2$/i.test(base)) {
+    order = Number.MAX_SAFE_INTEGER;
+  } else if (/^GF$|^GRAND_FINAL$|^GRAND FINAL$/i.test(base)) {
+    order = Number.MAX_SAFE_INTEGER - 1;
+  } else if (base.startsWith("R")) {
     const parsed = Number(base.slice(1));
     size = Number.isFinite(parsed) ? parsed : null;
   }
@@ -67,7 +75,17 @@ const parseRoundMeta = (label: string) => {
     if (base === "SEMIFINAL") size = 4;
     if (base === "FINAL") size = 2;
   }
-  return { prefix, size };
+  return { prefix, size, order };
+};
+
+const formatRoundLabel = (label: string) => {
+  const trimmed = label.trim();
+  const prefix = trimmed.startsWith("A ") ? "A " : trimmed.startsWith("B ") ? "B " : "";
+  const base = prefix ? trimmed.slice(2).trim() : trimmed;
+  if (/^L\\d+$/i.test(base)) return `${prefix}Ronda ${base.slice(1)}`;
+  if (/^GF2$|^GRAND_FINAL_RESET$|^GRAND FINAL 2$/i.test(base)) return `${prefix}Grande Final 2`;
+  if (/^GF$|^GRAND_FINAL$|^GRAND FINAL$/i.test(base)) return `${prefix}Grande Final`;
+  return label;
 };
 
 const buildRounds = (matches: LiveMatch[]) => {
@@ -83,7 +101,9 @@ const buildRounds = (matches: LiveMatch[]) => {
       const aMeta = parseRoundMeta(a[0]);
       const bMeta = parseRoundMeta(b[0]);
       if (aMeta.prefix !== bMeta.prefix) return aMeta.prefix.localeCompare(bMeta.prefix);
-      if (aMeta.size && bMeta.size && aMeta.size !== bMeta.size) return bMeta.size - aMeta.size;
+      const aOrder = aMeta.order ?? (aMeta.size !== null ? -aMeta.size : Number.MAX_SAFE_INTEGER - 1);
+      const bOrder = bMeta.order ?? (bMeta.size !== null ? -bMeta.size : Number.MAX_SAFE_INTEGER - 1);
+      if (aOrder !== bOrder) return aOrder - bOrder;
       return a[0].localeCompare(b[0]);
     })
     .map(([label, items]) => ({
@@ -195,7 +215,7 @@ export default function BracketWidgetClient({
           {rounds.map((round) => (
             <div key={round.label} className="rounded-lg border border-white/10 bg-white/5 p-3 space-y-2">
               <p className="text-[11px] uppercase tracking-[0.18em] text-white/60">
-                {round.label === "Bracket" ? t("bracket", resolvedLocale) : round.label}
+                {round.label === "Bracket" ? t("bracket", resolvedLocale) : formatRoundLabel(round.label)}
               </p>
               <div className="space-y-2">
                 {round.matches.map((match) => (

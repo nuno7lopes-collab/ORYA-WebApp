@@ -38,11 +38,37 @@ export function extractBracketPrefix(label: string | null): "" | "A " | "B " {
 
 export function sortRoundsBySize(matches: Array<{ roundLabel: string | null }>) {
   const counts = matches.reduce<Record<string, number>>((acc, m) => {
-    const key = m.roundLabel || "?";
+    const key = (m.roundLabel || "?").trim();
     acc[key] = (acc[key] || 0) + 1;
     return acc;
   }, {});
-  return Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([label]) => label);
+
+  const resolveOrder = (label: string) => {
+    const trimmed = label.trim();
+    const base = trimmed.startsWith("A ") || trimmed.startsWith("B ") ? trimmed.slice(2).trim() : trimmed;
+    if (/^L\d+$/i.test(base)) {
+      return Number(base.slice(1));
+    }
+    if (/^GF2$|^GRAND_FINAL_RESET$|^GRAND FINAL 2$/i.test(base)) {
+      return Number.MAX_SAFE_INTEGER;
+    }
+    if (/^GF$|^GRAND_FINAL$|^GRAND FINAL$/i.test(base)) {
+      return Number.MAX_SAFE_INTEGER - 1;
+    }
+    let size: number | null = null;
+    if (base.startsWith("R")) {
+      const parsed = Number(base.slice(1));
+      size = Number.isFinite(parsed) ? parsed : null;
+    } else if (base === "QUARTERFINAL") size = 8;
+    else if (base === "SEMIFINAL") size = 4;
+    else if (base === "FINAL") size = 2;
+    return size !== null ? -size : Number.MAX_SAFE_INTEGER - 1;
+  };
+
+  return Object.keys(counts)
+    .map((label) => ({ label, order: resolveOrder(label) }))
+    .sort((a, b) => a.order - b.order || a.label.localeCompare(b.label))
+    .map((entry) => entry.label);
 }
 
 function createBracketAdvancer(
@@ -73,7 +99,7 @@ function createBracketAdvancer(
     const nextMatches = roundsMap.get(nextRoundLabel) || [];
     const currentPos = currentMatches.findIndex((m) => m.id === fromMatchId);
     if (currentPos === -1) return;
-    const targetIdx = Math.floor(currentPos / 2);
+    const targetIdx = currentMatches.length === nextMatches.length ? currentPos : Math.floor(currentPos / 2);
     const target = nextMatches[targetIdx];
     if (!target) return;
 

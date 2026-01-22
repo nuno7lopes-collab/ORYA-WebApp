@@ -28,8 +28,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
   }
 
-  const isPrivate = targetProfile.visibility !== "PUBLIC";
-  if (isPrivate) {
+  const requiresApproval = targetProfile.visibility === "PRIVATE";
+  if (requiresApproval) {
     const existingFollow = await prisma.follows.findFirst({
       where: { follower_id: user.id, following_id: targetUserId },
       select: { id: true },

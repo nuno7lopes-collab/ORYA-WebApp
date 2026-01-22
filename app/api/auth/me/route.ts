@@ -40,6 +40,7 @@ type ApiAuthMeResponse = {
     allowFollowRequests: boolean;
     allowSalesAlerts?: boolean;
     allowSystemAnnouncements?: boolean;
+    allowMarketingCampaigns?: boolean;
     profileVisibility: "PUBLIC" | "PRIVATE" | "FOLLOWERS";
   } | null;
   needsEmailConfirmation?: boolean;
@@ -72,17 +73,11 @@ export async function GET() {
 
     const userId = user.id;
 
-    // Garantir Profile 1-1 com auth.users e prefs
-    const [profileFromDb, notificationPrefs] = await Promise.all([
-      prisma.profile.findUnique({
+    // Garantir Profile 1-1 com auth.users e prefs (upsert evita corrida concorrente)
+    const [initialProfile, notificationPrefs] = await Promise.all([
+      prisma.profile.upsert({
         where: { id: userId },
-      }),
-      getNotificationPrefs(userId).catch(() => null),
-    ]);
-    let profile =
-      profileFromDb ??
-      (await prisma.profile.create({
-        data: {
+        create: {
           id: userId,
           username: null,
           fullName: userMetadata.full_name ?? userMetadata.name ?? null,
@@ -90,7 +85,11 @@ export async function GET() {
           roles: ["user"],
           visibility: "PUBLIC",
         },
-      }));
+        update: {},
+      }),
+      getNotificationPrefs(userId).catch(() => null),
+    ]);
+    let profile = initialProfile;
 
     const pendingUsername = typeof userMetadata.pending_username === "string" ? userMetadata.pending_username : null;
 
@@ -171,6 +170,7 @@ export async function GET() {
       allowFollowRequests: notificationPrefs?.allowFollowRequests ?? true,
       allowSalesAlerts: notificationPrefs?.allowSalesAlerts ?? true,
       allowSystemAnnouncements: notificationPrefs?.allowSystemAnnouncements ?? true,
+      allowMarketingCampaigns: notificationPrefs?.allowMarketingCampaigns ?? true,
       profileVisibility,
     };
 
@@ -205,7 +205,7 @@ export async function GET() {
     console.error("GET /api/auth/me error:", err);
     return NextResponse.json<ApiAuthMeResponse>(
       { user: null, profile: null },
-      { status: 200 }
+      { status: 500 }
     );
   }
 }

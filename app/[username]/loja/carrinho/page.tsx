@@ -2,7 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { isStoreFeatureEnabled, isStorePublic } from "@/lib/storeAccess";
 import StorefrontHeader from "@/components/storefront/StorefrontHeader";
-import StorefrontCartClient from "@/components/storefront/StorefrontCartClient";
+import StorefrontCartOverlay from "@/components/storefront/StorefrontCartOverlay";
 
 export const dynamic = "force-dynamic";
 
@@ -69,16 +69,18 @@ export default async function StoreCartPage({ params }: PageProps) {
     <main className="min-h-screen w-full text-white">
       <div className="orya-page-width px-4 pb-16 pt-10 space-y-6">
         <StorefrontHeader title={displayName} subtitle="Carrinho" cartHref={baseHref + "/carrinho"} />
-        <div className="rounded-3xl border border-white/12 bg-white/5 p-6 shadow-[0_18px_50px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
-          <StorefrontCartClient
-            storeId={store.id}
-            currency={store.currency}
-            freeShippingThresholdCents={store.freeShippingThresholdCents}
-            storeBaseHref={baseHref}
-            checkoutHref={baseHref + "/checkout"}
-          />
+        <div className="rounded-3xl border border-white/12 bg-white/5 p-6 text-sm text-white/70 shadow-[0_18px_50px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
+          O carrinho aparece compacto no canto direito. Podes minimizar ou abrir para rever o pedido.
         </div>
       </div>
+      <StorefrontCartOverlay
+        storeId={store.id}
+        currency={store.currency}
+        freeShippingThresholdCents={store.freeShippingThresholdCents}
+        storeBaseHref={baseHref}
+        checkoutHref={baseHref + "/checkout"}
+        defaultOpen
+      />
     </main>
   );
 }

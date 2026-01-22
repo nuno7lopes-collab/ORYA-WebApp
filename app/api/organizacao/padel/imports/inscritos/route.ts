@@ -100,7 +100,12 @@ export async function POST(req: NextRequest) {
   });
 
   const buffer = Buffer.from(await file.arrayBuffer());
-  const workbook = read(buffer, { type: "buffer" });
+  const fileName = typeof file.name === "string" ? file.name.toLowerCase() : "";
+  const fileType = typeof file.type === "string" ? file.type.toLowerCase() : "";
+  const isCsv = fileName.endsWith(".csv") || fileType.includes("csv") || fileType === "text/plain";
+  const workbook = isCsv
+    ? read(buffer.toString("utf8"), { type: "string", raw: false, codepage: 65001 })
+    : read(buffer, { type: "buffer" });
   const sheetName = workbook.SheetNames[0];
   if (!sheetName) return NextResponse.json({ ok: false, error: "EMPTY_FILE" }, { status: 400 });
   const sheet = workbook.Sheets[sheetName];

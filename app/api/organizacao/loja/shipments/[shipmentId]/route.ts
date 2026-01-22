@@ -71,7 +71,7 @@ async function getOrganizationContext(req: NextRequest, userId: string, options?
   return { ok: true as const, store };
 }
 
-export async function PATCH(req: NextRequest, { params }: { params: { shipmentId: string } }) {
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ shipmentId: string }> }) {
   try {
     if (!isStoreFeatureEnabled()) {
       return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
@@ -85,7 +85,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { shipmentId
       return NextResponse.json({ ok: false, error: context.error }, { status: 403 });
     }
 
-    const shipmentId = parseId(params.shipmentId);
+    const resolvedParams = await params;
+    const shipmentId = parseId(resolvedParams.shipmentId);
     if (!shipmentId.ok) {
       return NextResponse.json({ ok: false, error: shipmentId.error }, { status: 400 });
     }
@@ -143,7 +144,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { shipmentId
         },
       });
 
-      if (nextStatus !== StoreShipmentStatus.PENDING) {
+      if (nextStatus === StoreShipmentStatus.DELIVERED) {
         await tx.storeOrder.update({
           where: { id: shipment.orderId },
           data: { status: StoreOrderStatus.FULFILLED },
@@ -163,7 +164,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { shipmentId
   }
 }
 
-export async function DELETE(req: NextRequest, { params }: { params: { shipmentId: string } }) {
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ shipmentId: string }> }) {
   try {
     if (!isStoreFeatureEnabled()) {
       return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
@@ -177,7 +178,8 @@ export async function DELETE(req: NextRequest, { params }: { params: { shipmentI
       return NextResponse.json({ ok: false, error: context.error }, { status: 403 });
     }
 
-    const shipmentId = parseId(params.shipmentId);
+    const resolvedParams = await params;
+    const shipmentId = parseId(resolvedParams.shipmentId);
     if (!shipmentId.ok) {
       return NextResponse.json({ ok: false, error: shipmentId.error }, { status: 400 });
     }

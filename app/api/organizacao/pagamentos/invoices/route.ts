@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { OrganizationMemberRole } from "@prisma/client";
+import { OrganizationMemberRole, SaleSummaryStatus } from "@prisma/client";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 
@@ -41,6 +41,7 @@ export async function GET(req: NextRequest) {
     const sales = await prisma.saleSummary.findMany({
       where: {
         event: { organizationId: organization.id },
+        status: SaleSummaryStatus.PAID,
         ...(from || to
           ? {
               createdAt: {

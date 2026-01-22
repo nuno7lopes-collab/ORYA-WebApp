@@ -30,6 +30,12 @@ function parseId(value: string) {
   return { ok: true as const, id };
 }
 
+function rangesOverlap(minA: number, maxA: number | null, minB: number, maxB: number | null) {
+  const aMax = maxA ?? Number.POSITIVE_INFINITY;
+  const bMax = maxB ?? Number.POSITIVE_INFINITY;
+  return minA <= bMax && minB <= aMax;
+}
+
 async function getOrganizationContext(req: NextRequest, userId: string, options?: { requireVerifiedEmail?: boolean }) {
   const organizationId = resolveOrganizationIdFromRequest(req);
   const { organization, membership } = await getActiveOrganizationForUser(userId, {
@@ -58,7 +64,7 @@ async function getOrganizationContext(req: NextRequest, userId: string, options?
   return { ok: true as const, store };
 }
 
-export async function GET(req: NextRequest, { params }: { params: { tierId: string } }) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ tierId: string }> }) {
   try {
     if (!isStoreFeatureEnabled()) {
       return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
@@ -72,7 +78,8 @@ export async function GET(req: NextRequest, { params }: { params: { tierId: stri
       return NextResponse.json({ ok: false, error: context.error }, { status: 403 });
     }
 
-    const tierId = parseId(params.tierId);
+    const resolvedParams = await params;
+    const tierId = parseId(resolvedParams.tierId);
     if (!tierId.ok) {
       return NextResponse.json({ ok: false, error: tierId.error }, { status: 400 });
     }
@@ -102,7 +109,7 @@ export async function GET(req: NextRequest, { params }: { params: { tierId: stri
   }
 }
 
-export async function PATCH(req: NextRequest, { params }: { params: { tierId: string } }) {
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ tierId: string }> }) {
   try {
     if (!isStoreFeatureEnabled()) {
       return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
@@ -116,7 +123,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { tierId: st
       return NextResponse.json({ ok: false, error: context.error }, { status: 403 });
     }
 
-    const tierId = parseId(params.tierId);
+    const resolvedParams = await params;
+    const tierId = parseId(resolvedParams.tierId);
     if (!tierId.ok) {
       return NextResponse.json({ ok: false, error: tierId.error }, { status: 400 });
     }
@@ -125,6 +133,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { tierId: st
       where: { id: tierId.id, method: { zone: { storeId: context.store.id } } },
       select: {
         id: true,
+        methodId: true,
         minSubtotalCents: true,
         maxSubtotalCents: true,
       },
@@ -145,6 +154,15 @@ export async function PATCH(req: NextRequest, { params }: { params: { tierId: st
     const nextMax = payload.maxSubtotalCents === undefined ? existing.maxSubtotalCents : payload.maxSubtotalCents;
     if (nextMax !== null && nextMax < nextMin) {
       return NextResponse.json({ ok: false, error: "Intervalo invalido." }, { status: 400 });
+    }
+
+    const otherTiers = await prisma.storeShippingTier.findMany({
+      where: { methodId: existing.methodId, id: { not: existing.id } },
+      select: { id: true, minSubtotalCents: true, maxSubtotalCents: true },
+    });
+    const overlap = otherTiers.some((tier) => rangesOverlap(nextMin, nextMax, tier.minSubtotalCents, tier.maxSubtotalCents));
+    if (overlap) {
+      return NextResponse.json({ ok: false, error: "Tier sobrepoe-se a outro intervalo." }, { status: 409 });
     }
 
     const data: {
@@ -185,7 +203,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { tierId: st
   }
 }
 
-export async function DELETE(req: NextRequest, { params }: { params: { tierId: string } }) {
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ tierId: string }> }) {
   try {
     if (!isStoreFeatureEnabled()) {
       return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
@@ -199,7 +217,8 @@ export async function DELETE(req: NextRequest, { params }: { params: { tierId: s
       return NextResponse.json({ ok: false, error: context.error }, { status: 403 });
     }
 
-    const tierId = parseId(params.tierId);
+    const resolvedParams = await params;
+    const tierId = parseId(resolvedParams.tierId);
     if (!tierId.ok) {
       return NextResponse.json({ ok: false, error: tierId.error }, { status: 400 });
     }

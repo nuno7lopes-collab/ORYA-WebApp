@@ -49,6 +49,7 @@ type ProfileListItem = {
   username: string | null;
   fullName: string | null;
   avatarUrl: string | null;
+  kind?: "user" | "organization";
 };
 
 type ListMode = "followers" | "following";
@@ -138,13 +139,15 @@ export default function ProfileHeader({
       setSaving(false);
       return false;
     }
+    const resolvedVisibility =
+      visibility === "PRIVATE" || visibility === "FOLLOWERS" || visibility === "PUBLIC" ? visibility : "PUBLIC";
     const payload = {
       fullName,
       username: validation.normalized,
       bio: opts?.bio ?? bioInput.trim(),
       avatarUrl: opts?.avatarUrl ?? avatar ?? null,
       coverUrl: opts?.coverUrl ?? cover ?? null,
-      visibility: visibility === "PRIVATE" ? "PRIVATE" : "PUBLIC",
+      visibility: resolvedVisibility,
     };
     const res = await fetch("/api/profiles/save-basic", {
       method: "POST",
@@ -239,7 +242,8 @@ export default function ProfileHeader({
   };
 
   const fetchList = async (mode: "followers" | "following") => {
-    const res = await fetch(`/api/social/${mode}?userId=${targetUserId}&limit=50`);
+    const includeOrganizations = mode === "following" ? "&includeOrganizations=1" : "";
+    const res = await fetch(`/api/social/${mode}?userId=${targetUserId}&limit=50${includeOrganizations}`);
     const json = await res.json().catch(() => null);
     if (!res.ok || !json?.ok || !Array.isArray(json.items)) return [];
     return json.items as ProfileListItem[];
@@ -512,10 +516,10 @@ export default function ProfileHeader({
         />
       </div>
       {showEditControls && avatarMenu && (
-        <div className="absolute left-0 top-[110%] z-30 w-52 rounded-2xl border border-white/15 bg-[rgba(5,8,15,0.9)] p-2 text-sm text-white shadow-[0_24px_80px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
+        <div className="absolute left-0 top-[110%] z-30 w-52 rounded-2xl orya-menu-surface p-2 text-sm text-white backdrop-blur-2xl">
           {avatar && (
             <button
-              className="w-full rounded-xl px-3 py-2 text-left hover:bg-white/10"
+              className="orya-menu-item text-sm"
               onClick={() => {
                 setAvatarMenu(false);
                 setIsListModalOpen(false);
@@ -545,7 +549,7 @@ export default function ProfileHeader({
             </button>
           )}
           <button
-            className="w-full rounded-xl px-3 py-2 text-left hover:bg-white/10"
+            className="orya-menu-item text-sm"
             onClick={() => {
               setAvatarMenu(false);
               triggerFile();
@@ -554,7 +558,7 @@ export default function ProfileHeader({
             Mudar foto
           </button>
           <button
-            className="w-full rounded-xl px-3 py-2 text-left hover:bg-white/10"
+            className="orya-menu-item text-sm"
             onClick={() => {
               setAvatarMenu(false);
               runSave({ avatarUrl: null });
@@ -662,29 +666,38 @@ export default function ProfileHeader({
             ) : (
               <div className="max-h-[60vh] space-y-2 overflow-y-auto pr-1">
                 {listItems.map((item) => {
+                  const isOrganization = item.kind === "organization";
                   const handle = item.username || item.userId;
+                  const displayName =
+                    item.fullName || item.username || (isOrganization ? "Organização ORYA" : "Utilizador ORYA");
+                  const href = item.username ? `/${item.username}` : isOrganization ? "/organizacao" : "/me";
                   return (
                     <Link
                       key={item.userId}
-                      href={item.username ? `/${item.username}` : `/me`}
+                      href={href}
                       className="flex items-center gap-3 rounded-xl border border-white/8 bg-white/5 px-3 py-2 hover:border-white/20 hover:bg-white/8 transition-colors"
                       onClick={() => setIsListModalOpen(false)}
                     >
                       <Avatar
                         src={item.avatarUrl}
-                        name={item.fullName || item.username || handle}
+                        name={displayName || handle}
                         className="h-10 w-10 border border-white/12"
                         textClassName="text-[11px] font-semibold uppercase text-white/80"
                         fallbackText="OR"
                       />
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-semibold text-white truncate">
-                          {item.fullName || item.username || "Utilizador ORYA"}
+                          {displayName}
                         </p>
                         {item.username && (
                           <p className="text-[11px] text-white/65 truncate">@{item.username}</p>
                         )}
                       </div>
+                      {isOrganization && (
+                        <span className="rounded-full border border-amber-300/35 bg-amber-400/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-amber-100">
+                          Org
+                        </span>
+                      )}
                     </Link>
                   );
                 })}

@@ -5,9 +5,11 @@ import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { canManageEvents } from "@/lib/organizationPermissions";
 import { notFound, redirect } from "next/navigation";
 import PadelTournamentTabs from "./PadelTournamentTabs";
+import EventAttendeesPanel from "./EventAttendeesPanel";
 import { CTA_PRIMARY, CTA_SECONDARY } from "@/app/organizacao/dashboardUi";
 import { getEventCoverSuggestionIds, getEventCoverUrl } from "@/lib/eventCover";
 import { cn } from "@/lib/utils";
+import { getEventLocationDisplay } from "@/lib/location/eventLocation";
 
 type PageProps = {
   params: Promise<{
@@ -28,7 +30,12 @@ type EventWithTickets = {
   locationName: string | null;
   locationCity: string | null;
   address: string | null;
+  locationSource: "OSM" | "MANUAL" | null;
+  locationFormattedAddress: string | null;
+  locationComponents: Record<string, unknown> | null;
+  locationOverrides: Record<string, unknown> | null;
   status: string;
+  liveHubVisibility: "PUBLIC" | "PRIVATE" | "DISABLED";
   coverImageUrl: string | null;
   isFree: boolean;
   ticketTypes: Array<{
@@ -42,6 +49,7 @@ type EventWithTickets = {
     status: string;
     startsAt: Date | null;
     endsAt: Date | null;
+    padelEventCategoryLinkId?: number | null;
   }>;
   padelCategoryLinks?: Array<{
     id: number;
@@ -114,7 +122,7 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
   const ticketLabelPluralCap = isPadelEvent ? "Inscrições" : "Bilhetes";
   const ticketsSoldLabel = isPadelEvent ? "Inscrições registadas" : "Bilhetes vendidos";
   const revenueHint = isPadelEvent
-    ? "Calculado com base em preço × inscrições registadas, por wave."
+    ? "Calculado com base em bilhetes vendidos."
     : "Calculado com base em preço × bilhetes vendidos, por wave.";
   const fallbackHref = eventRouteBase;
 
@@ -129,24 +137,103 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
     redirect(fallbackHref);
   }
 
+  const locationDisplay = getEventLocationDisplay(
+    {
+      locationName: event.locationName,
+      locationCity: event.locationCity,
+      address: event.address,
+      locationSource: event.locationSource,
+      locationFormattedAddress: event.locationFormattedAddress,
+      locationComponents: event.locationComponents,
+      locationOverrides: event.locationOverrides,
+    },
+    "Local a anunciar",
+  );
+
   const now = new Date();
+  const padelLinks = Array.isArray(event.padelCategoryLinks) ? event.padelCategoryLinks : [];
+  const advancedSettings = event.padelTournamentConfig?.advancedSettings as
+    | {
+        maxEntriesTotal?: number | null;
+        waitlistEnabled?: boolean;
+        allowSecondCategory?: boolean;
+        allowCancelGames?: boolean;
+        gameDurationMinutes?: number | null;
+        courtIds?: number[];
+        staffIds?: number[];
+        courtsFromClubs?: Array<{ id?: number; clubId?: number | null; clubName?: string | null; name?: string | null; indoor?: boolean }>;
+        staffFromClubs?: Array<{ clubName?: string | null; email?: string | null; role?: string | null }>;
+        categoriesMeta?: Array<{ name?: string; categoryId?: number | null; capacity?: number | null; registrationType?: string | null }>;
+      }
+    | null;
+
+  const padelCapacity = (() => {
+    if (!isPadelEvent) return null;
+    const maxEntriesTotal =
+      typeof advancedSettings?.maxEntriesTotal === "number" && Number.isFinite(advancedSettings.maxEntriesTotal)
+        ? Math.floor(advancedSettings.maxEntriesTotal)
+        : null;
+    if (maxEntriesTotal && maxEntriesTotal > 0) return maxEntriesTotal;
+    const enabledLinks = padelLinks.filter((link) => link.isEnabled !== false);
+    if (enabledLinks.length === 0) return null;
+    const capacities = enabledLinks.map((link) => link.capacityTeams ?? link.capacityPlayers ?? null);
+    if (capacities.some((cap) => cap === null)) return null;
+    return capacities.reduce((sum, cap) => sum + (cap ?? 0), 0);
+  })();
+
+  const padelPairingsCount = isPadelEvent
+    ? await prisma.padelPairing.count({
+        where: {
+          eventId: event.id,
+          pairingStatus: { not: "CANCELLED" },
+          lifecycleStatus: { not: "CANCELLED_INCOMPLETE" },
+        },
+      })
+    : 0;
+  const padelPairingsByCategory = isPadelEvent
+    ? await prisma.padelPairing.groupBy({
+        by: ["categoryId"],
+        where: {
+          eventId: event.id,
+          pairingStatus: { not: "CANCELLED" },
+          lifecycleStatus: { not: "CANCELLED_INCOMPLETE" },
+        },
+        _count: { _all: true },
+      })
+    : [];
+  const padelPairingsByCategoryMap = new Map<number | null, number>();
+  padelPairingsByCategory.forEach((row) => {
+    padelPairingsByCategoryMap.set(row.categoryId ?? null, row._count._all);
+  });
+  const padelMatchesCount = isPadelEvent
+    ? await prisma.padelMatch.count({
+        where: {
+          eventId: event.id,
+          status: { not: "CANCELLED" },
+        },
+      })
+    : 0;
 
   // 3) Métricas agregadas
   const totalWaves = event.ticketTypes.length;
-  const totalTicketsSold = event.ticketTypes.reduce(
-    (sum, t) => sum + t.soldQuantity,
-    0,
-  );
-  const totalStock = event.ticketTypes.reduce(
-    (sum, t) =>
-      sum +
-      (t.totalQuantity !== null && t.totalQuantity !== undefined
-        ? t.totalQuantity
-        : 0),
-    0,
-  );
-  const overallOccupancy =
-    totalStock > 0
+  const totalTicketsSold = isPadelEvent
+    ? padelPairingsCount
+    : event.ticketTypes.reduce((sum, t) => sum + t.soldQuantity, 0);
+  const totalStock = isPadelEvent
+    ? padelCapacity ?? 0
+    : event.ticketTypes.reduce(
+        (sum, t) =>
+          sum +
+          (t.totalQuantity !== null && t.totalQuantity !== undefined
+            ? t.totalQuantity
+            : 0),
+        0,
+      );
+  const overallOccupancy = isPadelEvent
+    ? padelCapacity && padelCapacity > 0
+      ? Math.min(100, Math.round((totalTicketsSold / padelCapacity) * 100))
+      : null
+    : totalStock > 0
       ? Math.min(100, Math.round((totalTicketsSold / totalStock) * 100))
       : null;
 
@@ -201,19 +288,6 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
           select: { id: true, name: true, city: true },
         })
       : [];
-  const advancedSettings = event.padelTournamentConfig?.advancedSettings as
-    | {
-        maxEntriesTotal?: number | null;
-        waitlistEnabled?: boolean;
-        allowSecondCategory?: boolean;
-        allowCancelGames?: boolean;
-        gameDurationMinutes?: number | null;
-        courtsFromClubs?: Array<{ id?: number; clubId?: number | null; clubName?: string | null; name?: string | null; indoor?: boolean }>;
-        staffFromClubs?: Array<{ clubName?: string | null; email?: string | null; role?: string | null }>;
-        categoriesMeta?: Array<{ name?: string; categoryId?: number | null; capacity?: number | null; registrationType?: string | null }>;
-      }
-    | null;
-  const padelLinks = Array.isArray(event.padelCategoryLinks) ? event.padelCategoryLinks : [];
   const categoriesMeta =
     padelLinks.length > 0
       ? padelLinks.map((link) => ({
@@ -223,8 +297,121 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
           registrationType: undefined,
         }))
       : advancedSettings?.categoriesMeta ?? [];
+  const padelCategorySummary = isPadelEvent
+    ? categoriesMeta.map((category, index) => {
+        const categoryId =
+          typeof category.categoryId === "number" && Number.isFinite(category.categoryId)
+            ? category.categoryId
+            : null;
+        const capacity =
+          typeof category.capacity === "number" && Number.isFinite(category.capacity)
+            ? Math.floor(category.capacity)
+            : null;
+        const count = padelPairingsByCategoryMap.get(categoryId ?? null) ?? 0;
+        const occupancy = capacity && capacity > 0 ? Math.min(100, Math.round((count / capacity) * 100)) : null;
+        const label = category.name || (categoryId ? `Categoria ${categoryId}` : `Categoria ${index + 1}`);
+        return {
+          key: categoryId ?? `padel-cat-${index}`,
+          label,
+          count,
+          capacity,
+          occupancy,
+        };
+      })
+    : [];
   const backHref = eventRouteBase;
   const liveHref = `${eventRouteBase}/${event.id}/live`;
+  const hubBaseHref = isPadelEvent ? `${eventRouteBase}?section=padel-hub` : null;
+  const hubCalendarHref = hubBaseHref ? `${hubBaseHref}&padel=calendar&eventId=${event.id}` : null;
+  const hubClubHref = hubBaseHref ? `${hubBaseHref}&padel=clubs` : null;
+  const hubCourtsHref = hubBaseHref ? `${hubBaseHref}&padel=courts` : null;
+  const hubCategoriesHref = hubBaseHref ? `${hubBaseHref}&padel=categories` : null;
+
+  const activePadelLinks = isPadelEvent ? padelLinks.filter((link) => link.isEnabled !== false) : [];
+  const activePadelLinkIds = activePadelLinks.map((link) => link.id);
+  const ticketLinkIds = new Set(
+    event.ticketTypes
+      .map((ticket) => ticket.padelEventCategoryLinkId)
+      .filter((id): id is number => typeof id === "number" && Number.isFinite(id)),
+  );
+  const padelTicketsReady =
+    activePadelLinkIds.length > 0 && activePadelLinkIds.every((id) => ticketLinkIds.has(id));
+  const courtIds =
+    Array.isArray(advancedSettings?.courtIds)
+      ? advancedSettings.courtIds.filter((id) => typeof id === "number" && Number.isFinite(id))
+      : [];
+  const staffIds =
+    Array.isArray(advancedSettings?.staffIds)
+      ? advancedSettings.staffIds.filter((id) => typeof id === "number" && Number.isFinite(id))
+      : [];
+  const courtsCount = courtIds.length > 0 ? courtIds.length : event.padelTournamentConfig?.numberOfCourts ?? 0;
+  const liveHubReady = event.liveHubVisibility !== "DISABLED";
+  const padelStatusItems = isPadelEvent
+    ? [
+        {
+          key: "club",
+          label: "Clube",
+          status: event.padelTournamentConfig?.club ? "ok" : "missing",
+          detail: event.padelTournamentConfig?.club?.name ?? "Sem clube",
+        },
+        {
+          key: "courts",
+          label: "Courts",
+          status: courtsCount > 0 ? "ok" : "missing",
+          detail: courtsCount > 0 ? `${courtsCount} court(s)` : "Sem courts",
+        },
+        {
+          key: "categories",
+          label: "Categorias",
+          status: activePadelLinkIds.length > 0 ? "ok" : "missing",
+          detail: activePadelLinkIds.length > 0 ? `${activePadelLinkIds.length} ativa(s)` : "Sem categorias",
+        },
+        {
+          key: "tickets",
+          label: "Inscrições",
+          status: padelTicketsReady ? "ok" : "missing",
+          detail: padelTicketsReady ? "Por categoria" : "Faltam por categoria",
+        },
+        {
+          key: "live",
+          label: "LiveHub",
+          status: liveHubReady ? "ok" : "missing",
+          detail: liveHubReady ? "Visível" : "Desativado",
+        },
+        {
+          key: "staff",
+          label: "Staff",
+          status: partnerClubs.length > 0 ? (staffIds.length > 0 ? "ok" : "missing") : staffIds.length > 0 ? "ok" : "optional",
+          detail:
+            staffIds.length > 0
+              ? `${staffIds.length} pessoa(s)`
+              : partnerClubs.length > 0
+                ? "Obrigatório"
+                : "Opcional",
+        },
+      ]
+    : [];
+  const padelStatusRequired = padelStatusItems.filter((item) => item.status !== "optional");
+  const padelStatusMissing = padelStatusItems.filter((item) => item.status === "missing");
+  const padelStatusComplete = padelStatusRequired.filter((item) => item.status === "ok").length;
+  const padelStatusLabel =
+    padelStatusMissing.length === 0 ? "Pronto" : `${padelStatusComplete}/${padelStatusRequired.length} ok`;
+
+  const activePadelCategoryIds = activePadelLinks.map((link) => link.padelCategoryId);
+  const categoriesWithPairings = activePadelCategoryIds.filter(
+    (id) => (padelPairingsByCategoryMap.get(id) ?? 0) >= 2,
+  );
+  const readyToGenerateMatches = activePadelCategoryIds.length > 0 && categoriesWithPairings.length > 0;
+  const generateIssues: string[] = [];
+  if (activePadelCategoryIds.length === 0) generateIssues.push("Sem categorias ativas");
+  if (categoriesWithPairings.length === 0) generateIssues.push("Duplas insuficientes (mín. 2)");
+
+  const readyForLive = padelMatchesCount > 0 && liveHubReady;
+  const liveIssues: string[] = [];
+  if (padelMatchesCount === 0) liveIssues.push("Sem jogos gerados");
+  if (!liveHubReady) liveIssues.push("LiveHub desativado");
+
+  const generateMatchesHref = isPadelEvent ? "#padel-torneio" : null;
 
   const timeline = [
     { key: "OCULTO", label: "Oculto", active: ["DRAFT"].includes(event.status), done: event.status !== "DRAFT" },
@@ -246,6 +433,11 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
             <a href={backHref} className={CTA_SECONDARY}>
               ← Voltar à lista
             </a>
+            {hubCalendarHref && (
+              <a href={hubCalendarHref} className={CTA_SECONDARY}>
+                Calendário do Hub
+              </a>
+            )}
             <a href={liveHref} className={CTA_SECONDARY}>
               Preparar Live
             </a>
@@ -274,11 +466,11 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
               <p className="mt-1 text-[11px] text-white/65">
                 {startDateFormatted}
                 {endDateFormatted ? ` — ${endDateFormatted}` : ""} •{" "}
-                {event.locationName}
+                {locationDisplay.primary}
               </p>
-              {event.address && (
+              {locationDisplay.secondary && (
                 <p className="text-[11px] text-white/45">
-                  {event.address}
+                  {locationDisplay.secondary}
                 </p>
               )}
             </div>
@@ -310,6 +502,122 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
               </div>
             ))}
           </div>
+
+          {isPadelEvent && padelStatusItems.length > 0 && (
+            <div className="mt-3 rounded-2xl border border-white/12 bg-black/30 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Estado operativo</p>
+                <span
+                  className={`rounded-full border px-2 py-1 text-[11px] ${
+                    padelStatusMissing.length === 0
+                      ? "border-emerald-400/60 bg-emerald-500/15 text-emerald-50"
+                      : "border-amber-400/50 bg-amber-500/10 text-amber-50"
+                  }`}
+                >
+                  {padelStatusLabel}
+                </span>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
+                {padelStatusItems.map((item) => {
+                  const statusClass =
+                    item.status === "ok"
+                      ? "border-emerald-400/60 bg-emerald-500/10 text-emerald-50"
+                      : item.status === "optional"
+                        ? "border-white/15 bg-white/5 text-white/60"
+                        : "border-amber-400/50 bg-amber-500/10 text-amber-50";
+                  return (
+                    <span key={item.key} className={`rounded-full border px-2 py-1 ${statusClass}`}>
+                      {item.label}: {item.detail}
+                    </span>
+                  );
+                })}
+              </div>
+              {padelStatusMissing.length > 0 && (
+                <p className="mt-2 text-[11px] text-white/60">
+                  Faltam {padelStatusMissing.length} passo(s) para ficar pronto.
+                </p>
+              )}
+              {(hubClubHref || hubCourtsHref || hubCategoriesHref || hubCalendarHref) && (
+                <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
+                  {hubClubHref && (
+                    <a href={hubClubHref} className={CTA_SECONDARY}>
+                      Clube
+                    </a>
+                  )}
+                  {hubCourtsHref && (
+                    <a href={hubCourtsHref} className={CTA_SECONDARY}>
+                      Courts
+                    </a>
+                  )}
+                  {hubCategoriesHref && (
+                    <a href={hubCategoriesHref} className={CTA_SECONDARY}>
+                      Categorias
+                    </a>
+                  )}
+                  {hubCalendarHref && (
+                    <a href={hubCalendarHref} className={CTA_SECONDARY}>
+                      Calendário
+                    </a>
+                  )}
+                  <a href={liveHref} className={CTA_SECONDARY}>
+                    LiveHub
+                  </a>
+                </div>
+              )}
+
+              <div className="mt-4 grid gap-3 md:grid-cols-2">
+                <div
+                  className={`rounded-xl border px-3 py-2 ${
+                    readyToGenerateMatches
+                      ? "border-emerald-400/50 bg-emerald-500/10"
+                      : "border-amber-400/50 bg-amber-500/10"
+                  }`}
+                >
+                  <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Pronto para gerar jogos</p>
+                  <p className="mt-2 text-sm text-white/80">
+                    {readyToGenerateMatches
+                      ? `OK · ${categoriesWithPairings.length} categoria(s) com duplas`
+                      : generateIssues.join(" · ")}
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
+                    {generateMatchesHref && (
+                      <a href={generateMatchesHref} className={CTA_SECONDARY}>
+                        Gerar jogos
+                      </a>
+                    )}
+                    {hubCategoriesHref && (
+                      <a href={hubCategoriesHref} className={CTA_SECONDARY}>
+                        Rever categorias
+                      </a>
+                    )}
+                  </div>
+                </div>
+
+                <div
+                  className={`rounded-xl border px-3 py-2 ${
+                    readyForLive ? "border-emerald-400/50 bg-emerald-500/10" : "border-amber-400/50 bg-amber-500/10"
+                  }`}
+                >
+                  <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Pronto para Live</p>
+                  <p className="mt-2 text-sm text-white/80">
+                    {readyForLive
+                      ? `OK · ${padelMatchesCount} jogo(s) prontos`
+                      : liveIssues.join(" · ")}
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
+                    <a href={liveHref} className={CTA_SECONDARY}>
+                      Preparar Live
+                    </a>
+                    {hubCalendarHref && (
+                      <a href={hubCalendarHref} className={CTA_SECONDARY}>
+                        Agenda
+                      </a>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           {cheapestWave && (
             <p className="mt-1 text-[11px] text-white/70">
@@ -439,29 +747,90 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
         <div className="flex items-center justify-between gap-2">
           <div>
             <h2 className="text-sm font-semibold text-white/90">
-              Waves &amp; {ticketLabelPlural}
+              {isPadelEvent ? "Categorias & inscrições" : `Waves & ${ticketLabelPlural}`}
             </h2>
             <p className="text-[11px] text-white/65">
-              Visão por wave: estado, stock, vendas e receita individual.
+              {isPadelEvent
+                ? "Visão por categoria: vagas, inscrições e ocupação."
+                : "Visão por wave: estado, stock, vendas e receita individual."}
             </p>
           </div>
         </div>
 
-        {event.ticketTypes.length === 0 && (
-          <div className="mt-2 rounded-xl border border-dashed border-white/20 bg-white/5 px-4 py-4 text-[11px] text-white/70">
-            Este {primaryLabel} ainda não tem waves configuradas. Usa o criador de{" "}
-            {primaryLabel}s para adicionar {ticketLabelPlural}.
-          </div>
-        )}
+        {isPadelEvent ? (
+          padelCategorySummary.length === 0 ? (
+            <div className="mt-2 rounded-xl border border-dashed border-white/20 bg-white/5 px-4 py-4 text-[11px] text-white/70">
+              Este torneio ainda não tem categorias ativas.
+            </div>
+          ) : (
+            <div className="mt-2 grid grid-cols-1 gap-4 md:grid-cols-2">
+              {padelCategorySummary.map((category) => {
+                const remaining =
+                  category.capacity !== null ? Math.max(category.capacity - category.count, 0) : null;
+                return (
+                  <article
+                    key={category.key}
+                    className="rounded-xl border border-white/14 bg-gradient-to-br from-white/5 via-black/80 to-black/95 px-4 py-4 flex flex-col gap-3"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <h3 className="text-sm font-semibold text-white/95">{category.label}</h3>
+                        <p className="mt-1 text-[11px] text-white/60">
+                          {category.capacity !== null
+                            ? `Capacidade: ${category.capacity}`
+                            : "Capacidade aberta"}
+                        </p>
+                      </div>
+                      <div className="flex flex-col items-end gap-1">
+                        <span className="px-2 py-0.5 rounded-full bg-white/5 border border-white/20 text-[10px] text-white/80">
+                          Inscrições
+                        </span>
+                        <span className="text-sm font-semibold text-white">{category.count}</span>
+                      </div>
+                    </div>
 
-        {event.ticketTypes.length > 0 && (
-          <div className="mt-2 grid grid-cols-1 gap-4 md:grid-cols-2">
-            {event.ticketTypes.map((ticket) => {
-              const remaining =
-                ticket.totalQuantity !== null &&
-                ticket.totalQuantity !== undefined
-                  ? ticket.totalQuantity - ticket.soldQuantity
-                  : null;
+                    <div className="flex flex-wrap items-center gap-3 text-[11px] text-white/70">
+                      <span>
+                        Vagas:{" "}
+                        <span className="text-white/85">
+                          {category.count} / {category.capacity ?? "∞"}
+                        </span>
+                      </span>
+                      {remaining !== null && (
+                        <span className="text-[10px] text-white/55">({remaining} restantes)</span>
+                      )}
+                    </div>
+
+                    {category.occupancy !== null && (
+                      <div className="h-1.5 w-40 rounded-full bg-white/10 overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-gradient-to-r from-[#6BFFFF] to-[#FF00C8]"
+                          style={{ width: `${category.occupancy}%` }}
+                        />
+                      </div>
+                    )}
+                  </article>
+                );
+              })}
+            </div>
+          )
+        ) : (
+          <>
+            {event.ticketTypes.length === 0 && (
+              <div className="mt-2 rounded-xl border border-dashed border-white/20 bg-white/5 px-4 py-4 text-[11px] text-white/70">
+                Este {primaryLabel} ainda não tem waves configuradas. Usa o criador de{" "}
+                {primaryLabel}s para adicionar {ticketLabelPlural}.
+              </div>
+            )}
+
+            {event.ticketTypes.length > 0 && (
+              <div className="mt-2 grid grid-cols-1 gap-4 md:grid-cols-2">
+                {event.ticketTypes.map((ticket) => {
+                  const remaining =
+                    ticket.totalQuantity !== null &&
+                    ticket.totalQuantity !== undefined
+                      ? ticket.totalQuantity - ticket.soldQuantity
+                      : null;
 
               const occupancy =
                 ticket.totalQuantity && ticket.totalQuantity > 0
@@ -608,13 +977,19 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
                   </p>
                 </article>
               );
-            })}
-          </div>
+                })}
+              </div>
+            )}
+          </>
         )}
       </section>
 
+      <EventAttendeesPanel eventId={event.id} isPadelEvent={isPadelEvent} />
+
       {event.templateType === "PADEL" && (
-        <PadelTournamentTabs eventId={event.id} eventSlug={event.slug} categoriesMeta={categoriesMeta} />
+        <section id="padel-torneio" className="scroll-mt-24">
+          <PadelTournamentTabs eventId={event.id} eventSlug={event.slug} categoriesMeta={categoriesMeta} />
+        </section>
       )}
     </div>
   );

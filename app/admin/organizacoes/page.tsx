@@ -24,6 +24,8 @@ type AdminOrganizationItem = {
   stripeAccountId?: string | null;
   stripeChargesEnabled?: boolean | null;
   stripePayoutsEnabled?: boolean | null;
+  officialEmail?: string | null;
+  officialEmailVerifiedAt?: string | null;
   owner?: AdminOrganizationOwner | null;
   eventsCount?: number | null;
   totalTickets?: number | null;
@@ -74,6 +76,12 @@ function paymentsBadgeClasses(orgType?: string | null) {
     : "border-sky-400/60 bg-sky-500/10 text-sky-100";
 }
 
+function emailBadgeClasses(isVerified: boolean) {
+  return isVerified
+    ? "border-emerald-400/60 bg-emerald-500/10 text-emerald-100"
+    : "border-amber-400/60 bg-amber-500/10 text-amber-100";
+}
+
 function formatDate(value?: string | null) {
   if (!value) return "";
   const d = new Date(value);
@@ -121,7 +129,7 @@ export default function AdminOrganizacoesPage() {
   const [organizations, setOrganizations] = useState<AdminOrganizationItem[]>([]);
   const [filter, setFilter] = useState<"ALL" | OrganizationStatus>("ALL");
   const [updatingId, setUpdatingId] = useState<number | string | null>(null);
-  const [updatingPaymentsId, setUpdatingPaymentsId] = useState<number | string | null>(null);
+  const [updatingEmailId, setUpdatingEmailId] = useState<number | string | null>(null);
   const pendingOrganizations = useMemo(
     () => organizations.filter((o) => o.status === "PENDING"),
     [organizations],
@@ -256,33 +264,29 @@ export default function AdminOrganizacoesPage() {
     }
   }
 
-  async function updatePaymentsMode(
-    organizationId: number | string,
-    mode: "PLATFORM" | "CONNECT",
-  ) {
+  async function verifyPlatformEmail(organizationId: number | string) {
     if (
-      mode === "PLATFORM" &&
       !window.confirm(
-        "Confirmas associar esta organização à plataforma ORYA? Todos os payouts pendentes serão cancelados.",
+        "Confirmas marcar esta organização como plataforma e validar o email oficial para oryapt@gmail.com?",
       )
     ) {
       return;
     }
 
     try {
-      setUpdatingPaymentsId(organizationId);
-      const res = await fetch("/api/admin/organizacoes/update-payments-mode", {
+      setUpdatingEmailId(organizationId);
+      const res = await fetch("/api/admin/organizacoes/verify-platform-email", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ organizationId, paymentsMode: mode }),
+        body: JSON.stringify({ organizationId }),
       });
 
       const data = await res.json().catch(() => null);
       if (!res.ok || !data?.ok) {
-        console.error("[admin/organizacoes] Erro ao atualizar pagamentos:", data);
-        alert("Não foi possível atualizar o modo de pagamentos.");
+        console.error("[admin/organizacoes] Erro ao confirmar email plataforma:", data);
+        alert("Não foi possível confirmar o email da plataforma.");
         return;
       }
 
@@ -291,17 +295,18 @@ export default function AdminOrganizacoesPage() {
           String(org.id) === String(organizationId)
             ? {
                 ...org,
-                orgType:
-                  data.organization?.orgType ?? (mode === "PLATFORM" ? "PLATFORM" : "EXTERNAL"),
+                orgType: data.organization?.orgType ?? "PLATFORM",
+                officialEmail: data.organization?.officialEmail ?? "oryapt@gmail.com",
+                officialEmailVerifiedAt: data.organization?.officialEmailVerifiedAt ?? new Date().toISOString(),
               }
             : org,
         ),
       );
     } catch (err) {
-      console.error("[admin/organizacoes] Erro ao atualizar pagamentos:", err);
-      alert("Ocorreu um erro inesperado ao atualizar o modo de pagamentos.");
+      console.error("[admin/organizacoes] Erro ao confirmar email plataforma:", err);
+      alert("Ocorreu um erro inesperado ao confirmar o email da plataforma.");
     } finally {
-      setUpdatingPaymentsId(null);
+      setUpdatingEmailId(null);
     }
   }
 
@@ -470,7 +475,9 @@ export default function AdminOrganizacoesPage() {
               const isPending = org.status === "PENDING";
               const isActive = org.status === "ACTIVE";
               const isSuspended = org.status === "SUSPENDED";
-              const isPlatformPayments = org.orgType === "PLATFORM";
+              const isPlatformEmail =
+                (org.officialEmail ?? "").toLowerCase() === "oryapt@gmail.com" &&
+                Boolean(org.officialEmailVerifiedAt);
 
               return (
                 <div
@@ -498,10 +505,24 @@ export default function AdminOrganizacoesPage() {
                       >
                         {paymentsModeLabel(org.orgType ?? null)}
                       </span>
+                      <span
+                        className={
+                          "inline-flex items-center rounded-full border px-2 py-[2px] text-[10px] font-medium " +
+                          emailBadgeClasses(isPlatformEmail)
+                        }
+                      >
+                        Email plataforma {isPlatformEmail ? "confirmado" : "pendente"}
+                      </span>
                     </div>
 
                     <p className="text-white/65">
                       Dono: <span className="font-medium">{formatOwner(org.owner)}</span>
+                    </p>
+                    <p className="text-white/55">
+                      Email oficial:{" "}
+                      <span className="font-medium">
+                        {org.officialEmail || "—"}
+                      </span>
                     </p>
 
                     <div className="flex flex-wrap items-center gap-3 text-white/55">
@@ -523,17 +544,15 @@ export default function AdminOrganizacoesPage() {
                   <div className="flex flex-wrap justify-end gap-2 text-[11px]">
                     <button
                       type="button"
-                      disabled={updatingPaymentsId === org.id}
-                      onClick={() =>
-                        updatePaymentsMode(org.id, isPlatformPayments ? "CONNECT" : "PLATFORM")
-                      }
+                      disabled={updatingEmailId === org.id || isPlatformEmail}
+                      onClick={() => verifyPlatformEmail(org.id)}
                       className="admin-button-secondary px-3 py-1.5 text-[11px] disabled:opacity-60"
                     >
-                      {updatingPaymentsId === org.id
-                        ? "A atualizar…"
-                        : isPlatformPayments
-                          ? "Voltar a Connect"
-                          : "Receber na ORYA"}
+                      {updatingEmailId === org.id
+                        ? "A confirmar…"
+                        : isPlatformEmail
+                          ? "Plataforma confirmada"
+                          : "Marcar como plataforma"}
                     </button>
                     {isPending && (
                       <>

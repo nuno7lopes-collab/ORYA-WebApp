@@ -111,12 +111,22 @@ const parseRoundLabel = (label?: string | null) => {
   const prefix = trimmed.startsWith("A ") ? "A" : trimmed.startsWith("B ") ? "B" : "";
   const base = prefix ? trimmed.slice(2).trim() : trimmed;
   let size: number | null = null;
-  if (base.startsWith("R")) {
+  if (/^L\d+$/i.test(base)) {
+    const parsed = Number(base.slice(1));
+    size = Number.isFinite(parsed) ? 1000 - parsed : null;
+  } else if (/^GF2$|^GRAND_FINAL_RESET$|^GRAND FINAL 2$/i.test(base)) {
+    size = 0;
+  } else if (/^GF$|^GRAND_FINAL$|^GRAND FINAL$/i.test(base)) {
+    size = 1;
+  } else if (base.startsWith("R")) {
     const parsed = Number(base.slice(1));
     size = Number.isFinite(parsed) ? parsed : null;
-  } else if (base === "QUARTERFINAL") size = 8;
-  else if (base === "SEMIFINAL") size = 4;
-  else if (base === "FINAL") size = 2;
+  }
+  if (size === null) {
+    if (base === "QUARTERFINAL") size = 8;
+    else if (base === "SEMIFINAL") size = 4;
+    else if (base === "FINAL") size = 2;
+  }
   return { prefix, size, label: base };
 };
 

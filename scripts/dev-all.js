@@ -26,6 +26,7 @@ loadEnv();
 
 const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
 const stripeCmd = process.platform === "win32" ? "stripe.exe" : "stripe";
+const redisCmd = process.platform === "win32" ? "redis-server.exe" : "redis-server";
 
 function parseBool(value, fallback) {
   if (value === undefined) return fallback;
@@ -61,6 +62,26 @@ const children = [
   run("dev", npmCmd, ["run", "dev"]),
   run("cron", npmCmd, ["run", "cron:local"]),
 ];
+
+const startWorker = parseBool(process.env.START_WORKER, true);
+if (startWorker) {
+  children.push(run("worker", npmCmd, ["run", "worker"]));
+}
+
+const startChatWs = parseBool(process.env.START_CHAT_WS, true);
+if (startChatWs) {
+  const chatWsEnv = {
+    CHAT_POLLING_ONLY: "0",
+    NEXT_PUBLIC_CHAT_POLLING_ONLY: "0",
+  };
+  children.push(run("chat-ws", npmCmd, ["run", "chat:ws"], chatWsEnv));
+}
+
+const startRedis = parseBool(process.env.START_REDIS, true);
+if (startRedis) {
+  const redisPort = process.env.REDIS_PORT || "6379";
+  children.push(run("redis", redisCmd, ["--port", redisPort]));
+}
 
 const startStripe = parseBool(process.env.START_STRIPE, true);
 if (startStripe) {

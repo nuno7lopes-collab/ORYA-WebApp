@@ -633,14 +633,16 @@ export async function autoGeneratePadelMatches({
   }
 
   const drawPairingIds = hasSeedRanks ? pairingIds : shuffle(pairingIds);
-  const isKnockout = formatEffective === "QUADRO_ELIMINATORIO" || formatEffective === "QUADRO_AB";
+  const isDoubleElim = formatEffective === "DUPLA_ELIMINACAO";
+  const isKnockout =
+    formatEffective === "QUADRO_ELIMINATORIO" || formatEffective === "QUADRO_AB" || isDoubleElim;
   const isRoundRobin = !isKnockout;
   const labelForRound = (count: number, prefix: string) => {
     const base =
       count === 1 ? "FINAL" : count === 2 ? "SEMIFINAL" : count === 4 ? "QUARTERFINAL" : `R${count * 2}`;
     return prefix ? `${prefix}${base}` : base;
   };
-  const bracketPrefix = formatEffective === "QUADRO_AB" ? "A " : "";
+  const bracketPrefix = formatEffective === "QUADRO_AB" || isDoubleElim ? "A " : "";
   const matchCreateData: Prisma.PadelMatchCreateManyInput[] = [];
 
   if (isKnockout) {
@@ -651,6 +653,7 @@ export async function autoGeneratePadelMatches({
     for (let i = 0; i < bracketSize / 2; i += 1) {
       pairs.push({ a: entrants[i] ?? null, b: entrants[bracketSize - 1 - i] ?? null });
     }
+
     const firstRoundLabel = labelForRound(pairs.length, bracketPrefix);
     pairs.forEach((p, idx) => {
       if (!p.a && !p.b) return;
@@ -688,29 +691,26 @@ export async function autoGeneratePadelMatches({
       currentCount = nextCount;
     }
 
-    const actualPairs = pairs.filter((p) => p.a && p.b);
-    const losersCount = actualPairs.length;
-    if (formatEffective === "QUADRO_AB" && losersCount > 1) {
-      const bPrefix = "B ";
-      const bFirstRoundMatches = Math.ceil(losersCount / 2);
-      const bFirstRoundLabel = labelForRound(bFirstRoundMatches, bPrefix);
-      for (let i = 0; i < bFirstRoundMatches; i += 1) {
-        matchCreateData.push({
-          eventId,
-          categoryId: resolvedCategoryId ?? null,
-          pairingAId: null,
-          pairingBId: null,
-          status: "PENDING",
-          roundType: "KNOCKOUT",
-          roundLabel: bFirstRoundLabel,
-          score: {},
-        });
+    if (isDoubleElim) {
+      const winnersRounds = Math.max(1, Math.ceil(Math.log2(bracketSize)));
+      const losersRounds = Math.max(0, winnersRounds * 2 - 2);
+      const losersMatchesByRound: number[] = [];
+      for (let round = 1; round <= losersRounds; round += 1) {
+        if (round === 1) {
+          losersMatchesByRound.push(Math.max(1, Math.floor(pairs.length / 2)));
+        } else if (round % 2 === 0) {
+          const winnersRoundIndex = round / 2 + 1;
+          const winnersMatches = Math.max(1, Math.floor(bracketSize / Math.pow(2, winnersRoundIndex)));
+          losersMatchesByRound.push(winnersMatches);
+        } else {
+          const prev = losersMatchesByRound[round - 2] ?? 1;
+          losersMatchesByRound.push(Math.max(1, Math.floor(prev / 2)));
+        }
       }
-      let currentBCount = bFirstRoundMatches;
-      while (currentBCount > 1) {
-        const nextBCount = Math.ceil(currentBCount / 2);
-        const roundLabel = labelForRound(nextBCount, bPrefix);
-        for (let i = 0; i < nextBCount; i += 1) {
+
+      losersMatchesByRound.forEach((count, idx) => {
+        const roundLabel = `B L${idx + 1}`;
+        for (let i = 0; i < count; i += 1) {
           matchCreateData.push({
             eventId,
             categoryId: resolvedCategoryId ?? null,
@@ -722,7 +722,67 @@ export async function autoGeneratePadelMatches({
             score: {},
           });
         }
-        currentBCount = nextBCount;
+      });
+
+      if (losersRounds > 0) {
+        matchCreateData.push({
+          eventId,
+          categoryId: resolvedCategoryId ?? null,
+          pairingAId: null,
+          pairingBId: null,
+          status: "PENDING",
+          roundType: "KNOCKOUT",
+          roundLabel: "A GF",
+          score: {},
+        });
+        matchCreateData.push({
+          eventId,
+          categoryId: resolvedCategoryId ?? null,
+          pairingAId: null,
+          pairingBId: null,
+          status: "PENDING",
+          roundType: "KNOCKOUT",
+          roundLabel: "A GF2",
+          score: {},
+        });
+      }
+    } else {
+      const actualPairs = pairs.filter((p) => p.a && p.b);
+      const losersCount = actualPairs.length;
+      if (formatEffective === "QUADRO_AB" && losersCount > 1) {
+        const bPrefix = "B ";
+        const bFirstRoundMatches = Math.ceil(losersCount / 2);
+        const bFirstRoundLabel = labelForRound(bFirstRoundMatches, bPrefix);
+        for (let i = 0; i < bFirstRoundMatches; i += 1) {
+          matchCreateData.push({
+            eventId,
+            categoryId: resolvedCategoryId ?? null,
+            pairingAId: null,
+            pairingBId: null,
+            status: "PENDING",
+            roundType: "KNOCKOUT",
+            roundLabel: bFirstRoundLabel,
+            score: {},
+          });
+        }
+        let currentBCount = bFirstRoundMatches;
+        while (currentBCount > 1) {
+          const nextBCount = Math.ceil(currentBCount / 2);
+          const roundLabel = labelForRound(nextBCount, bPrefix);
+          for (let i = 0; i < nextBCount; i += 1) {
+            matchCreateData.push({
+              eventId,
+              categoryId: resolvedCategoryId ?? null,
+              pairingAId: null,
+              pairingBId: null,
+              status: "PENDING",
+              roundType: "KNOCKOUT",
+              roundLabel,
+              score: {},
+            });
+          }
+          currentBCount = nextBCount;
+        }
       }
     }
   }

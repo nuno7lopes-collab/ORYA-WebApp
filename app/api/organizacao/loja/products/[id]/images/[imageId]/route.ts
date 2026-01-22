@@ -63,7 +63,7 @@ function parseId(value: string) {
 
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { id: string; imageId: string } },
+  { params }: { params: Promise<{ id: string; imageId: string }> },
 ) {
   try {
     if (!isStoreFeatureEnabled()) {
@@ -82,12 +82,13 @@ export async function PATCH(
       return NextResponse.json({ ok: false, error: "Catalogo bloqueado." }, { status: 403 });
     }
 
-    const productId = parseId(params.id);
+    const resolvedParams = await params;
+    const productId = parseId(resolvedParams.id);
     if (!productId.ok) {
       return NextResponse.json({ ok: false, error: productId.error }, { status: 400 });
     }
 
-    const imageId = parseId(params.imageId);
+    const imageId = parseId(resolvedParams.imageId);
     if (!imageId.ok) {
       return NextResponse.json({ ok: false, error: imageId.error }, { status: 400 });
     }
@@ -160,7 +161,7 @@ export async function PATCH(
 
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: { id: string; imageId: string } },
+  { params }: { params: Promise<{ id: string; imageId: string }> },
 ) {
   try {
     if (!isStoreFeatureEnabled()) {
@@ -179,12 +180,13 @@ export async function DELETE(
       return NextResponse.json({ ok: false, error: "Catalogo bloqueado." }, { status: 403 });
     }
 
-    const productId = parseId(params.id);
+    const resolvedParams = await params;
+    const productId = parseId(resolvedParams.id);
     if (!productId.ok) {
       return NextResponse.json({ ok: false, error: productId.error }, { status: 400 });
     }
 
-    const imageId = parseId(params.imageId);
+    const imageId = parseId(resolvedParams.imageId);
     if (!imageId.ok) {
       return NextResponse.json({ ok: false, error: imageId.error }, { status: 400 });
     }

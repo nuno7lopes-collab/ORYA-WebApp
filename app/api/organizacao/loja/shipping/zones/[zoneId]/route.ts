@@ -65,7 +65,7 @@ async function getOrganizationContext(req: NextRequest, userId: string, options?
   return { ok: true as const, store };
 }
 
-export async function GET(req: NextRequest, { params }: { params: { zoneId: string } }) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ zoneId: string }> }) {
   try {
     if (!isStoreFeatureEnabled()) {
       return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
@@ -79,7 +79,8 @@ export async function GET(req: NextRequest, { params }: { params: { zoneId: stri
       return NextResponse.json({ ok: false, error: context.error }, { status: 403 });
     }
 
-    const zoneId = parseId(params.zoneId);
+    const resolvedParams = await params;
+    const zoneId = parseId(resolvedParams.zoneId);
     if (!zoneId.ok) {
       return NextResponse.json({ ok: false, error: zoneId.error }, { status: 400 });
     }
@@ -103,7 +104,7 @@ export async function GET(req: NextRequest, { params }: { params: { zoneId: stri
   }
 }
 
-export async function PATCH(req: NextRequest, { params }: { params: { zoneId: string } }) {
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ zoneId: string }> }) {
   try {
     if (!isStoreFeatureEnabled()) {
       return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
@@ -117,14 +118,15 @@ export async function PATCH(req: NextRequest, { params }: { params: { zoneId: st
       return NextResponse.json({ ok: false, error: context.error }, { status: 403 });
     }
 
-    const zoneId = parseId(params.zoneId);
+    const resolvedParams = await params;
+    const zoneId = parseId(resolvedParams.zoneId);
     if (!zoneId.ok) {
       return NextResponse.json({ ok: false, error: zoneId.error }, { status: 400 });
     }
 
     const existing = await prisma.storeShippingZone.findFirst({
       where: { id: zoneId.id, storeId: context.store.id },
-      select: { id: true },
+      select: { id: true, countries: true, isActive: true },
     });
     if (!existing) {
       return NextResponse.json({ ok: false, error: "Zona nao encontrada." }, { status: 404 });
@@ -139,20 +141,38 @@ export async function PATCH(req: NextRequest, { params }: { params: { zoneId: st
     const payload = parsed.data;
     const data: { name?: string; countries?: string[]; isActive?: boolean } = {};
 
+    const nextIsActive = payload.isActive ?? existing.isActive;
+    const nextCountries =
+      payload.countries !== undefined ? normalizeCountries(payload.countries) : existing.countries;
+
     if (payload.name !== undefined) {
       data.name = payload.name.trim();
     }
 
     if (payload.countries !== undefined) {
-      const countries = normalizeCountries(payload.countries);
-      if (countries.length === 0) {
+      if (nextCountries.length === 0) {
         return NextResponse.json({ ok: false, error: "Paises invalidos." }, { status: 400 });
       }
-      data.countries = countries;
+      data.countries = nextCountries;
     }
 
     if (payload.isActive !== undefined) {
       data.isActive = payload.isActive;
+    }
+
+    if (nextIsActive) {
+      const overlapping = await prisma.storeShippingZone.findMany({
+        where: {
+          storeId: context.store.id,
+          id: { not: existing.id },
+          isActive: true,
+          countries: { hasSome: nextCountries },
+        },
+        select: { id: true },
+      });
+      if (overlapping.length > 0) {
+        return NextResponse.json({ ok: false, error: "Pais ja associado a outra zona ativa." }, { status: 409 });
+      }
     }
 
     const updated = await prisma.storeShippingZone.update({
@@ -171,7 +191,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { zoneId: st
   }
 }
 
-export async function DELETE(req: NextRequest, { params }: { params: { zoneId: string } }) {
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ zoneId: string }> }) {
   try {
     if (!isStoreFeatureEnabled()) {
       return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
@@ -185,7 +205,8 @@ export async function DELETE(req: NextRequest, { params }: { params: { zoneId: s
       return NextResponse.json({ ok: false, error: context.error }, { status: 403 });
     }
 
-    const zoneId = parseId(params.zoneId);
+    const resolvedParams = await params;
+    const zoneId = parseId(resolvedParams.zoneId);
     if (!zoneId.ok) {
       return NextResponse.json({ ok: false, error: zoneId.error }, { status: 400 });
     }

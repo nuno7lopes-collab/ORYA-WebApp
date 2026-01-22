@@ -9,6 +9,14 @@ type PadelClub = {
   name: string;
   city: string | null;
   address: string | null;
+  kind?: "OWN" | "PARTNER";
+  sourceClubId?: number | null;
+  locationSource?: "OSM" | "MANUAL" | null;
+  locationProviderId?: string | null;
+  locationFormattedAddress?: string | null;
+  locationComponents?: Record<string, unknown> | null;
+  latitude?: number | null;
+  longitude?: number | null;
   courtsCount: number;
   slug?: string | null;
   isActive: boolean;

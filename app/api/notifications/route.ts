@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
 import { AuthRequiredError, requireUser } from "@/lib/auth/requireUser";
 import { NotificationType } from "@prisma/client";
+import { getUserFollowingSet } from "@/domain/social/follows";
 
 // Lista notificações com badge de não lidas; só o próprio utilizador pode ver
 export async function GET(req: NextRequest) {
@@ -53,17 +54,9 @@ export async function GET(req: NextRequest) {
     const followSourceIds = notifications
       .filter((n) => n.type === "FOLLOWED_YOU" && n.fromUserId)
       .map((n) => n.fromUserId as string);
-    const mutualSet = new Set<string>();
-    if (followSourceIds.length > 0) {
-      const mutualRows = await prisma.follows.findMany({
-        where: {
-          follower_id: user.id,
-          following_id: { in: followSourceIds },
-        },
-        select: { following_id: true },
-      });
-      mutualRows.forEach((row) => mutualSet.add(row.following_id));
-    }
+    const mutualSet = followSourceIds.length > 0
+      ? await getUserFollowingSet(user.id, followSourceIds)
+      : new Set<string>();
 
     const items = notifications.map((item) => {
       if (item.type === "FOLLOWED_YOU") {

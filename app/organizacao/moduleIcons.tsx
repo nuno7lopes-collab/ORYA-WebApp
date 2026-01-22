@@ -83,6 +83,17 @@ function IconMegaphone(props: IconProps) {
   );
 }
 
+function IconOrbit(props: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <circle cx="12" cy="12" r="3.5" />
+      <path d="M3 12c2.5-4.5 15.5-4.5 18 0" />
+      <path d="M5 6c4.5 2.5 9.5 8.5 10 12" />
+      <path d="M19 6c-4.5 2.5-9.5 8.5-10 12" />
+    </svg>
+  );
+}
+
 function IconBag(props: IconProps) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" {...props}>
@@ -112,6 +123,18 @@ function IconSliders(props: IconProps) {
   );
 }
 
+function IconScan(props: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M7 3H4a1 1 0 0 0-1 1v3" />
+      <path d="M17 3h3a1 1 0 0 1 1 1v3" />
+      <path d="M21 17v3a1 1 0 0 1-1 1h-3" />
+      <path d="M3 17v3a1 1 0 0 0 1 1h3" />
+      <rect x="7" y="7" width="10" height="10" rx="2" />
+    </svg>
+  );
+}
+
 function IconDefault(props: IconProps) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" {...props}>
@@ -129,10 +152,12 @@ const MODULE_ICONS: Record<string, IconComponent> = {
   MENSAGENS: IconChat,
   STAFF: IconTeam,
   FINANCEIRO: IconCard,
+  CRM: IconOrbit,
   MARKETING: IconMegaphone,
   LOJA: IconBag,
   PERFIL_PUBLICO: IconProfile,
   DEFINICOES: IconSliders,
+  CHECKIN: IconScan,
 };
 
 export function ModuleIcon({ moduleKey, ...props }: { moduleKey: string } & IconProps) {

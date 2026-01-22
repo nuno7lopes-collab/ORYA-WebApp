@@ -128,7 +128,7 @@ export default function PurchasesPage() {
                 href="/me/compras/loja"
                 className="inline-flex items-center gap-2 rounded-full border border-white/30 bg-white/10 px-3 py-1.5 text-white/90 transition hover:border-white/45 hover:bg-white/20"
               >
-                Downloads da loja
+                Compras da loja
               </Link>
               <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-white/30 bg-white/10 px-3 py-1.5 text-white/90 transition hover:border-white/45 hover:bg-white/20">
                 <input

@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
+import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { stripe } from "@/lib/stripeClient";
 import { handleRefund } from "@/app/api/stripe/webhook/route";
@@ -60,67 +61,6 @@ function buildOwnerKey(params: { ownerUserId?: string | null; ownerIdentityId?: 
   const guest = normalizeEmail(params.guestEmail);
   if (guest) return `email:${guest}`;
   return "unknown";
-}
-
-async function issueEntitlementsForLine(
-  tx: Prisma.TransactionClient,
-  args: {
-    purchaseId: string;
-    saleLineId: number;
-    event: { id: number; title: string; locationName: string; coverImageUrl: string | null; startsAt: Date; timezone: string };
-    quantity: number;
-    ownerUserId?: string | null;
-    ownerIdentityId?: string | null;
-    guestEmail?: string | null;
-    type: EntitlementType;
-  },
-) {
-  const ownerKey = buildOwnerKey({
-    ownerUserId: args.ownerUserId ?? null,
-    ownerIdentityId: args.ownerIdentityId ?? null,
-    guestEmail: args.guestEmail ?? null,
-  });
-  const qty = Math.max(1, Number(args.quantity ?? 0));
-  for (let i = 0; i < qty; i++) {
-    await tx.entitlement.upsert({
-      where: {
-        purchaseId_saleLineId_lineItemIndex_ownerKey_type: {
-          purchaseId: args.purchaseId,
-          saleLineId: args.saleLineId,
-          lineItemIndex: i,
-          ownerKey,
-          type: args.type,
-        },
-      },
-      update: {
-        status: EntitlementStatus.ACTIVE,
-        ownerUserId: args.ownerUserId ?? null,
-        ownerIdentityId: args.ownerIdentityId ?? null,
-        eventId: args.event.id,
-        snapshotTitle: args.event.title,
-        snapshotCoverUrl: args.event.coverImageUrl,
-        snapshotVenueName: args.event.locationName,
-        snapshotStartAt: args.event.startsAt,
-        snapshotTimezone: args.event.timezone,
-      },
-      create: {
-        purchaseId: args.purchaseId,
-        saleLineId: args.saleLineId,
-        lineItemIndex: i,
-        ownerKey,
-        ownerUserId: args.ownerUserId ?? null,
-        ownerIdentityId: args.ownerIdentityId ?? null,
-        eventId: args.event.id,
-        type: args.type,
-        status: EntitlementStatus.ACTIVE,
-        snapshotTitle: args.event.title,
-        snapshotCoverUrl: args.event.coverImageUrl,
-        snapshotVenueName: args.event.locationName,
-        snapshotStartAt: args.event.startsAt,
-        snapshotTimezone: args.event.timezone,
-      },
-    });
-  }
 }
 
 async function markEntitlementsStatusByPurchase(purchaseId: string, status: EntitlementStatus) {
@@ -223,6 +163,18 @@ async function processSendEmailOutbox(op: OperationRecord) {
           startsAt: tpl?.startsAt ?? null,
           endsAt: tpl?.endsAt ?? null,
           locationName: tpl?.locationName ?? null,
+          locationCity: tpl?.locationCity ?? null,
+          address: tpl?.address ?? null,
+          locationSource: tpl?.locationSource ?? null,
+          locationFormattedAddress: tpl?.locationFormattedAddress ?? null,
+          locationComponents:
+            tpl?.locationComponents && typeof tpl.locationComponents === "object"
+              ? (tpl.locationComponents as Record<string, unknown>)
+              : null,
+          locationOverrides:
+            tpl?.locationOverrides && typeof tpl.locationOverrides === "object"
+              ? (tpl.locationOverrides as Record<string, unknown>)
+              : null,
           ticketsCount: tpl?.ticketsCount ?? 1,
           ticketUrl: tpl?.ticketUrl ? absUrl(tpl.ticketUrl) : absUrl(fallbackTicketUrl),
         });
@@ -429,6 +381,7 @@ async function deliverNotificationOutbox(item: {
 }) {
   if (!item.userId) throw new Error("OUTBOX_MISSING_USER");
   const payload = item.payload && typeof item.payload === "object" ? (item.payload as Record<string, unknown>) : {};
+  const payloadJson = payload as Prisma.InputJsonValue;
   const inviterUserId = typeof payload.inviterUserId === "string" ? payload.inviterUserId : null;
   const formatTime = (value: Date, timezone?: string | null) =>
     new Intl.DateTimeFormat("pt-PT", {
@@ -533,13 +486,66 @@ async function deliverNotificationOutbox(item: {
             : eventTitle
               ? `Foste convidado para uma dupla no torneio ${eventTitle}.`
               : "Foste convidado para uma dupla de padel.",
-        payload,
+        payload: payloadJson,
         ctaUrl,
         ctaLabel,
         priority: "HIGH",
         fromUserId: inviterUserId ?? undefined,
         organizationId: pairing?.event?.organizationId ?? undefined,
         eventId: pairing?.event?.id ?? undefined,
+      },
+    });
+    return;
+  }
+
+  if (item.notificationType === "CHAT_MESSAGE") {
+    const conversationId = typeof payload.conversationId === "string" ? payload.conversationId : null;
+    const messageId = typeof payload.messageId === "string" ? payload.messageId : null;
+    const senderId = typeof payload.senderId === "string" ? payload.senderId : null;
+    const preview = typeof payload.preview === "string" ? payload.preview : "";
+    const payloadOrgId =
+      typeof payload.organizationId === "number" ? payload.organizationId : Number(payload.organizationId);
+
+    if (!conversationId || !messageId) throw new Error("CHAT_MESSAGE_MISSING_CONTEXT");
+
+    const conversation = await prisma.chatConversation.findUnique({
+      where: { id: conversationId },
+      select: { id: true, type: true, title: true, organizationId: true },
+    });
+
+    const sender = senderId
+      ? await prisma.profile.findUnique({
+          where: { id: senderId },
+          select: { fullName: true, username: true },
+        })
+      : null;
+
+    const senderLabel =
+      sender?.fullName?.trim() || (sender?.username ? `@${sender.username}` : "Utilizador");
+    const title =
+      conversation?.type === "GROUP"
+        ? `Nova mensagem em ${conversation?.title || "Grupo"}`
+        : `Nova mensagem de ${senderLabel}`;
+    const body = preview || "Tens uma nova mensagem.";
+    const orgId = Number.isFinite(payloadOrgId)
+      ? payloadOrgId
+      : conversation?.organizationId ?? undefined;
+    const ctaUrl = conversationId
+      ? `/organizacao/chat?conversationId=${encodeURIComponent(conversationId)}`
+      : "/organizacao/chat";
+
+    await prisma.notification.create({
+      data: {
+        userId: item.userId,
+        type: NotificationType.CHAT_MESSAGE,
+        title,
+        body,
+        payload: payloadJson,
+        ctaUrl,
+        ctaLabel: "Abrir chat",
+        priority: "NORMAL",
+        fromUserId: senderId ?? undefined,
+        organizationId: orgId,
       },
     });
     return;
@@ -579,7 +585,7 @@ async function deliverNotificationOutbox(item: {
         type: NotificationType.EVENT_REMINDER,
         title,
         body,
-        payload,
+        payload: payloadJson,
         ctaUrl,
         ctaLabel: "Ver torneio",
         organizationId: match.event.organizationId ?? undefined,
@@ -614,7 +620,7 @@ async function deliverNotificationOutbox(item: {
         type: NotificationType.EVENT_REMINDER,
         title,
         body,
-        payload,
+        payload: payloadJson,
         ctaUrl,
         ctaLabel: "Ver torneio",
         organizationId: match.event.organizationId ?? undefined,
@@ -640,7 +646,7 @@ async function deliverNotificationOutbox(item: {
         type: NotificationType.EVENT_REMINDER,
         title: "Próximo adversário definido",
         body: match.event.title ? `No torneio ${match.event.title}.` : "Ver detalhes do torneio.",
-        payload,
+        payload: payloadJson,
         ctaUrl,
         ctaLabel: "Ver torneio",
         organizationId: match.event.organizationId ?? undefined,
@@ -676,7 +682,7 @@ async function deliverNotificationOutbox(item: {
         type: NotificationType.EVENT_REMINDER,
         title,
         body,
-        payload,
+        payload: payloadJson,
         ctaUrl,
         ctaLabel: "Ver torneio",
         organizationId: event.organizationId ?? undefined,
@@ -707,7 +713,7 @@ async function deliverNotificationOutbox(item: {
         type: NotificationType.EVENT_REMINDER,
         title,
         body,
-        payload,
+        payload: payloadJson,
         ctaUrl,
         ctaLabel: "Ver torneio",
         organizationId: event.organizationId ?? undefined,
@@ -743,7 +749,7 @@ async function deliverNotificationOutbox(item: {
         type: NotificationType.EVENT_REMINDER,
         title,
         body,
-        payload,
+        payload: payloadJson,
         ctaUrl,
         ctaLabel: "Ver torneio",
         organizationId: event.organizationId ?? undefined,
@@ -759,7 +765,7 @@ async function deliverNotificationOutbox(item: {
       type: NotificationType.SYSTEM_ANNOUNCE,
       title: "Notificação",
       body: "Tens uma nova notificação.",
-      payload,
+      payload: payloadJson,
       ctaUrl: "/social?tab=notifications",
       ctaLabel: "Ver",
       priority: "NORMAL",
@@ -921,6 +927,7 @@ async function processUpsertLedger(op: OperationRecord) {
         ? payload.ownerUserId
         : null;
   const ownerIdentityId = typeof payload.ownerIdentityId === "string" ? payload.ownerIdentityId : null;
+  const guestEmail = typeof payload.guestEmail === "string" ? payload.guestEmail : null;
   const subtotalCents = Number(payload.subtotalCents ?? 0);
   const discountCents = Number(payload.discountCents ?? 0);
   const platformFeeCents = Number(payload.platformFeeCents ?? 0);
@@ -931,89 +938,228 @@ async function processUpsertLedger(op: OperationRecord) {
 
   const ticketTypeMap = new Map(event.ticketTypes.map((t) => [t.id, t]));
 
-  const saleSummary = await prisma.saleSummary.upsert({
-    where: { paymentIntentId: purchaseId },
-    update: {
-      eventId: event.id,
-      userId,
-      ownerUserId: userId,
-      ownerIdentityId,
-      purchaseId,
-      promoCodeId,
-      subtotalCents,
-      discountCents,
-      platformFeeCents,
-      stripeFeeCents: 0,
-      totalCents: 0,
-      netCents: 0,
-      feeMode: feeMode as any,
-      currency,
-    },
-    create: {
-      paymentIntentId: purchaseId,
-      eventId: event.id,
-      userId,
-      ownerUserId: userId,
-      ownerIdentityId,
-      purchaseId,
-      promoCodeId,
-      subtotalCents,
-      discountCents,
-      platformFeeCents,
-      stripeFeeCents: 0,
-      totalCents: 0,
-      netCents: 0,
-      feeMode: feeMode as any,
-      currency,
-      status: "PAID",
-    },
-  });
+  const ownerKey = buildOwnerKey({ ownerUserId: userId, ownerIdentityId, guestEmail });
+  const totalSubtotal = lines.reduce(
+    (sum, line) => sum + Math.max(0, Number(line.unitPriceCents ?? 0)) * Math.max(1, Number(line.quantity ?? 0)),
+    0,
+  );
 
-  await prisma.saleLine.deleteMany({ where: { saleSummaryId: saleSummary.id } });
-
-  for (const line of lines) {
-    const saleLine = await prisma.saleLine.create({
-      data: {
-        saleSummaryId: saleSummary.id,
+  await prisma.$transaction(async (tx) => {
+    const saleSummary = await tx.saleSummary.upsert({
+      where: { paymentIntentId: purchaseId },
+      update: {
         eventId: event.id,
-        ticketTypeId: line.ticketTypeId,
+        userId,
+        ownerUserId: userId,
+        ownerIdentityId,
+        purchaseId,
         promoCodeId,
-        quantity: line.quantity,
-        unitPriceCents: line.unitPriceCents,
-        discountPerUnitCents: 0,
-        grossCents: line.unitPriceCents * line.quantity,
-        netCents: 0,
+        subtotalCents,
+        discountCents,
         platformFeeCents,
+        stripeFeeCents: 0,
+        totalCents: 0,
+        netCents: 0,
+        feeMode: feeMode as any,
+        currency,
       },
-      select: { id: true },
+      create: {
+        paymentIntentId: purchaseId,
+        eventId: event.id,
+        userId,
+        ownerUserId: userId,
+        ownerIdentityId,
+        purchaseId,
+        promoCodeId,
+        subtotalCents,
+        discountCents,
+        platformFeeCents,
+        stripeFeeCents: 0,
+        totalCents: 0,
+        netCents: 0,
+        feeMode: feeMode as any,
+        currency,
+        status: "PAID",
+      },
     });
 
-    const tt = ticketTypeMap.get(line.ticketTypeId);
-    if (!tt) continue;
-
-    // Entitlements (SSOT)
-    await issueEntitlementsForLine(prisma, {
-      purchaseId,
-      saleLineId: saleLine.id,
-      event: {
-        id: event.id,
-        title: event.title,
-        locationName: event.locationName,
-        coverImageUrl: event.coverImageUrl,
-        startsAt: event.startsAt,
-        timezone: event.timezone,
-      } as any,
-      quantity: line.quantity,
-      ownerUserId: userId,
-      ownerIdentityId,
-      type: EntitlementType.EVENT_TICKET,
-    } as any);
-
-    await prisma.ticketType.update({
-      where: { id: tt.id },
-      data: { soldQuantity: { increment: line.quantity } },
+    const existingTickets = await tx.ticket.findMany({
+      where: {
+        eventId: event.id,
+        OR: [{ purchaseId }, { stripePaymentIntentId: purchaseId }],
+      },
+      select: {
+        id: true,
+        ticketTypeId: true,
+        emissionIndex: true,
+        saleSummaryId: true,
+        purchaseId: true,
+      },
     });
-  }
+
+    const ticketsByType = new Map<number, Map<number, typeof existingTickets[number]>>();
+    for (const ticket of existingTickets) {
+      const index = ticket.emissionIndex ?? 0;
+      const typeMap = ticketsByType.get(ticket.ticketTypeId) ?? new Map();
+      typeMap.set(index, ticket);
+      ticketsByType.set(ticket.ticketTypeId, typeMap);
+    }
+
+    await tx.saleLine.deleteMany({ where: { saleSummaryId: saleSummary.id } });
+
+    let remainingDiscount = discountCents;
+    let remainingPlatformFee = platformFeeCents;
+
+    for (const [index, line] of lines.entries()) {
+      const tt = ticketTypeMap.get(line.ticketTypeId);
+      if (!tt) continue;
+
+      const qty = Math.max(1, Number(line.quantity ?? 0));
+      const lineSubtotal = Math.max(0, Number(line.unitPriceCents ?? 0)) * qty;
+      const isLastLine = index === lines.length - 1;
+      const discountForLine = isLastLine
+        ? remainingDiscount
+        : totalSubtotal > 0
+          ? Math.round((discountCents * lineSubtotal) / totalSubtotal)
+          : 0;
+      remainingDiscount -= discountForLine;
+      const platformFeeForLine = isLastLine
+        ? remainingPlatformFee
+        : totalSubtotal > 0
+          ? Math.round((platformFeeCents * lineSubtotal) / totalSubtotal)
+          : 0;
+      remainingPlatformFee -= platformFeeForLine;
+      const discountPerUnitCents = qty > 0 ? Math.floor(discountForLine / qty) : 0;
+      const netCents = Math.max(0, lineSubtotal - discountForLine);
+
+      const saleLine = await tx.saleLine.create({
+        data: {
+          saleSummaryId: saleSummary.id,
+          eventId: event.id,
+          ticketTypeId: line.ticketTypeId,
+          promoCodeId,
+          quantity: qty,
+          unitPriceCents: line.unitPriceCents,
+          discountPerUnitCents,
+          grossCents: lineSubtotal,
+          netCents,
+          platformFeeCents: platformFeeForLine,
+        },
+        select: { id: true },
+      });
+
+      const pricePerTicketCents = Math.round(netCents / Math.max(1, qty));
+      const basePlatformFee = Math.floor(platformFeeForLine / Math.max(1, qty));
+      let feeRemainder = platformFeeForLine - basePlatformFee * Math.max(1, qty);
+
+      const typeTickets = ticketsByType.get(line.ticketTypeId) ?? new Map();
+      let createdCount = 0;
+
+      for (let i = 0; i < qty; i++) {
+        let ticket = typeTickets.get(i);
+        if (!ticket) {
+          const feeForTicket = basePlatformFee + (feeRemainder > 0 ? 1 : 0);
+          if (feeRemainder > 0) feeRemainder -= 1;
+
+          const created = await tx.ticket.create({
+            data: {
+              userId: userId ?? null,
+              ownerUserId: userId ?? null,
+              ownerIdentityId: ownerIdentityId ?? null,
+              eventId: event.id,
+              ticketTypeId: line.ticketTypeId,
+              status: "ACTIVE",
+              purchasedAt: new Date(),
+              qrSecret: crypto.randomUUID(),
+              pricePaid: pricePerTicketCents,
+              currency: tt.currency ?? currency,
+              platformFeeCents: feeForTicket,
+              totalPaidCents: pricePerTicketCents + feeForTicket,
+              stripePaymentIntentId: purchaseId,
+              purchaseId,
+              saleSummaryId: saleSummary.id,
+              emissionIndex: i,
+            },
+            select: { id: true, ticketTypeId: true, emissionIndex: true, saleSummaryId: true, purchaseId: true },
+          });
+          ticket = created;
+          typeTickets.set(i, ticket);
+          createdCount += 1;
+        } else {
+          if (ticket.saleSummaryId !== saleSummary.id) {
+            await tx.ticket.update({
+              where: { id: ticket.id },
+              data: { saleSummaryId: saleSummary.id },
+            });
+          }
+          if (!ticket.purchaseId && purchaseId) {
+            await tx.ticket.update({
+              where: { id: ticket.id },
+              data: { purchaseId },
+            });
+          }
+        }
+
+        if (!userId && guestEmail) {
+          await tx.guestTicketLink.upsert({
+            where: { ticketId: ticket.id },
+            update: { guestEmail, guestName: "Convidado" },
+            create: { ticketId: ticket.id, guestEmail, guestName: "Convidado" },
+          });
+        }
+
+        await tx.entitlement.upsert({
+          where: {
+            purchaseId_saleLineId_lineItemIndex_ownerKey_type: {
+              purchaseId,
+              saleLineId: saleLine.id,
+              lineItemIndex: i,
+              ownerKey,
+              type: EntitlementType.EVENT_TICKET,
+            },
+          },
+          update: {
+            status: EntitlementStatus.ACTIVE,
+            ownerUserId: userId ?? null,
+            ownerIdentityId: ownerIdentityId ?? null,
+            eventId: event.id,
+            snapshotTitle: event.title,
+            snapshotCoverUrl: event.coverImageUrl,
+            snapshotVenueName: event.locationName,
+            snapshotStartAt: event.startsAt,
+            snapshotTimezone: event.timezone,
+            ticketId: ticket.id,
+          },
+          create: {
+            purchaseId,
+            saleLineId: saleLine.id,
+            lineItemIndex: i,
+            ownerKey,
+            ownerUserId: userId ?? null,
+            ownerIdentityId: ownerIdentityId ?? null,
+            eventId: event.id,
+            type: EntitlementType.EVENT_TICKET,
+            status: EntitlementStatus.ACTIVE,
+            snapshotTitle: event.title,
+            snapshotCoverUrl: event.coverImageUrl,
+            snapshotVenueName: event.locationName,
+            snapshotStartAt: event.startsAt,
+            snapshotTimezone: event.timezone,
+            ticketId: ticket.id,
+          },
+        });
+      }
+
+      ticketsByType.set(line.ticketTypeId, typeTickets);
+
+      if (createdCount > 0) {
+        await tx.ticketType.update({
+          where: { id: tt.id },
+          data: { soldQuantity: { increment: createdCount } },
+        });
+      }
+    }
+  });
 
   // Marcar PaymentEvent como OK (free flow)
   await prisma.paymentEvent.updateMany({
@@ -1178,7 +1324,19 @@ async function processSendEmailReceipt(op: OperationRecord) {
 
   const event = await prisma.event.findUnique({
     where: { id: sale.eventId },
-    select: { title: true, slug: true, startsAt: true, endsAt: true, locationName: true },
+    select: {
+      title: true,
+      slug: true,
+      startsAt: true,
+      endsAt: true,
+      locationName: true,
+      locationCity: true,
+      address: true,
+      locationSource: true,
+      locationFormattedAddress: true,
+      locationComponents: true,
+      locationOverrides: true,
+    },
   });
   if (!event) throw new Error("Event not found for email receipt");
 
@@ -1193,6 +1351,18 @@ async function processSendEmailReceipt(op: OperationRecord) {
     startsAt: event.startsAt?.toISOString() ?? null,
     endsAt: event.endsAt?.toISOString() ?? null,
     locationName: event.locationName ?? null,
+    locationCity: event.locationCity ?? null,
+    address: event.address ?? null,
+    locationSource: event.locationSource ?? null,
+    locationFormattedAddress: event.locationFormattedAddress ?? null,
+    locationComponents:
+      event.locationComponents && typeof event.locationComponents === "object"
+        ? (event.locationComponents as Record<string, unknown>)
+        : null,
+    locationOverrides:
+      event.locationOverrides && typeof event.locationOverrides === "object"
+        ? (event.locationOverrides as Record<string, unknown>)
+        : null,
     ticketsCount,
     ticketUrl: absUrl("/me/carteira?section=wallet"),
   });

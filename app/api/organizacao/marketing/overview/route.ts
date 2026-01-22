@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { isOrgAdminOrAbove } from "@/lib/organizationPermissions";
-import { TicketStatus } from "@prisma/client";
+import { SaleSummaryStatus, TicketStatus } from "@prisma/client";
 import { resolveOrganizationIdFromParams } from "@/lib/organizationId";
 
 export async function GET(req: NextRequest) {
@@ -34,6 +34,7 @@ export async function GET(req: NextRequest) {
       : excludeTemplateType
         ? { NOT: { templateType: excludeTemplateType } }
         : {};
+    const isPadelScope = templateType === "PADEL";
     const cookieOrgId = req.cookies.get("orya_organization")?.value;
     const orgRaw = orgParam ?? (cookieOrgId ? Number(cookieOrgId) : null);
     const organizationId = typeof orgRaw === "number" && Number.isFinite(orgRaw) ? orgRaw : null;
@@ -63,9 +64,47 @@ export async function GET(req: NextRequest) {
         templateType: true,
         locationName: true,
         locationCity: true,
+        padelTournamentConfig: {
+          select: { advancedSettings: true },
+        },
       },
     });
     const eventIds = events.map((e) => e.id);
+
+    const saleSummaries30d = await prisma.saleSummary.findMany({
+      where: {
+        createdAt: { gte: from, lte: now },
+        status: SaleSummaryStatus.PAID,
+        event: {
+          organizationId: organization.id,
+          ...eventTemplateFilter,
+        },
+      },
+      select: {
+        eventId: true,
+        netCents: true,
+        lines: {
+          select: { quantity: true, netCents: true },
+        },
+      },
+    });
+
+    let lineTickets30d = 0;
+    let totalRevenueCents = 0;
+    const eventLineStats30d = new Map<number, { netCents: number; tickets: number }>();
+
+    for (const summary of saleSummaries30d) {
+      totalRevenueCents += summary.netCents ?? 0;
+      for (const line of summary.lines) {
+        const qty = line.quantity ?? 0;
+        const net = line.netCents ?? 0;
+        lineTickets30d += qty;
+        const current = eventLineStats30d.get(summary.eventId) ?? { netCents: 0, tickets: 0 };
+        current.netCents += net;
+        current.tickets += qty;
+        eventLineStats30d.set(summary.eventId, current);
+      }
+    }
 
     const tickets30d = await prisma.ticket.findMany({
       where: {
@@ -74,17 +113,26 @@ export async function GET(req: NextRequest) {
         eventId: { in: eventIds },
       },
       select: {
-        pricePaid: true,
-        totalPaidCents: true,
-        eventId: true,
-        purchasedAt: true,
         guestLink: { select: { guestEmail: true } },
       },
     });
 
-    const totalTickets = tickets30d.length;
-    const totalRevenueCents = tickets30d.reduce((sum, t) => sum + (t.pricePaid ?? 0), 0);
+    let totalTickets = lineTickets30d;
     const guestTickets = tickets30d.filter((t) => t.guestLink?.guestEmail).length;
+    if (isPadelScope) {
+      const padel30d = await prisma.padelPairing.count({
+        where: {
+          createdAt: { gte: from, lte: now },
+          pairingStatus: { not: "CANCELLED" },
+          lifecycleStatus: { not: "CANCELLED_INCOMPLETE" },
+          event: {
+            organizationId: organization.id,
+            ...eventTemplateFilter,
+          },
+        },
+      });
+      totalTickets = padel30d;
+    }
 
     const promoRepo = (prisma as unknown as {
       promoCode?: {
@@ -108,19 +156,39 @@ export async function GET(req: NextRequest) {
         },
       });
 
-      const avgPricePerEvent = new Map<number, number>();
-      const ticketSumByEvent = new Map<number, { sum: number; count: number }>();
-      for (const t of tickets30d) {
-        const prev = ticketSumByEvent.get(t.eventId) ?? { sum: 0, count: 0 };
-        ticketSumByEvent.set(t.eventId, { sum: prev.sum + (t.pricePaid ?? 0), count: prev.count + 1 });
+      const purchaseIds = Array.from(
+        new Set(
+          promoCodes
+            .flatMap((promo) => promo.redemptions.map((redemption) => redemption.purchaseId))
+            .filter((id): id is string => typeof id === "string" && id.trim().length > 0),
+        ),
+      );
+      const paidPurchaseIds = new Set<string>();
+      if (purchaseIds.length) {
+        const paidSummaries = await prisma.saleSummary.findMany({
+          where: {
+            purchaseId: { in: purchaseIds },
+            status: SaleSummaryStatus.PAID,
+            eventId: { in: eventIds },
+          },
+          select: { purchaseId: true },
+        });
+        paidSummaries.forEach((summary) => {
+          if (summary.purchaseId) paidPurchaseIds.add(summary.purchaseId);
+        });
       }
-      ticketSumByEvent.forEach((val, key) => {
-        avgPricePerEvent.set(key, val.count ? val.sum / val.count : 0);
+
+      const avgPricePerEvent = new Map<number, number>();
+      eventLineStats30d.forEach((val, key) => {
+        avgPricePerEvent.set(key, val.tickets ? val.netCents / val.tickets : 0);
       });
-      const globalAvg = totalTickets ? totalRevenueCents / totalTickets : 0;
+      const globalAvg = lineTickets30d ? totalRevenueCents / lineTickets30d : 0;
 
       for (const promo of promoCodes) {
-        const redemptionsCount = promo.redemptions.length;
+        const redemptions = purchaseIds.length
+          ? promo.redemptions.filter((redemption) => redemption.purchaseId && paidPurchaseIds.has(redemption.purchaseId))
+          : promo.redemptions;
+        const redemptionsCount = redemptions.length;
         ticketsWithPromo += redemptionsCount;
         const estimatedPrice =
           promo.eventId && avgPricePerEvent.has(promo.eventId)
@@ -148,21 +216,73 @@ export async function GET(req: NextRequest) {
     capacityAgg.forEach((row) => {
       capacityMap.set(row.eventId, row._sum.totalQuantity ?? 0);
     });
+    const padelPairingStats =
+      eventIds.length > 0
+        ? await prisma.padelPairing.groupBy({
+            by: ["eventId"],
+            where: {
+              eventId: { in: eventIds },
+              pairingStatus: { not: "CANCELLED" },
+              lifecycleStatus: { not: "CANCELLED_INCOMPLETE" },
+            },
+            _count: { _all: true },
+          })
+        : [];
+    const padelPairingMap = new Map<number, number>();
+    padelPairingStats.forEach((row) => {
+      padelPairingMap.set(row.eventId, row._count._all);
+    });
+    const padelEventIds = events.filter((event) => event.templateType === "PADEL").map((event) => event.id);
+    const padelCategoryLinks =
+      padelEventIds.length > 0
+        ? await prisma.padelEventCategoryLink.findMany({
+            where: { eventId: { in: padelEventIds }, isEnabled: true },
+            select: { eventId: true, capacityTeams: true, capacityPlayers: true },
+          })
+        : [];
+    const padelCapacityBuckets = new Map<number, Array<number | null>>();
+    padelCategoryLinks.forEach((link) => {
+      const capacity = link.capacityTeams ?? link.capacityPlayers ?? null;
+      const current = padelCapacityBuckets.get(link.eventId) ?? [];
+      current.push(capacity);
+      padelCapacityBuckets.set(link.eventId, current);
+    });
+    const padelCapacityMap = new Map<number, number | null>();
+    events.forEach((event) => {
+      if (event.templateType !== "PADEL") return;
+      const advancedSettings = (event.padelTournamentConfig?.advancedSettings ?? {}) as {
+        maxEntriesTotal?: number | null;
+      };
+      const maxEntriesTotal =
+        typeof advancedSettings.maxEntriesTotal === "number" && Number.isFinite(advancedSettings.maxEntriesTotal)
+          ? Math.floor(advancedSettings.maxEntriesTotal)
+          : null;
+      if (maxEntriesTotal && maxEntriesTotal > 0) {
+        padelCapacityMap.set(event.id, maxEntriesTotal);
+        return;
+      }
+      const capacities = padelCapacityBuckets.get(event.id) ?? [];
+      if (capacities.length === 0 || capacities.some((cap) => cap === null)) {
+        padelCapacityMap.set(event.id, null);
+        return;
+      }
+      const total = capacities.reduce((sum, cap) => sum + (cap ?? 0), 0);
+      padelCapacityMap.set(event.id, total);
+    });
 
-    const ticketStatsAll = await prisma.ticket.groupBy({
+    const saleLineStatsAll = await prisma.saleLine.groupBy({
       by: ["eventId"],
       where: {
-        status: { in: [TicketStatus.ACTIVE, TicketStatus.USED] },
         eventId: { in: eventIds },
+        saleSummary: { status: SaleSummaryStatus.PAID },
       },
-      _count: { _all: true },
-      _sum: { pricePaid: true },
+      _sum: { quantity: true, netCents: true },
     });
     const statsMap = new Map<number, { tickets: number; revenueCents: number }>();
-    ticketStatsAll.forEach((s) => {
+    saleLineStatsAll.forEach((s) => {
       statsMap.set(s.eventId, {
-        tickets: s._count._all,
-        revenueCents: s._sum.pricePaid ?? 0,
+        tickets: s._sum.quantity ?? 0,
+        revenueCents: s._sum.netCents ?? 0,
       });
     });
 
@@ -177,8 +297,14 @@ export async function GET(req: NextRequest) {
         topPromo: topPromo ?? null,
         events: events.map((ev) => ({
           ...ev,
-          capacity: capacityMap.get(ev.id) ?? null,
-          ticketsSold: statsMap.get(ev.id)?.tickets ?? 0,
+          capacity:
+            ev.templateType === "PADEL"
+              ? padelCapacityMap.get(ev.id) ?? null
+              : capacityMap.get(ev.id) ?? null,
+          ticketsSold:
+            ev.templateType === "PADEL"
+              ? padelPairingMap.get(ev.id) ?? 0
+              : statsMap.get(ev.id)?.tickets ?? 0,
           revenueCents: statsMap.get(ev.id)?.revenueCents ?? 0,
         })),
       },

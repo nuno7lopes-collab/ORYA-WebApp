@@ -2,6 +2,7 @@ import "server-only";
 import { createServerClient } from "@supabase/ssr";
 import { cookies, headers } from "next/headers";
 import { env } from "@/lib/env";
+import { cache } from "react";
 
 function decodeBase64Cookie(raw: string) {
   const BASE64_PREFIX = "base64-";
@@ -100,7 +101,7 @@ export async function createSupabaseServer() {
 }
 
 
-export async function getCurrentUser() {
+export const getCurrentUser = cache(async () => {
   const supabase = await createSupabaseServer();
 
   try {
@@ -114,4 +115,4 @@ export async function getCurrentUser() {
   } catch (err) {
     return { user: null, error: err };
   }
-}
+});

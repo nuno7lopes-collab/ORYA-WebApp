@@ -21,6 +21,7 @@ import {
   Prisma,
   PromoType,
   SaleSummaryStatus,
+  StoreOrderStatus,
   TicketStatus,
 } from "@prisma/client";
 import { stripe } from "@/lib/stripeClient";
@@ -130,52 +131,75 @@ export async function handleStripeEvent(event: Stripe.Event) {
         }
         // Registar PaymentEvent ingest-only (tolerante a PI múltiplos para o mesmo purchaseId)
         try {
-          const existing =
-            (await prisma.paymentEvent.findUnique({ where: { purchaseId: purchaseAnchor } })) ||
-            (await prisma.paymentEvent.findUnique({ where: { stripePaymentIntentId: intent.id } }));
+          const updateData = {
+            stripePaymentIntentId: intent.id,
+            status: "PROCESSING",
+            purchaseId: purchaseAnchor,
+            stripeEventId: event.id,
+            source: PaymentEventSource.WEBHOOK,
+            dedupeKey: event.id,
+            amountCents: intent.amount ?? null,
+            userId: typeof intent.metadata?.userId === "string" ? intent.metadata.userId : undefined,
+            updatedAt: new Date(),
+            errorMessage: null,
+            mode: intent.livemode ? "LIVE" : "TEST",
+            isTest: !intent.livemode,
+          };
+          const createData = {
+            stripePaymentIntentId: intent.id,
+            status: "PROCESSING",
+            purchaseId: purchaseAnchor,
+            stripeEventId: event.id,
+            source: PaymentEventSource.WEBHOOK,
+            dedupeKey: event.id,
+            attempt: 1,
+            eventId:
+              typeof intent.metadata?.eventId === "string" && Number.isFinite(Number(intent.metadata.eventId))
+                ? Number(intent.metadata.eventId)
+                : undefined,
+            userId: typeof intent.metadata?.userId === "string" ? intent.metadata.userId : undefined,
+            amountCents: intent.amount ?? null,
+            platformFeeCents:
+              typeof intent.metadata?.platformFeeCents === "string"
+                ? Number(intent.metadata.platformFeeCents)
+                : null,
+            mode: intent.livemode ? "LIVE" : "TEST",
+            isTest: !intent.livemode,
+          };
+
+          const existing = await prisma.paymentEvent.findFirst({
+            where: {
+              OR: [
+                { stripePaymentIntentId: intent.id },
+                { purchaseId: purchaseAnchor },
+              ],
+            },
+            select: { id: true },
+          });
 
           if (existing) {
             await prisma.paymentEvent.update({
               where: { id: existing.id },
+              data: updateData,
+            });
+          } else {
+            await prisma.paymentEvent.create({ data: createData });
+          }
+        } catch (logErr) {
+          if (logErr instanceof Prisma.PrismaClientKnownRequestError && logErr.code === "P2002") {
+            await prisma.paymentEvent.updateMany({
+              where: { stripePaymentIntentId: intent.id },
               data: {
-                stripePaymentIntentId: intent.id,
                 status: "PROCESSING",
                 purchaseId: purchaseAnchor,
                 stripeEventId: event.id,
-                source: PaymentEventSource.WEBHOOK,
-                dedupeKey: event.id,
-                amountCents: intent.amount ?? null,
-                userId: typeof intent.metadata?.userId === "string" ? intent.metadata.userId : undefined,
                 updatedAt: new Date(),
                 errorMessage: null,
-                mode: intent.livemode ? "LIVE" : "TEST",
-                isTest: !intent.livemode,
               },
             });
           } else {
-            await prisma.paymentEvent.create({
-              data: {
-                stripePaymentIntentId: intent.id,
-                status: "PROCESSING",
-                purchaseId: purchaseAnchor,
-                stripeEventId: event.id,
-                source: PaymentEventSource.WEBHOOK,
-                dedupeKey: event.id,
-                attempt: 1,
-                eventId:
-                  typeof intent.metadata?.eventId === "string" && Number.isFinite(Number(intent.metadata.eventId))
-                    ? Number(intent.metadata.eventId)
-                    : undefined,
-                userId: typeof intent.metadata?.userId === "string" ? intent.metadata.userId : undefined,
-                amountCents: intent.amount ?? null,
-                platformFeeCents: typeof intent.metadata?.platformFeeCents === "string" ? Number(intent.metadata.platformFeeCents) : null,
-                mode: intent.livemode ? "LIVE" : "TEST",
-                isTest: !intent.livemode,
-              },
-            });
+            console.warn("[Webhook] Falha ao registar PaymentEvent ingest-only", logErr);
           }
-        } catch (logErr) {
-          console.warn("[Webhook] Falha ao registar PaymentEvent ingest-only", logErr);
         }
 
         await enqueueOperation({
@@ -192,6 +216,32 @@ export async function handleStripeEvent(event: Stripe.Event) {
       case "payment_intent.canceled": {
         const intent = event.data.object as Stripe.PaymentIntent;
         await cancelPendingPayout(intent.id, event.type);
+        const metadata = intent.metadata ?? {};
+        if (metadata.sourceType === "STORE_ORDER") {
+          const orderIdRaw = typeof metadata.storeOrderId === "string" ? Number(metadata.storeOrderId) : null;
+          const orderId = orderIdRaw && Number.isFinite(orderIdRaw) ? orderIdRaw : null;
+          const cartId = typeof metadata.cartId === "string" ? metadata.cartId : null;
+          if (orderId) {
+            await prisma.storeOrder.updateMany({
+              where: { id: orderId, paymentIntentId: intent.id, status: StoreOrderStatus.PENDING },
+              data: { status: StoreOrderStatus.CANCELLED },
+            });
+          }
+          if (cartId) {
+            await prisma.storeCart.updateMany({
+              where: { id: cartId, status: "CHECKOUT_LOCKED" },
+              data: { status: "ACTIVE" },
+            });
+          }
+          await prisma.paymentEvent.updateMany({
+            where: { stripePaymentIntentId: intent.id },
+            data: {
+              status: "ERROR",
+              errorMessage: `PAYMENT_INTENT_${event.type.toUpperCase()}`,
+              updatedAt: new Date(),
+            },
+          });
+        }
         break;
       }
 
@@ -742,42 +792,48 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent, stripeEventId
 
   // Marcar log como PROCESSING (idempotência/auditoria)
   try {
+    const updateData = {
+      status: "PROCESSING",
+      eventId: eventRecord.id,
+      purchaseId: purchaseAnchor,
+      stripeEventId: stripeEventId ?? undefined,
+      source: PaymentEventSource.WEBHOOK,
+      dedupeKey: purchaseAnchor ?? stripeEventId ?? intent.id,
+      attempt: { increment: 1 },
+      amountCents: intent.amount ?? null,
+      platformFeeCents: platformFeeForEvents ?? null,
+      userId,
+      errorMessage: null,
+      updatedAt: new Date(),
+      mode: intent.livemode ? "LIVE" : "TEST",
+      isTest: !intent.livemode,
+    };
+    const createData = {
+      stripePaymentIntentId: intent.id,
+      status: "PROCESSING",
+      purchaseId: purchaseAnchor,
+      stripeEventId: stripeEventId ?? undefined,
+      source: PaymentEventSource.WEBHOOK,
+      dedupeKey: purchaseAnchor ?? stripeEventId ?? intent.id,
+      attempt: 1,
+      eventId: eventRecord.id,
+      userId,
+      amountCents: intent.amount ?? null,
+      platformFeeCents: platformFeeForEvents ?? null,
+      mode: intent.livemode ? "LIVE" : "TEST",
+      isTest: !intent.livemode,
+    };
     const updated = await prisma.paymentEvent.updateMany({
-      where: { stripePaymentIntentId: intent.id },
-      data: {
-        status: "PROCESSING",
-        eventId: eventRecord.id,
-        purchaseId: purchaseAnchor,
-        stripeEventId: stripeEventId ?? undefined,
-        source: PaymentEventSource.WEBHOOK,
-        dedupeKey: purchaseAnchor ?? stripeEventId ?? intent.id,
-        attempt: { increment: 1 },
-        amountCents: intent.amount ?? null,
-        platformFeeCents: platformFeeForEvents ?? null,
-        userId,
-        errorMessage: null,
-        updatedAt: new Date(),
-        mode: intent.livemode ? "LIVE" : "TEST",
-        isTest: !intent.livemode,
-      },
+      where: purchaseAnchor
+        ? { OR: [{ stripePaymentIntentId: intent.id }, { purchaseId: purchaseAnchor }] }
+        : { stripePaymentIntentId: intent.id },
+      data: updateData,
     });
     if (updated.count === 0) {
-      await prisma.paymentEvent.create({
-        data: {
-          stripePaymentIntentId: intent.id,
-          status: "PROCESSING",
-          purchaseId: purchaseAnchor,
-          stripeEventId: stripeEventId ?? undefined,
-          source: PaymentEventSource.WEBHOOK,
-          dedupeKey: purchaseAnchor ?? stripeEventId ?? intent.id,
-          attempt: 1,
-          eventId: eventRecord.id,
-          userId,
-          amountCents: intent.amount ?? null,
-          platformFeeCents: platformFeeForEvents ?? null,
-          mode: intent.livemode ? "LIVE" : "TEST",
-          isTest: !intent.livemode,
-        },
+      await prisma.paymentEvent.upsert({
+        where: { stripePaymentIntentId: intent.id },
+        update: updateData,
+        create: createData,
       });
     }
   } catch (logErr) {
@@ -1192,6 +1248,18 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent, stripeEventId
         startsAt: eventRecord.startsAt?.toISOString() ?? null,
         endsAt: eventRecord.endsAt?.toISOString() ?? null,
         locationName: eventRecord.locationName ?? null,
+        locationCity: eventRecord.locationCity ?? null,
+        address: eventRecord.address ?? null,
+        locationSource: eventRecord.locationSource ?? null,
+        locationFormattedAddress: eventRecord.locationFormattedAddress ?? null,
+        locationComponents:
+          eventRecord.locationComponents && typeof eventRecord.locationComponents === "object"
+            ? (eventRecord.locationComponents as Record<string, unknown>)
+            : null,
+        locationOverrides:
+          eventRecord.locationOverrides && typeof eventRecord.locationOverrides === "object"
+            ? (eventRecord.locationOverrides as Record<string, unknown>)
+            : null,
         ticketsCount: createdTicketsCount,
         ticketUrl: userId ? `${baseUrl}/me/carteira?section=wallet` : `${baseUrl}/`,
       });
@@ -1369,6 +1437,7 @@ async function handlePadelSplitPayment(intent: Stripe.PaymentIntent) {
         totalPaidCents: amountCents,
         currency: ticketType.currency || intent.currency.toUpperCase(),
         stripePaymentIntentId: intent.id,
+        purchaseId: purchaseId ?? intent.id,
         status: "ACTIVE",
         qrSecret,
         rotatingSeed,
@@ -1377,6 +1446,7 @@ async function handlePadelSplitPayment(intent: Stripe.PaymentIntent) {
         ownerIdentityId: null,
         pairingId,
         padelSplitShareCents: ticketType.price,
+        emissionIndex: 0,
       },
     });
 
@@ -1460,6 +1530,7 @@ async function handlePadelSplitPayment(intent: Stripe.PaymentIntent) {
         snapshotVenueName: event.locationName,
         snapshotStartAt: event.startsAt,
         snapshotTimezone: event.timezone,
+        ticketId: ticket.id,
       },
       create: {
         purchaseId: entitlementPurchaseId,
@@ -1476,6 +1547,7 @@ async function handlePadelSplitPayment(intent: Stripe.PaymentIntent) {
         snapshotVenueName: event.locationName,
         snapshotStartAt: event.startsAt,
         snapshotTimezone: event.timezone,
+        ticketId: ticket.id,
       },
     });
 
@@ -1840,6 +1912,7 @@ async function handlePadelFullPayment(intent: Stripe.PaymentIntent) {
         totalPaidCents: ticketType.price,
         currency: ticketType.currency || intent.currency.toUpperCase(),
         stripePaymentIntentId: intent.id,
+        purchaseId: purchaseId ?? intent.id,
         status: "ACTIVE",
         qrSecret: qr1,
         rotatingSeed: rot1,
@@ -1848,6 +1921,7 @@ async function handlePadelFullPayment(intent: Stripe.PaymentIntent) {
         ownerIdentityId: null,
         pairingId,
         padelSplitShareCents: ticketType.price,
+        emissionIndex: 0,
       },
     });
 
@@ -1859,6 +1933,7 @@ async function handlePadelFullPayment(intent: Stripe.PaymentIntent) {
         totalPaidCents: ticketType.price,
         currency: ticketType.currency || intent.currency.toUpperCase(),
         stripePaymentIntentId: intent.id,
+        purchaseId: purchaseId ?? intent.id,
         status: "ACTIVE",
         qrSecret: qr2,
         rotatingSeed: rot2,
@@ -1866,6 +1941,7 @@ async function handlePadelFullPayment(intent: Stripe.PaymentIntent) {
         padelSplitShareCents: ticketType.price,
         ownerUserId: userId ?? null,
         ownerIdentityId: null,
+        emissionIndex: 1,
       },
     });
 
@@ -1950,8 +2026,8 @@ async function handlePadelFullPayment(intent: Stripe.PaymentIntent) {
           type: EntitlementType.PADEL_ENTRY,
         },
       },
-      update: entitlementBase,
-      create: { ...entitlementBase, lineItemIndex: 0 },
+      update: { ...entitlementBase, ticketId: ticketCaptain.id },
+      create: { ...entitlementBase, lineItemIndex: 0, ticketId: ticketCaptain.id },
     });
 
     await tx.entitlement.upsert({
@@ -1964,8 +2040,8 @@ async function handlePadelFullPayment(intent: Stripe.PaymentIntent) {
           type: EntitlementType.PADEL_ENTRY,
         },
       },
-      update: entitlementBase,
-      create: { ...entitlementBase, lineItemIndex: 1 },
+      update: { ...entitlementBase, ticketId: ticketPartner.id },
+      create: { ...entitlementBase, lineItemIndex: 1, ticketId: ticketPartner.id },
     });
 
     await tx.ticket.updateMany({

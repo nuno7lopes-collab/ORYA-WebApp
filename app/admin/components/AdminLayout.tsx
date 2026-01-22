@@ -119,11 +119,11 @@ export function AdminLayout({ children, title, subtitle }: AdminLayoutProps) {
               <summary className="list-none cursor-pointer rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-[12px] text-white/80 shadow-[0_10px_30px_rgba(0,0,0,0.3)]">
                 Menu ▾
               </summary>
-              <div className="absolute right-0 mt-2 w-56 rounded-2xl border border-white/12 bg-[#060b15]/95 p-2 shadow-[0_18px_60px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
+              <div className="absolute right-0 mt-2 w-56 rounded-2xl orya-menu-surface p-2 backdrop-blur-2xl">
                 {navGroups.map((group) => (
                   <div key={group.label} className="space-y-2 py-2">
                     <p className="px-2 text-[10px] uppercase tracking-[0.2em] text-white/45">{group.label}</p>
-                    <div className="grid gap-1">
+                    <div className="orya-menu-list">
                       {group.items.map((item) => {
                         const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
                         return (
@@ -152,13 +152,13 @@ export function AdminLayout({ children, title, subtitle }: AdminLayoutProps) {
                   <span className="text-white/50">▾</span>
                 </div>
               </summary>
-              <div className="absolute right-0 mt-2 w-56 rounded-2xl border border-white/12 bg-[#060b15]/95 p-2 shadow-[0_18px_60px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
+              <div className="absolute right-0 mt-2 w-56 rounded-2xl orya-menu-surface p-2 backdrop-blur-2xl">
                 <div className="px-2 pb-2">
                   <p className="text-[10px] uppercase tracking-[0.24em] text-white/50">Conta</p>
                   <p className="mt-2 truncate text-sm font-semibold text-white/90">{adminName}</p>
                   {adminEmail && <p className="truncate text-[12px] text-white/60">{adminEmail}</p>}
                 </div>
-                <div className="border-t border-white/10 pt-2">
+                <div className="border-t border-[var(--orya-menu-divider)] pt-2">
                   <button
                     type="button"
                     onClick={handleLogout}

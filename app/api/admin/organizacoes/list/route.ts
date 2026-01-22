@@ -69,6 +69,8 @@ export async function GET(req: NextRequest) {
           stripeAccountId: true,
           stripeChargesEnabled: true,
           stripePayoutsEnabled: true,
+          officialEmail: true,
+          officialEmailVerifiedAt: true,
           members: {
             where: { role: { in: ["OWNER", "CO_OWNER"] } },
             select: {
@@ -138,6 +140,8 @@ export async function GET(req: NextRequest) {
         stripeAccountId: org.stripeAccountId,
         stripeChargesEnabled: org.stripeChargesEnabled,
         stripePayoutsEnabled: org.stripePayoutsEnabled,
+        officialEmail: org.officialEmail,
+        officialEmailVerifiedAt: org.officialEmailVerifiedAt,
         owner: ownerMember?.user
           ? {
               id: ownerMember.user.id,

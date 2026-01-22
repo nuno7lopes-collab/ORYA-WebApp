@@ -1701,6 +1701,7 @@ export async function POST(req: NextRequest) {
                 ownerIdentityId: null,
                 pairingId: pairing.id,
                 padelSplitShareCents: ticketType.price,
+                emissionIndex: 0,
               },
             });
 
@@ -1789,6 +1790,7 @@ export async function POST(req: NextRequest) {
                 snapshotVenueName: event.location_name,
                 snapshotStartAt: event.starts_at,
                 snapshotTimezone: event.timezone,
+                ticketId: ticket.id,
               },
               create: {
                 purchaseId: entitlementPurchaseId,
@@ -1805,6 +1807,7 @@ export async function POST(req: NextRequest) {
                 snapshotVenueName: event.location_name,
                 snapshotStartAt: event.starts_at,
                 snapshotTimezone: event.timezone,
+                ticketId: ticket.id,
               },
             });
 
@@ -1899,6 +1902,7 @@ export async function POST(req: NextRequest) {
                 totalPaidCents: 0,
                 currency: (ticketType.currency || "EUR").toUpperCase(),
                 stripePaymentIntentId: purchaseId,
+                purchaseId,
                 status: "ACTIVE",
                 qrSecret: qr1,
                 rotatingSeed: rot1,
@@ -1907,6 +1911,7 @@ export async function POST(req: NextRequest) {
                 ownerIdentityId: null,
                 pairingId: pairing.id,
                 padelSplitShareCents: ticketType.price,
+                emissionIndex: 0,
               },
             });
 
@@ -1918,6 +1923,7 @@ export async function POST(req: NextRequest) {
                 totalPaidCents: 0,
                 currency: (ticketType.currency || "EUR").toUpperCase(),
                 stripePaymentIntentId: purchaseId,
+                purchaseId,
                 status: "ACTIVE",
                 qrSecret: qr2,
                 rotatingSeed: rot2,
@@ -1925,6 +1931,7 @@ export async function POST(req: NextRequest) {
                 padelSplitShareCents: ticketType.price,
                 ownerUserId: userId,
                 ownerIdentityId: null,
+                emissionIndex: 1,
               },
             });
 
@@ -2019,8 +2026,8 @@ export async function POST(req: NextRequest) {
                   type: EntitlementType.PADEL_ENTRY,
                 },
               },
-              update: entitlementBase,
-              create: { ...entitlementBase, lineItemIndex: 0 },
+              update: { ...entitlementBase, ticketId: ticketCaptain.id },
+              create: { ...entitlementBase, lineItemIndex: 0, ticketId: ticketCaptain.id },
             });
             await tx.entitlement.upsert({
               where: {
@@ -2032,8 +2039,8 @@ export async function POST(req: NextRequest) {
                   type: EntitlementType.PADEL_ENTRY,
                 },
               },
-              update: entitlementBase,
-              create: { ...entitlementBase, lineItemIndex: 1 },
+              update: { ...entitlementBase, ticketId: ticketPartner.id },
+              create: { ...entitlementBase, lineItemIndex: 1, ticketId: ticketPartner.id },
             });
 
             const partnerFilled = Boolean(partnerSlot.profileId || partnerSlot.playerProfileId);

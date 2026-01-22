@@ -201,6 +201,20 @@ const getTimeParts = (date: Date, timezone: string) => {
   return { hour: Number(map.get("hour") || 0), minute: Number(map.get("minute") || 0) };
 };
 
+const formatInputDate = (date: Date, timezone: string) => {
+  const parts = getDateParts(date, timezone);
+  const month = String(parts.month).padStart(2, "0");
+  const day = String(parts.day).padStart(2, "0");
+  return `${parts.year}-${month}-${day}`;
+};
+
+const formatInputTime = (date: Date, timezone: string) => {
+  const parts = getTimeParts(date, timezone);
+  const hour = String(parts.hour).padStart(2, "0");
+  const minute = String(parts.minute).padStart(2, "0");
+  return `${hour}:${minute}`;
+};
+
 const getWeekStart = (date: Date, timezone: string) => {
   const parts = getDateParts(date, timezone);
   const weekday = new Date(Date.UTC(parts.year, parts.month - 1, parts.day)).getUTCDay();
@@ -356,17 +370,25 @@ const buildBookingPositions = (
   }));
 };
 
+const normalizeHourHeight = (value: number) =>
+  Math.max(MIN_HOUR_HEIGHT, Math.min(MAX_HOUR_HEIGHT, Math.round(value / 4) * 4));
+
 export default function ReservasDashboardPage() {
   const searchParams = useSearchParams();
   const [calendarView, setCalendarView] = useState<CalendarView>("week");
   const [calendarTab, setCalendarTab] = useState<CalendarTab>("agenda");
-  const [hourHeight, setHourHeight] = useState(DEFAULT_HOUR_HEIGHT);
+  const [hourHeight, setHourHeight] = useState(() => normalizeHourHeight(DEFAULT_HOUR_HEIGHT));
   const minuteHeight = hourHeight / 60;
   const [focusDate, setFocusDate] = useState(() => new Date());
   const [selectedProfessionalId, setSelectedProfessionalId] = useState<number | null>(null);
   const [selectedResourceId, setSelectedResourceId] = useState<number | null>(null);
   const [drawerBooking, setDrawerBooking] = useState<BookingItem | null>(null);
   const [cancelingId, setCancelingId] = useState<number | null>(null);
+  const [rescheduleDate, setRescheduleDate] = useState("");
+  const [rescheduleTime, setRescheduleTime] = useState("");
+  const [rescheduleError, setRescheduleError] = useState<string | null>(null);
+  const [rescheduleBusy, setRescheduleBusy] = useState(false);
+  const [noShowBusy, setNoShowBusy] = useState(false);
   const [modeSaving, setModeSaving] = useState<string | null>(null);
   const initializedRef = useRef(false);
   const serviceInitRef = useRef(false);
@@ -437,6 +459,19 @@ export default function ReservasDashboardPage() {
   const timezone = orgData?.organization?.timezone ?? "Europe/Lisbon";
   const membershipRole = orgData?.membershipRole ?? null;
   const isStaffMember = membershipRole === "STAFF";
+
+  useEffect(() => {
+    if (!drawerBooking) {
+      setRescheduleDate("");
+      setRescheduleTime("");
+      setRescheduleError(null);
+      return;
+    }
+    const start = new Date(drawerBooking.startsAt);
+    setRescheduleDate(formatInputDate(start, timezone));
+    setRescheduleTime(formatInputTime(start, timezone));
+    setRescheduleError(null);
+  }, [drawerBooking, timezone]);
 
   const stripePromise = useMemo(() => {
     const key = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
@@ -830,6 +865,18 @@ export default function ReservasDashboardPage() {
         )}`
     : "—";
 
+  const drawerBookingClosed = drawerBooking
+    ? ["CANCELLED", "CANCELLED_BY_CLIENT", "CANCELLED_BY_ORG", "COMPLETED", "DISPUTED", "NO_SHOW"].includes(
+        drawerBooking.status,
+      )
+    : false;
+  const drawerBookingStarted = drawerBooking ? new Date(drawerBooking.startsAt) <= new Date() : false;
+  const canMarkNoShow =
+    !!drawerBooking &&
+    !drawerBookingClosed &&
+    ["CONFIRMED", "PENDING_CONFIRMATION", "PENDING"].includes(drawerBooking.status) &&
+    drawerBookingStarted;
+
   const handleShiftRange = (direction: -1 | 1) => {
     const delta = calendarView === "week" ? 7 : 1;
     const baseParts = getDateParts(focusDate, timezone);
@@ -877,11 +924,80 @@ export default function ReservasDashboardPage() {
         throw new Error(json?.error || "Erro ao cancelar reserva.");
       }
       mutateBookings();
+      if (json.booking) {
+        setDrawerBooking((prev) => (prev ? { ...prev, ...json.booking } : prev));
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Erro ao cancelar reserva.";
       alert(message);
     } finally {
       setCancelingId(null);
+    }
+  };
+
+  const handleReschedule = async () => {
+    if (!drawerBooking || rescheduleBusy) return;
+    if (!rescheduleDate || !rescheduleTime) {
+      setRescheduleError("Indica data e hora.");
+      return;
+    }
+    const [year, month, day] = rescheduleDate.split("-").map((part) => Number(part));
+    const [hour, minute] = rescheduleTime.split(":").map((part) => Number(part));
+    if (!year || !month || !day || !Number.isFinite(hour) || !Number.isFinite(minute)) {
+      setRescheduleError("Data ou hora inválida.");
+      return;
+    }
+    const startsAt = makeUtcDateFromLocal({ year, month, day, hour, minute }, timezone);
+    if (!startsAt || Number.isNaN(startsAt.getTime())) {
+      setRescheduleError("Data inválida.");
+      return;
+    }
+    setRescheduleBusy(true);
+    setRescheduleError(null);
+    try {
+      const res = await fetch(`/api/organizacao/reservas/${drawerBooking.id}/reschedule`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ startsAt: startsAt.toISOString() }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.error || "Erro ao reagendar reserva.");
+      }
+      mutateBookings();
+      if (json.booking) {
+        setDrawerBooking((prev) => (prev ? { ...prev, ...json.booking } : prev));
+      }
+    } catch (err) {
+      setRescheduleError(err instanceof Error ? err.message : "Erro ao reagendar reserva.");
+    } finally {
+      setRescheduleBusy(false);
+    }
+  };
+
+  const handleNoShow = async (bookingId: number) => {
+    if (noShowBusy) return;
+    const confirmed = window.confirm("Marcar como no-show? O cliente será notificado.");
+    if (!confirmed) return;
+    setNoShowBusy(true);
+    try {
+      const res = await fetch(`/api/organizacao/reservas/${bookingId}/no-show`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.error || "Erro ao atualizar reserva.");
+      }
+      mutateBookings();
+      if (json.booking) {
+        setDrawerBooking((prev) => (prev ? { ...prev, ...json.booking } : prev));
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Erro ao atualizar reserva.";
+      alert(message);
+    } finally {
+      setNoShowBusy(false);
     }
   };
 
@@ -1208,11 +1324,11 @@ export default function ReservasDashboardPage() {
                 type="range"
                 min={MIN_HOUR_HEIGHT}
                 max={MAX_HOUR_HEIGHT}
-                step={2}
+                step={4}
                 value={hourHeight}
-                onChange={(event) => setHourHeight(Number(event.target.value))}
+                onChange={(event) => setHourHeight(normalizeHourHeight(Number(event.target.value)))}
                 className="h-1 w-24 cursor-pointer accent-white/70"
-                aria-label="Zoom do calendario"
+                aria-label="Zoom do calendário"
               />
             </div>
           </div>
@@ -1349,7 +1465,7 @@ export default function ReservasDashboardPage() {
             <div className="space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
-                  <h2 className="text-sm font-semibold text-white/90 tracking-[0.02em]">Calendario</h2>
+                <h2 className="text-sm font-semibold text-white/90 tracking-[0.02em]">Calendário</h2>
                   <p className={DASHBOARD_MUTED}>
                     Arrasta para explorar a semana. Visível 09:00–19:00 (scroll para o resto do dia).
                   </p>
@@ -1369,7 +1485,7 @@ export default function ReservasDashboardPage() {
                   </div>
                 </div>
                 <div className="text-[12px] text-white/60">
-                  {bookingsLoading ? "A carregar..." : `${filteredBookings.length} reservas visiveis`}
+                  {bookingsLoading ? "A carregar..." : `${filteredBookings.length} reservas visíveis`}
                 </div>
               </div>
 
@@ -1411,21 +1527,27 @@ export default function ReservasDashboardPage() {
 
                     <div
                       ref={calendarScrollRef}
-                      className="overflow-y-auto"
+                      className="overflow-y-auto orya-scrollbar-hide"
                       style={{ height: calendarViewportHeight, maxHeight: "calc(100vh - 320px)" }}
                     >
                       <div className="grid gap-1" style={{ gridTemplateColumns: "72px minmax(0,1fr)" }}>
                         <div
                           className="sticky left-0 z-20 relative border-r border-white/8 bg-[rgba(6,10,20,0.7)] backdrop-blur-xl"
-                          style={{ height: (calendarEndHour - calendarStartHour) * hourHeight }}
+                          style={{
+                            height: (calendarEndHour - calendarStartHour) * hourHeight,
+                            backgroundImage:
+                              "linear-gradient(to bottom, rgba(255,255,255,0.03) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.06) 1px, transparent 1px)",
+                            backgroundSize: `100% ${hourHeight / 4}px, 100% ${hourHeight}px`,
+                            backgroundPosition: "0 0, 0 0",
+                          }}
                         >
                           {Array.from({ length: calendarEndHour - calendarStartHour }, (_, idx) => {
                             const hour = calendarStartHour + idx;
                             const top = (hour - calendarStartHour) * hourHeight;
                             const labelClass =
                               hour === calendarStartHour
-                                ? "absolute left-0 text-[10px] font-mono tracking-[0.12em] text-white/40"
-                                : "absolute left-0 -translate-y-1/2 text-[10px] font-mono tracking-[0.12em] text-white/40";
+                                ? "absolute right-2 text-[10px] font-mono leading-none tracking-[0.12em] text-white/40"
+                                : "absolute right-2 -translate-y-1/2 text-[10px] font-mono leading-none tracking-[0.12em] text-white/40";
                             return (
                               <div
                                 key={`time-${hour}`}
@@ -1468,7 +1590,7 @@ export default function ReservasDashboardPage() {
                                   isTodayInView &&
                                   todayTop >= 0 &&
                                   todayTop <= (calendarEndHour - calendarStartHour) * hourHeight && (
-                                    <div className="absolute left-0 right-0 flex items-center gap-2" style={{ top: todayTop }}>
+                                    <div className="pointer-events-none absolute left-0 right-0 z-10 flex items-center gap-2" style={{ top: todayTop }}>
                                       <span className="h-[1px] flex-1 bg-red-400/70" />
                                       <span className="rounded-full bg-red-500 px-2 py-0.5 text-[10px] text-white">
                                         Agora
@@ -1843,6 +1965,47 @@ export default function ReservasDashboardPage() {
               )}
             </div>
 
+            {!drawerBookingClosed && (
+              <div className="mt-6 space-y-3">
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.2em] text-white/50">Reagendar</p>
+                  <p className="text-[12px] text-white/60">Escolhe nova data e hora.</p>
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-[12px]">
+                  <label className="flex flex-col gap-1 text-white/60">
+                    Data
+                    <input
+                      type="date"
+                      value={rescheduleDate}
+                      onChange={(event) => setRescheduleDate(event.target.value)}
+                      className="rounded-lg border border-white/15 bg-black/30 px-2 py-2 text-white"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1 text-white/60">
+                    Hora
+                    <input
+                      type="time"
+                      step={900}
+                      value={rescheduleTime}
+                      onChange={(event) => setRescheduleTime(event.target.value)}
+                      className="rounded-lg border border-white/15 bg-black/30 px-2 py-2 text-white"
+                    />
+                  </label>
+                </div>
+                {rescheduleError && (
+                  <p className="text-[11px] text-red-200">{rescheduleError}</p>
+                )}
+                <button
+                  type="button"
+                  className="w-full rounded-full border border-white/20 bg-white/10 px-4 py-2 text-[12px] text-white hover:bg-white/20 disabled:opacity-60"
+                  onClick={handleReschedule}
+                  disabled={rescheduleBusy}
+                >
+                  {rescheduleBusy ? "A reagendar..." : "Reagendar reserva"}
+                </button>
+              </div>
+            )}
+
             <div className="mt-6 space-y-2">
               {drawerBooking.service?.id && (
                 <Link href={`/organizacao/reservas/${drawerBooking.service.id}`} className={CTA_SECONDARY}>
@@ -1857,6 +2020,16 @@ export default function ReservasDashboardPage() {
                   disabled={cancelingId === drawerBooking.id}
                 >
                   {cancelingId === drawerBooking.id ? "A cancelar..." : "Cancelar reserva"}
+                </button>
+              )}
+              {canMarkNoShow && (
+                <button
+                  type="button"
+                  className="w-full rounded-full border border-amber-400/40 bg-amber-500/10 px-4 py-2 text-[12px] text-amber-100"
+                  onClick={() => handleNoShow(drawerBooking.id)}
+                  disabled={noShowBusy}
+                >
+                  {noShowBusy ? "A atualizar..." : "Marcar no-show"}
                 </button>
               )}
             </div>

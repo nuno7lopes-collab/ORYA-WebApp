@@ -268,6 +268,26 @@ export function getObjectiveSections(
         href: manageHref("padel-hub"),
       },
     );
+    if (hasModule(context.modules, "EVENTOS") || hasModule(context.modules, "TORNEIOS")) {
+      sections.push({
+        id: "checkin",
+        label: "Check-in",
+        href: "/organizacao/scan",
+      });
+    }
+    if (hasModule(context.modules, "CRM")) {
+      sections.push({
+        id: "crm",
+        label: "CRM",
+        href: "/organizacao/crm",
+        items: [
+          { id: "crm-clientes", label: "Clientes", href: "/organizacao/crm/clientes" },
+          { id: "crm-segmentos", label: "Segmentos", href: "/organizacao/crm/segmentos" },
+          { id: "crm-campanhas", label: "Campanhas", href: "/organizacao/crm/campanhas" },
+          { id: "crm-loyalty", label: "Pontos & recompensas", href: "/organizacao/crm/loyalty" },
+        ],
+      });
+    }
     if (hasModule(context.modules, "INSCRICOES")) {
       sections.push({
         id: "inscricoes",

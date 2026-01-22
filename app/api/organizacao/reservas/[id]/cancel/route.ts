@@ -5,10 +5,12 @@ import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
-import { OrganizationMemberRole } from "@prisma/client";
+import { CrmInteractionSource, CrmInteractionType, OrganizationMemberRole } from "@prisma/client";
 import { refundBookingPayment } from "@/lib/reservas/bookingRefund";
 import { ensureReservasModuleAccess } from "@/lib/reservas/access";
 import { decideCancellation } from "@/lib/bookingCancellation";
+import { ingestCrmInteraction } from "@/lib/crm/ingest";
+import { createNotification, shouldNotify } from "@/lib/notifications";
 
 const ALLOWED_ROLES: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -67,6 +69,8 @@ export async function POST(
     const reason = typeof payload?.reason === "string" ? payload.reason.trim().slice(0, 200) : null;
     const { ip, userAgent } = getRequestMeta(req);
 
+    let crmPayload: { organizationId: number; userId: string; bookingId: number } | null = null;
+    let bookingUserId: string | null = null;
     const result = await prisma.$transaction(async (tx) => {
       const booking = await tx.booking.findFirst({
         where: { id: bookingId, organizationId: organization.id },
@@ -100,6 +104,7 @@ export async function POST(
         return { booking, already: true };
       }
 
+      bookingUserId = booking.userId;
       const isPending = ["PENDING_CONFIRMATION", "PENDING"].includes(booking.status);
       const fallbackPolicy =
         booking.service?.policyId &&
@@ -153,6 +158,12 @@ export async function POST(
         userAgent,
       });
 
+      crmPayload = {
+        organizationId: organization.id,
+        userId: booking.userId,
+        bookingId: booking.id,
+      };
+
       return { booking: updated, already: false, refundRequired, paymentIntentId: booking.paymentIntentId };
     });
 
@@ -168,6 +179,44 @@ export async function POST(
       } catch (refundErr) {
         console.error("[organizacao/cancel] refund failed", refundErr);
         return NextResponse.json({ ok: false, error: "Reserva cancelada, mas o reembolso falhou." }, { status: 502 });
+      }
+    }
+
+    if (!result.already && crmPayload) {
+      try {
+        await ingestCrmInteraction({
+          organizationId: crmPayload.organizationId,
+          userId: crmPayload.userId,
+          type: CrmInteractionType.BOOKING_CANCELLED,
+          sourceType: CrmInteractionSource.BOOKING,
+          sourceId: String(crmPayload.bookingId),
+          occurredAt: new Date(),
+          metadata: {
+            bookingId: crmPayload.bookingId,
+            canceledBy: "ORG",
+          },
+        });
+      } catch (err) {
+        console.warn("[organizacao/cancel] Falha ao criar interação CRM", err);
+      }
+    }
+
+    if (!result.already && bookingUserId) {
+      try {
+        const shouldSend = await shouldNotify(bookingUserId, "SYSTEM_ANNOUNCE");
+        if (shouldSend) {
+          await createNotification({
+            userId: bookingUserId,
+            type: "SYSTEM_ANNOUNCE",
+            title: "Reserva cancelada",
+            body: "A tua reserva foi cancelada pela organização.",
+            ctaUrl: "/me/reservas",
+            ctaLabel: "Ver reservas",
+            organizationId: organization.id,
+          });
+        }
+      } catch (notifyErr) {
+        console.warn("[organizacao/cancel] Falha ao enviar notificação", notifyErr);
       }
     }
 

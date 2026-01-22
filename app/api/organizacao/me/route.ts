@@ -13,6 +13,7 @@ import { cookies } from "next/headers";
 import { resolveOrganizationIdFromParams } from "@/lib/organizationId";
 import { mergeLayoutWithDefaults, sanitizePublicProfileLayout } from "@/lib/publicProfileLayout";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
+import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
 import {
   DEFAULT_PRIMARY_MODULE,
   parsePrimaryModule,
@@ -64,7 +65,10 @@ export async function GET(req: NextRequest) {
       allowFallback: !urlOrg,
       allowedStatuses: [OrganizationStatus.ACTIVE, OrganizationStatus.SUSPENDED],
     });
-    const [platformFees, orgTransferEnabled, organizationModules] = await Promise.all([
+    const memberPermissionsModel = (prisma as {
+      organizationMemberPermission?: { findMany?: (args: unknown) => Promise<unknown[]> };
+    }).organizationMemberPermission;
+    const [platformFees, orgTransferEnabled, organizationModules, memberPermissions] = await Promise.all([
       getPlatformFees(),
       getOrgTransferEnabled(),
       organization
@@ -73,6 +77,19 @@ export async function GET(req: NextRequest) {
             select: { moduleKey: true },
             orderBy: { moduleKey: "asc" },
           })
+        : Promise.resolve([]),
+      organization && membership
+        ? memberPermissionsModel?.findMany
+          ? memberPermissionsModel.findMany({
+            where: { organizationId: organization.id, userId: membership.userId },
+            select: {
+              moduleKey: true,
+              accessLevel: true,
+              scopeType: true,
+              scopeId: true,
+            },
+          })
+          : Promise.resolve([])
         : Promise.resolve([]),
     ]);
 
@@ -180,6 +197,7 @@ export async function GET(req: NextRequest) {
         paymentsStatus,
         paymentsMode: isPlatformAccount ? "PLATFORM" : "CONNECT",
         membershipRole: membership?.role ?? null,
+        modulePermissions: memberPermissions,
       },
       { status: 200 }
     );
@@ -553,7 +571,15 @@ export async function PATCH(req: NextRequest) {
       });
     }
 
+    let previousModules: string[] | null = null;
     if (modulesProvided) {
+      previousModules = (
+        await prisma.organizationModuleEntry.findMany({
+          where: { organizationId: organization.id, enabled: true },
+          select: { moduleKey: true },
+          orderBy: { moduleKey: "asc" },
+        })
+      ).map((module) => module.moduleKey);
       await prisma.organizationModuleEntry.deleteMany({
         where: { organizationId: organization.id },
       });
@@ -584,6 +610,15 @@ export async function PATCH(req: NextRequest) {
           .filter((module): module is string => typeof module === "string" && module.length > 0),
       ),
     );
+
+    if (modulesProvided) {
+      await recordOrganizationAuditSafe({
+        organizationId: organization.id,
+        actorUserId: user.id,
+        action: "MODULES_UPDATED",
+        metadata: { previousModules, nextModules },
+      });
+    }
 
     const verifiedOfficialEmail =
       organization && (organization as { officialEmailVerifiedAt?: Date | null })?.officialEmailVerifiedAt

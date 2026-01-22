@@ -1,6 +1,7 @@
 // app/components/EventCard.tsx
 import Link from 'next/link';
 import { getEventCoverFallback } from '@/lib/eventCover';
+import { getEventLocationDisplay } from '@/lib/location/eventLocation';
 
 type EventTicket = { price: number };
 
@@ -11,7 +12,14 @@ type EventForCard = {
   endDate: string;
   timezone: string;
   locationName: string;
-  address: string;
+  address?: string | null;
+  locationCity?: string | null;
+  locationSource?: "OSM" | "MANUAL" | null;
+  locationFormattedAddress?: string | null;
+  locationComponents?: Record<string, unknown> | null;
+  locationOverrides?: Record<string, unknown> | null;
+  latitude?: number | null;
+  longitude?: number | null;
   isFree: boolean;
   tickets?: EventTicket[];
   interestedCount: number;
@@ -64,6 +72,20 @@ export default function EventCard({ event }: Props) {
   const priceLabel = formatPrice(event.tickets, event.isFree);
   const dateLabel = formatDateRange(event.startDate, event.endDate, event.timezone);
   const coverUrl = getEventCoverFallback(event.slug);
+  const locationDisplay = getEventLocationDisplay(
+    {
+      locationName: event.locationName,
+      locationCity: event.locationCity ?? null,
+      address: event.address ?? null,
+      locationSource: event.locationSource ?? null,
+      locationFormattedAddress: event.locationFormattedAddress ?? null,
+      locationComponents: event.locationComponents ?? null,
+      locationOverrides: event.locationOverrides ?? null,
+      latitude: event.latitude ?? null,
+      longitude: event.longitude ?? null,
+    },
+    'Local a anunciar'
+  );
 
   return (
     <Link
@@ -90,7 +112,8 @@ export default function EventCard({ event }: Props) {
             {event.title}
           </h3>
           <p className="text-[12px] text-white/60 line-clamp-2">
-            {event.locationName} · {event.address}
+            {locationDisplay.primary}
+            {locationDisplay.secondary ? ` · ${locationDisplay.secondary}` : ""}
           </p>
         </div>
 

@@ -14,6 +14,7 @@ import {
 } from "@prisma/client";
 import { validateEligibility } from "@/domain/padelEligibility";
 import { validatePadelCategoryGender } from "@/domain/padelCategoryGender";
+import { validatePadelCategoryLevel } from "@/domain/padelCategoryLevel";
 
 type InviteState =
   | "AWAITING_PAYMENT"
@@ -55,6 +56,16 @@ function categoryLabel(restriction?: string | null) {
   if (value === "FEMALE") return "Categoria feminina";
   if (value === "MIXED") return "Categoria mista";
   return "Categoria aberta";
+}
+
+function levelLabel(minLevel?: string | null, maxLevel?: string | null) {
+  const min = (minLevel ?? "").trim();
+  const max = (maxLevel ?? "").trim();
+  if (min && max && min === max) return `Nível ${min}`;
+  if (min && max) return `Nível ${min}-${max}`;
+  if (min) return `Nível ${min}+`;
+  if (max) return `Nível até ${max}`;
+  return "Nível livre";
 }
 
 export async function GET(req: NextRequest) {
@@ -104,7 +115,7 @@ export async function GET(req: NextRequest) {
     }),
     prisma.profile.findUnique({
       where: { id: userId },
-      select: { username: true, contactPhone: true, gender: true },
+      select: { username: true, contactPhone: true, gender: true, padelLevel: true },
     }),
   ]);
 
@@ -120,7 +131,7 @@ export async function GET(req: NextRequest) {
     pairing.categoryId
       ? prisma.padelCategory.findUnique({
           where: { id: pairing.categoryId },
-          select: { genderRestriction: true },
+          select: { genderRestriction: true, minLevel: true, maxLevel: true },
         })
       : Promise.resolve(null),
   ]);
@@ -177,15 +188,29 @@ export async function GET(req: NextRequest) {
 
   let state: InviteState = "AWAITING_PAYMENT";
   let requiredAction: "PAY" | "ACCEPT" | "ONBOARD" | "WAIT_PARTNER" | "SUPPORT" | "NONE" = "NONE";
-  let blockingReason: "PROFILE_INCOMPLETE" | "GENDER_MISMATCH" | "CATEGORY_GENDER_MISMATCH" | null = null;
+  let blockingReason:
+    | "PROFILE_INCOMPLETE"
+    | "GENDER_MISMATCH"
+    | "CATEGORY_GENDER_MISMATCH"
+    | "LEVEL_REQUIRED_FOR_CATEGORY"
+    | "CATEGORY_LEVEL_MISMATCH"
+    | null = null;
   let blockingDetails:
     | {
-        reason: "PROFILE_INCOMPLETE" | "GENDER_MISMATCH" | "CATEGORY_GENDER_MISMATCH";
+        reason:
+          | "PROFILE_INCOMPLETE"
+          | "GENDER_MISMATCH"
+          | "CATEGORY_GENDER_MISMATCH"
+          | "LEVEL_REQUIRED_FOR_CATEGORY"
+          | "CATEGORY_LEVEL_MISMATCH";
         message: string;
         captainGender?: Gender | null;
         partnerGender?: Gender | null;
         eligibilityType?: PadelEligibilityType | null;
         categoryRestriction?: string | null;
+        categoryMinLevel?: string | null;
+        categoryMaxLevel?: string | null;
+        partnerLevel?: string | null;
       }
     | null = null;
 
@@ -204,7 +229,7 @@ export async function GET(req: NextRequest) {
         : partnerSlot?.invitedUserId
           ? await prisma.profile.findUnique({
               where: { id: partnerSlot.invitedUserId },
-              select: { gender: true },
+              select: { gender: true, padelLevel: true },
             })
           : null;
 
@@ -259,6 +284,41 @@ export async function GET(req: NextRequest) {
             partnerGender,
             categoryRestriction: category?.genderRestriction ?? null,
           };
+        } else {
+          const categoryLevel = validatePadelCategoryLevel(
+            category?.minLevel ?? null,
+            category?.maxLevel ?? null,
+            partnerProfile?.padelLevel ?? null,
+          );
+          if (!categoryLevel.ok) {
+            const requirementLabel = levelLabel(category?.minLevel ?? null, category?.maxLevel ?? null);
+            const partnerLevelLabel = (partnerProfile?.padelLevel ?? "").trim() || "não definido";
+            if (categoryLevel.code === "LEVEL_REQUIRED_FOR_CATEGORY") {
+              blockingReason = "LEVEL_REQUIRED_FOR_CATEGORY";
+              requiredAction = viewerRole === "INVITED" ? "ONBOARD" : "WAIT_PARTNER";
+              blockingDetails = {
+                reason: "LEVEL_REQUIRED_FOR_CATEGORY",
+                message:
+                  viewerRole === "INVITED"
+                    ? "Define o teu nível de padel para continuares."
+                    : "O parceiro precisa definir o nível de padel.",
+                categoryMinLevel: category?.minLevel ?? null,
+                categoryMaxLevel: category?.maxLevel ?? null,
+                partnerLevel: partnerProfile?.padelLevel ?? null,
+              };
+            } else {
+              const partnerLabel = viewerRole === "INVITED" ? "teu" : "do parceiro";
+              blockingReason = "CATEGORY_LEVEL_MISMATCH";
+              requiredAction = "NONE";
+              blockingDetails = {
+                reason: "CATEGORY_LEVEL_MISMATCH",
+                message: `${requirementLabel}: nível ${partnerLabel} ${partnerLevelLabel}.`,
+                categoryMinLevel: category?.minLevel ?? null,
+                categoryMaxLevel: category?.maxLevel ?? null,
+                partnerLevel: partnerProfile?.padelLevel ?? null,
+              };
+            }
+          }
         }
       }
     }

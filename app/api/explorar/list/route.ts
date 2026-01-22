@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
+import { getOrganizationFollowingSet } from "@/domain/social/follows";
 import { Prisma } from "@prisma/client";
 
 const DEFAULT_PAGE_SIZE = 12;
@@ -16,8 +17,13 @@ type ExploreItem = {
   location: {
     name: string | null;
     city: string | null;
+    address: string | null;
     lat: number | null;
     lng: number | null;
+    formattedAddress: string | null;
+    source: string | null;
+    components: Record<string, unknown> | null;
+    overrides: Record<string, unknown> | null;
   };
   coverImageUrl: string | null;
   isFree: boolean;
@@ -123,6 +129,8 @@ export async function GET(req: NextRequest) {
       { description: { contains: q, mode: "insensitive" } },
       { locationName: { contains: q, mode: "insensitive" } },
       { locationCity: { contains: q, mode: "insensitive" } },
+      { locationFormattedAddress: { contains: q, mode: "insensitive" } },
+      { address: { contains: q, mode: "insensitive" } },
     ];
   }
 
@@ -295,12 +303,8 @@ export async function GET(req: NextRequest) {
         ),
       );
       if (organizationIds.length > 0) {
-        const rows = await prisma.organization_follows.findMany({
-          where: { follower_id: viewerId, organization_id: { in: organizationIds } },
-          select: { organization_id: true },
-        });
-        if (rows.length > 0) {
-          const followedIds = new Set(rows.map((row) => row.organization_id));
+        const followedIds = await getOrganizationFollowingSet(viewerId, organizationIds);
+        if (followedIds.size > 0) {
           const followed: typeof events = [];
           const rest: typeof events = [];
           events.forEach((event) => {
@@ -363,8 +367,19 @@ export async function GET(req: NextRequest) {
         location: {
           name: event.locationName ?? null,
           city: event.locationCity ?? null,
+          address: event.address ?? null,
           lat: event.latitude ?? null,
           lng: event.longitude ?? null,
+          formattedAddress: event.locationFormattedAddress ?? null,
+          source: event.locationSource ?? null,
+          components:
+            event.locationComponents && typeof event.locationComponents === "object"
+              ? (event.locationComponents as Record<string, unknown>)
+              : null,
+          overrides:
+            event.locationOverrides && typeof event.locationOverrides === "object"
+              ? (event.locationOverrides as Record<string, unknown>)
+              : null,
         },
         coverImageUrl: event.coverImageUrl ?? null,
         isFree: event.isFree,

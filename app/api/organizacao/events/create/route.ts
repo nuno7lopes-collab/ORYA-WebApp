@@ -11,7 +11,6 @@ import { canManageEvents } from "@/lib/organizationPermissions";
 import { clampDeadlineHours } from "@/domain/padelDeadlines";
 import { DEFAULT_PADEL_SCORE_RULES } from "@/domain/padel/score";
 import { formatPaidSalesGateMessage, getPaidSalesGate } from "@/lib/organizationPayments";
-import { resolvePrimaryModule } from "@/lib/organizationCategories";
 import {
   EventParticipantAccessMode,
   EventPublicAccessMode,
@@ -20,6 +19,7 @@ import {
   PadelEligibilityType,
   PayoutMode,
   ResaleMode,
+  Prisma,
   padel_format,
 } from "@prisma/client";
 
@@ -28,6 +28,7 @@ const ALLOWED_PADEL_FORMATS = new Set<padel_format>([
   padel_format.QUADRO_ELIMINATORIO,
   padel_format.GRUPOS_ELIMINATORIAS,
   padel_format.QUADRO_AB,
+  padel_format.DUPLA_ELIMINACAO,
   padel_format.NON_STOP,
   padel_format.CAMPEONATO_LIGA,
 ]);
@@ -52,6 +53,13 @@ type CreateOrganizationEventBody = {
   templateType?: string; // PADEL | OTHER
   ticketTypes?: TicketTypeInput[];
   address?: string | null;
+  locationSource?: string | null;
+  locationProviderId?: string | null;
+  locationFormattedAddress?: string | null;
+  locationComponents?: Record<string, unknown> | null;
+  locationOverrides?: Record<string, unknown> | null;
+  latitude?: number | null;
+  longitude?: number | null;
   resaleMode?: string; // ALWAYS | AFTER_SOLD_OUT | DISABLED
   coverImageUrl?: string | null;
   inviteOnly?: boolean;
@@ -208,6 +216,36 @@ export async function POST(req: NextRequest) {
     const locationName = body.locationName?.trim() ?? "";
     const locationCity = body.locationCity?.trim() ?? "";
     const address = body.address?.trim() || null;
+    const locationSourceRaw = typeof body.locationSource === "string" ? body.locationSource.toUpperCase() : null;
+    const locationSource = locationSourceRaw === "OSM" ? "OSM" : "MANUAL";
+    const locationProviderId =
+      typeof body.locationProviderId === "string" ? body.locationProviderId.trim() || null : null;
+    const locationFormattedAddress =
+      typeof body.locationFormattedAddress === "string" ? body.locationFormattedAddress.trim() || null : null;
+    const locationComponents =
+      body.locationComponents && typeof body.locationComponents === "object"
+        ? (body.locationComponents as Prisma.InputJsonValue)
+        : null;
+    const rawOverrides =
+      body.locationOverrides && typeof body.locationOverrides === "object"
+        ? (body.locationOverrides as Record<string, unknown>)
+        : null;
+    const overridesHouse =
+      typeof rawOverrides?.houseNumber === "string" ? rawOverrides.houseNumber.trim() || null : null;
+    const overridesPostal =
+      typeof rawOverrides?.postalCode === "string" ? rawOverrides.postalCode.trim() || null : null;
+    const locationOverrides =
+      overridesHouse || overridesPostal
+        ? ({ houseNumber: overridesHouse, postalCode: overridesPostal } as Prisma.InputJsonValue)
+        : null;
+    const latitude =
+      typeof body.latitude === "number" || typeof body.latitude === "string"
+        ? Number(body.latitude)
+        : null;
+    const longitude =
+      typeof body.longitude === "number" || typeof body.longitude === "string"
+        ? Number(body.longitude)
+        : null;
     const templateTypeRaw = body.templateType?.toUpperCase();
     const resaleModeRaw = body.resaleMode?.toUpperCase() as
       | "ALWAYS"
@@ -232,11 +270,21 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (!locationCity) {
+    const isLocationTbd = locationSource === "MANUAL" && !locationName && !locationCity && !address;
+    if (!locationCity && !isLocationTbd) {
       return NextResponse.json(
         { ok: false, error: "Cidade é obrigatória." },
         { status: 400 },
       );
+    }
+    if (locationSource === "OSM") {
+      const hasCoords = Number.isFinite(latitude ?? NaN) && Number.isFinite(longitude ?? NaN);
+      if (!locationProviderId || !hasCoords) {
+        return NextResponse.json(
+          { ok: false, error: "Localização OSM inválida." },
+          { status: 400 },
+        );
+      }
     }
     // Permitimos cidades fora da whitelist para não bloquear dados existentes
 
@@ -263,12 +311,7 @@ export async function POST(req: NextRequest) {
     const endsAtParsed = parseDate(endsAtRaw);
     const endsAt = endsAtParsed && endsAtParsed >= startsAt ? endsAtParsed : startsAt;
 
-    const primaryModule = resolvePrimaryModule(
-      (organization as { primaryModule?: string | null })?.primaryModule ?? null,
-      null,
-    );
-    const isPadelOrganization = primaryModule === "TORNEIOS";
-    const padelRequested = Boolean(body.padel) || templateTypeRaw === "PADEL" || isPadelOrganization;
+    const padelRequested = Boolean(body.padel) || templateTypeRaw === "PADEL";
     const templateTypeFromBody =
       templateTypeRaw === "PADEL"
         ? EventTemplateType.PADEL
@@ -414,6 +457,8 @@ export async function POST(req: NextRequest) {
     let padelDefaultCategoryId: number | null = null;
     let padelEligibilityType: PadelEligibilityType = PadelEligibilityType.OPEN;
     let splitDeadlineHours: number | null = null;
+    let resolvedCourtIds: number[] = [];
+    let resolvedStaffIds: number[] = [];
     const categoryConfigMap = new Map<number, { capacityTeams: number | null; format: padel_format | null }>();
 
     if (padelRequested && organization) {
@@ -426,6 +471,16 @@ export async function POST(req: NextRequest) {
         ? padelConfigInput.partnerClubIds.filter((id) => typeof id === "number" && Number.isFinite(id))
         : [];
       advancedSettings = padelConfigInput?.advancedSettings ?? null;
+      const requestedCourtIds = Array.isArray(padelConfigInput?.courtIds)
+        ? Array.from(
+            new Set(padelConfigInput.courtIds.filter((id) => typeof id === "number" && Number.isFinite(id))),
+          )
+        : [];
+      const requestedStaffIds = Array.isArray(padelConfigInput?.staffIds)
+        ? Array.from(
+            new Set(padelConfigInput.staffIds.filter((id) => typeof id === "number" && Number.isFinite(id))),
+          )
+        : [];
       const eligibilityRaw = typeof padelConfigInput?.eligibilityType === "string" ? padelConfigInput.eligibilityType : null;
       if (eligibilityRaw && Object.values(PadelEligibilityType).includes(eligibilityRaw as PadelEligibilityType)) {
         padelEligibilityType = eligibilityRaw as PadelEligibilityType;
@@ -461,17 +516,62 @@ export async function POST(req: NextRequest) {
           : null;
       let allowedCategoryIds: Set<number> | null = null;
 
-      if (padelClubId) {
-        const club = await prisma.padelClub.findFirst({
-          where: { id: padelClubId, organizationId: organization.id, isActive: true, deletedAt: null },
-          select: { id: true },
-        });
-        if (!club) {
+      if (!padelClubId) {
+        return NextResponse.json(
+          { ok: false, error: "Seleciona um clube de padel." },
+          { status: 400 },
+        );
+      }
+
+      const club = await prisma.padelClub.findFirst({
+        where: { id: padelClubId, organizationId: organization.id, isActive: true, deletedAt: null },
+        select: { id: true },
+      });
+      if (!club) {
+        return NextResponse.json(
+          { ok: false, error: "Clube de padel arquivado ou inexistente." },
+          { status: 400 },
+        );
+      }
+
+      const activeCourts = await prisma.padelClubCourt.findMany({
+        where: { padelClubId, isActive: true },
+        select: { id: true },
+      });
+      if (activeCourts.length === 0) {
+        return NextResponse.json(
+          { ok: false, error: "O clube selecionado não tem courts ativos." },
+          { status: 400 },
+        );
+      }
+      const activeCourtIds = new Set(activeCourts.map((court) => court.id));
+      if (requestedCourtIds.length > 0) {
+        resolvedCourtIds = requestedCourtIds.filter((id) => activeCourtIds.has(id));
+        if (resolvedCourtIds.length === 0) {
           return NextResponse.json(
-            { ok: false, error: "Clube de padel arquivado ou inexistente." },
+            { ok: false, error: "Seleciona courts válidos para o clube." },
             { status: 400 },
           );
         }
+      } else {
+        resolvedCourtIds = activeCourts.map((court) => court.id);
+      }
+
+      if (requestedStaffIds.length > 0) {
+        const activeStaff = await prisma.padelClubStaff.findMany({
+          where: { id: { in: requestedStaffIds }, padelClubId, isActive: true, deletedAt: null },
+          select: { id: true },
+        });
+        const activeStaffIds = new Set(activeStaff.map((member) => member.id));
+        resolvedStaffIds = requestedStaffIds.filter((id) => activeStaffIds.has(id));
+        if (resolvedStaffIds.length === 0) {
+          return NextResponse.json(
+            { ok: false, error: "Seleciona staff válido para o clube." },
+            { status: 400 },
+          );
+        }
+      } else {
+        resolvedStaffIds = [];
       }
 
       if (partnerClubIds.length > 0) {
@@ -547,6 +647,13 @@ export async function POST(req: NextRequest) {
         locationName,
         locationCity,
         address,
+        locationSource,
+        locationProviderId,
+        locationFormattedAddress,
+        locationComponents: locationComponents ?? undefined,
+        locationOverrides: locationOverrides ?? undefined,
+        latitude: Number.isFinite(latitude ?? NaN) ? latitude : null,
+        longitude: Number.isFinite(longitude ?? NaN) ? longitude : null,
         isFree: ticketTypesData.every((t) => t.price === 0),
         inviteOnly: publicAccessMode === "INVITE",
         publicAccessMode,
@@ -563,9 +670,9 @@ export async function POST(req: NextRequest) {
 
     if (templateType === "PADEL" && padelConfigInput && organization) {
       const padelV2Enabled = padelConfigInput?.padelV2Enabled ?? true;
-      const courtIds = Array.isArray(padelConfigInput?.courtIds) ? padelConfigInput?.courtIds : [];
-      const staffIds = Array.isArray(padelConfigInput?.staffIds) ? padelConfigInput?.staffIds : [];
-      const computedCourts = Math.max(1, padelConfigInput.numberOfCourts || courtIds.length || 1);
+      const courtIds = resolvedCourtIds;
+      const staffIds = resolvedStaffIds;
+      const computedCourts = Math.max(1, courtIds.length || padelConfigInput.numberOfCourts || 1);
       const requestedFormat =
         typeof padelConfigInput.format === "string" ? padelConfigInput.format : null;
       const padelFormat =

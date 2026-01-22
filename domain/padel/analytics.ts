@@ -442,7 +442,11 @@ export function buildPadelAnalytics(input: BuildPadelAnalyticsInput): PadelAnaly
 
     const totalMatches = Object.values(weights).reduce((acc, v) => acc + v, 0);
     if (totalMatches === 0) {
-      if (category.format === "QUADRO_ELIMINATORIO" || category.format === "QUADRO_AB") {
+      if (
+        category.format === "QUADRO_ELIMINATORIO" ||
+        category.format === "QUADRO_AB" ||
+        category.format === "DUPLA_ELIMINACAO"
+      ) {
         weights.KNOCKOUT_MAIN = 1;
       } else if (category.format === "NON_STOP" || category.format === "TODOS_CONTRA_TODOS") {
         weights.GROUPS = 1;

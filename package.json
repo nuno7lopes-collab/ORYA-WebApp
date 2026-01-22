@@ -5,6 +5,9 @@
   "scripts": {
     "dev": "NODE_TLS_REJECT_UNAUTHORIZED=0 next dev",
     "dev:all": "node scripts/dev-all.js",
+    "reset": "scripts/reset-dev-servers.sh",
+    "reset:hard": "scripts/reset-dev-servers.sh --aggressive --full --no-exclude",
+    "delete": "prisma db execute --file scripts/db/cleanup-app_v3.sql",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
@@ -12,6 +15,7 @@
     "test": "vitest run",
     "worker": "node scripts/operations-loop.js",
     "cron:local": "node scripts/cron-loop.js",
+    "chat:ws": "node scripts/chat-ws-server.js",
     "postinstall": "prisma generate",
     "prisma:generate": "prisma generate",
     "covers:build": "node scripts/generate_cover_library.js",
@@ -26,6 +30,7 @@
     "@supabase/auth-helpers-nextjs": "^0.10.0",
     "@supabase/ssr": "^0.7.0",
     "@supabase/supabase-js": "^2.81.1",
+    "@tanstack/react-virtual": "^3.13.18",
     "@types/pdfkit": "^0.17.4",
     "@types/seedrandom": "^3.0.8",
     "@upstash/redis": "^1.34.4",
@@ -45,6 +50,7 @@
     "seedrandom": "^3.0.5",
     "stripe": "^19.3.1",
     "swr": "^2.3.6",
+    "ws": "^8.19.0",
     "xlsx": "^0.18.5",
     "zod": "^4.1.13"
   },

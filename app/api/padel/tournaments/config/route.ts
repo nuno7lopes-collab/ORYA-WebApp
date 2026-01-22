@@ -81,22 +81,46 @@ export async function POST(req: NextRequest) {
 
   const eventId = typeof body.eventId === "number" ? body.eventId : Number(body.eventId);
   const organizationIdBody = parseOrganizationId(body.organizationId);
+  const hasFormat = Object.prototype.hasOwnProperty.call(body, "format");
   const format =
-    typeof body.format === "string" && Object.values(padel_format).includes(body.format as padel_format)
+    hasFormat && typeof body.format === "string" && Object.values(padel_format).includes(body.format as padel_format)
       ? (body.format as padel_format)
       : null;
-  const numberOfCourts = typeof body.numberOfCourts === "number" ? body.numberOfCourts : 1;
-  const ruleSetId = typeof body.ruleSetId === "number" ? body.ruleSetId : null;
-  const defaultCategoryId = typeof body.defaultCategoryId === "number" ? body.defaultCategoryId : null;
+  const hasNumberOfCourts = Object.prototype.hasOwnProperty.call(body, "numberOfCourts");
+  const numberOfCourtsRaw =
+    hasNumberOfCourts && (typeof body.numberOfCourts === "number" || typeof body.numberOfCourts === "string")
+      ? Number(body.numberOfCourts)
+      : null;
+  const numberOfCourtsParsed =
+    hasNumberOfCourts && Number.isFinite(numberOfCourtsRaw) ? Math.max(1, Math.floor(numberOfCourtsRaw)) : null;
+  const hasRuleSetId = Object.prototype.hasOwnProperty.call(body, "ruleSetId");
+  const ruleSetIdRaw =
+    hasRuleSetId && (typeof body.ruleSetId === "number" || typeof body.ruleSetId === "string")
+      ? Number(body.ruleSetId)
+      : null;
+  const ruleSetId = hasRuleSetId && Number.isFinite(ruleSetIdRaw) ? Math.floor(ruleSetIdRaw) : null;
+  const hasDefaultCategoryId = Object.prototype.hasOwnProperty.call(body, "defaultCategoryId");
+  const defaultCategoryRaw =
+    hasDefaultCategoryId &&
+    (typeof body.defaultCategoryId === "number" || typeof body.defaultCategoryId === "string")
+      ? Number(body.defaultCategoryId)
+      : null;
+  const defaultCategoryId =
+    hasDefaultCategoryId && Number.isFinite(defaultCategoryRaw) ? Math.floor(defaultCategoryRaw) : null;
+  const hasEligibilityType = Object.prototype.hasOwnProperty.call(body, "eligibilityType");
   const eligibilityType =
-    typeof body.eligibilityType === "string" && Object.values(PadelEligibilityType).includes(body.eligibilityType as PadelEligibilityType)
+    hasEligibilityType &&
+    typeof body.eligibilityType === "string" &&
+    Object.values(PadelEligibilityType).includes(body.eligibilityType as PadelEligibilityType)
       ? (body.eligibilityType as PadelEligibilityType)
       : null;
+  const hasSplitDeadlineHours = Object.prototype.hasOwnProperty.call(body, "splitDeadlineHours");
   const splitDeadlineHours =
-    typeof body.splitDeadlineHours === "number" && Number.isFinite(body.splitDeadlineHours)
+    hasSplitDeadlineHours && typeof body.splitDeadlineHours === "number" && Number.isFinite(body.splitDeadlineHours)
       ? Math.max(48, Math.min(168, Math.floor(body.splitDeadlineHours)))
       : null;
-  const enabledFormats = Array.isArray(body.enabledFormats)
+  const hasEnabledFormats = Object.prototype.hasOwnProperty.call(body, "enabledFormats");
+  const enabledFormats = hasEnabledFormats && Array.isArray(body.enabledFormats)
     ? (body.enabledFormats as unknown[]).map((f) => String(f))
     : null;
   const groupsBody = body.groups && typeof body.groups === "object" ? (body.groups as Record<string, unknown>) : null;
@@ -290,7 +314,85 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  if (!Number.isFinite(eventId) || !organizationIdBody || !format) {
+  const hasFeaturedMatchId = Object.prototype.hasOwnProperty.call(body, "featuredMatchId");
+  let featuredMatchId: number | null | undefined = undefined;
+  if (hasFeaturedMatchId) {
+    const raw =
+      typeof body.featuredMatchId === "number"
+        ? body.featuredMatchId
+        : typeof body.featuredMatchId === "string"
+          ? Number(body.featuredMatchId)
+          : null;
+    featuredMatchId = Number.isFinite(raw) ? Math.floor(raw as number) : null;
+  }
+
+  const hasGoalLimits = Object.prototype.hasOwnProperty.call(body, "goalLimits");
+  let goalLimits: { defaultLimit?: number | null; roundLimits?: Record<string, number> | null } | null | undefined =
+    undefined;
+  if (hasGoalLimits) {
+    if (body.goalLimits === null) {
+      goalLimits = null;
+    } else if (body.goalLimits && typeof body.goalLimits === "object") {
+      const payload = body.goalLimits as Record<string, unknown>;
+      const defaultLimitRaw =
+        typeof payload.defaultLimit === "number"
+          ? payload.defaultLimit
+          : typeof payload.defaultLimit === "string"
+            ? Number(payload.defaultLimit)
+            : null;
+      const defaultLimit =
+        defaultLimitRaw !== null && Number.isFinite(defaultLimitRaw) ? Math.round(defaultLimitRaw) : null;
+      const roundLimitsRaw = payload.roundLimits && typeof payload.roundLimits === "object"
+        ? (payload.roundLimits as Record<string, unknown>)
+        : null;
+      const roundLimits: Record<string, number> = {};
+      if (roundLimitsRaw) {
+        Object.entries(roundLimitsRaw).forEach(([key, value]) => {
+          const parsed = typeof value === "number" ? value : Number(value);
+          if (Number.isFinite(parsed)) roundLimits[String(key)] = Math.round(parsed);
+        });
+      }
+      goalLimits = {
+        defaultLimit,
+        roundLimits: Object.keys(roundLimits).length ? roundLimits : null,
+      };
+    } else {
+      goalLimits = null;
+    }
+  }
+
+  const hasLiveSponsors = Object.prototype.hasOwnProperty.call(body, "liveSponsors");
+  let liveSponsors: Record<string, unknown> | null | undefined = undefined;
+  if (hasLiveSponsors) {
+    if (body.liveSponsors === null) {
+      liveSponsors = null;
+    } else if (body.liveSponsors && typeof body.liveSponsors === "object") {
+      const payload = body.liveSponsors as Record<string, unknown>;
+      const sanitizeSlot = (value: unknown) => {
+        if (!value || typeof value !== "object") return null;
+        const slot = value as Record<string, unknown>;
+        const label = typeof slot.label === "string" ? slot.label.trim() : "";
+        const logoUrl = typeof slot.logoUrl === "string" ? slot.logoUrl.trim() : "";
+        const url = typeof slot.url === "string" ? slot.url.trim() : "";
+        if (!label && !logoUrl && !url) return null;
+        return {
+          label: label || null,
+          logoUrl: logoUrl || null,
+          url: url || null,
+        };
+      };
+      liveSponsors = {
+        hero: sanitizeSlot(payload.hero),
+        sideA: sanitizeSlot(payload.sideA),
+        sideB: sanitizeSlot(payload.sideB),
+        nowPlaying: sanitizeSlot(payload.nowPlaying),
+      };
+    } else {
+      liveSponsors = null;
+    }
+  }
+
+  if (!Number.isFinite(eventId) || !organizationIdBody) {
     return NextResponse.json({ ok: false, error: "MISSING_FIELDS" }, { status: 400 });
   }
 
@@ -302,26 +404,39 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });
   }
 
-  // Formatos suportados (alinhados com geração de jogos)
-  const allowedFormats = new Set<padel_format>([
-    padel_format.TODOS_CONTRA_TODOS,
-    padel_format.QUADRO_ELIMINATORIO,
-    padel_format.GRUPOS_ELIMINATORIAS,
-    padel_format.QUADRO_AB,
-    padel_format.NON_STOP,
-    padel_format.CAMPEONATO_LIGA,
-  ]);
-  if (!allowedFormats.has(format)) {
-    return NextResponse.json({ ok: false, error: "FORMAT_NOT_SUPPORTED" }, { status: 400 });
-  }
-
-  const formatEffective = format;
-
   try {
     const existing = await prisma.padelTournamentConfig.findUnique({
       where: { eventId },
-      select: { advancedSettings: true },
+      select: {
+        advancedSettings: true,
+        format: true,
+        numberOfCourts: true,
+        ruleSetId: true,
+        defaultCategoryId: true,
+        eligibilityType: true,
+        splitDeadlineHours: true,
+        enabledFormats: true,
+      },
     });
+    const formatEffective = format ?? existing?.format ?? null;
+    if (!formatEffective) {
+      return NextResponse.json({ ok: false, error: "MISSING_FIELDS" }, { status: 400 });
+    }
+
+    // Formatos suportados (alinhados com geração de jogos)
+    const allowedFormats = new Set<padel_format>([
+      padel_format.TODOS_CONTRA_TODOS,
+      padel_format.QUADRO_ELIMINATORIO,
+      padel_format.GRUPOS_ELIMINATORIAS,
+      padel_format.QUADRO_AB,
+      padel_format.DUPLA_ELIMINACAO,
+      padel_format.NON_STOP,
+      padel_format.CAMPEONATO_LIGA,
+    ]);
+    if (!allowedFormats.has(formatEffective)) {
+      return NextResponse.json({ ok: false, error: "FORMAT_NOT_SUPPORTED" }, { status: 400 });
+    }
+
     const mergedAdvanced = {
       ...((existing?.advancedSettings as Record<string, unknown>) ?? {}),
       ...(groupsConfig ? { groupsConfig } : {}),
@@ -336,7 +451,10 @@ export async function POST(req: NextRequest) {
       ...(templateId !== undefined ? { templateId } : {}),
       ...(tvMonitor !== undefined ? { tvMonitor } : {}),
       ...(scoreRules !== undefined ? { scoreRules } : {}),
-      formatRequested: format,
+      ...(featuredMatchId !== undefined ? { featuredMatchId } : {}),
+      ...(goalLimits !== undefined ? { goalLimits } : {}),
+      ...(liveSponsors !== undefined ? { liveSponsors } : {}),
+      formatRequested: formatEffective,
       formatEffective,
       generationVersion: "v1-groups-ko",
     };
@@ -346,23 +464,27 @@ export async function POST(req: NextRequest) {
       create: {
         eventId,
         organizationId: organizationIdBody,
-        numberOfCourts: Math.max(1, numberOfCourts || 1),
-        ruleSetId: ruleSetId || undefined,
-        defaultCategoryId: defaultCategoryId || undefined,
-        eligibilityType: eligibilityType || undefined,
-        splitDeadlineHours: splitDeadlineHours ?? undefined,
-        enabledFormats: enabledFormats?.filter((f) => allowedFormats.has(f as padel_format)) ?? undefined,
+        numberOfCourts: numberOfCourtsParsed ?? existing?.numberOfCourts ?? 1,
+        ruleSetId: hasRuleSetId ? ruleSetId ?? undefined : existing?.ruleSetId ?? undefined,
+        defaultCategoryId: hasDefaultCategoryId ? defaultCategoryId ?? undefined : existing?.defaultCategoryId ?? undefined,
+        eligibilityType: hasEligibilityType ? eligibilityType || undefined : existing?.eligibilityType ?? undefined,
+        splitDeadlineHours: hasSplitDeadlineHours ? splitDeadlineHours ?? undefined : existing?.splitDeadlineHours ?? undefined,
+        enabledFormats: hasEnabledFormats
+          ? enabledFormats?.filter((f) => allowedFormats.has(f as padel_format)) ?? []
+          : existing?.enabledFormats ?? undefined,
         advancedSettings: mergedAdvanced,
         format: formatEffective,
       },
       update: {
-        format: formatEffective,
-        numberOfCourts: Math.max(1, numberOfCourts || 1),
-        ruleSetId: ruleSetId || undefined,
-        defaultCategoryId: defaultCategoryId || undefined,
-        eligibilityType: eligibilityType || undefined,
-        splitDeadlineHours: splitDeadlineHours ?? undefined,
-        enabledFormats: enabledFormats?.filter((f) => allowedFormats.has(f as padel_format)) ?? undefined,
+        ...(hasFormat ? { format: formatEffective } : {}),
+        ...(hasNumberOfCourts && numberOfCourtsParsed !== null ? { numberOfCourts: numberOfCourtsParsed } : {}),
+        ...(hasRuleSetId ? { ruleSetId } : {}),
+        ...(hasDefaultCategoryId ? { defaultCategoryId } : {}),
+        ...(hasEligibilityType ? { eligibilityType: eligibilityType || null } : {}),
+        ...(hasSplitDeadlineHours ? { splitDeadlineHours } : {}),
+        ...(hasEnabledFormats
+          ? { enabledFormats: enabledFormats?.filter((f) => allowedFormats.has(f as padel_format)) ?? [] }
+          : {}),
         advancedSettings: mergedAdvanced,
       },
     });
