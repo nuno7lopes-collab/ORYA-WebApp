@@ -12,7 +12,7 @@ const ADMIN_ALLOWED_IPS = (process.env.ADMIN_ALLOWED_IPS ?? "")
   .split(",")
   .map((ip) => ip.trim())
   .filter(Boolean);
-const CANONICAL_HOST = (process.env.CANONICAL_HOST ?? "orya.pt").trim().toLowerCase();
+const CANONICAL_HOST = (process.env.CANONICAL_HOST ?? "").trim().toLowerCase();
 const CANONICAL_PROTOCOL = (process.env.CANONICAL_PROTOCOL ?? "https").trim().toLowerCase();
 const FORCE_HTTPS = process.env.FORCE_HTTPS !== "0";
 
