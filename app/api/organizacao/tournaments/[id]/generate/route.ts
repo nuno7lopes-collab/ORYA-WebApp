@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { generateAndPersistTournamentStructure, getConfirmedPairings } from "@/domain/tournaments/generation";
+import { getConfirmedPairings } from "@/domain/tournaments/generation";
 import { prisma } from "@/lib/prisma";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
-import { TournamentFormat } from "@prisma/client";
+import { TournamentFormat, OrganizationModule } from "@prisma/client";
+import { getActiveOrganizationForUser } from "@/lib/organizationContext";
+import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
+import { requestTournamentGeneration } from "@/domain/tournaments/commands";
 
 async function isOrganizationUser(userId: string, organizationId: number) {
   const organization = await prisma.organization.findUnique({
@@ -21,15 +24,20 @@ async function isOrganizationUser(userId: string, organizationId: number) {
     profile?.onboardingDone ||
     (Boolean(profile?.fullName?.trim()) && Boolean(profile?.username?.trim()));
   if (!hasUserOnboarding) return false;
-  const member = await prisma.organizationMember.findFirst({
-    where: {
-      organizationId,
-      userId,
-      role: { in: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"] },
-    },
-    select: { id: true },
+  const { membership } = await getActiveOrganizationForUser(userId, {
+    organizationId,
+    roles: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"],
   });
-  return Boolean(member);
+  if (!membership) return false;
+  const access = await ensureMemberModuleAccess({
+    organizationId,
+    userId,
+    role: membership.role,
+    rolePack: membership.rolePack,
+    moduleKey: OrganizationModule.TORNEIOS,
+    required: "EDIT",
+  });
+  return access.ok;
 }
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -114,37 +122,23 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ ok: false, error: "NO_PARTICIPANTS" }, { status: 400 });
   }
 
-  try {
-    const result = await generateAndPersistTournamentStructure({
+  await requestTournamentGeneration({
+    organizationId: tournament.event.organizationId,
+    tournamentId: tournament.id,
+    eventId: tournament.eventId,
+    actorUserId: data.user.id,
+    payload: {
       tournamentId: tournament.id,
       format,
       pairings: pairingIds,
       seed,
-      inscriptionDeadlineAt: tournament.inscriptionDeadlineAt,
+      inscriptionDeadlineAt: tournament.inscriptionDeadlineAt?.toISOString() ?? null,
       forceGenerate,
       userId: data.user.id,
       targetSize: bracketSize ?? configBracketSize ?? null,
       preserveOrder,
-    });
+    },
+  });
 
-    return NextResponse.json(
-      { ok: true, stagesCreated: result.stagesCreated, matchesCreated: result.matchesCreated, seed: result.seed },
-      { status: 200 },
-    );
-  } catch (err) {
-    if (err instanceof Error && err.message === "TOURNAMENT_ALREADY_STARTED") {
-      return NextResponse.json({ ok: false, error: "TOURNAMENT_ALREADY_STARTED" }, { status: 409 });
-    }
-    if (err instanceof Error && err.message === "INSCRIPTION_NOT_CLOSED") {
-      return NextResponse.json({ ok: false, error: "INSCRIPTION_NOT_CLOSED" }, { status: 409 });
-    }
-    if (err instanceof Error && err.message === "INVALID_BRACKET_SIZE") {
-      return NextResponse.json({ ok: false, error: "INVALID_BRACKET_SIZE" }, { status: 400 });
-    }
-    if (err instanceof Error && err.message === "BRACKET_TOO_SMALL") {
-      return NextResponse.json({ ok: false, error: "BRACKET_TOO_SMALL" }, { status: 400 });
-    }
-    console.error("[tournament_generate] erro", err);
-    return NextResponse.json({ ok: false, error: "GENERATION_FAILED" }, { status: 500 });
-  }
+  return NextResponse.json({ ok: true, queued: true }, { status: 202 });
 }

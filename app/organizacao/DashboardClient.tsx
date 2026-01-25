@@ -37,8 +37,8 @@ import InscricoesPage from "./(dashboard)/inscricoes/page";
 import { getEventCoverSuggestionIds, getEventCoverUrl } from "@/lib/eventCover";
 import { getProfileCoverUrl } from "@/lib/profileCover";
 import { getOrganizationRoleFlags } from "@/lib/organizationUiPermissions";
-import { hasModuleAccess, resolveModuleAccess } from "@/lib/organizationRbac";
-import type { OrganizationMemberRole, OrganizationModule } from "@prisma/client";
+import { hasModuleAccess, resolveMemberModuleAccess } from "@/lib/organizationRbac";
+import type { OrganizationMemberRole, OrganizationModule, OrganizationRolePack } from "@prisma/client";
 import { ModuleIcon } from "./moduleIcons";
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
@@ -79,7 +79,7 @@ type EventItem = {
   locationName: string | null;
   locationCity: string | null;
   status: string;
-  isFree: boolean;
+  isGratis: boolean;
   coverImageUrl?: string | null;
   ticketsSold?: number;
   revenueCents?: number;
@@ -507,6 +507,7 @@ function OrganizacaoPageInner({
       ok?: boolean;
       orgTransferEnabled?: boolean | null;
       membershipRole?: string | null;
+      membershipRolePack?: string | null;
       modulePermissions?: Array<{
         moduleKey: OrganizationModule;
         accessLevel: string;
@@ -597,6 +598,7 @@ function OrganizacaoPageInner({
   const paymentsMode = organizationData?.paymentsMode ?? "CONNECT";
   const profileStatus = organizationData?.profileStatus ?? "MISSING_CONTACT";
   const membershipRole = organizationData?.membershipRole ?? null;
+  const membershipRolePack = organizationData?.membershipRolePack ?? null;
   const moduleOverrides = useMemo(
     () =>
       Array.isArray(organizationData?.modulePermissions)
@@ -610,8 +612,13 @@ function OrganizacaoPageInner({
     [organizationData?.modulePermissions],
   );
   const moduleAccess = useMemo(
-    () => resolveModuleAccess(membershipRole as OrganizationMemberRole | null, moduleOverrides),
-    [membershipRole, moduleOverrides],
+    () =>
+      resolveMemberModuleAccess({
+        role: membershipRole as OrganizationMemberRole | null,
+        rolePack: membershipRolePack as OrganizationRolePack | null,
+        overrides: moduleOverrides,
+      }),
+    [membershipRole, membershipRolePack, moduleOverrides],
   );
   const canAccessModule = useCallback(
     (moduleKey: OrganizationModule) => hasModuleAccess(moduleAccess, moduleKey, "EDIT"),
@@ -629,7 +636,10 @@ function OrganizacaoPageInner({
   const canAccessStaff = canAccessModule("STAFF");
   const canAccessProfile = canAccessModule("PERFIL_PUBLICO");
   const canAccessSettings = canAccessModule("DEFINICOES");
-  const roleFlags = useMemo(() => getOrganizationRoleFlags(membershipRole), [membershipRole]);
+  const roleFlags = useMemo(
+    () => getOrganizationRoleFlags(membershipRole, membershipRolePack),
+    [membershipRole, membershipRolePack],
+  );
   const canViewFinance = roleFlags.canViewFinance && canAccessFinance;
   const canPromote = roleFlags.canPromote && canAccessMarketing;
   const canManageMembers = roleFlags.canManageMembers && canAccessStaff;

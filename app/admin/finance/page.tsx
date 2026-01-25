@@ -310,7 +310,7 @@ function PaymentsSection({ initialQuery }: { initialQuery?: string }) {
       <div className="grid gap-6 lg:grid-cols-[1.2fr_1.8fr]">
         <div className="admin-card">
           <div className="border-b border-white/10 px-4 py-3">
-            <h3 className="text-sm font-semibold text-white">Visão global (sale_summaries)</h3>
+            <h3 className="text-sm font-semibold text-white">Visão global (ledger)</h3>
             <p className="text-[11px] text-white/60">
               Filtros de modo/organization/evento/período aplicados. Valores estimam fee Stripe base.
             </p>

@@ -6,6 +6,7 @@ import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureCrmModuleAccess } from "@/lib/crm/access";
 import { LoyaltyProgramStatus, OrganizationMemberRole } from "@prisma/client";
+import { LOYALTY_GUARDRAILS } from "@/lib/loyalty/guardrails";
 
 const READ_ROLES = Object.values(OrganizationMemberRole);
 
@@ -39,7 +40,7 @@ export async function GET(req: NextRequest) {
       },
     });
 
-    return NextResponse.json({ ok: true, program });
+    return NextResponse.json({ ok: true, program, guardrails: LOYALTY_GUARDRAILS });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
       return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
@@ -112,7 +113,7 @@ export async function PUT(req: NextRequest) {
       },
     });
 
-    return NextResponse.json({ ok: true, program });
+    return NextResponse.json({ ok: true, program, guardrails: LOYALTY_GUARDRAILS });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
       return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });

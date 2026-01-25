@@ -2,11 +2,20 @@ import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { CheckinResultCode, CrmInteractionSource, CrmInteractionType, EntitlementStatus } from "@prisma/client";
+import { CheckinResultCode, CrmInteractionSource, CrmInteractionType } from "@prisma/client";
 import { buildDefaultCheckinWindow, isOutsideWindow } from "@/lib/checkin/policy";
-import { canManageEvents } from "@/lib/organizationPermissions";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { ingestCrmInteraction } from "@/lib/crm/ingest";
+import { ensureGroupMemberCheckinAccess } from "@/lib/organizationMemberAccess";
+import { appendEventLog } from "@/domain/eventLog/append";
+import {
+  getCheckinResultFromExisting,
+  getEntitlementEffectiveStatus,
+} from "@/lib/entitlements/status";
+import {
+  resolveCheckinMethodForEntitlement,
+  resolvePolicyForCheckin,
+} from "@/lib/checkin/accessPolicy";
 
 type Body = { qrToken?: string; eventId?: number; deviceId?: string };
 
@@ -46,11 +55,12 @@ async function ensureOrganization(userId: string, eventId: number) {
   const isAdmin = roles.includes("admin");
   if (isAdmin) return { ok: true as const, isAdmin };
 
-  const membership = await prisma.organizationMember.findUnique({
-    where: { organizationId_userId: { organizationId: event.organizationId, userId } },
-    select: { id: true, role: true },
+  const access = await ensureGroupMemberCheckinAccess({
+    organizationId: event.organizationId,
+    userId,
+    required: "EDIT",
   });
-  if (membership && canManageEvents(membership.role)) {
+  if (access.ok) {
     return { ok: true as const, isAdmin };
   }
 
@@ -82,7 +92,7 @@ export async function POST(req: NextRequest) {
   const tokenHash = hashToken(qrToken);
   const tokenRow = await prisma.entitlementQrToken.findUnique({
     where: { tokenHash },
-    include: { entitlement: true },
+    include: { entitlement: { include: { checkins: { select: { resultCode: true } } } } },
   });
 
   if (!tokenRow || !tokenRow.entitlement) {
@@ -94,6 +104,10 @@ export async function POST(req: NextRequest) {
     where: { id: eventId },
     select: { startsAt: true, endsAt: true, organizationId: true },
   });
+  const orgId = event?.organizationId ?? null;
+  if (!orgId) {
+    return NextResponse.json({ code: CheckinResultCode.NOT_ALLOWED }, { status: 200 });
+  }
   const window = buildDefaultCheckinWindow(event?.startsAt ?? null, event?.endsAt ?? null);
   if (isOutsideWindow(window)) {
     return NextResponse.json({ code: CheckinResultCode.OUTSIDE_WINDOW }, { status: 200 });
@@ -108,16 +122,32 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ code: CheckinResultCode.INVALID }, { status: 200 });
   }
 
+  const policyResolution = await resolvePolicyForCheckin(eventId, ent.policyVersionApplied);
+  if (!policyResolution.ok) {
+    return NextResponse.json({ code: CheckinResultCode.NOT_ALLOWED }, { status: 200 });
+  }
+  if (policyResolution.policy) {
+    const method = resolveCheckinMethodForEntitlement(ent.type);
+    if (!method || !policyResolution.policy.checkinMethods.includes(method)) {
+      return NextResponse.json({ code: CheckinResultCode.NOT_ALLOWED }, { status: 200 });
+    }
+  }
+
   // blocked statuses
-  if (ent.status === EntitlementStatus.REFUNDED) {
-    return NextResponse.json({ code: CheckinResultCode.REFUNDED }, { status: 200 });
-  }
-  if (ent.status === EntitlementStatus.REVOKED) {
-    return NextResponse.json({ code: CheckinResultCode.REVOKED }, { status: 200 });
-  }
-  if (ent.status === EntitlementStatus.SUSPENDED) {
+  const effectiveStatus = getEntitlementEffectiveStatus({
+    status: ent.status,
+    checkins: ent.checkins,
+  });
+  if (effectiveStatus === "SUSPENDED") {
     return NextResponse.json({ code: CheckinResultCode.SUSPENDED }, { status: 200 });
   }
+  if (effectiveStatus === "REVOKED") {
+    return NextResponse.json({ code: CheckinResultCode.REVOKED }, { status: 200 });
+  }
+
+  const idempotencyKey = `${eventId}:${ent.id}:${deviceId}`;
+  const causationId = idempotencyKey;
+  const correlationId = ent.purchaseId ?? null;
 
   // Idempotência e audit
   try {
@@ -128,9 +158,26 @@ export async function POST(req: NextRequest) {
         select: { resultCode: true },
       });
       if (existing) {
-        return existing.resultCode === CheckinResultCode.OK
-          ? CheckinResultCode.ALREADY_USED
-          : existing.resultCode;
+        const sourceType = ent.sourceType ?? null;
+        await appendEventLog(
+          {
+            organizationId: orgId,
+            eventType: "checkin.duplicate",
+            idempotencyKey: `checkin:${eventId}:${ent.id}:${deviceId}:duplicate`,
+            payload: {
+              entitlementId: ent.id,
+              eventId,
+              deviceId,
+              resultCode: existing.resultCode,
+            },
+            actorUserId: userId,
+            sourceType,
+            sourceId: sourceType ? ent.sourceId ?? null : null,
+            correlationId: ent.purchaseId ?? null,
+          },
+          tx,
+        );
+        return getCheckinResultFromExisting(existing) ?? CheckinResultCode.ALREADY_USED;
       }
 
       await tx.entitlementCheckin.create({
@@ -141,13 +188,30 @@ export async function POST(req: NextRequest) {
           resultCode: CheckinResultCode.OK,
           checkedInBy: userId,
           purchaseId: ent.purchaseId,
+          idempotencyKey,
+          causationId,
+          correlationId,
         },
       });
 
-      await tx.entitlement.update({
-        where: { id: ent.id },
-        data: { status: EntitlementStatus.USED },
-      });
+      await appendEventLog(
+        {
+          organizationId: orgId,
+          eventType: "checkin.success",
+          idempotencyKey: `checkin:${eventId}:${ent.id}:${deviceId}:ok`,
+          payload: {
+            entitlementId: ent.id,
+            eventId,
+            deviceId,
+            resultCode: CheckinResultCode.OK,
+          },
+          actorUserId: userId,
+          sourceType: ent.sourceType ?? null,
+          sourceId: ent.sourceType ? ent.sourceId ?? null : null,
+          correlationId: ent.purchaseId ?? null,
+        },
+        tx,
+      );
 
       return CheckinResultCode.OK;
     });

@@ -5,6 +5,7 @@ import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { LoyaltyEntryType, LoyaltySourceType, Prisma } from "@prisma/client";
 import crypto from "crypto";
 import { getOrganizationActiveModules, hasAnyActiveModule } from "@/lib/organizationModules";
+import { recordLoyaltyLedgerOutbox } from "@/domain/loyaltyOutbox";
 
 export async function POST(_req: NextRequest, context: { params: { rewardId: string } }) {
   try {
@@ -70,7 +71,7 @@ export async function POST(_req: NextRequest, context: { params: { rewardId: str
       }
 
       const balanceAfter = balance - reward.pointsCost;
-      await tx.loyaltyLedger.create({
+      const entry = await tx.loyaltyLedger.create({
         data: {
           organizationId: reward.program.organizationId,
           programId: reward.programId,
@@ -85,6 +86,7 @@ export async function POST(_req: NextRequest, context: { params: { rewardId: str
           note: `Resgate: ${reward.name}`,
         },
       });
+      await recordLoyaltyLedgerOutbox(entry, tx);
 
       return { balanceAfter };
     });

@@ -1,5 +1,6 @@
 // app/api/organizacao/events/update/route.ts
 import { NextRequest, NextResponse } from "next/server";
+import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
@@ -10,12 +11,25 @@ import {
   LiveHubVisibility,
   EventPublicAccessMode,
   EventParticipantAccessMode,
+  EventPricingMode,
   PayoutMode,
   OrganizationMemberRole,
+  OrganizationRolePack,
+  CheckinMethod,
+  EventAccessMode,
+  InviteIdentityMatch,
+  OrganizationModule,
 } from "@prisma/client";
-import { canManageEvents } from "@/lib/organizationPermissions";
+import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { formatPaidSalesGateMessage, getPaidSalesGate } from "@/lib/organizationPayments";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
+import { createEventAccessPolicyVersion } from "@/lib/checkin/accessPolicy";
+import { resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
+import { appendEventLog } from "@/domain/eventLog/append";
+import { SourceType } from "@prisma/client";
+import { recordOutboxEvent } from "@/domain/outbox/producer";
+import { recordSearchIndexOutbox } from "@/domain/searchIndex/outbox";
+import { validateZeroPriceGuard } from "@/domain/events/pricingGuard";
 
 type TicketTypeUpdate = {
   id: number;
@@ -51,7 +65,8 @@ type UpdateEventBody = {
   latitude?: number | null;
   longitude?: number | null;
   templateType?: string | null;
-  isFree?: boolean;
+  isGratis?: boolean;
+  pricingMode?: string | null;
   inviteOnly?: boolean;
   coverImageUrl?: string | null;
   liveHubVisibility?: string | null;
@@ -63,6 +78,20 @@ type UpdateEventBody = {
   ticketTypeUpdates?: TicketTypeUpdate[];
   newTicketTypes?: NewTicketType[];
   payoutMode?: string | null;
+  accessPolicy?: {
+    mode: EventAccessMode;
+    guestCheckoutAllowed: boolean;
+    inviteTokenAllowed: boolean;
+    inviteIdentityMatch: InviteIdentityMatch;
+    inviteTokenTtlSeconds?: number | null;
+    requiresEntitlementForEntry: boolean;
+    checkinMethods?: CheckinMethod[] | null;
+    scannerRequired?: boolean | null;
+    allowReentry?: boolean | null;
+    reentryWindowMinutes?: number | null;
+    maxEntries?: number | null;
+    undoWindowMinutes?: number | null;
+  } | null;
 };
 
 function slugify(input: string): string {
@@ -128,7 +157,7 @@ export async function POST(req: NextRequest) {
       id: number;
       slug: string;
       organizationId: number | null;
-      isFree: boolean;
+      pricingMode: EventPricingMode | null;
       payoutMode: PayoutMode | null;
       ticketTypes: { id: number; soldQuantity: number; price: number; status: TicketTypeStatus; currency: string | null }[];
       organization: {
@@ -141,7 +170,7 @@ export async function POST(req: NextRequest) {
         officialEmail?: string | null;
         officialEmailVerifiedAt?: Date | null;
       } | null;
-      _count: { tickets: number; reservations: number; saleLines: number };
+      _count: { tickets: number; reservations: number; saleLines?: number };
     } | null = null;
 
     const [profile, eventResult] = await Promise.all([
@@ -157,7 +186,7 @@ export async function POST(req: NextRequest) {
               id: true,
               slug: true,
               organizationId: true,
-              isFree: true,
+              pricingMode: true,
               templateType: true,
               payoutMode: true,
               ticketTypes: {
@@ -185,7 +214,6 @@ export async function POST(req: NextRequest) {
                 select: {
                   tickets: true,
                   reservations: true,
-                  saleLines: true,
                 },
               },
             },
@@ -193,8 +221,14 @@ export async function POST(req: NextRequest) {
         } catch (err) {
           if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2022") {
             const rows = await prisma.$queryRaw<
-              { id: number; slug: string; organization_id: number | null; is_free: boolean; payout_mode: PayoutMode | null }[]
-            >(Prisma.sql`SELECT id, slug, organization_id, is_free, payout_mode FROM app_v3.events WHERE id = ${eventId} LIMIT 1`);
+              {
+                id: number;
+                slug: string;
+                organization_id: number | null;
+                payout_mode: PayoutMode | null;
+                pricing_mode: EventPricingMode | null;
+              }[]
+            >(Prisma.sql`SELECT id, slug, organization_id, payout_mode, pricing_mode FROM app_v3.events WHERE id = ${eventId} LIMIT 1`);
             const row = rows[0];
             if (!row) return null;
             const [ticketTypes, organizationRows, counts] = await Promise.all([
@@ -218,11 +252,10 @@ export async function POST(req: NextRequest) {
                     LIMIT 1
                   `)
                 : Promise.resolve([]),
-              prisma.$queryRaw<{ tickets: number; reservations: number; sale_lines: number }[]>(Prisma.sql`
+              prisma.$queryRaw<{ tickets: number; reservations: number }[]>(Prisma.sql`
                 SELECT
                   (SELECT COUNT(*)::int FROM app_v3.tickets WHERE event_id = ${eventId}) AS tickets,
-                  (SELECT COUNT(*)::int FROM app_v3.ticket_reservations WHERE event_id = ${eventId}) AS reservations,
-                  (SELECT COUNT(*)::int FROM app_v3.sale_lines WHERE event_id = ${eventId}) AS sale_lines
+                  (SELECT COUNT(*)::int FROM app_v3.ticket_reservations WHERE event_id = ${eventId}) AS reservations
               `),
             ]);
 
@@ -230,7 +263,7 @@ export async function POST(req: NextRequest) {
               id: row.id,
               slug: row.slug,
               organizationId: row.organization_id,
-              isFree: row.is_free,
+              pricingMode: row.pricing_mode ?? null,
               payoutMode: row.payout_mode,
               ticketTypes: ticketTypes.map((t) => ({
                 id: t.id,
@@ -254,7 +287,7 @@ export async function POST(req: NextRequest) {
               _count: {
                 tickets: counts[0]?.tickets ?? 0,
                 reservations: counts[0]?.reservations ?? 0,
-                saleLines: counts[0]?.sale_lines ?? 0,
+                saleLines: 0,
               },
             };
           }
@@ -291,17 +324,25 @@ export async function POST(req: NextRequest) {
 
     const isAdmin = Array.isArray(profile.roles) ? profile.roles.includes("admin") : false;
 
-    let membership: { role: OrganizationMemberRole } | null = null;
+    let membership: { role: OrganizationMemberRole; rolePack: OrganizationRolePack | null } | null = null;
     if (event.organizationId == null) {
       if (!isAdmin) {
         return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
       }
     } else {
-      membership = await prisma.organizationMember.findUnique({
-        where: { organizationId_userId: { organizationId: event.organizationId, userId: user.id } },
-        select: { role: true },
+      membership = await resolveGroupMemberForOrg({ organizationId: event.organizationId, userId: user.id });
+      if (!membership) {
+        return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      }
+      const access = await ensureMemberModuleAccess({
+        organizationId: event.organizationId,
+        userId: user.id,
+        role: membership.role,
+        rolePack: membership.rolePack,
+        moduleKey: OrganizationModule.EVENTOS,
+        required: "EDIT",
       });
-      if (!membership || !canManageEvents(membership.role)) {
+      if (!access.ok) {
         return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
       }
     }
@@ -310,6 +351,24 @@ export async function POST(req: NextRequest) {
       const emailGate = ensureOrganizationEmailVerified(event.organization);
       if (!emailGate.ok) {
         return NextResponse.json({ ok: false, error: emailGate.error }, { status: 403 });
+      }
+    }
+
+    if (body.accessPolicy) {
+      try {
+        await createEventAccessPolicyVersion(event.id, body.accessPolicy);
+      } catch (err: any) {
+        const message = typeof err?.message === "string" ? err.message : "";
+        if (message.startsWith("ACCESS_POLICY_LOCKED")) {
+          return NextResponse.json({ ok: false, error: "ACCESS_POLICY_LOCKED" }, { status: 409 });
+        }
+        if (message === "INVITE_TOKEN_TTL_REQUIRED") {
+          return NextResponse.json(
+            { ok: false, error: "INVITE_TOKEN_TTL_REQUIRED" },
+            { status: 400 },
+          );
+        }
+        throw err;
       }
     }
 
@@ -330,7 +389,7 @@ export async function POST(req: NextRequest) {
     if (body.archive === true) {
       const hasSoldTickets = event.ticketTypes.some((t) => (t.soldQuantity ?? 0) > 0);
       const hasRegistrations = (event._count?.tickets ?? 0) > 0 || (event._count?.reservations ?? 0) > 0;
-      const hasPayments = (event._count?.saleLines ?? 0) > 0 || hasSoldTickets;
+      const hasPayments = hasSoldTickets;
       if (hasRegistrations || hasPayments) {
         return NextResponse.json(
           {
@@ -432,24 +491,6 @@ export async function POST(req: NextRequest) {
         dataUpdate.templateType = tpl as EventTemplateType;
       }
     }
-    // Não permitir converter para grátis se já há bilhetes e atualmente não é grátis
-    if (body.isFree !== undefined) {
-      const hasTickets = event.ticketTypes.length > 0;
-      const wantsFree = body.isFree === true;
-      const wasFree = event.isFree === true;
-
-      if (wantsFree && !wasFree && hasTickets) {
-        return NextResponse.json(
-          {
-            ok: false,
-            error:
-              "Este evento já tem bilhetes. Não pode ser convertido em evento grátis.",
-          },
-          { status: 400 },
-        );
-      }
-      dataUpdate.isFree = body.isFree;
-    }
     if (body.inviteOnly !== undefined && body.publicAccessMode === undefined) {
       const inviteOnly = body.inviteOnly === true;
       dataUpdate.inviteOnly = inviteOnly;
@@ -498,6 +539,13 @@ export async function POST(req: NextRequest) {
       dataUpdate.payoutMode = body.payoutMode.toUpperCase() as PayoutMode;
     }
 
+    const pricingModeRaw = typeof body.pricingMode === "string" ? body.pricingMode.trim().toUpperCase() : null;
+    if (pricingModeRaw === EventPricingMode.FREE_ONLY || pricingModeRaw === EventPricingMode.STANDARD) {
+      dataUpdate.pricingMode = pricingModeRaw as EventPricingMode;
+    } else if (body.isGratis !== undefined) {
+      dataUpdate.pricingMode = body.isGratis ? EventPricingMode.FREE_ONLY : EventPricingMode.STANDARD;
+    }
+
     const ticketTypeUpdates = Array.isArray(body.ticketTypeUpdates)
       ? body.ticketTypeUpdates
       : [];
@@ -542,18 +590,20 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const transactions: Prisma.PrismaPromise<unknown>[] = [];
+    const hasDataUpdate = Object.keys(dataUpdate).length > 0;
+    const hasTicketStatusUpdates = ticketTypeUpdates.length > 0;
+    const hasNewTickets = newTicketTypes.length > 0;
+    const agendaRelevantUpdate =
+      dataUpdate.title !== undefined ||
+      dataUpdate.startsAt !== undefined ||
+      dataUpdate.endsAt !== undefined ||
+      dataUpdate.status !== undefined ||
+      dataUpdate.isDeleted !== undefined;
+    const searchIndexRelevantUpdate = agendaRelevantUpdate || hasNewTickets;
+    const eventLogId = searchIndexRelevantUpdate && event.organizationId ? crypto.randomUUID() : null;
 
-    if (Object.keys(dataUpdate).length > 0) {
-      transactions.push(
-        prisma.event.update({
-          where: { id: eventId },
-          data: dataUpdate,
-        }),
-      );
-    }
-
-    if (ticketTypeUpdates.length > 0) {
+    const ticketStatusOps: Array<{ ids: number[]; status: TicketTypeStatus }> = [];
+    if (hasTicketStatusUpdates) {
       const updatesByStatus = new Map<TicketTypeStatus, number[]>();
       for (const upd of ticketTypeUpdates) {
         const tt = event.ticketTypes.find((t) => t.id === upd.id);
@@ -568,17 +618,13 @@ export async function POST(req: NextRequest) {
         updatesByStatus.set(status, list);
       }
       updatesByStatus.forEach((ids, status) => {
-        transactions.push(
-          prisma.ticketType.updateMany({
-            where: { id: { in: ids } },
-            data: { status },
-          }),
-        );
+        ticketStatusOps.push({ ids, status });
       });
     }
 
-    if (newTicketTypes.length > 0) {
-      const newTicketData = newTicketTypes.map((nt) => {
+    let newTicketData: typeof newTicketTypes | null = null;
+    if (hasNewTickets) {
+      newTicketData = newTicketTypes.map((nt) => {
         const price = Number(nt.price ?? 0);
         const totalQuantity =
           typeof nt.totalQuantity === "number" && Number.isFinite(nt.totalQuantity) && nt.totalQuantity > 0
@@ -607,19 +653,112 @@ export async function POST(req: NextRequest) {
           currency: "EUR",
         };
       });
-
-      transactions.push(
-        prisma.ticketType.createMany({
-          data: newTicketData,
-        }),
-      );
     }
 
-    if (transactions.length === 0) {
+    const ticketPrices = [
+      ...event.ticketTypes.map((t) => Number(t.price ?? 0)),
+      ...newTicketTypes.map((t) => Number(t.price ?? 0)),
+    ];
+    const nextPricingMode = (dataUpdate.pricingMode ?? event.pricingMode ?? EventPricingMode.STANDARD) as EventPricingMode;
+    const guard = validateZeroPriceGuard({ pricingMode: nextPricingMode, ticketPrices });
+    if (!guard.ok) {
+      return NextResponse.json({ ok: false, error: guard.error }, { status: 400 });
+    }
+
+    if (!hasDataUpdate && !hasTicketStatusUpdates && !hasNewTickets) {
       return NextResponse.json({ ok: false, error: "Nada para atualizar." }, { status: 400 });
     }
 
-    await prisma.$transaction(transactions);
+    await prisma.$transaction(async (tx) => {
+      const txOps: Prisma.PrismaPromise<unknown>[] = [];
+      if (hasDataUpdate) {
+        txOps.push(
+          tx.event.update({
+            where: { id: eventId },
+            data: dataUpdate,
+          }),
+        );
+      }
+      if (hasTicketStatusUpdates) {
+        ticketStatusOps.forEach((op) => {
+          txOps.push(
+            tx.ticketType.updateMany({
+              where: { id: { in: op.ids } },
+              data: { status: op.status },
+            }),
+          );
+        });
+      }
+      if (hasNewTickets) {
+        if (Array.isArray(newTicketData) && newTicketData.length > 0) {
+          txOps.push(
+            tx.ticketType.createMany({
+              data: newTicketData,
+            }),
+          );
+        }
+      }
+
+      if (txOps.length > 0) {
+        await Promise.all(txOps);
+      }
+
+      if (searchIndexRelevantUpdate && event.organizationId && eventLogId) {
+        const nextTitle = (dataUpdate.title ?? event.title) as string;
+        const nextStartsAt = (dataUpdate.startsAt ?? event.startsAt) as Date;
+        const nextEndsAt = (dataUpdate.endsAt ?? event.endsAt ?? event.startsAt) as Date;
+        const nextStatus =
+          typeof dataUpdate.status === "string" ? dataUpdate.status : (event.status as string);
+
+        await appendEventLog(
+          {
+            eventId: eventLogId,
+            organizationId: event.organizationId,
+            eventType: "event.updated",
+            idempotencyKey: `event.updated:${eventId}:${Date.now()}`,
+            actorUserId: user.id,
+            sourceType: SourceType.EVENT,
+            sourceId: String(eventId),
+            correlationId: String(eventId),
+            payload: {
+              eventId,
+              title: nextTitle,
+              startsAt: nextStartsAt,
+              endsAt: nextEndsAt,
+              status: nextStatus,
+              organizationId: event.organizationId,
+            },
+          },
+          tx,
+        );
+        await recordOutboxEvent(
+          {
+            eventId: eventLogId,
+            eventType: "event.updated",
+            payload: {
+              eventId,
+              title: nextTitle,
+              startsAt: nextStartsAt,
+              endsAt: nextEndsAt,
+              status: nextStatus,
+              organizationId: event.organizationId,
+            },
+            correlationId: String(eventId),
+          },
+          tx,
+        );
+        await recordSearchIndexOutbox(
+          {
+            eventLogId,
+            organizationId: event.organizationId,
+            sourceType: SourceType.EVENT,
+            sourceId: String(eventId),
+            correlationId: String(eventId),
+          },
+          tx,
+        );
+      }
+    });
 
     return NextResponse.json({ ok: true }, { status: 200 });
   } catch (err) {

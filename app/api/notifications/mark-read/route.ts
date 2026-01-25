@@ -1,7 +1,8 @@
-import { prisma } from "@/lib/prisma";
 import { CrmDeliveryStatus } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
 import { AuthRequiredError, requireUser } from "@/lib/auth/requireUser";
+import { markAllNotificationsRead, markNotificationRead } from "@/domain/notifications/consumer";
+import { prisma } from "@/lib/prisma";
 
 export async function POST(req: NextRequest) {
   try {
@@ -26,10 +27,7 @@ export async function POST(req: NextRequest) {
       if (orgId) {
         where.AND = [{ OR: [{ organizationId: orgId }, { event: { organizationId: orgId } }] }];
       }
-      await prisma.notification.updateMany({
-        where,
-        data: { isRead: true, readAt: new Date() },
-      });
+      await markAllNotificationsRead({ userId: user.id, organizationId: orgId });
       return NextResponse.json({ ok: true, updated: "all" });
     }
 
@@ -50,10 +48,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    await prisma.notification.update({
-      where: { id: notificationId },
-      data: { isRead: true, readAt: new Date() },
-    });
+    await markNotificationRead({ userId: user.id, notificationId });
 
     if (notif.type === "CRM_CAMPAIGN") {
       const delivery = await prisma.crmCampaignDelivery.findFirst({

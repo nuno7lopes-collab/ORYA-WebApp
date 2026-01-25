@@ -1,4 +1,5 @@
 // app/api/organizacao/estatisticas/overview/route.ts
+// @deprecated Slice 5 cleanup: legacy summaries endpoint (v7 uses ledger).
 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
@@ -7,6 +8,8 @@ import { EventStatus, Prisma, SaleSummaryStatus } from "@prisma/client";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { isOrgAdminOrAbove } from "@/lib/organizationPermissions";
+import { ACTIVE_PAIRING_REGISTRATION_WHERE } from "@/domain/padelRegistration";
+const LEGACY_STATS_DISABLED = true;
 
 /**
  * F6 – Estatísticas do organização (overview)
@@ -24,6 +27,9 @@ import { isOrgAdminOrAbove } from "@/lib/organizationPermissions";
  */
 
 export async function GET(req: NextRequest) {
+  if (LEGACY_STATS_DISABLED) {
+    return NextResponse.json({ ok: false, error: "LEGACY_STATS_DISABLED" }, { status: 410 });
+  }
   try {
     const supabase = await createSupabaseServer();
     const {
@@ -89,7 +95,7 @@ export async function GET(req: NextRequest) {
       toDate = undefined;
     }
 
-    // Fonte preferencial: sale_summaries + sale_lines
+    // Fonte preferencial: legacy summaries (desativado no v7)
     const createdAtFilter: Prisma.DateTimeFilter<"SaleSummary"> = {};
     if (fromDate) createdAtFilter.gte = fromDate;
     if (toDate) createdAtFilter.lte = toDate;
@@ -138,7 +144,7 @@ export async function GET(req: NextRequest) {
       const pairings = await prisma.padelPairing.findMany({
         where: {
           pairingStatus: { not: "CANCELLED" },
-          lifecycleStatus: { not: "CANCELLED_INCOMPLETE" },
+          ...ACTIVE_PAIRING_REGISTRATION_WHERE,
           ...(Object.keys(pairingCreatedFilter).length > 0
             ? { createdAt: pairingCreatedFilter }
             : {}),

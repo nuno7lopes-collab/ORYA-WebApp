@@ -44,7 +44,7 @@ export default function Step1Bilhete() {
     })
     .sort((a, b) => (a.price ?? 0) - (b.price ?? 0))[0];
   const hasWaves = stableWaves.length > 0;
-  const isFreeEvent =
+  const isGratisEvent =
     hasWaves &&
     stableWaves.every((w) => typeof w.price === "number" && w.price <= 0);
   const storedQuantidades =
@@ -272,13 +272,13 @@ export default function Step1Bilhete() {
   function getMaxForWave(waveId: string) {
     const wave = stableWaves.find((w) => w.id === waveId);
     if (!wave) return Number.MAX_SAFE_INTEGER;
-    const isFreeWave = typeof wave.price === "number" && wave.price <= 0;
+    const isGratisWave = typeof wave.price === "number" && wave.price <= 0;
     const remaining =
       typeof wave.remaining === "number" && wave.remaining >= 0
         ? wave.remaining
         : null;
     const baseMax = remaining === null ? Number.MAX_SAFE_INTEGER : Math.max(0, remaining);
-    return isFreeWave ? Math.min(baseMax, 1) : baseMax;
+    return isGratisWave ? Math.min(baseMax, 1) : baseMax;
   }
 
   function handleIncrement(id: string) {
@@ -286,7 +286,7 @@ export default function Step1Bilhete() {
       const current = prev[id] ?? 0;
       const maxAllowed = getMaxForWave(id);
       if (current >= maxAllowed) return prev;
-      if (isFreeEvent) {
+      if (isGratisEvent) {
         const totalSelected = Object.values(prev).reduce((sum, qty) => sum + qty, 0);
         if (totalSelected >= 1) return prev;
       }
@@ -787,12 +787,12 @@ export default function Step1Bilhete() {
             Passo 1 de 3
           </p>
           <h2 className="text-2xl font-semibold leading-tight">
-            {isFreeEvent ? "Escolhe a tua entrada" : "Escolhe o teu bilhete"}
+            {isGratisEvent ? "Escolhe a tua entrada" : "Escolhe o teu bilhete"}
           </h2>
           <p className="text-[11px] text-white/60 max-w-xs">
             Escolhe a wave e quantidades.
           </p>
-          {isFreeEvent && (
+          {isGratisEvent && (
             <p className="text-[11px] text-emerald-100/80">
               Limite de 1 entrada por utilizador.
             </p>
@@ -820,7 +820,7 @@ export default function Step1Bilhete() {
           const status = normalizeStatus(wave.status);
           const isSoldOut = status === "sold_out" || status === "closed";
           const maxForWave = getMaxForWave(wave.id);
-          const freeLimitReached = isFreeEvent && selectedQty >= 1 && q === 0;
+          const freeLimitReached = isGratisEvent && selectedQty >= 1 && q === 0;
 
           return (
             <div

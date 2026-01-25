@@ -13,6 +13,7 @@ import {
   parseOrganizationModules,
 } from "@/lib/organizationCategories";
 import { isValidWebsite } from "@/lib/validation/organization";
+import { ensureGroupMemberForOrg } from "@/lib/organizationGroupAccess";
 
 type OrganizationPayload = {
   entityType?: string | null;
@@ -223,6 +224,7 @@ export async function POST(req: NextRequest) {
         : getDefaultOrganizationModules(primaryFallback);
 
     organization = await prisma.$transaction(async (tx) => {
+      const group = organization ? null : await tx.organizationGroup.create({ data: {} });
       const nextOrganization = organization
         ? await tx.organization.update({
             where: { id: organization!.id },
@@ -242,6 +244,7 @@ export async function POST(req: NextRequest) {
           })
         : await tx.organization.create({
             data: {
+              groupId: group?.id ?? undefined,
               publicName: publicNameValue,
               status: "ACTIVE", // self-serve aberto
               entityType,
@@ -276,23 +279,28 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      return nextOrganization;
-    });
-
-    // Garante membership OWNER para o utilizador
-    await prisma.organizationMember.upsert({
-      where: {
-        organizationId_userId: {
-          organizationId: organization.id,
-          userId: profile.id,
+      await tx.organizationMember.upsert({
+        where: {
+          organizationId_userId: {
+            organizationId: nextOrganization.id,
+            userId: profile.id,
+          },
         },
-      },
-      update: { role: "OWNER" },
-      create: {
-        organizationId: organization.id,
+        update: { role: "OWNER" },
+        create: {
+          organizationId: nextOrganization.id,
+          userId: profile.id,
+          role: "OWNER",
+        },
+      });
+      await ensureGroupMemberForOrg({
+        organizationId: nextOrganization.id,
         userId: profile.id,
         role: "OWNER",
-      },
+        client: tx,
+      });
+
+      return nextOrganization;
     });
 
     // Garante que o perfil tem role de organization

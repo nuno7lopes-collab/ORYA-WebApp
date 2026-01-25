@@ -70,7 +70,7 @@ export function validateGoalScore(score: GoalScorePayload): GoalValidationResult
     return { ok: false, code: "INVALID_LIMIT", message: "Limite de golos inválido." };
   }
   if (a > limit || b > limit) {
-    return { ok: false, code: "LIMIT_EXCEEDED", message: "Score ultrapassa o limite." };
+    return { ok: false, code: "LIMIT_EXCEEDED", message: "Score excede o limite." };
   }
   if (a === limit && b === limit) {
     return { ok: false, code: "TIE_NOT_ALLOWED", message: "Empate não permitido." };

@@ -10,7 +10,8 @@ export type OperationType =
   | "SEND_NOTIFICATION_PURCHASE"
   | "APPLY_PROMO_REDEMPTION"
   | "CLAIM_GUEST_PURCHASE"
-  | "SEND_EMAIL_OUTBOX";
+  | "SEND_EMAIL_OUTBOX"
+  | "OUTBOX_EVENT";
 
 export type OperationRecord = {
   id: number;

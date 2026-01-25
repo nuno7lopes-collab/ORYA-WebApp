@@ -1,4 +1,5 @@
 import { Prisma } from "@prisma/client";
+import { INACTIVE_REGISTRATION_STATUSES } from "@/domain/padelRegistration";
 
 type LimitResult = { ok: true } | { ok: false; code: "ALREADY_IN_CATEGORY" | "MAX_CATEGORIES" };
 
@@ -30,7 +31,10 @@ export async function checkPadelCategoryLimit(params: LimitParams): Promise<Limi
       pairing: {
         eventId,
         pairingStatus: { not: "CANCELLED" },
-        lifecycleStatus: { not: "CANCELLED_INCOMPLETE" },
+        OR: [
+          { registration: { is: null } },
+          { registration: { status: { notIn: INACTIVE_REGISTRATION_STATUSES } } },
+        ],
         ...(excludePairingId ? { id: { not: excludePairingId } } : {}),
       },
     },

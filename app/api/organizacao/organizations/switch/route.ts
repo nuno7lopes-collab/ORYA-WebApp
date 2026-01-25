@@ -3,6 +3,7 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { parseOrganizationId } from "@/lib/organizationId";
 import { OrganizationStatus } from "@prisma/client";
+import { setActiveOrganizationForUser } from "@/lib/organizationContext";
 
 const COOKIE_NAME = "orya_organization";
 const COOKIE_MAX_AGE = 60 * 60 * 24 * 30; // 30 dias
@@ -32,17 +33,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "INVALID_ORGANIZATION_ID" }, { status: 400 });
     }
 
-    // Validar membership
-    const membership = await prisma.organizationMember.findFirst({
-      where: {
-        organizationId: resolvedId,
-        userId: user.id,
-        organization: { status: { in: [OrganizationStatus.ACTIVE, OrganizationStatus.SUSPENDED] } },
-      },
-      include: { organization: true },
+    const organization = await prisma.organization.findUnique({
+      where: { id: resolvedId },
+      select: { id: true, status: true },
     });
-
-    if (!membership || !membership.organization) {
+    if (!organization || ![OrganizationStatus.ACTIVE, OrganizationStatus.SUSPENDED].includes(organization.status)) {
       return NextResponse.json({ ok: false, error: "NOT_MEMBER" }, { status: 403 });
     }
 
@@ -58,10 +53,20 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    const result = await setActiveOrganizationForUser({
+      userId: user.id,
+      organizationId: resolvedId,
+      ip: req.headers.get("x-forwarded-for"),
+      userAgent: req.headers.get("user-agent"),
+    });
+    if (!result.ok) {
+      return NextResponse.json({ ok: false, error: "NOT_MEMBER" }, { status: 403 });
+    }
+
     const res = NextResponse.json({
       ok: true,
       organizationId: resolvedId,
-      role: membership.role,
+      role: result.membership.role,
     });
     res.cookies.set(COOKIE_NAME, String(resolvedId), {
       httpOnly: false,

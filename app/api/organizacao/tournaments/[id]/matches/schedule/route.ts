@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { canReschedule } from "@/domain/tournaments/schedulePolicy";
 import { readNumericParam } from "@/lib/routeParams";
+import { ensureGroupMemberRole } from "@/lib/organizationGroupAccess";
 
 async function ensureOrganizationAccess(userId: string, eventId: number) {
   const evt = await prisma.event.findUnique({
@@ -24,11 +25,12 @@ async function ensureOrganizationAccess(userId: string, eventId: number) {
     profile?.onboardingDone ||
     (Boolean(profile?.fullName?.trim()) && Boolean(profile?.username?.trim()));
   if (!hasUserOnboarding) return false;
-  const member = await prisma.organizationMember.findFirst({
-    where: { organizationId: evt.organizationId, userId, role: { in: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"] } },
-    select: { id: true },
+  const access = await ensureGroupMemberRole({
+    organizationId: evt.organizationId,
+    userId,
+    allowedRoles: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"],
   });
-  return Boolean(member);
+  return access.ok;
 }
 
 type ScheduleItem = { matchId: number; courtId?: number | null; startAt?: string | null };
@@ -74,8 +76,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         const newStart = entry.startAt ? new Date(entry.startAt) : null;
         const newCourt = entry.courtId ?? null;
 
-        const canEdit = canReschedule(m.status, newStart);
-        if (!canEdit) {
+        const editAllowed = canReschedule(m.status, newStart);
+        if (!editAllowed) {
           throw new Error("START_AT_IN_PAST_OR_LOCKED");
         }
 
@@ -91,7 +93,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         where: { id: m.id },
         data: { startAt: newStart, courtId: newCourt },
       });
-      await tx.tournamentAuditLog.create({
+      await tx.tournamentAuditLog["create"]({
         data: {
           tournamentId,
           userId: data.user.id,

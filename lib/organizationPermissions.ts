@@ -35,10 +35,7 @@ export function isOrgAdminOrAbove(role: OrganizationMemberRole | null | undefine
   return role ? ROLE_WEIGHT[role] >= ROLE_WEIGHT[OrganizationMemberRole.ADMIN] : false;
 }
 
-export function canManageEvents(role: OrganizationMemberRole | null | undefined) {
-  return role === OrganizationMemberRole.STAFF || isOrgAdminOrAbove(role);
-}
-
+// @deprecated Prefer role pack aware access (resolveMemberModuleAccess/ensureMemberModuleAccess).
 export function canManageBilling(role: OrganizationMemberRole | null | undefined) {
   return role === OrganizationMemberRole.OWNER;
 }

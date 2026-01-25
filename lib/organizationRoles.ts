@@ -1,5 +1,6 @@
 import { OrganizationMemberRole, Prisma, PrismaClient } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { ensureGroupMemberForOrg } from "@/lib/organizationGroupAccess";
 
 type TxLike = Prisma.TransactionClient | PrismaClient;
 
@@ -28,6 +29,13 @@ export async function setSoleOwner(
   await client.organizationMember.updateMany({
     where: { organizationId, role: OrganizationMemberRole.OWNER, userId: { not: userId } },
     data: { role: OrganizationMemberRole.CO_OWNER },
+  });
+
+  await ensureGroupMemberForOrg({
+    organizationId,
+    userId,
+    role: OrganizationMemberRole.OWNER,
+    client,
   });
 }
 

@@ -4,7 +4,6 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   Gender,
   PadelEligibilityType,
-  PadelPairingLifecycleStatus,
   PadelPairingPaymentStatus,
   PadelPairingSlotRole,
   PadelPairingSlotStatus,
@@ -26,7 +25,13 @@ import {
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { checkPadelCategoryLimit } from "@/domain/padelCategoryLimit";
 import { checkPadelCategoryCapacity } from "@/domain/padelCategoryCapacity";
-import { checkPadelRegistrationWindow } from "@/domain/padelRegistration";
+import {
+  checkPadelRegistrationWindow,
+  INACTIVE_REGISTRATION_STATUSES,
+  mapRegistrationToPairingLifecycle,
+  resolveInitialPadelRegistrationStatus,
+  upsertPadelRegistrationForPairing,
+} from "@/domain/padelRegistration";
 import { upsertPadelWaitlistEntry } from "@/domain/padelWaitlist";
 import { checkPadelEventCapacity } from "@/domain/padelEventCapacity";
 import { parseOrganizationId } from "@/lib/organizationId";
@@ -307,11 +312,18 @@ export async function POST(req: NextRequest) {
   const existingActive = await prisma.padelPairing.findFirst({
     where: {
       eventId,
-      lifecycleStatus: { not: "CANCELLED_INCOMPLETE" },
       categoryId: effectiveCategoryId,
-      OR: [{ player1UserId: user.id }, { player2UserId: user.id }],
+      AND: [
+        {
+          OR: [
+            { registration: { is: null } },
+            { registration: { status: { notIn: INACTIVE_REGISTRATION_STATUSES } } },
+          ],
+        },
+        { OR: [{ player1UserId: user.id }, { player2UserId: user.id }] },
+      ],
     },
-    include: { slots: true },
+    include: { slots: true, registration: { select: { status: true } } },
   });
   if (existingActive) {
     const updates: Record<string, unknown> = {};
@@ -400,9 +412,27 @@ export async function POST(req: NextRequest) {
                 }
               : {}),
           },
-          include: { slots: true },
+          include: { slots: true, registration: { select: { status: true } } },
         })
       : existingActive;
+
+    const resolvedRegistrationStatus =
+      pairingReturn.registration?.status ??
+      resolveInitialPadelRegistrationStatus({
+        pairingJoinMode: pairingReturn.pairingJoinMode,
+        paymentMode: pairingReturn.payment_mode,
+        captainPaid: pairingReturn.slots.some(
+          (slot) => slot.slot_role === "CAPTAIN" && slot.paymentStatus === PadelPairingPaymentStatus.PAID,
+        ),
+      });
+    await prisma.$transaction((tx) =>
+      upsertPadelRegistrationForPairing(tx, {
+        pairingId: pairingReturn.id,
+        organizationId: pairingReturn.organizationId,
+        eventId: pairingReturn.eventId,
+        status: resolvedRegistrationStatus,
+      }),
+    );
 
     await upsertActiveHold(prisma, { pairingId: pairingReturn.id, eventId, ttlMinutes: 30 });
     let inviteSent = false;
@@ -425,8 +455,12 @@ export async function POST(req: NextRequest) {
       pairingReturn.slots.find((s) => s.slot_role === "CAPTAIN") ??
       pairingReturn.slots[0] ??
       null;
+    const lifecycleStatus = mapRegistrationToPairingLifecycle(
+      resolvedRegistrationStatus,
+      pairingReturn.payment_mode,
+    );
     return NextResponse.json(
-      { ok: true, pairing: pairingReturn, inviteSent, slotId: slotForUser?.id ?? null },
+      { ok: true, pairing: { ...pairingReturn, lifecycleStatus }, inviteSent, slotId: slotForUser?.id ?? null },
       { status: 200 },
     );
   }
@@ -443,9 +477,16 @@ export async function POST(req: NextRequest) {
         categoryId: effectiveCategoryId,
         payment_mode: PadelPaymentMode.SPLIT,
         pairingStatus: { not: "CANCELLED" },
-        lifecycleStatus: { not: "CANCELLED_INCOMPLETE" },
         player2UserId: null,
-        OR: [{ pairingJoinMode: "LOOKING_FOR_PARTNER" }, { isPublicOpen: true }],
+        AND: [
+          {
+            OR: [
+              { registration: { is: null } },
+              { registration: { status: { notIn: INACTIVE_REGISTRATION_STATUSES } } },
+            ],
+          },
+          { OR: [{ pairingJoinMode: "LOOKING_FOR_PARTNER" }, { isPublicOpen: true }] },
+        ],
       },
       select: {
         id: true,
@@ -683,11 +724,12 @@ export async function POST(req: NextRequest) {
         ? randomUUID()
         : null;
 
-    const initialLifecycleStatus = captainPaid
-      ? paymentMode === "FULL"
-        ? PadelPairingLifecycleStatus.CONFIRMED_CAPTAIN_FULL
-        : PadelPairingLifecycleStatus.PENDING_PARTNER_PAYMENT
-      : PadelPairingLifecycleStatus.PENDING_ONE_PAID;
+    const initialRegistrationStatus = resolveInitialPadelRegistrationStatus({
+      pairingJoinMode: pairingJoinModeRaw ?? PadelPairingJoinMode.INVITE_PARTNER,
+      paymentMode,
+      captainPaid,
+    });
+    const initialLifecycleStatus = mapRegistrationToPairingLifecycle(initialRegistrationStatus, paymentMode);
 
     const waitlistEnabled = advancedSettings.waitlistEnabled === true;
     const maxEntriesTotal =
@@ -757,7 +799,6 @@ export async function POST(req: NextRequest) {
           lockedUntil,
           isPublicOpen,
           pairingJoinMode: pairingJoinModeRaw ?? PadelPairingJoinMode.INVITE_PARTNER,
-          lifecycleStatus: initialLifecycleStatus,
           slots: {
             create: slotsToCreate,
           },
@@ -765,8 +806,15 @@ export async function POST(req: NextRequest) {
         include: { slots: true },
       });
 
+      await upsertPadelRegistrationForPairing(tx, {
+        pairingId: created.id,
+        organizationId,
+        eventId,
+        status: initialRegistrationStatus,
+      });
+
       await upsertActiveHold(tx, { pairingId: created.id, eventId, ttlMinutes: 30 });
-      return { kind: "PAIRING" as const, pairing: created };
+      return { kind: "PAIRING" as const, pairing: { ...created, lifecycleStatus: initialLifecycleStatus } };
     });
 
     if (result.kind === "WAITLIST") {

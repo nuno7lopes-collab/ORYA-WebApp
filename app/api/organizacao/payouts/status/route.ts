@@ -4,7 +4,7 @@ export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { stripe } from "@/lib/stripeClient";
+import { retrieveStripeAccount } from "@/domain/finance/gateway/stripeGateway";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { isOrgOwner } from "@/lib/organizationPermissions";
@@ -53,7 +53,7 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    const account = await stripe.accounts.retrieve(organization.stripeAccountId);
+    const account = await retrieveStripeAccount(organization.stripeAccountId);
 
     const charges_enabled = account.charges_enabled ?? false;
     const payouts_enabled = account.payouts_enabled ?? false;

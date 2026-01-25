@@ -2,12 +2,13 @@ export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { stripe } from "@/lib/stripeClient";
+import { createPaymentIntent, retrievePaymentIntent, cancelPaymentIntent } from "@/domain/finance/gateway/stripeGateway";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { getPlatformFees, getStripeBaseFees } from "@/lib/platformSettings";
 import { computePricing } from "@/lib/pricing";
 import { computeCombinedFees } from "@/lib/fees";
+import { SourceType } from "@prisma/client";
 import { formatPaidSalesGateMessage, getPaidSalesGate } from "@/lib/organizationPayments";
 import { ensureReservasModuleAccess } from "@/lib/reservas/access";
 
@@ -108,7 +109,7 @@ export async function POST(
 
     const allowedPaymentMethods = paymentMethod === "card" ? (["card"] as const) : (["mb_way"] as const);
     if (booking.paymentIntentId) {
-      const intent = await stripe.paymentIntents.retrieve(booking.paymentIntentId);
+      const intent = await retrievePaymentIntent(booking.paymentIntentId);
       if (intent.status === "succeeded") {
         return NextResponse.json({ ok: false, error: "PAGAMENTO_CONCLUIDO" }, { status: 409 });
       }
@@ -128,7 +129,7 @@ export async function POST(
         });
       }
       if (intent.status !== "canceled") {
-        await stripe.paymentIntents.cancel(intent.id).catch((err) => {
+        await cancelPaymentIntent(intent.id).catch((err) => {
           console.warn("[reservas/checkout] falha ao cancelar intent antigo", err);
         });
       }
@@ -200,7 +201,7 @@ export async function POST(
     const payoutAmountCents = Math.max(0, totalCents - platformFeeCents - stripeFeeEstimateCents);
     const purchaseId = `booking_${booking.id}_${Date.now()}`;
 
-    const intent = await stripe.paymentIntents.create(
+    const intent = await createPaymentIntent(
       {
         amount: totalCents,
         currency: currency.toLowerCase(),
@@ -220,7 +221,7 @@ export async function POST(
           grossAmountCents: String(totalCents),
           payoutAmountCents: String(payoutAmountCents),
           recipientConnectAccountId: isPlatformOrg ? "" : booking.service.organization.stripeAccountId ?? "",
-          sourceType: "SERVICE_BOOKING",
+          sourceType: SourceType.BOOKING,
           sourceId: `booking_${booking.id}`,
           currency,
           stripeFeeEstimateCents: String(stripeFeeEstimateCents),
@@ -228,7 +229,16 @@ export async function POST(
         },
         description: `Reserva serviço ${booking.serviceId}`,
       },
-      { idempotencyKey: purchaseId },
+      {
+        idempotencyKey: purchaseId,
+        requireStripe: !isPlatformOrg,
+        org: {
+          stripeAccountId: booking.service.organization.stripeAccountId ?? null,
+          stripeChargesEnabled: booking.service.organization.stripeChargesEnabled ?? false,
+          stripePayoutsEnabled: booking.service.organization.stripePayoutsEnabled ?? false,
+          orgType: booking.service.organization.orgType ?? null,
+        },
+      },
     );
 
     await prisma.booking.update({

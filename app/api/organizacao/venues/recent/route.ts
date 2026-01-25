@@ -4,7 +4,8 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
-import { canManageEvents } from "@/lib/organizationPermissions";
+import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
+import { OrganizationModule } from "@prisma/client";
 
 export async function GET(req: NextRequest) {
   try {
@@ -28,7 +29,18 @@ export async function GET(req: NextRequest) {
       roles: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"],
     });
 
-    if (!organization || !membership || !canManageEvents(membership.role)) {
+    if (!organization || !membership) {
+      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    }
+    const access = await ensureMemberModuleAccess({
+      organizationId: organization.id,
+      userId: profile.id,
+      role: membership.role,
+      rolePack: membership.rolePack,
+      moduleKey: OrganizationModule.EVENTOS,
+      required: "EDIT",
+    });
+    if (!access.ok) {
       return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 

@@ -6,6 +6,7 @@ import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { parseOrganizationId } from "@/lib/organizationId";
 import { isOrgAdminOrAbove } from "@/lib/organizationPermissions";
 import { createNotification } from "@/lib/notifications";
+import { ensureGroupMemberForOrg } from "@/lib/organizationGroupAccess";
 
 const ADMIN_ROLES: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -245,6 +246,7 @@ export async function POST(req: NextRequest) {
       where: { organizationId_userId: { organizationId: organization.id, userId: targetProfile.id } },
     });
 
+    let assignedTrainerRole = false;
     if (!existingMember) {
       await prisma.organizationMember.create({
         data: {
@@ -254,6 +256,7 @@ export async function POST(req: NextRequest) {
           status: "ACTIVE",
         },
       });
+      assignedTrainerRole = true;
     } else if (
       existingMember.role !== OrganizationMemberRole.TRAINER &&
       ![OrganizationMemberRole.OWNER, OrganizationMemberRole.CO_OWNER, OrganizationMemberRole.ADMIN].includes(existingMember.role)
@@ -262,6 +265,57 @@ export async function POST(req: NextRequest) {
         where: { organizationId_userId: { organizationId: organization.id, userId: targetProfile.id } },
         data: { role: OrganizationMemberRole.TRAINER },
       });
+      assignedTrainerRole = true;
+    }
+
+    if (assignedTrainerRole) {
+      const org = await prisma.organization.findUnique({
+        where: { id: organization.id },
+        select: { groupId: true },
+      });
+      if (!org?.groupId) {
+        throw new Error("ORG_GROUP_NOT_FOUND");
+      }
+
+      const targetGroup = await prisma.organizationGroupMember.findUnique({
+        where: { groupId_userId: { groupId: org.groupId, userId: targetProfile.id } },
+        select: { id: true, scopeAllOrgs: true, scopeOrgIds: true, role: true },
+      });
+
+      if (!targetGroup) {
+        await ensureGroupMemberForOrg({
+          organizationId: organization.id,
+          userId: targetProfile.id,
+          role: OrganizationMemberRole.TRAINER,
+        });
+      } else {
+        const scopeOrgIds = targetGroup.scopeOrgIds ?? [];
+        const hasMultipleScopes = targetGroup.scopeAllOrgs || scopeOrgIds.length > 1;
+        if (hasMultipleScopes && targetGroup.role !== OrganizationMemberRole.TRAINER) {
+          await prisma.organizationGroupMemberOrganizationOverride.upsert({
+            where: {
+              groupMemberId_organizationId: {
+                groupMemberId: targetGroup.id,
+                organizationId: organization.id,
+              },
+            },
+            update: { roleOverride: OrganizationMemberRole.TRAINER, revokedAt: null },
+            create: {
+              groupMemberId: targetGroup.id,
+              organizationId: organization.id,
+              roleOverride: OrganizationMemberRole.TRAINER,
+            },
+          });
+        } else {
+          await prisma.organizationGroupMember.update({
+            where: { id: targetGroup.id },
+            data: { role: OrganizationMemberRole.TRAINER },
+          });
+          await prisma.organizationGroupMemberOrganizationOverride.deleteMany({
+            where: { groupMemberId: targetGroup.id, organizationId: organization.id },
+          });
+        }
+      }
     }
 
     const profile = await prisma.trainerProfile.upsert({

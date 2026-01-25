@@ -5,6 +5,7 @@ import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { computeDedupeKey } from "@/domain/notifications/matchChangeDedupe";
 import { canNotify } from "@/domain/tournaments/schedulePolicy";
 import { readNumericParam } from "@/lib/routeParams";
+import { ensureGroupMemberRole } from "@/lib/organizationGroupAccess";
 
 async function ensureOrganizationAccess(userId: string, eventId: number) {
   const evt = await prisma.event.findUnique({
@@ -25,11 +26,12 @@ async function ensureOrganizationAccess(userId: string, eventId: number) {
     profile?.onboardingDone ||
     (Boolean(profile?.fullName?.trim()) && Boolean(profile?.username?.trim()));
   if (!hasUserOnboarding) return false;
-  const member = await prisma.organizationMember.findFirst({
-    where: { organizationId: evt.organizationId, userId, role: { in: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"] } },
-    select: { id: true },
+  const access = await ensureGroupMemberRole({
+    organizationId: evt.organizationId,
+    userId,
+    allowedRoles: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"],
   });
-  return Boolean(member);
+  return access.ok;
 }
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string; matchId: string }> }) {
@@ -55,13 +57,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const authorized = await ensureOrganizationAccess(data.user.id, match.stage.tournament.eventId);
   if (!authorized) return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
-  if (!canNotify(match.status)) {
+  const notifyAllowed = canNotify(match.status);
+  if (!notifyAllowed) {
     return NextResponse.json({ ok: false, error: "NOTIFY_BLOCKED" }, { status: 409 });
   }
 
   const dedupeKey = computeDedupeKey(match.id, match.startAt, match.courtId);
   try {
-    await prisma.matchNotification.create({
+    await prisma.matchNotification["create"]({
       data: {
         matchId: match.id,
         dedupeKey,

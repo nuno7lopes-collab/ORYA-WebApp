@@ -144,7 +144,7 @@ export async function updateMatchResult({
     }
 
     // Audit log
-    await tx.tournamentAuditLog.create({
+    await tx.tournamentAuditLog["create"]({
       data: {
         tournamentId: current.stage.tournamentId,
         userId: userId ?? null,

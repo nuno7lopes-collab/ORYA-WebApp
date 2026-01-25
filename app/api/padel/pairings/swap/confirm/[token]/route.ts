@@ -4,7 +4,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { canSwapPartner } from "@/domain/padel/pairingPolicy";
-import { PadelPairingLifecycleStatus, PadelPairingPaymentStatus, PadelPairingSlotStatus } from "@prisma/client";
+import {
+  PadelPairingPaymentStatus,
+  PadelPairingSlotStatus,
+  PadelRegistrationStatus,
+} from "@prisma/client";
+import { mapRegistrationToPairingLifecycle, upsertPadelRegistrationForPairing } from "@/domain/padelRegistration";
 
 // Confirma troca de parceiro quando o parceiro pago autoriza a saída.
 export async function POST(_: NextRequest, { params }: { params: Promise<{ token: string }> }) {
@@ -20,7 +25,7 @@ export async function POST(_: NextRequest, { params }: { params: Promise<{ token
 
   const pairing = await prisma.padelPairing.findFirst({
     where: { partnerLinkToken: token },
-    include: { slots: true },
+    include: { slots: true, registration: { select: { status: true } } },
   });
   if (!pairing) return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
 
@@ -31,13 +36,11 @@ export async function POST(_: NextRequest, { params }: { params: Promise<{ token
   if (pairing.player2UserId !== user.id) {
     return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
   }
-  if (
-    !canSwapPartner(
-      pairing.lifecycleStatus as PadelPairingLifecycleStatus,
-      now,
-      pairing.partnerSwapAllowedUntilAt,
-    )
-  ) {
+  const lifecycleStatus = mapRegistrationToPairingLifecycle(
+    pairing.registration?.status ?? PadelRegistrationStatus.PENDING_PARTNER,
+    pairing.payment_mode,
+  );
+  if (!canSwapPartner(lifecycleStatus, now, pairing.partnerSwapAllowedUntilAt)) {
     return NextResponse.json({ ok: false, error: "SWAP_NOT_ALLOWED" }, { status: 409 });
   }
 
@@ -57,7 +60,7 @@ export async function POST(_: NextRequest, { params }: { params: Promise<{ token
       });
     }
 
-    await tx.padelPairing.update({
+    const updated = await tx.padelPairing.update({
       where: { id: pairing.id },
       data: {
         player2UserId: null,
@@ -68,7 +71,6 @@ export async function POST(_: NextRequest, { params }: { params: Promise<{ token
         partnerLinkToken: null,
         partnerLinkExpiresAt: null,
         pairingStatus: "INCOMPLETE",
-        lifecycleStatus: PadelPairingLifecycleStatus.PENDING_PARTNER_PAYMENT,
         slots: {
           update: {
             where: { id: partnerSlot.id },
@@ -83,6 +85,13 @@ export async function POST(_: NextRequest, { params }: { params: Promise<{ token
           },
         },
       },
+    });
+
+    await upsertPadelRegistrationForPairing(tx, {
+      pairingId: updated.id,
+      organizationId: updated.organizationId,
+      eventId: updated.eventId,
+      status: PadelRegistrationStatus.PENDING_PARTNER,
     });
   });
 

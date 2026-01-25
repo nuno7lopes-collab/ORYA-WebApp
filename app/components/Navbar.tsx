@@ -22,7 +22,7 @@ type SearchEvent = {
   locationCity: string | null;
   coverImageUrl: string | null;
   priceFrom: number | null;
-  isFree: boolean;
+  isGratis: boolean;
 };
 
 type SearchOrganization = {
@@ -355,7 +355,7 @@ export function Navbar() {
               location?: { name?: string | null; city?: string | null };
               coverImageUrl?: string | null;
               priceFrom?: number | null;
-              isFree?: boolean;
+              isGratis?: boolean;
             }>)
           : [];
 
@@ -377,7 +377,7 @@ export function Navbar() {
             locationCity: it.location?.city ?? null,
             coverImageUrl: it.coverImageUrl ?? null,
             priceFrom: typeof it.priceFrom === "number" ? it.priceFrom : null,
-            isFree: Boolean(it.isFree),
+            isGratis: Boolean(it.isGratis),
           })),
         );
         setUserResults(userItems);
@@ -913,7 +913,7 @@ export function Navbar() {
                                   </div>
                                   <div className="flex flex-col items-end gap-1 text-[10px] text-white/70">
                                     <span>
-                                      {item.isFree
+                                      {item.isGratis
                                         ? "Grátis"
                                         : item.priceFrom !== null
                                           ? `Desde ${item.priceFrom.toFixed(2)} €`
@@ -1118,7 +1118,7 @@ export function Navbar() {
                               </div>
                               <div className="flex flex-col items-end gap-1 text-[10px] text-white/70">
                                 <span>
-                                  {item.isFree
+                                  {item.isGratis
                                     ? "Grátis"
                                     : item.priceFrom !== null
                                       ? `Desde ${item.priceFrom.toFixed(2)} €`

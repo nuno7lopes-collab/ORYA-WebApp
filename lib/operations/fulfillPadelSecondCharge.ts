@@ -1,8 +1,15 @@
 import { prisma } from "@/lib/prisma";
-import { PaymentEventSource, PadelPairingLifecycleStatus, PadelPairingPaymentStatus, PadelPairingStatus } from "@prisma/client";
+import {
+  PaymentEventSource,
+  PadelPairingPaymentStatus,
+  PadelPairingStatus,
+  PadelPaymentMode,
+  PadelRegistrationStatus,
+} from "@prisma/client";
 import { computeGraceUntil } from "@/domain/padelDeadlines";
 import { queueOffsessionActionRequired, queueDeadlineExpired } from "@/domain/notifications/splitPayments";
 import { ensureEntriesForConfirmedPairing } from "@/domain/tournaments/ensureEntriesForConfirmedPairing";
+import { upsertPadelRegistrationForPairing } from "@/domain/padelRegistration";
 
 type IntentLike = {
   id: string;
@@ -33,10 +40,10 @@ export async function fulfillPadelSecondCharge(intent: IntentLike): Promise<bool
       });
       const allFilled = slots.length > 0 && slots.every((slot) => slot.slotStatus === "FILLED");
       const pairingStatus = allFilled ? PadelPairingStatus.COMPLETE : PadelPairingStatus.INCOMPLETE;
+      const registrationStatus = PadelRegistrationStatus.CONFIRMED;
       const confirmed = await tx.padelPairing.update({
         where: { id: pairingId },
         data: {
-          lifecycleStatus: PadelPairingLifecycleStatus.CONFIRMED_CAPTAIN_FULL,
           pairingStatus,
           guaranteeStatus: "SUCCEEDED",
           secondChargePaymentIntentId: intent.id,
@@ -44,6 +51,15 @@ export async function fulfillPadelSecondCharge(intent: IntentLike): Promise<bool
           partnerPaidAt: now,
           graceUntilAt: null,
         },
+      });
+      await upsertPadelRegistrationForPairing(tx, {
+        pairingId,
+        organizationId: confirmed.organizationId,
+        eventId: confirmed.eventId,
+        status: registrationStatus,
+        paymentMode: confirmed.payment_mode,
+        secondChargeConfirmed: true,
+        reason: "SECOND_CHARGE_CONFIRMED",
       });
       if (allFilled) {
         await ensureEntriesForConfirmedPairing(confirmed.id);
@@ -102,14 +118,20 @@ export async function fulfillPadelSecondCharge(intent: IntentLike): Promise<bool
 
   if (intent.status === "requires_payment_method" || intent.status === "canceled") {
     await prisma.$transaction(async (tx) => {
-      await tx.padelPairing.update({
+      const pairing = await tx.padelPairing.update({
         where: { id: pairingId },
         data: {
           guaranteeStatus: "FAILED",
-          lifecycleStatus: PadelPairingLifecycleStatus.CANCELLED_INCOMPLETE,
           pairingStatus: PadelPairingStatus.CANCELLED,
           graceUntilAt: null,
         },
+      });
+      await upsertPadelRegistrationForPairing(tx, {
+        pairingId,
+        organizationId: pairing.organizationId,
+        eventId: pairing.eventId,
+        status: PadelRegistrationStatus.EXPIRED,
+        reason: "SECOND_CHARGE_FAILED",
       });
       await tx.padelPairingHold.updateMany({
         where: { pairingId, status: "ACTIVE" },

@@ -3,6 +3,7 @@ import { OrganizationMemberRole } from "@prisma/client";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
+import { resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
 
 const STATUS_PENDING = "PENDING";
 
@@ -34,9 +35,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "REQUEST_NOT_PENDING" }, { status: 400 });
     }
 
-    const membership = await prisma.organizationMember.findUnique({
-      where: { organizationId_userId: { organizationId: request.organizationId, userId: user.id } },
-    });
+    const membership = await resolveGroupMemberForOrg({ organizationId: request.organizationId, userId: user.id });
     if (!membership || membership.role !== OrganizationMemberRole.OWNER) {
       return NextResponse.json({ ok: false, error: "ONLY_OWNER_CAN_CONFIRM" }, { status: 403 });
     }

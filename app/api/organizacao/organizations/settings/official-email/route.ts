@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { sendOfficialEmailVerificationEmail } from "@/lib/emailSender";
 import { parseOrganizationId } from "@/lib/organizationId";
+import { resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
 const DEFAULT_EXPIRATION_MS = 1000 * 60 * 60 * 24; // 24h
@@ -33,9 +34,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "INVALID_EMAIL" }, { status: 400 });
     }
 
-    const membership = await prisma.organizationMember.findUnique({
-      where: { organizationId_userId: { organizationId, userId: user.id } },
-    });
+    const membership = await resolveGroupMemberForOrg({ organizationId, userId: user.id });
     if (!membership || membership.role !== OrganizationMemberRole.OWNER) {
       return NextResponse.json({ ok: false, error: "ONLY_OWNER_CAN_UPDATE_OFFICIAL_EMAIL" }, { status: 403 });
     }

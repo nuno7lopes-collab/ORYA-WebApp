@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { isOrgAdminOrAbove } from "@/lib/organizationPermissions";
+import { ACTIVE_PAIRING_REGISTRATION_WHERE } from "@/domain/padelRegistration";
 import { SaleSummaryStatus, TicketStatus } from "@prisma/client";
 import { resolveOrganizationIdFromParams } from "@/lib/organizationId";
 
@@ -124,7 +125,7 @@ export async function GET(req: NextRequest) {
         where: {
           createdAt: { gte: from, lte: now },
           pairingStatus: { not: "CANCELLED" },
-          lifecycleStatus: { not: "CANCELLED_INCOMPLETE" },
+          ...ACTIVE_PAIRING_REGISTRATION_WHERE,
           event: {
             organizationId: organization.id,
             ...eventTemplateFilter,
@@ -223,7 +224,7 @@ export async function GET(req: NextRequest) {
             where: {
               eventId: { in: eventIds },
               pairingStatus: { not: "CANCELLED" },
-              lifecycleStatus: { not: "CANCELLED_INCOMPLETE" },
+              ...ACTIVE_PAIRING_REGISTRATION_WHERE,
             },
             _count: { _all: true },
           })

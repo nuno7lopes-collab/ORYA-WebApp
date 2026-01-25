@@ -17,9 +17,11 @@ import {
   listEventCoverFallbacks,
   parseEventCoverToken,
 } from "@/lib/eventCover";
-import { getOrganizationRoleFlags } from "@/lib/organizationUiPermissions";
+import { resolveMemberModuleAccess } from "@/lib/organizationRbac";
+import { OrganizationMemberRole, OrganizationModule, OrganizationRolePack } from "@prisma/client";
 import { parseOrganizationModules, resolvePrimaryModule } from "@/lib/organizationCategories";
 import { fetchGeoAutocomplete, fetchGeoDetails } from "@/lib/geo/client";
+import { AppleMapsLoader } from "@/app/components/maps/AppleMapsLoader";
 import type { GeoAutocompleteItem, GeoDetailsItem } from "@/lib/geo/provider";
 
 type TicketTypeRow = {
@@ -236,6 +238,7 @@ export default function NewOrganizationEventPage({
       } | null;
     } | null;
     membershipRole?: string | null;
+    membershipRolePack?: string | null;
     paymentsStatus?: string;
     paymentsMode?: "PLATFORM" | "CONNECT";
     profileStatus?: string;
@@ -305,7 +308,7 @@ export default function NewOrganizationEventPage({
   const [coverSearch, setCoverSearch] = useState("");
   const [coverCategory, setCoverCategory] =
     useState<"SUGESTOES" | "ALL" | "EVENTOS" | "PADEL" | "RESERVAS" | "GERAL">("SUGESTOES");
-  const [isFreeEvent, setIsFreeEvent] = useState(false);
+  const [isGratisEvent, setIsFreeEvent] = useState(false);
   const [liveHubVisibility, setLiveHubVisibility] = useState<LiveHubVisibility>("PUBLIC");
   const [freeTicketName, setFreeTicketName] = useState("Inscrição");
   const [freeTicketPublicAccess, setFreeTicketPublicAccess] = useState(true);
@@ -374,7 +377,16 @@ export default function NewOrganizationEventPage({
 
   const roles = Array.isArray(profile?.roles) ? (profile?.roles as string[]) : [];
   const membershipRole = organizationStatus?.membershipRole ?? null;
-  const roleFlags = useMemo(() => getOrganizationRoleFlags(membershipRole), [membershipRole]);
+  const membershipRolePack = organizationStatus?.membershipRolePack ?? null;
+  const moduleAccess = useMemo(
+    () =>
+      resolveMemberModuleAccess({
+        role: membershipRole as OrganizationMemberRole | null,
+        rolePack: membershipRolePack as OrganizationRolePack | null,
+        overrides: [],
+      }),
+    [membershipRole, membershipRolePack],
+  );
   const isOrganization =
     roles.includes("organization") ||
     Boolean(organizationStatus?.organization?.id) ||
@@ -392,7 +404,7 @@ export default function NewOrganizationEventPage({
   const hasTorneiosModule = normalizedModules.includes("TORNEIOS") || primaryModule === "TORNEIOS";
   const hasCurrentModule = isPadelPreset ? hasTorneiosModule : hasEventosModule;
   const canSwitchPreset = !forcePreset && hasEventosModule && hasTorneiosModule;
-  const isPadelPaid = isPadelPreset && !isFreeEvent;
+  const isPadelPaid = isPadelPreset && !isGratisEvent;
   const isTicketsModalOpen = showTicketsModal && !isPadelPreset;
   const coverLibrary = useMemo(() => listEventCoverFallbacks(), []);
   const templateHint = isPadelPreset ? "PADEL" : "OTHER";
@@ -455,14 +467,14 @@ export default function NewOrganizationEventPage({
   const hasActiveOrganization = Boolean(organizationStatus?.organization?.id);
   const organizationStatusValue = organizationStatus?.organization?.status ?? null;
   const organizationInactive = Boolean(organizationStatusValue && organizationStatusValue !== "ACTIVE");
-  const canCreateEvents = Boolean(roleFlags?.canManageEvents);
+  const canCreateEvents = moduleAccess[OrganizationModule.EVENTOS] === "EDIT";
   const paymentsMode = organizationStatus?.paymentsMode ?? "CONNECT";
   const isPlatformPayout = paymentsMode === "PLATFORM";
   const paymentsStatusRaw = isAdmin ? "READY" : organizationStatus?.paymentsStatus ?? "NO_STRIPE";
   const paymentsStatus = isPlatformPayout ? "READY" : paymentsStatusRaw;
   const hasPaidTicket = useMemo(
-    () => !isFreeEvent && ticketTypes.some((t) => Number(t.price.replace(",", ".")) > 0),
-    [isFreeEvent, ticketTypes],
+    () => !isGratisEvent && ticketTypes.some((t) => Number(t.price.replace(",", ".")) > 0),
+    [isGratisEvent, ticketTypes],
   );
   const timeSlots = useMemo(() => buildTimeSlots(), []);
   const startCalendarCells = useMemo(() => buildCalendarCells(startCalendarView), [startCalendarView]);
@@ -593,7 +605,7 @@ export default function NewOrganizationEventPage({
         ticketTypes: TicketTypeRow[];
         coverUrl: string | null;
         selectedPreset: string | null;
-        isFreeEvent: boolean;
+        isGratisEvent: boolean;
         liveHubVisibility: LiveHubVisibility;
         freeTicketName: string;
         freeTicketPublicAccess: boolean;
@@ -629,7 +641,7 @@ export default function NewOrganizationEventPage({
       );
       setCoverUrl(draft.coverUrl ?? null);
       setSelectedPreset(draft.selectedPreset ?? null);
-      setIsFreeEvent(Boolean(draft.isFreeEvent));
+      setIsFreeEvent(Boolean(draft.isGratisEvent));
       setLiveHubVisibility(draft.liveHubVisibility ?? "PUBLIC");
       setFreeTicketName(draft.freeTicketName || freeTicketPlaceholder);
       setFreeTicketPublicAccess(draft.freeTicketPublicAccess ?? true);
@@ -721,7 +733,7 @@ export default function NewOrganizationEventPage({
   }, [endDateInput]);
 
   useEffect(() => {
-    if (!isFreeEvent) return;
+    if (!isGratisEvent) return;
     setTicketTypes([
       {
         name: freeTicketName.trim() || freeTicketPlaceholder,
@@ -729,12 +741,12 @@ export default function NewOrganizationEventPage({
         totalQuantity: freeCapacity,
       },
     ]);
-  }, [isFreeEvent, freeTicketName, freeCapacity, freeTicketPlaceholder]);
+  }, [isGratisEvent, freeTicketName, freeCapacity, freeTicketPlaceholder]);
 
   useEffect(() => {
     clearErrorsForFields(["tickets"]);
     setStripeAlert(null);
-  }, [isFreeEvent]);
+  }, [isGratisEvent]);
 
   useEffect(() => {
     if (selectedPreset === "padel") return;
@@ -1671,7 +1683,7 @@ export default function NewOrganizationEventPage({
   };
 
   const shouldSplitFreeTickets =
-    isFreeEvent && selectedPreset === "padel" && padelCategoryIds.length > 1;
+    isGratisEvent && selectedPreset === "padel" && padelCategoryIds.length > 1;
 
   const parsePositiveInteger = (value: string | null | undefined) => {
     if (!value) return null;
@@ -1689,7 +1701,7 @@ export default function NewOrganizationEventPage({
     parsePositiveInteger(getPadelTicketCapacityValue(categoryId));
 
   const buildTicketsPayload = () => {
-    if (isFreeEvent) {
+    if (isGratisEvent) {
       const totalQuantityRaw = freeCapacity ? Number(freeCapacity) : null;
       const parsedQuantity =
         typeof totalQuantityRaw === "number" && Number.isFinite(totalQuantityRaw) && totalQuantityRaw > 0
@@ -1764,7 +1776,7 @@ export default function NewOrganizationEventPage({
   const preparedTickets = useMemo(
     () => buildTicketsPayload(),
     [
-      isFreeEvent,
+      isGratisEvent,
       freeTicketName,
       freeTicketPublicAccess,
       freeCapacity,
@@ -1783,7 +1795,7 @@ export default function NewOrganizationEventPage({
     if (preparedTickets.length === 0) {
       return isPadelPreset ? "Sem inscrições (1 gratuita)" : "Sem bilhetes (1 gratuito)";
     }
-    if (isFreeEvent) {
+    if (isGratisEvent) {
       if (shouldSplitFreeTickets) {
         return `Grátis · ${padelCategoryIds.length} categorias`;
       }
@@ -1800,7 +1812,7 @@ export default function NewOrganizationEventPage({
     return `${countLabel} · desde ${minPrice.toFixed(2)} €`;
   }, [
     preparedTickets,
-    isFreeEvent,
+    isGratisEvent,
     freeCapacity,
     shouldSplitFreeTickets,
     padelCategoryIds.length,
@@ -1813,15 +1825,15 @@ export default function NewOrganizationEventPage({
   const liveHubSummary =
     liveHubVisibility === "PUBLIC" ? "Público" : liveHubVisibility === "PRIVATE" ? "Privado" : "Desativado";
   const hasPublicTickets = useMemo(() => {
-    if (isFreeEvent) return freeTicketPublicAccess;
+    if (isGratisEvent) return freeTicketPublicAccess;
     if (ticketTypes.length === 0) return true;
     return ticketTypes.some((ticket) => ticket.publicAccess !== false);
-  }, [isFreeEvent, freeTicketPublicAccess, ticketTypes]);
+  }, [isGratisEvent, freeTicketPublicAccess, ticketTypes]);
   const hasInviteOnlyTickets = useMemo(() => {
-    if (isFreeEvent) return !freeTicketPublicAccess;
+    if (isGratisEvent) return !freeTicketPublicAccess;
     if (ticketTypes.length === 0) return false;
     return ticketTypes.some((ticket) => ticket.publicAccess === false);
-  }, [isFreeEvent, freeTicketPublicAccess, ticketTypes]);
+  }, [isGratisEvent, freeTicketPublicAccess, ticketTypes]);
   const accessSummary = hasInviteOnlyTickets
     ? hasPublicTickets
       ? "Misto"
@@ -1881,7 +1893,7 @@ export default function NewOrganizationEventPage({
   const padelTicketsCovered =
     padelCategoryIds.length > 0 && padelCategoryIds.every((id) => padelTicketCategorySet.has(id));
   const padelTicketsUnique = padelTicketCategoryIds.length === padelTicketCategorySet.size;
-  const padelTicketsOk = padelTicketsCovered && (isFreeEvent || padelTicketsUnique);
+  const padelTicketsOk = padelTicketsCovered && (isGratisEvent || padelTicketsUnique);
   const padelClubOk = Boolean(selectedPadelClubId);
   const padelCourtsOk = selectedPadelCourtIds.length > 0;
   const padelCategoriesOk = padelCategoryIds.length > 0;
@@ -1973,7 +1985,7 @@ export default function NewOrganizationEventPage({
     const currentTickets = buildTicketsPayload();
 
     if (currentTickets.length > 0) {
-      if (!isFreeEvent) {
+      if (!isGratisEvent) {
         const hasNegativePrice = currentTickets.some((t) => t.price < 0);
         const hasBelowMinimum = currentTickets.some((t) => t.price >= 0 && t.price < 1);
         if (hasNegativePrice) {
@@ -1986,7 +1998,7 @@ export default function NewOrganizationEventPage({
           });
         }
       }
-      if (!isFreeEvent && hasPaidTicket && paidTicketsBlocked) {
+      if (!isGratisEvent && hasPaidTicket && paidTicketsBlocked) {
         issues.push({
           field: "tickets",
           message:
@@ -2019,7 +2031,7 @@ export default function NewOrganizationEventPage({
           : "Cria pelo menos uma categoria de padel.";
       issues.push({ field: "padel", message });
     }
-    if (selectedPreset === "padel" && !isFreeEvent) {
+    if (selectedPreset === "padel" && !isGratisEvent) {
       const ticketCategoryIds = currentTickets
         .map((t) => t.padelCategoryId)
         .filter((id): id is number => typeof id === "number");
@@ -2356,7 +2368,7 @@ export default function NewOrganizationEventPage({
     setErrorMessage(null);
 
     const issues = collectFormErrors();
-    const paidAlert = !isFreeEvent && hasPaidTicket && paidTicketsBlocked ? paidTicketsBlockedMessage : null;
+    const paidAlert = !isGratisEvent && hasPaidTicket && paidTicketsBlocked ? paidTicketsBlockedMessage : null;
     if (issues.length > 0) {
       applyErrors(issues);
       setValidationAlert(`Revê os campos obrigatórios antes de criar o ${primaryLabel}.`);
@@ -3326,7 +3338,7 @@ export default function NewOrganizationEventPage({
               disabled={paidTicketsBlocked}
               title={paidTicketsBlockedMessage ?? `Ativa o Stripe e o email oficial para vender ${ticketLabelPlural} pagos.`}
               className={`rounded-full px-3 py-1 font-semibold transition ${
-                !isFreeEvent && !paidTicketsBlocked ? "bg-white text-black shadow" : "text-white/70"
+                !isGratisEvent && !paidTicketsBlocked ? "bg-white text-black shadow" : "text-white/70"
               } ${paidTicketsBlocked ? "cursor-not-allowed opacity-50" : ""}`}
             >
               {primaryLabelTitle} pago
@@ -3335,7 +3347,7 @@ export default function NewOrganizationEventPage({
               type="button"
               onClick={() => setIsFreeEvent(true)}
               className={`rounded-full px-3 py-1 font-semibold transition ${
-                isFreeEvent ? "bg-white text-black shadow" : "text-white/70"
+                isGratisEvent ? "bg-white text-black shadow" : "text-white/70"
               }`}
             >
               {primaryLabelTitle} grátis
@@ -3380,7 +3392,7 @@ export default function NewOrganizationEventPage({
             <p className="text-[11px] text-amber-50/70">Agora: grátis.</p>
           </div>
         )}
-        {ticketTypes.length === 0 && !isFreeEvent && (
+        {ticketTypes.length === 0 && !isGratisEvent && (
           <div className="rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-[12px] text-white/70">
             {isPadelPaid
               ? "Seleciona categorias."
@@ -3397,7 +3409,7 @@ export default function NewOrganizationEventPage({
         )}
       </div>
 
-      {isFreeEvent ? (
+      {isGratisEvent ? (
         <div className="space-y-3 rounded-2xl border border-white/12 bg-white/5 p-4">
           <div className="flex items-center justify-between">
             <p className={labelClass}>{freeTicketLabel}</p>
@@ -3563,7 +3575,7 @@ export default function NewOrganizationEventPage({
                       </label>
                       <input
                         type="number"
-                        min={isFreeEvent ? 0 : 1}
+                        min={isGratisEvent ? 0 : 1}
                         step="0.01"
                         value={row.price}
                         onChange={(e) => handleTicketChange(idx, "price", e.target.value)}
@@ -3951,6 +3963,7 @@ export default function NewOrganizationEventPage({
 
   return (
     <>
+      <AppleMapsLoader />
       <div className="pointer-events-none fixed inset-0 -z-10" aria-hidden>
         <div className="absolute inset-0 bg-[#05070f]" />
         {coverPreviewUrl ? (
@@ -4477,7 +4490,7 @@ export default function NewOrganizationEventPage({
                       <div className="space-y-1">
                         <p className={labelClass}>Categorias & {ticketLabelPlural}</p>
                         <p className="text-[12px] text-white/75">{ticketsSummary}</p>
-                        {paidTicketsBlocked && !isFreeEvent && (
+                        {paidTicketsBlocked && !isGratisEvent && (
                           <p className="text-[11px] text-amber-200/90">Stripe + email oficial.</p>
                         )}
                       </div>
@@ -4492,7 +4505,7 @@ export default function NewOrganizationEventPage({
                       <div className="space-y-1">
                         <p className={labelClass}>{ticketLabelPluralCap}</p>
                         <p className="text-[12px] text-white/75">{ticketsSummary}</p>
-                        {paidTicketsBlocked && !isFreeEvent && (
+                        {paidTicketsBlocked && !isGratisEvent && (
                           <p className="text-[11px] text-amber-200/90">Stripe + email oficial.</p>
                         )}
                       </div>

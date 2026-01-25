@@ -5,6 +5,7 @@ import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { isOrgAdminOrAbove } from "@/lib/organizationPermissions";
 import { getStripeBaseFees } from "@/lib/platformSettings";
+import { ACTIVE_PAIRING_REGISTRATION_WHERE } from "@/domain/padelRegistration";
 import { PendingPayoutStatus, SaleSummaryStatus } from "@prisma/client";
 
 type Aggregate = {
@@ -175,7 +176,7 @@ export async function GET(req: NextRequest) {
           where: {
             eventId: { in: eventIds },
             pairingStatus: { not: "CANCELLED" },
-            lifecycleStatus: { not: "CANCELLED_INCOMPLETE" },
+            ...ACTIVE_PAIRING_REGISTRATION_WHERE,
           },
           _count: { _all: true },
         })
@@ -190,7 +191,7 @@ export async function GET(req: NextRequest) {
           eventId: { in: eventIds },
           createdAt: { gte: last7 },
           pairingStatus: { not: "CANCELLED" },
-          lifecycleStatus: { not: "CANCELLED_INCOMPLETE" },
+          ...ACTIVE_PAIRING_REGISTRATION_WHERE,
         },
       });
       const padelLast30 = await prisma.padelPairing.count({
@@ -198,7 +199,7 @@ export async function GET(req: NextRequest) {
           eventId: { in: eventIds },
           createdAt: { gte: last30 },
           pairingStatus: { not: "CANCELLED" },
-          lifecycleStatus: { not: "CANCELLED_INCOMPLETE" },
+          ...ACTIVE_PAIRING_REGISTRATION_WHERE,
         },
       });
       totals.tickets = padelPairingMap.size

@@ -7,6 +7,7 @@ import { randomUUID } from "crypto";
 import { clampDeadlineHours, computePartnerLinkExpiresAt, computeSplitDeadlineAt } from "@/domain/padelDeadlines";
 import { queuePairingInvite } from "@/domain/notifications/splitPayments";
 import { readNumericParam } from "@/lib/routeParams";
+import { resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
 
 // Regenera token de convite para um pairing (v2). Apenas capitão ou staff OWNER/ADMIN.
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -48,15 +49,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const isCaptain = pairing.createdByUserId === user.id;
   let isStaff = false;
   if (!isCaptain) {
-    const staff = await prisma.organizationMember.findFirst({
-      where: {
-        organizationId: pairing.organizationId,
-        userId: user.id,
-        role: { in: ["OWNER", "CO_OWNER", "ADMIN"] },
-      },
-      select: { id: true },
+    const membership = await resolveGroupMemberForOrg({
+      organizationId: pairing.organizationId,
+      userId: user.id,
     });
-    isStaff = Boolean(staff);
+    isStaff = Boolean(membership && ["OWNER", "CO_OWNER", "ADMIN"].includes(membership.role));
   }
   if (!isCaptain && !isStaff) {
     return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });

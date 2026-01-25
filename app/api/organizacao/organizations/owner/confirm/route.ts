@@ -5,9 +5,9 @@ import { prisma } from "@/lib/prisma";
 import { getOrgTransferEnabled } from "@/lib/platformSettings";
 import { setSoleOwner } from "@/lib/organizationRoles";
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
-import { sendEmail } from "@/lib/resendClient";
-import { getAppBaseUrl } from "@/lib/appBaseUrl";
+import { resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
+import { recordOutboxEvent } from "@/domain/outbox/producer";
+import { appendEventLog } from "@/domain/eventLog/append";
 
 export async function POST(req: NextRequest) {
   try {
@@ -44,6 +44,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "TRANSFER_NOT_FOUND" }, { status: 404 });
     }
 
+    if (transfer.status === "CONFIRMED") {
+      return NextResponse.json({ ok: true }, { status: 200 });
+    }
     if (transfer.status !== "PENDING") {
       return NextResponse.json({ ok: false, error: "TRANSFER_NOT_PENDING" }, { status: 400 });
     }
@@ -54,34 +57,121 @@ export async function POST(req: NextRequest) {
 
     const now = new Date();
     if (transfer.expiresAt && transfer.expiresAt.getTime() < now.getTime()) {
-      await ownerTransferModel.update({
-        where: { id: transfer.id },
-        data: { status: "EXPIRED", cancelledAt: now },
+      await prisma.$transaction(async (tx) => {
+        await ownerTransferModel.update({
+          where: { id: transfer.id },
+          data: { status: "EXPIRED", cancelledAt: now },
+        });
+        await recordOrganizationAudit(tx, {
+          organizationId: transfer.organizationId,
+          groupId: null,
+          actorUserId: user.id,
+          action: "OWNER_TRANSFER_EXPIRED",
+          entityType: "organization_owner_transfer",
+          entityId: transfer.id,
+          correlationId: transfer.id,
+          fromUserId: transfer.fromUserId,
+          toUserId: transfer.toUserId,
+          metadata: { transferId: transfer.id },
+          ip: req.headers.get("x-forwarded-for") ?? req.headers.get("x-real-ip") ?? null,
+          userAgent: req.headers.get("user-agent"),
+        });
+        const outbox = await recordOutboxEvent(
+          {
+            eventType: "organization.owner_transfer.expired",
+            payload: {
+              transferId: transfer.id,
+              organizationId: transfer.organizationId,
+              fromUserId: transfer.fromUserId,
+              toUserId: transfer.toUserId,
+            },
+            correlationId: transfer.id,
+          },
+          tx,
+        );
+        await appendEventLog(
+          {
+            eventId: outbox.eventId,
+            organizationId: transfer.organizationId,
+            eventType: "organization.owner_transfer.expired",
+            idempotencyKey: outbox.eventId,
+            payload: {
+              transferId: transfer.id,
+              fromUserId: transfer.fromUserId,
+              toUserId: transfer.toUserId,
+            },
+            actorUserId: user.id,
+            sourceId: String(transfer.organizationId),
+            correlationId: transfer.id,
+          },
+          tx,
+        );
       });
       return NextResponse.json({ ok: false, error: "TRANSFER_EXPIRED" }, { status: 400 });
     }
 
-    const fromMembership = await prisma.organizationMember.findUnique({
-      where: { organizationId_userId: { organizationId: transfer.organizationId, userId: transfer.fromUserId } },
+    const fromMembership = await resolveGroupMemberForOrg({
+      organizationId: transfer.organizationId,
+      userId: transfer.fromUserId,
     });
     if (!fromMembership || fromMembership.role !== OrganizationMemberRole.OWNER) {
-      await ownerTransferModel.update({
-        where: { id: transfer.id },
-        data: { status: "CANCELLED", cancelledAt: now },
+      await prisma.$transaction(async (tx) => {
+        await ownerTransferModel.update({
+          where: { id: transfer.id },
+          data: { status: "CANCELLED", cancelledAt: now },
+        });
+        await recordOrganizationAudit(tx, {
+          organizationId: transfer.organizationId,
+          groupId: null,
+          actorUserId: user.id,
+          action: "OWNER_TRANSFER_CANCELLED",
+          entityType: "organization_owner_transfer",
+          entityId: transfer.id,
+          correlationId: transfer.id,
+          fromUserId: transfer.fromUserId,
+          toUserId: transfer.toUserId,
+          metadata: { transferId: transfer.id },
+          ip: req.headers.get("x-forwarded-for") ?? req.headers.get("x-real-ip") ?? null,
+          userAgent: req.headers.get("user-agent"),
+        });
+        const outbox = await recordOutboxEvent(
+          {
+            eventType: "organization.owner_transfer.cancelled",
+            payload: {
+              transferId: transfer.id,
+              organizationId: transfer.organizationId,
+              fromUserId: transfer.fromUserId,
+              toUserId: transfer.toUserId,
+            },
+            correlationId: transfer.id,
+          },
+          tx,
+        );
+        await appendEventLog(
+          {
+            eventId: outbox.eventId,
+            organizationId: transfer.organizationId,
+            eventType: "organization.owner_transfer.cancelled",
+            idempotencyKey: outbox.eventId,
+            payload: {
+              transferId: transfer.id,
+              fromUserId: transfer.fromUserId,
+              toUserId: transfer.toUserId,
+            },
+            actorUserId: user.id,
+            sourceId: String(transfer.organizationId),
+            correlationId: transfer.id,
+          },
+          tx,
+        );
       });
       return NextResponse.json({ ok: false, error: "TRANSFER_NO_LONGER_VALID" }, { status: 400 });
     }
 
-    const [organization, toProfile] = await Promise.all([
-      prisma.organization.findUnique({
-        where: { id: transfer.organizationId },
-        select: { publicName: true, username: true },
-      }),
-      prisma.profile.findUnique({
-        where: { id: transfer.toUserId },
-        select: { fullName: true, username: true },
-      }),
-    ]);
+    const organization = await prisma.organization.findUnique({
+      where: { id: transfer.organizationId },
+      select: { id: true, publicName: true, username: true, groupId: true },
+    });
     const ip = req.headers.get("x-forwarded-for") ?? req.headers.get("x-real-ip") ?? null;
 
     await prisma.$transaction(async (tx) => {
@@ -94,40 +184,51 @@ export async function POST(req: NextRequest) {
 
       await recordOrganizationAudit(tx, {
         organizationId: transfer.organizationId,
+        groupId: organization?.groupId ?? null,
         actorUserId: user.id,
         action: "OWNER_TRANSFER_CONFIRMED",
+        entityType: "organization_owner_transfer",
+        entityId: transfer.id,
+        correlationId: transfer.id,
         fromUserId: transfer.fromUserId,
         toUserId: transfer.toUserId,
-        metadata: { transferId: transfer.id, token: transfer.token },
+        metadata: { transferId: transfer.id },
         ip,
         userAgent: req.headers.get("user-agent"),
       });
-    });
 
-    // Notificar o antigo OWNER (best-effort)
-    const organizationName = organization?.publicName || organization?.username || "Organização ORYA";
-    const toName = toProfile?.fullName || toProfile?.username || "novo OWNER";
-    const baseUrl = getAppBaseUrl();
-    try {
-      const fromUser = await supabaseAdmin.auth.admin.getUserById(transfer.fromUserId);
-      const fromEmail = fromUser.data?.user?.email ?? null;
-      if (fromEmail) {
-        await sendEmail({
-          to: fromEmail,
-          subject: `✅ Transferência concluída – ${organizationName}`,
-          html: `<div style="font-family: Arial, sans-serif; color:#0f172a;">
-            <h2>Transferência de OWNER concluída</h2>
-            <p>O papel de OWNER em <strong>${organizationName}</strong> foi assumido por <strong>${toName}</strong>.</p>
-            <p>Podes rever o staff aqui: <a href="${baseUrl}/organizacao?tab=manage&section=staff" style="color:#2563eb;">Ver staff</a></p>
-          </div>`,
-          text: `Transferência de OWNER concluída\n${organizationName}\nNovo OWNER: ${toName}\nStaff: ${baseUrl}/organizacao?tab=manage&section=staff`,
-        });
-      } else {
-        console.warn("[owner/confirm] fromUser sem email para notificar", { fromUserId: transfer.fromUserId });
-      }
-    } catch (emailErr) {
-      console.error("[owner/confirm] Falha ao notificar antigo OWNER", emailErr);
-    }
+      const outbox = await recordOutboxEvent(
+        {
+          eventType: "organization.owner_transfer.confirmed",
+          payload: {
+            transferId: transfer.id,
+            organizationId: transfer.organizationId,
+            fromUserId: transfer.fromUserId,
+            toUserId: transfer.toUserId,
+          },
+          correlationId: transfer.id,
+        },
+        tx,
+      );
+
+      await appendEventLog(
+        {
+          eventId: outbox.eventId,
+          organizationId: transfer.organizationId,
+          eventType: "organization.owner_transfer.confirmed",
+          idempotencyKey: outbox.eventId,
+          payload: {
+            transferId: transfer.id,
+            fromUserId: transfer.fromUserId,
+            toUserId: transfer.toUserId,
+          },
+          actorUserId: user.id,
+          sourceId: String(transfer.organizationId),
+          correlationId: transfer.id,
+        },
+        tx,
+      );
+    });
 
     return NextResponse.json({ ok: true }, { status: 200 });
   } catch (err) {

@@ -6,6 +6,7 @@ import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureCrmModuleAccess } from "@/lib/crm/access";
 import { LoyaltyRuleTrigger, OrganizationMemberRole } from "@prisma/client";
+import { validateLoyaltyRuleLimits } from "@/lib/loyalty/guardrails";
 
 const READ_ROLES = Object.values(OrganizationMemberRole);
 
@@ -123,6 +124,11 @@ export async function POST(req: NextRequest) {
       maxPointsPerUserRaw !== null && maxPointsPerUserRaw >= 1 ? Math.floor(maxPointsPerUserRaw) : null;
     const isActive = typeof payload?.isActive === "boolean" ? payload.isActive : true;
     const conditions = payload?.conditions && typeof payload.conditions === "object" ? payload.conditions : {};
+
+    const guardrails = validateLoyaltyRuleLimits({ points, maxPointsPerDay, maxPointsPerUser });
+    if (!guardrails.ok) {
+      return NextResponse.json({ ok: false, error: guardrails.error }, { status: 400 });
+    }
 
     const rule = await prisma.loyaltyRule.create({
       data: {

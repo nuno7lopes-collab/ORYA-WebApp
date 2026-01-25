@@ -207,7 +207,7 @@ export async function ensureEntriesForConfirmedPairing(pairingId: number) {
       targetSize: bracketSize ?? null,
       forceGenerate: false,
     });
-    await prisma.tournamentAuditLog.create({
+    await prisma.tournamentAuditLog["create"]({
       data: {
         tournamentId: tournament.id,
         userId: null,

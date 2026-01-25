@@ -1,67 +1,12 @@
-import { prisma } from "./prisma";
-import type { NotificationPriority, NotificationType } from "@prisma/client";
+import type { NotificationType } from "@prisma/client";
+import { enqueueNotification } from "@/domain/notifications/outbox";
+import { getNotificationPrefs, shouldNotify } from "@/domain/notifications/prefs";
+import type { CreateNotificationInput } from "@/domain/notifications/types";
 
-export type CreateNotificationInput = {
-  userId: string;
-  type: NotificationType;
-  title?: string | null;
-  body?: string | null;
-  payload?: Record<string, unknown> | null;
-  ctaUrl?: string | null;
-  ctaLabel?: string | null;
-  priority?: NotificationPriority;
-  senderVisibility?: "PUBLIC" | "PRIVATE";
-  fromUserId?: string | null;
-  organizationId?: number | null;
-  eventId?: number | null;
-  ticketId?: string | null;
-  inviteId?: string | null;
-};
+export type { CreateNotificationInput };
 
-export async function shouldNotify(userId: string, type: NotificationType) {
-  const prefs = await getNotificationPrefs(userId);
-  switch (type) {
-    case "EVENT_SALE":
-      return prefs.allowSalesAlerts;
-    case "FOLLOW_REQUEST":
-    case "FOLLOW_ACCEPT":
-      return prefs.allowFollowRequests;
-    case "FOLLOWED_YOU":
-      return prefs.allowFollowRequests;
-    case "SYSTEM_ANNOUNCE":
-    case "STRIPE_STATUS":
-    case "CHAT_OPEN":
-    case "CHAT_ANNOUNCEMENT":
-      return prefs.allowSystemAnnouncements;
-    case "EVENT_REMINDER":
-    case "NEW_EVENT_FROM_FOLLOWED_ORGANIZATION":
-      return prefs.allowEventReminders;
-    case "CRM_CAMPAIGN":
-    case "MARKETING_PROMO_ALERT":
-      return prefs.allowMarketingCampaigns;
-    default:
-      return true;
-  }
-}
-
-function sanitizeActor(
-  actor: any,
-  options: { isPrivate?: boolean; viewerId?: string | null },
-) {
-  if (!actor || typeof actor !== "object") return actor;
-  const isSelf = options.viewerId && actor.id === options.viewerId;
-  if (isSelf) return actor;
-  if (!("email" in actor)) return actor;
-  return { ...actor, email: null };
-}
-
-function sanitizePayload(payload: any, opts: { senderVisibility?: "PUBLIC" | "PRIVATE"; viewerId?: string | null }) {
-  if (!payload || typeof payload !== "object") return payload;
-  const clone: Record<string, unknown> = { ...payload };
-  if (clone.actor) {
-    clone.actor = sanitizeActor(clone.actor, { isPrivate: opts.senderVisibility === "PRIVATE", viewerId: opts.viewerId });
-  }
-  return clone;
+function buildDedupe(parts: Array<string | number | null | undefined>) {
+  return ["notification", ...parts.map((p) => (p === null || p === undefined ? "null" : String(p)))].join(":");
 }
 
 export async function createNotification(input: CreateNotificationInput) {
@@ -82,42 +27,28 @@ export async function createNotification(input: CreateNotificationInput) {
     inviteId = null,
   } = input;
 
-  const data = {
-    userId,
-    type,
+  const dedupeKey = buildDedupe([type, userId, organizationId, eventId, ticketId, inviteId, fromUserId]);
+  const payloadJson = {
     title: title ?? null,
     body: body ?? null,
-    payload: payload ? sanitizePayload(payload, { senderVisibility, viewerId: userId }) : undefined,
-    ctaUrl: ctaUrl || undefined,
-    ctaLabel: ctaLabel || undefined,
+    ctaUrl: ctaUrl ?? null,
+    ctaLabel: ctaLabel ?? null,
     priority,
-    fromUserId: fromUserId || undefined,
-    organizationId: organizationId ?? undefined,
-    eventId: eventId ?? undefined,
-    ticketId: ticketId ?? undefined,
-    inviteId: inviteId ?? undefined,
+    senderVisibility,
+    fromUserId,
+    organizationId,
+    eventId,
+    ticketId,
+    inviteId,
+    payload: payload ?? null,
   };
 
-  return prisma.notification.create({ data });
-}
-
-export async function getNotificationPrefs(userId: string) {
-  const existing = await prisma.notificationPreference.findUnique({ where: { userId } });
-  if (existing) return existing;
-
-  const defaults = {
+  return enqueueNotification({
+    dedupeKey,
     userId,
-    allowEmailNotifications: true,
-    allowEventReminders: true,
-    allowFollowRequests: true,
-    allowSalesAlerts: true,
-    allowSystemAnnouncements: true,
-    allowMarketingCampaigns: true,
-  };
-
-  return prisma.notificationPreference.upsert({
-    where: { userId },
-    update: {},
-    create: defaults,
+    notificationType: type,
+    payload: payloadJson,
   });
 }
+
+export { shouldNotify, getNotificationPrefs };

@@ -3,6 +3,7 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { OrganizationMemberRole, Prisma } from "@prisma/client";
+import { resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
 
 const UNDO_WINDOW_MS = 60 * 1000;
 
@@ -24,10 +25,7 @@ async function getOrganizationRole(userId: string, eventId: number) {
     profile?.onboardingDone ||
     (Boolean(profile?.fullName?.trim()) && Boolean(profile?.username?.trim()));
   if (!hasUserOnboarding) return null;
-  const member = await prisma.organizationMember.findFirst({
-    where: { organizationId: evt.organizationId, userId },
-    select: { role: true },
-  });
+  const member = await resolveGroupMemberForOrg({ organizationId: evt.organizationId, userId });
   return member?.role ?? null;
 }
 
@@ -116,7 +114,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
       }
     }
 
-    await tx.tournamentAuditLog.create({
+    await tx.tournamentAuditLog["create"]({
       data: {
         tournamentId,
         userId: data.user.id,

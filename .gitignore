@@ -41,6 +41,7 @@ yarn-error.log*
 Arquivo*.zip
 Arquivo.zip
 11.7.0
+.cache/
 
 # nested web app artifacts
 /web/.next/

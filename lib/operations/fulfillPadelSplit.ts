@@ -4,10 +4,10 @@ import {
   CrmInteractionType,
   EntitlementStatus,
   EntitlementType,
-  PadelPairingLifecycleStatus,
   PadelPairingPaymentStatus,
   PadelPairingSlotStatus,
   PadelPaymentMode,
+  PadelRegistrationStatus,
   PaymentEventSource,
   Prisma,
 } from "@prisma/client";
@@ -16,6 +16,8 @@ import { ensureEntriesForConfirmedPairing } from "@/domain/tournaments/ensureEnt
 import { queuePartnerPaid } from "@/domain/notifications/splitPayments";
 import { checkoutKey } from "@/lib/stripe/idempotency";
 import { ingestCrmInteraction } from "@/lib/crm/ingest";
+import { getLatestPolicyVersionForEvent } from "@/lib/checkin/accessPolicy";
+import { upsertPadelRegistrationForPairing } from "@/domain/padelRegistration";
 
 type IntentLike = {
   id: string;
@@ -273,6 +275,7 @@ export async function fulfillPadelSplitIntent(intent: IntentLike, stripeFeeForIn
       });
     }
 
+    const policyVersionApplied = await getLatestPolicyVersionForEvent(eventId, tx);
     const ownerKey = ownerUserId
       ? `user:${ownerUserId}`
       : ownerIdentityId
@@ -296,6 +299,7 @@ export async function fulfillPadelSplitIntent(intent: IntentLike, stripeFeeForIn
         ownerUserId: ownerUserId ?? null,
         ownerIdentityId: ownerIdentityId ?? null,
         eventId,
+        policyVersionApplied,
         snapshotTitle: event.title,
         snapshotCoverUrl: event.coverImageUrl,
         snapshotVenueName: event.locationName,
@@ -313,6 +317,7 @@ export async function fulfillPadelSplitIntent(intent: IntentLike, stripeFeeForIn
         type: EntitlementType.PADEL_ENTRY,
         status: EntitlementStatus.ACTIVE,
         eventId,
+        policyVersionApplied,
         snapshotTitle: event.title,
         snapshotCoverUrl: event.coverImageUrl,
         snapshotVenueName: event.locationName,
@@ -374,16 +379,18 @@ export async function fulfillPadelSplitIntent(intent: IntentLike, stripeFeeForIn
     });
 
     const allPaid = updated.slots.every((s) => s.paymentStatus === PadelPairingPaymentStatus.PAID);
-    const nextLifecycle = allPaid
-      ? PadelPairingLifecycleStatus.CONFIRMED_BOTH_PAID
-      : PadelPairingLifecycleStatus.PENDING_PARTNER_PAYMENT;
-    if (updated.lifecycleStatus !== nextLifecycle) {
-      updated = await tx.padelPairing.update({
-        where: { id: pairingId },
-        data: { lifecycleStatus: nextLifecycle },
-        include: { slots: true },
-      });
-    }
+    const nextRegistrationStatus = allPaid
+      ? PadelRegistrationStatus.CONFIRMED
+      : PadelRegistrationStatus.PENDING_PAYMENT;
+    await upsertPadelRegistrationForPairing(tx, {
+      pairingId,
+      organizationId: updated.organizationId,
+      eventId: updated.eventId,
+      status: nextRegistrationStatus,
+      paymentMode: updated.payment_mode,
+      isFullyPaid: allPaid,
+      reason: "PAYMENT_WEBHOOK",
+    });
 
     const stillPending = updated.slots.some((s) => s.slotStatus === "PENDING" || s.paymentStatus === "UNPAID");
     if (!stillPending && updated.pairingStatus !== "COMPLETE") {

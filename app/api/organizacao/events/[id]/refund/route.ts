@@ -3,10 +3,11 @@ import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
-import { canManageEvents } from "@/lib/organizationPermissions";
+import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { refundPurchase } from "@/lib/refunds/refundService";
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
-import { EntitlementStatus, RefundReason } from "@prisma/client";
+import { OrganizationModule, RefundReason } from "@prisma/client";
+import { mapV7StatusToLegacy } from "@/lib/entitlements/status";
 
 const ALLOWED_REASONS: RefundReason[] = ["CANCELLED", "DELETED", "DATE_CHANGED"];
 
@@ -48,7 +49,18 @@ export async function POST(
       organizationId: event.organizationId,
     });
 
-    if (!organization || !membership || !canManageEvents(membership.role)) {
+    if (!organization || !membership) {
+      return NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 });
+    }
+    const access = await ensureMemberModuleAccess({
+      organizationId: organization.id,
+      userId: user.id,
+      role: membership.role,
+      rolePack: membership.rolePack,
+      moduleKey: OrganizationModule.FINANCEIRO,
+      required: "EDIT",
+    });
+    if (!access.ok) {
       return NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 });
     }
 
@@ -88,7 +100,7 @@ export async function POST(
 
     await prisma.entitlement.updateMany({
       where: { purchaseId },
-      data: { status: EntitlementStatus.REFUNDED },
+      data: { status: mapV7StatusToLegacy("REVOKED") },
     });
 
     await recordOrganizationAudit(prisma, {

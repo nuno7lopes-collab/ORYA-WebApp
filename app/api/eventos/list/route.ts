@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
+import { deriveIsFreeEvent } from "@/domain/events/derivedIsFree";
 
 const DEFAULT_PAGE_SIZE = 12;
 
@@ -35,7 +36,7 @@ export async function GET(req: NextRequest) {
       overrides: Record<string, unknown> | null;
     };
     coverImageUrl: string | null;
-    isFree: boolean;
+    isGratis: boolean;
     priceFrom: number | null;
     category: string | null;
     tags: string[];
@@ -71,12 +72,6 @@ export async function GET(req: NextRequest) {
           OR: [{ templateType: { not: "PADEL" } }, { templateType: null }],
         });
       }
-    }
-
-    if (typeFilter === "free") {
-      filters.push({ isFree: true });
-    } else if (typeFilter === "paid") {
-      filters.push({ isFree: false });
     }
 
     if (search && search.trim().length > 0) {
@@ -130,11 +125,15 @@ export async function GET(req: NextRequest) {
       nextCursor = next?.id ?? null;
     }
 
-    items = events.map((e) => {
+    let mapped = events.map((e) => {
       const priceFrom =
         e.ticketTypes && e.ticketTypes.length > 0
           ? Math.min(...e.ticketTypes.map((t) => t.price ?? 0)) / 100
           : null;
+      const isGratis = deriveIsFreeEvent({
+        pricingMode: e.pricingMode ?? undefined,
+        ticketPrices: e.ticketTypes?.map((t) => t.price ?? 0) ?? [],
+      });
 
       const onSaleCount = e.ticketTypes?.filter((t) => t.status === "ON_SALE").length ?? 0;
       const soldOutCount = e.ticketTypes?.filter((t) => t.status === "SOLD_OUT").length ?? 0;
@@ -164,7 +163,7 @@ export async function GET(req: NextRequest) {
               : null,
         },
         coverImageUrl: e.coverImageUrl ?? null,
-        isFree: e.isFree,
+        isGratis,
         priceFrom,
         category: e.templateType ?? null,
         tags: [],
@@ -180,6 +179,14 @@ export async function GET(req: NextRequest) {
         },
       };
     });
+
+    if (typeFilter === "free") {
+      mapped = mapped.filter((item) => item.isGratis);
+    } else if (typeFilter === "paid") {
+      mapped = mapped.filter((item) => !item.isGratis);
+    }
+
+    items = mapped;
   } catch (error) {
     console.error("[api/eventos/list] Erro ao carregar eventos, fallback para lista vazia:", error);
     items = [];

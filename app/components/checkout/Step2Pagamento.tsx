@@ -214,8 +214,8 @@ export default function Step2Pagamento() {
   const safeDados: CheckoutData | null =
     dados && typeof dados === "object" ? (dados as CheckoutData) : null;
   const scenario = safeDados?.paymentScenario ?? cachedIntent?.paymentScenario ?? null;
-  const isFreeScenario = scenario === "FREE_CHECKOUT";
-  const needsStripe = !isFreeScenario;
+  const isGratisScenario = scenario === "FREE_CHECKOUT";
+  const needsStripe = !isGratisScenario;
   const pairingId =
     safeDados?.additional && typeof safeDados.additional === "object"
       ? (safeDados.additional as Record<string, unknown>).pairingId
@@ -257,7 +257,7 @@ export default function Step2Pagamento() {
   // - Podemos forçar via additional.requiresAuth (SSOT no futuro)
   const requiresAuth =
     Boolean((additionalForRules as Record<string, unknown>)?.requiresAuth) ||
-    isFreeScenario ||
+    isGratisScenario ||
     scenario === "GROUP_SPLIT";
 
   useEffect(() => {
@@ -866,7 +866,7 @@ export default function Step2Pagamento() {
               const freeCopy =
                 respCode === "AUTH_REQUIRED_FOR_GROUP_SPLIT"
                   ? "Para pagar apenas a tua parte tens de iniciar sessão."
-                  : isFreeScenario
+                  : isGratisScenario
                     ? "Checkouts gratuitos exigem conta com username. Cria conta ou entra para continuar."
                     : "Este tipo de checkout requer sessão iniciada.";
               setAuthInfo(freeCopy);
@@ -1122,7 +1122,7 @@ export default function Step2Pagamento() {
             return;
           }
 
-          if (data.freeCheckout || data.isFreeCheckout || statusFromResponse === "PAID") {
+          if (data.freeCheckout || data.isGratisCheckout || statusFromResponse === "PAID") {
             const totalCents = totalCentsNumber ?? 0;
             setBreakdown(breakdownFromResponse);
             setAppliedDiscount(discountCentsNumber > 0 ? discountCentsNumber / 100 : 0);
@@ -1403,7 +1403,7 @@ export default function Step2Pagamento() {
 
   const showPaymentUI =
     (!authChecking && Boolean(userId)) ||
-    (!isFreeScenario && purchaseMode === "guest" && guestSubmitVersion > 0);
+    (!isGratisScenario && purchaseMode === "guest" && guestSubmitVersion > 0);
 
   const handleRemovePromo = () => {
     setPromoCode("");
@@ -1444,10 +1444,10 @@ export default function Step2Pagamento() {
             Passo 2 de 3
           </p>
           <h2 className="text-2xl font-semibold leading-tight">
-            {isFreeScenario ? freeHeaderLabel : "Pagamento"}
+            {isGratisScenario ? freeHeaderLabel : "Pagamento"}
           </h2>
           <p className="text-[11px] text-white/60 max-w-xs">
-            {isFreeScenario
+            {isGratisScenario
               ? freeDescription
               : "Pagamento seguro processado pela Stripe."}
           </p>
@@ -1503,10 +1503,10 @@ export default function Step2Pagamento() {
                 <div className="absolute inset-0 h-14 w-14 animate-pulse rounded-full border border-[#6BFFFF]/20" />
               </div>
               <h3 className="text-sm font-semibold mb-1 animate-pulse">
-                {isFreeScenario ? freePrepLabel : "A preparar o teu pagamento…"}
+                {isGratisScenario ? freePrepLabel : "A preparar o teu pagamento…"}
               </h3>
               <p className="text-[11px] text-white/65 max-w-xs leading-relaxed">
-                {isFreeScenario
+                {isGratisScenario
                   ? freeConfirmLabel
                   : "Estamos a ligar-te à Stripe para criar uma transação segura."}
               </p>
@@ -1601,7 +1601,7 @@ export default function Step2Pagamento() {
                   </div>
                 )}
               </div>
-              {!isFreeScenario && (
+              {!isGratisScenario && (
                 <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 space-y-3">
                   <div className="flex items-center justify-between text-[11px] text-white/70">
                     <span className="uppercase tracking-[0.16em]">Método de pagamento</span>
@@ -2177,6 +2177,42 @@ function AuthWall({ onAuthenticated, ticketPluralWithArticle }: AuthWallProps) {
     }
   }
 
+  async function handleApple() {
+    setSubmitting(true);
+    setError(null);
+    try {
+      const redirectTo =
+        typeof window !== "undefined"
+          ? (() => {
+              const currentPath = `${window.location.pathname}${window.location.search}`;
+              const safeRedirect = sanitizeRedirectPath(currentPath, "/");
+              return `${window.location.origin}/auth/callback?redirectTo=${encodeURIComponent(
+                safeRedirect
+              )}`;
+            })()
+          : undefined;
+      if (typeof window !== "undefined") {
+        try {
+          const currentPath = `${window.location.pathname}${window.location.search}`;
+          const safeRedirect = sanitizeRedirectPath(currentPath, "/");
+          localStorage.setItem("orya_post_auth_redirect", safeRedirect);
+        } catch {}
+      }
+      const { error } = await supabaseBrowser.auth.signInWithOAuth({
+        provider: "apple",
+        options: { redirectTo },
+      });
+      if (error) {
+        setError(error.message ?? "Não foi possível iniciar sessão com Apple.");
+      }
+    } catch (err) {
+      console.error("[AuthWall] Apple OAuth error:", err);
+      setError("Não foi possível iniciar sessão com Apple.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSubmitting(true);
@@ -2473,6 +2509,14 @@ function AuthWall({ onAuthenticated, ticketPluralWithArticle }: AuthWallProps) {
           className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-white/20 bg-black/50 px-6 py-2.5 text-xs font-semibold text-white shadow hover:border-white/40 hover:bg-black/60 transition-colors disabled:opacity-50"
         >
           <span>Continuar com Google</span>
+        </button>
+        <button
+          type="button"
+          onClick={handleApple}
+          disabled={submitting}
+          className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-full border border-white/20 bg-black/50 px-6 py-2.5 text-xs font-semibold text-white shadow hover:border-white/40 hover:bg-black/60 transition-colors disabled:opacity-50"
+        >
+          <span>Continuar com Apple</span>
         </button>
 
         <button

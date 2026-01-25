@@ -43,6 +43,7 @@ export async function enqueueNotification(params: EnqueueParams) {
       templateVersion: templateVersion ?? null,
       payload,
       status: "PENDING",
+      nextAttemptAt: null,
     },
     update: {
       userId: userId ?? null,
@@ -53,6 +54,7 @@ export async function enqueueNotification(params: EnqueueParams) {
       retries: 0,
       lastError: null,
       sentAt: null,
+      nextAttemptAt: null,
     },
   });
 }

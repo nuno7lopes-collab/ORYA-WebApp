@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { clearUsernameForOwner } from "@/lib/globalUsernames";
+import { resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
 
 export async function DELETE(_req: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
@@ -21,10 +22,7 @@ export async function DELETE(_req: NextRequest, context: { params: Promise<{ id:
       return NextResponse.json({ ok: false, error: "INVALID_ORGANIZATION_ID" }, { status: 400 });
     }
 
-    const membership = await prisma.organizationMember.findUnique({
-      where: { organizationId_userId: { organizationId, userId: user.id } },
-    });
-
+    const membership = await resolveGroupMemberForOrg({ organizationId, userId: user.id });
     if (!membership || membership.role !== "OWNER") {
       return NextResponse.json({ ok: false, error: "ONLY_OWNER_CAN_DELETE" }, { status: 403 });
     }

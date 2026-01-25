@@ -3,6 +3,10 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { TournamentFormat } from "@prisma/client";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
+import { getActiveOrganizationForUser } from "@/lib/organizationContext";
+import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
+import { OrganizationModule } from "@prisma/client";
+import { createTournamentForEvent } from "@/domain/tournaments/commands";
 
 async function ensureOrganizationAccess(userId: string, eventId: number) {
   const evt = await prisma.event.findUnique({
@@ -23,15 +27,20 @@ async function ensureOrganizationAccess(userId: string, eventId: number) {
     profile?.onboardingDone ||
     (Boolean(profile?.fullName?.trim()) && Boolean(profile?.username?.trim()));
   if (!hasUserOnboarding) return false;
-  const member = await prisma.organizationMember.findFirst({
-    where: {
-      organizationId: evt.organizationId,
-      userId,
-      role: { in: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"] },
-    },
-    select: { id: true },
+  const { membership } = await getActiveOrganizationForUser(userId, {
+    organizationId: evt.organizationId,
+    roles: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"],
   });
-  return Boolean(member);
+  if (!membership) return false;
+  const access = await ensureMemberModuleAccess({
+    organizationId: evt.organizationId,
+    userId,
+    role: membership.role,
+    rolePack: membership.rolePack,
+    moduleKey: OrganizationModule.TORNEIOS,
+    required: "EDIT",
+  });
+  return access.ok;
 }
 
 export async function POST(req: NextRequest) {
@@ -66,16 +75,20 @@ export async function POST(req: NextRequest) {
   const bracketSize = Number.isFinite(body?.bracketSize) ? Number(body.bracketSize) : null;
 
   const config = bracketSize ? { bracketSize } : {};
-  const tournament = await prisma.tournament.create({
-    data: {
-      eventId: event.id,
-      format,
-      config,
-    },
-    select: { id: true },
+  const result = await createTournamentForEvent({
+    eventId: event.id,
+    format,
+    config,
+    actorUserId: authData.user.id,
   });
+  if (!result.ok) {
+    return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
+  }
 
-  const res = NextResponse.json({ ok: true, tournamentId: tournament.id, created: true }, { status: 200 });
+  const res = NextResponse.json(
+    { ok: true, tournamentId: result.tournamentId, created: result.created },
+    { status: 200 }
+  );
   res.headers.set("Cache-Control", "no-store");
   return res;
 }

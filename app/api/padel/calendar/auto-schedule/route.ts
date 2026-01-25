@@ -1,20 +1,20 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
-import { OrganizationMemberRole } from "@prisma/client";
+import { OrganizationMemberRole, SourceType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromParams } from "@/lib/organizationId";
-import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
 import { computeAutoSchedulePlan } from "@/domain/padel/autoSchedule";
+import { recordOutboxEvent } from "@/domain/outbox/producer";
+import { appendEventLog } from "@/domain/eventLog/append";
 
 const allowedRoles: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
 const DEFAULT_DURATION_MINUTES = 60;
 const DEFAULT_SLOT_MINUTES = 15;
 const DEFAULT_BUFFER_MINUTES = 5;
 const DEFAULT_REST_MINUTES = 10;
-const LOCK_TTL_SECONDS = 75;
 
 const parseDate = (value: unknown) => {
   if (typeof value !== "string") return null;
@@ -207,13 +207,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "NO_COURTS_CONFIGURED" }, { status: 400 });
   }
 
-  const lockKey = `padel_auto_schedule_${event.id}`;
-  const lock = await acquireLock(lockKey);
-  if (!lock) {
-    return NextResponse.json({ ok: false, error: "LOCKED" }, { status: 423 });
-  }
-
-  try {
+  {
     const unscheduledMatchesRaw = await prisma.padelMatch.findMany({
       where: {
         eventId: event.id,
@@ -425,33 +419,54 @@ export async function POST(req: NextRequest) {
     });
     const skipped = scheduleResult.skipped;
 
+    let outboxEventId: string | null = null;
     if (!dryRun && scheduledUpdates.length > 0) {
-      await prisma.$transaction(
-        scheduledUpdates.map((update) =>
-          prisma.padelMatch.update({
-            where: { id: update.matchId },
-            data: {
-              plannedStartAt: update.start,
-              plannedEndAt: update.end,
-              plannedDurationMinutes: update.durationMinutes,
-              courtId: update.courtId,
-              ...(update.score ? { score: update.score } : {}),
+      const outbox = await prisma.$transaction(async (tx) => {
+        const outbox = await recordOutboxEvent(
+          {
+            eventType: "PADEL_AUTO_SCHEDULE_REQUESTED",
+            payload: {
+              eventId: event.id,
+              organizationId: organization.id,
+              actorUserId: check.userId,
+              scheduledUpdates: scheduledUpdates.map((update) => ({
+                matchId: update.matchId,
+                courtId: update.courtId,
+                start: update.start.toISOString(),
+                end: update.end.toISOString(),
+                durationMinutes: update.durationMinutes,
+                score: update.score ?? null,
+              })),
+              skipped,
+              matchIds: targetMatchIds ?? null,
+              requestedAt: new Date().toISOString(),
+              requestMeta: getRequestMeta(req),
             },
-          }),
-        ),
-      );
-      await recordOrganizationAuditSafe({
-        organizationId: organization.id,
-        actorUserId: check.userId,
-        action: "PADEL_CALENDAR_AUTO_SCHEDULE",
-        metadata: {
-          eventId: event.id,
-          scheduledCount: scheduledUpdates.length,
-          skippedCount: skipped.length,
-          matchIds: targetMatchIds ?? null,
-        },
-        ...getRequestMeta(req),
+          },
+          tx,
+        );
+        await appendEventLog(
+          {
+            eventId: outbox.eventId,
+            organizationId: organization.id,
+            eventType: "PADEL_AUTO_SCHEDULE_REQUESTED",
+            idempotencyKey: outbox.eventId,
+            actorUserId: check.userId,
+            sourceType: SourceType.EVENT,
+            sourceId: String(event.id),
+            correlationId: outbox.eventId,
+            payload: {
+              eventId: event.id,
+              scheduledCount: scheduledUpdates.length,
+              skippedCount: skipped.length,
+              matchIds: targetMatchIds ?? null,
+            },
+          },
+          tx,
+        );
+        return outbox;
       });
+      outboxEventId = outbox.eventId;
     }
 
     return NextResponse.json(
@@ -463,6 +478,8 @@ export async function POST(req: NextRequest) {
         dryRun,
         priority,
         minRestMinutes,
+        queued: !dryRun && scheduledUpdates.length > 0,
+        eventId: outboxEventId,
         scheduled: dryRun
           ? scheduledUpdates.map((update) => ({
               matchId: update.matchId,
@@ -474,33 +491,5 @@ export async function POST(req: NextRequest) {
       },
       { status: 200 },
     );
-  } finally {
-    await releaseLock(lockKey);
   }
-}
-
-async function acquireLock(key: string, ttlSeconds = LOCK_TTL_SECONDS) {
-  const expiresAt = new Date(Date.now() + ttlSeconds * 1000);
-  try {
-    const lock = await prisma.lock.create({
-      data: { key, expiresAt },
-    });
-    return lock;
-  } catch {
-    const existing = await prisma.lock.findUnique({ where: { key }, select: { expiresAt: true } });
-    if (!existing) return null;
-    if (existing.expiresAt && existing.expiresAt < new Date()) {
-      await prisma.lock.delete({ where: { key } }).catch(() => null);
-      try {
-        return await prisma.lock.create({ data: { key, expiresAt } });
-      } catch {
-        return null;
-      }
-    }
-    return null;
-  }
-}
-
-async function releaseLock(key: string) {
-  await prisma.lock.delete({ where: { key } }).catch(() => null);
 }

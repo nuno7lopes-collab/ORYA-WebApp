@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
+import { mapRegistrationToPairingLifecycle } from "@/domain/padelRegistration";
+import { PadelRegistrationStatus } from "@prisma/client";
 
 export async function GET() {
   const supabase = await createSupabaseServer();
@@ -21,10 +23,10 @@ export async function GET() {
         select: {
           id: true,
           payment_mode: true,
-          lifecycleStatus: true,
           guaranteeStatus: true,
           partnerInvitedAt: true,
           partnerAcceptedAt: true,
+          registration: { select: { status: true } },
           slots: {
             select: {
               id: true,
@@ -48,17 +50,22 @@ export async function GET() {
           : "SINGLE";
 
     let nextAction: "NONE" | "PAY_PARTNER" | "CONFIRM_GUARANTEE" | "VIEW_LIVE" = "NONE";
-    if (pairing?.lifecycleStatus === "PENDING_PARTNER_PAYMENT") nextAction = "PAY_PARTNER";
+    const lifecycleStatus = pairing
+      ? mapRegistrationToPairingLifecycle(
+          pairing.registration?.status ?? PadelRegistrationStatus.PENDING_PARTNER,
+          pairing.payment_mode,
+        )
+      : null;
+    if (lifecycleStatus === "PENDING_PARTNER_PAYMENT") nextAction = "PAY_PARTNER";
     if (pairing?.guaranteeStatus === "REQUIRES_ACTION") nextAction = "CONFIRM_GUARANTEE";
     if (!pairing && entry.event?.slug) nextAction = "VIEW_LIVE";
     if (nextAction === "NONE" && entry.event?.slug) nextAction = "VIEW_LIVE";
 
-    const isCancelled =
-      pairing?.pairingStatus === "CANCELLED" || pairing?.lifecycleStatus === "CANCELLED_INCOMPLETE";
+    const isCancelled = pairing?.pairingStatus === "CANCELLED" || lifecycleStatus === "CANCELLED_INCOMPLETE";
     const isComplete = pairing?.pairingStatus === "COMPLETE";
     const paymentStatusLabel = isCancelled
       ? "Cancelado"
-      : pairing?.lifecycleStatus === "PENDING_PARTNER_PAYMENT"
+      : lifecycleStatus === "PENDING_PARTNER_PAYMENT"
         ? "À espera do parceiro"
         : isComplete
           ? "Confirmado"

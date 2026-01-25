@@ -9,6 +9,7 @@ import { useUser } from "@/app/hooks/useUser";
 import { CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
 import { getEventCoverSuggestionIds, getEventCoverUrl, parseEventCoverToken } from "@/lib/eventCover";
 import { fetchGeoAutocomplete, fetchGeoDetails } from "@/lib/geo/client";
+import { AppleMapsLoader } from "@/app/components/maps/AppleMapsLoader";
 import type { GeoAutocompleteItem, GeoDetailsItem } from "@/lib/geo/provider";
 
 const TicketTypeStatus = {
@@ -114,7 +115,7 @@ type EventEditClientProps = {
     latitude?: number | null;
     longitude?: number | null;
     templateType: string | null;
-    isFree: boolean;
+    isGratis: boolean;
     inviteOnly: boolean;
     coverImageUrl: string | null;
     liveHubVisibility: LiveHubVisibility;
@@ -220,7 +221,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
     [templateType, organizationPrimaryModule],
   );
   const organizationId = event.organizationId ?? null;
-  const [isFree] = useState(event.isFree);
+  const [isGratis] = useState(event.isGratis);
   const [coverUrl, setCoverUrl] = useState<string | null>(event.coverImageUrl);
   const [coverCropFile, setCoverCropFile] = useState<File | null>(null);
   const [showCoverCropModal, setShowCoverCropModal] = useState(false);
@@ -281,7 +282,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
   );
   const steps = useMemo(
     () =>
-      isFree
+      isGratis
         ? [
             { key: "base", label: "Essenciais", desc: "Imagem e localização" },
             { key: "dates", label: "Datas & Local", desc: "Início e fim" },
@@ -292,16 +293,16 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
             { key: "dates", label: "Datas & Local", desc: "Início e fim" },
             { key: "tickets", label: ticketLabelPluralCap, desc: "Gestão e vendas" },
           ],
-    [isFree, ticketLabelPluralCap],
+    [isGratis, ticketLabelPluralCap],
   );
   const freeCapacity = useMemo(() => {
-    if (!isFree) return null;
+    if (!isGratis) return null;
     const total = ticketList.reduce((sum, t) => {
       if (t.totalQuantity == null) return sum;
       return sum + t.totalQuantity;
     }, 0);
     return total > 0 ? total : null;
-  }, [isFree, ticketList]);
+  }, [isGratis, ticketList]);
 
   const [newTicket, setNewTicket] = useState({
     name: "",
@@ -1054,7 +1055,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
           latitude: resolvedLocationSource === "OSM" ? locationLat : null,
           longitude: resolvedLocationSource === "OSM" ? locationLng : null,
           templateType,
-          isFree,
+          isGratis,
           inviteOnly: publicAccessMode === "INVITE",
           coverImageUrl: coverUrl,
           liveHubVisibility,
@@ -1515,8 +1516,8 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
         <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-3 text-sm text-white/75">
           <p className="font-semibold text-white">{primaryLabelTitle} grátis</p>
           <p className="text-[12px] text-white/65">
-            Estado: {isFree ? "grátis" : "pago"}.
-            {isFree && (
+            Estado: {isGratis ? "grátis" : "pago"}.
+            {isGratis && (
               <span className="block text-[12px] text-white/60 mt-1">
                 Vagas: {freeCapacity != null ? freeCapacity : "Sem limite"}.
               </span>
@@ -1963,9 +1964,9 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
             <div className="rounded-xl border border-white/10 bg-black/20 p-3 space-y-1">
               <p className="text-[11px] uppercase tracking-wide text-white/60">Estado</p>
               <p className="font-semibold">
-                {isFree ? `${primaryLabelTitle} grátis` : `${primaryLabelTitle} pago`}
+                {isGratis ? `${primaryLabelTitle} grátis` : `${primaryLabelTitle} pago`}
               </p>
-              {isFree && (
+              {isGratis && (
                 <p className="text-white/70">
                   Vagas/inscrições: {freeCapacity != null ? freeCapacity : "Sem limite definido"}.
                 </p>
@@ -1992,6 +1993,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
 
   return (
     <>
+      <AppleMapsLoader />
       <div className="space-y-6">
         {confirmId && (
           <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/70 backdrop-blur">
@@ -2040,7 +2042,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
               </p>
             </div>
             <div className="text-right text-[12px] text-white/60">
-              <p>Estado: {isFree ? "Grátis" : "Pago"}</p>
+              <p>Estado: {isGratis ? "Grátis" : "Pago"}</p>
               <p>Template: {templateLabel}</p>
             </div>
           </div>

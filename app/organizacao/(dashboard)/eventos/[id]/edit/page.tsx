@@ -3,11 +3,13 @@ import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
-import { canManageEvents } from "@/lib/organizationPermissions";
+import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
+import { OrganizationModule } from "@prisma/client";
 import { EventEditClient } from "@/app/organizacao/(dashboard)/eventos/EventEditClient";
 import { CTA_SECONDARY } from "@/app/organizacao/dashboardUi";
 import { AuthGate } from "@/app/components/autenticação/AuthGate";
 import { cn } from "@/lib/utils";
+import { deriveIsFreeEvent } from "@/domain/events/derivedIsFree";
 
 type PageProps = {
   params: Promise<{ id: string }>;
@@ -42,6 +44,10 @@ export default async function OrganizationEventEditPage({ params }: PageProps) {
   if (!event || !event.organizationId) notFound();
 
   const isPadelEvent = event.templateType === "PADEL";
+  const isGratis = deriveIsFreeEvent({
+    pricingMode: event.pricingMode ?? undefined,
+    ticketPrices: event.ticketTypes.map((t) => t.price ?? 0),
+  });
   const eventRouteBase = isPadelEvent ? "/organizacao/torneios" : "/organizacao/eventos";
   const primaryLabelTitle = isPadelEvent ? "Torneio" : "Evento";
   const fallbackHref = eventRouteBase;
@@ -53,7 +59,15 @@ export default async function OrganizationEventEditPage({ params }: PageProps) {
   if (!organization || !membership) {
     redirect("/organizacao");
   }
-  if (!canManageEvents(membership.role)) {
+  const access = await ensureMemberModuleAccess({
+    organizationId: event.organizationId,
+    userId: data.user.id,
+    role: membership.role,
+    rolePack: membership.rolePack,
+    moduleKey: OrganizationModule.EVENTOS,
+    required: "EDIT",
+  });
+  if (!access.ok) {
     redirect(fallbackHref);
   }
 
@@ -112,7 +126,7 @@ export default async function OrganizationEventEditPage({ params }: PageProps) {
           latitude: event.latitude,
           longitude: event.longitude,
           templateType: event.templateType,
-          isFree: event.isFree,
+          isGratis: isGratis,
           inviteOnly: event.inviteOnly,
           coverImageUrl: event.coverImageUrl,
           liveHubVisibility: event.liveHubVisibility,

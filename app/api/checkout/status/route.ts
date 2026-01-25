@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
-import { enqueueOperation } from "@/lib/operations/enqueue";
-import { runOperationsBatch } from "@/app/api/internal/worker/operations/route";
 
 type Status =
   | "PENDING"
@@ -16,8 +14,6 @@ type Status =
 const FINAL_STATUSES: Status[] = ["PAID", "FAILED", "REFUNDED", "DISPUTED"];
 const FREE_PLACEHOLDER_INTENT_ID = "FREE_CHECKOUT";
 const NO_STORE_HEADERS = { "Cache-Control": "no-store" };
-const STUCK_MS = 5 * 60 * 1000; // 5 minutos para considerar uma Operation presa
-
 function cleanParam(v: string | null) {
   const s = (v ?? "").trim();
   return s ? s : null;
@@ -103,61 +99,6 @@ export async function GET(req: NextRequest) {
           updatedAt: true,
         },
       });
-
-      const now = Date.now();
-      const opUpdatedAt = op?.updatedAt ? op.updatedAt.getTime() : 0;
-      const stuck =
-        op && (op.status === "PENDING" || op.status === "RUNNING") && now - opUpdatedAt > STUCK_MS;
-      const needsQueue = !op || op.status === "FAILED" || op.status === "DEAD_LETTER" || stuck;
-
-      // Auto-requeue para evitar ficar preso em PROCESSING
-      if (needsQueue && (paymentIntentId || purchaseId)) {
-        const dedupe = paymentIntentId ?? purchaseId!;
-        await enqueueOperation({
-          operationType: "FULFILL_PAYMENT",
-          dedupeKey: dedupe,
-          correlations: { purchaseId: purchaseId ?? null, paymentIntentId: paymentIntentId ?? null },
-          payload: { purchaseId, paymentIntentId },
-        });
-      }
-
-      // Auto-disparar worker em linha (mesmo em prod) mas com salvaguarda: até 3 batches
-      if (op && (op.status === "PENDING" || op.status === "RUNNING" || needsQueue)) {
-        for (let i = 0; i < 3; i++) {
-          try {
-            await runOperationsBatch();
-          } catch (err) {
-            console.warn("[checkout/status] auto-run worker falhou (ignorado)", err);
-            break;
-          }
-          // Após cada batch, verifica se o SaleSummary já existe para este purchase/paymentIntent
-          const summaryAfter = await prisma.saleSummary.findFirst({
-            where: {
-              OR: [
-                purchaseId ? { purchaseId } : undefined,
-                paymentIntentId ? { paymentIntentId } : undefined,
-              ].filter(Boolean) as Prisma.SaleSummaryWhereInput[],
-            },
-            select: { purchaseId: true, paymentIntentId: true },
-          });
-          if (summaryAfter) {
-            return NextResponse.json(
-              {
-                ok: true,
-                status: "PAID" as Status,
-                final: true,
-                purchaseId: summaryAfter.purchaseId ?? purchaseId ?? paymentIntentId,
-                paymentIntentId: summaryAfter.paymentIntentId ?? paymentIntentId,
-                code: "PAID",
-                retryable: false,
-                nextAction: "NONE",
-                errorMessage: null,
-              },
-              { status: 200, headers: NO_STORE_HEADERS },
-            );
-          }
-        }
-      }
 
       if (op) {
         const opStatusMap: Record<string, Status> = {

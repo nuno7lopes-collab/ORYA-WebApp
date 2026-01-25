@@ -16,6 +16,7 @@ import { checkPadelCategoryPlayerCapacity } from "@/domain/padelCategoryCapacity
 import { readNumericParam } from "@/lib/routeParams";
 import { getPadelOnboardingMissing, isPadelOnboardingComplete } from "@/domain/padelOnboarding";
 import { validatePadelCategoryAccess } from "@/domain/padelCategoryAccess";
+import { INACTIVE_REGISTRATION_STATUSES } from "@/domain/padelRegistration";
 
 // Apenas valida e delega criação de intent ao endpoint central (/api/payments/intent).
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -165,9 +166,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const existingActive = await prisma.padelPairing.findFirst({
     where: {
       eventId: pairing.event.id,
-      lifecycleStatus: { not: "CANCELLED_INCOMPLETE" },
       categoryId: pairing.categoryId ?? undefined,
-      OR: [{ player1UserId: user.id }, { player2UserId: user.id }],
+      AND: [
+        {
+          OR: [
+            { registration: { is: null } },
+            { registration: { status: { notIn: INACTIVE_REGISTRATION_STATUSES } } },
+          ],
+        },
+        { OR: [{ player1UserId: user.id }, { player2UserId: user.id }] },
+      ],
       NOT: { id: pairing.id },
     },
     select: { id: true },

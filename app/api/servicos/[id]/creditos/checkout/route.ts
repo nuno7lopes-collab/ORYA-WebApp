@@ -2,11 +2,12 @@ export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { stripe } from "@/lib/stripeClient";
+import { createPaymentIntent } from "@/domain/finance/gateway/stripeGateway";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { getPlatformFees, getStripeBaseFees } from "@/lib/platformSettings";
 import { computePricing } from "@/lib/pricing";
+import { SourceType } from "@prisma/client";
 import { computeCombinedFees } from "@/lib/fees";
 import { formatPaidSalesGateMessage, getPaidSalesGate } from "@/lib/organizationPayments";
 
@@ -173,7 +174,7 @@ export async function POST(
         grossAmountCents: String(totalCents),
         payoutAmountCents: String(payoutAmountCents),
         recipientConnectAccountId: isPlatformOrg ? "" : service.organization.stripeAccountId ?? "",
-        sourceType: "SERVICE_CREDITS",
+        sourceType: SourceType.STORE_ORDER,
         sourceId: purchaseId,
         currency,
         stripeFeeEstimateCents: String(stripeFeeEstimateCents),
@@ -181,7 +182,16 @@ export async function POST(
       description: `Créditos serviço ${service.id}`,
     } as const;
 
-    const intent = await stripe.paymentIntents.create(intentParams, { idempotencyKey: purchaseId });
+    const intent = await createPaymentIntent(intentParams, {
+      idempotencyKey: purchaseId,
+      requireStripe: !isPlatformOrg,
+      org: {
+        stripeAccountId: service.organization.stripeAccountId ?? null,
+        stripeChargesEnabled: service.organization.stripeChargesEnabled ?? false,
+        stripePayoutsEnabled: service.organization.stripePayoutsEnabled ?? false,
+        orgType: service.organization.orgType ?? null,
+      },
+    });
 
     return NextResponse.json({
       ok: true,

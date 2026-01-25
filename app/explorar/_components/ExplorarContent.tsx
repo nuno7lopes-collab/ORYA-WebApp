@@ -46,7 +46,7 @@ type ExploreItem = {
     overrides: Record<string, unknown> | null;
   };
   coverImageUrl: string | null;
-  isFree: boolean;
+  isGratis: boolean;
   priceFrom: number | null;
   categories: string[];
   hostName: string | null;
@@ -2001,7 +2001,7 @@ type PadelOpenPairingCardProps = {
 };
 
 function PriceBadge({ item }: { item: ExploreItem }) {
-  if (item.isFree) return <span className="text-emerald-200">Grátis</span>;
+  if (item.isGratis) return <span className="text-emerald-200">Grátis</span>;
   if (item.priceFrom !== null) return <span>Desde {item.priceFrom.toFixed(2)} €</span>;
   return <span>Preço a anunciar</span>;
 }
@@ -2338,7 +2338,7 @@ function BaseCard({
 
         <div className="mt-2 flex items-center justify-between text-[11px]">
           <span className="px-2 py-0.5 rounded-full bg-black/75 border border-white/22 text-white font-medium">
-            {item.isFree ? "Entrada gratuita" : "Bilhetes disponíveis"}
+            {item.isGratis ? "Entrada gratuita" : "Bilhetes disponíveis"}
           </span>
           <span className={status.className}>{status.text}</span>
         </div>

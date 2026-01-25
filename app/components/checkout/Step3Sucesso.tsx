@@ -72,7 +72,7 @@ export default function Step3Sucesso() {
       ? (additional.paymentScenario as string)
       : null);
 
-  const isFreeScenario = scenario === "FREE_CHECKOUT";
+  const isGratisScenario = scenario === "FREE_CHECKOUT";
 
   const paymentIntentId =
     additional && typeof additional.paymentIntentId === "string"
@@ -88,10 +88,10 @@ export default function Step3Sucesso() {
       : fallbackPurchaseId;
 
   useEffect(() => {
-    if (dados && !purchaseId && !isFreeScenario) {
+    if (dados && !purchaseId && !isGratisScenario) {
       router.replace("/explorar/eventos");
     }
-  }, [dados, router, purchaseId, isFreeScenario]);
+  }, [dados, router, purchaseId, isGratisScenario]);
 
   // Revalidar bilhetes após sucesso (traz novos bilhetes mais depressa)
   useEffect(() => {
@@ -185,15 +185,15 @@ export default function Step3Sucesso() {
   const totalEur = breakdown ? breakdown.totalCents / 100 : null;
 
   const initialStatus: "PROCESSING" | "PAID" | "FAILED" =
-    isFreeScenario ? "PAID" : purchaseId ? "PROCESSING" : "PROCESSING";
+    isGratisScenario ? "PAID" : purchaseId ? "PROCESSING" : "PROCESSING";
   const [status, setStatus] = useState<"PROCESSING" | "PAID" | "FAILED">(initialStatus);
 
   useEffect(() => {
-    if (isFreeScenario) setStatus("PAID");
-  }, [isFreeScenario]);
+    if (isGratisScenario) setStatus("PAID");
+  }, [isGratisScenario]);
 
   useEffect(() => {
-    if (!purchaseId || isFreeScenario) return;
+    if (!purchaseId || isGratisScenario) return;
 
     let cancelled = false;
     let interval: ReturnType<typeof setInterval> | null = null;
@@ -243,7 +243,7 @@ export default function Step3Sucesso() {
       cancelled = true;
       if (interval) clearInterval(interval);
     };
-  }, [purchaseId, isFreeScenario]);
+  }, [purchaseId, isGratisScenario]);
 
   if (!dados) {
     return (
@@ -262,7 +262,7 @@ export default function Step3Sucesso() {
     );
   }
 
-  if (!purchaseId && !isFreeScenario) {
+  if (!purchaseId && !isGratisScenario) {
     return null;
   }
 
@@ -281,7 +281,7 @@ export default function Step3Sucesso() {
       <div className="space-y-1">
         <h2 className="text-3xl font-semibold bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] bg-clip-text text-transparent">
           {status === "PAID"
-            ? isFreeScenario
+            ? isGratisScenario
               ? freeSuccessTitle
               : "Compra Confirmada 🎉"
             : status === "FAILED"
@@ -294,7 +294,7 @@ export default function Step3Sucesso() {
             : status === "PAID"
               ? guestEmail
                 ? `Obrigado! Enviámos ${ticketPluralWithArticle} para ${guestEmail}.`
-                : isFreeScenario
+                : isGratisScenario
                   ? `A tua ${freeLabelLower} está confirmada.`
                   : `Compra confirmada. Já podes ver ${ticketPluralWithArticle}.`
               : guestEmail

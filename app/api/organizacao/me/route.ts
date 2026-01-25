@@ -197,6 +197,7 @@ export async function GET(req: NextRequest) {
         paymentsStatus,
         paymentsMode: isPlatformAccount ? "PLATFORM" : "CONNECT",
         membershipRole: membership?.role ?? null,
+        membershipRolePack: membership?.rolePack ?? null,
         modulePermissions: memberPermissions,
       },
       { status: 200 }

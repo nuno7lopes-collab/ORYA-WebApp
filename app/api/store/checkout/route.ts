@@ -3,10 +3,10 @@ export const runtime = "nodejs";
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
-import { stripe } from "@/lib/stripeClient";
+import { createPaymentIntent } from "@/domain/finance/gateway/stripeGateway";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { isStoreFeatureEnabled, canCheckoutStore } from "@/lib/storeAccess";
-import { StoreAddressType, StoreOrderStatus, StoreStockPolicy } from "@prisma/client";
+import { SourceType, StoreAddressType, StoreOrderStatus, StoreStockPolicy } from "@prisma/client";
 import type { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { createPurchaseId } from "@/lib/checkoutSchemas";
@@ -732,7 +732,7 @@ export async function POST(req: NextRequest) {
 
     let intent;
     try {
-      intent = await stripe.paymentIntents.create(
+      intent = await createPaymentIntent(
         {
           amount: totalCents,
           currency: store.currency.toLowerCase(),
@@ -753,7 +753,7 @@ export async function POST(req: NextRequest) {
             promoCodeId: promoCodeId ? String(promoCodeId) : "",
             promoCode: promoCodeLabel ?? "",
             recipientConnectAccountId: organization && !isPlatformOrg ? organization.stripeAccountId ?? "" : "",
-            sourceType: "STORE_ORDER",
+            sourceType: SourceType.STORE_ORDER,
             sourceId: `store_order_${order.id}`,
             currency: store.currency,
             stripeFeeEstimateCents: String(stripeFeeEstimateCents),
@@ -763,7 +763,16 @@ export async function POST(req: NextRequest) {
           },
           description: order.orderNumber ? `Loja ${order.orderNumber}` : `Loja ${order.id}`,
         },
-        { idempotencyKey: purchaseId },
+        {
+          idempotencyKey: purchaseId,
+          requireStripe: !isPlatformOrg,
+          org: {
+            stripeAccountId: organization?.stripeAccountId ?? null,
+            stripeChargesEnabled: organization?.stripeChargesEnabled ?? null,
+            stripePayoutsEnabled: organization?.stripePayoutsEnabled ?? null,
+            orgType: organization?.orgType ?? null,
+          },
+        },
       );
     } catch (err) {
       await prisma.storeOrder.update({

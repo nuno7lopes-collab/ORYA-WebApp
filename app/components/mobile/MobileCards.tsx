@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { defaultBlurDataURL } from "@/lib/image";
+import { shareLink } from "@/lib/share/shareLink";
 
 type TagTone = "live" | "soon" | "default";
 
@@ -217,30 +218,14 @@ export function InvitePeopleCard({
   const [copied, setCopied] = useState(false);
 
   const handleShare = async () => {
-    const shareUrl = href;
-    const shareData = { title, text: description, url: shareUrl };
-    if (typeof navigator !== "undefined" && navigator.share) {
-      try {
-        await navigator.share(shareData);
-        return;
-      } catch {
-        // ignore share cancel
-      }
-    }
-
     try {
-      if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(shareUrl);
+      const res = await shareLink({ url: href, title, text: description });
+      if (res.ok && res.method === "clipboard") {
         setCopied(true);
         window.setTimeout(() => setCopied(false), 2200);
-        return;
       }
     } catch {
       // fallback below
-    }
-
-    if (typeof window !== "undefined") {
-      window.prompt("Copia o link para partilhar", shareUrl);
     }
   };
 

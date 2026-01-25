@@ -6,11 +6,17 @@ import { prisma } from "@/lib/prisma";
 import { resolveUserIdentifier } from "@/lib/userResolver";
 import { getOrgTransferEnabled } from "@/lib/platformSettings";
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
-import { sendOwnerTransferEmail } from "@/lib/emailSender";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { parseOrganizationId } from "@/lib/organizationId";
+import { resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
+import { recordOutboxEvent } from "@/domain/outbox/producer";
+import { appendEventLog } from "@/domain/eventLog/append";
 
 const DEFAULT_EXPIRATION_MS = 1000 * 60 * 60 * 24 * 3; // 3 dias
+const isUniquePendingError = (err: unknown) =>
+  typeof err === "object" &&
+  err !== null &&
+  "code" in err &&
+  (err as { code?: string }).code === "P2002";
 
 export async function POST(req: NextRequest) {
   try {
@@ -42,9 +48,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "INVALID_PAYLOAD" }, { status: 400 });
     }
 
-    const callerMembership = await prisma.organizationMember.findUnique({
-      where: { organizationId_userId: { organizationId, userId: user.id } },
-    });
+    const callerMembership = await resolveGroupMemberForOrg({ organizationId, userId: user.id });
     if (!callerMembership || callerMembership.role !== OrganizationMemberRole.OWNER) {
       return NextResponse.json({ ok: false, error: "ONLY_OWNER_CAN_TRANSFER" }, { status: 403 });
     }
@@ -62,71 +66,84 @@ export async function POST(req: NextRequest) {
     const expiresAt = new Date(now + DEFAULT_EXPIRATION_MS);
     const token = randomUUID();
 
-    const [organization, actorProfile] = await Promise.all([
-      prisma.organization.findUnique({
-        where: { id: organizationId },
-        select: { publicName: true, username: true },
-      }),
-      prisma.profile.findUnique({
-        where: { id: user.id },
-        select: { fullName: true, username: true },
-      }),
-    ]);
-
     const ip = req.headers.get("x-forwarded-for") ?? req.headers.get("x-real-ip") ?? null;
-    const transfer = await prisma.$transaction(async (tx) => {
-      // Cancela pedidos pendentes anteriores
-      await ownerTransferModel.updateMany({
-        where: { organizationId, status: "PENDING" },
-        data: { status: "CANCELLED", cancelledAt: new Date(now) },
-      });
+    let transfer;
+    try {
+      transfer = await prisma.$transaction(async (tx) => {
+        // Cancela pedidos pendentes anteriores
+        await ownerTransferModel.updateMany({
+          where: { organizationId, status: "PENDING" },
+          data: { status: "CANCELLED", cancelledAt: new Date(now) },
+        });
 
-      const created = await ownerTransferModel.create({
-        data: {
+        const created = await ownerTransferModel.create({
+          data: {
+            organizationId,
+            fromUserId: user.id,
+            toUserId: targetUserId,
+            status: "PENDING",
+            token,
+            expiresAt,
+          },
+        });
+
+        await recordOrganizationAudit(tx, {
           organizationId,
+          groupId: callerMembership.groupId,
+          actorUserId: user.id,
+          action: "OWNER_TRANSFER_REQUESTED",
+          entityType: "organization_owner_transfer",
+          entityId: created.id,
+          correlationId: created.id,
           fromUserId: user.id,
           toUserId: targetUserId,
-          status: "PENDING",
-          token,
-          expiresAt,
-        },
-      });
-
-      await recordOrganizationAudit(tx, {
-        organizationId,
-        actorUserId: user.id,
-        action: "OWNER_TRANSFER_REQUESTED",
-        fromUserId: user.id,
-        toUserId: targetUserId,
-        metadata: { transferId: created.id, token },
-        ip,
-        userAgent: req.headers.get("user-agent"),
-      });
-
-      return created;
-    });
-
-    // Envio do email de confirmação para o novo Owner (best-effort)
-    try {
-      const targetUser = await supabaseAdmin.auth.admin.getUserById(targetUserId);
-      const targetEmail = targetUser.data?.user?.email ?? null;
-      const organizationName =
-        organization?.publicName || organization?.username || "Organização ORYA";
-      const actorName = actorProfile?.fullName || actorProfile?.username || "OWNER atual";
-
-      if (targetEmail) {
-        await sendOwnerTransferEmail({
-          to: targetEmail,
-          organizationName,
-          actorName,
-          token: transfer.token,
-          expiresAt: transfer.expiresAt,
+          metadata: { transferId: created.id },
+          ip,
+          userAgent: req.headers.get("user-agent"),
         });
-      } else {
-        console.warn("[owner/transfer] target user sem email para envio", { targetUserId });
+
+        const outbox = await recordOutboxEvent(
+          {
+            eventType: "organization.owner_transfer.requested",
+            payload: {
+              transferId: created.id,
+              organizationId,
+              fromUserId: user.id,
+              toUserId: targetUserId,
+              expiresAt: created.expiresAt,
+            },
+            correlationId: created.id,
+          },
+          tx,
+        );
+
+        await appendEventLog(
+          {
+            eventId: outbox.eventId,
+            organizationId,
+            eventType: "organization.owner_transfer.requested",
+            idempotencyKey: outbox.eventId,
+            payload: {
+              transferId: created.id,
+              fromUserId: user.id,
+              toUserId: targetUserId,
+              expiresAt: created.expiresAt,
+            },
+            actorUserId: user.id,
+            sourceType: null,
+            sourceId: null,
+            correlationId: created.id,
+          },
+          tx,
+        );
+
+        return created;
+      });
+    } catch (err) {
+      if (isUniquePendingError(err)) {
+        return NextResponse.json({ ok: false, error: "OWNER_TRANSFER_PENDING_EXISTS" }, { status: 409 });
       }
-    } catch (emailErr) {
-      console.error("[owner/transfer] Falha ao enviar email de transferência", emailErr);
+      throw err;
     }
 
     return NextResponse.json(

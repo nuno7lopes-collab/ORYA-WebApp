@@ -33,11 +33,7 @@ export async function claimIdentity(email: string, userId: string, opts?: { requ
       where: { ownerIdentityId: identity.id },
       data: { ownerUserId: userId, ownerIdentityId: null },
     });
-    // sale_summaries
-    await tx.saleSummary.updateMany({
-      where: { ownerIdentityId: identity.id },
-      data: { ownerUserId: userId, ownerIdentityId: null },
-    });
+    // legacy summaries removidos no v7 (ledger + entitlements)
     // tournament_entries
     await tx.tournamentEntry.updateMany({
       where: { ownerIdentityId: identity.id },

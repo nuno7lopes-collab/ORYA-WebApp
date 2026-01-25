@@ -2,10 +2,19 @@ import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { CheckinResultCode, EntitlementStatus } from "@prisma/client";
+import { CheckinResultCode } from "@prisma/client";
 import { buildDefaultCheckinWindow, isOutsideWindow } from "@/lib/checkin/policy";
-import { canManageEvents } from "@/lib/organizationPermissions";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
+import { ensureGroupMemberCheckinAccess } from "@/lib/organizationMemberAccess";
+import {
+  getCheckinResultFromExisting,
+  getEntitlementEffectiveStatus,
+  isConsumed,
+} from "@/lib/entitlements/status";
+import {
+  resolveCheckinMethodForEntitlement,
+  resolvePolicyForCheckin,
+} from "@/lib/checkin/accessPolicy";
 
 type Body = { qrToken?: string; eventId?: number };
 
@@ -45,11 +54,12 @@ async function ensureCheckinAccess(userId: string, eventId: number) {
   const isAdmin = roles.includes("admin");
   if (isAdmin) return { ok: true as const, isAdmin };
 
-  const membership = await prisma.organizationMember.findUnique({
-    where: { organizationId_userId: { organizationId: event.organizationId, userId } },
-    select: { id: true, role: true },
+  const access = await ensureGroupMemberCheckinAccess({
+    organizationId: event.organizationId,
+    userId,
+    required: "VIEW",
   });
-  if (membership && canManageEvents(membership.role)) {
+  if (access.ok) {
     return { ok: true as const, isAdmin };
   }
 
@@ -80,7 +90,11 @@ export async function POST(req: NextRequest) {
   const tokenHash = hashToken(qrToken);
   const tokenRow = await prisma.entitlementQrToken.findUnique({
     where: { tokenHash },
-    include: { entitlement: true },
+    include: {
+      entitlement: {
+        include: { checkins: { select: { resultCode: true, checkedInAt: true } } },
+      },
+    },
   });
 
   if (!tokenRow || !tokenRow.entitlement) {
@@ -106,23 +120,34 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ code: CheckinResultCode.INVALID }, { status: 200 });
   }
 
-  if (ent.status === EntitlementStatus.REFUNDED) {
-    return NextResponse.json({ code: CheckinResultCode.REFUNDED }, { status: 200 });
+  const policyResolution = await resolvePolicyForCheckin(eventId, ent.policyVersionApplied);
+  if (!policyResolution.ok) {
+    return NextResponse.json({ code: CheckinResultCode.NOT_ALLOWED }, { status: 200 });
   }
-  if (ent.status === EntitlementStatus.REVOKED) {
-    return NextResponse.json({ code: CheckinResultCode.REVOKED }, { status: 200 });
-  }
-  if (ent.status === EntitlementStatus.SUSPENDED) {
-    return NextResponse.json({ code: CheckinResultCode.SUSPENDED }, { status: 200 });
+  if (policyResolution.policy) {
+    const method = resolveCheckinMethodForEntitlement(ent.type);
+    if (!method || !policyResolution.policy.checkinMethods.includes(method)) {
+      return NextResponse.json({ code: CheckinResultCode.NOT_ALLOWED }, { status: 200 });
+    }
   }
 
-  const existing = await prisma.entitlementCheckin.findUnique({
-    where: { eventId_entitlementId: { eventId, entitlementId: ent.id } },
-    select: { resultCode: true, checkedInAt: true },
+  const effectiveStatus = getEntitlementEffectiveStatus({
+    status: ent.status,
+    checkins: ent.checkins,
   });
-  if (existing) {
+  if (effectiveStatus === "SUSPENDED") {
+    return NextResponse.json({ code: CheckinResultCode.SUSPENDED }, { status: 200 });
+  }
+  if (effectiveStatus === "REVOKED") {
+    return NextResponse.json({ code: CheckinResultCode.REVOKED }, { status: 200 });
+  }
+
+  const consumed = isConsumed({ status: ent.status, checkins: ent.checkins });
+  if (consumed) {
+    const existingCheckin = ent.checkins?.[0] ?? null;
+    const resultCode = getCheckinResultFromExisting(existingCheckin) ?? CheckinResultCode.ALREADY_USED;
     return NextResponse.json(
-      { code: CheckinResultCode.ALREADY_USED, checkedInAt: existing.checkedInAt },
+      { code: resultCode, checkedInAt: existingCheckin?.checkedInAt },
       { status: 200 },
     );
   }

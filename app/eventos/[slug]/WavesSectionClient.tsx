@@ -28,7 +28,7 @@ type WavesSectionClientProps = {
   slug: string;
   tickets: WaveTicket[];
   // para sabermos se devemos ir para checkout ou fazer “join” direto
-  isFreeEvent?: boolean;
+  isGratisEvent?: boolean;
   checkoutUiVariant?: "DEFAULT" | "PADEL";
   padelMeta?: {
     eventId: number;
@@ -42,7 +42,7 @@ type WavesSectionClientProps = {
 export default function WavesSectionClient({
   slug,
   tickets: initialTickets,
-  isFreeEvent,
+  isGratisEvent,
   checkoutUiVariant = "DEFAULT",
   padelMeta,
   inviteEmail,
@@ -66,14 +66,14 @@ export default function WavesSectionClient({
     purchasableTickets.length > 0
       ? Math.min(...purchasableTickets.map((t) => t.price))
       : null;
-  const isFreeLabel = Boolean(isFreeEvent);
+  const isGratisLabel = Boolean(isGratisEvent);
 
   return (
     <div className="mt-6 w-full">
       <div className="relative flex flex-col gap-3 rounded-2xl border border-white/12 bg-black/55 px-5 py-4 shadow-[0_18px_40px_rgba(0,0,0,0.55)] backdrop-blur-xl">
         <div className="pointer-events-none absolute inset-x-4 top-0 h-px bg-gradient-to-r from-transparent via-[#7CFFEA]/70 to-transparent" />
         <p className="text-sm text-white/85">
-          {isFreeLabel ? (
+          {isGratisLabel ? (
             <span className="text-white font-semibold">{ticketCopy.freeLabel}</span>
           ) : minPrice !== null ? (
             <>
@@ -130,7 +130,7 @@ export default function WavesSectionClient({
         >
           {purchasableTickets.length === 0
             ? "Esgotado"
-            : isFreeLabel
+            : isGratisLabel
               ? freeCtaLabel
               : ticketCopy.buyLabel}
         </button>

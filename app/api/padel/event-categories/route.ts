@@ -4,15 +4,16 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   OrganizationMemberRole,
   padel_format,
-  PadelPairingLifecycleStatus,
   PadelPairingSlotStatus,
   PadelPairingStatus,
+  PadelRegistrationStatus,
 } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { enqueueOperation } from "@/lib/operations/enqueue";
 import { refundKey } from "@/lib/stripe/idempotency";
+import { transitionPadelRegistrationStatus } from "@/domain/padelRegistration";
 
 const allowedRoles: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
 
@@ -86,7 +87,6 @@ async function cancelCategoryActivity(params: { eventId: number; categoryId: num
       where: { eventId, categoryId },
       data: {
         pairingStatus: PadelPairingStatus.CANCELLED,
-        lifecycleStatus: PadelPairingLifecycleStatus.CANCELLED_INCOMPLETE,
         partnerInviteToken: null,
         partnerInviteUsedAt: null,
         partnerLinkToken: null,
@@ -94,6 +94,18 @@ async function cancelCategoryActivity(params: { eventId: number; categoryId: num
         lockedUntil: null,
       },
     });
+    const registrations = await tx.padelRegistration.findMany({
+      where: { pairing: { eventId, categoryId } },
+      select: { pairingId: true },
+    });
+    for (const reg of registrations) {
+      if (!reg.pairingId) continue;
+      await transitionPadelRegistrationStatus(tx, {
+        pairingId: reg.pairingId,
+        status: PadelRegistrationStatus.CANCELLED,
+        reason: "CATEGORY_CANCELLED",
+      });
+    }
     await tx.padelPairingHold.updateMany({
       where: { pairing: { eventId, categoryId }, status: "ACTIVE" },
       data: { status: "CANCELLED" },

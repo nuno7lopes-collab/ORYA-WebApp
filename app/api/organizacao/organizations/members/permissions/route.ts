@@ -3,8 +3,11 @@ import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { parseOrganizationId, resolveOrganizationIdFromParams, resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { canManageMembers, isOrgAdminOrAbove } from "@/lib/organizationPermissions";
-import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
+import { recordOrganizationAudit } from "@/lib/organizationAudit";
+import { recordOutboxEvent } from "@/domain/outbox/producer";
+import { appendEventLog } from "@/domain/eventLog/append";
 import { OrganizationMemberRole, OrganizationModule, OrganizationPermissionLevel } from "@prisma/client";
+import { resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
 
 const ACCESS_LEVELS = ["NONE", "VIEW", "EDIT"] as const;
 
@@ -42,9 +45,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "INVALID_ORGANIZATION_ID" }, { status: 400 });
     }
 
-    const callerMembership = await prisma.organizationMember.findUnique({
-      where: { organizationId_userId: { organizationId, userId: user.id } },
-    });
+    const callerMembership = await resolveGroupMemberForOrg({ organizationId, userId: user.id });
 
     if (!callerMembership || !isOrgAdminOrAbove(callerMembership.role)) {
       return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
@@ -101,9 +102,7 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "INVALID_MODULE" }, { status: 400 });
     }
 
-    const callerMembership = await prisma.organizationMember.findUnique({
-      where: { organizationId_userId: { organizationId, userId: user.id } },
-    });
+    const callerMembership = await resolveGroupMemberForOrg({ organizationId, userId: user.id });
     if (!callerMembership) {
       return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
@@ -116,7 +115,8 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "NOT_MEMBER" }, { status: 404 });
     }
 
-    if (!canManageMembers(callerRole, targetMembership.role, targetMembership.role)) {
+    const manageAllowed = canManageMembers(callerRole, targetMembership.role, targetMembership.role);
+    if (!manageAllowed) {
       return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
@@ -130,24 +130,65 @@ export async function PATCH(req: NextRequest) {
     }
 
     if (shouldClear) {
-      await permissionModel.deleteMany({
-        where: {
-          organizationId,
-          userId: targetUserId,
-          moduleKey: moduleKey as OrganizationModule,
-          scopeType: null,
-          scopeId: null,
-        },
-      });
+      await prisma.$transaction(async (tx) => {
+        const permissionModelTx = (tx as typeof prisma & { organizationMemberPermission?: { deleteMany?: Function } })
+          .organizationMemberPermission;
+        if (!permissionModelTx?.deleteMany) {
+          throw new Error("RBAC_NOT_READY");
+        }
+        await permissionModelTx.deleteMany({
+          where: {
+            organizationId,
+            userId: targetUserId,
+            moduleKey: moduleKey as OrganizationModule,
+            scopeType: null,
+            scopeId: null,
+          },
+        });
 
-      await recordOrganizationAuditSafe({
-        organizationId,
-        actorUserId: user.id,
-        action: "PERMISSION_CLEARED",
-        toUserId: targetUserId,
-        metadata: { moduleKey },
-        ip,
-        userAgent,
+        await recordOrganizationAudit(tx, {
+          organizationId,
+          groupId: callerMembership.groupId,
+          actorUserId: user.id,
+          action: "PERMISSION_CLEARED",
+          entityType: "organization_member_permission",
+          entityId: `${targetUserId}:${moduleKey}`,
+          correlationId: `${targetUserId}:${moduleKey}`,
+          toUserId: targetUserId,
+          metadata: { moduleKey },
+          ip,
+          userAgent,
+        });
+
+        const outbox = await recordOutboxEvent(
+          {
+            eventType: "organization.permission.cleared",
+            payload: {
+              organizationId,
+              targetUserId,
+              moduleKey,
+            },
+            correlationId: `${targetUserId}:${moduleKey}`,
+          },
+          tx,
+        );
+
+        await appendEventLog(
+          {
+            eventId: outbox.eventId,
+            organizationId,
+            eventType: "organization.permission.cleared",
+            idempotencyKey: outbox.eventId,
+            payload: {
+              targetUserId,
+              moduleKey,
+            },
+            actorUserId: user.id,
+            sourceId: String(organizationId),
+            correlationId: `${targetUserId}:${moduleKey}`,
+          },
+          tx,
+        );
       });
 
       return NextResponse.json({ ok: true }, { status: 200 });
@@ -159,35 +200,78 @@ export async function PATCH(req: NextRequest) {
 
     const accessLevel = accessLevelRaw as AccessLevel;
 
-    await permissionModel.upsert({
-      where: {
-        organizationId_userId_moduleKey_scopeType_scopeId: {
+      await prisma.$transaction(async (tx) => {
+        const permissionModelTx = (tx as typeof prisma & { organizationMemberPermission?: { upsert?: Function } })
+          .organizationMemberPermission;
+        if (!permissionModelTx?.upsert) {
+          throw new Error("RBAC_NOT_READY");
+        }
+        await permissionModelTx.upsert({
+        where: {
+          organizationId_userId_moduleKey_scopeType_scopeId: {
+            organizationId,
+            userId: targetUserId,
+            moduleKey: moduleKey as OrganizationModule,
+            scopeType: null,
+            scopeId: null,
+          },
+        },
+        create: {
           organizationId,
           userId: targetUserId,
           moduleKey: moduleKey as OrganizationModule,
+          accessLevel: accessLevel as OrganizationPermissionLevel,
           scopeType: null,
           scopeId: null,
         },
-      },
-      create: {
-        organizationId,
-        userId: targetUserId,
-        moduleKey: moduleKey as OrganizationModule,
-        accessLevel: accessLevel as OrganizationPermissionLevel,
-        scopeType: null,
-        scopeId: null,
-      },
-      update: { accessLevel: accessLevel as OrganizationPermissionLevel },
-    });
+        update: { accessLevel: accessLevel as OrganizationPermissionLevel },
+      });
 
-    await recordOrganizationAuditSafe({
-      organizationId,
-      actorUserId: user.id,
-      action: "PERMISSION_UPDATED",
-      toUserId: targetUserId,
-      metadata: { moduleKey, accessLevel },
-      ip,
-      userAgent,
+      await recordOrganizationAudit(tx, {
+        organizationId,
+        groupId: callerMembership.groupId,
+        actorUserId: user.id,
+        action: "PERMISSION_UPDATED",
+        entityType: "organization_member_permission",
+        entityId: `${targetUserId}:${moduleKey}`,
+        correlationId: `${targetUserId}:${moduleKey}`,
+        toUserId: targetUserId,
+        metadata: { moduleKey, accessLevel },
+        ip,
+        userAgent,
+      });
+
+      const outbox = await recordOutboxEvent(
+        {
+          eventType: "organization.permission.updated",
+          payload: {
+            organizationId,
+            targetUserId,
+            moduleKey,
+            accessLevel,
+          },
+          correlationId: `${targetUserId}:${moduleKey}`,
+        },
+        tx,
+      );
+
+      await appendEventLog(
+        {
+          eventId: outbox.eventId,
+          organizationId,
+          eventType: "organization.permission.updated",
+          idempotencyKey: outbox.eventId,
+          payload: {
+            targetUserId,
+            moduleKey,
+            accessLevel,
+          },
+          actorUserId: user.id,
+          sourceId: String(organizationId),
+          correlationId: `${targetUserId}:${moduleKey}`,
+        },
+        tx,
+      );
     });
 
     return NextResponse.json({ ok: true }, { status: 200 });

@@ -1,5 +1,8 @@
 import { prisma } from "@/lib/prisma";
-import { stripe } from "@/lib/stripeClient";
+import {
+  createTransfer,
+  retrieveStripeAccount,
+} from "@/domain/finance/gateway/stripeGateway";
 import { createNotification, shouldNotify } from "@/lib/notifications";
 import { sendImportantUpdateEmail } from "@/lib/emailSender";
 import { getAppBaseUrl } from "@/lib/appBaseUrl";
@@ -38,7 +41,7 @@ function normalizeErrorReason(err: unknown) {
 }
 
 async function isConnectedAccountReady(accountId: string) {
-  const account = await stripe.accounts.retrieve(accountId);
+  const account = await retrieveStripeAccount(accountId);
   const payoutsEnabled = account.payouts_enabled ?? false;
   const detailsSubmitted = account.details_submitted ?? false;
   const requirementsDue = account.requirements?.currently_due ?? [];
@@ -286,14 +289,23 @@ export async function releaseSinglePayout(payoutId: number, options?: { force?: 
       return { id: payout.id, status: "FAILED", error: "CONNECT_ONBOARDING_INCOMPLETE" };
     }
 
-    const transfer = await stripe.transfers.create(
+    const transfer = await createTransfer(
       {
         amount: payout.amountCents,
         currency: payout.currency.toLowerCase(),
         destination: payout.recipientConnectAccountId,
         transfer_group: payout.paymentIntentId ?? undefined,
       },
-      { idempotencyKey: `payout_${payout.id}` },
+      {
+        idempotencyKey: `payout_${payout.id}`,
+        requireStripe: true,
+        org: {
+          stripeAccountId: payout.recipientConnectAccountId,
+          stripeChargesEnabled: true,
+          stripePayoutsEnabled: true,
+          orgType: null,
+        },
+      },
     );
 
     await prisma.pendingPayout.update({
@@ -397,14 +409,23 @@ export async function releaseDuePayouts(limit = 25): Promise<ReleaseResult[]> {
         continue;
       }
 
-      const transfer = await stripe.transfers.create(
+      const transfer = await createTransfer(
         {
           amount: payout.amountCents,
           currency: payout.currency.toLowerCase(),
           destination: payout.recipientConnectAccountId,
           transfer_group: payout.paymentIntentId ?? undefined,
         },
-        { idempotencyKey: `payout_${payout.id}` },
+        {
+          idempotencyKey: `payout_${payout.id}`,
+          requireStripe: true,
+          org: {
+            stripeAccountId: payout.recipientConnectAccountId,
+            stripeChargesEnabled: true,
+            stripePayoutsEnabled: true,
+            orgType: null,
+          },
+        },
       );
 
       await prisma.pendingPayout.update({

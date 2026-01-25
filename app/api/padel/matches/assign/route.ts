@@ -16,9 +16,6 @@ const parseOptionalId = (value: unknown) => {
   return Math.floor(parsed);
 };
 
-const isConfirmedLifecycle = (value: string | null) =>
-  value === "CONFIRMED_BOTH_PAID" || value === "CONFIRMED_CAPTAIN_FULL";
-
 export async function POST(req: NextRequest) {
   const supabase = await createSupabaseServer();
   const {
@@ -83,7 +80,7 @@ export async function POST(req: NextRequest) {
   if (pairingIds.length > 0) {
     const pairings = await prisma.padelPairing.findMany({
       where: { id: { in: pairingIds }, eventId: match.eventId },
-      select: { id: true, categoryId: true, pairingStatus: true, lifecycleStatus: true },
+      select: { id: true, categoryId: true, pairingStatus: true, registration: { select: { status: true } } },
     });
     if (pairings.length !== pairingIds.length) {
       return NextResponse.json({ ok: false, error: "PAIRING_NOT_FOUND" }, { status: 404 });
@@ -92,7 +89,7 @@ export async function POST(req: NextRequest) {
       (p) =>
         (match.categoryId && p.categoryId !== match.categoryId) ||
         p.pairingStatus !== "COMPLETE" ||
-        !isConfirmedLifecycle(p.lifecycleStatus),
+        p.registration?.status !== "CONFIRMED",
     );
     if (invalid) {
       return NextResponse.json({ ok: false, error: "PAIRING_INVALID" }, { status: 409 });

@@ -5,6 +5,7 @@ import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureReservasModuleAccess } from "@/lib/reservas/access";
+import { resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
 import { OrganizationMemberRole } from "@prisma/client";
 
 const VIEW_ROLES: OrganizationMemberRole[] = [
@@ -140,9 +141,9 @@ export async function POST(req: NextRequest) {
     }
 
     if (userIdRaw) {
-      const member = await prisma.organizationMember.findFirst({
-        where: { organizationId: organization.id, userId: userIdRaw },
-        select: { id: true },
+      const member = await resolveGroupMemberForOrg({
+        organizationId: organization.id,
+        userId: userIdRaw,
       });
       if (!member) {
         return NextResponse.json({ ok: false, error: "Utilizador não pertence à organização." }, { status: 400 });

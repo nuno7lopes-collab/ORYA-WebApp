@@ -31,7 +31,7 @@ const EVENT_SELECT = {
   locationCity: true,
   latitude: true,
   longitude: true,
-  isFree: true,
+  isGratis: true,
   coverImageUrl: true,
   ticketTypes: {
     select: {
@@ -105,7 +105,7 @@ function filterByPrice(events: DiscoverEvent[], min: number | null, max: number 
   if (min === null && max === null) return events;
   const upperBound = max !== null ? max : Number.POSITIVE_INFINITY;
   return events.filter((event) => {
-    const value = event.isFree ? 0 : event.priceFrom;
+    const value = event.isGratis ? 0 : event.priceFrom;
     if (value == null) return min === null && max === null;
     if (value < (min ?? 0)) return false;
     return value <= upperBound;
@@ -117,7 +117,7 @@ export function formatLocationLabel(event: DiscoverEvent) {
 }
 
 export function formatPriceLabel(event: DiscoverEvent) {
-  if (event.isFree) return "Gratuito";
+  if (event.isGratis) return "Gratuito";
   if (event.priceFrom == null) return "Valor a anunciar";
   const formatted = event.priceFrom.toLocaleString("pt-PT", {
     minimumFractionDigits: 2,

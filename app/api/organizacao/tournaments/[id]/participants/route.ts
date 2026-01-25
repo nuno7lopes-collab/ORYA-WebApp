@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
+import { ensureGroupMemberRole } from "@/lib/organizationGroupAccess";
 
 type ParticipantInput = {
   id?: number;
@@ -33,15 +34,12 @@ async function ensureOrganizationAccess(
     profile?.onboardingDone ||
     (Boolean(profile?.fullName?.trim()) && Boolean(profile?.username?.trim()));
   if (!hasUserOnboarding) return false;
-  const member = await prisma.organizationMember.findFirst({
-    where: {
-      organizationId: evt.organizationId,
-      userId,
-      role: { in: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"] },
-    },
-    select: { id: true },
+  const access = await ensureGroupMemberRole({
+    organizationId: evt.organizationId,
+    userId,
+    allowedRoles: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"],
   });
-  if (!member) return false;
+  if (!access.ok) return false;
   if (options?.requireVerifiedEmail) {
     const emailGate = ensureOrganizationEmailVerified(evt.organization ?? {});
     if (!emailGate.ok) return false;

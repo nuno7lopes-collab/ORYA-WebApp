@@ -10,7 +10,7 @@ type AgendaItem = {
   timeLabel: string;
   locationLabel: string;
   isPast: boolean;
-  isFree: boolean;
+  isGratis: boolean;
   templateType?: string | null;
 };
 
@@ -152,7 +152,7 @@ export default function OrganizationAgendaTabs({
                         ? "Ver resumo"
                         : isPadel
                           ? "Inscrever agora"
-                          : item.isFree
+                          : item.isGratis
                             ? "Garantir lugar"
                             : "Comprar bilhete"}
                     </span>

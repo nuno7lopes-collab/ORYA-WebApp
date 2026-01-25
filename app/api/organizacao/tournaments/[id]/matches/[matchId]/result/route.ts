@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
-import { updateMatchResult } from "@/domain/tournaments/matchUpdate";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
-import { OrganizationMemberRole, TournamentMatchStatus } from "@prisma/client";
+import { OrganizationMemberRole, SourceType, TournamentMatchStatus } from "@prisma/client";
+import { resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
+import { recordOutboxEvent } from "@/domain/outbox/producer";
+import { appendEventLog } from "@/domain/eventLog/append";
 
 async function getOrganizationRole(userId: string, eventId: number) {
   const evt = await prisma.event.findUnique({ where: { id: eventId }, select: { organizationId: true } });
@@ -23,10 +25,7 @@ async function getOrganizationRole(userId: string, eventId: number) {
     profile?.onboardingDone ||
     (Boolean(profile?.fullName?.trim()) && Boolean(profile?.username?.trim()));
   if (!hasUserOnboarding) return null;
-  const member = await prisma.organizationMember.findFirst({
-    where: { organizationId: evt.organizationId, userId },
-    select: { role: true },
-  });
+  const member = await resolveGroupMemberForOrg({ organizationId: evt.organizationId, userId });
   return member?.role ?? null;
 }
 
@@ -48,6 +47,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   });
   if (!match || match.stage.tournamentId !== tournamentId) {
     return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
+  }
+  const event = await prisma.event.findUnique({
+    where: { id: match.stage.tournament.eventId },
+    select: { organizationId: true },
+  });
+  if (!event?.organizationId) {
+    return NextResponse.json({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
   }
 
   const organizationRole = await getOrganizationRole(data.user.id, match.stage.tournament.eventId);
@@ -74,17 +80,45 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     status && Object.values(TournamentMatchStatus).includes(status) ? (status as TournamentMatchStatus) : undefined;
 
   try {
-    const updated = await updateMatchResult({
-      matchId,
-      score,
-      status: nextStatus,
-      explicitWinnerPairingId: winnerPairingId,
-      expectedUpdatedAt: expectedUpdatedAt ? new Date(expectedUpdatedAt) : undefined,
-      userId: data.user.id,
-      force: force === true,
+    const outbox = await prisma.$transaction(async (tx) => {
+      const outbox = await recordOutboxEvent(
+        {
+          eventType: "TOURNAMENT_MATCH_RESULT_REQUESTED",
+          payload: {
+            matchId,
+            score,
+            status: nextStatus ?? null,
+            winnerPairingId: winnerPairingId ?? null,
+            expectedUpdatedAt: expectedUpdatedAt ?? null,
+            userId: data.user.id,
+            force: force === true,
+          },
+        },
+        tx,
+      );
+
+      await appendEventLog(
+        {
+          eventId: outbox.eventId,
+          organizationId: event.organizationId,
+          eventType: "TOURNAMENT_MATCH_RESULT_REQUESTED",
+          idempotencyKey: outbox.eventId,
+          actorUserId: data.user.id,
+          sourceType: SourceType.MATCH,
+          sourceId: String(matchId),
+          correlationId: outbox.eventId,
+          payload: {
+            matchId,
+            tournamentId,
+            eventId: match.stage.tournament.eventId,
+          },
+        },
+        tx,
+      );
+      return outbox;
     });
 
-    return NextResponse.json({ ok: true, match: updated }, { status: 200 });
+    return NextResponse.json({ ok: true, queued: true, eventId: outbox.eventId }, { status: 202 });
   } catch (err) {
     if (err instanceof Error && err.message === "MATCH_CONFLICT") {
       return NextResponse.json({ ok: false, error: "MATCH_CONFLICT", code: "VERSION_CONFLICT" }, { status: 409 });

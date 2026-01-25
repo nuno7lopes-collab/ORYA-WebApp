@@ -4,7 +4,7 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { isOrgAdminOrAbove } from "@/lib/organizationPermissions";
-import { PendingPayoutStatus, SaleSummaryStatus } from "@prisma/client";
+import { PendingPayoutStatus, SaleSummaryStatus, SourceType } from "@prisma/client";
 
 type Aggregate = {
   grossCents: number;
@@ -121,7 +121,7 @@ export async function GET(req: NextRequest) {
 
     const pending = await prisma.pendingPayout.findMany({
       where: {
-        sourceType: "EVENT_TICKET",
+        sourceType: SourceType.TICKET_ORDER,
         sourceId: { in: eventIds.map((id) => String(id)) },
         status: { in: [PendingPayoutStatus.HELD, PendingPayoutStatus.RELEASING, PendingPayoutStatus.BLOCKED] },
       },

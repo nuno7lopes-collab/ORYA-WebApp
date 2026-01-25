@@ -2,7 +2,7 @@ export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { stripe } from "@/lib/stripeClient";
+import { createPaymentIntent, retrievePaymentIntent } from "@/domain/finance/gateway/stripeGateway";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { getPlatformFees, getStripeBaseFees } from "@/lib/platformSettings";
@@ -11,7 +11,7 @@ import { computeCombinedFees } from "@/lib/fees";
 import { formatPaidSalesGateMessage, getPaidSalesGate } from "@/lib/organizationPayments";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { ensureReservasModuleAccess } from "@/lib/reservas/access";
-import { OrganizationMemberRole } from "@prisma/client";
+import { OrganizationMemberRole, SourceType } from "@prisma/client";
 
 const HOLD_MINUTES = 10;
 const ALLOWED_ROLES: OrganizationMemberRole[] = [
@@ -104,7 +104,7 @@ export async function POST(
     }
 
     if (booking.paymentIntentId) {
-      const intent = await stripe.paymentIntents.retrieve(booking.paymentIntentId);
+      const intent = await retrievePaymentIntent(booking.paymentIntentId);
       if (intent.status === "succeeded") {
         return NextResponse.json({ ok: false, error: "PAGAMENTO_CONCLUIDO" }, { status: 409 });
       }
@@ -172,7 +172,7 @@ export async function POST(
     const payoutAmountCents = Math.max(0, totalCents - platformFeeCents - stripeFeeEstimateCents);
     const purchaseId = `booking_${booking.id}_${Date.now()}`;
 
-    const intent = await stripe.paymentIntents.create(
+    const intent = await createPaymentIntent(
       {
         amount: totalCents,
         currency: currency.toLowerCase(),
@@ -190,14 +190,23 @@ export async function POST(
           grossAmountCents: String(totalCents),
           payoutAmountCents: String(payoutAmountCents),
           recipientConnectAccountId: isPlatformOrg ? "" : booking.service.organization.stripeAccountId ?? "",
-          sourceType: "SERVICE_BOOKING",
+          sourceType: SourceType.BOOKING,
           sourceId: `booking_${booking.id}`,
           currency,
           stripeFeeEstimateCents: String(stripeFeeEstimateCents),
         },
         description: `Reserva serviço ${booking.serviceId}`,
       },
-      { idempotencyKey: purchaseId },
+      {
+        idempotencyKey: purchaseId,
+        requireStripe: !isPlatformOrg,
+        org: {
+          stripeAccountId: booking.service.organization.stripeAccountId ?? null,
+          stripeChargesEnabled: booking.service.organization.stripeChargesEnabled ?? false,
+          stripePayoutsEnabled: booking.service.organization.stripePayoutsEnabled ?? false,
+          orgType: booking.service.organization.orgType ?? null,
+        },
+      },
     );
 
     await prisma.booking.update({

@@ -2,17 +2,18 @@ import { randomUUID } from "crypto";
 import {
   Prisma,
   PadelPairingJoinMode,
-  PadelPairingLifecycleStatus,
   PadelPairingPaymentStatus,
   PadelPairingSlotRole,
   PadelPairingSlotStatus,
   PadelPaymentMode,
+  PadelRegistrationStatus,
   PadelWaitlistStatus,
 } from "@prisma/client";
 import { checkPadelCategoryCapacity } from "@/domain/padelCategoryCapacity";
 import { checkPadelCategoryLimit } from "@/domain/padelCategoryLimit";
 import { checkPadelEventCapacity } from "@/domain/padelEventCapacity";
 import { computePartnerLinkExpiresAt, computeSplitDeadlineAt, clampDeadlineHours } from "@/domain/padelDeadlines";
+import { INACTIVE_REGISTRATION_STATUSES, upsertPadelRegistrationForPairing } from "@/domain/padelRegistration";
 
 type UpsertWaitlistParams = {
   tx: Prisma.TransactionClient;
@@ -86,8 +87,15 @@ export async function promoteNextPadelWaitlistEntry(params: PromoteParams): Prom
     where: {
       eventId,
       categoryId: entry.categoryId ?? undefined,
-      lifecycleStatus: { not: "CANCELLED_INCOMPLETE" },
-      OR: [{ player1UserId: entry.userId }, { player2UserId: entry.userId }],
+      AND: [
+        {
+          OR: [
+            { registration: { is: null } },
+            { registration: { status: { notIn: INACTIVE_REGISTRATION_STATUSES } } },
+          ],
+        },
+        { OR: [{ player1UserId: entry.userId }, { player2UserId: entry.userId }] },
+      ],
     },
     select: { id: true },
   });
@@ -138,6 +146,11 @@ export async function promoteNextPadelWaitlistEntry(params: PromoteParams): Prom
   const partnerInviteToken = entry.pairingJoinMode === PadelPairingJoinMode.INVITE_PARTNER ? randomUUID() : null;
   const partnerLinkExpiresAt = partnerInviteToken ? computePartnerLinkExpiresAt(now, undefined) : null;
 
+  const registrationStatus =
+    entry.pairingJoinMode === PadelPairingJoinMode.LOOKING_FOR_PARTNER
+      ? PadelRegistrationStatus.MATCHMAKING
+      : PadelRegistrationStatus.PENDING_PARTNER;
+
   const pairing = await tx.padelPairing.create({
     data: {
       eventId,
@@ -156,7 +169,6 @@ export async function promoteNextPadelWaitlistEntry(params: PromoteParams): Prom
       lockedUntil: null,
       isPublicOpen,
       pairingJoinMode: entry.pairingJoinMode,
-      lifecycleStatus: PadelPairingLifecycleStatus.PENDING_ONE_PAID,
       slots: {
         create: [
           {
@@ -180,6 +192,15 @@ export async function promoteNextPadelWaitlistEntry(params: PromoteParams): Prom
         ],
       },
     },
+  });
+
+  await upsertPadelRegistrationForPairing(tx, {
+    pairingId: pairing.id,
+    organizationId: entry.organizationId,
+    eventId,
+    status: registrationStatus,
+    paymentMode: entry.paymentMode,
+    reason: "WAITLIST_PROMOTION",
   });
 
   await tx.padelWaitlistEntry.update({
