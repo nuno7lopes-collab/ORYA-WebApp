@@ -157,7 +157,7 @@ export async function POST(req: NextRequest) {
 
       const dedupeKey = `REMINDER_30:${match.id}:${userId}`;
       try {
-        await prisma.matchNotification.create({
+        await prisma.matchNotification["create"]({
           data: {
             matchId: match.id,
             dedupeKey,

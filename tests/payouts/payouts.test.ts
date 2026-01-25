@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import type Stripe from "stripe";
-import { PendingPayoutStatus } from "@prisma/client";
+import { PendingPayoutStatus, SourceType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { stripe } from "@/lib/stripeClient";
 
@@ -89,6 +89,7 @@ describe("payout flow hardening", () => {
   });
 
   it("webhook creates PendingPayout on payment_intent.succeeded", async () => {
+    const sourceId = "99";
     const { handleStripeEvent } = await import("@/app/api/stripe/webhook/route");
     const { createPendingPayout } = await import("@/lib/payments/pendingPayout");
 
@@ -109,8 +110,8 @@ describe("payout flow hardening", () => {
             grossAmountCents: "1000",
             platformFeeCents: "200",
             feeMode: "INCLUDED",
-            sourceType: "EVENT_TICKET",
-            sourceId: "99",
+            sourceType: SourceType.TICKET_ORDER,
+            sourceId,
             currency: "EUR",
             purchaseId: "purchase_1",
           },
@@ -126,8 +127,8 @@ describe("payout flow hardening", () => {
         paymentIntentId: "pi_123",
         amountCents: 700,
         recipientConnectAccountId: "acct_123",
-        sourceType: "EVENT_TICKET",
-        sourceId: "99",
+        sourceType: SourceType.TICKET_ORDER,
+        sourceId,
       }),
     );
   });

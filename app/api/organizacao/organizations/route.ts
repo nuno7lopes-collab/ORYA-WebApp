@@ -10,6 +10,7 @@ import {
   parseOrganizationModules,
 } from "@/lib/organizationCategories";
 import { isValidWebsite } from "@/lib/validation/organization";
+import { ensureGroupMemberForOrg } from "@/lib/organizationGroupAccess";
 
 export async function GET() {
   try {
@@ -171,8 +172,10 @@ export async function POST(req: NextRequest) {
       : getDefaultOrganizationModules(primaryFallback);
 
     const organization = await prisma.$transaction(async (tx) => {
+      const group = await tx.organizationGroup.create({ data: {} });
       const created = await tx.organization.create({
         data: {
+          groupId: group.id,
           publicName: pName,
           businessName: bName,
           entityType: eType,
@@ -198,13 +201,18 @@ export async function POST(req: NextRequest) {
         ownerId: created.id,
         tx,
       });
+      await tx.organizationMember.upsert({
+        where: { organizationId_userId: { organizationId: created.id, userId: user.id } },
+        update: { role: OrganizationMemberRole.OWNER },
+        create: { organizationId: created.id, userId: user.id, role: OrganizationMemberRole.OWNER },
+      });
+      await ensureGroupMemberForOrg({
+        organizationId: created.id,
+        userId: user.id,
+        role: OrganizationMemberRole.OWNER,
+        client: tx,
+      });
       return created;
-    });
-
-    await prisma.organizationMember.upsert({
-      where: { organizationId_userId: { organizationId: organization.id, userId: user.id } },
-      update: { role: OrganizationMemberRole.OWNER },
-      create: { organizationId: organization.id, userId: user.id, role: OrganizationMemberRole.OWNER },
     });
 
     return NextResponse.json(

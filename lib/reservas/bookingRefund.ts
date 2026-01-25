@@ -1,6 +1,13 @@
 import { prisma } from "@/lib/prisma";
-import { stripe } from "@/lib/stripeClient";
+import {
+  cancelPaymentIntent,
+  createRefund,
+  retrievePaymentIntent,
+} from "@/domain/finance/gateway/stripeGateway";
 import { cancelPendingPayout } from "@/lib/payments/pendingPayout";
+import { recordOutboxEvent } from "@/domain/outbox/producer";
+import { appendEventLog } from "@/domain/eventLog/append";
+import { SourceType } from "@prisma/client";
 
 type RefundBookingParams = {
   bookingId: number;
@@ -9,13 +16,34 @@ type RefundBookingParams = {
 };
 
 export async function refundBookingPayment(params: RefundBookingParams) {
+  const booking = await prisma.booking.findUnique({
+    where: { id: params.bookingId },
+    select: { organizationId: true },
+  });
+  if (!booking?.organizationId) {
+    throw new Error("FINANCE_ORG_NOT_RESOLVED");
+  }
+
+  const org = await prisma.organization.findUnique({
+    where: { id: booking.organizationId },
+    select: {
+      stripeAccountId: true,
+      stripeChargesEnabled: true,
+      stripePayoutsEnabled: true,
+      orgType: true,
+    },
+  });
+  if (!org) {
+    throw new Error("FINANCE_ORG_NOT_RESOLVED");
+  }
+
   const transaction = await prisma.transaction.findFirst({
     where: { stripePaymentIntentId: params.paymentIntentId },
     select: { amountCents: true },
   });
 
-  const idempotencyKey = `booking_refund_${params.bookingId}`;
-  const paymentIntent = await stripe.paymentIntents.retrieve(params.paymentIntentId, {
+  const idempotencyKey = `refund:BOOKING:${params.bookingId}`;
+  const paymentIntent = await retrievePaymentIntent(params.paymentIntentId, {
     expand: ["charges"],
   });
   const charges = Array.isArray(paymentIntent.charges?.data) ? paymentIntent.charges.data : [];
@@ -33,7 +61,7 @@ export async function refundBookingPayment(params: RefundBookingParams) {
   if (!hasSuccessfulCharge) {
     if (cancelableStatuses.has(paymentIntent.status)) {
       try {
-        await stripe.paymentIntents.cancel(params.paymentIntentId);
+        await cancelPaymentIntent(params.paymentIntentId);
       } catch (err) {
         console.warn("[reservas/refund] failed to cancel payment intent", err);
       }
@@ -46,15 +74,48 @@ export async function refundBookingPayment(params: RefundBookingParams) {
   const refundAmount = amountCents && amountCents > 0 ? amountCents : undefined;
 
   try {
-    const refund = await stripe.refunds.create(
+    const refund = await createRefund(
       {
         payment_intent: params.paymentIntentId,
         amount: refundAmount,
       },
-      { idempotencyKey },
+      { idempotencyKey, org, requireStripe: true },
     );
 
     await cancelPendingPayout(params.paymentIntentId, params.reason);
+
+    await prisma.$transaction(async (tx) => {
+      const outbox = await recordOutboxEvent(
+        {
+          eventType: "refund.created",
+          payload: {
+            bookingId: params.bookingId,
+            paymentIntentId: params.paymentIntentId,
+            reason: params.reason,
+          },
+        },
+        tx,
+      );
+
+      await appendEventLog(
+        {
+          eventId: outbox.eventId,
+          organizationId: booking.organizationId,
+          eventType: "refund.created",
+          idempotencyKey: outbox.eventId,
+          actorUserId: null,
+          sourceType: SourceType.BOOKING,
+          sourceId: String(params.bookingId),
+          correlationId: outbox.eventId,
+          payload: {
+            bookingId: params.bookingId,
+            paymentIntentId: params.paymentIntentId,
+            reason: params.reason,
+          },
+        },
+        tx,
+      );
+    });
 
     return refund;
   } catch (err) {
@@ -62,6 +123,9 @@ export async function refundBookingPayment(params: RefundBookingParams) {
     if (message.includes("does not have a successful charge")) {
       await cancelPendingPayout(params.paymentIntentId, params.reason);
       return null;
+    }
+    if (message.includes("FINANCE_CONNECT_NOT_READY") || message.includes("FINANCE_ORG_NOT_RESOLVED")) {
+      throw err;
     }
     throw err;
   }

@@ -89,8 +89,8 @@ export async function ingestCrmInteraction(input: CrmIngestInput): Promise<{ cus
       existingCustomer?.contactPhone,
   );
 
-  let emailAllowed: boolean | null = null;
-  let phoneAllowed: boolean | null = null;
+  let emailOk: boolean | null = null;
+  let phoneOk: boolean | null = null;
   if (needsConsentCheck) {
     const consentEntries = await prisma.userConsent.findMany({
       where: {
@@ -104,27 +104,27 @@ export async function ingestCrmInteraction(input: CrmIngestInput): Promise<{ cus
     for (const consent of consentEntries) {
       consentMap.set(consent.type, consent.status);
     }
-    emailAllowed = consentMap.get(ConsentType.CONTACT_EMAIL) === ConsentStatus.GRANTED;
-    phoneAllowed = consentMap.get(ConsentType.CONTACT_SMS) === ConsentStatus.GRANTED;
+    emailOk = consentMap.get(ConsentType.CONTACT_EMAIL) === ConsentStatus.GRANTED;
+    phoneOk = consentMap.get(ConsentType.CONTACT_SMS) === ConsentStatus.GRANTED;
   }
 
-  if (emailAllowed === false) {
+  if (emailOk === false) {
     contactEmail = null;
   }
-  if (phoneAllowed === false) {
+  if (phoneOk === false) {
     contactPhone = null;
   }
 
   const contactEmailValue =
-    emailAllowed === null
+    emailOk === null
       ? undefined
-      : emailAllowed
+      : emailOk
         ? existingCustomer?.contactEmail || contactEmail || undefined
         : null;
   const contactPhoneValue =
-    phoneAllowed === null
+    phoneOk === null
       ? undefined
-      : phoneAllowed
+      : phoneOk
         ? existingCustomer?.contactPhone || contactPhone || undefined
         : null;
 

@@ -20,7 +20,7 @@ type EventForCard = {
   locationOverrides?: Record<string, unknown> | null;
   latitude?: number | null;
   longitude?: number | null;
-  isFree: boolean;
+  isGratis: boolean;
   tickets?: EventTicket[];
   interestedCount: number;
   goingCount: number;
@@ -30,8 +30,8 @@ type Props = {
   event: EventForCard;
 };
 
-function formatPrice(tickets: EventTicket[] | undefined, isFree: boolean) {
-  if (isFree) return 'Grátis';
+function formatPrice(tickets: EventTicket[] | undefined, isGratis: boolean) {
+  if (isGratis) return 'Grátis';
 
   const list = tickets || []; // <— Evita undefined
 
@@ -69,7 +69,7 @@ function formatDateRange(startDate: string, endDate: string, timezone: string) {
 }
 
 export default function EventCard({ event }: Props) {
-  const priceLabel = formatPrice(event.tickets, event.isFree);
+  const priceLabel = formatPrice(event.tickets, event.isGratis);
   const dateLabel = formatDateRange(event.startDate, event.endDate, event.timezone);
   const coverUrl = getEventCoverFallback(event.slug);
   const locationDisplay = getEventLocationDisplay(

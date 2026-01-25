@@ -2,66 +2,25 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getOrganizationFollowingSet } from "@/domain/social/follows";
-import { Prisma } from "@prisma/client";
+import { listPublicDiscoverIndex } from "@/domain/search/publicDiscover";
+import {
+  PublicEventCard,
+  PublicEventCardWithPrice,
+  toPublicEventCardWithPriceFromIndex,
+} from "@/domain/events/publicEventCard";
 
 const DEFAULT_PAGE_SIZE = 12;
 
-type ExploreItem = {
-  id: number;
-  type: "EVENT";
-  slug: string;
-  title: string;
-  shortDescription: string | null;
-  startsAt: string;
-  endsAt: string;
-  location: {
-    name: string | null;
-    city: string | null;
-    address: string | null;
-    lat: number | null;
-    lng: number | null;
-    formattedAddress: string | null;
-    source: string | null;
-    components: Record<string, unknown> | null;
-    overrides: Record<string, unknown> | null;
-  };
-  coverImageUrl: string | null;
-  isFree: boolean;
-  priceFrom: number | null;
-  categories: string[];
-  hostName: string | null;
-  hostUsername: string | null;
-  status: "ACTIVE" | "CANCELLED" | "PAST" | "DRAFT";
-  isHighlighted: boolean;
-};
+type ExploreItem = PublicEventCard;
 
 type ExploreResponse = {
   items: ExploreItem[];
   pagination: {
-    nextCursor: number | null;
+    nextCursor: string | null;
     hasMore: boolean;
   };
 };
-
-function resolveStatus(event: {
-  status: string;
-  endsAt: Date | string | null;
-  isDeleted?: boolean;
-}): ExploreItem["status"] {
-  if (event.status === "CANCELLED") return "CANCELLED";
-  if (event.status === "DRAFT") return "DRAFT";
-
-  const now = Date.now();
-  const endDate =
-    event.endsAt instanceof Date
-      ? event.endsAt.getTime()
-      : event.endsAt
-        ? new Date(event.endsAt).getTime()
-        : null;
-
-  if (endDate && endDate < now) return "PAST";
-  return "ACTIVE";
-}
+type ExploreItemWithPrice = PublicEventCardWithPrice;
 
 function clampTake(value: number | null): number {
   if (!value || Number.isNaN(value)) return DEFAULT_PAGE_SIZE;
@@ -83,7 +42,7 @@ export async function GET(req: NextRequest) {
   const dayParam = searchParams.get("day"); // YYYY-MM-DD opcional
 
   const take = clampTake(limitParam ? parseInt(limitParam, 10) : DEFAULT_PAGE_SIZE);
-  const cursorId = cursorParam ? Number(cursorParam) : null;
+  const cursorId = cursorParam ? cursorParam : null;
 
   const priceMin = priceMinParam ? Math.max(0, parseFloat(priceMinParam)) : 0;
   const priceMaxRaw = priceMaxParam ? parseFloat(priceMaxParam) : null;
@@ -92,212 +51,76 @@ export async function GET(req: NextRequest) {
   const priceMinCents = Math.round(priceMin * 100);
   const priceMaxCents = priceMax !== null ? Math.round(priceMax * 100) : null;
 
+  let viewerId: string | null = null;
+  let profileLocation:
+    | {
+        locationConsent: "PENDING" | "GRANTED" | "DENIED";
+        locationGranularity: "PRECISE" | "COARSE";
+        locationCity: string | null;
+        locationRegion: string | null;
+      }
+    | null = null;
+  try {
+    const supabase = await createSupabaseServer();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    viewerId = user?.id ?? null;
+    if (viewerId) {
+      profileLocation = await prisma.profile.findUnique({
+        where: { id: viewerId },
+        select: {
+          locationConsent: true,
+          locationGranularity: true,
+          locationCity: true,
+          locationRegion: true,
+        },
+      });
+    }
+  } catch {
+    viewerId = null;
+    profileLocation = null;
+  }
+
   const categoryFilters = (categoriesParam || "")
     .split(",")
     .map((c) => c.trim().toUpperCase())
     .filter(Boolean);
 
-  const where: Prisma.EventWhereInput = {
-    status: { in: ["PUBLISHED", "DATE_CHANGED"] },
-    isDeleted: false,
-  };
-
-  const listingFilter: Prisma.EventWhereInput = {
-    organizationId: { not: null },
-    organization: { status: "ACTIVE" },
-  };
-  where.AND = Array.isArray(where.AND) ? [...where.AND, listingFilter] : [listingFilter];
-
   if (typeParam === "event") {
     // Sem filtro extra: todos os eventos publicados entram.
   }
 
-  const normalizedCity = cityParam?.trim();
+  const profileCity =
+    profileLocation &&
+    profileLocation.locationConsent === "GRANTED" &&
+    profileLocation.locationGranularity === "COARSE"
+      ? profileLocation.locationCity || profileLocation.locationRegion
+      : null;
+  const normalizedCity = cityParam?.trim() || profileCity || null;
   const applyCityFilter = normalizedCity && normalizedCity.toLowerCase() !== "portugal";
 
-  if (applyCityFilter) {
-    where.locationCity = {
-      contains: normalizedCity,
-      mode: "insensitive",
-    };
-  }
-
-  if (searchParam) {
-    const q = searchParam.trim();
-    where.OR = [
-      { title: { contains: q, mode: "insensitive" } },
-      { description: { contains: q, mode: "insensitive" } },
-      { locationName: { contains: q, mode: "insensitive" } },
-      { locationCity: { contains: q, mode: "insensitive" } },
-      { locationFormattedAddress: { contains: q, mode: "insensitive" } },
-      { address: { contains: q, mode: "insensitive" } },
-    ];
-  }
-
-  // Categorias principais: Padel vs Eventos gerais (tudo o resto)
-  if (categoryFilters.length > 0) {
-    const hasPadel = categoryFilters.includes("PADEL");
-    const hasGeneral = categoryFilters.includes("GERAL") || categoryFilters.includes("EVENTOS") || categoryFilters.includes("OTHER");
-    const andFilters: Prisma.EventWhereInput[] = [];
-
-    if (hasPadel && !hasGeneral) {
-      andFilters.push({ templateType: "PADEL" });
-    } else if (!hasPadel && hasGeneral) {
-      andFilters.push({
-        OR: [{ templateType: { not: "PADEL" } }, { templateType: null }],
-      });
-    }
-
-    if (andFilters.length > 0) {
-      where.AND = Array.isArray(where.AND) ? [...where.AND, ...andFilters] : andFilters;
-    }
-  }
-
-  if (dateParam === "today") {
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = new Date();
-    endOfDay.setHours(23, 59, 59, 999);
-    where.startsAt = { gte: startOfDay, lte: endOfDay };
-  } else if (dateParam === "upcoming") {
-    const now = new Date();
-    where.startsAt = { gte: now };
-  } else if (dateParam === "weekend") {
-    const now = new Date();
-    const day = now.getDay(); // 0 domingo ... 6 sábado
-    let start = new Date(now);
-    let end = new Date(now);
-    if (day === 0) {
-      // domingo: só hoje a partir de agora
-      start = now;
-      end.setHours(23, 59, 59, 999);
-    } else {
-      const daysToSaturday = (6 - day + 7) % 7;
-      start.setDate(now.getDate() + daysToSaturday);
-      start.setHours(0, 0, 0, 0);
-      end = new Date(start);
-      end.setDate(start.getDate() + 1); // domingo
-      end.setHours(23, 59, 59, 999);
-    }
-    where.startsAt = { gte: start, lte: end };
-  } else if (dateParam === "day" && dayParam) {
-    const day = new Date(dayParam);
-    if (!Number.isNaN(day.getTime())) {
-      const startOfDay = new Date(day);
-      startOfDay.setHours(0, 0, 0, 0);
-      const endOfDay = new Date(day);
-      endOfDay.setHours(23, 59, 59, 999);
-      where.startsAt = { gte: startOfDay, lte: endOfDay };
-    }
-  }
-
-  // Filtro de preço (priceMax === null significa sem limite superior)
-  const priceFilters: Prisma.EventWhereInput[] = [];
-  if (priceMinCents > 0 && priceMaxCents !== null) {
-    priceFilters.push({
-      isFree: false,
-      ticketTypes: {
-        some: {
-          price: {
-            gte: priceMinCents,
-            lte: priceMaxCents,
-          },
-        },
-      },
-    });
-  } else if (priceMinCents > 0) {
-    priceFilters.push({
-      isFree: false,
-      ticketTypes: {
-        some: {
-          price: {
-            gte: priceMinCents,
-          },
-        },
-      },
-    });
-  } else if (priceMaxCents !== null) {
-    priceFilters.push({
-      OR: [
-        { isFree: true },
-        {
-          ticketTypes: {
-            some: {
-              price: {
-                lte: priceMaxCents,
-              },
-            },
-          },
-        },
-      ],
-    });
-  }
-
-  if (priceFilters.length > 0) {
-    where.AND = Array.isArray(where.AND) ? [...where.AND, ...priceFilters] : priceFilters;
-  }
-
-  const query = {
-    where,
-    orderBy: [{ startsAt: "asc" }, { id: "asc" }],
-    take: take + 1,
-    include: {
-      ticketTypes: {
-        select: {
-          price: true,
-          status: true,
-        },
-      },
-      organization: {
-        select: {
-          publicName: true,
-        },
-      },
-    },
-    ...(cursorId ? { skip: 1, cursor: { id: cursorId } } : {}),
-  } satisfies Prisma.EventFindManyArgs;
+  // Filtros são aplicados no builder canónico.
 
   try {
-    const events: Prisma.EventGetPayload<typeof query>[] = await prisma.event.findMany(query);
+    const { items: indexItems, nextCursor } = await listPublicDiscoverIndex({
+      q: searchParam,
+      city: applyCityFilter ? normalizedCity : null,
+      categories: categoryFilters.join(",") || null,
+      date: dateParam,
+      day: dayParam,
+      type: typeParam,
+      priceMin: priceMinParam,
+      priceMax: priceMaxParam,
+      cursor: cursorId,
+      limit: take,
+    });
 
-    let viewerId: string | null = null;
-    try {
-      const supabase = await createSupabaseServer();
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      viewerId = user?.id ?? null;
-    } catch {
-      viewerId = null;
-    }
-
-    let nextCursor: number | null = null;
-    if (events.length > take) {
-      const nextItem = events.pop();
-      nextCursor = nextItem?.id ?? null;
-    }
-
-    const ownerIds = Array.from(
-      new Set(
-        events
-          .map((e) => e.ownerUserId)
-          .filter((v): v is string => typeof v === "string" && v.length > 0),
-      ),
-    );
-    const owners =
-      ownerIds.length > 0
-        ? await prisma.profile.findMany({
-            where: { id: { in: ownerIds } },
-            select: { id: true, username: true, fullName: true },
-          })
-        : [];
-    const ownerMap = new Map(owners.map((o) => [o.id, o]));
-
-    let orderedEvents = events;
-    if (viewerId && events.length > 0 && searchParam && searchParam.trim().length >= 1) {
+    let orderedItems = indexItems;
+    if (viewerId && indexItems.length > 0 && searchParam && searchParam.trim().length >= 1) {
       const organizationIds = Array.from(
         new Set(
-          events
+          indexItems
             .map((event) => event.organizationId)
             .filter((id): id is number => typeof id === "number"),
         ),
@@ -305,92 +128,72 @@ export async function GET(req: NextRequest) {
       if (organizationIds.length > 0) {
         const followedIds = await getOrganizationFollowingSet(viewerId, organizationIds);
         if (followedIds.size > 0) {
-          const followed: typeof events = [];
-          const rest: typeof events = [];
-          events.forEach((event) => {
+          const followed: typeof indexItems = [];
+          const rest: typeof indexItems = [];
+          indexItems.forEach((event) => {
             if (event.organizationId && followedIds.has(event.organizationId)) {
               followed.push(event);
             } else {
               rest.push(event);
             }
           });
-          orderedEvents = [...followed, ...rest];
+          orderedItems = [...followed, ...rest];
         }
       }
     }
 
-    const items: ExploreItem[] = orderedEvents.map((event) => {
-      const mappedType: ExploreItem["type"] = "EVENT";
-      const status = resolveStatus({
-        status: event.status,
-        endsAt: event.endsAt,
-        isDeleted: false,
-      });
-
-      const ticketPrices = Array.isArray(event.ticketTypes)
-        ? event.ticketTypes
-            .map((t) => (typeof t.price === "number" ? t.price : null))
-            .filter((p): p is number => p !== null)
-        : [];
-
-      let priceFrom: number | null = null;
-      if (event.isFree) {
-        priceFrom = 0;
-      } else if (ticketPrices.length > 0) {
-        priceFrom = Math.min(...ticketPrices) / 100;
-      }
-
-      const ownerProfile = event.ownerUserId ? ownerMap.get(event.ownerUserId) : null;
-      const hostName = event.organization?.publicName ?? ownerProfile?.fullName ?? null;
-      const hostUsername = ownerProfile?.username ?? null;
-
-      const templateToCategory: Record<string, string> = {
-        PARTY: "FESTA",
-        PADEL: "PADEL",
-        TALK: "PALESTRA",
-        VOLUNTEERING: "VOLUNTARIADO",
-        OTHER: "GERAL",
-      };
-      const categories =
-        event.templateType != null
-          ? [templateToCategory[String(event.templateType)] ?? "GERAL"]
-          : ["GERAL"];
-
-      return {
-        id: event.id,
-        type: mappedType,
+    const computed: ExploreItemWithPrice[] = orderedItems.map((event) =>
+      toPublicEventCardWithPriceFromIndex({
+        sourceId: event.sourceId,
         slug: event.slug,
         title: event.title,
-        shortDescription: event.description?.slice(0, 200) ?? null,
-        startsAt: event.startsAt ? new Date(event.startsAt).toISOString() : "",
-        endsAt: event.endsAt ? new Date(event.endsAt).toISOString() : "",
-        location: {
-          name: event.locationName ?? null,
-          city: event.locationCity ?? null,
-          address: event.address ?? null,
-          lat: event.latitude ?? null,
-          lng: event.longitude ?? null,
-          formattedAddress: event.locationFormattedAddress ?? null,
-          source: event.locationSource ?? null,
-          components:
-            event.locationComponents && typeof event.locationComponents === "object"
-              ? (event.locationComponents as Record<string, unknown>)
-              : null,
-          overrides:
-            event.locationOverrides && typeof event.locationOverrides === "object"
-              ? (event.locationOverrides as Record<string, unknown>)
-              : null,
-        },
+        description: event.description ?? null,
+        startsAt: event.startsAt,
+        endsAt: event.endsAt,
+        status: event.status,
+        templateType: event.templateType ?? null,
+        pricingMode: event.pricingMode ?? null,
+        isGratis: event.isGratis,
+        priceFromCents: event.priceFromCents ?? null,
         coverImageUrl: event.coverImageUrl ?? null,
-        isFree: event.isFree,
-        priceFrom,
-        categories,
-        hostName,
-        hostUsername,
-        status,
-        isHighlighted: false,
-      };
+        hostName: event.hostName ?? null,
+        hostUsername: event.hostUsername ?? null,
+        locationName: event.locationName ?? null,
+        locationCity: event.locationCity ?? null,
+        address: event.address ?? null,
+        latitude: event.latitude ?? null,
+        longitude: event.longitude ?? null,
+        locationFormattedAddress: event.locationFormattedAddress ?? null,
+        locationSource: event.locationSource ?? null,
+      }),
+    );
+
+    const filtered = computed.filter((item) => {
+      if (priceMinCents > 0 && priceMaxCents !== null) {
+        return (
+          !item.isGratis &&
+          item._priceFromCents !== null &&
+          item._priceFromCents >= priceMinCents &&
+          item._priceFromCents <= priceMaxCents
+        );
+      }
+      if (priceMinCents > 0) {
+        return (
+          !item.isGratis &&
+          item._priceFromCents !== null &&
+          item._priceFromCents >= priceMinCents
+        );
+      }
+      if (priceMaxCents !== null) {
+        return (
+          item.isGratis ||
+          (item._priceFromCents !== null && item._priceFromCents <= priceMaxCents)
+        );
+      }
+      return true;
     });
+
+    const items: ExploreItem[] = filtered.map(({ _priceFromCents, ...rest }) => rest);
 
     return NextResponse.json<ExploreResponse>({
       items,

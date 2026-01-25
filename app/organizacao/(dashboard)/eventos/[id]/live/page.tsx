@@ -1,10 +1,10 @@
 // app/organizacao/(dashboard)/eventos/[id]/live/page.tsx
 import { notFound, redirect } from "next/navigation";
-import { OrganizationMemberRole } from "@prisma/client";
+import { OrganizationModule } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
-import { canManageEvents } from "@/lib/organizationPermissions";
+import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import EventLiveDashboardClient from "@/app/organizacao/(dashboard)/eventos/EventLiveDashboardClient";
 import { AuthGate } from "@/app/components/autenticação/AuthGate";
 import { cn } from "@/lib/utils";
@@ -46,15 +46,16 @@ export default async function OrganizationEventLivePrepPage({ params }: PageProp
   });
 
   if (!organization || !membership) redirect("/organizacao");
-  const allowedRoles: OrganizationMemberRole[] = [
-    OrganizationMemberRole.OWNER,
-    OrganizationMemberRole.CO_OWNER,
-    OrganizationMemberRole.ADMIN,
-    OrganizationMemberRole.STAFF,
-  ];
-  const canOperateLive = allowedRoles.includes(membership.role);
-  const canManageLiveConfig = canManageEvents(membership.role);
-  if (!canOperateLive) redirect(fallbackHref);
+  const access = await ensureMemberModuleAccess({
+    organizationId: event.organizationId,
+    userId: data.user.id,
+    role: membership.role,
+    rolePack: membership.rolePack,
+    moduleKey: OrganizationModule.EVENTOS,
+    required: "EDIT",
+  });
+  if (!access.ok) redirect(fallbackHref);
+  const canManageLiveConfig = access.ok;
 
   return (
     <div className={cn("w-full py-8 text-white")}>

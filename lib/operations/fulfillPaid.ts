@@ -1,11 +1,15 @@
+// @deprecated Slice 4 cleanup: legacy fulfillPaid path (see cleanup plan).
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { normalizePaymentScenario } from "@/lib/paymentScenario";
 import { CrmInteractionSource, CrmInteractionType, EntitlementType, EntitlementStatus } from "@prisma/client";
+import { getLatestPolicyVersionForEvent } from "@/lib/checkin/accessPolicy";
 import { enqueueOperation } from "@/lib/operations/enqueue";
 import { normalizeEmail } from "@/lib/utils/email";
 import { checkoutKey } from "@/lib/stripe/idempotency";
 import { ingestCrmInteraction } from "@/lib/crm/ingest";
+
+const LEGACY_FULFILLMENT_DISABLED = true;
 
 function buildOwnerKey(params: { ownerUserId?: string | null; ownerIdentityId?: string | null; guestEmail?: string | null }) {
   if (params.ownerUserId) return `user:${params.ownerUserId}`;
@@ -39,6 +43,7 @@ type IntentLike = {
  * Retorna true se tratou o intent; false se não aplicável.
  */
 export async function fulfillPaidIntent(intent: IntentLike, stripeEventId?: string): Promise<boolean> {
+  if (LEGACY_FULFILLMENT_DISABLED) return false;
   const meta = intent.metadata ?? {};
   const scenario = normalizePaymentScenario(typeof meta.paymentScenario === "string" ? meta.paymentScenario : null);
   // Deixar cenários especiais para handlers dedicados.
@@ -109,6 +114,7 @@ export async function fulfillPaidIntent(intent: IntentLike, stripeEventId?: stri
   const ticketTypeMap = new Map(event.ticketTypes.map((t) => [t.id, t]));
 
   await prisma.$transaction(async (tx) => {
+    const policyVersionApplied = await getLatestPolicyVersionForEvent(event.id, tx);
     // Evitar conflito por purchaseId já existente: se já existir, atualizamos, senão criamos.
     const existingSummary =
       (purchaseId
@@ -288,6 +294,7 @@ export async function fulfillPaidIntent(intent: IntentLike, stripeEventId?: stri
             ownerUserId: userId ?? null,
             ownerIdentityId: ownerIdentityId ?? null,
             eventId: event.id,
+            policyVersionApplied,
             snapshotTitle: event.title,
             snapshotCoverUrl: event.coverImageUrl,
             snapshotVenueName: event.locationName,
@@ -305,6 +312,7 @@ export async function fulfillPaidIntent(intent: IntentLike, stripeEventId?: stri
             eventId: event.id,
             type: EntitlementType.EVENT_TICKET,
             status: EntitlementStatus.ACTIVE,
+            policyVersionApplied,
             snapshotTitle: event.title,
             snapshotCoverUrl: event.coverImageUrl,
             snapshotVenueName: event.locationName,

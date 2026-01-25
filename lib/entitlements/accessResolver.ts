@@ -1,4 +1,5 @@
 import { EntitlementStatus, EntitlementType } from "@prisma/client";
+import { getEntitlementEffectiveStatus, isConsumed } from "@/lib/entitlements/status";
 
 export type RequesterRole = "OWNER" | "ORGANIZATION" | "ADMIN";
 
@@ -32,27 +33,27 @@ function insideWindow(window?: { start: Date | null; end: Date | null }) {
 
 export function resolveActions(input: ResolverInput): EntitlementActions {
   const { status, isOwner, isOrganization, isAdmin, checkinWindow, outsideWindow, emailVerified, isGuestOwner } = input;
-  const baseBlocked =
-    status === EntitlementStatus.REFUNDED ||
-    status === EntitlementStatus.REVOKED ||
-    status === EntitlementStatus.SUSPENDED;
+  const effectiveStatus = getEntitlementEffectiveStatus({ status });
+  const consumed = isConsumed({ status });
+  const baseBlocked = effectiveStatus === "REVOKED" || effectiveStatus === "SUSPENDED";
 
   const canViewDetails = isOwner || isAdmin || isOrganization;
   const canShowQr =
     isOwner &&
-    status === EntitlementStatus.ACTIVE &&
+    effectiveStatus === "ACTIVE" &&
     !baseBlocked &&
+    !consumed &&
     insideWindow(checkinWindow) &&
     !outsideWindow;
 
   const isWithinWindow = !outsideWindow && insideWindow(checkinWindow);
   const canCheckIn =
     (isOrganization || isAdmin) &&
-    status === EntitlementStatus.ACTIVE &&
+    effectiveStatus === "ACTIVE" &&
     !baseBlocked &&
     isWithinWindow;
 
-  const canClaim = Boolean(isGuestOwner && emailVerified && status === EntitlementStatus.ACTIVE);
+  const canClaim = Boolean(isGuestOwner && emailVerified && effectiveStatus === "ACTIVE");
 
   return {
     canShowQr,

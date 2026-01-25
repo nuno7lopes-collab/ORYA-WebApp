@@ -8,7 +8,7 @@ const EMAIL_REGEX = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
 type InviteGateClientProps = {
   slug: string;
-  isFree: boolean;
+  isGratis: boolean;
   isAuthenticated: boolean;
   hasUsername: boolean;
   userEmailNormalized: string | null;
@@ -33,7 +33,7 @@ type CheckResponse = {
 
 export default function InviteGateClient({
   slug,
-  isFree,
+  isGratis,
   isAuthenticated,
   hasUsername,
   userEmailNormalized,
@@ -102,8 +102,8 @@ export default function InviteGateClient({
         usernameNormalized &&
         inviteNormalized === usernameNormalized));
 
-  const paidInviteMatches = inviteMatchesAccount && !isFree;
-  const freeInviteMatches = inviteMatchesAccount && isFree && hasUsername;
+  const paidInviteMatches = inviteMatchesAccount && !isGratis;
+  const freeInviteMatches = inviteMatchesAccount && isGratis && hasUsername;
 
   const gateMessage = (() => {
     if (!validated) return null;
@@ -114,10 +114,10 @@ export default function InviteGateClient({
       if (!inviteNormalized || !userEmailNormalized || inviteNormalized !== userEmailNormalized) {
         return "Este convite não corresponde ao email desta conta.";
       }
-      if (isFree && !hasUsername) {
+      if (isGratis && !hasUsername) {
         return `Define um username na tua conta para concluir a ${freeLabelLower}.`;
       }
-      return isFree
+      return isGratis
         ? `Convite validado. Podes continuar a ${freeLabelLower}.`
         : "Convite validado. Podes continuar o checkout.";
     }
@@ -128,7 +128,7 @@ export default function InviteGateClient({
       if (!inviteNormalized || !usernameNormalized || inviteNormalized !== usernameNormalized) {
         return "Este convite não corresponde ao teu username.";
       }
-      return isFree
+      return isGratis
         ? `Convite validado. Podes continuar a ${freeLabelLower}.`
         : "Convite validado. Podes continuar o checkout.";
     }
@@ -195,13 +195,13 @@ export default function InviteGateClient({
         <WavesSectionClient
           slug={slug}
           tickets={uiTickets}
-          isFreeEvent
+          isGratisEvent
           checkoutUiVariant={checkoutUiVariant}
           padelMeta={padelMeta}
         />
       )}
 
-      {!validated && identifier.trim() && EMAIL_REGEX.test(identifier.trim()) && !isFree && (
+      {!validated && identifier.trim() && EMAIL_REGEX.test(identifier.trim()) && !isGratis && (
         <div className="rounded-xl border border-white/12 bg-black/50 px-3.5 py-2.5 text-[11px] text-white/65">
           Usa o mesmo email na tua conta para desbloquear o convite.
         </div>

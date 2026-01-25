@@ -33,6 +33,14 @@ function AuthCallbackInner() {
           headers: { "Content-Type": "application/json" },
         }).catch((mErr) => console.warn("[auth/callback] migrate-guest falhou", mErr));
 
+        // Best-effort: liga identidade Apple quando aplicável
+        fetch("/api/auth/apple/link", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+        }).catch((linkErr) =>
+          console.warn("[auth/callback] apple link falhou", linkErr),
+        );
+
         if (cancelled) return;
         router.replace(target);
       } catch (err) {

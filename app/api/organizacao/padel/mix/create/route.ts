@@ -6,9 +6,9 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
-import { canManageEvents } from "@/lib/organizationPermissions";
+import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
-import { padel_format, EventTemplateType, EventPublicAccessMode, EventParticipantAccessMode } from "@prisma/client";
+import { padel_format, EventTemplateType, EventPublicAccessMode, EventParticipantAccessMode, OrganizationModule } from "@prisma/client";
 
 const slugify = (value: string) =>
   value
@@ -56,7 +56,18 @@ export async function POST(req: NextRequest) {
       organizationId: organizationId ?? undefined,
       roles: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"],
     });
-    if (!organization || !membership || !canManageEvents(membership.role)) {
+    if (!organization || !membership) {
+      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    }
+    const access = await ensureMemberModuleAccess({
+      organizationId: organization.id,
+      userId: user.id,
+      role: membership.role,
+      rolePack: membership.rolePack,
+      moduleKey: OrganizationModule.TORNEIOS,
+      required: "EDIT",
+    });
+    if (!access.ok) {
       return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
     const emailGate = ensureOrganizationEmailVerified(organization);
@@ -118,7 +129,7 @@ export async function POST(req: NextRequest) {
         status: "PUBLISHED",
         publicAccessMode: EventPublicAccessMode.OPEN,
         participantAccessMode: EventParticipantAccessMode.NONE,
-        isFree: true,
+        pricingMode: "FREE_ONLY",
         inviteOnly: false,
         locationName,
         locationCity,

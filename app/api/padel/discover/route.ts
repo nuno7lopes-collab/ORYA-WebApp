@@ -5,6 +5,7 @@ import { Prisma, padel_format, PadelEligibilityType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { resolvePadelCompetitionState } from "@/domain/padelCompetitionState";
 import { enforcePublicRateLimit } from "@/lib/padel/publicRateLimit";
+import { deriveIsFreeEvent } from "@/domain/events/derivedIsFree";
 
 const DEFAULT_LIMIT = 12;
 const SUPPORTED_FORMATS = new Set<padel_format>([
@@ -115,38 +116,6 @@ export async function GET(req: NextRequest) {
     }
 
     const andFilters: Prisma.EventWhereInput[] = [];
-    if (priceMinCents > 0 && priceMaxCents !== null) {
-      andFilters.push({
-        isFree: false,
-        ticketTypes: {
-          some: {
-            price: { gte: priceMinCents, lte: priceMaxCents },
-          },
-        },
-      });
-    } else if (priceMinCents > 0) {
-      andFilters.push({
-        isFree: false,
-        ticketTypes: {
-          some: {
-            price: { gte: priceMinCents },
-          },
-        },
-      });
-    } else if (priceMaxCents !== null) {
-      andFilters.push({
-        OR: [
-          { isFree: true },
-          {
-            ticketTypes: {
-              some: {
-                price: { lte: priceMaxCents },
-              },
-            },
-          },
-        ],
-      });
-    }
 
     if (formatParam && SUPPORTED_FORMATS.has(formatParam as padel_format)) {
       andFilters.push({ padelTournamentConfig: { is: { format: formatParam as padel_format } } });
@@ -195,17 +164,18 @@ export async function GET(req: NextRequest) {
       });
       return competitionState === "DEVELOPMENT" || competitionState === "PUBLIC";
     });
-    const items = visibleEvents.map((event) => {
+    const computed = visibleEvents.map((event) => {
       const ticketPrices = event.ticketTypes
         .map((t) => (typeof t.price === "number" ? t.price : null))
         .filter((p): p is number => p !== null);
 
-      let priceFrom: number | null = null;
-      if (event.isFree) {
-        priceFrom = 0;
-      } else if (ticketPrices.length > 0) {
-        priceFrom = Math.min(...ticketPrices) / 100;
-      }
+      const isGratis = deriveIsFreeEvent({
+        pricingMode: event.pricingMode ?? undefined,
+        ticketPrices,
+      });
+      const priceFromCents =
+        isGratis ? 0 : ticketPrices.length > 0 ? Math.min(...ticketPrices) : null;
+      const priceFrom = priceFromCents !== null ? priceFromCents / 100 : null;
 
       const levels = (event.padelCategoryLinks ?? [])
         .map((link) => link.category)
@@ -226,8 +196,37 @@ export async function GET(req: NextRequest) {
         format: event.padelTournamentConfig?.format ?? null,
         eligibility: event.padelTournamentConfig?.eligibilityType ?? null,
         levels,
+        _priceFromCents: priceFromCents,
+        isGratis,
       };
     });
+
+    const filtered = computed.filter((item) => {
+      if (priceMinCents > 0 && priceMaxCents !== null) {
+        return (
+          !item.isGratis &&
+          item._priceFromCents !== null &&
+          item._priceFromCents >= priceMinCents &&
+          item._priceFromCents <= priceMaxCents
+        );
+      }
+      if (priceMinCents > 0) {
+        return (
+          !item.isGratis &&
+          item._priceFromCents !== null &&
+          item._priceFromCents >= priceMinCents
+        );
+      }
+      if (priceMaxCents !== null) {
+        return (
+          item.isGratis ||
+          (item._priceFromCents !== null && item._priceFromCents <= priceMaxCents)
+        );
+      }
+      return true;
+    });
+
+    const items = filtered.map(({ _priceFromCents, isGratis: _isGratis, ...rest }) => rest);
 
     return NextResponse.json(
       {

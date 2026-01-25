@@ -1,11 +1,18 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
-import { PadelPairingLifecycleStatus, PadelPairingPaymentStatus, PadelPairingSlotStatus, PadelPaymentMode } from "@prisma/client";
+import {
+  PadelPairingPaymentStatus,
+  PadelPairingSlotStatus,
+  PadelPaymentMode,
+  PadelRegistrationStatus,
+} from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { clampDeadlineHours, computeSplitDeadlineAt } from "@/domain/padelDeadlines";
+import { INACTIVE_REGISTRATION_STATUSES, mapRegistrationToPairingLifecycle, upsertPadelRegistrationForPairing } from "@/domain/padelRegistration";
 import { readNumericParam } from "@/lib/routeParams";
+import { resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
 
 // Regulariza uma dupla cancelada por falha de pagamento (SPLIT).
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -25,6 +32,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     where: { id: pairingId },
     include: {
       slots: true,
+      registration: { select: { status: true } },
       event: {
         select: {
           organizationId: true,
@@ -42,21 +50,19 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const isCaptain = pairing.createdByUserId === user.id;
   let isStaff = false;
   if (!isCaptain) {
-    const staff = await prisma.organizationMember.findFirst({
-      where: {
-        organizationId: pairing.organizationId,
-        userId: user.id,
-        role: { in: ["OWNER", "CO_OWNER", "ADMIN"] },
-      },
-      select: { id: true },
+    const membership = await resolveGroupMemberForOrg({
+      organizationId: pairing.organizationId,
+      userId: user.id,
     });
-    isStaff = Boolean(staff);
+    isStaff = Boolean(membership && ["OWNER", "CO_OWNER", "ADMIN"].includes(membership.role));
   }
   if (!isCaptain && !isStaff) {
     return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
   }
 
-  if (pairing.pairingStatus !== "CANCELLED" || pairing.lifecycleStatus !== "CANCELLED_INCOMPLETE") {
+  const isInactiveRegistration =
+    pairing.registration?.status ? INACTIVE_REGISTRATION_STATUSES.includes(pairing.registration.status) : false;
+  if (pairing.pairingStatus !== "CANCELLED" || !isInactiveRegistration) {
     return NextResponse.json({ ok: false, error: "PAIRING_NOT_CANCELLED" }, { status: 409 });
   }
   if (!["FAILED", "EXPIRED"].includes(pairing.guaranteeStatus)) {
@@ -88,11 +94,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       },
     });
 
-    return tx.padelPairing.update({
+    const updatedPairing = await tx.padelPairing.update({
       where: { id: pairing.id },
       data: {
         pairingStatus: "INCOMPLETE",
-        lifecycleStatus: PadelPairingLifecycleStatus.PENDING_PARTNER_PAYMENT,
         guaranteeStatus: "ARMED",
         deadlineAt,
         partnerSwapAllowedUntilAt: deadlineAt,
@@ -102,7 +107,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       },
       include: { slots: true },
     });
+    await upsertPadelRegistrationForPairing(tx, {
+      pairingId: updatedPairing.id,
+      organizationId: updatedPairing.organizationId,
+      eventId: updatedPairing.eventId,
+      status: PadelRegistrationStatus.PENDING_PAYMENT,
+    });
+    return updatedPairing;
   });
 
-  return NextResponse.json({ ok: true, pairing: updated }, { status: 200 });
+  const lifecycleStatus = mapRegistrationToPairingLifecycle(PadelRegistrationStatus.PENDING_PAYMENT, pairing.payment_mode);
+  return NextResponse.json({ ok: true, pairing: { ...updated, lifecycleStatus } }, { status: 200 });
 }

@@ -1,4 +1,5 @@
 // app/api/stripe/webhook/route.ts
+// @deprecated Slice 4 cleanup: legacy fulfillment path (see cleanup plan).
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,11 +13,11 @@ import {
   EntitlementStatus,
   EntitlementType,
   FeeMode,
-  PadelPairingLifecycleStatus,
   PadelPairingPaymentStatus,
   PadelPairingSlotStatus,
   PadelPairingStatus,
   PadelPaymentMode,
+  PadelRegistrationStatus,
   PaymentEventSource,
   Prisma,
   PromoType,
@@ -24,7 +25,11 @@ import {
   StoreOrderStatus,
   TicketStatus,
 } from "@prisma/client";
-import { stripe } from "@/lib/stripeClient";
+import {
+  constructStripeWebhookEvent,
+  retrieveCharge,
+  retrievePaymentIntent,
+} from "@/domain/finance/gateway/stripeGateway";
 import crypto from "crypto";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { sendPurchaseConfirmationEmail } from "@/lib/emailSender";
@@ -37,6 +42,8 @@ import { computeGraceUntil } from "@/domain/padelDeadlines";
 import { enqueueOperation } from "@/lib/operations/enqueue";
 import { ensureEntriesForConfirmedPairing } from "@/domain/tournaments/ensureEntriesForConfirmedPairing";
 import { resolveOwner } from "@/lib/ownership/resolveOwner";
+import { mapRegistrationToPairingLifecycle, upsertPadelRegistrationForPairing } from "@/domain/padelRegistration";
+import { getLatestPolicyVersionForEvent } from "@/lib/checkin/accessPolicy";
 import {
   queuePartnerPaid,
   queueDeadlineExpired,
@@ -52,8 +59,15 @@ import {
 
 const webhookSecret = env.stripeWebhookSecret;
 const FREE_PLACEHOLDER_INTENT_ID = "FREE_CHECKOUT";
+const LEGACY_FULFILLMENT_DISABLED = true;
 
 export async function POST(req: NextRequest) {
+  if (LEGACY_FULFILLMENT_DISABLED) {
+    return NextResponse.json(
+      { ok: false, error: "LEGACY_FULFILLMENT_DISABLED" },
+      { status: 410 }
+    );
+  }
   if (!webhookSecret) {
     console.error("[Webhook] Missing STRIPE webhook secret");
     return new Response("Webhook secret not configured", { status: 500 });
@@ -68,7 +82,7 @@ export async function POST(req: NextRequest) {
 
   let event: Stripe.Event;
   try {
-    event = stripe.webhooks.constructEvent(body, sig, webhookSecret);
+    event = constructStripeWebhookEvent(body, sig, webhookSecret);
   } catch (err) {
     const message =
       err instanceof Error ? err.message : "Unknown signature validation error";
@@ -293,6 +307,16 @@ export async function handleStripeEvent(event: Stripe.Event) {
         if (paymentIntentId) {
           await blockPendingPayout(paymentIntentId, `DISPUTE_${dispute.reason ?? "UNKNOWN"}`);
         }
+        await enqueueOperation({
+          operationType: "PROCESS_STRIPE_EVENT",
+          dedupeKey: event.id,
+          correlations: { stripeEventId: event.id },
+          payload: {
+            stripeEventType: event.type,
+            stripeEventId: event.id,
+            stripeEventObject: dispute,
+          },
+        });
         break;
       }
 
@@ -309,6 +333,23 @@ export async function handleStripeEvent(event: Stripe.Event) {
             await unblockPendingPayout(paymentIntentId);
           }
         }
+        break;
+      }
+
+      case "dispute.created":
+      case "dispute.won":
+      case "dispute.lost": {
+        const dispute = event.data.object as Stripe.Dispute;
+        await enqueueOperation({
+          operationType: "PROCESS_STRIPE_EVENT",
+          dedupeKey: event.id,
+          correlations: { stripeEventId: event.id },
+          payload: {
+            stripeEventType: event.type,
+            stripeEventId: event.id,
+            stripeEventObject: dispute,
+          },
+        });
         break;
       }
 
@@ -876,7 +917,7 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent, stripeEventId
   let stripeFeeCents: number | null = null;
   try {
     if (intent.latest_charge) {
-      const charge = await stripe.charges.retrieve(intent.latest_charge as string, {
+      const charge = await retrieveCharge(intent.latest_charge as string, {
         expand: ["balance_transaction"],
       });
       const balanceTx = charge.balance_transaction as Stripe.BalanceTransaction | null;
@@ -1339,7 +1380,7 @@ async function handlePadelSplitPayment(intent: Stripe.PaymentIntent) {
   let stripeFeeForIntentValue = 0;
   try {
     if (intent.latest_charge) {
-      const charge = await stripe.charges.retrieve(intent.latest_charge as string, {
+      const charge = await retrieveCharge(intent.latest_charge as string, {
         expand: ["balance_transaction"],
       });
       const balanceTx = charge.balance_transaction as Stripe.BalanceTransaction | null;
@@ -1365,13 +1406,20 @@ async function handlePadelSplitPayment(intent: Stripe.PaymentIntent) {
         pairingId,
       });
       await prisma.$transaction(async (tx) => {
-        await tx.padelPairing.update({
+        const updated = await tx.padelPairing.update({
           where: { id: pairingId },
           data: {
             pairingStatus: PadelPairingStatus.CANCELLED,
-            lifecycleStatus: PadelPairingLifecycleStatus.CANCELLED_INCOMPLETE,
             guaranteeStatus: "FAILED",
           },
+          select: { id: true, eventId: true, organizationId: true },
+        });
+        await upsertPadelRegistrationForPairing(tx, {
+          pairingId: updated.id,
+          organizationId: updated.organizationId,
+          eventId: updated.eventId,
+          status: PadelRegistrationStatus.CANCELLED,
+          reason: "STOCK_INSUFFICIENT",
         });
         await tx.padelPairingHold.updateMany({
           where: { pairingId, status: "ACTIVE" },
@@ -1508,6 +1556,7 @@ async function handlePadelSplitPayment(intent: Stripe.PaymentIntent) {
       data: { saleSummaryId: sale.id },
     });
 
+    const policyVersionApplied = await getLatestPolicyVersionForEvent(eventId, tx);
     const ownerKey = userId ? `user:${userId}` : "unknown";
     const entitlementPurchaseId = sale.purchaseId ?? sale.paymentIntentId ?? intent.id;
     await tx.entitlement.upsert({
@@ -1525,6 +1574,7 @@ async function handlePadelSplitPayment(intent: Stripe.PaymentIntent) {
         ownerUserId: userId ?? null,
         ownerIdentityId: null,
         eventId,
+        policyVersionApplied,
         snapshotTitle: event.title,
         snapshotCoverUrl: event.coverImageUrl,
         snapshotVenueName: event.locationName,
@@ -1542,6 +1592,7 @@ async function handlePadelSplitPayment(intent: Stripe.PaymentIntent) {
         type: EntitlementType.PADEL_ENTRY,
         status: EntitlementStatus.ACTIVE,
         eventId,
+        policyVersionApplied,
         snapshotTitle: event.title,
         snapshotCoverUrl: event.coverImageUrl,
         snapshotVenueName: event.locationName,
@@ -1588,16 +1639,19 @@ async function handlePadelSplitPayment(intent: Stripe.PaymentIntent) {
     });
 
     const allPaid = updated.slots.every((s) => s.paymentStatus === PadelPairingPaymentStatus.PAID);
-    const nextLifecycle = allPaid
-      ? PadelPairingLifecycleStatus.CONFIRMED_BOTH_PAID
-      : PadelPairingLifecycleStatus.PENDING_PARTNER_PAYMENT;
-    if (updated.lifecycleStatus !== nextLifecycle) {
-      updated = await tx.padelPairing.update({
-        where: { id: pairingId },
-        data: { lifecycleStatus: nextLifecycle },
-        include: { slots: true },
-      });
-    }
+    const nextRegistrationStatus = allPaid
+      ? PadelRegistrationStatus.CONFIRMED
+      : PadelRegistrationStatus.PENDING_PAYMENT;
+
+    await upsertPadelRegistrationForPairing(tx, {
+      pairingId,
+      organizationId: updated.organizationId,
+      eventId: updated.eventId,
+      status: nextRegistrationStatus,
+      paymentMode: updated.payment_mode,
+      isFullyPaid: allPaid,
+      reason: "PAYMENT_WEBHOOK",
+    });
 
     const stillPending = updated.slots.some((s) => s.slotStatus === "PENDING" || s.paymentStatus === "UNPAID");
     if (!stillPending && updated.pairingStatus !== "COMPLETE") {
@@ -1673,7 +1727,6 @@ async function handleSecondCharge(intent: Stripe.PaymentIntent) {
       const confirmed = await tx.padelPairing.update({
         where: { id: pairingId },
         data: {
-          lifecycleStatus: PadelPairingLifecycleStatus.CONFIRMED_CAPTAIN_FULL,
           pairingStatus,
           guaranteeStatus: "SUCCEEDED",
           secondChargePaymentIntentId: intent.id,
@@ -1681,6 +1734,15 @@ async function handleSecondCharge(intent: Stripe.PaymentIntent) {
           partnerPaidAt: now,
           graceUntilAt: null,
         },
+      });
+      await upsertPadelRegistrationForPairing(tx, {
+        pairingId,
+        organizationId: confirmed.organizationId,
+        eventId: confirmed.eventId,
+        status: PadelRegistrationStatus.CONFIRMED,
+        paymentMode: confirmed.payment_mode,
+        secondChargeConfirmed: true,
+        reason: "SECOND_CHARGE_CONFIRMED",
       });
       if (allFilled) {
         await ensureEntriesForConfirmedPairing(confirmed.id);
@@ -1740,14 +1802,21 @@ async function handleSecondCharge(intent: Stripe.PaymentIntent) {
 
   if (intent.status === "requires_payment_method" || intent.status === "canceled") {
     await prisma.$transaction(async (tx) => {
-      await tx.padelPairing.update({
+      const updated = await tx.padelPairing.update({
         where: { id: pairingId },
         data: {
           guaranteeStatus: "FAILED",
-          lifecycleStatus: PadelPairingLifecycleStatus.CANCELLED_INCOMPLETE,
           pairingStatus: PadelPairingStatus.CANCELLED,
           graceUntilAt: null,
         },
+        select: { id: true, eventId: true, organizationId: true },
+      });
+      await upsertPadelRegistrationForPairing(tx, {
+        pairingId: updated.id,
+        organizationId: updated.organizationId,
+        eventId: updated.eventId,
+        status: PadelRegistrationStatus.EXPIRED,
+        reason: "SECOND_CHARGE_FAILED",
       });
       await tx.padelPairingHold.updateMany({
         where: { pairingId, status: "ACTIVE" },
@@ -1802,13 +1871,20 @@ async function handlePadelFullPayment(intent: Stripe.PaymentIntent) {
         pairingId,
       });
       await prisma.$transaction(async (tx) => {
-        await tx.padelPairing.update({
+        const updated = await tx.padelPairing.update({
           where: { id: pairingId },
           data: {
             pairingStatus: PadelPairingStatus.CANCELLED,
-            lifecycleStatus: PadelPairingLifecycleStatus.CANCELLED_INCOMPLETE,
             guaranteeStatus: "FAILED",
           },
+          select: { id: true, eventId: true, organizationId: true },
+        });
+        await upsertPadelRegistrationForPairing(tx, {
+          pairingId: updated.id,
+          organizationId: updated.organizationId,
+          eventId: updated.eventId,
+          status: PadelRegistrationStatus.CANCELLED,
+          reason: "STOCK_INSUFFICIENT",
         });
         await tx.padelPairingHold.updateMany({
           where: { pairingId, status: "ACTIVE" },
@@ -2009,6 +2085,7 @@ async function handlePadelFullPayment(intent: Stripe.PaymentIntent) {
       type: EntitlementType.PADEL_ENTRY,
       status: EntitlementStatus.ACTIVE,
       eventId,
+      policyVersionApplied,
       snapshotTitle: event.title,
       snapshotCoverUrl: event.coverImageUrl,
       snapshotVenueName: event.locationName,
@@ -2053,11 +2130,11 @@ async function handlePadelFullPayment(intent: Stripe.PaymentIntent) {
     const partnerSlotStatus = partnerFilled ? PadelPairingSlotStatus.FILLED : PadelPairingSlotStatus.PENDING;
     const pairingStatus = partnerSlotStatus === PadelPairingSlotStatus.FILLED ? "COMPLETE" : "INCOMPLETE";
 
+    const registrationStatus = PadelRegistrationStatus.CONFIRMED;
     await tx.padelPairing.update({
       where: { id: pairingId },
       data: {
         pairingStatus,
-        lifecycleStatus: PadelPairingLifecycleStatus.CONFIRMED_CAPTAIN_FULL,
         slots: {
           update: [
             {
@@ -2080,6 +2157,16 @@ async function handlePadelFullPayment(intent: Stripe.PaymentIntent) {
           ],
         },
       },
+    });
+
+    await upsertPadelRegistrationForPairing(tx, {
+      pairingId,
+      organizationId: event.organizationId,
+      eventId,
+      status: registrationStatus,
+      paymentMode: PadelPaymentMode.FULL,
+      isFullyPaid: true,
+      reason: "CAPTAIN_FULL_PAYMENT",
     });
 
     shouldEnsureEntries = partnerFilled;
@@ -2133,7 +2220,7 @@ export async function handleRefund(charge: Stripe.Charge) {
   }
 
   // Obter metadata do payment intent para identificar PADEL_SPLIT
-  const intent = await stripe.paymentIntents.retrieve(paymentIntentId, { expand: ["latest_charge"] }).catch(() => null);
+  const intent = await retrievePaymentIntent(paymentIntentId, { expand: ["latest_charge"] }).catch(() => null);
 
   const paymentScenario = normalizePaymentScenario(
     typeof intent?.metadata?.paymentScenario === "string" ? intent?.metadata?.paymentScenario : null,

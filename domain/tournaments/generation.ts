@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { Prisma, TournamentFormat, TournamentMatchStatus, TournamentStageType, PadelPairingLifecycleStatus } from "@prisma/client";
+import { Prisma, TournamentFormat, TournamentMatchStatus, TournamentStageType, PadelRegistrationStatus } from "@prisma/client";
 import {
   generateDrawAB,
   generateRoundRobin,
@@ -16,17 +16,12 @@ type PairingId = number | null;
 export type { RoundRobinMatch, RoundRobinSchedule, EliminationMatch, EliminationBracket, ABBracket };
 export { generateRoundRobin, generateSingleElimination, generateDrawAB };
 
-const CONFIRMED_PAIRING_STATUSES: PadelPairingLifecycleStatus[] = [
-  PadelPairingLifecycleStatus.CONFIRMED_BOTH_PAID,
-  PadelPairingLifecycleStatus.CONFIRMED_CAPTAIN_FULL,
-];
-
 export async function getConfirmedPairings(eventId: number) {
   const pairings = await prisma.padelPairing.findMany({
     where: {
       eventId,
       pairingStatus: "COMPLETE",
-      lifecycleStatus: { in: CONFIRMED_PAIRING_STATUSES },
+      registration: { status: PadelRegistrationStatus.CONFIRMED },
     },
     select: { id: true },
     orderBy: { id: "asc" },
@@ -55,7 +50,7 @@ export async function generateAndPersistTournamentStructure(opts: PersistOptions
   const confirmed = preserveOrder ? pairings : pairings.filter((id) => typeof id === "number");
 
   return prisma.$transaction(async (tx) => {
-    // Deadline: se ainda não passou e não foi forçado, bloqueia
+    // Deadline: se ainda não expirou e não foi forçado, bloqueia
     if (inscriptionDeadlineAt && new Date() < new Date(inscriptionDeadlineAt) && !forceGenerate) {
       throw new Error("INSCRIPTION_NOT_CLOSED");
     }
@@ -225,7 +220,7 @@ export async function generateAndPersistTournamentStructure(opts: PersistOptions
 
     // Audit log da geração
     if (userId) {
-      await tx.tournamentAuditLog.create({
+      await tx.tournamentAuditLog["create"]({
         data: {
           tournamentId,
           userId,

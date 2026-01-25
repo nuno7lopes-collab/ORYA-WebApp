@@ -21,10 +21,13 @@ import { normalizeInterestSelection, resolveInterestLabel } from "@/lib/interest
 import { getPaidSalesGate } from "@/lib/organizationPayments";
 import { isStoreFeatureEnabled, isStorePublic } from "@/lib/storeAccess";
 import { OrganizationFormStatus } from "@prisma/client";
+import { deriveIsFreeEvent } from "@/domain/events/derivedIsFree";
 import ReservasBookingSection from "@/app/[username]/_components/ReservasBookingSection";
 import { ensurePublicProfileLayout, type PublicProfileModuleType } from "@/lib/publicProfileLayout";
 import { formatEventLocationLabel } from "@/lib/location/eventLocation";
 import { getUserFollowCounts, isUserFollowing } from "@/domain/social/follows";
+import type { Metadata } from "next";
+import { getAppBaseUrl } from "@/lib/appBaseUrl";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -33,6 +36,78 @@ type PageProps = {
   params: { username: string } | Promise<{ username: string }>;
   searchParams?: { serviceId?: string } | Promise<{ serviceId?: string }>;
 };
+
+export async function generateMetadata({
+  params,
+}: {
+  params: PageProps["params"];
+}): Promise<Metadata> {
+  const resolved = await params;
+  const username = resolved?.username?.trim();
+  const baseUrl = getAppBaseUrl();
+
+  if (!username) {
+    return {
+      metadataBase: new URL(baseUrl),
+      title: "Perfil | ORYA",
+      description: "Perfil público na ORYA.",
+    };
+  }
+
+  const [profile, organization] = await Promise.all([
+    prisma.profile.findUnique({
+      where: { username },
+      select: { fullName: true, username: true, bio: true, coverUrl: true, avatarUrl: true },
+    }),
+    prisma.organization.findFirst({
+      where: { username, status: "ACTIVE" },
+      select: {
+        publicName: true,
+        businessName: true,
+        publicDescription: true,
+        brandingCoverUrl: true,
+        brandingAvatarUrl: true,
+      },
+    }),
+  ]);
+
+  const canonicalUrl = `${baseUrl}/${username}`;
+  const isOrg = Boolean(organization);
+  const displayName = isOrg
+    ? organization?.publicName?.trim() ||
+      organization?.businessName?.trim() ||
+      "Organização ORYA"
+    : profile?.fullName?.trim() || username;
+  const description =
+    (isOrg ? organization?.publicDescription : profile?.bio)?.trim() ||
+    `Perfil público de ${displayName} na ORYA.`;
+  const rawCover = isOrg ? organization?.brandingCoverUrl : profile?.coverUrl;
+  const coverUrl = rawCover
+    ? rawCover.startsWith("http")
+      ? rawCover
+      : `${baseUrl}${rawCover.startsWith("/") ? "" : "/"}${rawCover}`
+    : null;
+
+  return {
+    metadataBase: new URL(baseUrl),
+    alternates: { canonical: canonicalUrl },
+    title: `${displayName} | ORYA`,
+    description,
+    openGraph: {
+      title: `${displayName} | ORYA`,
+      description,
+      url: canonicalUrl,
+      type: "profile",
+      images: coverUrl ? [{ url: coverUrl }] : undefined,
+    },
+    twitter: {
+      card: coverUrl ? "summary_large_image" : "summary",
+      title: `${displayName} | ORYA`,
+      description,
+      images: coverUrl ? [coverUrl] : undefined,
+    },
+  };
+}
 
 async function getViewerId() {
   try {
@@ -98,7 +173,7 @@ type OrganizationEvent = {
   timezone: string | null;
   templateType: string | null;
   coverImageUrl: string | null;
-  isFree: boolean;
+  isGratis: boolean;
 };
 
 type OrganizationFormPreview = {
@@ -119,7 +194,7 @@ type AgendaItem = {
   timeLabel: string;
   locationLabel: string;
   isPast: boolean;
-  isFree: boolean;
+  isGratis: boolean;
   templateType?: string | null;
 };
 
@@ -216,7 +291,7 @@ function buildAgendaGroups(events: OrganizationEvent[], pastEventIds?: Set<numbe
       timeLabel: hasDate ? formatTimeLabel(event.startsAt as Date, timezone) : "—",
       locationLabel,
       isPast: pastEventIds?.has(event.id) ?? false,
-      isFree: event.isFree,
+      isGratis: event.isGratis,
       templateType: event.templateType ?? null,
     };
 
@@ -397,7 +472,7 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
           locationFormattedAddress: true,
           locationComponents: true,
           locationOverrides: true,
-          isFree: true,
+          pricingMode: true,
           timezone: true,
           templateType: true,
           coverImageUrl: true,
@@ -515,6 +590,32 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
         : Promise.resolve([] as Array<{ id: number; rating: number; comment: string | null; createdAt: Date; user: { fullName: string | null; avatarUrl: string | null } | null }>),
     ]);
 
+    const orgEvents: OrganizationEvent[] = events.map((event) => {
+      const ticketPrices = event.ticketTypes?.map((t) => t.price ?? 0) ?? [];
+      const isGratis = deriveIsFreeEvent({
+        pricingMode: event.pricingMode ?? undefined,
+        ticketPrices,
+      });
+      return {
+        id: event.id,
+        slug: event.slug,
+        title: event.title,
+        startsAt: event.startsAt,
+        endsAt: event.endsAt,
+        locationName: event.locationName,
+        locationCity: event.locationCity,
+        address: event.address,
+        locationSource: event.locationSource,
+        locationFormattedAddress: event.locationFormattedAddress,
+        locationComponents: event.locationComponents,
+        locationOverrides: event.locationOverrides,
+        timezone: event.timezone,
+        templateType: event.templateType,
+        coverImageUrl: event.coverImageUrl,
+        isGratis,
+      };
+    });
+
     const store = await prisma.store.findFirst({
       where: { ownerOrganizationId: organizationProfile.id },
       select: { id: true, status: true, showOnProfile: true, catalogLocked: true, currency: true },
@@ -568,13 +669,13 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
         : null;
 
     const categoryEvents = operationTemplate
-      ? (events as OrganizationEvent[]).filter(
+      ? orgEvents.filter(
           (event) =>
             event.templateType === operationTemplate ||
             event.templateType === null ||
             event.templateType === "OTHER",
         )
-      : (events as OrganizationEvent[]);
+      : orgEvents;
     const upcomingEvents = categoryEvents
       .filter((event) => event.startsAt && event.startsAt >= now)
       .sort((a, b) => (a.startsAt?.getTime() ?? 0) - (b.startsAt?.getTime() ?? 0));
@@ -606,7 +707,7 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
     const spotlightCtaLabel = spotlightEvent
       ? spotlightEvent.templateType === "PADEL"
         ? "Inscrever agora"
-        : spotlightEvent.isFree
+        : spotlightEvent.isGratis
           ? "Garantir lugar"
           : "Comprar bilhete"
       : "Comprar bilhete";

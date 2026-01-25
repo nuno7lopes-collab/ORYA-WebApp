@@ -4,6 +4,7 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { resolveActions } from "@/lib/entitlements/accessResolver";
 import { EntitlementStatus, OrganizationMemberRole } from "@prisma/client";
 import { buildDefaultCheckinWindow } from "@/lib/checkin/policy";
+import { resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
 
 const MAX_PAGE = 100;
 
@@ -62,9 +63,9 @@ async function ensureOrganization(userId: string, eventId: number) {
   const isAdmin = roles.includes("admin");
   if (isAdmin) return { ok: true as const, isAdmin };
 
-  const membership = await prisma.organizationMember.findUnique({
-    where: { organizationId_userId: { organizationId: event.organizationId, userId } },
-    select: { id: true, role: true },
+  const membership = await resolveGroupMemberForOrg({
+    organizationId: event.organizationId,
+    userId,
   });
   if (!membership) {
     return { ok: false as const, status: 403, error: "FORBIDDEN_ATTENDEES_ACCESS" };

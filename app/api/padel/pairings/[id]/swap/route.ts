@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { canSwapPartner } from "@/domain/padel/pairingPolicy";
+import { mapRegistrationToPairingLifecycle } from "@/domain/padelRegistration";
 import { computeGraceUntil } from "@/domain/padelDeadlines";
-import { PadelPairingPaymentStatus, PadelPairingSlotStatus } from "@prisma/client";
+import { PadelPairingPaymentStatus, PadelPairingSlotStatus, PadelRegistrationStatus } from "@prisma/client";
 import { readNumericParam } from "@/lib/routeParams";
 import { randomUUID } from "crypto";
 
@@ -23,7 +24,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       organizationId: true,
       player1UserId: true,
       player2UserId: true,
-      lifecycleStatus: true,
+      payment_mode: true,
+      registration: { select: { status: true } },
       partnerSwapAllowedUntilAt: true,
       slots: true,
     },
@@ -36,7 +38,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
   }
 
-  if (!canSwapPartner(pairing.lifecycleStatus as any, new Date(), pairing.partnerSwapAllowedUntilAt)) {
+  const lifecycleStatus = mapRegistrationToPairingLifecycle(
+    pairing.registration?.status ?? PadelRegistrationStatus.PENDING_PARTNER,
+    pairing.payment_mode,
+  );
+  if (!canSwapPartner(lifecycleStatus, new Date(), pairing.partnerSwapAllowedUntilAt)) {
     return NextResponse.json({ ok: false, error: "SWAP_NOT_ALLOWED" }, { status: 409 });
   }
 

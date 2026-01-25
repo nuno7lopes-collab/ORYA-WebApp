@@ -467,7 +467,7 @@ export function TournamentLiveManager({ tournamentId }: TournamentLiveManagerPro
     inProgress: flatMatches.filter((m: any) => m.status === "IN_PROGRESS").length,
     done: flatMatches.filter((m: any) => m.status === "DONE").length,
   };
-  const showLivePanel = tournament?.event?.isFree === false;
+  const showLivePanel = tournament?.event?.isGratis === false;
 
   return (
     <div className="space-y-4">

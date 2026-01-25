@@ -7,11 +7,14 @@ import { createNotification } from "@/lib/notifications";
 import { NotificationType } from "@prisma/client";
 import { canManageMembers, isOrgAdminOrAbove, isOrgOwner } from "@/lib/organizationPermissions";
 import { ensureUserIsOrganization, setSoleOwner } from "@/lib/organizationRoles";
+import { ensureGroupMemberForOrg, resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
 import { sanitizeProfileVisibility } from "@/lib/profileVisibility";
 import { sendEmail } from "@/lib/resendClient";
 import { parseOrganizationId, resolveOrganizationIdFromParams } from "@/lib/organizationId";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
-import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
+import { recordOrganizationAudit } from "@/lib/organizationAudit";
+import { recordOutboxEvent } from "@/domain/outbox/producer";
+import { appendEventLog } from "@/domain/eventLog/append";
 
 const resolveIp = (req: NextRequest) => {
   const forwarded = req.headers.get("x-forwarded-for");
@@ -164,9 +167,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "INVALID_ORGANIZATION_ID" }, { status: 400 });
     }
 
-    const membership = await prisma.organizationMember.findUnique({
-      where: { organizationId_userId: { organizationId, userId: user.id } },
-    });
+    const membership = await resolveGroupMemberForOrg({ organizationId, userId: user.id });
     const isManager = membership ? isOrgAdminOrAbove(membership.role) : false;
 
     const viewerEmail = user.email?.toLowerCase() ?? null;
@@ -273,10 +274,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "ROLE_NOT_ALLOWED" }, { status: 400 });
     }
 
-    const membership = await prisma.organizationMember.findUnique({
-      where: { organizationId_userId: { organizationId, userId: user.id } },
-    });
-    if (!membership || !canManageMembers(membership.role, null, roleRaw as OrganizationMemberRole)) {
+    const membership = await resolveGroupMemberForOrg({ organizationId, userId: user.id });
+    const manageAllowed = canManageMembers(membership?.role ?? null, null, roleRaw as OrganizationMemberRole);
+    if (!membership || !manageAllowed) {
       return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
     if (roleRaw === "OWNER" && !isOrgOwner(membership.role)) {
@@ -312,55 +312,95 @@ export async function POST(req: NextRequest) {
     }
 
     const normalizedIdentifier = identifier.toLowerCase();
-    await prisma.organizationMemberInvite.updateMany({
-      where: {
-        organizationId,
-        acceptedAt: null,
-        cancelledAt: null,
-        declinedAt: null,
-        OR: [
-          { targetIdentifier: { equals: normalizedIdentifier, mode: Prisma.QueryMode.insensitive } },
-          ...(targetUserId ? [{ targetUserId }] : []),
-        ],
-      },
-      data: { cancelledAt: new Date() },
-    });
-
     const expiresAt = new Date(Date.now() + INVITE_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
 
-    const invite = await prisma.organizationMemberInvite.create({
-      data: {
-        organizationId,
-        invitedByUserId: user.id,
-        targetIdentifier: identifier,
-        targetUserId,
-        role: roleRaw as OrganizationMemberRole,
-        token: crypto.randomUUID(),
-        expiresAt,
-      },
-      include: {
-        invitedBy: { select: { id: true, username: true, fullName: true, avatarUrl: true, visibility: true } },
-        targetUser: {
-          select: {
-            id: true,
-            username: true,
-            fullName: true,
-            avatarUrl: true,
-            visibility: true,
-          },
+    const invite = await prisma.$transaction(async (tx) => {
+      await tx.organizationMemberInvite.updateMany({
+        where: {
+          organizationId,
+          acceptedAt: null,
+          cancelledAt: null,
+          declinedAt: null,
+          OR: [
+            { targetIdentifier: { equals: normalizedIdentifier, mode: Prisma.QueryMode.insensitive } },
+            ...(targetUserId ? [{ targetUserId }] : []),
+          ],
         },
-        organization: { select: { id: true, publicName: true } },
-      },
-    });
+        data: { cancelledAt: new Date() },
+      });
 
-    await recordOrganizationAuditSafe({
-      organizationId,
-      actorUserId: user.id,
-      action: "INVITE_CREATED",
-      toUserId: targetUserId,
-      metadata: { inviteId: invite.id, role: invite.role, target: invite.targetIdentifier },
-      ip: resolveIp(req),
-      userAgent: req.headers.get("user-agent"),
+      const created = await tx.organizationMemberInvite.create({
+        data: {
+          organizationId,
+          invitedByUserId: user.id,
+          targetIdentifier: identifier,
+          targetUserId,
+          role: roleRaw as OrganizationMemberRole,
+          token: crypto.randomUUID(),
+          expiresAt,
+        },
+        include: {
+          invitedBy: { select: { id: true, username: true, fullName: true, avatarUrl: true, visibility: true } },
+          targetUser: {
+            select: {
+              id: true,
+              username: true,
+              fullName: true,
+              avatarUrl: true,
+              visibility: true,
+            },
+          },
+          organization: { select: { id: true, publicName: true } },
+        },
+      });
+
+      await recordOrganizationAudit(tx, {
+        organizationId,
+        groupId: membership?.groupId ?? null,
+        actorUserId: user.id,
+        action: "INVITE_CREATED",
+        entityType: "organization_member_invite",
+        entityId: created.id,
+        correlationId: created.id,
+        toUserId: targetUserId,
+        metadata: { inviteId: created.id, role: created.role, target: created.targetIdentifier },
+        ip: resolveIp(req),
+        userAgent: req.headers.get("user-agent"),
+      });
+
+      const outbox = await recordOutboxEvent(
+        {
+          eventType: "organization.invite.created",
+          payload: {
+            inviteId: created.id,
+            organizationId,
+            role: created.role,
+            targetUserId: created.targetUserId,
+          },
+          correlationId: created.id,
+        },
+        tx,
+      );
+
+      await appendEventLog(
+        {
+          eventId: outbox.eventId,
+          organizationId,
+          eventType: "organization.invite.created",
+          idempotencyKey: outbox.eventId,
+          payload: {
+            inviteId: created.id,
+            role: created.role,
+            target: created.targetIdentifier,
+          },
+          actorUserId: user.id,
+          sourceId: String(organizationId),
+          correlationId: created.id,
+        },
+        tx,
+      );
+
+      return created;
     });
 
     const viewer = {
@@ -466,9 +506,7 @@ export async function PATCH(req: NextRequest) {
       organizationId = invite.organizationId;
     }
 
-    const membership = await prisma.organizationMember.findUnique({
-      where: { organizationId_userId: { organizationId, userId: user.id } },
-    });
+    const membership = await resolveGroupMemberForOrg({ organizationId, userId: user.id });
     const isManager = membership ? isOrgAdminOrAbove(membership.role) : false;
     const organization = await prisma.organization.findUnique({
       where: { id: organizationId },
@@ -498,49 +536,50 @@ export async function PATCH(req: NextRequest) {
 
     const isOwnerManager = membership?.role === "OWNER";
 
-    if (action === "CANCEL") {
-      if (!isManager) {
-        return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
-      }
-      if (invite.role === "OWNER" && !isOwnerManager) {
-        return NextResponse.json({ ok: false, error: "ONLY_OWNER_CAN_CANCEL_OWNER_INVITE" }, { status: 403 });
-      }
-      await prisma.organizationMemberInvite.update({
-        where: { id: invite.id },
-        data: { cancelledAt: new Date() },
-      });
-    } else if (action === "RESEND") {
-      if (!isManager) {
-        return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
-      }
-      if (invite.role === "OWNER" && !isOwnerManager) {
-        return NextResponse.json({ ok: false, error: "ONLY_OWNER_CAN_SET_OWNER" }, { status: 403 });
-      }
-      const resolved = await resolveUserIdentifier(invite.targetIdentifier);
-      await prisma.organizationMemberInvite.update({
-        where: { id: invite.id },
-        data: {
-          cancelledAt: null,
-          declinedAt: null,
-          acceptedAt: null,
-          targetUserId: resolved?.userId ?? invite.targetUserId,
-          token: crypto.randomUUID(),
-          expiresAt: new Date(Date.now() + INVITE_EXPIRY_DAYS * 24 * 60 * 60 * 1000),
-        },
-      });
-    } else if (action === "ACCEPT") {
-      if (!isPending) {
-        return NextResponse.json({ ok: false, error: "INVITE_NOT_PENDING" }, { status: 400 });
-      }
-      if (isExpired) {
-        return NextResponse.json({ ok: false, error: "INVITE_EXPIRED" }, { status: 400 });
-      }
-      if (!isTargetUser && !matchesToken) {
-        return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
-      }
+    const resolvedTarget = action === "RESEND" ? await resolveUserIdentifier(invite.targetIdentifier) : null;
 
-      const role = invite.role as OrganizationMemberRole;
-      await prisma.$transaction(async (tx) => {
+    const updated = await prisma.$transaction(async (tx) => {
+      if (action === "CANCEL") {
+        if (!isManager) {
+          throw new Error("FORBIDDEN");
+        }
+        if (invite.role === "OWNER" && !isOwnerManager) {
+          throw new Error("ONLY_OWNER_CAN_CANCEL_OWNER_INVITE");
+        }
+        await tx.organizationMemberInvite.update({
+          where: { id: invite.id },
+          data: { cancelledAt: new Date() },
+        });
+      } else if (action === "RESEND") {
+        if (!isManager) {
+          throw new Error("FORBIDDEN");
+        }
+        if (invite.role === "OWNER" && !isOwnerManager) {
+          throw new Error("ONLY_OWNER_CAN_SET_OWNER");
+        }
+        await tx.organizationMemberInvite.update({
+          where: { id: invite.id },
+          data: {
+            cancelledAt: null,
+            declinedAt: null,
+            acceptedAt: null,
+            targetUserId: resolvedTarget?.userId ?? invite.targetUserId,
+            token: crypto.randomUUID(),
+            expiresAt: new Date(Date.now() + INVITE_EXPIRY_DAYS * 24 * 60 * 60 * 1000),
+          },
+        });
+      } else if (action === "ACCEPT") {
+        if (!isPending) {
+          throw new Error("INVITE_NOT_PENDING");
+        }
+        if (isExpired) {
+          throw new Error("INVITE_EXPIRED");
+        }
+        if (!isTargetUser && !matchesToken) {
+          throw new Error("FORBIDDEN");
+        }
+
+        const role = invite.role as OrganizationMemberRole;
         const currentMember = await tx.organizationMember.findUnique({
           where: { organizationId_userId: { organizationId, userId: user.id } },
         });
@@ -579,117 +618,171 @@ export async function PATCH(req: NextRequest) {
             });
           }
           await ensureUserIsOrganization(tx, user.id);
-          return;
-        }
-
-        if (role === "OWNER") {
-          await setSoleOwner(tx, organizationId, user.id, invite.invitedByUserId);
         } else {
-          await tx.organizationMember.upsert({
-            where: { organizationId_userId: { organizationId, userId: user.id } },
-            update: { role },
-            create: {
+          if (role === "OWNER") {
+            await setSoleOwner(tx, organizationId, user.id, invite.invitedByUserId);
+          } else {
+            await tx.organizationMember.upsert({
+              where: { organizationId_userId: { organizationId, userId: user.id } },
+              update: { role },
+              create: {
+                organizationId,
+                userId: user.id,
+                role,
+                invitedByUserId: invite.invitedByUserId,
+              },
+            });
+            await ensureGroupMemberForOrg({
               organizationId,
               userId: user.id,
               role,
-              invitedByUserId: invite.invitedByUserId,
-            },
-          });
-        }
+              client: tx,
+            });
+          }
 
-        await tx.organizationMemberInvite.update({
-          where: { id: invite.id },
-          data: {
-            acceptedAt: new Date(),
-            declinedAt: null,
-            cancelledAt: null,
-            targetUserId: user.id,
-          },
-        });
-
-        await ensureUserIsOrganization(tx, user.id);
-
-        const normalizedIdentifiers = [
-          invite.targetIdentifier.toLowerCase(),
-          viewerEmail,
-          viewerUsername?.toLowerCase() ?? null,
-        ].filter(Boolean) as string[];
-
-        if (normalizedIdentifiers.length > 0) {
-          await tx.organizationMemberInvite.updateMany({
-            where: {
-              organizationId,
-              id: { not: invite.id },
-              acceptedAt: null,
+          await tx.organizationMemberInvite.update({
+            where: { id: invite.id },
+            data: {
+              acceptedAt: new Date(),
               declinedAt: null,
               cancelledAt: null,
-              OR: [
-                { targetUserId: user.id },
-                ...normalizedIdentifiers.map((identifier) => ({
-                  targetIdentifier: { equals: identifier, mode: Prisma.QueryMode.insensitive },
-                })),
-              ],
+              targetUserId: user.id,
             },
-            data: { cancelledAt: new Date() },
           });
+
+          await ensureUserIsOrganization(tx, user.id);
+
+          const normalizedIdentifiers = [
+            invite.targetIdentifier.toLowerCase(),
+            viewerEmail,
+            viewerUsername?.toLowerCase() ?? null,
+          ].filter(Boolean) as string[];
+
+          if (normalizedIdentifiers.length > 0) {
+            await tx.organizationMemberInvite.updateMany({
+              where: {
+                organizationId,
+                id: { not: invite.id },
+                acceptedAt: null,
+                declinedAt: null,
+                cancelledAt: null,
+                OR: [
+                  { targetUserId: user.id },
+                  ...normalizedIdentifiers.map((identifier) => ({
+                    targetIdentifier: { equals: identifier, mode: Prisma.QueryMode.insensitive },
+                  })),
+                ],
+              },
+              data: { cancelledAt: new Date() },
+            });
+          }
         }
-      }).catch((err: unknown) => {
-        if (err instanceof Error && err.message === "LAST_OWNER_BLOCK") {
-          throw err;
+      } else if (action === "DECLINE") {
+        if (!isTargetUser && !matchesToken && !isManager) {
+          throw new Error("FORBIDDEN");
         }
-        throw err;
-      });
-    } else if (action === "DECLINE") {
-      if (!isTargetUser && !matchesToken && !isManager) {
-        return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+        if (!isPending) {
+          throw new Error("INVITE_NOT_PENDING");
+        }
+        await tx.organizationMemberInvite.update({
+          where: { id: invite.id },
+          data: { declinedAt: new Date(), acceptedAt: null, cancelledAt: null, targetUserId: user.id },
+        });
+      } else {
+        throw new Error("UNKNOWN_ACTION");
       }
-      if (!isPending) {
-        return NextResponse.json({ ok: false, error: "INVITE_NOT_PENDING" }, { status: 400 });
-      }
-      await prisma.organizationMemberInvite.update({
+
+      const updatedInvite = await tx.organizationMemberInvite.findUnique({
         where: { id: invite.id },
-        data: { declinedAt: new Date(), acceptedAt: null, cancelledAt: null, targetUserId: user.id },
-      });
-    } else {
-      return NextResponse.json({ ok: false, error: "UNKNOWN_ACTION" }, { status: 400 });
-    }
-
-    const updated = await prisma.organizationMemberInvite.findUnique({
-      where: { id: invite.id },
-      include: {
-        invitedBy: { select: { id: true, username: true, fullName: true, avatarUrl: true } },
-        targetUser: {
-          select: {
-            id: true,
-            username: true,
-            fullName: true,
-            avatarUrl: true,
+        include: {
+          invitedBy: { select: { id: true, username: true, fullName: true, avatarUrl: true } },
+          targetUser: {
+            select: {
+              id: true,
+              username: true,
+              fullName: true,
+              avatarUrl: true,
+            },
           },
+          organization: { select: { id: true, publicName: true } },
         },
-        organization: { select: { id: true, publicName: true } },
-      },
-    });
+      });
+      if (!updatedInvite) {
+        throw new Error("INVITE_NOT_FOUND");
+      }
 
-    if (!updated) {
-      return NextResponse.json({ ok: false, error: "INVITE_NOT_FOUND" }, { status: 404 });
-    }
-
-    await recordOrganizationAuditSafe({
-      organizationId,
-      actorUserId: user.id,
-      action:
+      const auditAction =
         action === "CANCEL"
           ? "INVITE_CANCELLED"
           : action === "RESEND"
             ? "INVITE_RESENT"
             : action === "ACCEPT"
               ? "INVITE_ACCEPTED"
-              : "INVITE_DECLINED",
-      toUserId: updated.targetUserId ?? null,
-      metadata: { inviteId: updated.id, role: updated.role, target: updated.targetIdentifier },
-      ip: resolveIp(req),
-      userAgent: req.headers.get("user-agent"),
+              : "INVITE_DECLINED";
+
+      await recordOrganizationAudit(tx, {
+        organizationId,
+        groupId: membership?.groupId ?? null,
+        actorUserId: user.id,
+        action: auditAction,
+        entityType: "organization_member_invite",
+        entityId: updatedInvite.id,
+        correlationId: updatedInvite.id,
+        toUserId: updatedInvite.targetUserId ?? null,
+        metadata: { inviteId: updatedInvite.id, role: updatedInvite.role, target: updatedInvite.targetIdentifier },
+        ip: resolveIp(req),
+        userAgent: req.headers.get("user-agent"),
+      });
+
+      const outbox = await recordOutboxEvent(
+        {
+          eventType: "organization.invite.updated",
+          payload: {
+            inviteId: updatedInvite.id,
+            organizationId,
+            action: auditAction,
+          },
+          correlationId: updatedInvite.id,
+        },
+        tx,
+      );
+
+      await appendEventLog(
+        {
+          eventId: outbox.eventId,
+          organizationId,
+          eventType: "organization.invite.updated",
+          idempotencyKey: outbox.eventId,
+          payload: {
+            inviteId: updatedInvite.id,
+            action: auditAction,
+            role: updatedInvite.role,
+            target: updatedInvite.targetIdentifier,
+          },
+          actorUserId: user.id,
+          sourceId: String(organizationId),
+          correlationId: updatedInvite.id,
+        },
+        tx,
+      );
+
+      return updatedInvite;
+    }).catch((err: unknown) => {
+      if (err instanceof Error && err.message === "LAST_OWNER_BLOCK") {
+        throw err;
+      }
+      if (err instanceof Error && err.message === "FORBIDDEN") {
+        throw err;
+      }
+      if (err instanceof Error && ["INVITE_NOT_PENDING", "INVITE_EXPIRED", "UNKNOWN_ACTION", "ONLY_OWNER_CAN_SET_OWNER", "ONLY_OWNER_CAN_CANCEL_OWNER_INVITE"].includes(err.message)) {
+        throw err;
+      }
+      throw err;
     });
+
+    if (!updated) {
+      return NextResponse.json({ ok: false, error: "INVITE_NOT_FOUND" }, { status: 404 });
+    }
 
     if (action === "ACCEPT") {
       // Evitar propagação de erros de transação
@@ -717,6 +810,23 @@ export async function PATCH(req: NextRequest) {
         { ok: false, error: "Não podes remover o último Owner. Adiciona outro Owner antes." },
         { status: 400 },
       );
+    }
+    if (err instanceof Error) {
+      if (err.message === "FORBIDDEN") {
+        return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      }
+      if (err.message === "ONLY_OWNER_CAN_SET_OWNER" || err.message === "ONLY_OWNER_CAN_CANCEL_OWNER_INVITE") {
+        return NextResponse.json({ ok: false, error: err.message }, { status: 403 });
+      }
+      if (err.message === "INVITE_NOT_FOUND") {
+        return NextResponse.json({ ok: false, error: "INVITE_NOT_FOUND" }, { status: 404 });
+      }
+      if (err.message === "INVITE_NOT_PENDING" || err.message === "INVITE_EXPIRED") {
+        return NextResponse.json({ ok: false, error: err.message }, { status: 400 });
+      }
+      if (err.message === "UNKNOWN_ACTION") {
+        return NextResponse.json({ ok: false, error: "UNKNOWN_ACTION" }, { status: 400 });
+      }
     }
     console.error("[organização/members/invites][PATCH]", err);
     return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });

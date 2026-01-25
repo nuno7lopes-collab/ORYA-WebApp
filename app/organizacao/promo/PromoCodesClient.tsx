@@ -446,7 +446,7 @@ export default function PromoCodesClient() {
               <div>
                 <p className="text-[11px] uppercase tracking-[0.18em] text-white/60">Utilizações</p>
                 <p className="text-2xl font-semibold">{stats.redemptions}</p>
-                <p className="text-[11px] text-white/50">Conta bilhetes (sale_lines)</p>
+                <p className="text-[11px] text-white/50">Conta bilhetes (ledger)</p>
               </div>
               <div>
                 <p className="text-[11px] uppercase tracking-[0.18em] text-white/60">Desconto total</p>

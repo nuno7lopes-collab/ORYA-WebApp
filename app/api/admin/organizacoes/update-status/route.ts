@@ -1,10 +1,13 @@
 // app/api/admin/organizacoes/update-status/route.ts
 
 import { NextRequest, NextResponse } from "next/server";
+import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { requireAdminUser } from "@/lib/admin/auth";
-import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
+import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { getClientIp } from "@/lib/auth/requestValidation";
+import { appendEventLog } from "@/domain/eventLog/append";
+import { recordSearchIndexOrgStatusOutbox } from "@/domain/searchIndex/outbox";
 
 // Tipos de estados permitidos para organizações (ajusta se o enum tiver outros valores)
 const ALLOWED_STATUSES = ["PENDING", "ACTIVE", "SUSPENDED"] as const;
@@ -105,28 +108,59 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const updated = await prisma.organization.update({
-      where: { id: organizationIdNumber },
-      data: {
-        status: normalizedStatus,
-      },
-      select: {
-        id: true,
-        status: true,
-        publicName: true,
-      },
-    });
+    const { updated } = await prisma.$transaction(async (tx) => {
+      const updated = await tx.organization.update({
+        where: { id: organizationIdNumber },
+        data: {
+          status: normalizedStatus,
+        },
+        select: {
+          id: true,
+          status: true,
+          publicName: true,
+        },
+      });
 
-    await recordOrganizationAuditSafe({
-      organizationId: updated.id,
-      actorUserId: admin.userId,
-      action: "admin_organization_status_change",
-      metadata: {
-        fromStatus: organization.status,
-        toStatus: updated.status,
-      },
-      ip,
-      userAgent,
+      const eventLogId = crypto.randomUUID();
+      await appendEventLog(
+        {
+          eventId: eventLogId,
+          organizationId: updated.id,
+          eventType: "organization.status.updated",
+          idempotencyKey: `organization.status.updated:${updated.id}:${updated.status}`,
+          actorUserId: admin.userId,
+          correlationId: String(updated.id),
+          payload: {
+            organizationId: updated.id,
+            fromStatus: organization.status,
+            toStatus: updated.status,
+          },
+        },
+        tx,
+      );
+
+      await recordSearchIndexOrgStatusOutbox(
+        {
+          eventLogId,
+          organizationId: updated.id,
+          status: updated.status,
+        },
+        tx,
+      );
+
+      await recordOrganizationAudit(tx, {
+        organizationId: updated.id,
+        actorUserId: admin.userId,
+        action: "admin_organization_status_change",
+        metadata: {
+          fromStatus: organization.status,
+          toStatus: updated.status,
+        },
+        ip,
+        userAgent,
+      });
+
+      return { updated };
     });
 
     // Se aprovado (ACTIVE), adicionar role organization ao profile

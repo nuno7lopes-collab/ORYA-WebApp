@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { isStoreFeatureEnabled } from "@/lib/storeAccess";
-import { stripe } from "@/lib/stripeClient";
+import { retrieveCharge, retrievePaymentIntent } from "@/domain/finance/gateway/stripeGateway";
 
 function resolveOrderId(params: { orderId: string }) {
   const orderId = Number(params.orderId);
@@ -48,10 +48,10 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ ord
       return NextResponse.json({ ok: false, error: "Recibo indisponivel." }, { status: 400 });
     }
 
-    const intent = await stripe.paymentIntents.retrieve(order.paymentIntentId, { expand: ["latest_charge"] });
+    const intent = await retrievePaymentIntent(order.paymentIntentId, { expand: ["latest_charge"] });
     let receiptUrl: string | null = null;
     if (typeof intent.latest_charge === "string") {
-      const charge = await stripe.charges.retrieve(intent.latest_charge);
+      const charge = await retrieveCharge(intent.latest_charge);
       receiptUrl = charge.receipt_url ?? null;
     } else {
       receiptUrl = intent.latest_charge?.receipt_url ?? null;

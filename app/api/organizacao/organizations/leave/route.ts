@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { parseOrganizationId } from "@/lib/organizationId";
+import { resolveGroupMemberForOrg, revokeGroupMemberForOrg } from "@/lib/organizationGroupAccess";
 
 export async function POST(req: NextRequest) {
   try {
@@ -21,9 +22,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "INVALID_ORGANIZATION_ID" }, { status: 400 });
     }
 
-    const membership = await prisma.organizationMember.findUnique({
-      where: { organizationId_userId: { organizationId, userId: user.id } },
-    });
+    const membership = await resolveGroupMemberForOrg({ organizationId, userId: user.id });
 
     if (!membership) {
       return NextResponse.json({ ok: false, error: "NOT_MEMBER" }, { status: 403 });
@@ -48,8 +47,11 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    await prisma.organizationMember.delete({
-      where: { organizationId_userId: { organizationId, userId: user.id } },
+    await prisma.$transaction(async (tx) => {
+      await tx.organizationMember.delete({
+        where: { organizationId_userId: { organizationId, userId: user.id } },
+      });
+      await revokeGroupMemberForOrg({ organizationId, userId: user.id, client: tx });
     });
 
     return NextResponse.json({ ok: true }, { status: 200 });

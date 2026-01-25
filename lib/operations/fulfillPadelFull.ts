@@ -4,16 +4,18 @@ import {
   CrmInteractionType,
   EntitlementStatus,
   EntitlementType,
-  PadelPairingLifecycleStatus,
   PadelPairingPaymentStatus,
   PadelPairingSlotStatus,
   PadelPaymentMode,
+  PadelRegistrationStatus,
   PaymentEventSource,
 } from "@prisma/client";
 import crypto from "crypto";
 import { ensureEntriesForConfirmedPairing } from "@/domain/tournaments/ensureEntriesForConfirmedPairing";
 import { checkoutKey } from "@/lib/stripe/idempotency";
 import { ingestCrmInteraction } from "@/lib/crm/ingest";
+import { getLatestPolicyVersionForEvent } from "@/lib/checkin/accessPolicy";
+import { upsertPadelRegistrationForPairing } from "@/domain/padelRegistration";
 
 type IntentLike = {
   id: string;
@@ -193,6 +195,7 @@ export async function fulfillPadelFullIntent(intent: IntentLike): Promise<boolea
       },
     });
 
+    const policyVersionApplied = await getLatestPolicyVersionForEvent(eventId, tx);
     const ownerKey = ownerUserId
       ? `user:${ownerUserId}`
       : ownerIdentityId
@@ -210,6 +213,7 @@ export async function fulfillPadelFullIntent(intent: IntentLike): Promise<boolea
       type: EntitlementType.PADEL_ENTRY,
       status: EntitlementStatus.ACTIVE,
       eventId,
+      policyVersionApplied,
       snapshotTitle: event.title,
       snapshotCoverUrl: event.coverImageUrl,
       snapshotVenueName: event.locationName,
@@ -254,11 +258,11 @@ export async function fulfillPadelFullIntent(intent: IntentLike): Promise<boolea
     const partnerSlotStatus = partnerFilled ? PadelPairingSlotStatus.FILLED : PadelPairingSlotStatus.PENDING;
     const pairingStatus = partnerSlotStatus === PadelPairingSlotStatus.FILLED ? "COMPLETE" : "INCOMPLETE";
 
+    const registrationStatus = PadelRegistrationStatus.CONFIRMED;
     await tx.padelPairing.update({
       where: { id: pairingId },
       data: {
         pairingStatus,
-        lifecycleStatus: PadelPairingLifecycleStatus.CONFIRMED_CAPTAIN_FULL,
         slots: {
           update: [
             {
@@ -281,6 +285,16 @@ export async function fulfillPadelFullIntent(intent: IntentLike): Promise<boolea
           ],
         },
       },
+    });
+
+    await upsertPadelRegistrationForPairing(tx, {
+      pairingId,
+      organizationId: event.organizationId,
+      eventId,
+      status: registrationStatus,
+      paymentMode: PadelPaymentMode.FULL,
+      isFullyPaid: true,
+      reason: "CAPTAIN_FULL_PAYMENT",
     });
 
     shouldEnsureEntries = pairingStatus === "COMPLETE";

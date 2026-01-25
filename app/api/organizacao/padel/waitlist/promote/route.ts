@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { promoteNextPadelWaitlistEntry } from "@/domain/padelWaitlist";
 import { checkPadelRegistrationWindow } from "@/domain/padelRegistration";
+import { ensureGroupMemberRole } from "@/lib/organizationGroupAccess";
 
 async function ensureOrganizationAccess(userId: string, eventId: number) {
   const evt = await prisma.event.findUnique({
@@ -24,15 +25,12 @@ async function ensureOrganizationAccess(userId: string, eventId: number) {
     profile?.onboardingDone ||
     (Boolean(profile?.fullName?.trim()) && Boolean(profile?.username?.trim()));
   if (!hasUserOnboarding) return false;
-  const member = await prisma.organizationMember.findFirst({
-    where: {
-      organizationId: evt.organizationId,
-      userId,
-      role: { in: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"] },
-    },
-    select: { id: true },
+  const access = await ensureGroupMemberRole({
+    organizationId: evt.organizationId,
+    userId,
+    allowedRoles: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"],
   });
-  return Boolean(member);
+  return access.ok;
 }
 
 async function ensurePadelPlayerProfile(params: { organizationId: number; userId: string }) {

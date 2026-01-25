@@ -2,10 +2,10 @@ export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
 import {
-  PadelPairingLifecycleStatus,
   PadelPairingPaymentStatus,
   PadelPairingSlotStatus,
   PadelPaymentMode,
+  PadelRegistrationStatus,
 } from "@prisma/client";
 import { randomUUID } from "crypto";
 import { prisma } from "@/lib/prisma";
@@ -14,6 +14,13 @@ import { clampDeadlineHours, computePartnerLinkExpiresAt, computeSplitDeadlineAt
 import { readNumericParam } from "@/lib/routeParams";
 import { upsertActiveHold } from "@/domain/padelPairingHold";
 import { queuePairingInvite } from "@/domain/notifications/splitPayments";
+import { resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
+import {
+  INACTIVE_REGISTRATION_STATUSES,
+  mapRegistrationToPairingLifecycle,
+  resolveInitialPadelRegistrationStatus,
+  upsertPadelRegistrationForPairing,
+} from "@/domain/padelRegistration";
 
 type ReopenMode = "INVITE_PARTNER" | "LOOKING_FOR_PARTNER";
 
@@ -50,26 +57,25 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         },
       },
       slots: true,
+      registration: { select: { status: true } },
     },
   });
   if (!pairing) return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
 
-  if (pairing.pairingStatus !== "CANCELLED" && pairing.lifecycleStatus !== "CANCELLED_INCOMPLETE") {
+  const isInactiveRegistration =
+    pairing.registration?.status ? INACTIVE_REGISTRATION_STATUSES.includes(pairing.registration.status) : false;
+  if (pairing.pairingStatus !== "CANCELLED" && !isInactiveRegistration) {
     return NextResponse.json({ ok: false, error: "PAIRING_NOT_CANCELLED" }, { status: 409 });
   }
 
   const isCaptain = pairing.createdByUserId === user.id;
   let isStaff = false;
   if (!isCaptain) {
-    const staff = await prisma.organizationMember.findFirst({
-      where: {
-        organizationId: pairing.organizationId,
-        userId: user.id,
-        role: { in: ["OWNER", "CO_OWNER", "ADMIN"] },
-      },
-      select: { id: true },
+    const membership = await resolveGroupMemberForOrg({
+      organizationId: pairing.organizationId,
+      userId: user.id,
     });
-    isStaff = Boolean(staff);
+    isStaff = Boolean(membership && ["OWNER", "CO_OWNER", "ADMIN"].includes(membership.role));
   }
   if (!isCaptain && !isStaff) {
     return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
@@ -99,11 +105,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   const captainPaid = captainSlot.paymentStatus === PadelPairingPaymentStatus.PAID;
-  const nextLifecycle = captainPaid
-    ? pairing.payment_mode === PadelPaymentMode.FULL
-      ? PadelPairingLifecycleStatus.CONFIRMED_CAPTAIN_FULL
-      : PadelPairingLifecycleStatus.PENDING_PARTNER_PAYMENT
-    : PadelPairingLifecycleStatus.PENDING_ONE_PAID;
+  const nextRegistrationStatus = resolveInitialPadelRegistrationStatus({
+    pairingJoinMode: mode === "LOOKING_FOR_PARTNER" ? "LOOKING_FOR_PARTNER" : "INVITE_PARTNER",
+    paymentMode: pairing.payment_mode,
+    captainPaid,
+  });
 
   const inviteToken = mode === "INVITE_PARTNER" ? randomUUID() : null;
   const linkExpiresAt = inviteToken ? computePartnerLinkExpiresAt(now, undefined) : null;
@@ -119,7 +125,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       where: { id: pairing.id },
       data: {
         pairingStatus: "INCOMPLETE",
-        lifecycleStatus: nextLifecycle,
         pairingJoinMode: mode,
         isPublicOpen: mode === "LOOKING_FOR_PARTNER",
         partnerInviteToken: inviteToken,
@@ -161,6 +166,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       include: { slots: true },
     });
 
+    await upsertPadelRegistrationForPairing(tx, {
+      pairingId: updatedPairing.id,
+      organizationId: updatedPairing.organizationId,
+      eventId: updatedPairing.eventId,
+      status: nextRegistrationStatus,
+    });
+
     if (pairing.payment_mode === PadelPaymentMode.SPLIT) {
       await upsertActiveHold(tx, { pairingId: pairing.id, eventId: pairing.eventId, ttlMinutes: 30 });
     }
@@ -177,10 +189,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     });
   }
 
+  const lifecycleStatus = mapRegistrationToPairingLifecycle(nextRegistrationStatus, pairing.payment_mode);
   return NextResponse.json(
     {
       ok: true,
-      pairing: updated,
+      pairing: { ...updated, lifecycleStatus },
       inviteToken,
       mode,
     },

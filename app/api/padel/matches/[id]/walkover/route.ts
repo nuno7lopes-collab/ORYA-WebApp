@@ -3,6 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { OrganizationMemberRole, padel_match_status } from "@prisma/client";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { canMarkWalkover } from "@/domain/padel/pairingPolicy";
+import { mapRegistrationToPairingLifecycle } from "@/domain/padelRegistration";
+import { PadelRegistrationStatus } from "@prisma/client";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { readNumericParam } from "@/lib/routeParams";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
@@ -59,9 +61,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const winnerPairing = await prisma.padelPairing.findUnique({
     where: { id: winnerPairingId },
-    select: { lifecycleStatus: true },
+    select: { payment_mode: true, registration: { select: { status: true } } },
   });
-  if (!winnerPairing || !canMarkWalkover(winnerPairing.lifecycleStatus)) {
+  const lifecycleStatus = winnerPairing
+    ? mapRegistrationToPairingLifecycle(
+        winnerPairing.registration?.status ?? PadelRegistrationStatus.PENDING_PARTNER,
+        winnerPairing.payment_mode,
+      )
+    : null;
+  if (!winnerPairing || !canMarkWalkover(lifecycleStatus)) {
     return NextResponse.json({ ok: false, error: "PAIRING_NOT_CONFIRMED" }, { status: 409 });
   }
 

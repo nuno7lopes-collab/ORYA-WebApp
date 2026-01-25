@@ -7,6 +7,7 @@ import { setSoleOwner } from "@/lib/organizationRoles";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
 import { parseOrganizationId, resolveOrganizationIdFromParams, resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
+import { ensureGroupMemberForOrg, resolveGroupMemberForOrg, revokeGroupMemberForOrg } from "@/lib/organizationGroupAccess";
 
 const resolveIp = (req: NextRequest) => {
   const forwarded = req.headers.get("x-forwarded-for");
@@ -50,9 +51,7 @@ export async function GET(req: NextRequest) {
     const limit = Math.min(Number(url.searchParams.get("limit") ?? 200), 500);
 
     // Qualquer membro pode consultar; ações ficam restritas por role
-    const callerMembership = await prisma.organizationMember.findUnique({
-      where: { organizationId_userId: { organizationId, userId: user.id } },
-    });
+    const callerMembership = await resolveGroupMemberForOrg({ organizationId, userId: user.id });
     if (!callerMembership) {
       return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
@@ -134,9 +133,7 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ ok: false, error: emailGate.error }, { status: 403 });
     }
 
-    const callerMembership = await prisma.organizationMember.findUnique({
-      where: { organizationId_userId: { organizationId, userId: user.id } },
-    });
+    const callerMembership = await resolveGroupMemberForOrg({ organizationId, userId: user.id });
     if (!callerMembership) {
       return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
@@ -149,11 +146,13 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "NOT_MEMBER" }, { status: 404 });
     }
 
-    if (!canManageMembers(callerRole, targetMembership.role, role as OrganizationMemberRole)) {
+    const manageAllowed = canManageMembers(callerRole, targetMembership.role, role as OrganizationMemberRole);
+    if (!manageAllowed) {
       return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
-    if (role === "OWNER" && !isOrgOwner(callerRole)) {
+    const ownerAllowed = callerRole === "OWNER";
+    if (role === "OWNER" && !ownerAllowed) {
       return NextResponse.json({ ok: false, error: "ONLY_OWNER_CAN_SET_OWNER" }, { status: 403 });
     }
 
@@ -178,8 +177,12 @@ export async function PATCH(req: NextRequest) {
       await prisma.$transaction(async (tx) => setSoleOwner(tx, organizationId, targetUserId));
       await recordOrganizationAuditSafe({
         organizationId,
+        groupId: callerMembership.groupId,
         actorUserId: user.id,
         action: "OWNER_PROMOTED",
+        entityType: "organization_member",
+        entityId: targetUserId,
+        correlationId: targetUserId,
         toUserId: targetUserId,
         metadata: { via: "members.patch" },
       });
@@ -199,16 +202,71 @@ export async function PATCH(req: NextRequest) {
       }
     }
 
-    await prisma.organizationMember.update({
-      where: { organizationId_userId: { organizationId, userId: targetUserId } },
-      data: { role: role as OrganizationMemberRole },
+    await prisma.$transaction(async (tx) => {
+      await tx.organizationMember.update({
+        where: { organizationId_userId: { organizationId, userId: targetUserId } },
+        data: { role: role as OrganizationMemberRole },
+      });
+
+      const org = await tx.organization.findUnique({
+        where: { id: organizationId },
+        select: { groupId: true },
+      });
+      if (!org?.groupId) {
+        throw new Error("ORG_GROUP_NOT_FOUND");
+      }
+
+      const targetGroup = await tx.organizationGroupMember.findUnique({
+        where: { groupId_userId: { groupId: org.groupId, userId: targetUserId } },
+        select: { id: true, scopeAllOrgs: true, scopeOrgIds: true, role: true },
+      });
+
+      if (!targetGroup) {
+        await ensureGroupMemberForOrg({
+          organizationId,
+          userId: targetUserId,
+          role: role as OrganizationMemberRole,
+          client: tx,
+        });
+      } else {
+        const scopeOrgIds = targetGroup.scopeOrgIds ?? [];
+        const hasMultipleScopes = targetGroup.scopeAllOrgs || scopeOrgIds.length > 1;
+        if (hasMultipleScopes && targetGroup.role !== role) {
+          await tx.organizationGroupMemberOrganizationOverride.upsert({
+            where: {
+              groupMemberId_organizationId: {
+                groupMemberId: targetGroup.id,
+                organizationId,
+              },
+            },
+            update: { roleOverride: role as OrganizationMemberRole, revokedAt: null },
+            create: {
+              groupMemberId: targetGroup.id,
+              organizationId,
+              roleOverride: role as OrganizationMemberRole,
+            },
+          });
+        } else {
+          await tx.organizationGroupMember.update({
+            where: { id: targetGroup.id },
+            data: { role: role as OrganizationMemberRole },
+          });
+          await tx.organizationGroupMemberOrganizationOverride.deleteMany({
+            where: { groupMemberId: targetGroup.id, organizationId },
+          });
+        }
+      }
     });
 
     if (targetMembership.role === "OWNER" && role !== "OWNER") {
       await recordOrganizationAuditSafe({
         organizationId,
+        groupId: callerMembership.groupId,
         actorUserId: user.id,
         action: "OWNER_DEMOTED",
+        entityType: "organization_member",
+        entityId: targetUserId,
+        correlationId: targetUserId,
         fromUserId: targetUserId,
         metadata: { newRole: role },
         ip: resolveIp(req),
@@ -218,8 +276,12 @@ export async function PATCH(req: NextRequest) {
 
     await recordOrganizationAuditSafe({
       organizationId,
+      groupId: callerMembership.groupId,
       actorUserId: user.id,
       action: "MEMBER_ROLE_UPDATED",
+      entityType: "organization_member",
+      entityId: targetUserId,
+      correlationId: targetUserId,
       toUserId: targetUserId,
       metadata: { fromRole: targetMembership.role, toRole: role },
       ip: resolveIp(req),
@@ -262,9 +324,7 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ ok: false, error: emailGate.error }, { status: 403 });
     }
 
-    const callerMembership = await prisma.organizationMember.findUnique({
-      where: { organizationId_userId: { organizationId, userId: user.id } },
-    });
+    const callerMembership = await resolveGroupMemberForOrg({ organizationId, userId: user.id });
     if (!callerMembership) {
       return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
@@ -277,12 +337,14 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "NOT_MEMBER" }, { status: 404 });
     }
 
-    if (!canManageMembers(callerRole, targetMembership.role, targetMembership.role)) {
+    const manageAllowed = canManageMembers(callerRole, targetMembership.role, targetMembership.role);
+    if (!manageAllowed) {
       return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
     if (targetMembership.role === "OWNER") {
-      if (!isOrgOwner(callerRole)) {
+      const ownerAllowed = callerRole === "OWNER";
+      if (!ownerAllowed) {
         return NextResponse.json({ ok: false, error: "ONLY_OWNER_CAN_REMOVE_OWNER" }, { status: 403 });
       }
 
@@ -301,15 +363,22 @@ export async function DELETE(req: NextRequest) {
       }
     }
 
-    await prisma.organizationMember.delete({
-      where: { organizationId_userId: { organizationId, userId: targetUserId } },
+    await prisma.$transaction(async (tx) => {
+      await tx.organizationMember.delete({
+        where: { organizationId_userId: { organizationId, userId: targetUserId } },
+      });
+      await revokeGroupMemberForOrg({ organizationId, userId: targetUserId, client: tx });
     });
 
     if (targetMembership.role === "OWNER") {
       await recordOrganizationAuditSafe({
         organizationId,
+        groupId: callerMembership.groupId,
         actorUserId: user.id,
         action: "OWNER_REMOVED",
+        entityType: "organization_member",
+        entityId: targetUserId,
+        correlationId: targetUserId,
         fromUserId: targetUserId,
         metadata: { via: "members.delete" },
         ip: resolveIp(req),
@@ -319,8 +388,12 @@ export async function DELETE(req: NextRequest) {
 
     await recordOrganizationAuditSafe({
       organizationId,
+      groupId: callerMembership.groupId,
       actorUserId: user.id,
       action: "MEMBER_REMOVED",
+      entityType: "organization_member",
+      entityId: targetUserId,
+      correlationId: targetUserId,
       toUserId: targetUserId,
       metadata: { role: targetMembership.role },
       ip: resolveIp(req),

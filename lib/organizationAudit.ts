@@ -5,8 +5,12 @@ type TxLike = Prisma.TransactionClient | PrismaClient;
 
 export type OrganizationAuditInput = {
   organizationId: number;
+  groupId?: number | null;
   actorUserId?: string | null;
   action: string;
+  entityType?: string | null;
+  entityId?: string | null;
+  correlationId?: string | null;
   fromUserId?: string | null;
   toUserId?: string | null;
   metadata?: Record<string, unknown> | Prisma.JsonValue;
@@ -28,8 +32,12 @@ export async function recordOrganizationAudit(
   return auditModel.create({
     data: {
       organizationId: input.organizationId,
+      groupId: input.groupId ?? null,
       actorUserId: input.actorUserId ?? null,
       action: input.action,
+      entityType: input.entityType ?? null,
+      entityId: input.entityId ?? null,
+      correlationId: input.correlationId ?? null,
       fromUserId: input.fromUserId ?? null,
       toUserId: input.toUserId ?? null,
       metadata: (input.metadata ?? {}) as Prisma.InputJsonValue,

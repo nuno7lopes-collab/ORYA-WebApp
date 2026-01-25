@@ -1,14 +1,20 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
-import { PadelPairingPaymentStatus, PadelPairingStatus, PadelPairingSlotStatus } from "@prisma/client";
+import {
+  PadelPairingPaymentStatus,
+  PadelPairingStatus,
+  PadelPairingSlotStatus,
+  PadelRegistrationStatus,
+} from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { cancelActiveHold } from "@/domain/padelPairingHold";
 import { promoteNextPadelWaitlistEntry } from "@/domain/padelWaitlist";
-import { checkPadelRegistrationWindow } from "@/domain/padelRegistration";
+import { checkPadelRegistrationWindow, upsertPadelRegistrationForPairing } from "@/domain/padelRegistration";
 import { readNumericParam } from "@/lib/routeParams";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
+import { resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
 
 // Cancela pairing Padel v2 (MVP: estados DB; refund efetivo fica para o checkout/refund handler).
 // Regras: capitão (created_by_user_id) ou staff OWNER/ADMIN do organization.
@@ -40,15 +46,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const isCaptain = pairing.createdByUserId === user.id;
   let isStaff = false;
   if (!isCaptain) {
-    const staff = await prisma.organizationMember.findFirst({
-      where: {
-        organizationId: pairing.organizationId,
-        userId: user.id,
-        role: { in: ["OWNER", "CO_OWNER", "ADMIN"] },
-      },
-      select: { id: true },
+    const membership = await resolveGroupMemberForOrg({
+      organizationId: pairing.organizationId,
+      userId: user.id,
     });
-    isStaff = Boolean(staff);
+    isStaff = Boolean(membership && ["OWNER", "CO_OWNER", "ADMIN"].includes(membership.role));
   }
   if (!isCaptain && !isStaff) {
     return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
@@ -87,6 +89,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       });
 
       await cancelActiveHold(tx, pairingId);
+
+      await upsertPadelRegistrationForPairing(tx, {
+        pairingId,
+        organizationId: pairing.organizationId,
+        eventId: pairing.eventId,
+        status: PadelRegistrationStatus.CANCELLED,
+      });
 
       return updatedPairing;
     });

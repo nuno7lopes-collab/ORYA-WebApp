@@ -15,6 +15,8 @@ import {
 import { validateEligibility } from "@/domain/padelEligibility";
 import { validatePadelCategoryGender } from "@/domain/padelCategoryGender";
 import { validatePadelCategoryLevel } from "@/domain/padelCategoryLevel";
+import { mapRegistrationToPairingLifecycle } from "@/domain/padelRegistration";
+import { PadelRegistrationStatus } from "@prisma/client";
 
 type InviteState =
   | "AWAITING_PAYMENT"
@@ -94,7 +96,7 @@ export async function GET(req: NextRequest) {
         payment_mode: true,
         pairingJoinMode: true,
         pairingStatus: true,
-        lifecycleStatus: true,
+        registration: { select: { status: true } },
         partnerInviteToken: true,
         partnerLinkExpiresAt: true,
         deadlineAt: true,
@@ -165,8 +167,12 @@ export async function GET(req: NextRequest) {
   const captainSlot = pairing.slots.find((slot) => slot.slot_role === "CAPTAIN");
 
   const now = Date.now();
+  const lifecycleStatus = mapRegistrationToPairingLifecycle(
+    pairing.registration?.status ?? PadelRegistrationStatus.PENDING_PARTNER,
+    pairing.payment_mode,
+  );
   const isCancelled =
-    pairing.pairingStatus === "CANCELLED" || pairing.lifecycleStatus === "CANCELLED_INCOMPLETE";
+    pairing.pairingStatus === "CANCELLED" || lifecycleStatus === "CANCELLED_INCOMPLETE";
   const partnerPaid = partnerSlot?.paymentStatus === PadelPairingPaymentStatus.PAID;
   const partnerFilled = partnerSlot?.slotStatus === PadelPairingSlotStatus.FILLED;
   const captainPaid = captainSlot?.paymentStatus === PadelPairingPaymentStatus.PAID;
@@ -524,7 +530,7 @@ export async function GET(req: NextRequest) {
       blockingDetails,
       paymentMode: pairing.payment_mode,
       pairingStatus: pairing.pairingStatus,
-      lifecycleStatus: pairing.lifecycleStatus,
+      lifecycleStatus,
       deadlineAt: pairing.deadlineAt?.toISOString() ?? null,
       event: pairing.event
         ? { title: pairing.event.title ?? null, slug: pairing.event.slug ?? null }

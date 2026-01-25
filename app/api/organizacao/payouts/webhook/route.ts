@@ -3,7 +3,7 @@ export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
-import { stripe } from "@/lib/stripeClient";
+import { constructStripeWebhookEvent } from "@/domain/finance/gateway/stripeGateway";
 import { prisma } from "@/lib/prisma";
 
 const webhookSecret =
@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
 
   let event: Stripe.Event;
   try {
-    event = stripe.webhooks.constructEvent(body, sig, webhookSecret);
+    event = constructStripeWebhookEvent(body, sig, webhookSecret);
   } catch (err) {
     const message =
       err instanceof Error ? err.message : "Unknown signature validation error";

@@ -1,4 +1,5 @@
 import { Prisma } from "@prisma/client";
+import { INACTIVE_REGISTRATION_STATUSES } from "@/domain/padelRegistration";
 
 type EventCapacityResult = { ok: true } | { ok: false; code: "EVENT_FULL" };
 
@@ -18,7 +19,10 @@ export async function checkPadelEventCapacity(params: EventCapacityParams): Prom
     where: {
       eventId,
       pairingStatus: { not: "CANCELLED" },
-      lifecycleStatus: { not: "CANCELLED_INCOMPLETE" },
+      OR: [
+        { registration: { is: null } },
+        { registration: { status: { notIn: INACTIVE_REGISTRATION_STATUSES } } },
+      ],
       ...(excludePairingId ? { id: { not: excludePairingId } } : {}),
     },
   });

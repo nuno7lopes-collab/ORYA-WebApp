@@ -6,6 +6,7 @@ import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureCrmModuleAccess } from "@/lib/crm/access";
 import { LoyaltyRewardType, OrganizationMemberRole } from "@prisma/client";
+import { validateLoyaltyRewardLimits } from "@/lib/loyalty/guardrails";
 
 const READ_ROLES = Object.values(OrganizationMemberRole);
 
@@ -104,6 +105,10 @@ export async function POST(req: NextRequest) {
 
     if (!type || pointsCost === null || pointsCost < 1) {
       return NextResponse.json({ ok: false, error: "Tipo ou custo inválido." }, { status: 400 });
+    }
+    const guardrails = validateLoyaltyRewardLimits({ pointsCost });
+    if (!guardrails.ok) {
+      return NextResponse.json({ ok: false, error: guardrails.error }, { status: 400 });
     }
 
     const stockRaw = typeof payload?.stock === "number" && Number.isFinite(payload.stock) ? payload.stock : null;

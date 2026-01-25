@@ -1,22 +1,25 @@
 // app/api/payments/intent/route.ts
+// @deprecated Slice 4 cleanup: legacy payment intent endpoint (see cleanup plan).
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import crypto from "crypto";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { stripe } from "@/lib/stripeClient";
+import type Stripe from "stripe";
+import { createPaymentIntent, retrievePaymentIntent } from "@/domain/finance/gateway/stripeGateway";
 import { getPlatformFees, getStripeBaseFees } from "@/lib/platformSettings";
 import { shouldNotify, createNotification } from "@/lib/notifications";
 import {
   EntitlementStatus,
   EntitlementType,
   NotificationType,
-  PadelPairingLifecycleStatus,
   PadelPairingPaymentStatus,
   PadelPairingSlotStatus,
+  PadelRegistrationStatus,
   Prisma,
   PaymentEventSource,
+  SourceType,
 } from "@prisma/client";
 import type { FeeMode } from "@prisma/client";
 import { paymentScenarioSchema, type PaymentScenario } from "@/lib/paymentScenario";
@@ -25,6 +28,10 @@ import { computePromoDiscountCents } from "@/lib/promoMath";
 import { computePricing } from "@/lib/pricing";
 import { computeCombinedFees } from "@/lib/fees";
 import { normalizeEmail } from "@/lib/utils/email";
+import { getEntitlementEffectiveStatus } from "@/lib/entitlements/status";
+import { getLatestPolicyVersionForEvent } from "@/lib/checkin/accessPolicy";
+import { evaluateEventAccess } from "@/domain/access/evaluateAccess";
+import { INACTIVE_REGISTRATION_STATUSES, mapRegistrationToPairingLifecycle, upsertPadelRegistrationForPairing } from "@/domain/padelRegistration";
 import {
   checkoutMetadataSchema,
   normalizeItemsForMetadata,
@@ -40,6 +47,7 @@ import { formatPaidSalesGateMessage, getPaidSalesGate } from "@/lib/organization
 
 const FREE_PLACEHOLDER_INTENT_ID = "FREE_CHECKOUT";
 const ORYA_CARD_FEE_BPS = 100;
+const LEGACY_INTENT_DISABLED = true;
 
 type CheckoutItem = {
   ticketId: string | number;
@@ -182,11 +190,16 @@ async function hasExistingFreeEntryForUser(params: { eventId: number; userId: st
       eventId: params.eventId,
       type: EntitlementType.EVENT_TICKET,
       ownerKey,
-      status: { in: [EntitlementStatus.ACTIVE, EntitlementStatus.USED, EntitlementStatus.SUSPENDED] },
     },
-    select: { id: true },
+    select: { id: true, status: true, checkins: { select: { resultCode: true } } },
   });
-  if (entitlement) return true;
+  if (entitlement) {
+    const effective = getEntitlementEffectiveStatus({
+      status: entitlement.status,
+      checkins: entitlement.checkins,
+    });
+    if (effective === "ACTIVE" || effective === "SUSPENDED") return true;
+  }
 
   const summary = await prisma.saleSummary.findFirst({
     where: {
@@ -304,6 +317,9 @@ async function ensurePadelPlayerProfileId(
 }
 
 export async function POST(req: NextRequest) {
+  if (LEGACY_INTENT_DISABLED) {
+    return intentError("LEGACY_INTENT_DISABLED", "Endpoint desativado.", { httpStatus: 410 });
+  }
   try {
     const body = (await req.json().catch(() => null)) as Body | null;
 
@@ -477,6 +493,19 @@ export async function POST(req: NextRequest) {
 
     if (!event) {
       return intentError("EVENT_NOT_FOUND", "Evento não encontrado.", { httpStatus: 404 });
+    }
+    const accessIntent = inviteToken ? "INVITE_TOKEN" : "VIEW";
+    const accessDecision = await evaluateEventAccess({
+      eventId: event.id,
+      userId,
+      intent: accessIntent,
+    });
+    if (!accessDecision.allowed) {
+      return intentError(
+        accessDecision.reasonCode || "ACCESS_DENIED",
+        "Acesso bloqueado pela política do evento.",
+        { httpStatus: 403, status: "FAILED", retryable: false },
+      );
     }
     const profile = userId
       ? await prisma.profile.findUnique({ where: { id: userId } })
@@ -874,7 +903,7 @@ export async function POST(req: NextRequest) {
         throw new Error("PROMO_MIN_TOTAL");
       }
 
-      // Contagem de redemptions passadas
+      // Contagem de redemptions anteriores
       const totalUses = await prisma.promoRedemption.count({
         where: { promoCodeId: promo.id },
       });
@@ -981,7 +1010,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Clamp final discount (não deixa passar do total)
+    // Clamp final discount (não deixa exceder o total)
     discountCents = Math.max(0, Math.min(discountCents, preDiscountAmountCents));
     const amountAfterDiscountCents = preDiscountAmountCents - discountCents;
 
@@ -1142,10 +1171,11 @@ export async function POST(req: NextRequest) {
     }
 
     let groupPairing:
-      | {
+        | {
           id: number;
           eventId: number;
           lifecycleStatus: string;
+          registrationStatus?: PadelRegistrationStatus | null;
           payment_mode: string;
           pairingJoinMode: string;
           partnerInviteToken: string | null;
@@ -1182,13 +1212,13 @@ export async function POST(req: NextRequest) {
           id: true,
           eventId: true,
           categoryId: true,
-          lifecycleStatus: true,
           payment_mode: true,
           pairingJoinMode: true,
           partnerInviteToken: true,
           partnerLinkExpiresAt: true,
           player1UserId: true,
           player2UserId: true,
+          registration: { select: { status: true } },
           slots: {
             select: {
               id: true,
@@ -1203,13 +1233,21 @@ export async function POST(req: NextRequest) {
           },
         },
       });
-      if (!pairing || pairing.eventId !== event.id || pairing.lifecycleStatus === "CANCELLED_INCOMPLETE") {
+      if (
+        !pairing ||
+        pairing.eventId !== event.id ||
+        (pairing.registration && INACTIVE_REGISTRATION_STATUSES.includes(pairing.registration.status))
+      ) {
         return intentError("PAIRING_INVALID", "A dupla não é válida para este evento.", {
           httpStatus: 400,
           status: "FAILED",
           retryable: false,
         });
       }
+      const lifecycleStatus = mapRegistrationToPairingLifecycle(
+        pairing.registration?.status ?? PadelRegistrationStatus.PENDING_PARTNER,
+        pairing.payment_mode,
+      );
       const slot = pairing.slots.find((s) => s.id === bodySlotId);
       if (!slot) {
         return intentError("PAIRING_SLOT_INVALID", "Slot da dupla não encontrado.", {
@@ -1225,7 +1263,11 @@ export async function POST(req: NextRequest) {
           retryable: false,
         });
       }
-      groupPairing = pairing;
+      groupPairing = {
+        ...pairing,
+        lifecycleStatus,
+        registrationStatus: pairing.registration?.status ?? null,
+      };
       if (scenarioAdjusted === "GROUP_SPLIT" && pairing.payment_mode !== "SPLIT") {
         return intentError("PAIRING_MODE_MISMATCH", "A dupla não está em modo split.", {
           httpStatus: 400,
@@ -1506,7 +1548,7 @@ export async function POST(req: NextRequest) {
 
       if (existing?.stripePaymentIntentId?.startsWith("pi_")) {
         try {
-          const pi = await stripe.paymentIntents.retrieve(existing.stripePaymentIntentId);
+          const pi = await retrievePaymentIntent(existing.stripePaymentIntentId);
           const terminal = pi.status && ["succeeded", "canceled", "requires_capture"].includes(pi.status);
           if (!terminal) {
             // Safety: payload mismatch ainda bloqueia
@@ -1641,7 +1683,7 @@ export async function POST(req: NextRequest) {
             nextAction: "NONE",
             retryable: false,
             freeCheckout: true,
-            isFreeCheckout: true,
+            isGratisCheckout: true,
             purchaseId,
             paymentIntentId: FREE_PLACEHOLDER_INTENT_ID,
             paymentScenario: scenarioAdjusted,
@@ -1768,6 +1810,7 @@ export async function POST(req: NextRequest) {
               data: { saleSummaryId: saleSummary.id },
             });
 
+            const policyVersionApplied = await getLatestPolicyVersionForEvent(event.id, tx);
             const ownerKey = `user:${ownerUserId}`;
             const entitlementPurchaseId = saleSummary.purchaseId ?? saleSummary.paymentIntentId;
             await tx.entitlement.upsert({
@@ -1785,6 +1828,7 @@ export async function POST(req: NextRequest) {
                 ownerUserId: ownerUserId ?? null,
                 ownerIdentityId: null,
                 eventId: event.id,
+                policyVersionApplied,
                 snapshotTitle: event.title,
                 snapshotCoverUrl: event.cover_image_url,
                 snapshotVenueName: event.location_name,
@@ -1802,6 +1846,7 @@ export async function POST(req: NextRequest) {
                 type: EntitlementType.PADEL_ENTRY,
                 status: EntitlementStatus.ACTIVE,
                 eventId: event.id,
+                policyVersionApplied,
                 snapshotTitle: event.title,
                 snapshotCoverUrl: event.cover_image_url,
                 snapshotVenueName: event.location_name,
@@ -1860,16 +1905,19 @@ export async function POST(req: NextRequest) {
             });
 
             const allPaid = updated.slots.every((s) => s.paymentStatus === PadelPairingPaymentStatus.PAID);
-            const nextLifecycle = allPaid
-              ? PadelPairingLifecycleStatus.CONFIRMED_BOTH_PAID
-              : PadelPairingLifecycleStatus.PENDING_PARTNER_PAYMENT;
-            if (updated.lifecycleStatus !== nextLifecycle) {
-              updated = await tx.padelPairing.update({
-                where: { id: pairing.id },
-                data: { lifecycleStatus: nextLifecycle },
-                include: { slots: true },
-              });
-            }
+            const nextRegistrationStatus = allPaid
+              ? PadelRegistrationStatus.CONFIRMED
+              : PadelRegistrationStatus.PENDING_PAYMENT;
+
+            await upsertPadelRegistrationForPairing(tx, {
+              pairingId: pairing.id,
+              organizationId: pairing.organizationId,
+              eventId: pairing.eventId,
+              status: nextRegistrationStatus,
+              paymentMode: pairing.payment_mode,
+              isFullyPaid: allPaid,
+              reason: "PAYMENT_CONFIRMATION",
+            });
 
             const stillPending = updated.slots.some(
               (s) => s.slotStatus === PadelPairingSlotStatus.PENDING || s.paymentStatus === PadelPairingPaymentStatus.UNPAID,
@@ -1998,6 +2046,7 @@ export async function POST(req: NextRequest) {
               data: { saleSummaryId: saleSummary.id },
             });
 
+            const policyVersionApplied = await getLatestPolicyVersionForEvent(event.id, tx);
             const ownerKey = `user:${userId}`;
             const entitlementPurchaseId = saleSummary.purchaseId ?? saleSummary.paymentIntentId;
             const entitlementBase = {
@@ -2009,6 +2058,7 @@ export async function POST(req: NextRequest) {
               type: EntitlementType.PADEL_ENTRY,
               status: EntitlementStatus.ACTIVE,
               eventId: event.id,
+              policyVersionApplied,
               snapshotTitle: event.title,
               snapshotCoverUrl: event.cover_image_url,
               snapshotVenueName: event.location_name,
@@ -2047,11 +2097,10 @@ export async function POST(req: NextRequest) {
             const partnerSlotStatus = partnerFilled ? PadelPairingSlotStatus.FILLED : PadelPairingSlotStatus.PENDING;
             const pairingStatus = partnerSlotStatus === PadelPairingSlotStatus.FILLED ? "COMPLETE" : "INCOMPLETE";
 
-            await tx.padelPairing.update({
+            const updatedPairing = await tx.padelPairing.update({
               where: { id: pairing.id },
               data: {
                 pairingStatus,
-                lifecycleStatus: PadelPairingLifecycleStatus.CONFIRMED_CAPTAIN_FULL,
                 slots: {
                   update: [
                     {
@@ -2074,6 +2123,16 @@ export async function POST(req: NextRequest) {
                   ],
                 },
               },
+            });
+
+            await upsertPadelRegistrationForPairing(tx, {
+              pairingId: updatedPairing.id,
+              organizationId: updatedPairing.organizationId,
+              eventId: updatedPairing.eventId,
+              status: PadelRegistrationStatus.CONFIRMED,
+              paymentMode: updatedPairing.payment_mode,
+              isFullyPaid: true,
+              reason: "CAPTAIN_FULL_PAYMENT",
             });
 
             shouldEnsureEntries = partnerFilled;
@@ -2134,7 +2193,7 @@ export async function POST(req: NextRequest) {
           nextAction: "NONE",
           retryable: false,
           freeCheckout: true,
-          isFreeCheckout: true,
+          isGratisCheckout: true,
           purchaseId,
           paymentIntentId: FREE_PLACEHOLDER_INTENT_ID,
           paymentScenario: scenarioAdjusted,
@@ -2286,7 +2345,7 @@ export async function POST(req: NextRequest) {
         nextAction: "NONE",
         retryable: true,
         freeCheckout: true,
-        isFreeCheckout: true,
+        isGratisCheckout: true,
         purchaseId,
         paymentIntentId: FREE_PLACEHOLDER_INTENT_ID,
         paymentScenario,
@@ -2330,7 +2389,7 @@ export async function POST(req: NextRequest) {
       grossAmountCents: String(totalAmountInCents),
       payoutAmountCents: String(payoutAmountCents),
       recipientConnectAccountId: recipientConnectAccountId ?? "",
-      sourceType: "EVENT_TICKET",
+      sourceType: SourceType.TICKET_ORDER,
       sourceId: String(event.id),
       currency: currency.toUpperCase(),
       feeMode: pricing.feeMode,
@@ -2372,7 +2431,7 @@ export async function POST(req: NextRequest) {
     const allowedPaymentMethods =
       paymentMethod === "card" ? (["card"] as const) : (["mb_way"] as const);
 
-    const intentParams: Parameters<typeof stripe.paymentIntents.create>[0] = {
+    const intentParams: Stripe.PaymentIntentCreateParams = {
       amount: Math.max(0, totalAmountInCents),
       currency,
       payment_method_types: [...allowedPaymentMethods],
@@ -2390,7 +2449,16 @@ export async function POST(req: NextRequest) {
         : checkoutIdempotencyKey;
 
     const createPi = async (idemKey?: string) =>
-      stripe.paymentIntents.create(intentParams, idemKey ? { idempotencyKey: idemKey } : undefined);
+      createPaymentIntent(intentParams, {
+        idempotencyKey: idemKey,
+        requireStripe: requiresOrganizationStripe,
+        org: {
+          stripeAccountId,
+          stripeChargesEnabled,
+          stripePayoutsEnabled,
+          orgType: organization?.orgType ?? null,
+        },
+      });
 
     const isTerminal = (status?: string | null) =>
       !!status && ["succeeded", "canceled", "requires_capture"].includes(status);

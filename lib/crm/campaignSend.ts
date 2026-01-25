@@ -295,7 +295,7 @@ export async function sendCrmCampaign(options: SendCrmCampaignOptions): Promise<
 
       if (inAppEnabled && allowMarketing) {
         try {
-          const notification = await createNotification({
+          await createNotification({
             userId: recipientId,
             type: NotificationType.CRM_CAMPAIGN,
             title,
@@ -307,7 +307,7 @@ export async function sendCrmCampaign(options: SendCrmCampaignOptions): Promise<
             organizationId: options.organizationId,
             payload: { campaignId: campaign.id },
           });
-          notificationId = notification.id;
+          notificationId = null;
           sentAny = true;
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);

@@ -1,3 +1,4 @@
+// @deprecated Slice 4 cleanup: legacy operations batch (see cleanup plan).
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -5,11 +6,12 @@ import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
-import { stripe } from "@/lib/stripeClient";
+import { retrieveCharge, retrievePaymentIntent } from "@/domain/finance/gateway/stripeGateway";
 import { handleRefund } from "@/app/api/stripe/webhook/route";
 import { OperationType } from "../types";
 import { refundPurchase } from "@/lib/refunds/refundService";
 import { PaymentEventSource, RefundReason, EntitlementType, EntitlementStatus, Prisma, NotificationType } from "@prisma/client";
+import { EntitlementV7Status, mapV7StatusToLegacy } from "@/lib/entitlements/status";
 import { FulfillPayload } from "@/lib/operations/types";
 import { fulfillPaidIntent } from "@/lib/operations/fulfillPaid";
 import { fulfillStoreOrderIntent } from "@/lib/operations/fulfillStoreOrder";
@@ -29,18 +31,31 @@ import { fulfillServiceBookingIntent } from "@/lib/operations/fulfillServiceBook
 import { fulfillServiceCreditPurchaseIntent } from "@/lib/operations/fulfillServiceCredits";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { createNotification } from "@/lib/notifications";
+import { processNotificationOutboxBatch } from "@/domain/notifications/outboxProcessor";
 import { applyPromoRedemptionOperation } from "@/lib/operations/applyPromoRedemption";
 import { normalizeEmail } from "@/lib/utils/email";
 import { getAppBaseUrl } from "@/lib/appBaseUrl";
+import { getLatestPolicyVersionForEvent } from "@/lib/checkin/accessPolicy";
+import { maybeReconcileStripeFees } from "@/domain/finance/reconciliationTrigger";
+import { handleStripeWebhook } from "@/domain/finance/webhook";
+import { sweepPendingProcessorFees } from "@/domain/finance/reconciliationSweep";
+import { publishOutboxBatch } from "@/domain/outbox/publisher";
+import { consumeOpsFeedBatch } from "@/domain/opsFeed/consumer";
+import { handlePadelRegistrationOutboxEvent } from "@/domain/padelRegistrationOutbox";
+import { handleLoyaltyOutboxEvent } from "@/domain/loyaltyOutbox";
+import { handleTournamentOutboxEvent } from "@/domain/tournaments/outbox";
+import { handlePadelOutboxEvent } from "@/domain/padel/outbox";
+import { handleOwnerTransferOutboxEvent } from "@/domain/organization/ownerTransferOutbox";
+import { consumeAgendaMaterializationEvent } from "@/domain/agenda/consumer";
+import { handleSearchIndexOutboxEvent } from "@/domain/searchIndex/consumer";
 
 const MAX_ATTEMPTS = 5;
 const BATCH_SIZE = 5;
 const INTERNAL_HEADER = "X-ORYA-CRON-SECRET";
-const NOTIFICATION_BATCH_SIZE = 20;
-const NOTIFICATION_MAX_RETRIES = 5;
 
 const BASE_URL = getAppBaseUrl();
 const absUrl = (path: string) => (/^https?:\/\//i.test(path) ? path : `${BASE_URL}${path.startsWith("/") ? path : `/${path}`}`);
+const LEGACY_OPERATIONS_DISABLED = true;
 
 type OperationRecord = {
   id: number;
@@ -63,10 +78,11 @@ function buildOwnerKey(params: { ownerUserId?: string | null; ownerIdentityId?: 
   return "unknown";
 }
 
-async function markEntitlementsStatusByPurchase(purchaseId: string, status: EntitlementStatus) {
+async function markEntitlementsStatusByPurchase(purchaseId: string, status: EntitlementV7Status) {
+  const legacyStatus = mapV7StatusToLegacy(status);
   await prisma.entitlement.updateMany({
     where: { purchaseId },
-    data: { status },
+    data: { status: legacyStatus },
   });
 }
 
@@ -246,6 +262,12 @@ function requireInternalSecret(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  if (LEGACY_OPERATIONS_DISABLED) {
+    return NextResponse.json(
+      { ok: false, error: "LEGACY_OPERATIONS_DISABLED" },
+      { status: 410 }
+    );
+  }
   const unauthorized = requireInternalSecret(req);
   if (unauthorized) return unauthorized;
 
@@ -304,7 +326,22 @@ export async function runOperationsBatch() {
     }
   }
 
-  await processNotificationOutbox();
+  await processNotificationOutboxBatch();
+  try {
+    await publishOutboxBatch();
+  } catch (err) {
+    console.warn("[runOperationsBatch] publishOutboxBatch falhou", err);
+  }
+  try {
+    await consumeOpsFeedBatch();
+  } catch (err) {
+    console.warn("[runOperationsBatch] consumeOpsFeedBatch falhou", err);
+  }
+  try {
+    await sweepPendingProcessorFees();
+  } catch (err) {
+    console.warn("[runOperationsBatch] sweepPendingProcessorFees falhou", err);
+  }
   return results;
 }
 
@@ -331,447 +368,74 @@ async function processOperation(op: OperationRecord) {
       return processClaimGuestPurchase(op);
     case "SEND_EMAIL_OUTBOX":
       return processSendEmailOutbox(op);
+    case "OUTBOX_EVENT": {
+      const payload = op.payload ?? {};
+      const eventType = typeof payload.eventType === "string" ? payload.eventType : null;
+      const eventPayload =
+        payload.payload && typeof payload.payload === "object"
+          ? (payload.payload as Record<string, unknown>)
+          : {};
+      console.info("[outbox.consume]", {
+        eventId: typeof payload.eventId === "string" ? payload.eventId : null,
+        eventType,
+        correlationId: typeof payload.correlationId === "string" ? payload.correlationId : null,
+        registrationId:
+          typeof (eventPayload as Record<string, unknown>).registrationId === "string"
+            ? (eventPayload as Record<string, unknown>).registrationId
+            : null,
+        attempts: op.attempts,
+      });
+      if (!eventType) throw new Error("OUTBOX_EVENT_MISSING_TYPE");
+      if (eventType.startsWith("PADREG_")) {
+        return handlePadelRegistrationOutboxEvent({
+          eventType,
+          payload: eventPayload as any,
+        });
+      }
+      if (eventType.startsWith("LOYALTY_")) {
+        return handleLoyaltyOutboxEvent({
+          eventType,
+          payload: eventPayload as any,
+        });
+      }
+      if (eventType.startsWith("TOURNAMENT_")) {
+        return handleTournamentOutboxEvent({
+          eventType,
+          payload: eventPayload as any,
+        });
+      }
+      if (eventType.startsWith("PADEL_")) {
+        return handlePadelOutboxEvent({
+          eventType,
+          payload: eventPayload as any,
+        });
+      }
+      if (
+        eventType.startsWith("event.") ||
+        eventType.startsWith("tournament.") ||
+        eventType.startsWith("reservation.")
+      ) {
+        const eventId = typeof payload.eventId === "string" ? payload.eventId : null;
+        if (!eventId) throw new Error("OUTBOX_EVENT_MISSING_ID");
+        return consumeAgendaMaterializationEvent(eventId);
+      }
+      if (eventType.startsWith("search.index.")) {
+        return handleSearchIndexOutboxEvent({
+          eventType,
+          payload: eventPayload as any,
+        });
+      }
+      if (eventType.startsWith("organization.owner_transfer.")) {
+        return handleOwnerTransferOutboxEvent({
+          eventType,
+          payload: eventPayload as any,
+        });
+      }
+      return { ok: true };
+    }
     default:
       throw new Error(`Unsupported operationType=${op.operationType}`);
   }
-}
-
-async function processNotificationOutbox() {
-  const pending = await prisma.notificationOutbox.findMany({
-    where: {
-      status: { in: ["PENDING", "FAILED", "SENDING"] },
-      retries: { lt: NOTIFICATION_MAX_RETRIES },
-    },
-    orderBy: { createdAt: "asc" },
-    take: NOTIFICATION_BATCH_SIZE,
-  });
-
-  for (const item of pending) {
-    const claimed = await prisma.notificationOutbox.updateMany({
-      where: { id: item.id, status: { in: ["PENDING", "FAILED", "SENDING"] } },
-      data: { status: "SENDING" },
-    });
-    if (claimed.count === 0) continue;
-
-    try {
-      await deliverNotificationOutbox(item);
-      await prisma.notificationOutbox.update({
-        where: { id: item.id },
-        data: { status: "SENT", sentAt: new Date(), lastError: null },
-      });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      await prisma.notificationOutbox.update({
-        where: { id: item.id },
-        data: {
-          status: "FAILED",
-          lastError: message.slice(0, 200),
-          retries: { increment: 1 },
-        },
-      });
-    }
-  }
-}
-
-async function deliverNotificationOutbox(item: {
-  id: string;
-  userId: string | null;
-  notificationType: string;
-  payload: unknown;
-}) {
-  if (!item.userId) throw new Error("OUTBOX_MISSING_USER");
-  const payload = item.payload && typeof item.payload === "object" ? (item.payload as Record<string, unknown>) : {};
-  const payloadJson = payload as Prisma.InputJsonValue;
-  const inviterUserId = typeof payload.inviterUserId === "string" ? payload.inviterUserId : null;
-  const formatTime = (value: Date, timezone?: string | null) =>
-    new Intl.DateTimeFormat("pt-PT", {
-      timeZone: timezone || "Europe/Lisbon",
-      hour: "2-digit",
-      minute: "2-digit",
-    }).format(value);
-  const pairingLabel = (pairing?: { slots?: Array<{ playerProfile?: { displayName?: string | null; fullName?: string | null } | null }> | null }) => {
-    const names =
-      pairing?.slots
-        ?.map((slot) => slot.playerProfile?.displayName || slot.playerProfile?.fullName || null)
-        .filter((name): name is string => Boolean(name)) || [];
-    return names.length > 0 ? names.slice(0, 2).join(" / ") : "Dupla";
-  };
-  const formatScoreLabel = (match: { scoreSets?: unknown; score?: unknown }) => {
-    const scoreSets = Array.isArray(match.scoreSets) ? (match.scoreSets as Array<{ teamA: number; teamB: number }>) : null;
-    if (scoreSets?.length) {
-      return scoreSets.map((set) => `${set.teamA}-${set.teamB}`).join(", ");
-    }
-    const score = match.score && typeof match.score === "object" ? (match.score as Record<string, unknown>) : {};
-    const resultType =
-      score.resultType === "WALKOVER" || score.walkover === true
-        ? "WALKOVER"
-        : score.resultType === "RETIREMENT"
-          ? "RETIREMENT"
-          : score.resultType === "INJURY"
-            ? "INJURY"
-            : null;
-    if (resultType === "WALKOVER") return "WO";
-    if (resultType === "RETIREMENT") return "Desistência";
-    if (resultType === "INJURY") return "Lesão";
-    return "—";
-  };
-
-  if (item.notificationType === "PAIRING_INVITE") {
-    const pairingId = typeof payload.pairingId === "number" ? payload.pairingId : Number(payload.pairingId);
-    const pairing = Number.isFinite(pairingId)
-      ? await prisma.padelPairing.findUnique({
-          where: { id: pairingId },
-          select: {
-            id: true,
-            partnerInviteToken: true,
-            event: { select: { id: true, title: true, slug: true, organizationId: true } },
-          },
-        })
-      : null;
-    const eventSlug = pairing?.event?.slug ?? null;
-    const token =
-      typeof payload.token === "string" && payload.token.trim().length > 0
-        ? payload.token.trim()
-        : pairing?.partnerInviteToken ?? null;
-    const viewerRole = payload.viewerRole === "CAPTAIN" ? "CAPTAIN" : "INVITED";
-    let entitlementId: string | null = null;
-    if (Number.isFinite(pairingId)) {
-      const ticket = await prisma.ticket.findFirst({
-        where: {
-          pairingId,
-          OR: [{ userId: item.userId }, { ownerUserId: item.userId }],
-        },
-        select: {
-          purchaseId: true,
-          saleSummary: { select: { purchaseId: true, paymentIntentId: true } },
-        },
-      });
-      const purchaseId =
-        ticket?.purchaseId ?? ticket?.saleSummary?.purchaseId ?? ticket?.saleSummary?.paymentIntentId ?? null;
-      if (purchaseId) {
-        const entitlement = await prisma.entitlement.findFirst({
-          where: {
-            purchaseId,
-            ownerUserId: item.userId,
-            type: "PADEL_ENTRY",
-          },
-          select: { id: true },
-        });
-        entitlementId = entitlement?.id ?? null;
-      }
-    }
-    const ctaUrl = entitlementId
-      ? `/me/bilhetes/${entitlementId}`
-      : token && eventSlug
-        ? `/eventos/${eventSlug}?inviteToken=${encodeURIComponent(token)}`
-        : "/me/carteira";
-    const ctaLabel =
-      viewerRole === "CAPTAIN"
-        ? "Ver estado"
-        : entitlementId
-          ? "Ver inscrição"
-          : "Aceitar convite";
-    const eventTitle = pairing?.event?.title ?? null;
-
-    await prisma.notification.create({
-      data: {
-        userId: item.userId,
-        type: NotificationType.PAIRING_INVITE,
-        title: viewerRole === "CAPTAIN" ? "Convite enviado" : "Convite para dupla",
-        body:
-          viewerRole === "CAPTAIN"
-            ? eventTitle
-              ? `Convite enviado para o torneio ${eventTitle}.`
-              : "Convite enviado para a tua dupla."
-            : eventTitle
-              ? `Foste convidado para uma dupla no torneio ${eventTitle}.`
-              : "Foste convidado para uma dupla de padel.",
-        payload: payloadJson,
-        ctaUrl,
-        ctaLabel,
-        priority: "HIGH",
-        fromUserId: inviterUserId ?? undefined,
-        organizationId: pairing?.event?.organizationId ?? undefined,
-        eventId: pairing?.event?.id ?? undefined,
-      },
-    });
-    return;
-  }
-
-  if (item.notificationType === "CHAT_MESSAGE") {
-    const conversationId = typeof payload.conversationId === "string" ? payload.conversationId : null;
-    const messageId = typeof payload.messageId === "string" ? payload.messageId : null;
-    const senderId = typeof payload.senderId === "string" ? payload.senderId : null;
-    const preview = typeof payload.preview === "string" ? payload.preview : "";
-    const payloadOrgId =
-      typeof payload.organizationId === "number" ? payload.organizationId : Number(payload.organizationId);
-
-    if (!conversationId || !messageId) throw new Error("CHAT_MESSAGE_MISSING_CONTEXT");
-
-    const conversation = await prisma.chatConversation.findUnique({
-      where: { id: conversationId },
-      select: { id: true, type: true, title: true, organizationId: true },
-    });
-
-    const sender = senderId
-      ? await prisma.profile.findUnique({
-          where: { id: senderId },
-          select: { fullName: true, username: true },
-        })
-      : null;
-
-    const senderLabel =
-      sender?.fullName?.trim() || (sender?.username ? `@${sender.username}` : "Utilizador");
-    const title =
-      conversation?.type === "GROUP"
-        ? `Nova mensagem em ${conversation?.title || "Grupo"}`
-        : `Nova mensagem de ${senderLabel}`;
-    const body = preview || "Tens uma nova mensagem.";
-    const orgId = Number.isFinite(payloadOrgId)
-      ? payloadOrgId
-      : conversation?.organizationId ?? undefined;
-    const ctaUrl = conversationId
-      ? `/organizacao/chat?conversationId=${encodeURIComponent(conversationId)}`
-      : "/organizacao/chat";
-
-    await prisma.notification.create({
-      data: {
-        userId: item.userId,
-        type: NotificationType.CHAT_MESSAGE,
-        title,
-        body,
-        payload: payloadJson,
-        ctaUrl,
-        ctaLabel: "Abrir chat",
-        priority: "NORMAL",
-        fromUserId: senderId ?? undefined,
-        organizationId: orgId,
-      },
-    });
-    return;
-  }
-
-  if (item.notificationType === "MATCH_CHANGED") {
-    const matchId = typeof payload.matchId === "number" ? payload.matchId : Number(payload.matchId);
-    if (!Number.isFinite(matchId)) throw new Error("MATCH_NOT_FOUND");
-    const match = await prisma.padelMatch.findUnique({
-      where: { id: matchId },
-      include: {
-        event: { select: { id: true, title: true, slug: true, organizationId: true, timezone: true } },
-        court: { select: { name: true } },
-        pairingA: { include: { slots: { include: { playerProfile: true } } } },
-        pairingB: { include: { slots: { include: { playerProfile: true } } } },
-      },
-    });
-    if (!match?.event) throw new Error("MATCH_NOT_FOUND");
-
-    const startAt =
-      typeof payload.startAt === "string"
-        ? new Date(payload.startAt)
-        : match.plannedStartAt ?? match.startTime ?? null;
-    const validStartAt = startAt && !Number.isNaN(startAt.getTime()) ? startAt : null;
-    const courtLabel = match.court?.name || match.courtName || match.courtNumber || match.courtId || "Quadra";
-    const teamA = pairingLabel(match.pairingA);
-    const teamB = pairingLabel(match.pairingB);
-    const title = validStartAt ? "Horário atualizado" : "Jogo adiado";
-    const body = validStartAt
-      ? `${teamA} vs ${teamB} · ${formatTime(validStartAt, match.event.timezone)} · ${courtLabel}`
-      : `${teamA} vs ${teamB} · Novo horário a definir.`;
-    const ctaUrl = match.event.slug ? `/eventos/${match.event.slug}` : "/eventos";
-
-    await prisma.notification.create({
-      data: {
-        userId: item.userId,
-        type: NotificationType.EVENT_REMINDER,
-        title,
-        body,
-        payload: payloadJson,
-        ctaUrl,
-        ctaLabel: "Ver torneio",
-        organizationId: match.event.organizationId ?? undefined,
-        eventId: match.event.id ?? undefined,
-      },
-    });
-    return;
-  }
-
-  if (item.notificationType === "MATCH_RESULT") {
-    const matchId = typeof payload.matchId === "number" ? payload.matchId : Number(payload.matchId);
-    if (!Number.isFinite(matchId)) throw new Error("MATCH_NOT_FOUND");
-    const match = await prisma.padelMatch.findUnique({
-      where: { id: matchId },
-      include: {
-        event: { select: { id: true, title: true, slug: true, organizationId: true } },
-        pairingA: { include: { slots: { include: { playerProfile: true } } } },
-        pairingB: { include: { slots: { include: { playerProfile: true } } } },
-      },
-    });
-    if (!match?.event) throw new Error("MATCH_NOT_FOUND");
-    const scoreLabel = formatScoreLabel(match);
-    const teamA = pairingLabel(match.pairingA);
-    const teamB = pairingLabel(match.pairingB);
-    const title = "Resultado final";
-    const body = scoreLabel !== "—" ? `${teamA} vs ${teamB} · ${scoreLabel}` : `${teamA} vs ${teamB}`;
-    const ctaUrl = match.event.slug ? `/eventos/${match.event.slug}` : "/eventos";
-
-    await prisma.notification.create({
-      data: {
-        userId: item.userId,
-        type: NotificationType.EVENT_REMINDER,
-        title,
-        body,
-        payload: payloadJson,
-        ctaUrl,
-        ctaLabel: "Ver torneio",
-        organizationId: match.event.organizationId ?? undefined,
-        eventId: match.event.id ?? undefined,
-      },
-    });
-    return;
-  }
-
-  if (item.notificationType === "NEXT_OPPONENT") {
-    const matchId = typeof payload.matchId === "number" ? payload.matchId : Number(payload.matchId);
-    if (!Number.isFinite(matchId)) throw new Error("MATCH_NOT_FOUND");
-    const match = await prisma.padelMatch.findUnique({
-      where: { id: matchId },
-      include: { event: { select: { id: true, title: true, slug: true, organizationId: true } } },
-    });
-    if (!match?.event) throw new Error("MATCH_NOT_FOUND");
-    const ctaUrl = match.event.slug ? `/eventos/${match.event.slug}` : "/eventos";
-
-    await prisma.notification.create({
-      data: {
-        userId: item.userId,
-        type: NotificationType.EVENT_REMINDER,
-        title: "Próximo adversário definido",
-        body: match.event.title ? `No torneio ${match.event.title}.` : "Ver detalhes do torneio.",
-        payload: payloadJson,
-        ctaUrl,
-        ctaLabel: "Ver torneio",
-        organizationId: match.event.organizationId ?? undefined,
-        eventId: match.event.id ?? undefined,
-      },
-    });
-    return;
-  }
-
-  if (item.notificationType === "CHAMPION" || item.notificationType === "ELIMINATED") {
-    const tournamentId =
-      typeof payload.tournamentId === "number" ? payload.tournamentId : Number(payload.tournamentId);
-    if (!Number.isFinite(tournamentId)) throw new Error("EVENT_NOT_FOUND");
-    const event = await prisma.event.findUnique({
-      where: { id: tournamentId },
-      select: { id: true, title: true, slug: true, organizationId: true },
-    });
-    if (!event) throw new Error("EVENT_NOT_FOUND");
-    const isChampion = item.notificationType === "CHAMPION";
-    const title = isChampion ? "Campeão!" : "Eliminação";
-    const body = event.title
-      ? isChampion
-        ? `És campeão do torneio ${event.title}.`
-        : `Ficaste eliminado no torneio ${event.title}.`
-      : isChampion
-        ? "És campeão do torneio."
-        : "Ficaste eliminado no torneio.";
-    const ctaUrl = event.slug ? `/eventos/${event.slug}` : "/eventos";
-
-    await prisma.notification.create({
-      data: {
-        userId: item.userId,
-        type: NotificationType.EVENT_REMINDER,
-        title,
-        body,
-        payload: payloadJson,
-        ctaUrl,
-        ctaLabel: "Ver torneio",
-        organizationId: event.organizationId ?? undefined,
-        eventId: event.id ?? undefined,
-      },
-    });
-    return;
-  }
-
-  if (item.notificationType === "BRACKET_PUBLISHED") {
-    const tournamentId =
-      typeof payload.tournamentId === "number" ? payload.tournamentId : Number(payload.tournamentId);
-    if (!Number.isFinite(tournamentId)) throw new Error("EVENT_NOT_FOUND");
-    const event = await prisma.event.findUnique({
-      where: { id: tournamentId },
-      select: { id: true, title: true, slug: true, organizationId: true },
-    });
-    if (!event) throw new Error("EVENT_NOT_FOUND");
-    const title = "Bracket publicado";
-    const body = event.title
-      ? `O bracket do torneio ${event.title} já está disponível.`
-      : "O bracket do torneio já está disponível.";
-    const ctaUrl = event.slug ? `/eventos/${event.slug}` : "/eventos";
-
-    await prisma.notification.create({
-      data: {
-        userId: item.userId,
-        type: NotificationType.EVENT_REMINDER,
-        title,
-        body,
-        payload: payloadJson,
-        ctaUrl,
-        ctaLabel: "Ver torneio",
-        organizationId: event.organizationId ?? undefined,
-        eventId: event.id ?? undefined,
-      },
-    });
-    return;
-  }
-
-  if (item.notificationType === "TOURNAMENT_EVE_REMINDER") {
-    const tournamentId =
-      typeof payload.tournamentId === "number" ? payload.tournamentId : Number(payload.tournamentId);
-    if (!Number.isFinite(tournamentId)) throw new Error("EVENT_NOT_FOUND");
-    const event = await prisma.event.findUnique({
-      where: { id: tournamentId },
-      select: { id: true, title: true, slug: true, startsAt: true, timezone: true, organizationId: true },
-    });
-    if (!event) throw new Error("EVENT_NOT_FOUND");
-    const startLabel = event.startsAt ? formatTime(event.startsAt, event.timezone) : null;
-    const title = "Torneio amanhã";
-    const body = event.title
-      ? startLabel
-        ? `O torneio ${event.title} começa amanhã às ${startLabel}.`
-        : `O torneio ${event.title} começa amanhã.`
-      : startLabel
-        ? `O torneio começa amanhã às ${startLabel}.`
-        : "O torneio começa amanhã.";
-    const ctaUrl = event.slug ? `/eventos/${event.slug}` : "/eventos";
-
-    await prisma.notification.create({
-      data: {
-        userId: item.userId,
-        type: NotificationType.EVENT_REMINDER,
-        title,
-        body,
-        payload: payloadJson,
-        ctaUrl,
-        ctaLabel: "Ver torneio",
-        organizationId: event.organizationId ?? undefined,
-        eventId: event.id ?? undefined,
-      },
-    });
-    return;
-  }
-
-  await prisma.notification.create({
-    data: {
-      userId: item.userId,
-      type: NotificationType.SYSTEM_ANNOUNCE,
-      title: "Notificação",
-      body: "Tens uma nova notificação.",
-      payload: payloadJson,
-      ctaUrl: "/social?tab=notifications",
-      ctaLabel: "Ver",
-      priority: "NORMAL",
-      fromUserId: inviterUserId ?? undefined,
-    },
-  });
 }
 
 async function performPaymentFulfillment(intent: Stripe.PaymentIntent, stripeEventId?: string) {
@@ -813,7 +477,33 @@ async function processStripeEvent(op: OperationRecord) {
       op.paymentIntentId ||
       (typeof payload.paymentIntentId === "string" ? payload.paymentIntentId : null);
     if (!piId) throw new Error("Missing paymentIntentId");
-    const intent = await stripe.paymentIntents.retrieve(piId, { expand: ["latest_charge"] });
+    const intent = await retrievePaymentIntent(piId, { expand: ["latest_charge"] });
+    const paymentId =
+      typeof intent.metadata?.paymentId === "string" && intent.metadata.paymentId.trim() !== ""
+        ? intent.metadata.paymentId.trim()
+        : typeof payload.paymentId === "string" && payload.paymentId.trim() !== ""
+          ? payload.paymentId.trim()
+          : null;
+    try {
+      const chargeId =
+        typeof intent.latest_charge === "string"
+          ? intent.latest_charge
+          : intent.latest_charge?.id ?? null;
+      if (chargeId) {
+        const charge = await retrieveCharge(chargeId, { expand: ["balance_transaction"] });
+        const balanceTx = charge.balance_transaction as Stripe.BalanceTransaction | null;
+        if (balanceTx?.fee != null) {
+          await maybeReconcileStripeFees({
+            paymentId,
+            feeCents: balanceTx.fee,
+            balanceTxId: balanceTx.id ?? null,
+            stripeEventId: op.stripeEventId ?? null,
+          });
+        }
+      }
+    } catch (err) {
+      console.warn("[processStripeEvent] reconcile fees falhou", err);
+    }
     try {
       const handled = await performPaymentFulfillment(intent as Stripe.PaymentIntent, op.stripeEventId ?? undefined);
       if (!handled) {
@@ -843,8 +533,20 @@ async function processStripeEvent(op: OperationRecord) {
   if (eventType === "charge.refunded") {
     const chargeId = typeof payload.chargeId === "string" ? payload.chargeId : null;
     if (!chargeId) throw new Error("Missing chargeId");
-    const charge = await stripe.charges.retrieve(chargeId);
+    const charge = await retrieveCharge(chargeId);
     return handleRefund(charge as Stripe.Charge);
+  }
+  if (eventType === "dispute.created" || eventType === "dispute.won" || eventType === "dispute.lost" || eventType === "charge.dispute.created") {
+    const stripeEventObject =
+      typeof payload.stripeEventObject === "object" && payload.stripeEventObject
+        ? (payload.stripeEventObject as Record<string, any>)
+        : null;
+    if (!stripeEventObject) throw new Error("Missing stripeEventObject");
+    return handleStripeWebhook({
+      id: typeof payload.stripeEventId === "string" ? payload.stripeEventId : op.stripeEventId ?? "unknown",
+      type: eventType as any,
+      data: { object: stripeEventObject },
+    });
   }
   throw new Error(`Unsupported stripeEventType=${eventType ?? "unknown"}`);
 }
@@ -858,8 +560,8 @@ async function processFulfillPayment(op: OperationRecord) {
 
   const intent =
     typeof payload.rawMetadata === "object"
-      ? await stripe.paymentIntents.retrieve(piId, { expand: ["latest_charge"] })
-      : await stripe.paymentIntents.retrieve(piId, { expand: ["latest_charge"] });
+      ? await retrievePaymentIntent(piId, { expand: ["latest_charge"] })
+      : await retrievePaymentIntent(piId, { expand: ["latest_charge"] });
 
   try {
     const handled = await performPaymentFulfillment(intent as Stripe.PaymentIntent, op.stripeEventId ?? undefined);
@@ -1053,6 +755,7 @@ async function processUpsertLedger(op: OperationRecord) {
       let feeRemainder = platformFeeForLine - basePlatformFee * Math.max(1, qty);
 
       const typeTickets = ticketsByType.get(line.ticketTypeId) ?? new Map();
+      const policyVersionApplied = await getLatestPolicyVersionForEvent(event.id, tx);
       let createdCount = 0;
 
       for (let i = 0; i < qty; i++) {
@@ -1123,6 +826,7 @@ async function processUpsertLedger(op: OperationRecord) {
             ownerUserId: userId ?? null,
             ownerIdentityId: ownerIdentityId ?? null,
             eventId: event.id,
+            policyVersionApplied,
             snapshotTitle: event.title,
             snapshotCoverUrl: event.coverImageUrl,
             snapshotVenueName: event.locationName,
@@ -1140,6 +844,7 @@ async function processUpsertLedger(op: OperationRecord) {
             eventId: event.id,
             type: EntitlementType.EVENT_TICKET,
             status: EntitlementStatus.ACTIVE,
+            policyVersionApplied,
             snapshotTitle: event.title,
             snapshotCoverUrl: event.coverImageUrl,
             snapshotVenueName: event.locationName,
@@ -1231,7 +936,7 @@ async function processRefundSingle(op: OperationRecord) {
     },
   });
 
-  await markEntitlementsStatusByPurchase(purchaseId, EntitlementStatus.REFUNDED);
+  await markEntitlementsStatusByPurchase(purchaseId, "REVOKED");
 }
 
 async function processMarkDispute(op: OperationRecord) {
@@ -1279,7 +984,7 @@ async function processMarkDispute(op: OperationRecord) {
   });
 
   if (purchaseId) {
-    await markEntitlementsStatusByPurchase(purchaseId, EntitlementStatus.SUSPENDED);
+    await markEntitlementsStatusByPurchase(purchaseId, "SUSPENDED");
   }
 }
 

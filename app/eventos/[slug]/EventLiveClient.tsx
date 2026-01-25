@@ -120,63 +120,6 @@ function getEventStatusLabel(start?: string, end?: string) {
   return "A decorrer";
 }
 
-function escapeIcsText(value?: string | null) {
-  if (!value) return "";
-  return value.replace(/\\/g, "\\\\").replace(/\n/g, "\\n").replace(/,/g, "\\,").replace(/;/g, "\\;");
-}
-
-function formatCalendarDate(value: Date) {
-  return value.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
-}
-
-function buildCalendarLinks(event: EventPayload, timeZone: string) {
-  const startsAt = new Date(event.startsAt);
-  const endsAt = event.endsAt ? new Date(event.endsAt) : startsAt;
-  const location = formatEventLocationLabel(
-    {
-      locationName: event.locationName,
-      locationCity: event.locationCity,
-      address: event.address,
-      locationSource: event.locationSource,
-      locationFormattedAddress: event.locationFormattedAddress,
-      locationComponents: event.locationComponents,
-      locationOverrides: event.locationOverrides,
-    },
-    "Local a anunciar",
-  );
-  const description = event.description?.trim() || `Evento ${event.title}`;
-  const dtStart = formatCalendarDate(startsAt);
-  const dtEnd = formatCalendarDate(endsAt);
-  const uid = `${event.slug || event.id}@orya`;
-
-  const googleUrl = new URL("https://calendar.google.com/calendar/render");
-  googleUrl.searchParams.set("action", "TEMPLATE");
-  googleUrl.searchParams.set("text", event.title);
-  googleUrl.searchParams.set("dates", `${dtStart}/${dtEnd}`);
-  if (description) googleUrl.searchParams.set("details", description);
-  if (location) googleUrl.searchParams.set("location", location);
-  if (timeZone) googleUrl.searchParams.set("ctz", timeZone);
-
-  const icsLines = [
-    "BEGIN:VCALENDAR",
-    "VERSION:2.0",
-    "PRODID:-//ORYA//LiveHub//PT",
-    "BEGIN:VEVENT",
-    `UID:${escapeIcsText(uid)}`,
-    `DTSTAMP:${formatCalendarDate(new Date())}`,
-    `DTSTART:${dtStart}`,
-    `DTEND:${dtEnd}`,
-    `SUMMARY:${escapeIcsText(event.title)}`,
-    `DESCRIPTION:${escapeIcsText(description)}`,
-    `LOCATION:${escapeIcsText(location)}`,
-    "END:VEVENT",
-    "END:VCALENDAR",
-  ];
-
-  const icsUrl = `data:text/calendar;charset=utf-8,${encodeURIComponent(icsLines.join("\n"))}`;
-  return { google: googleUrl.toString(), ics: icsUrl };
-}
-
 function compareMatchOrder(a: MatchPayload, b: MatchPayload) {
   if (a.startAt && b.startAt) {
     const diff = new Date(a.startAt).getTime() - new Date(b.startAt).getTime();
@@ -2889,7 +2832,6 @@ export default function EventLiveClient({
   const resolvedModules: LiveHubModule[] =
     event.liveStreamUrl && !modules.includes("VIDEO") ? ["VIDEO", ...modules] : modules;
   const eventStatus = getEventStatusLabel(event.startsAt, event.endsAt);
-  const calendarLinks = event.startsAt ? buildCalendarLinks(event, timeZone) : null;
   const countdownLabel = formatCountdown(event.startsAt, nowMs);
   const goalLimits = normalizeGoalLimits(tournamentView?.goalLimits as GoalLimitsConfig);
   const sponsors = (tournamentView?.sponsors as SponsorsConfig) ?? null;
@@ -3131,15 +3073,6 @@ export default function EventLiveClient({
                 <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] uppercase tracking-[0.2em] text-white/60">
                   Modo automático
                 </span>
-                {calendarLinks && (
-                  <a
-                    href={calendarLinks.ics}
-                    download={`${event.slug || "evento"}.ics`}
-                    className="rounded-full border border-white/15 px-3 py-1 text-[11px] uppercase tracking-[0.2em] text-white/70 hover:border-white/40"
-                  >
-                    Adicionar ao calendário
-                  </a>
-                )}
               </div>
             </div>
 

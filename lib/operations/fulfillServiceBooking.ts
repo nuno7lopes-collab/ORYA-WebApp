@@ -1,6 +1,6 @@
 import Stripe from "stripe";
 import { prisma } from "@/lib/prisma";
-import { stripe } from "@/lib/stripeClient";
+import { retrieveCharge } from "@/domain/finance/gateway/stripeGateway";
 import { getStripeBaseFees } from "@/lib/platformSettings";
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { confirmPendingBooking } from "@/lib/reservas/confirmBooking";
@@ -55,7 +55,7 @@ export async function fulfillServiceBookingIntent(
           ? intent.latest_charge
           : intent.latest_charge?.id;
       if (chargeId) {
-        const charge = await stripe.charges.retrieve(chargeId, {
+        const charge = await retrieveCharge(chargeId, {
           expand: ["balance_transaction"],
         });
         stripeChargeId = charge.id ?? null;

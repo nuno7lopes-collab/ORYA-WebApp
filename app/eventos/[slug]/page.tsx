@@ -26,6 +26,8 @@ import { Avatar } from "@/components/ui/avatar";
 import { CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
 import { getTicketCopy } from "@/app/components/checkout/checkoutCopy";
 import { resolveEventLocation } from "@/lib/location/eventLocation";
+import { getAppBaseUrl } from "@/lib/appBaseUrl";
+import { deriveIsFreeEvent } from "@/domain/events/derivedIsFree";
 
 type EventPageParams = { slug: string };
 type EventPageParamsInput = EventPageParams | Promise<EventPageParams>;
@@ -61,6 +63,7 @@ export async function generateMetadata(
       description: true,
       locationName: true,
       organizationId: true,
+      coverImageUrl: true,
     },
   });
   if (!event) {
@@ -73,6 +76,7 @@ export async function generateMetadata(
           description: true,
           locationName: true,
           organizationId: true,
+          coverImageUrl: true,
         },
       });
     }
@@ -86,14 +90,38 @@ export async function generateMetadata(
   }
 
   const location = event.locationName || "ORYA";
-  const baseTitle = event.title || "Evento ORYA";
+    const baseTitle = event.title || "Evento ORYA";
+    const baseUrl = getAppBaseUrl();
+    const canonicalUrl = `${baseUrl}/eventos/${slug}`;
+    const coverUrl = event.coverImageUrl
+      ? event.coverImageUrl.startsWith("http")
+        ? event.coverImageUrl
+        : `${baseUrl}${event.coverImageUrl.startsWith("/") ? "" : "/"}${event.coverImageUrl}`
+      : null;
+
+  const description =
+    event.description && event.description.trim().length > 0
+      ? event.description
+      : `Descobre o evento ${baseTitle} em ${location} na ORYA.`;
 
   return {
+    metadataBase: new URL(baseUrl),
+    alternates: { canonical: canonicalUrl },
     title: `${baseTitle} | ORYA`,
-    description:
-      event.description && event.description.trim().length > 0
-        ? event.description
-        : `Descobre o evento ${baseTitle} em ${location} na ORYA.`,
+    description,
+    openGraph: {
+      title: `${baseTitle} | ORYA`,
+      description,
+      url: canonicalUrl,
+      type: "website",
+      images: coverUrl ? [{ url: coverUrl }] : undefined,
+    },
+    twitter: {
+      card: coverUrl ? "summary_large_image" : "summary",
+      title: `${baseTitle} | ORYA`,
+      description,
+      images: coverUrl ? [coverUrl] : undefined,
+    },
   };
 }
 
@@ -269,6 +297,10 @@ export default async function EventPage({
     }
     notFound();
   }
+  const isGratis = deriveIsFreeEvent({
+    pricingMode: event.pricingMode ?? undefined,
+    ticketPrices: event.ticketTypes.map((t) => t.price ?? 0),
+  });
   const ticketTypesWithVisibility = event.ticketTypes as TicketTypeWithVisibility[];
   const visibleTicketTypes = ticketTypesWithVisibility.filter((t) => t.isVisible ?? true);
   const publicAccessMode = event.publicAccessMode ?? (event.inviteOnly ? "INVITE" : "OPEN");
@@ -304,7 +336,7 @@ export default async function EventPage({
   }
   const showInviteGate = inviteOnly && !isInvited;
   const canFreeCheckout = Boolean(user) && hasUsername && (!inviteOnly || isInvited);
-  const allowCheckoutBase = !showInviteGate && (event.isFree ? canFreeCheckout : true);
+  const allowCheckoutBase = !showInviteGate && (isGratis ? canFreeCheckout : true);
   const isPadel = event.templateType === "PADEL";
   const ticketCopy = getTicketCopy(isPadel ? "PADEL" : "DEFAULT");
   const ticketSectionLabel = ticketCopy.pluralCap;
@@ -339,7 +371,7 @@ export default async function EventPage({
   const eventEndedCopy = `Este ${isPadel ? "torneio" : "evento"} já terminou. ${
     ticketCopy.isPadel ? "As inscrições" : "Os bilhetes"
   } deixaram de estar disponíveis.`;
-  const freeUsernameGateMessage = event.isFree
+  const freeUsernameGateMessage = isGratis
     ? user
       ? hasUsername
         ? null
@@ -623,7 +655,7 @@ export default async function EventPage({
     console.error("Erro ao carregar revendas para o evento", slug, err);
   }
 
-  const showPriceFrom = !event.isFree && minTicketPrice !== null;
+  const showPriceFrom = !isGratis && minTicketPrice !== null;
 
   const padelV2Enabled = Boolean(event.padelTournamentConfig?.padelV2Enabled);
   const padelCategoryLinks = Array.isArray(event.padelCategoryLinks) ? event.padelCategoryLinks : [];
@@ -816,7 +848,7 @@ export default async function EventPage({
                         Só por convite
                       </span>
                     )}
-                    {event.isFree ? (
+                    {isGratis ? (
                       <span className="rounded-full border border-emerald-400/50 bg-emerald-500/15 px-3 py-1.5 text-[11px] font-semibold text-emerald-100">
                         {freeBadgeLabel}
                       </span>
@@ -898,7 +930,7 @@ export default async function EventPage({
                         href="#bilhetes"
                         className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-xs font-semibold text-black shadow-[0_0_30px_rgba(255,255,255,0.3)] transition-transform hover:scale-105 active:scale-95 md:text-sm"
                       >
-                        {event.isFree ? ctaFreeLabel : ctaPaidLabel}
+                        {isGratis ? ctaFreeLabel : ctaPaidLabel}
                         <span className="text-xs">↓</span>
                       </a>
                     )}
@@ -971,14 +1003,14 @@ export default async function EventPage({
                   Preço
                 </p>
                 <p className="mt-2 text-sm font-semibold text-white/90">
-                  {event.isFree
+                  {isGratis
                     ? freeBadgeLabel
                     : showPriceFrom
                       ? `${(displayPriceFrom ?? 0).toFixed(2)} €`
                       : "A anunciar"}
                 </p>
                 <p className="text-xs text-white/60">
-                  {event.isFree
+                  {isGratis
                     ? ticketCopy.isPadel
                       ? "Inscreve-te agora."
                       : "Reserva o teu lugar agora."
@@ -1161,7 +1193,7 @@ export default async function EventPage({
                           <h3 className="text-base font-semibold">
                             {ticketSelectLabel}
                           </h3>
-                          {!event.isFree && showPriceFrom && (
+                          {!isGratis && showPriceFrom && (
                             <span className="text-xs text-white/75">
                               A partir de{" "}
                               <span className="font-semibold text-white">
@@ -1174,7 +1206,7 @@ export default async function EventPage({
                         {showInviteGate ? (
                           <InviteGateClient
                             slug={event.slug}
-                            isFree={event.isFree}
+                            isGratis={isGratis}
                             isAuthenticated={Boolean(user)}
                             hasUsername={hasUsername}
                             userEmailNormalized={userEmailNormalized}
@@ -1194,7 +1226,7 @@ export default async function EventPage({
                           />
                         ) : (
                           <>
-                            {event.isFree && (
+                            {isGratis && (
                               <>
                                 <div className="flex items-center justify-between gap-3 rounded-xl border border-emerald-500/40 bg-emerald-500/15 px-3.5 py-2.5 text-sm text-emerald-100">
                                   <div>
@@ -1256,7 +1288,7 @@ export default async function EventPage({
                                 <WavesSectionClient
                                   slug={event.slug}
                                   tickets={uiTickets}
-                                  isFreeEvent={event.isFree}
+                                  isGratisEvent={isGratis}
                                   checkoutUiVariant={checkoutVariant}
                                   padelMeta={
                                     checkoutVariant === "PADEL"

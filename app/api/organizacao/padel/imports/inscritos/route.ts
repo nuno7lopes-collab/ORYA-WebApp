@@ -3,12 +3,12 @@ export const runtime = "nodejs";
 import { NextRequest, NextResponse } from "next/server";
 import {
   OrganizationMemberRole,
-  PadelPairingLifecycleStatus,
   PadelPairingPaymentStatus,
   PadelPairingSlotRole,
   PadelPairingSlotStatus,
   PadelPaymentMode,
   PadelPairingStatus,
+  PadelRegistrationStatus,
   Prisma,
 } from "@prisma/client";
 import { read, utils } from "xlsx";
@@ -17,6 +17,11 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
+import {
+  ACTIVE_PAIRING_REGISTRATION_WHERE,
+  mapRegistrationToPairingLifecycle,
+  upsertPadelRegistrationForPairing,
+} from "@/domain/padelRegistration";
 import {
   buildImportPairKey,
   normalizeImportLookup,
@@ -139,7 +144,7 @@ export async function POST(req: NextRequest) {
     where: {
       eventId,
       pairingStatus: { not: "CANCELLED" },
-      lifecycleStatus: { not: "CANCELLED_INCOMPLETE" },
+      ...ACTIVE_PAIRING_REGISTRATION_WHERE,
     },
     select: {
       id: true,
@@ -181,7 +186,7 @@ export async function POST(req: NextRequest) {
       where: {
         eventId,
         pairingStatus: { not: "CANCELLED" },
-        lifecycleStatus: { not: "CANCELLED_INCOMPLETE" },
+        ...ACTIVE_PAIRING_REGISTRATION_WHERE,
       },
       _count: { _all: true },
     });
@@ -201,7 +206,7 @@ export async function POST(req: NextRequest) {
             eventId,
             categoryId,
             pairingStatus: { not: "CANCELLED" },
-            lifecycleStatus: { not: "CANCELLED_INCOMPLETE" },
+            ...ACTIVE_PAIRING_REGISTRATION_WHERE,
           },
         },
       });
@@ -213,7 +218,7 @@ export async function POST(req: NextRequest) {
     where: {
       eventId,
       pairingStatus: { not: "CANCELLED" },
-      lifecycleStatus: { not: "CANCELLED_INCOMPLETE" },
+      ...ACTIVE_PAIRING_REGISTRATION_WHERE,
     },
   });
   parsedRows
@@ -414,7 +419,7 @@ export async function POST(req: NextRequest) {
         where: {
           eventId,
           pairingStatus: { not: "CANCELLED" },
-          lifecycleStatus: { not: "CANCELLED_INCOMPLETE" },
+          ...ACTIVE_PAIRING_REGISTRATION_WHERE,
         },
       });
 
@@ -426,7 +431,7 @@ export async function POST(req: NextRequest) {
           where: {
             eventId,
             pairingStatus: { not: "CANCELLED" },
-            lifecycleStatus: { not: "CANCELLED_INCOMPLETE" },
+            ...ACTIVE_PAIRING_REGISTRATION_WHERE,
           },
           _count: { _all: true },
         });
@@ -446,7 +451,7 @@ export async function POST(req: NextRequest) {
                 eventId,
                 categoryId,
                 pairingStatus: { not: "CANCELLED" },
-                lifecycleStatus: { not: "CANCELLED_INCOMPLETE" },
+                ...ACTIVE_PAIRING_REGISTRATION_WHERE,
               },
             },
           });
@@ -481,11 +486,10 @@ export async function POST(req: NextRequest) {
 
       const playerA = await ensurePlayerProfile(tx, row.players[0]);
       const playerB = await ensurePlayerProfile(tx, row.players[1]);
-      const lifecycleStatus = row.paid
-        ? row.paymentMode === PadelPaymentMode.SPLIT
-          ? PadelPairingLifecycleStatus.CONFIRMED_BOTH_PAID
-          : PadelPairingLifecycleStatus.CONFIRMED_CAPTAIN_FULL
-        : PadelPairingLifecycleStatus.PENDING_ONE_PAID;
+      const registrationStatus = row.paid
+        ? PadelRegistrationStatus.CONFIRMED
+        : PadelRegistrationStatus.PENDING_PAYMENT;
+      const lifecycleStatus = mapRegistrationToPairingLifecycle(registrationStatus, row.paymentMode);
       const pairing = await tx.padelPairing.create({
         data: {
           eventId,
@@ -586,8 +590,18 @@ export async function POST(req: NextRequest) {
       count: createdPairings.length,
       seedsApplied: seedsToApply.size,
       groupsApplied: Object.keys(groupsToApply).length,
-    },
-  });
+        },
+      });
+
+      await upsertPadelRegistrationForPairing(tx, {
+        pairingId: pairing.id,
+        organizationId: organization.id,
+        eventId,
+        status: registrationStatus,
+        paymentMode: row.paymentMode,
+        isFullyPaid: row.paid,
+        reason: "IMPORT",
+      });
 
   return NextResponse.json(
     {

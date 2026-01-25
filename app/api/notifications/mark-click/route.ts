@@ -1,7 +1,8 @@
-import { prisma } from "@/lib/prisma";
 import { CrmDeliveryStatus } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
 import { AuthRequiredError, requireUser } from "@/lib/auth/requireUser";
+import { markNotificationRead } from "@/domain/notifications/consumer";
+import { prisma } from "@/lib/prisma";
 
 export async function POST(req: NextRequest) {
   try {
@@ -28,10 +29,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (!notif.isRead || !notif.readAt) {
-      await prisma.notification.update({
-        where: { id: notif.id },
-        data: { isRead: true, readAt: new Date() },
-      });
+      await markNotificationRead({ userId: user.id, notificationId: notif.id });
     }
 
     if (notif.type === "CRM_CAMPAIGN") {

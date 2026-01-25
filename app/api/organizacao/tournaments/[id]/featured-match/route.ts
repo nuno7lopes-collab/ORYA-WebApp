@@ -3,6 +3,7 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { OrganizationMemberRole } from "@prisma/client";
+import { resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
 
 async function getOrganizationRole(userId: string, eventId: number) {
   const evt = await prisma.event.findUnique({
@@ -25,13 +26,7 @@ async function getOrganizationRole(userId: string, eventId: number) {
     profile?.onboardingDone ||
     (Boolean(profile?.fullName?.trim()) && Boolean(profile?.username?.trim()));
   if (!hasUserOnboarding) return null;
-  const member = await prisma.organizationMember.findFirst({
-    where: {
-      organizationId: evt.organizationId,
-      userId,
-    },
-    select: { role: true },
-  });
+  const member = await resolveGroupMemberForOrg({ organizationId: evt.organizationId, userId });
   return member?.role ?? null;
 }
 

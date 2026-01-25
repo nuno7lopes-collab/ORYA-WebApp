@@ -2,11 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
-import { canManageEvents } from "@/lib/organizationPermissions";
 import { normalizeEmail } from "@/lib/utils/email";
 import { resolveUserIdentifier } from "@/lib/userResolver";
 import { validateUsername } from "@/lib/username";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
+import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
+import { OrganizationModule } from "@prisma/client";
 
 const EMAIL_REGEX = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
@@ -93,11 +94,13 @@ async function ensureInviteAccess(
     return { ok: false as const, status: 403, error: "FORBIDDEN" };
   }
 
-  const membership = await prisma.organizationMember.findUnique({
-    where: { organizationId_userId: { organizationId: event.organizationId, userId } },
-    select: { role: true },
+  const access = await ensureMemberModuleAccess({
+    organizationId: event.organizationId,
+    userId,
+    moduleKey: OrganizationModule.EVENTOS,
+    required: "EDIT",
   });
-  if (!membership || !canManageEvents(membership.role)) {
+  if (!access.ok) {
     return { ok: false as const, status: 403, error: "FORBIDDEN" };
   }
 

@@ -2,15 +2,21 @@
 
 // app/api/organizacao/events/create/route.ts
 import { NextRequest, NextResponse } from "next/server";
+import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
-import { canManageEvents } from "@/lib/organizationPermissions";
+import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { clampDeadlineHours } from "@/domain/padelDeadlines";
 import { DEFAULT_PADEL_SCORE_RULES } from "@/domain/padel/score";
 import { formatPaidSalesGateMessage, getPaidSalesGate } from "@/lib/organizationPayments";
+import { appendEventLog } from "@/domain/eventLog/append";
+import { SourceType, EventPricingMode } from "@prisma/client";
+import { recordOutboxEvent } from "@/domain/outbox/producer";
+import { recordSearchIndexOutbox } from "@/domain/searchIndex/outbox";
+import { validateZeroPriceGuard } from "@/domain/events/pricingGuard";
 import {
   EventParticipantAccessMode,
   EventPublicAccessMode,
@@ -21,6 +27,7 @@ import {
   ResaleMode,
   Prisma,
   padel_format,
+  OrganizationModule,
 } from "@prisma/client";
 
 const ALLOWED_PADEL_FORMATS = new Set<padel_format>([
@@ -203,7 +210,18 @@ export async function POST(req: NextRequest) {
       organizationId: organizationId ?? undefined,
       roles: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"],
     });
-    if (!organization || !membership || !canManageEvents(membership.role)) {
+    if (!organization || !membership) {
+      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    }
+    const access = await ensureMemberModuleAccess({
+      organizationId: organization.id,
+      userId: user.id,
+      role: membership.role,
+      rolePack: membership.rolePack,
+      moduleKey: OrganizationModule.EVENTOS,
+      required: "EDIT",
+    });
+    if (!access.ok) {
       return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
     const isAdmin = Array.isArray(profile.roles) ? profile.roles.includes("admin") : false;
@@ -398,6 +416,26 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: ticketPriceError }, { status: 400 });
     }
 
+    const pricingModeRaw = typeof body.pricingMode === "string" ? body.pricingMode.trim().toUpperCase() : null;
+    const ticketPrices = ticketTypesData.map((t) => t.price);
+    const hasZeroTicket = ticketPrices.some((price) => price === 0);
+    const hasPaidTicket = ticketPrices.some((price) => price > 0);
+    const pricingMode =
+      pricingModeRaw === EventPricingMode.FREE_ONLY
+        ? EventPricingMode.FREE_ONLY
+        : pricingModeRaw === EventPricingMode.STANDARD
+          ? EventPricingMode.STANDARD
+          : hasZeroTicket && !hasPaidTicket
+            ? EventPricingMode.FREE_ONLY
+            : EventPricingMode.STANDARD;
+    const guard = validateZeroPriceGuard({
+      pricingMode,
+      ticketPrices,
+    });
+    if (!guard.ok) {
+      return NextResponse.json({ ok: false, error: guard.error }, { status: 400 });
+    }
+
     const hasPaidTickets = ticketTypesData.some((t) => t.price > 0);
     if (hasPaidTickets && !isAdmin) {
       const gate = getPaidSalesGate({
@@ -579,8 +617,8 @@ export async function POST(req: NextRequest) {
           where: { id: { in: partnerClubIds }, organizationId: organization.id, isActive: true, deletedAt: null },
           select: { id: true },
         });
-        const allowed = new Set(activePartners.map((c) => c.id));
-        partnerClubIds = partnerClubIds.filter((id) => allowed.has(id));
+        const permittedPartners = new Set(activePartners.map((c) => c.id));
+        partnerClubIds = partnerClubIds.filter((id) => permittedPartners.has(id));
       }
 
       const requestedCategoryIdsAll = Array.from(
@@ -612,9 +650,9 @@ export async function POST(req: NextRequest) {
       }
 
       if (requestedDefaultCategoryId && (!allowedCategoryIds || allowedCategoryIds.has(requestedDefaultCategoryId))) {
-        const isAllowed =
+        const isPermitted =
           padelCategoryIds.length === 0 || padelCategoryIds.includes(requestedDefaultCategoryId);
-        padelDefaultCategoryId = isAllowed ? requestedDefaultCategoryId : null;
+        padelDefaultCategoryId = isPermitted ? requestedDefaultCategoryId : null;
       } else if (padelCategoryIds.length > 0) {
         padelDefaultCategoryId = padelCategoryIds[0];
       }
@@ -632,40 +670,95 @@ export async function POST(req: NextRequest) {
       ticketTypesData = ticketTypesData.map((ticket) => ({ ...ticket, padelCategoryId: null }));
     }
 
-    // Criar o evento primeiro
-    const event = await prisma.event.create({
-      data: {
-        slug,
-        title,
-        description,
-        type: "ORGANIZATION_EVENT",
-        templateType,
-        ownerUserId: profile.id,
-        organization: organization?.id ? { connect: { id: organization.id } } : undefined,
-        startsAt,
-        endsAt,
-        locationName,
-        locationCity,
-        address,
-        locationSource,
-        locationProviderId,
-        locationFormattedAddress,
-        locationComponents: locationComponents ?? undefined,
-        locationOverrides: locationOverrides ?? undefined,
-        latitude: Number.isFinite(latitude ?? NaN) ? latitude : null,
-        longitude: Number.isFinite(longitude ?? NaN) ? longitude : null,
-        isFree: ticketTypesData.every((t) => t.price === 0),
-        inviteOnly: publicAccessMode === "INVITE",
-        publicAccessMode,
-        participantAccessMode,
-        publicTicketTypeIds: [],
-        participantTicketTypeIds: [],
-        liveHubVisibility,
-        status: "PUBLISHED",
-        resaleMode,
-        coverImageUrl,
-        payoutMode,
-      },
+    // Criar o evento + EventLog/Outbox na mesma tx
+    const event = await prisma.$transaction(async (tx) => {
+      const created = await tx.event.create({
+        data: {
+          slug,
+          title,
+          description,
+          type: "ORGANIZATION_EVENT",
+          templateType,
+          ownerUserId: profile.id,
+          organization: organization?.id ? { connect: { id: organization.id } } : undefined,
+          startsAt,
+          endsAt,
+          locationName,
+          locationCity,
+          address,
+          locationSource,
+          locationProviderId,
+          locationFormattedAddress,
+          locationComponents: locationComponents ?? undefined,
+          locationOverrides: locationOverrides ?? undefined,
+          latitude: Number.isFinite(latitude ?? NaN) ? latitude : null,
+          longitude: Number.isFinite(longitude ?? NaN) ? longitude : null,
+          pricingMode,
+          inviteOnly: publicAccessMode === "INVITE",
+          publicAccessMode,
+          participantAccessMode,
+          publicTicketTypeIds: [],
+          participantTicketTypeIds: [],
+          liveHubVisibility,
+          status: "PUBLISHED",
+          resaleMode,
+          coverImageUrl,
+          payoutMode,
+        },
+      });
+
+      if (created.organizationId) {
+        const eventIdLog = crypto.randomUUID();
+        await appendEventLog(
+          {
+            eventId: eventIdLog,
+            organizationId: created.organizationId,
+            eventType: "event.created",
+            idempotencyKey: `event.created:${created.id}`,
+            actorUserId: profile.id,
+            sourceType: SourceType.EVENT,
+            sourceId: String(created.id),
+            correlationId: String(created.id),
+            payload: {
+              eventId: created.id,
+              title: created.title,
+              startsAt: created.startsAt,
+              endsAt: created.endsAt,
+              status: created.status,
+              organizationId: created.organizationId,
+            },
+          },
+          tx,
+        );
+        await recordOutboxEvent(
+          {
+            eventId: eventIdLog,
+            eventType: "event.created",
+            payload: {
+              eventId: created.id,
+              title: created.title,
+              startsAt: created.startsAt,
+              endsAt: created.endsAt,
+              status: created.status,
+              organizationId: created.organizationId,
+            },
+            correlationId: String(created.id),
+          },
+          tx,
+        );
+        await recordSearchIndexOutbox(
+          {
+            eventLogId: eventIdLog,
+            organizationId: created.organizationId,
+            sourceType: SourceType.EVENT,
+            sourceId: String(created.id),
+            correlationId: String(created.id),
+          },
+          tx,
+        );
+      }
+
+      return created;
     });
 
     if (templateType === "PADEL" && padelConfigInput && organization) {

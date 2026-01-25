@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { resolveConnectStatus } from "@/domain/finance/stripeConnectStatus";
-import { PendingPayoutStatus, SaleSummaryStatus } from "@prisma/client";
+import { PendingPayoutStatus, SaleSummaryStatus, SourceType } from "@prisma/client";
 
 export async function GET(_req: NextRequest) {
   const supabase = await createSupabaseServer();
@@ -35,7 +35,7 @@ export async function GET(_req: NextRequest) {
 
   const pending = await prisma.pendingPayout.findMany({
     where: {
-      sourceType: "EVENT_TICKET",
+      sourceType: SourceType.TICKET_ORDER,
       sourceId: { in: events.map((e) => String(e.id)) },
       status: { in: [PendingPayoutStatus.HELD, PendingPayoutStatus.RELEASING, PendingPayoutStatus.BLOCKED] },
     },

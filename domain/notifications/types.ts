@@ -19,3 +19,20 @@ export type NotificationTemplate =
 export type NotificationPayload = Record<string, unknown>;
 
 export type DedupeKey = string;
+
+export type CreateNotificationInput = {
+  userId: string;
+  type: import("@prisma/client").NotificationType;
+  title?: string | null;
+  body?: string | null;
+  payload?: Record<string, unknown> | null;
+  ctaUrl?: string | null;
+  ctaLabel?: string | null;
+  priority?: import("@prisma/client").NotificationPriority;
+  senderVisibility?: "PUBLIC" | "PRIVATE";
+  fromUserId?: string | null;
+  organizationId?: number | null;
+  eventId?: number | null;
+  ticketId?: string | null;
+  inviteId?: string | null;
+};

@@ -4,7 +4,10 @@ export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { stripe } from "@/lib/stripeClient";
+import {
+  createAccountLink,
+  createStripeAccount,
+} from "@/domain/finance/gateway/stripeGateway";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { isOrgOwner } from "@/lib/organizationPermissions";
@@ -74,7 +77,7 @@ export async function POST(req: NextRequest) {
     let accountId = organization.stripeAccountId;
 
     if (!accountId) {
-      const account = await stripe.accounts.create({
+      const account = await createStripeAccount({
         type: "express",
         country: "PT",
         email: user.email ?? undefined,
@@ -102,7 +105,7 @@ export async function POST(req: NextRequest) {
     }
 
     const baseUrl = getAppBaseUrl();
-    const link = await stripe.accountLinks.create({
+    const link = await createAccountLink({
       account: accountId,
       refresh_url: `${baseUrl}/organizacao?tab=analyze&section=financas&onboarding=refresh`,
       return_url: `${baseUrl}/organizacao?tab=analyze&section=financas&onboarding=done`,

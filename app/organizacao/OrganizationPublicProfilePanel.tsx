@@ -157,7 +157,7 @@ function buildAgendaGroups(
     locationName: string | null;
     locationCity: string | null;
     timezone: string | null;
-    isFree: boolean;
+    isGratis: boolean;
     templateType: string | null;
   }>,
   pastEventIds?: Set<number>,
@@ -172,7 +172,7 @@ function buildAgendaGroups(
         timeLabel: string;
         locationLabel: string;
         isPast: boolean;
-        isFree: boolean;
+        isGratis: boolean;
         templateType: string | null;
       }>;
   }> = [];
@@ -199,7 +199,7 @@ function buildAgendaGroups(
       timeLabel: hasDate ? formatTimeLabel(event.startsAt as Date, timezone) : "—",
       locationLabel,
       isPast: pastEventIds?.has(event.id) ?? false,
-      isFree: event.isFree,
+      isGratis: event.isGratis,
       templateType: event.templateType ?? null,
     };
 
@@ -276,7 +276,7 @@ type EventPreviewItem = {
   locationName?: string | null;
   locationCity?: string | null;
   coverImageUrl?: string | null;
-  isFree?: boolean;
+  isGratis?: boolean;
 };
 
 type FormPreviewItem = {
@@ -371,7 +371,7 @@ type AgendaEvent = {
   coverImageUrl: string | null;
   locationName: string | null;
   locationCity: string | null;
-  isFree: boolean;
+  isGratis: boolean;
   templateType: string | null;
 };
 
@@ -642,7 +642,7 @@ export default function OrganizationPublicProfilePanel({
         coverImageUrl: ev.coverImageUrl ?? null,
         locationName: ev.locationName ?? null,
         locationCity: ev.locationCity ?? null,
-        isFree: Boolean(ev.isFree),
+        isGratis: Boolean(ev.isGratis),
         templateType: ev.templateType ?? null,
       }))
       .sort((a, b) => {
@@ -1130,7 +1130,7 @@ export default function OrganizationPublicProfilePanel({
   const spotlightCtaLabel = spotlightEvent
     ? spotlightEvent.templateType === "PADEL"
       ? "Inscrever agora"
-      : spotlightEvent.isFree
+      : spotlightEvent.isGratis
         ? "Garantir lugar"
         : "Comprar bilhete"
     : "Comprar bilhete";

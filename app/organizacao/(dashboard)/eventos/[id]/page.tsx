@@ -2,7 +2,9 @@
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
-import { canManageEvents } from "@/lib/organizationPermissions";
+import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
+import { OrganizationModule } from "@prisma/client";
+import { ACTIVE_PAIRING_REGISTRATION_WHERE } from "@/domain/padelRegistration";
 import { notFound, redirect } from "next/navigation";
 import PadelTournamentTabs from "./PadelTournamentTabs";
 import EventAttendeesPanel from "./EventAttendeesPanel";
@@ -37,7 +39,7 @@ type EventWithTickets = {
   status: string;
   liveHubVisibility: "PUBLIC" | "PRIVATE" | "DISABLED";
   coverImageUrl: string | null;
-  isFree: boolean;
+  isGratis: boolean;
   ticketTypes: Array<{
     id: number;
     name: string;
@@ -133,7 +135,15 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
   if (!organization || !membership) {
     redirect("/organizacao");
   }
-  if (!canManageEvents(membership.role)) {
+  const access = await ensureMemberModuleAccess({
+    organizationId: event.organizationId,
+    userId,
+    role: membership.role,
+    rolePack: membership.rolePack,
+    moduleKey: OrganizationModule.EVENTOS,
+    required: "EDIT",
+  });
+  if (!access.ok) {
     redirect(fallbackHref);
   }
 
@@ -186,7 +196,7 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
         where: {
           eventId: event.id,
           pairingStatus: { not: "CANCELLED" },
-          lifecycleStatus: { not: "CANCELLED_INCOMPLETE" },
+          ...ACTIVE_PAIRING_REGISTRATION_WHERE,
         },
       })
     : 0;
@@ -196,7 +206,7 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
         where: {
           eventId: event.id,
           pairingStatus: { not: "CANCELLED" },
-          lifecycleStatus: { not: "CANCELLED_INCOMPLETE" },
+          ...ACTIVE_PAIRING_REGISTRATION_WHERE,
         },
         _count: { _all: true },
       })

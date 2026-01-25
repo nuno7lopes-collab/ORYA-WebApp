@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { readNumericParam } from "@/lib/routeParams";
-import { PendingPayoutStatus, SaleSummaryStatus } from "@prisma/client";
+import { PendingPayoutStatus, SaleSummaryStatus, SourceType } from "@prisma/client";
+import { ensureGroupMemberRole } from "@/lib/organizationGroupAccess";
 
 async function ensureOrganizationAccess(userId: string, eventId: number) {
   const evt = await prisma.event.findUnique({ where: { id: eventId }, select: { organizationId: true } });
@@ -15,11 +16,12 @@ async function ensureOrganizationAccess(userId: string, eventId: number) {
     profile?.onboardingDone ||
     (Boolean(profile?.fullName?.trim()) && Boolean(profile?.username?.trim()));
   if (!hasUserOnboarding) return { ok: false };
-  const member = await prisma.organizationMember.findFirst({
-    where: { organizationId: evt.organizationId, userId, role: { in: ["OWNER", "CO_OWNER", "ADMIN"] } },
-    select: { id: true },
+  const access = await ensureGroupMemberRole({
+    organizationId: evt.organizationId,
+    userId,
+    allowedRoles: ["OWNER", "CO_OWNER", "ADMIN"],
   });
-  return { ok: Boolean(member) };
+  return { ok: access.ok };
 }
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -70,7 +72,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const event = await prisma.event.findUnique({ where: { id: tournament.eventId }, select: { payoutMode: true } });
   const pending = await prisma.pendingPayout.findMany({
     where: {
-      sourceType: "EVENT_TICKET",
+      sourceType: SourceType.TICKET_ORDER,
       sourceId: String(tournament.eventId),
       status: { in: [PendingPayoutStatus.HELD, PendingPayoutStatus.RELEASING, PendingPayoutStatus.BLOCKED] },
     },

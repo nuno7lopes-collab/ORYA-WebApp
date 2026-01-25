@@ -933,6 +933,69 @@ function AuthModalContent({
               </button>
             )}
 
+            {(mode === "login" || mode === "signup") && showGoogle && (
+              <button
+                type="button"
+                disabled={loading}
+                onClick={async () => {
+                  setError(null);
+                  setLoading(true);
+                  try {
+                    const redirect =
+                      typeof window !== "undefined"
+                        ? (() => {
+                            const currentPath = `${window.location.pathname}${window.location.search}`;
+                            const safeRedirect = sanitizeRedirectPath(
+                              redirectTo ?? currentPath,
+                              "/"
+                            );
+                            return `${window.location.origin}/auth/callback?redirectTo=${encodeURIComponent(
+                              safeRedirect
+                            )}`;
+                          })()
+                        : undefined;
+                    if (typeof window !== "undefined") {
+                      try {
+                        const currentPath = `${window.location.pathname}${window.location.search}`;
+                        const safeRedirect = sanitizeRedirectPath(
+                          redirectTo ?? currentPath,
+                          "/"
+                        );
+                        window.localStorage.setItem(
+                          "orya_post_auth_redirect",
+                          safeRedirect,
+                        );
+                      } catch {}
+                    }
+                    const { error: oauthError } =
+                      await supabaseBrowser.auth.signInWithOAuth({
+                        provider: "apple",
+                        options: { redirectTo: redirect },
+                      });
+                    if (oauthError) {
+                      setError(
+                        oauthError.message ??
+                          "Não foi possível iniciar sessão com Apple.",
+                      );
+                    }
+                  } catch (err) {
+                    console.error("[AuthModal] Apple OAuth error:", err);
+                    setError(
+                      "Não foi possível iniciar sessão com Apple. Tenta novamente.",
+                    );
+                  } finally {
+                    setLoading(false);
+                  }
+                }}
+                className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-full border border-white/20 bg-white/5 px-4 py-2 text-sm font-semibold text-white shadow hover:border-white/40 hover:bg-white/10 transition-colors disabled:opacity-50"
+              >
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white/90 text-[11px] font-bold text-black">
+                  
+                </span>
+                Continuar com Apple
+              </button>
+            )}
+
             {mode === "login" && loginOtpSent && (
               <span className="mt-2 block text-emerald-300 text-[11px]">Email enviado.</span>
             )}

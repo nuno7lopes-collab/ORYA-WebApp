@@ -8,6 +8,12 @@ import {
   PrismaClient,
 } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import {
+  clampLoyaltyMaxPerDay,
+  clampLoyaltyMaxPerUser,
+  clampLoyaltyRulePoints,
+} from "@/lib/loyalty/guardrails";
+import { recordLoyaltyLedgerOutbox } from "@/domain/loyaltyOutbox";
 
 export type CustomerSnapshot = {
   totalSpentCents: number;
@@ -140,6 +146,12 @@ export async function applyLoyaltyForInteraction(
   if (!trigger || !sourceType) return { entries: 0 };
 
   const client: PrismaClientLike = options?.tx ?? prisma;
+  const writeInTransaction = async <T>(
+    fn: (tx: Prisma.TransactionClient) => Promise<T>,
+  ): Promise<T> => {
+    if (options?.tx) return fn(options.tx);
+    return prisma.$transaction(fn);
+  };
 
   const program = await client.loyaltyProgram.findUnique({
     where: { organizationId: input.organizationId },
@@ -163,21 +175,23 @@ export async function applyLoyaltyForInteraction(
     if (!rule.points || rule.points <= 0) continue;
     if (!matchesConditions(rule.conditions as Prisma.JsonValue, input)) continue;
 
-    let pointsToGrant = rule.points;
+    let pointsToGrant = clampLoyaltyRulePoints(rule.points);
 
-    if (rule.maxPointsPerUser) {
+    const maxPerUser = clampLoyaltyMaxPerUser(rule.maxPointsPerUser ?? null);
+    if (maxPerUser) {
       const earned = await getEarnedPoints({
         client,
         programId: program.id,
         userId: input.userId,
         ruleId: rule.id,
       });
-      const remaining = rule.maxPointsPerUser - earned;
+      const remaining = maxPerUser - earned;
       if (remaining <= 0) continue;
       pointsToGrant = Math.min(pointsToGrant, remaining);
     }
 
-    if (rule.maxPointsPerDay) {
+    const maxPerDay = clampLoyaltyMaxPerDay(rule.maxPointsPerDay ?? null);
+    if (maxPerDay) {
       const start = startOfDayUtc(createdAt);
       const earnedToday = await getEarnedPoints({
         client,
@@ -186,7 +200,7 @@ export async function applyLoyaltyForInteraction(
         ruleId: rule.id,
         since: start,
       });
-      const remainingToday = rule.maxPointsPerDay - earnedToday;
+      const remainingToday = maxPerDay - earnedToday;
       if (remainingToday <= 0) continue;
       pointsToGrant = Math.min(pointsToGrant, remainingToday);
     }
@@ -196,7 +210,8 @@ export async function applyLoyaltyForInteraction(
     const dedupeKey = `rule:${rule.id}:${sourceType}:${input.sourceId ?? input.interactionType}`;
 
     try {
-        await client.loyaltyLedger.create({
+      const entry = await writeInTransaction(async (tx) => {
+        const created = await tx.loyaltyLedger.create({
           data: {
             organizationId: input.organizationId,
             programId: program.id,
@@ -212,7 +227,10 @@ export async function applyLoyaltyForInteraction(
             expiresAt: expiresAt ?? undefined,
           },
         });
-      entries += 1;
+        await recordLoyaltyLedgerOutbox(created, tx);
+        return created;
+      });
+      if (entry) entries += 1;
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
         continue;

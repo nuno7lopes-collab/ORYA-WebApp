@@ -5,6 +5,8 @@ import { resolveActions } from "@/lib/entitlements/accessResolver";
 import { buildDefaultCheckinWindow } from "@/lib/checkin/policy";
 import crypto from "crypto";
 import { normalizeEmail } from "@/lib/utils/email";
+import { mapRegistrationToPairingLifecycle } from "@/domain/padelRegistration";
+import { PadelRegistrationStatus } from "@prisma/client";
 
 function hashToken(token: string) {
   return crypto.createHash("sha256").update(token).digest("hex");
@@ -154,8 +156,8 @@ export async function GET(_: Request, context: { params: Params | Promise<Params
           id: true,
           payment_mode: true,
           pairingStatus: true,
-          lifecycleStatus: true,
           createdByUserId: true,
+          registration: { select: { status: true } },
           slots: {
             select: {
               slot_role: true,
@@ -174,6 +176,10 @@ export async function GET(_: Request, context: { params: Params | Promise<Params
           profile?.username?.trim() ?? null,
           profile?.username ? `@${profile.username}` : null,
         ].filter(Boolean) as string[];
+        const lifecycleStatus = mapRegistrationToPairingLifecycle(
+          pairing.registration?.status ?? PadelRegistrationStatus.PENDING_PARTNER,
+          pairing.payment_mode,
+        );
         const userSlot = pairing.slots.find((slot) => {
           if (slot.profileId === userId || slot.invitedUserId === userId) return true;
           if (!slot.invitedContact) return false;
@@ -196,7 +202,7 @@ export async function GET(_: Request, context: { params: Params | Promise<Params
           id: pairing.id,
           paymentMode: pairing.payment_mode,
           pairingStatus: pairing.pairingStatus,
-          lifecycleStatus: pairing.lifecycleStatus,
+          lifecycleStatus,
           createdByUserId: pairing.createdByUserId,
           slots: pairing.slots.map((slot) => ({
             slotRole: slot.slot_role,

@@ -1,4 +1,5 @@
 import { Prisma } from "@prisma/client";
+import { INACTIVE_REGISTRATION_STATUSES } from "@/domain/padelRegistration";
 
 type CapacityCheckResult = { ok: true } | { ok: false; code: "CATEGORY_FULL" | "CATEGORY_PLAYERS_FULL" };
 
@@ -34,7 +35,10 @@ export async function checkPadelCategoryCapacity(params: CapacityCheckParams): P
     eventId,
     categoryId,
     pairingStatus: { not: "CANCELLED" as const },
-    lifecycleStatus: { not: "CANCELLED_INCOMPLETE" as const },
+    OR: [
+      { registration: { is: null } },
+      { registration: { status: { notIn: INACTIVE_REGISTRATION_STATUSES } } },
+    ],
     ...(excludePairingId ? { id: { not: excludePairingId } } : {}),
   };
 
@@ -88,7 +92,10 @@ export async function checkPadelCategoryPlayerCapacity(params: PlayerCapacityPar
         eventId,
         categoryId,
         pairingStatus: { not: "CANCELLED" as const },
-        lifecycleStatus: { not: "CANCELLED_INCOMPLETE" as const },
+        OR: [
+          { registration: { is: null } },
+          { registration: { status: { notIn: INACTIVE_REGISTRATION_STATUSES } } },
+        ],
         ...(excludePairingId ? { id: { not: excludePairingId } } : {}),
       },
     },

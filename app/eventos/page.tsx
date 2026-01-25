@@ -21,7 +21,7 @@ type EventCard = {
   locationOverrides: Record<string, unknown> | null;
   latitude: number | null;
   longitude: number | null;
-  isFree: boolean;
+  isGratis: boolean;
   priceFrom: number | null;
 };
 
@@ -67,7 +67,7 @@ export default function EventosFeedPage() {
             locationOverrides: ev.venue?.overrides ?? null,
             latitude: ev.venue?.lat ?? null,
             longitude: ev.venue?.lng ?? null,
-            isFree: Boolean(ev.isFree),
+            isGratis: Boolean(ev.isGratis),
             priceFrom: ev.priceFrom ?? null,
           }))
         : [];
@@ -190,7 +190,7 @@ export default function EventosFeedPage() {
                   <div className="h-full w-full bg-[radial-gradient(circle_at_top,_#FF00C8_0,_#02020a_65%)] flex items-center justify-center text-xs text-white/60">
                     ORYA • Evento
                   </div>
-                  {ev.isFree && (
+                  {ev.isGratis && (
                     <span className="absolute bottom-2 left-2 rounded-full bg-black/80 px-2 py-0.5 text-[10px] font-semibold text-[#6BFFFF] border border-[#6BFFFF]/40">
                       Evento gratuito
                     </span>
@@ -202,7 +202,7 @@ export default function EventosFeedPage() {
                     <p className="text-[11px] text-white/60">
                       {formatDate(ev.startsAt)}
                     </p>
-                    {ev.priceFrom !== null && !ev.isFree && (
+                    {ev.priceFrom !== null && !ev.isGratis && (
                       <p className="text-[11px] text-white">
                         desde{" "}
                         <span className="font-semibold">

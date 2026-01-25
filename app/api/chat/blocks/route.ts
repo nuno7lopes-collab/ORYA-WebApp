@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { ChatContextError, requireChatContext } from "@/lib/chat/context";
 import { isChatV2Enabled } from "@/lib/chat/featureFlags";
 import { isUnauthenticatedError } from "@/lib/security";
+import { resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
 
 export async function POST(req: NextRequest) {
   try {
@@ -22,9 +23,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "INVALID_TARGET" }, { status: 400 });
     }
 
-    const membership = await prisma.organizationMember.findFirst({
-      where: { organizationId: organization.id, userId: blockedId },
-      select: { userId: true },
+    const membership = await resolveGroupMemberForOrg({
+      organizationId: organization.id,
+      userId: blockedId,
     });
     if (!membership) {
       return NextResponse.json({ ok: false, error: "NOT_IN_ORGANIZATION" }, { status: 400 });

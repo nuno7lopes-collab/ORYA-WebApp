@@ -24,6 +24,7 @@ model Profile {
   onboardingDone                                                   Boolean                 @default(false) @map("onboarding_done")
   /// roles do user: ["user"], ["user","organization"], ["user","admin"], etc.
   roles                                                            String[]                @default(["user"])
+  activeOrganizationId                                             Int?                    @map("active_organization_id")
   createdAt                                                        DateTime                @default(now()) @map("created_at")
   updatedAt                                                        DateTime                @default(now()) @updatedAt @map("updated_at")
   deletedAt                                                        DateTime?               @map("deleted_at") @db.Timestamp(6)
@@ -57,6 +58,7 @@ model Profile {
   eventInvitesReceived                                             EventInvite[]           @relation("EventInviteTarget")
   organization_members_organization_members_invited_by_user_idToprofiles OrganizationMember[]       @relation("organization_members_invited_by_user_idToprofiles")
   organizationMembers                                                 OrganizationMember[]
+  organizationGroupMembers                                            OrganizationGroupMember[]
   organizationMemberPermissions                                       OrganizationMemberPermission[]
   userActivities                                                   UserActivity[]
   bookings                                                         Booking[]
@@ -73,8 +75,9 @@ model Profile {
   organizationFormSubmissions                                      OrganizationFormSubmission[]
   tournamentsGenerated                                             Tournament[]            @relation("TournamentGeneratedBy")
   tournamentAuditLogs                                              TournamentAuditLog[]    @relation("TournamentAuditLogUser")
+  userIdentities                                                  UserIdentity[]
+  pushDeviceTokens                                                PushDeviceToken[]
   users                                                            users                   @relation(fields: [id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  saleSummaries                                                    SaleSummary[]
   notificationOutbox                                               NotificationOutbox[]
   servicesInstructing                                              Service[]               @relation("ServiceInstructor")
   reservationProfessionals                                         ReservationProfessional[]
@@ -97,19 +100,60 @@ model Profile {
   internalChatChannelsCreated                                      InternalChatChannel[]   @relation("InternalChatChannelCreator")
   internalChatMessagesAuthored                                     InternalChatMessage[]   @relation("InternalChatMessageAuthor")
   internalChatMessagesDeleted                                      InternalChatMessage[]   @relation("InternalChatMessageDeletedBy")
+  locationConsent                                                  LocationConsent         @default(PENDING) @map("location_consent")
+  locationGranularity                                              LocationGranularity     @default(COARSE) @map("location_granularity")
+  locationSource                                                   UserLocationSource?      @map("location_source")
+  locationCity                                                     String?                 @map("location_city")
+  locationRegion                                                   String?                 @map("location_region")
+  locationUpdatedAt                                                DateTime?               @map("location_updated_at") @db.Timestamptz(6)
   store                                                            Store?
   storeCarts                                                       StoreCart[]
   storeOrders                                                      StoreOrder[]
   storeDigitalGrants                                               StoreDigitalGrant[]
   promoCodesPromoted                                               PromoCode[]            @relation("PromoCodePromoter")
+  activeOrganization                                               Organization?          @relation("ProfileActiveOrganization", fields: [activeOrganizationId], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
+  @@index([activeOrganizationId], map: "profiles_active_org_idx")
   @@map("profiles")
+  @@schema("app_v3")
+}
+
+model UserIdentity {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId          String   @map("user_id") @db.Uuid
+  provider        String   @db.Text
+  providerUserId  String   @map("provider_user_id") @db.Text
+  email           String?  @db.Text
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user Profile @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerUserId], map: "user_identities_provider_unique")
+  @@index([userId], map: "user_identities_user_idx")
+  @@map("user_identities")
+  @@schema("app_v3")
+}
+
+model PushDeviceToken {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  platform  String   @db.Text
+  token     String   @db.Text
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  revokedAt DateTime? @map("revoked_at") @db.Timestamptz(6)
+
+  user Profile @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([platform, token], map: "push_device_tokens_platform_token_unique")
+  @@index([userId], map: "push_device_tokens_user_idx")
+  @@map("push_device_tokens")
   @@schema("app_v3")
 }
 
 /// Entidade organização (marca, página de eventos)
 model Organization {
   id                      Int                             @id @default(autoincrement())
+  groupId                 Int                             @map("group_id")
   stripeAccountId         String?                         @map("stripe_account_id")
   status                  OrganizationStatus                 @default(PENDING)
   createdAt               DateTime                        @default(now()) @map("created_at")
@@ -164,8 +208,13 @@ model Organization {
   officialEmail           String?                         @map("official_email")
   officialEmailVerifiedAt DateTime?                       @map("official_email_verified_at") @db.Timestamptz(6)
   officialEmailRequests   OrganizationOfficialEmailRequest[]
+  eventLogs               EventLog[]
+  activityFeedItems       ActivityFeedItem[]
+  agendaItems             AgendaItem[]
+  searchIndexItems        SearchIndexItem[]
   events                  Event[]
   promoCodes              PromoCode[]
+  payments                Payment[]
   notifications           Notification[]                  @relation("NotificationOrganization")
   memberInvites           OrganizationMemberInvite[]
   members                 OrganizationMember[]
@@ -173,6 +222,8 @@ model Organization {
   organizationModules     OrganizationModuleEntry[]
   organizationForms       OrganizationForm[]
   organizationAuditLogs   OrganizationAuditLog[]
+  publicApiKeys           PublicApiKey[]
+  settings                OrganizationSettings?
   ownerTransfers          OrganizationOwnerTransfer[]
   trainerProfiles         TrainerProfile[]
   padelDefaultRuleSet     PadelRuleSet?                   @relation("OrganizationPadelDefaultRuleSet", fields: [padelDefaultRuleSetId], references: [id], onUpdate: NoAction, map: "organizations_padel_default_rule_set_fk")
@@ -196,6 +247,7 @@ model Organization {
   internalChatChannels    InternalChatChannel[]
   internalChatMessages    InternalChatMessage[]
   weeklyAvailabilityTemplates WeeklyAvailabilityTemplate[]
+  analyticsRollups        AnalyticsRollup[]
   availabilityOverrides   AvailabilityOverride[]
   serviceReviews           ServiceReview[]
   transactions            Transaction[]
@@ -208,6 +260,9 @@ model Organization {
   crmCampaignDeliveries   CrmCampaignDelivery[]
   userConsents            UserConsent[]
   loyaltyProgram          LoyaltyProgram?
+  activeProfiles          Profile[]                    @relation("ProfileActiveOrganization")
+  group                   OrganizationGroup               @relation(fields: [groupId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  memberOverrides          OrganizationGroupMemberOrganizationOverride[]
   loyaltyLedger           LoyaltyLedger[]
   membershipPlans         MembershipPlan[]
   membershipSubscriptions MembershipSubscription[]
@@ -217,6 +272,73 @@ model Organization {
   @@index([stripeCustomerId], map: "organizations_stripe_customer_idx")
   @@index([stripeSubscriptionId], map: "organizations_stripe_subscription_idx")
   @@map("organizations")
+  @@schema("app_v3")
+}
+
+model OrganizationSettings {
+  organizationId                  Int           @id @map("organization_id")
+  invoicingMode                   InvoicingMode? @map("invoicing_mode")
+  invoicingSoftwareName           String?       @map("invoicing_software_name")
+  invoicingNotes                  String?       @map("invoicing_notes")
+  invoicingAcknowledgedAt         DateTime?     @map("invoicing_acknowledged_at") @db.Timestamptz(6)
+  invoicingAcknowledgedByIdentityId String?     @map("invoicing_acknowledged_by_identity_id") @db.Uuid
+  createdAt                       DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                       DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization            Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("organization_settings")
+  @@schema("app_v3")
+}
+
+model OrganizationGroup {
+  id         Int                      @id @default(autoincrement())
+  createdAt  DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime                 @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  organizations Organization[]
+  members    OrganizationGroupMember[]
+
+  @@map("organization_groups")
+  @@schema("app_v3")
+}
+
+model OrganizationGroupMember {
+  id           String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  groupId      Int                     @map("group_id")
+  userId       String                  @map("user_id") @db.Uuid
+  role         OrganizationMemberRole
+  rolePack     OrganizationRolePack?   @map("role_pack")
+  scopeAllOrgs Boolean                 @default(false) @map("scope_all_orgs")
+  scopeOrgIds  Int[]                   @default([]) @map("scope_org_ids")
+  createdAt    DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime                @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  group        OrganizationGroup       @relation(fields: [groupId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  user         Profile                 @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  overrides    OrganizationGroupMemberOrganizationOverride[]
+
+  @@unique([groupId, userId], map: "organization_group_members_group_user_uniq")
+  @@index([groupId], map: "organization_group_members_group_idx")
+  @@index([userId], map: "organization_group_members_user_idx")
+  @@map("organization_group_members")
+  @@schema("app_v3")
+}
+
+model OrganizationGroupMemberOrganizationOverride {
+  id            String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  groupMemberId String                  @map("group_member_id") @db.Uuid
+  organizationId Int                    @map("organization_id")
+  roleOverride  OrganizationMemberRole? @map("role_override")
+  revokedAt     DateTime?               @map("revoked_at") @db.Timestamptz(6)
+  createdAt     DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime                @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  groupMember   OrganizationGroupMember @relation(fields: [groupMemberId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  organization  Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([groupMemberId, organizationId], map: "organization_member_overrides_group_org_uniq")
+  @@index([organizationId], map: "organization_member_overrides_org_idx")
+  @@map("organization_member_overrides")
   @@schema("app_v3")
 }
 
@@ -856,6 +978,7 @@ model Notification {
   inviteId    String?                @map("invite_id") @db.Uuid
   isRead      Boolean                @default(false) @map("is_read")
   readAt      DateTime?              @map("read_at") @db.Timestamptz(6)
+  sourceEventId String?              @map("source_event_id")
   expiresAt   DateTime?              @map("expires_at") @db.Timestamptz(6)
   createdAt   DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
   event       Event?                 @relation("NotificationEvent", fields: [eventId], references: [id], onUpdate: NoAction)
@@ -873,6 +996,7 @@ model Notification {
   @@index([eventId])
   @@index([ticketId])
   @@index([inviteId])
+  @@unique([sourceEventId], map: "notifications_source_event_id_unique")
   @@map("notifications")
   @@schema("app_v3")
 }
@@ -912,6 +1036,7 @@ model NotificationOutbox {
   payload          Json      @default("{}")
   retries          Int       @default(0)
   lastError        String?   @map("last_error")
+  nextAttemptAt    DateTime? @map("next_attempt_at") @db.Timestamptz(6)
   createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   sentAt           DateTime? @map("sent_at") @db.Timestamptz(6)
   user             Profile?  @relation(fields: [userId], references: [id], onUpdate: NoAction, onDelete: NoAction)
@@ -1286,6 +1411,7 @@ model OrganizationMember {
   organizationId                                             Int                 @map("organization_id")
   userId                                                  String              @map("user_id") @db.Uuid
   role                                                    OrganizationMemberRole
+  rolePack                                                OrganizationRolePack? @map("role_pack")
   invitedByUserId                                         String?             @map("invited_by_user_id") @db.Uuid
   createdAt                                               DateTime?           @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt                                               DateTime?           @default(now()) @map("updated_at") @db.Timestamptz(6)
@@ -1331,6 +1457,7 @@ model OrganizationMemberInvite {
   targetIdentifier String              @map("target_identifier") @db.Citext
   targetUserId     String?             @map("target_user_id") @db.Uuid
   role             OrganizationMemberRole
+  rolePack         OrganizationRolePack? @map("role_pack")
   token            String              @unique @db.Uuid
   expiresAt        DateTime            @map("expires_at") @db.Timestamptz(6)
   acceptedAt       DateTime?           @map("accepted_at") @db.Timestamptz(6)
@@ -1353,8 +1480,12 @@ model OrganizationMemberInvite {
 model OrganizationAuditLog {
   id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   organizationId Int      @map("organization_id")
+  groupId     Int?     @map("group_id")
   actorUserId String?  @map("actor_user_id") @db.Uuid
   action      String
+  entityType  String?  @map("entity_type")
+  entityId    String?  @map("entity_id")
+  correlationId String? @map("correlation_id")
   fromUserId  String?  @map("from_user_id") @db.Uuid
   toUserId    String?  @map("to_user_id") @db.Uuid
   metadata    Json?    @default("{}")
@@ -1366,6 +1497,23 @@ model OrganizationAuditLog {
   @@index([organizationId], map: "organization_audit_logs_org_idx")
   @@index([actorUserId], map: "organization_audit_logs_actor_idx")
   @@map("organization_audit_logs")
+  @@schema("app_v3")
+}
+
+model PublicApiKey {
+  id             String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId Int              @map("organization_id")
+  keyPrefix      String           @map("key_prefix")
+  keyHash        String           @unique @map("key_hash")
+  scopes         PublicApiScope[] @map("scopes")
+  revokedAt      DateTime?        @map("revoked_at") @db.Timestamptz(6)
+  lastUsedAt     DateTime?        @map("last_used_at") @db.Timestamptz(6)
+  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId], map: "public_api_keys_org_idx")
+  @@map("public_api_keys")
   @@schema("app_v3")
 }
 
@@ -1417,6 +1565,7 @@ model Event {
   locationOverrides                 Json?                   @map("location_overrides")
   latitude                          Float?                  @map("lat")
   longitude                         Float?                  @map("lng")
+  pricingMode                       EventPricingMode        @default(STANDARD) @map("pricing_mode")
   isFree                            Boolean                 @default(false) @map("is_free")
   inviteOnly                        Boolean                 @default(false) @map("invite_only")
   publicAccessMode                  EventPublicAccessMode   @default(OPEN) @map("public_access_mode")
@@ -1452,17 +1601,45 @@ model Event {
   tournamentEntries                 TournamentEntry[]
   tournament                        Tournament?             @relation("EventTournament")
   promoCodes                        PromoCode[]
-  saleLines                         SaleLine[]
-  saleSummaries                     SaleSummary[]
   reservations                      TicketReservation[]
   ticketTypes                       TicketType[]
   tickets                           Ticket[]
   invites                           EventInvite[]
+  accessPolicies                    EventAccessPolicy[]
+  inviteTokens                      InviteToken[]
+  ticketOrders                      TicketOrder[]
+  padelRegistrations                PadelRegistration[]
 
   @@index([type, status])
   @@index([ownerUserId])
   @@index([organizationId])
   @@map("events")
+  @@schema("app_v3")
+}
+
+model EventAccessPolicy {
+  id                        Int                 @id @default(autoincrement())
+  eventId                   Int                 @map("event_id")
+  policyVersion             Int                 @map("policy_version")
+  mode                      EventAccessMode
+  guestCheckoutAllowed      Boolean             @map("guest_checkout_allowed")
+  inviteTokenAllowed        Boolean             @map("invite_token_allowed")
+  inviteIdentityMatch       InviteIdentityMatch @map("invite_identity_match")
+  inviteTokenTtlSeconds     Int?                @map("invite_token_ttl_seconds")
+  requiresEntitlementForEntry Boolean           @map("requires_entitlement_for_entry")
+  checkinMethods            CheckinMethod[]     @default([]) @map("checkin_methods")
+  scannerRequired           Boolean             @default(false) @map("scanner_required")
+  allowReentry              Boolean             @default(false) @map("allow_reentry")
+  reentryWindowMinutes      Int                 @default(15) @map("reentry_window_minutes")
+  maxEntries                Int                 @default(1) @map("max_entries")
+  undoWindowMinutes         Int                 @default(10) @map("undo_window_minutes")
+  createdAt                 DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                 DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  event                     Event               @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, policyVersion], map: "event_access_policies_event_version_uq")
+  @@index([eventId], map: "event_access_policies_event_idx")
+  @@map("event_access_policies")
   @@schema("app_v3")
 }
 
@@ -1487,6 +1664,27 @@ model EventInvite {
   @@schema("app_v3")
 }
 
+model InviteToken {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tokenHash       String    @unique @map("token_hash")
+  eventId         Int       @map("event_id")
+  ticketTypeId    Int?      @map("ticket_type_id")
+  emailNormalized String    @map("email_normalized") @db.Citext
+  expiresAt       DateTime  @map("expires_at") @db.Timestamptz(6)
+  usedAt          DateTime? @map("used_at") @db.Timestamptz(6)
+  usedByIdentityId String?  @map("used_by_identity_id") @db.Uuid
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  event           Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  ticketType      TicketType? @relation(fields: [ticketTypeId], references: [id], onDelete: SetNull)
+
+  @@index([eventId], map: "invite_tokens_event_idx")
+  @@index([ticketTypeId], map: "invite_tokens_ticket_type_idx")
+  @@index([expiresAt], map: "invite_tokens_expires_idx")
+  @@index([usedAt], map: "invite_tokens_used_idx")
+  @@map("invite_tokens")
+  @@schema("app_v3")
+}
+
 /// Tipos de bilhete (antigas "waves")
 model TicketType {
   id            Int                 @id @default(autoincrement())
@@ -1504,11 +1702,12 @@ model TicketType {
   sortOrder     Int                 @default(0) @map("sort_order")
   createdAt     DateTime            @default(now()) @map("created_at")
   updatedAt     DateTime            @updatedAt @map("updated_at")
-  saleLines     SaleLine[]
   reservations  TicketReservation[]
   event         Event               @relation(fields: [eventId], references: [id], onDelete: Cascade)
   tickets       Ticket[]
   padelEventCategoryLink PadelEventCategoryLink? @relation(fields: [padelEventCategoryLinkId], references: [id], onDelete: SetNull)
+  inviteTokens  InviteToken[]
+  ticketOrderLines TicketOrderLine[]
 
   @@index([eventId])
   @@index([padelEventCategoryLinkId], map: "ticket_types_padel_category_link_idx")
@@ -1527,7 +1726,6 @@ model Ticket {
   rotatingSeed          String?           @map("rotating_seed") @db.Uuid
   pricePaid             Int               @map("price_paid")
   currency              String            @default("EUR")
-  stripePaymentIntentId String?           @map("stripe_payment_intent_id")
   usedAt                DateTime?         @map("used_at")
   userId                String?           @map("user_id") @db.Uuid
   platformFeeCents      Int               @default(0) @map("platform_fee_cents")
@@ -1535,7 +1733,6 @@ model Ticket {
   pairingId             Int?              @map("pairing_id")
   padelSplitShareCents  Int?              @map("padel_split_share_cents")
   purchaseId            String?           @map("purchase_id") @db.Text
-  saleSummaryId         Int?              @map("sale_summary_id")
   emissionIndex         Int               @default(0) @map("emission_index")
   guestLink             GuestTicketLink?
   notifications         Notification[]    @relation("NotificationTicket")
@@ -1550,15 +1747,12 @@ model Ticket {
   ownerIdentityId       String?           @map("owner_identity_id") @db.Uuid
   tournamentEntryId     Int?              @map("tournament_entry_id")
   tournamentEntry       TournamentEntry?  @relation("TicketTournamentEntry", fields: [tournamentEntryId], references: [id], onDelete: SetNull)
-  saleSummary           SaleSummary?      @relation(fields: [saleSummaryId], references: [id], onDelete: SetNull)
 
   @@unique([purchaseId, ticketTypeId, emissionIndex], map: "tickets_purchase_ticket_idx")
   @@index([eventId])
   @@index([userId])
   @@index([ticketTypeId])
-  @@index([stripePaymentIntentId])
   @@index([pairingId])
-  @@index([saleSummaryId])
   @@map("tickets")
   @@schema("app_v3")
 }
@@ -1600,6 +1794,42 @@ model TicketReservation {
   @@schema("app_v3")
 }
 
+/// Checkout source (TICKET_ORDER)
+model TicketOrder {
+  id             String            @id @default(uuid()) @db.Uuid
+  organizationId Int               @map("organization_id")
+  eventId        Int               @map("event_id")
+  buyerIdentityId String?          @map("buyer_identity_id") @db.Uuid
+  currency       String            @default("EUR")
+  status         TicketOrderStatus @default(DRAFT)
+  createdAt      DateTime          @default(now()) @map("created_at")
+  updatedAt      DateTime          @updatedAt @map("updated_at")
+  lines          TicketOrderLine[]
+  event          Event             @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId], map: "ticket_orders_org_idx")
+  @@index([eventId], map: "ticket_orders_event_idx")
+  @@map("ticket_orders")
+  @@schema("app_v3")
+}
+
+/// Linhas do TicketOrder (para pricing snapshot)
+model TicketOrderLine {
+  id            Int         @id @default(autoincrement())
+  ticketOrderId String      @map("ticket_order_id") @db.Uuid
+  ticketTypeId  Int         @map("ticket_type_id")
+  qty           Int         @map("qty")
+  unitAmount    Int         @map("unit_amount")
+  totalAmount   Int         @map("total_amount")
+  ticketOrder   TicketOrder @relation(fields: [ticketOrderId], references: [id], onDelete: Cascade)
+  ticketType    TicketType  @relation(fields: [ticketTypeId], references: [id], onDelete: Cascade)
+
+  @@index([ticketOrderId], map: "ticket_order_lines_order_idx")
+  @@index([ticketTypeId], map: "ticket_order_lines_ticket_type_idx")
+  @@map("ticket_order_lines")
+  @@schema("app_v3")
+}
+
 /// Revenda de bilhetes pelo utilizador
 model TicketResale {
   id           String       @id @default(cuid())
@@ -1618,10 +1848,57 @@ model TicketResale {
   @@schema("app_v3")
 }
 
+/// SSOT financeiro (Payment) conforme blueprint v7
+model Payment {
+  id                   String              @id
+  organizationId       Int                 @map("organization_id")
+  sourceType           SourceType          @map("source_type")
+  sourceId             String              @map("source_id") @db.Text
+  customerIdentityId   String?             @map("customer_identity_id") @db.Uuid
+  status               PaymentStatus       @default(CREATED)
+  feePolicyVersion     String              @map("fee_policy_version")
+  pricingSnapshotJson  Json                @map("pricing_snapshot_json")
+  pricingSnapshotHash  String?             @map("pricing_snapshot_hash")
+  processorFeesStatus  ProcessorFeesStatus @default(PENDING) @map("processor_fees_status")
+  processorFeesActual  Int?                @map("processor_fees_actual")
+  idempotencyKey       String              @map("idempotency_key")
+  createdAt            DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  organization         Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  ledgerEntries        LedgerEntry[]
+
+  @@unique([idempotencyKey], map: "payments_idempotency_key_unique")
+  @@index([organizationId], map: "payments_org_idx")
+  @@index([sourceType, sourceId], map: "payments_source_idx")
+  @@map("payments")
+  @@schema("app_v3")
+}
+
+/// Ledger append-only conforme blueprint v7
+model LedgerEntry {
+  id            Int             @id @default(autoincrement())
+  paymentId     String          @map("payment_id")
+  entryType     LedgerEntryType @map("entry_type")
+  amount        Int             @map("amount")
+  currency      String          @map("currency")
+  sourceType    SourceType      @map("source_type")
+  sourceId      String          @map("source_id") @db.Text
+  causationId   String          @map("causation_id")
+  correlationId String          @map("correlation_id")
+  createdAt     DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  payment       Payment         @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@index([paymentId], map: "ledger_entries_payment_idx")
+  @@index([sourceType, sourceId], map: "ledger_entries_source_idx")
+  @@index([causationId], map: "ledger_entries_causation_idx")
+  @@unique([paymentId, causationId], map: "ledger_entries_payment_causation_unique")
+  @@map("ledger_entries")
+  @@schema("app_v3")
+}
+
 /// Registo de eventos de pagamento (auditoria webhooks/intent)
 model PaymentEvent {
   id                    Int                @id @default(autoincrement())
-  stripePaymentIntentId String             @unique @map("stripe_payment_intent_id")
   status                String             @default("PROCESSING")
   stripeEventId         String?            @unique @map("stripe_event_id")
   purchaseId            String?            @unique @map("purchase_id") @db.Text
@@ -1639,7 +1916,6 @@ model PaymentEvent {
   mode                  PaymentMode        @default(LIVE)
   isTest                Boolean            @default(false) @map("is_test")
 
-  @@index([stripePaymentIntentId])
   @@index([stripeEventId])
   @@index([purchaseId])
   @@index([eventId])
@@ -1671,6 +1947,125 @@ model Operation {
   @@index([paymentIntentId], map: "operations_payment_intent_idx")
   @@index([stripeEventId], map: "operations_stripe_event_idx")
   @@map("operations")
+  @@schema("app_v3")
+}
+
+model OutboxEvent {
+  eventId        String   @id @db.Uuid @map("event_id")
+  eventType      String   @map("event_type")
+  payload        Json     @default("{}")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  publishedAt    DateTime? @map("published_at") @db.Timestamptz(6)
+  attempts       Int      @default(0)
+  nextAttemptAt  DateTime? @map("next_attempt_at") @db.Timestamptz(6)
+  causationId    String?  @map("causation_id")
+  correlationId  String?  @map("correlation_id")
+  deadLetteredAt DateTime? @map("dead_lettered_at") @db.Timestamptz(6)
+
+  @@index([publishedAt, nextAttemptAt], map: "outbox_events_publish_idx")
+  @@index([deadLetteredAt], map: "outbox_events_dead_letter_idx")
+  @@map("outbox_events")
+  @@schema("app_v3")
+}
+
+model EventLog {
+  id             String      @id @db.Uuid
+  organizationId Int         @map("organization_id")
+  eventType      String      @map("event_type")
+  idempotencyKey String      @map("idempotency_key")
+  payload        Json        @default("{}")
+  actorUserId    String?     @map("actor_user_id") @db.Uuid
+  sourceType     SourceType? @map("source_type")
+  sourceId       String?     @map("source_id") @db.Text
+  correlationId  String?     @map("correlation_id")
+  createdAt      DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  activityItem ActivityFeedItem?
+
+  @@unique([organizationId, eventType, idempotencyKey], map: "event_logs_org_event_idempotency_unique")
+  @@index([organizationId, createdAt], map: "event_logs_org_time_idx")
+  @@index([eventType, createdAt], map: "event_logs_event_time_idx")
+  @@map("event_logs")
+  @@schema("app_v3")
+}
+
+model ActivityFeedItem {
+  id             String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId Int         @map("organization_id")
+  eventId        String      @unique @map("event_id") @db.Uuid
+  eventType      String      @map("event_type")
+  actorUserId    String?     @map("actor_user_id") @db.Uuid
+  sourceType     SourceType? @map("source_type")
+  sourceId       String?     @map("source_id") @db.Text
+  correlationId  String?     @map("correlation_id")
+  createdAt      DateTime    @map("created_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  eventLog      EventLog     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt], map: "activity_feed_org_time_idx")
+  @@index([organizationId, eventType], map: "activity_feed_org_type_idx")
+  @@map("activity_feed_items")
+  @@schema("app_v3")
+}
+
+model AgendaItem {
+  id             String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId Int              @map("organization_id")
+  sourceType     SourceType       @map("source_type")
+  sourceId       String           @map("source_id") @db.Text
+  title          String
+  startsAt       DateTime         @map("starts_at") @db.Timestamptz(6)
+  endsAt         DateTime         @map("ends_at") @db.Timestamptz(6)
+  status         String           @db.Text
+  lastEventId    String           @map("last_event_id") @db.Uuid
+  updatedAt      DateTime         @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, sourceType, sourceId], map: "agenda_items_unique")
+  @@index([organizationId, startsAt], map: "agenda_items_org_start_idx")
+  @@map("agenda_items")
+  @@schema("app_v3")
+}
+
+model SearchIndexItem {
+  id                       String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId           Int                   @map("organization_id")
+  sourceType               SourceType            @map("source_type")
+  sourceId                 String                @map("source_id") @db.Text
+  slug                     String
+  title                    String
+  description              String?
+  startsAt                 DateTime              @map("starts_at") @db.Timestamptz(6)
+  endsAt                   DateTime              @map("ends_at") @db.Timestamptz(6)
+  templateType             EventTemplateType?    @map("template_type")
+  pricingMode              EventPricingMode?     @map("pricing_mode")
+  isGratis                 Boolean               @default(false) @map("is_gratis")
+  priceFromCents           Int?                  @map("price_from_cents")
+  coverImageUrl            String?               @map("cover_image_url")
+  hostName                 String?               @map("host_name")
+  hostUsername             String?               @map("host_username")
+  locationName             String?               @map("location_name")
+  locationCity             String?               @map("location_city")
+  address                  String?
+  locationFormattedAddress String?               @map("location_formatted_address")
+  latitude                 Float?                @map("lat")
+  longitude                Float?                @map("lng")
+  locationSource           LocationSource?       @map("location_source")
+  status                   EventStatus           @map("status")
+  visibility               SearchIndexVisibility @map("visibility")
+  lastEventId              String                @map("last_event_id") @db.Uuid
+  updatedAt                DateTime              @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, sourceType, sourceId], map: "search_index_items_unique")
+  @@index([visibility, startsAt, id], map: "search_index_items_visibility_start_idx")
+  @@index([locationCity, startsAt, id], map: "search_index_items_city_start_idx")
+  @@index([organizationId, startsAt, id], map: "search_index_items_org_start_idx")
+  @@map("search_index_items")
   @@schema("app_v3")
 }
 
@@ -1710,8 +2105,6 @@ model PromoCode {
   organization     Organization?        @relation(fields: [organizationId], references: [id], onUpdate: NoAction)
   promoter      Profile?          @relation("PromoCodePromoter", fields: [promoterUserId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   redemptions   PromoRedemption[]
-  saleLines     SaleLine[]
-  saleSummaries SaleSummary[]
 
   @@index([eventId])
   @@index([organizationId])
@@ -1765,77 +2158,6 @@ model Refund {
 }
 
 /// Venda agregada por PaymentIntent (fonte de verdade de valores)
-model SaleSummary {
-  id                 Int               @id @default(autoincrement())
-  paymentIntentId    String            @unique @map("payment_intent_id")
-  eventId            Int               @map("event_id")
-  userId             String?           @map("user_id") @db.Uuid
-  promoCodeId        Int?              @map("promo_code_id")
-  subtotalCents      Int               @map("subtotal_cents")
-  discountCents      Int               @map("discount_cents")
-  platformFeeCents   Int               @map("platform_fee_cents")
-  cardPlatformFeeCents Int             @default(0) @map("card_platform_fee_cents")
-  totalCents         Int               @map("total_cents")
-  netCents           Int               @map("net_cents")
-  feeMode            FeeMode?          @map("fee_mode")
-  currency           String            @default("EUR")
-  createdAt          DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt          DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  purchaseId         String?           @unique @map("purchase_id") @db.Text
-  promoCodeSnapshot  String?           @map("promo_code_snapshot")
-  promoLabelSnapshot String?           @map("promo_label_snapshot")
-  promoTypeSnapshot  PromoType?        @map("promo_type_snapshot")
-  promoValueSnapshot Int?              @map("promo_value_snapshot")
-  stripeFeeCents     Int               @default(0) @map("stripe_fee_cents")
-  status             SaleSummaryStatus @default(PAID)
-  paymentMethod      String?           @map("payment_method")
-  lines              SaleLine[]
-  tickets            Ticket[]
-  tournamentEntries  TournamentEntry[]
-  event              Event             @relation(fields: [eventId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  promoCode          PromoCode?        @relation(fields: [promoCodeId], references: [id], onUpdate: NoAction)
-  user               Profile?          @relation(fields: [userId], references: [id], onUpdate: NoAction)
-  ownerUserId        String?           @map("owner_user_id") @db.Uuid
-  ownerIdentityId    String?           @map("owner_identity_id") @db.Uuid
-
-  @@index([eventId], map: "sale_summaries_event_idx")
-  @@index([promoCodeId], map: "sale_summaries_promo_idx")
-  @@index([userId], map: "sale_summaries_user_idx")
-  @@map("sale_summaries")
-  @@schema("app_v3")
-}
-
-/// Linhas de venda por tipo de bilhete (para analytics, promo e fees)
-model SaleLine {
-  id                   Int         @id @default(autoincrement())
-  saleSummaryId        Int         @map("sale_summary_id")
-  eventId              Int         @map("event_id")
-  ticketTypeId         Int         @map("ticket_type_id")
-  promoCodeId          Int?        @map("promo_code_id")
-  quantity             Int
-  unitPriceCents       Int         @map("unit_price_cents")
-  discountPerUnitCents Int         @default(0) @map("discount_per_unit_cents")
-  grossCents           Int         @map("gross_cents")
-  netCents             Int         @map("net_cents")
-  platformFeeCents     Int         @default(0) @map("platform_fee_cents")
-  createdAt            DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
-  promoCodeSnapshot    String?     @map("promo_code_snapshot")
-  promoLabelSnapshot   String?     @map("promo_label_snapshot")
-  promoTypeSnapshot    PromoType?  @map("promo_type_snapshot")
-  promoValueSnapshot   Int?        @map("promo_value_snapshot")
-  event                Event       @relation(fields: [eventId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "sale_lines_event_fkey")
-  promoCode            PromoCode?  @relation(fields: [promoCodeId], references: [id], onUpdate: NoAction, map: "sale_lines_promo_code_fkey")
-  saleSummary          SaleSummary @relation(fields: [saleSummaryId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "sale_lines_summary_fkey")
-  ticketType           TicketType  @relation(fields: [ticketTypeId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "sale_lines_ticket_type_fkey")
-
-  @@index([eventId], map: "sale_lines_event_idx")
-  @@index([promoCodeId], map: "sale_lines_promo_code_idx")
-  @@index([saleSummaryId], map: "sale_lines_summary_idx")
-  @@index([ticketTypeId], map: "sale_lines_ticket_type_idx")
-  @@map("sale_lines")
-  @@schema("app_v3")
-}
-
 /// Padel MVP: perfis de jogadores do clube
 model PadelPlayerProfile {
   id            Int                 @id @default(autoincrement())
@@ -2100,7 +2422,6 @@ model PadelPairing {
   player2UserId               String?                     @map("player2_user_id") @db.Uuid
   payment_mode                PadelPaymentMode
   pairingStatus               PadelPairingStatus          @default(INCOMPLETE) @map("pairing_status")
-  lifecycleStatus             PadelPairingLifecycleStatus @default(PENDING_ONE_PAID) @map("lifecycle_status")
   pairingJoinMode             PadelPairingJoinMode        @default(INVITE_PARTNER) @map("pairing_join_mode")
   createdByUserId             String?                     @map("created_by_user_id") @db.Uuid
   createdByTicketId           String?                     @map("created_by_ticket_id")
@@ -2136,6 +2457,7 @@ model PadelPairing {
   waitlistPromotions          PadelWaitlistEntry[]
   holds                       PadelPairingHold[]
   tournamentEntries           TournamentEntry[]
+  registration                PadelRegistration?          @relation("PadelPairingRegistration")
 
   @@index([eventId])
   @@index([organizationId])
@@ -2161,6 +2483,43 @@ model PadelPairingHold {
   @@index([pairingId])
   @@index([eventId])
   @@map("padel_pairing_holds")
+  @@schema("app_v3")
+}
+
+/// Checkout source (PADEL_REGISTRATION)
+model PadelRegistration {
+  id             String                 @id @default(uuid()) @db.Uuid
+  organizationId Int                    @map("organization_id")
+  eventId        Int                    @map("event_id")
+  buyerIdentityId String?               @map("buyer_identity_id") @db.Uuid
+  pairingId      Int?                   @map("pairing_id")
+  currency       String                 @default("EUR")
+  status         PadelRegistrationStatus @default(PENDING_PARTNER)
+  createdAt      DateTime               @default(now()) @map("created_at")
+  updatedAt      DateTime               @updatedAt @map("updated_at")
+  lines          PadelRegistrationLine[]
+  event          Event                  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  pairing        PadelPairing?          @relation("PadelPairingRegistration", fields: [pairingId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId], map: "padel_registrations_org_idx")
+  @@index([eventId], map: "padel_registrations_event_idx")
+  @@unique([pairingId], map: "padel_registrations_pairing_unique")
+  @@map("padel_registrations")
+  @@schema("app_v3")
+}
+
+/// Linhas da PadelRegistration (para pricing snapshot)
+model PadelRegistrationLine {
+  id                  Int               @id @default(autoincrement())
+  padelRegistrationId String            @map("padel_registration_id") @db.Uuid
+  label               String            @map("label")
+  qty                 Int               @map("qty")
+  unitAmount          Int               @map("unit_amount")
+  totalAmount         Int               @map("total_amount")
+  padelRegistration   PadelRegistration @relation(fields: [padelRegistrationId], references: [id], onDelete: Cascade)
+
+  @@index([padelRegistrationId], map: "padel_registration_lines_reg_idx")
+  @@map("padel_registration_lines")
   @@schema("app_v3")
 }
 
@@ -2202,7 +2561,6 @@ model TournamentEntry {
   ownerUserId     String?               @map("owner_user_id") @db.Uuid
   ownerIdentityId String?               @map("owner_identity_id") @db.Uuid
   purchaseId      String?               @map("purchase_id") @db.Text
-  saleSummaryId   Int?                  @map("sale_summary_id")
   emissionIndex   Int                   @default(0) @map("emission_index")
   createdAt       DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt       DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -2211,7 +2569,6 @@ model TournamentEntry {
   pairing         PadelPairing?         @relation(fields: [pairingId], references: [id], onDelete: Cascade)
   category        PadelCategory?        @relation(fields: [categoryId], references: [id], onUpdate: NoAction)
   tickets         Ticket[]              @relation("TicketTournamentEntry")
-  saleSummary     SaleSummary?          @relation(fields: [saleSummaryId], references: [id], onDelete: SetNull)
 
   @@unique([eventId, categoryId, userId], map: "tournament_entries_event_category_user_unique")
   @@unique([purchaseId, emissionIndex], map: "tournament_entries_purchase_idx")
@@ -2540,6 +2897,7 @@ model Entitlement {
   snapshotVenueName String?              @map("snapshot_venue_name")
   snapshotStartAt  DateTime              @map("snapshot_start_at") @db.Timestamptz(6)
   snapshotTimezone String                @map("snapshot_timezone")
+  policyVersionApplied Int?              @map("policy_version_applied")
   createdAt        DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt        DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   ticket           Ticket?               @relation("TicketEntitlement", fields: [ticketId], references: [id], onDelete: SetNull)
@@ -2552,6 +2910,7 @@ model Entitlement {
   @@index([tournamentId], map: "entitlements_tournament_idx")
   @@index([seasonId], map: "entitlements_season_idx")
   @@index([status], map: "entitlements_status_idx")
+  @@index([eventId, policyVersionApplied], map: "entitlements_event_policy_idx")
   @@map("entitlements")
   @@schema("app_v3")
 }
@@ -2565,6 +2924,9 @@ model EntitlementCheckin {
   checkedInAt    DateTime           @default(now()) @map("checked_in_at") @db.Timestamptz(6)
   checkedInBy    String?            @map("checked_in_by") @db.Uuid
   purchaseId     String             @map("purchase_id") @db.Text
+  idempotencyKey String?            @map("idempotency_key") @db.Text
+  causationId    String?            @map("causation_id") @db.Text
+  correlationId  String?            @map("correlation_id") @db.Text
   createdAt      DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   entitlement    Entitlement        @relation(fields: [entitlementId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "entitlement_checkins_entitlement_fkey")
@@ -2572,6 +2934,7 @@ model EntitlementCheckin {
   @@unique([eventId, entitlementId], map: "entitlement_checkins_event_entitlement_key")
   @@index([eventId], map: "entitlement_checkins_event_idx")
   @@index([purchaseId], map: "entitlement_checkins_purchase_idx")
+  @@index([idempotencyKey], map: "entitlement_checkins_idempotency_idx")
   @@map("entitlement_checkins")
   @@schema("app_v3")
 }
@@ -3029,7 +3392,6 @@ model Transaction {
   amountCents          Int                     @map("amount_cents")
   currency             String                  @default("EUR")
   stripeChargeId       String?                 @map("stripe_charge_id")
-  stripePaymentIntentId String?                @map("stripe_payment_intent_id")
   platformFeeCents     Int                     @default(0) @map("platform_fee_cents")
   stripeFeeCents       Int                     @default(0) @map("stripe_fee_cents")
   payoutStatus         TransactionPayoutStatus @default(PENDING) @map("payout_status")
@@ -3042,7 +3404,6 @@ model Transaction {
   @@index([organizationId])
   @@index([userId])
   @@index([stripeChargeId])
-  @@index([stripePaymentIntentId])
   @@map("transactions")
   @@schema("app_v3")
 }
@@ -3468,12 +3829,93 @@ enum NotificationPriority {
   @@schema("app_v3")
 }
 
-enum SaleSummaryStatus {
-  PAID
+enum PaymentStatus {
+  CREATED
+  REQUIRES_ACTION
+  PROCESSING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+  PARTIAL_REFUND
   REFUNDED
   DISPUTED
-  FAILED
-  PROCESSING
+  CHARGEBACK_WON
+  CHARGEBACK_LOST
+
+  @@schema("app_v3")
+}
+
+enum ProcessorFeesStatus {
+  PENDING
+  FINAL
+
+  @@schema("app_v3")
+}
+
+enum LedgerEntryType {
+  GROSS
+  PLATFORM_FEE
+  PROCESSOR_FEES_FINAL
+  PROCESSOR_FEES_ADJUSTMENT
+  DISPUTE_FEE
+  DISPUTE_FEE_REVERSAL
+  REFUND_GROSS
+  REFUND_PLATFORM_FEE_REVERSAL
+  REFUND_PROCESSOR_FEES_REVERSAL
+  CHARGEBACK_GROSS
+  CHARGEBACK_PLATFORM_FEE_REVERSAL
+
+  @@schema("app_v3")
+}
+
+enum TicketOrderStatus {
+  DRAFT
+  READY_FOR_CHECKOUT
+  CANCELLED
+
+  @@schema("app_v3")
+}
+
+enum PadelRegistrationStatus {
+  PENDING_PARTNER
+  PENDING_PAYMENT
+  MATCHMAKING
+  CONFIRMED
+  EXPIRED
+  CANCELLED
+  REFUNDED
+
+  @@schema("app_v3")
+}
+
+enum SourceType {
+  TICKET_ORDER
+  BOOKING
+  PADEL_REGISTRATION
+  STORE_ORDER
+  SUBSCRIPTION
+  MEMBERSHIP
+  EVENT
+  TOURNAMENT
+  MATCH
+  LOYALTY_TX
+
+  @@schema("app_v3")
+}
+
+enum SearchIndexVisibility {
+  PUBLIC
+  HIDDEN
+
+  @@schema("app_v3")
+}
+
+enum PublicApiScope {
+  EVENTS_READ
+  TOURNAMENTS_READ
+  AGENDA_READ
+  ANALYTICS_READ
+  OPS_READ
 
   @@schema("app_v3")
 }
@@ -3485,6 +3927,7 @@ enum OrgType {
   @@schema("app_v3")
 }
 
+
 enum OrganizationMemberRole {
   OWNER
   CO_OWNER
@@ -3493,6 +3936,16 @@ enum OrganizationMemberRole {
   TRAINER
   PROMOTER
   VIEWER
+
+  @@schema("app_v3")
+}
+
+enum OrganizationRolePack {
+  CLUB_MANAGER
+  TOURNAMENT_DIRECTOR
+  FRONT_DESK
+  COACH
+  REFEREE
 
   @@schema("app_v3")
 }
@@ -3628,6 +4081,30 @@ enum LocationSource {
   @@schema("app_v3")
 }
 
+enum LocationConsent {
+  PENDING
+  GRANTED
+  DENIED
+
+  @@schema("app_v3")
+}
+
+enum LocationGranularity {
+  PRECISE
+  COARSE
+
+  @@schema("app_v3")
+}
+
+enum UserLocationSource {
+  GPS
+  WIFI
+  IP
+  MANUAL
+
+  @@schema("app_v3")
+}
+
 
 enum OrganizationModule {
   EVENTOS
@@ -3647,11 +4124,55 @@ enum OrganizationModule {
   @@schema("app_v3")
 }
 
+enum InvoicingMode {
+  EXTERNAL_SOFTWARE
+  MANUAL_OUTSIDE_ORYA
+
+  @@schema("app_v3")
+}
+
 enum OrganizationFormStatus {
   DRAFT
   PUBLISHED
   ARCHIVED
 
+  @@schema("app_v3")
+}
+
+enum AnalyticsMetricKey {
+  GROSS
+  PLATFORM_FEES
+  PROCESSOR_FEES
+  NET_TO_ORG
+
+  @@schema("app_v3")
+}
+
+enum AnalyticsDimensionKey {
+  MODULE
+  SOURCE_TYPE
+  PAYMENT_PROVIDER
+  CURRENCY
+
+  @@schema("app_v3")
+}
+
+model AnalyticsRollup {
+  id             Int                  @id @default(autoincrement())
+  organizationId Int                  @map("organization_id")
+  bucketDate     DateTime             @map("bucket_date") @db.Date
+  metricKey      AnalyticsMetricKey   @map("metric_key")
+  dimensionKey   AnalyticsDimensionKey @map("dimension_key")
+  dimensionValue String               @map("dimension_value")
+  value          Int                  @map("value")
+  createdAt      DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization   Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, bucketDate, metricKey, dimensionKey, dimensionValue], map: "analytics_rollup_unique")
+  @@index([organizationId, bucketDate], map: "analytics_rollup_org_bucket_idx")
+  @@map("analytics_rollups")
   @@schema("app_v3")
 }
 
@@ -3704,6 +4225,13 @@ enum StoreProductOptionType {
 enum StoreBundlePricingMode {
   FIXED
   PERCENT_DISCOUNT
+
+  @@schema("app_v3")
+}
+
+enum EventPricingMode {
+  STANDARD
+  FREE_ONLY
 
   @@schema("app_v3")
 }
@@ -3852,15 +4380,7 @@ enum PadelPaymentMode {
   @@schema("app_v3")
 }
 
-enum PadelPairingLifecycleStatus {
-  PENDING_ONE_PAID
-  PENDING_PARTNER_PAYMENT
-  CONFIRMED_BOTH_PAID
-  CONFIRMED_CAPTAIN_FULL
-  CANCELLED_INCOMPLETE
-
-  @@schema("app_v3")
-}
+// Enum legacy removido (SSOT = PadelRegistration.status)
 
 enum PadelPairingJoinMode {
   INVITE_PARTNER
@@ -4021,6 +4541,8 @@ enum TicketStatus {
   REFUNDED
   TRANSFERRED
   RESALE_LISTED
+  DISPUTED
+  CANCELLED
 
   @@schema("app_v3")
 }
@@ -4096,6 +4618,34 @@ enum CheckinResultCode {
   OUTSIDE_WINDOW
 
   @@map("checkin_result_code")
+  @@schema("app_v3")
+}
+
+enum CheckinMethod {
+  QR_TICKET
+  QR_REGISTRATION
+  QR_BOOKING
+  MANUAL
+
+  @@map("checkin_method")
+  @@schema("app_v3")
+}
+
+enum EventAccessMode {
+  PUBLIC
+  INVITE_ONLY
+  UNLISTED
+
+  @@map("event_access_mode")
+  @@schema("app_v3")
+}
+
+enum InviteIdentityMatch {
+  EMAIL
+  USERNAME
+  BOTH
+
+  @@map("invite_identity_match")
   @@schema("app_v3")
 }
 

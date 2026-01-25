@@ -1,11 +1,19 @@
 import { prisma } from "@/lib/prisma";
 import {
   hasModuleAccess,
-  resolveModuleAccess,
+  accessLevelSatisfies,
+  resolveCheckinAccess,
+  resolveMemberModuleAccess,
   type MemberPermissionOverride,
   type ModuleAccessLevel,
 } from "@/lib/organizationRbac";
-import type { OrganizationMemberRole, OrganizationModule, Prisma } from "@prisma/client";
+import { resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
+import type {
+  OrganizationMemberRole,
+  OrganizationModule,
+  OrganizationRolePack,
+  Prisma,
+} from "@prisma/client";
 
 type PrismaClientLike = Prisma.TransactionClient | typeof prisma;
 
@@ -46,18 +54,85 @@ export async function ensureMemberModuleAccess(input: {
   organizationId: number;
   userId: string;
   role: OrganizationMemberRole | null;
+  rolePack?: OrganizationRolePack | null;
   moduleKey: OrganizationModule;
   required?: ModuleAccessLevel;
   client?: Prisma.TransactionClient;
 }) {
-  const { organizationId, userId, role, moduleKey, required = "VIEW", client } = input;
-  if (!role || !userId) {
+  const { organizationId, userId, role, rolePack, moduleKey, required = "VIEW", client } = input;
+  if (!userId) {
+    return { ok: false as const, error: "Sem permissoes." };
+  }
+  const membership = await resolveGroupMemberForOrg({ organizationId, userId, client });
+  if (!membership) {
     return { ok: false as const, error: "Sem permissoes." };
   }
   const overrides = await getMemberPermissionOverrides(organizationId, userId, client);
-  const access = resolveModuleAccess(role, overrides);
+  const access = resolveMemberModuleAccess({
+    role: membership.role ?? role,
+    rolePack: membership.rolePack ?? rolePack,
+    overrides,
+  });
   if (!hasModuleAccess(access, moduleKey, required)) {
     return { ok: false as const, error: "Sem permissoes." };
   }
   return { ok: true as const };
+}
+
+export async function ensureGroupMemberModuleAccess(input: {
+  organizationId: number;
+  userId: string;
+  moduleKey: OrganizationModule;
+  required?: ModuleAccessLevel;
+  client?: Prisma.TransactionClient;
+  membership?: { role: OrganizationMemberRole; rolePack?: OrganizationRolePack | null } | null;
+}) {
+  const { organizationId, userId, moduleKey, required = "VIEW", client } = input;
+  const membership =
+    input.membership ?? (await resolveGroupMemberForOrg({ organizationId, userId, client }));
+  if (!membership) {
+    return { ok: false as const, error: "Sem permissoes." };
+  }
+  const overrides = await getMemberPermissionOverrides(organizationId, userId, client);
+  const access = resolveMemberModuleAccess({ role: membership.role, rolePack: membership.rolePack, overrides });
+  if (!hasModuleAccess(access, moduleKey, required)) {
+    return { ok: false as const, error: "Sem permissoes." };
+  }
+  return { ok: true as const, membership };
+}
+
+export function ensureMemberCheckinAccess(input: {
+  role: OrganizationMemberRole | null;
+  rolePack?: OrganizationRolePack | null;
+  required?: ModuleAccessLevel;
+}) {
+  const { role, rolePack, required = "VIEW" } = input;
+  if (!role) {
+    return { ok: false as const, error: "Sem permissoes." };
+  }
+  const access = resolveCheckinAccess({ role, rolePack });
+  if (!accessLevelSatisfies(access, required)) {
+    return { ok: false as const, error: "Sem permissoes." };
+  }
+  return { ok: true as const };
+}
+
+export async function ensureGroupMemberCheckinAccess(input: {
+  organizationId: number;
+  userId: string;
+  required?: ModuleAccessLevel;
+  client?: Prisma.TransactionClient;
+  membership?: { role: OrganizationMemberRole; rolePack?: OrganizationRolePack | null } | null;
+}) {
+  const { organizationId, userId, required = "VIEW", client } = input;
+  const membership =
+    input.membership ?? (await resolveGroupMemberForOrg({ organizationId, userId, client }));
+  if (!membership) {
+    return { ok: false as const, error: "Sem permissoes." };
+  }
+  const access = resolveCheckinAccess({ role: membership.role, rolePack: membership.rolePack });
+  if (!accessLevelSatisfies(access, required)) {
+    return { ok: false as const, error: "Sem permissoes." };
+  }
+  return { ok: true as const, membership };
 }

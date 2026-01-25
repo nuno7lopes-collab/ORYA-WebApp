@@ -1,6 +1,12 @@
-import type { OrganizationMemberRole, OrganizationModule } from "@prisma/client";
+import type {
+  OrganizationMemberRole,
+  OrganizationModule,
+  OrganizationRolePack,
+} from "@prisma/client";
 
 export type ModuleAccessLevel = "NONE" | "VIEW" | "EDIT";
+
+export type CheckinAccessLevel = ModuleAccessLevel;
 
 export type MemberPermissionOverride = {
   moduleKey: OrganizationModule;
@@ -84,7 +90,7 @@ const ROLE_BASE_ACCESS: Record<OrganizationMemberRole, Partial<Record<Organizati
     INSCRICOES: "EDIT",
   },
   STAFF: {
-    EVENTOS: "EDIT",
+    EVENTOS: "VIEW",
     RESERVAS: "EDIT",
     TORNEIOS: "EDIT",
     MENSAGENS: "EDIT",
@@ -99,6 +105,65 @@ const ROLE_BASE_ACCESS: Record<OrganizationMemberRole, Partial<Record<Organizati
     MARKETING: "EDIT",
   },
   VIEWER: {},
+};
+
+type RolePackAccess = {
+  modules: Partial<Record<OrganizationModule, ModuleAccessLevel>>;
+  checkin: CheckinAccessLevel;
+};
+
+const ROLE_PACK_ACCESS: Record<OrganizationRolePack, RolePackAccess> = {
+  CLUB_MANAGER: {
+    modules: {
+      TORNEIOS: "EDIT",
+      RESERVAS: "EDIT",
+      CRM: "EDIT",
+      STAFF: "VIEW",
+      DEFINICOES: "VIEW",
+    },
+    checkin: "EDIT",
+  },
+  TOURNAMENT_DIRECTOR: {
+    modules: {
+      TORNEIOS: "EDIT",
+      EVENTOS: "EDIT",
+      RESERVAS: "VIEW",
+    },
+    checkin: "EDIT",
+  },
+  FRONT_DESK: {
+    modules: {
+      RESERVAS: "EDIT",
+      EVENTOS: "VIEW",
+      CRM: "VIEW",
+    },
+    checkin: "EDIT",
+  },
+  COACH: {
+    modules: {
+      RESERVAS: "EDIT",
+      TORNEIOS: "VIEW",
+      CRM: "VIEW",
+    },
+    checkin: "NONE",
+  },
+  REFEREE: {
+    modules: {
+      TORNEIOS: "EDIT",
+      EVENTOS: "VIEW",
+    },
+    checkin: "VIEW",
+  },
+};
+
+const ROLE_CHECKIN_ACCESS: Record<OrganizationMemberRole, CheckinAccessLevel> = {
+  OWNER: "EDIT",
+  CO_OWNER: "EDIT",
+  ADMIN: "EDIT",
+  STAFF: "EDIT",
+  TRAINER: "NONE",
+  PROMOTER: "NONE",
+  VIEWER: "NONE",
 };
 
 export function normalizeAccessLevel(value: string | null | undefined): ModuleAccessLevel | null {
@@ -137,6 +202,61 @@ export function getDefaultModuleAccess(role?: OrganizationMemberRole | null) {
   return base;
 }
 
+export function getDefaultModuleAccessForRolePack(rolePack?: OrganizationRolePack | null) {
+  const base: Record<OrganizationModule, ModuleAccessLevel> = {
+    EVENTOS: "NONE",
+    RESERVAS: "NONE",
+    TORNEIOS: "NONE",
+    STAFF: "NONE",
+    FINANCEIRO: "NONE",
+    MENSAGENS: "NONE",
+    CRM: "NONE",
+    MARKETING: "NONE",
+    LOJA: "NONE",
+    ANALYTICS: "NONE",
+    DEFINICOES: "NONE",
+    PERFIL_PUBLICO: "NONE",
+    INSCRICOES: "NONE",
+  };
+
+  if (!rolePack) return base;
+  const roleAccess = ROLE_PACK_ACCESS[rolePack]?.modules ?? {};
+  Object.entries(roleAccess).forEach(([key, value]) => {
+    const moduleKey = key as OrganizationModule;
+    base[moduleKey] = value ?? base[moduleKey];
+  });
+
+  return base;
+}
+
+export function resolveMemberModuleAccess(input: {
+  role: OrganizationMemberRole | null | undefined;
+  rolePack?: OrganizationRolePack | null;
+  overrides?: MemberPermissionOverride[];
+}) {
+  const { role, rolePack, overrides = [] } = input;
+  const access = rolePack ? getDefaultModuleAccessForRolePack(rolePack) : getDefaultModuleAccess(role);
+  overrides.forEach((override) => {
+    if (override.scopeType || override.scopeId) return;
+    const normalized = normalizeAccessLevel(override.accessLevel);
+    if (!normalized) return;
+    access[override.moduleKey] = normalized;
+  });
+  return access;
+}
+
+export function resolveCheckinAccess(input: {
+  role: OrganizationMemberRole | null | undefined;
+  rolePack?: OrganizationRolePack | null;
+}): CheckinAccessLevel {
+  const { role, rolePack } = input;
+  if (rolePack) {
+    return ROLE_PACK_ACCESS[rolePack]?.checkin ?? "NONE";
+  }
+  if (!role) return "NONE";
+  return ROLE_CHECKIN_ACCESS[role] ?? "NONE";
+}
+
 export function resolveModuleAccess(
   role: OrganizationMemberRole | null | undefined,
   overrides: MemberPermissionOverride[] = [],
@@ -149,6 +269,13 @@ export function resolveModuleAccess(
     access[override.moduleKey] = normalized;
   });
   return access;
+}
+
+export function accessLevelSatisfies(
+  current: ModuleAccessLevel,
+  required: ModuleAccessLevel = "VIEW",
+) {
+  return ACCESS_ORDER[current] >= ACCESS_ORDER[required];
 }
 
 export function hasModuleAccess(

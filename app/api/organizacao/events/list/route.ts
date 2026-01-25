@@ -1,12 +1,14 @@
 // app/api/organizacao/events/list/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { deriveIsFreeEvent } from "@/domain/events/derivedIsFree";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
-import { TicketStatus } from "@prisma/client";
+import { TicketStatus, OrganizationModule } from "@prisma/client";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
-import { canManageEvents } from "@/lib/organizationPermissions";
+import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
+import { ACTIVE_PAIRING_REGISTRATION_WHERE } from "@/domain/padelRegistration";
 
 export async function GET(req: NextRequest) {
   try {
@@ -63,7 +65,25 @@ export async function GET(req: NextRequest) {
       roles: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"],
     });
 
-    if (!organization || !membership || !canManageEvents(membership.role)) {
+    if (!organization || !membership) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            "Ainda não és organização. Usa o botão 'Quero ser organização' para começar.",
+        },
+        { status: 403 }
+      );
+    }
+    const access = await ensureMemberModuleAccess({
+      organizationId: organization.id,
+      userId: profile.id,
+      role: membership.role,
+      rolePack: membership.rolePack,
+      moduleKey: OrganizationModule.EVENTOS,
+      required: "VIEW",
+    });
+    if (!access.ok) {
       return NextResponse.json(
         {
           ok: false,
@@ -93,6 +113,9 @@ export async function GET(req: NextRequest) {
         },
         tournament: {
           select: { id: true },
+        },
+        ticketTypes: {
+          select: { price: true },
         },
       },
       take: limit,
@@ -154,7 +177,7 @@ export async function GET(req: NextRequest) {
             where: {
               eventId: { in: padelEventIds },
               pairingStatus: { not: "CANCELLED" },
-              lifecycleStatus: { not: "CANCELLED_INCOMPLETE" },
+              ...ACTIVE_PAIRING_REGISTRATION_WHERE,
             },
             _count: { _all: true },
           })
@@ -222,7 +245,14 @@ export async function GET(req: NextRequest) {
     const padelClubMap = new Map<number, string>();
     padelClubs.forEach((c) => padelClubMap.set(c.id, c.name || `Clube ${c.id}`));
 
-    const items = events.map((event) => ({
+    const items = events.map((event) => {
+      const ticketPrices = event.ticketTypes?.map((t) => t.price ?? 0) ?? [];
+      const isGratis = deriveIsFreeEvent({
+        pricingMode: event.pricingMode ?? undefined,
+        ticketPrices,
+      });
+
+      return {
       id: event.id,
       slug: event.slug,
       title: event.title,
@@ -234,7 +264,7 @@ export async function GET(req: NextRequest) {
       status: event.status,
       templateType: event.templateType,
       tournamentId: event.tournament?.id ?? null,
-      isFree: event.isFree,
+      isGratis,
       coverImageUrl: event.coverImageUrl ?? null,
       ticketsSold:
         event.templateType === "PADEL"
@@ -251,7 +281,8 @@ export async function GET(req: NextRequest) {
       padelPartnerClubIds: event.padelTournamentConfig?.partnerClubIds ?? [],
       padelClubName: event.padelTournamentConfig?.padelClubId ? padelClubMap.get(event.padelTournamentConfig.padelClubId) ?? null : null,
       padelPartnerClubNames: (event.padelTournamentConfig?.partnerClubIds || []).map((id) => padelClubMap.get(id) ?? null),
-    }));
+      };
+    });
 
     return NextResponse.json(
       {

@@ -1,3 +1,5 @@
+import { OrganizationMemberRole, OrganizationRolePack } from "@prisma/client";
+
 export type OrganizationUiRole =
   | "OWNER"
   | "CO_OWNER"
@@ -17,14 +19,25 @@ const ROLE_SET = new Set<OrganizationUiRole>([
   "VIEWER",
 ]);
 
+const ROLE_PACK_SET = new Set<OrganizationRolePack>([
+  OrganizationRolePack.CLUB_MANAGER,
+  OrganizationRolePack.TOURNAMENT_DIRECTOR,
+  OrganizationRolePack.FRONT_DESK,
+  OrganizationRolePack.COACH,
+  OrganizationRolePack.REFEREE,
+]);
+
 export function normalizeOrganizationUiRole(role?: string | null): OrganizationUiRole | null {
   if (!role) return null;
   const normalized = role.toUpperCase() as OrganizationUiRole;
   return ROLE_SET.has(normalized) ? normalized : null;
 }
 
-export function getOrganizationRoleFlags(role?: string | null) {
+export function getOrganizationRoleFlags(role?: string | null, rolePack?: string | null) {
   const normalized = normalizeOrganizationUiRole(role);
+  const normalizedPack = rolePack && ROLE_PACK_SET.has(rolePack as OrganizationRolePack)
+    ? (rolePack as OrganizationRolePack)
+    : null;
   const isOwner = normalized === "OWNER";
   const isCoOwner = normalized === "CO_OWNER";
   const isAdmin = normalized === "ADMIN";
@@ -35,9 +48,9 @@ export function getOrganizationRoleFlags(role?: string | null) {
   const isAdminOrAbove = isOwner || isCoOwner || isAdmin;
   const isManager = isAdminOrAbove;
   const isPromoterOnly = isPromoter && !isAdminOrAbove;
-
   return {
     role: normalized,
+    rolePack: normalizedPack,
     isOwner,
     isCoOwner,
     isAdmin,
@@ -47,12 +60,11 @@ export function getOrganizationRoleFlags(role?: string | null) {
     isViewer,
     isAdminOrAbove,
     isPromoterOnly,
-    canManageEvents: isStaff || isManager,
     canViewFinance: isManager,
     canManageMembers: isManager,
     canEditOrg: isManager,
-    canAccessOperationalSettings: isManager,
-    canAccessTrainerHub: isTrainer || isManager,
+    canViewOperationalSettings: isManager,
+    canViewTrainerHub: isTrainer || isManager,
     canPromote: isAdminOrAbove || isPromoter,
   };
 }

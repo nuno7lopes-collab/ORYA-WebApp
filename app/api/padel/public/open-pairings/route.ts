@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { PORTUGAL_CITIES } from "@/config/cities";
 import { Prisma } from "@prisma/client";
-import { checkPadelRegistrationWindow } from "@/domain/padelRegistration";
+import { checkPadelRegistrationWindow, INACTIVE_REGISTRATION_STATUSES } from "@/domain/padelRegistration";
 import { enforcePublicRateLimit } from "@/lib/padel/publicRateLimit";
 
 const DEFAULT_LIMIT = 12;
@@ -31,8 +31,15 @@ export async function GET(req: NextRequest) {
 
     const pairingWhere: Prisma.PadelPairingWhereInput = {
       pairingStatus: { not: "CANCELLED" },
-      lifecycleStatus: { not: "CANCELLED_INCOMPLETE" },
-      OR: [{ pairingJoinMode: "LOOKING_FOR_PARTNER" }, { isPublicOpen: true }],
+      AND: [
+        {
+          OR: [
+            { registration: { is: null } },
+            { registration: { status: { notIn: INACTIVE_REGISTRATION_STATUSES } } },
+          ],
+        },
+        { OR: [{ pairingJoinMode: "LOOKING_FOR_PARTNER" }, { isPublicOpen: true }] },
+      ],
       event: {
         isDeleted: false,
         startsAt: { gte: now },

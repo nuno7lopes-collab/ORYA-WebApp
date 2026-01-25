@@ -1,8 +1,10 @@
 import { prisma } from "@/lib/prisma";
-import { stripe } from "@/lib/stripeClient";
+import { createRefund } from "@/domain/finance/gateway/stripeGateway";
 import type { RefundReason, Prisma } from "@prisma/client";
-import { refundKey } from "@/lib/stripe/idempotency";
 import { logFinanceError } from "@/lib/observability/finance";
+import { recordOutboxEvent } from "@/domain/outbox/producer";
+import { appendEventLog } from "@/domain/eventLog/append";
+import { SourceType } from "@prisma/client";
 
 // Idempotent refund executor (base-only) anchored by refundKey(purchaseId).
 export async function refundPurchase(params: {
@@ -14,10 +16,31 @@ export async function refundPurchase(params: {
   auditPayload?: Prisma.InputJsonValue;
 }) {
   const { purchaseId, paymentIntentId, eventId, reason, refundedBy, auditPayload } = params;
-  const dedupeKey = refundKey(purchaseId);
+  const dedupeKey = `refund:TICKET_ORDER:${purchaseId}`;
 
   const existing = await prisma.refund.findUnique({ where: { dedupeKey } });
   if (existing) return existing;
+
+  const event = await prisma.event.findUnique({
+    where: { id: eventId },
+    select: { organizationId: true },
+  });
+  if (!event?.organizationId) {
+    throw new Error("FINANCE_ORG_NOT_RESOLVED");
+  }
+
+  const org = await prisma.organization.findUnique({
+    where: { id: event.organizationId },
+    select: {
+      stripeAccountId: true,
+      stripeChargesEnabled: true,
+      stripePayoutsEnabled: true,
+      orgType: true,
+    },
+  });
+  if (!org) {
+    throw new Error("FINANCE_ORG_NOT_RESOLVED");
+  }
 
   const saleSummary = await prisma.saleSummary.findUnique({
     where: { purchaseId },
@@ -44,32 +67,74 @@ export async function refundPurchase(params: {
 
   let stripeRefundId: string | null = null;
   try {
-    const refund = await stripe.refunds.create(
+    const refund = await createRefund(
       {
         payment_intent: paymentIntentId ?? saleSummary.paymentIntentId ?? undefined,
         amount: baseAmount,
       },
-      { idempotencyKey: dedupeKey },
+      { idempotencyKey: dedupeKey, org, requireStripe: true },
     );
     stripeRefundId = refund.id;
   } catch (err) {
+    const message = err && typeof err === "object" && "message" in err ? String(err.message) : "";
+    if (message.includes("FINANCE_CONNECT_NOT_READY") || message.includes("FINANCE_ORG_NOT_RESOLVED")) {
+      throw err;
+    }
     logFinanceError("refund", err, { purchaseId, eventId, paymentIntentId });
     return null;
   }
 
-  return await prisma.refund.create({
-    data: {
-      dedupeKey,
-      purchaseId,
-      paymentIntentId: paymentIntentId ?? saleSummary.paymentIntentId ?? null,
-      eventId,
-      baseAmountCents: baseAmount,
-      feesExcludedCents: (saleSummary.platformFeeCents ?? 0) + cardFeeCents + (saleSummary.stripeFeeCents ?? 0),
-      reason,
-      refundedBy: refundedBy ?? null,
-      stripeRefundId: stripeRefundId ?? null,
-      auditPayload: auditPayload ?? {},
-      refundedAt: new Date(),
-    },
+  return await prisma.$transaction(async (tx) => {
+    const refund = await tx.refund.create({
+      data: {
+        dedupeKey,
+        purchaseId,
+        paymentIntentId: paymentIntentId ?? saleSummary.paymentIntentId ?? null,
+        eventId,
+        baseAmountCents: baseAmount,
+        feesExcludedCents:
+          (saleSummary.platformFeeCents ?? 0) + cardFeeCents + (saleSummary.stripeFeeCents ?? 0),
+        reason,
+        refundedBy: refundedBy ?? null,
+        stripeRefundId: stripeRefundId ?? null,
+        auditPayload: auditPayload ?? {},
+        refundedAt: new Date(),
+      },
+    });
+
+    const outbox = await recordOutboxEvent(
+      {
+        eventType: "refund.created",
+        payload: {
+          refundId: refund.id,
+          purchaseId,
+          eventId,
+          reason,
+        },
+      },
+      tx,
+    );
+
+    await appendEventLog(
+      {
+        eventId: outbox.eventId,
+        organizationId: event.organizationId,
+        eventType: "refund.created",
+        idempotencyKey: outbox.eventId,
+        actorUserId: refundedBy ?? null,
+        sourceType: SourceType.TICKET_ORDER,
+        sourceId: purchaseId,
+        correlationId: outbox.eventId,
+        payload: {
+          refundId: refund.id,
+          purchaseId,
+          eventId,
+          reason,
+        },
+      },
+      tx,
+    );
+
+    return refund;
   });
 }
