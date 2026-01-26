@@ -43,6 +43,7 @@
 - Objetivo: Payment+Ledger SSOT, fees determinísticas.
 - Outputs mínimos: snapshot + ledger types + reconciliação.
 - Riscos/decisões: integração Stripe e idempotência E2E.
+- Estado: DONE (audited*) — Payment SSOT com fallback PaymentSnapshot; PaymentEvent só metadata/timeline; finance overview fail‑closed.
 
 ### D5 RBAC mínimo + Role Packs
 - Objetivo: roles/scopes canónicos + packs.

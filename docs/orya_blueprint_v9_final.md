@@ -512,6 +512,10 @@ D4.5 SaleSummary (se existir) — read model derivado
   - nunca decide estados (pago/reembolsado)
   - é re‑gerável a partir de Ledger + Payment
   - falhas são reparáveis por replay (EventLog/Jobs)
+- Definição (read‑model):
+  - `SaleSummary`: resumo por compra (`purchaseId`/`paymentIntentId`), totais/fees (`subtotal/discount/platformFee/cardFee/stripeFee/total/net`), `status`, owner (`ownerUserId`/`ownerIdentityId`), modo/teste (`mode`/`isTest`) e snapshots de promo (`promoCodeSnapshot/label/type/value`).
+  - `SaleLine`: linhas por ticketType (`ticketTypeId`), `quantity`, `unitPrice`, `gross/net/platformFee` + snapshots de promo.
+- Owner: apenas o consumer de finanças (domain/finance read‑model consumer) escreve; resto é read‑only.
 
 D4.6 FeeMode e pricing têm um resolvedor único (FECHADO)
 - `computePricing()` (Finanças) decide de forma determinística e versionada:
@@ -2273,6 +2277,11 @@ Lista oficial:
 Regra:
 - Ledger e check‑in guardam apenas `sourceType` canónico.
 - Não criar “sourceType por módulo” fora desta lista; se precisares, adiciona aqui com versionamento.
+
+Separação de enums (SSOT D7):
+- `FinanceSourceType` = lista acima (SSOT para Finanças/ledger/check‑in).
+- `AgendaSourceType` = `EVENT`, `TOURNAMENT`, `MATCH`, `SOFT_BLOCK`, `HARD_BLOCK` (apenas agenda/check‑in).
+- Normalização deve escolher o enum certo por domínio (finance vs agenda).  
 
 7.6 Segurança de Entitlements (mínimo v1–v2)
 - QR tokens nunca reversíveis (guardar **hash**, nunca token em claro) + expiração.

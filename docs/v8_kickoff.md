@@ -136,6 +136,10 @@ Provas / Gates
 - D4.2: EventLog + Outbox na mesma tx em refunds (booking + ticket).
 - D4.2: gates OK (RG stripe.refunds.create=0 fora do gateway; vitest finance/outbox).
 - D4.x: DONE — legacy finance routes sem side‑effects (checkout/status read‑only; payments/intent desativado). Gates OK (RG stripe.*=0 fora do gateway; db:gates:offline + vitest finance/outbox).
+- D4.9: DONE (audited*) — SSOT Payment → fallback PaymentSnapshot; PaymentEvent apenas metadata/timeline; finance overview fail‑closed.
+- Guardrails: EventLog/Outbox só canónicos; PaymentSnapshot writes só no consumer.
+- Provas: db:gates:offline OK; vitest finance/outbox/ops OK; vitest full OK; RG guardrails 0.
+- Nota: `npx prisma migrate deploy` falhou com "Schema engine error" no ambiente atual (requer validação em ambiente com engine ok).
 
 ### D5 — RBAC mínimo viável + Role Packs
 - Objetivo: roles/scopes canónicos com packs definidos.
@@ -192,6 +196,11 @@ Provas / Gates
 - Decisões necessárias: não criar sourceType fora da lista (D7).
 - Estado: DONE (writers EventLog/Outbox/Agenda/Notifications/Analytics normalizados).
 - Gates: db:gates:offline; vitest tests/sourceType tests/agenda tests/analytics tests/notifications tests/ops tests/outbox tests/finance; rg sourceType/sourceId string-literals = 0.
+
+Nota SSOT D7 (v9): separar enums.
+- `FinanceSourceType` = TICKET_ORDER, BOOKING, PADEL_REGISTRATION, STORE_ORDER, SUBSCRIPTION, MEMBERSHIP.
+- `AgendaSourceType` = EVENT, TOURNAMENT, MATCH, SOFT_BLOCK, HARD_BLOCK.
+- Normalização e validação por domínio (finanças vs agenda) para evitar drift.
 
 ### D8 — EventAccessPolicy (acesso + convites)
 - Objetivo: policy única para acesso/convites/guest checkout/check‑in.
