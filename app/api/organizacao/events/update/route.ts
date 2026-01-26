@@ -30,6 +30,7 @@ import { SourceType } from "@prisma/client";
 import { recordOutboxEvent } from "@/domain/outbox/producer";
 import { recordSearchIndexOutbox } from "@/domain/searchIndex/outbox";
 import { validateZeroPriceGuard } from "@/domain/events/pricingGuard";
+import { shouldEmitSearchIndexUpdate } from "@/domain/searchIndex/triggers";
 
 type TicketTypeUpdate = {
   id: number;
@@ -599,7 +600,11 @@ export async function POST(req: NextRequest) {
       dataUpdate.endsAt !== undefined ||
       dataUpdate.status !== undefined ||
       dataUpdate.isDeleted !== undefined;
-    const searchIndexRelevantUpdate = agendaRelevantUpdate || hasNewTickets;
+    const searchIndexRelevantUpdate = shouldEmitSearchIndexUpdate({
+      agendaRelevantUpdate,
+      hasNewTickets,
+      hasTicketStatusUpdates,
+    });
     const eventLogId = searchIndexRelevantUpdate && event.organizationId ? crypto.randomUUID() : null;
 
     const ticketStatusOps: Array<{ ids: number[]; status: TicketTypeStatus }> = [];

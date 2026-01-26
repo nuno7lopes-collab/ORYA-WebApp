@@ -143,7 +143,7 @@ Provas / Gates
 - Helpers canónicos: domain/ops/health.ts + domain/ops/slo.ts (queries baratas com janelas/take).
 - Gates: db:gates:offline; vitest ops/outbox; RG Outbox/EventLog/create=0 nas rotas ops; requireInternalSecret() em todas.
 
-### D11 — Search Index (EventLog → SearchIndexItem)
+### D11 — Search Index (EventLog → SearchIndexItem) (DONE, audited)
 - Objetivo: materializar SearchIndexItem via consumer idempotente e migrar search/discover para read‑model.
 - Outputs mínimos: SearchIndexItem (visibility PUBLIC|HIDDEN) + consumer por outbox; search/discover lê apenas SearchIndexItem.
 - Estado: DONE (event/org status emitindo SEARCH_INDEX_*; consumer dedupe por lastEventId).
@@ -151,7 +151,7 @@ Provas / Gates
 - TicketType pricing/visibility writes ⇒ MUST call domain/searchIndex/triggers.ts
 - soldQuantity updates ⇒ OUT_OF_SCOPE (no search impact)
 
-### D11.1 — Discover/Explore → SearchIndexItem (DONE)
+### D11.1 — Discover/Explore → SearchIndexItem (DONE, audited)
 - /api/explorar/list agora lê exclusivamente SearchIndexItem (read‑model).
 - DTO canónico mantém‑se (publicEventCard); filtros paritários e paginação por cursor string.
 - Nota anti‑drift: sem fallback para Event; index lag aceite e documentado.
