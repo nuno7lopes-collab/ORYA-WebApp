@@ -13,6 +13,11 @@ node scripts/diagnoseTournamentsMissingEventId.js --format json --out /tmp/diagn
 node scripts/diagnoseTournamentsMissingEventId.js --format csv --out /tmp/diagnose_tournaments.csv
 ```
 
+Nota sobre TLS (importante):
+
+- Preferido: usar `DATABASE_URL` a apontar para um proxy/endpoint com CA correta (cadeia valida).
+- Ultimo recurso (apenas em sandbox local): `NODE_TLS_REJECT_UNAUTHORIZED=0` para contornar certificados self-signed.
+
 Exemplo (estrutura do output JSON):
 
 ```json
