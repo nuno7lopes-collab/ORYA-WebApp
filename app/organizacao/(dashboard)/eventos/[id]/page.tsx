@@ -130,6 +130,7 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
 
   const { organization, membership } = await getActiveOrganizationForUser(userId, {
     organizationId: event.organizationId,
+    allowFallback: true,
   });
 
   if (!organization || !membership) {

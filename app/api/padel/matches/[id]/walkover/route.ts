@@ -11,7 +11,7 @@ import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
 import { buildWalkoverSets, normalizePadelScoreRules } from "@/domain/padel/score";
 import { updatePadelMatch } from "@/domain/padel/matches/commands";
 
-const allowedRoles: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
+const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const resolved = await params;
@@ -54,7 +54,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const { organization } = await getActiveOrganizationForUser(authData.user.id, {
     organizationId: match.event.organizationId,
-    roles: allowedRoles,
+    roles: ROLE_ALLOWLIST,
   });
   if (!organization) {
     return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });

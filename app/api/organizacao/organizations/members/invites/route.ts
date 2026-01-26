@@ -5,7 +5,9 @@ import { prisma } from "@/lib/prisma";
 import { resolveUserIdentifier } from "@/lib/userResolver";
 import { createNotification } from "@/lib/notifications";
 import { NotificationType } from "@prisma/client";
-import { canManageMembers, isOrgAdminOrAbove, isOrgOwner } from "@/lib/organizationPermissions";
+import { canManageMembers, isOrgOwner as hasOrgOwnerAccess } from "@/lib/organizationPermissions";
+import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
+import { OrganizationModule } from "@prisma/client";
 import { ensureUserIsOrganization, setSoleOwner } from "@/lib/organizationRoles";
 import { ensureGroupMemberForOrg, resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
 import { sanitizeProfileVisibility } from "@/lib/profileVisibility";
@@ -168,7 +170,17 @@ export async function GET(req: NextRequest) {
     }
 
     const membership = await resolveGroupMemberForOrg({ organizationId, userId: user.id });
-    const isManager = membership ? isOrgAdminOrAbove(membership.role) : false;
+    const managerAccess = membership
+      ? await ensureMemberModuleAccess({
+          organizationId,
+          userId: user.id,
+          role: membership.role,
+          rolePack: membership.rolePack,
+          moduleKey: OrganizationModule.STAFF,
+          required: "EDIT",
+        })
+      : { ok: false };
+    const isManager = managerAccess.ok;
 
     const viewerEmail = user.email?.toLowerCase() ?? null;
     const viewerUsername = profile?.username ?? null;
@@ -279,7 +291,7 @@ export async function POST(req: NextRequest) {
     if (!membership || !manageAllowed) {
       return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
-    if (roleRaw === "OWNER" && !isOrgOwner(membership.role)) {
+    if (roleRaw === "OWNER" && !hasOrgOwnerAccess(membership.role)) {
       return NextResponse.json({ ok: false, error: "ONLY_OWNER_CAN_SET_OWNER" }, { status: 403 });
     }
     const organization = await prisma.organization.findUnique({
@@ -507,7 +519,17 @@ export async function PATCH(req: NextRequest) {
     }
 
     const membership = await resolveGroupMemberForOrg({ organizationId, userId: user.id });
-    const isManager = membership ? isOrgAdminOrAbove(membership.role) : false;
+    const managerAccess = membership
+      ? await ensureMemberModuleAccess({
+          organizationId,
+          userId: user.id,
+          role: membership.role,
+          rolePack: membership.rolePack,
+          moduleKey: OrganizationModule.STAFF,
+          required: "EDIT",
+        })
+      : { ok: false };
+    const isManager = managerAccess.ok;
     const organization = await prisma.organization.findUnique({
       where: { id: organizationId },
       select: { officialEmail: true, officialEmailVerifiedAt: true },

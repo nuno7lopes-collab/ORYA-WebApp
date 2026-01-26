@@ -15,7 +15,7 @@ import { OrganizationMemberRole, SourceType } from "@prisma/client";
 import { cancelBooking, updateBooking } from "@/domain/bookings/commands";
 
 const HOLD_MINUTES = 10;
-const ALLOWED_ROLES: OrganizationMemberRole[] = [
+const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
   OrganizationMemberRole.CO_OWNER,
   OrganizationMemberRole.ADMIN,
@@ -77,7 +77,7 @@ export async function POST(
 
     const { organization } = await getActiveOrganizationForUser(profile.id, {
       organizationId: booking.organizationId,
-      roles: [...ALLOWED_ROLES],
+      roles: [...ROLE_ALLOWLIST],
     });
 
     if (!organization) {

@@ -12,7 +12,7 @@ import { normalizePadelScoreRules, resolvePadelMatchStats } from "@/domain/padel
 import { enforcePublicRateLimit } from "@/lib/padel/publicRateLimit";
 import { updatePadelMatch } from "@/domain/padel/matches/commands";
 
-const allowedRoles: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
+const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
 const adminRoles = new Set<OrganizationMemberRole>(["OWNER", "CO_OWNER", "ADMIN"]);
 
 export async function GET(req: NextRequest) {
@@ -62,7 +62,7 @@ export async function GET(req: NextRequest) {
   if (user && !isPublicEvent) {
     const { organization } = await getActiveOrganizationForUser(user.id, {
       organizationId: event.organizationId,
-      roles: allowedRoles,
+      roles: ROLE_ALLOWLIST,
     });
     if (!organization) return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
   }
@@ -128,7 +128,7 @@ export async function POST(req: NextRequest) {
 
   const { organization, membership } = await getActiveOrganizationForUser(user.id, {
     organizationId: match.event.organizationId,
-    roles: allowedRoles,
+    roles: ROLE_ALLOWLIST,
   });
   if (!organization || !membership) {
     return NextResponse.json({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });

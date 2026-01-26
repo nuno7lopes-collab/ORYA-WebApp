@@ -12,7 +12,7 @@ import { appendEventLog } from "@/domain/eventLog/append";
 import { evaluateCandidate, type AgendaCandidate } from "@/domain/agenda/conflictEngine";
 import { buildAgendaConflictPayload } from "@/domain/agenda/conflictResponse";
 
-const allowedRoles: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
+const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
 const DEFAULT_DURATION_MINUTES = 60;
 const DEFAULT_SLOT_MINUTES = 15;
 const DEFAULT_BUFFER_MINUTES = 5;
@@ -40,7 +40,7 @@ async function ensureOrganization(req: NextRequest) {
   const parsedOrgId = resolveOrganizationIdFromParams(req.nextUrl.searchParams);
   const { organization } = await getActiveOrganizationForUser(user.id, {
     organizationId: Number.isFinite(parsedOrgId) ? parsedOrgId : undefined,
-    roles: allowedRoles,
+    roles: ROLE_ALLOWLIST,
   });
   if (!organization) return { error: "NO_ORGANIZATION" as const, status: 403 };
   return { organization, userId: user.id };

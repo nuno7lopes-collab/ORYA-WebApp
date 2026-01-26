@@ -41,7 +41,7 @@ import { resolveUserIdentifier } from "@/lib/userResolver";
 import { queuePairingInvite } from "@/domain/notifications/splitPayments";
 import { requireActiveEntitlementForTicket } from "@/lib/entitlements/accessChecks";
 
-const allowedRoles: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
+const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
 
 async function syncPlayersFromSlots({
   organizationId,
@@ -907,7 +907,7 @@ export async function GET(req: NextRequest) {
     if (!isParticipant) {
       const { organization } = await getActiveOrganizationForUser(user.id, {
         organizationId: pairing.organizationId,
-        roles: allowedRoles,
+        roles: ROLE_ALLOWLIST,
       });
       if (!organization) {
         return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
@@ -944,7 +944,7 @@ export async function GET(req: NextRequest) {
   }
   const { organization } = await getActiveOrganizationForUser(user.id, {
     organizationId: event.organizationId,
-    roles: allowedRoles,
+    roles: ROLE_ALLOWLIST,
   });
   if (!organization) {
     return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });

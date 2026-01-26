@@ -70,6 +70,21 @@ function runCmd(command) {
   }
 }
 
+function listProcesses() {
+  const psOutput = runCmd("ps -ax -o pid=,command=");
+  return psOutput
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const parts = line.split(/\s+/);
+      const pid = Number(parts[0]);
+      const command = parts.slice(1).join(" ");
+      return { pid, command };
+    })
+    .filter(({ pid }) => Number.isFinite(pid));
+}
+
 function findListeningPids(port) {
   const output = runCmd(`lsof -nP -iTCP:${port} -sTCP:LISTEN -Fp`);
   if (!output) return [];
@@ -84,12 +99,13 @@ function getCommandForPid(pid) {
   return runCmd(`ps -p ${pid} -o command=`) || "";
 }
 
-function maybeKillPid(pid, patterns) {
+function maybeKillPid(pid, patterns, requireRepo = true) {
   const command = getCommandForPid(pid);
   if (!command) return false;
   const matchesRepo = command.includes(repoRoot);
   const matchesPattern = patterns.some((pattern) => command.includes(pattern));
-  if (!matchesRepo || !matchesPattern) return false;
+  if (!matchesPattern) return false;
+  if (requireRepo && !matchesRepo) return false;
   try {
     process.kill(pid, "SIGKILL");
     console.log(`[dev-all] Killed PID ${pid} (${command.trim()}).`);
@@ -97,6 +113,25 @@ function maybeKillPid(pid, patterns) {
   } catch (err) {
     console.log(`[dev-all] Failed to kill PID ${pid}: ${err?.message || err}`);
     return false;
+  }
+}
+
+function killProcessesMatching(patterns, requireRepo = true) {
+  const processes = listProcesses();
+  for (const proc of processes) {
+    if (!patterns.some((pattern) => proc.command.includes(pattern))) continue;
+    if (requireRepo && !proc.command.includes(repoRoot)) continue;
+    maybeKillPid(proc.pid, patterns, requireRepo);
+  }
+}
+
+function killPortProcesses(port, patterns, requireRepo = true) {
+  const pids = findListeningPids(port);
+  if (!pids.length) return;
+  for (const pid of pids) {
+    const command = getCommandForPid(pid);
+    if (!patterns.some((pattern) => command.includes(pattern))) continue;
+    maybeKillPid(pid, patterns, requireRepo);
   }
 }
 
@@ -116,18 +151,48 @@ function findAvailablePort(startPort, maxAttempts = 5) {
   return startPort;
 }
 
+function findRepoNextDevPids() {
+  return listProcesses()
+    .filter(
+      ({ command }) =>
+        command.includes(repoRoot) &&
+        (command.includes("next dev") || command.includes("node_modules/.bin/next")),
+    )
+    .map(({ pid }) => pid);
+}
+
 function cleanupNextDevLockIfIdle() {
   const lockPath = path.join(repoRoot, ".next", "dev", "lock");
   if (!fs.existsSync(lockPath)) return;
-  const psOutput = runCmd("ps -ax -o pid=,command=");
-  const hasNextDev = psOutput
-    .split("\n")
-    .some(
-      (line) =>
-        line.includes("next dev") ||
-        (line.includes("node_modules/.bin/next") && line.includes(repoRoot)),
-    );
-  if (!hasNextDev) {
+  const hasLsof = Boolean(runCmd("command -v lsof"));
+  if (hasLsof) {
+    const output = runCmd(`lsof -nP ${lockPath} -Fp`);
+    const pids = output
+      .split("\n")
+      .filter((line) => line.startsWith("p"))
+      .map((line) => Number(line.slice(1)))
+      .filter((pid) => Number.isFinite(pid));
+    if (pids.length > 0) {
+      for (const pid of pids) {
+        maybeKillPid(pid, ["next dev", "node_modules/.bin/next"]);
+      }
+      const remaining = findRepoNextDevPids();
+      if (remaining.length === 0) {
+        fs.rmSync(lockPath, { force: true });
+        console.log("[dev-all] Removed .next/dev/lock after killing Next dev.");
+      }
+      return;
+    }
+  }
+
+  const repoNextPids = findRepoNextDevPids();
+  if (repoNextPids.length > 0) {
+    for (const pid of repoNextPids) {
+      maybeKillPid(pid, ["next dev", "node_modules/.bin/next"]);
+    }
+  }
+  const remaining = findRepoNextDevPids();
+  if (remaining.length === 0) {
     fs.rmSync(lockPath, { force: true });
     console.log("[dev-all] Removed stale .next/dev/lock.");
   }
@@ -165,10 +230,31 @@ function sanitizeStripeCliEnv(env) {
   return stripeEnv;
 }
 
+function resetDevState() {
+  // Kill repo-scoped dev processes.
+  killProcessesMatching(["operations-loop.js", "cron-loop.js", "chat-ws-server.js"], true);
+  killProcessesMatching(["stripe listen"], false);
+  // Kill Next servers bound to common dev ports.
+  [3000, 3001, 3002, 3003].forEach((port) => {
+    killPortProcesses(port, ["next dev", "next-server", "node_modules/.bin/next"], false);
+  });
+  // Clean Next cache to avoid stale locks.
+  const nextDir = path.join(repoRoot, ".next");
+  if (fs.existsSync(nextDir)) {
+    fs.rmSync(nextDir, { recursive: true, force: true });
+    console.log("[dev-all] Removed .next cache.");
+  }
+}
+
+resetDevState();
+
 cleanupPort(3000, ["next dev", "node_modules/.bin/next"]);
 cleanupPort(3001, ["next dev", "node_modules/.bin/next"]);
 cleanupPort(4001, ["chat-ws-server.js"]);
 cleanupNextDevLockIfIdle();
+
+const localHost = process.env.HOSTNAME || "127.0.0.1";
+process.env.HOSTNAME = localHost;
 
 const baseNextPort = Number(process.env.NEXT_PORT || process.env.PORT || 3000);
 const nextPort = findAvailablePort(baseNextPort, 5);
@@ -178,7 +264,7 @@ if (nextPort !== baseNextPort) {
 process.env.NEXT_PORT = String(nextPort);
 process.env.PORT = String(nextPort);
 if (!process.env.ORYA_BASE_URL) {
-  process.env.ORYA_BASE_URL = `http://localhost:${nextPort}`;
+  process.env.ORYA_BASE_URL = `http://${localHost}:${nextPort}`;
 }
 if (!process.env.WORKER_BASE_URL) {
   process.env.WORKER_BASE_URL = process.env.ORYA_BASE_URL;
@@ -191,12 +277,15 @@ if (chatWsPort !== baseChatWsPort) {
 }
 
 process.env.CHAT_WS_PORT = String(chatWsPort);
+if (!process.env.CHAT_WS_HOST) {
+  process.env.CHAT_WS_HOST = localHost;
+}
 if (!process.env.NEXT_PUBLIC_CHAT_WS_URL) {
-  process.env.NEXT_PUBLIC_CHAT_WS_URL = `ws://localhost:${chatWsPort}`;
+  process.env.NEXT_PUBLIC_CHAT_WS_URL = `ws://${localHost}:${chatWsPort}`;
 }
 
 const children = [
-  run("dev", npmCmd, ["run", "dev"]),
+  run("dev", npmCmd, ["run", "dev", "--", "--hostname", localHost]),
   run("cron", npmCmd, ["run", "cron:local"]),
 ];
 

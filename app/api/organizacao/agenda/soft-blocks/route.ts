@@ -9,7 +9,7 @@ import { evaluateCandidate, type AgendaCandidate } from "@/domain/agenda/conflic
 import { buildAgendaConflictPayload } from "@/domain/agenda/conflictResponse";
 import { createSoftBlock, deleteSoftBlock, updateSoftBlock } from "@/domain/softBlocks/commands";
 
-const allowedRoles = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"] as const;
+const ROLE_ALLOWLIST = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"] as const;
 
 const parseDate = (value: unknown) => {
   if (typeof value !== "string") return null;
@@ -251,7 +251,7 @@ export async function POST(req: NextRequest) {
   const organizationId = resolveOrganizationIdFromRequest(req);
   const { organization, membership } = await getActiveOrganizationForUser(user.id, {
     organizationId: organizationId ?? undefined,
-    roles: [...allowedRoles],
+    roles: [...ROLE_ALLOWLIST],
   });
   if (!organization || !membership) {
     return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
@@ -328,7 +328,7 @@ export async function PATCH(req: NextRequest) {
   const organizationId = resolveOrganizationIdFromRequest(req);
   const { organization, membership } = await getActiveOrganizationForUser(user.id, {
     organizationId: organizationId ?? undefined,
-    roles: [...allowedRoles],
+    roles: [...ROLE_ALLOWLIST],
   });
   if (!organization || !membership) {
     return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
@@ -424,7 +424,7 @@ export async function DELETE(req: NextRequest) {
   const organizationId = resolveOrganizationIdFromRequest(req);
   const { organization, membership } = await getActiveOrganizationForUser(user.id, {
     organizationId: organizationId ?? undefined,
-    roles: [...allowedRoles],
+    roles: [...ROLE_ALLOWLIST],
   });
   if (!organization || !membership) {
     return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });

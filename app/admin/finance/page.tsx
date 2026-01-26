@@ -45,7 +45,9 @@ function SectionHeader({ id, title, subtitle }: { id: string; title: string; sub
 
 type PaymentEvent = {
   id: number;
-  stripePaymentIntentId: string | null;
+  purchaseId: string | null;
+  stripeEventId?: string | null;
+  paymentIntentId?: string | null;
   status: string;
   mode?: "LIVE" | "TEST" | null;
   isTest?: boolean;
@@ -204,7 +206,7 @@ function PaymentsSection({ initialQuery }: { initialQuery?: string }) {
       <SectionHeader
         id="pagamentos"
         title="Pagamentos"
-        subtitle="Monitoriza intents, fees e ações críticas de cobrança."
+        subtitle="Monitoriza pagamentos, fees e ações críticas de cobrança."
       />
 
       <div className="admin-card-soft p-4">
@@ -215,7 +217,7 @@ function PaymentsSection({ initialQuery }: { initialQuery?: string }) {
               type="text"
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="Intent ID, event ID..."
+              placeholder="Pagamento ID, event ID..."
               className="admin-input"
             />
           </div>
@@ -370,7 +372,7 @@ function PaymentsSection({ initialQuery }: { initialQuery?: string }) {
           <table className="admin-table text-left">
             <thead>
               <tr>
-                <th className="px-3 py-3">Intent</th>
+                <th className="px-3 py-3">Pagamento</th>
                 <th className="px-3 py-3">Estado</th>
                 <th className="px-3 py-3">Evento</th>
                 <th className="px-3 py-3">Montantes</th>
@@ -397,17 +399,19 @@ function PaymentsSection({ initialQuery }: { initialQuery?: string }) {
               {!isLoading && !errorMsg && (!items || items.length === 0) && (
                 <tr>
                   <td colSpan={7} className="px-3 py-4 text-center text-white/60">
-                    Sem intents para estes filtros.
+                    Sem pagamentos para estes filtros.
                   </td>
                 </tr>
               )}
               {!isLoading &&
                 !errorMsg &&
-                items?.map((p) => (
-                  <tr key={p.id} className="border-b border-white/10 last:border-0">
+                items?.map((p) => {
+                  const paymentRef = p.paymentIntentId ?? p.purchaseId ?? p.stripeEventId ?? "";
+                  return (
+                    <tr key={p.id} className="border-b border-white/10 last:border-0">
                     <td className="px-3 py-3 align-top text-[11px] font-mono text-white/70">
                       <div className="flex flex-col gap-1">
-                        <span className="truncate">{p.stripePaymentIntentId || "—"}</span>
+                        <span className="truncate">{paymentRef || "—"}</span>
                         <span className={`inline-flex w-fit rounded-full px-2 py-0.5 text-[10px] ${modeBadgeClass(p.mode)}`}>
                           {p.mode || "—"}
                         </span>
@@ -453,7 +457,7 @@ function PaymentsSection({ initialQuery }: { initialQuery?: string }) {
                         <button
                           type="button"
                           onClick={() => {
-                            navigator.clipboard?.writeText(p.stripePaymentIntentId || "");
+                            if (paymentRef) navigator.clipboard?.writeText(paymentRef);
                           }}
                           className="admin-button-secondary px-2 py-1 text-[11px]"
                         >
@@ -461,14 +465,14 @@ function PaymentsSection({ initialQuery }: { initialQuery?: string }) {
                         </button>
                         <button
                           type="button"
-                          onClick={() => handleReprocess(p.stripePaymentIntentId || "")}
+                          onClick={() => handleReprocess(paymentRef)}
                           className="admin-button px-2.5 py-1 text-[11px]"
                         >
                           Reprocessar
                         </button>
                         <button
                           type="button"
-                          onClick={() => handleRefund(p.stripePaymentIntentId || "")}
+                          onClick={() => handleRefund(paymentRef)}
                           className="admin-button-secondary px-2.5 py-1 text-[11px]"
                         >
                           Refund
@@ -485,7 +489,8 @@ function PaymentsSection({ initialQuery }: { initialQuery?: string }) {
                       </div>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
             </tbody>
           </table>
         </div>

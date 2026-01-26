@@ -8,7 +8,7 @@ import { ensureCrmModuleAccess } from "@/lib/crm/access";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
 import { ConsentStatus, ConsentType, OrganizationMemberRole } from "@prisma/client";
 
-const ALLOWED_ROLES = Object.values(OrganizationMemberRole);
+const ROLE_ALLOWLIST = Object.values(OrganizationMemberRole);
 
 const CONSENT_TYPES = [
   ConsentType.MARKETING,
@@ -35,7 +35,7 @@ export async function PUT(req: NextRequest, context: { params: Promise<{ userId:
     const organizationId = resolveOrganizationIdFromRequest(req);
     const { organization, membership } = await getActiveOrganizationForUser(actor.id, {
       organizationId: organizationId ?? undefined,
-      roles: [...ALLOWED_ROLES],
+      roles: [...ROLE_ALLOWLIST],
     });
 
     if (!organization || !membership) {

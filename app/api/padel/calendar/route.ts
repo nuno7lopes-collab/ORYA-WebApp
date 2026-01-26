@@ -13,7 +13,7 @@ import { buildAgendaConflictPayload } from "@/domain/agenda/conflictResponse";
 import { createHardBlock, deleteHardBlock, updateHardBlock } from "@/domain/hardBlocks/commands";
 import { applyMatchSlotUpdate } from "@/domain/padel/matchSlots/commands";
 
-const allowedRoles: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
+const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
 const BUFFER_MINUTES = 5; // tempo mínimo entre registos para evitar sobreposição acidental
 const LOCK_TTL_SECONDS = 45;
 
@@ -178,7 +178,7 @@ async function ensureOrganization(req: NextRequest) {
   const parsedOrgId = resolveOrganizationIdFromParams(req.nextUrl.searchParams);
   const { organization } = await getActiveOrganizationForUser(user.id, {
     organizationId: Number.isFinite(parsedOrgId) ? parsedOrgId : undefined,
-    roles: allowedRoles,
+    roles: ROLE_ALLOWLIST,
   });
   if (!organization) return { error: "NO_ORGANIZATION" as const, status: 403 };
   return { organization, userId: user.id };

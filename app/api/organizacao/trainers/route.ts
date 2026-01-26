@@ -1,18 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
-import { NotificationType, OrganizationMemberRole, TrainerProfileReviewStatus } from "@prisma/client";
+import { NotificationType, OrganizationMemberRole, OrganizationModule, TrainerProfileReviewStatus } from "@prisma/client";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { parseOrganizationId } from "@/lib/organizationId";
-import { isOrgAdminOrAbove } from "@/lib/organizationPermissions";
+import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { createNotification } from "@/lib/notifications";
 import { ensureGroupMemberForOrg } from "@/lib/organizationGroupAccess";
-
-const ADMIN_ROLES: OrganizationMemberRole[] = [
-  OrganizationMemberRole.OWNER,
-  OrganizationMemberRole.CO_OWNER,
-  OrganizationMemberRole.ADMIN,
-];
 
 export async function GET(req: NextRequest) {
   try {
@@ -31,10 +25,21 @@ export async function GET(req: NextRequest) {
 
     const { organization, membership } = await getActiveOrganizationForUser(user.id, {
       organizationId: organizationId ?? undefined,
-      roles: ADMIN_ROLES,
     });
 
-    if (!organization || !membership || !isOrgAdminOrAbove(membership.role)) {
+    if (!organization || !membership) {
+      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    }
+
+    const access = await ensureMemberModuleAccess({
+      organizationId: organization.id,
+      userId: user.id,
+      role: membership.role,
+      rolePack: membership.rolePack,
+      moduleKey: OrganizationModule.STAFF,
+      required: "VIEW",
+    });
+    if (!access.ok) {
       return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
@@ -101,10 +106,21 @@ export async function PATCH(req: NextRequest) {
 
     const { organization, membership } = await getActiveOrganizationForUser(user.id, {
       organizationId: organizationId ?? undefined,
-      roles: ADMIN_ROLES,
     });
 
-    if (!organization || !membership || !isOrgAdminOrAbove(membership.role)) {
+    if (!organization || !membership) {
+      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    }
+
+    const access = await ensureMemberModuleAccess({
+      organizationId: organization.id,
+      userId: user.id,
+      role: membership.role,
+      rolePack: membership.rolePack,
+      moduleKey: OrganizationModule.STAFF,
+      required: "EDIT",
+    });
+    if (!access.ok) {
       return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
@@ -226,10 +242,21 @@ export async function POST(req: NextRequest) {
 
     const { organization, membership } = await getActiveOrganizationForUser(user.id, {
       organizationId: organizationId ?? undefined,
-      roles: ADMIN_ROLES,
     });
 
-    if (!organization || !membership || !isOrgAdminOrAbove(membership.role)) {
+    if (!organization || !membership) {
+      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    }
+
+    const access = await ensureMemberModuleAccess({
+      organizationId: organization.id,
+      userId: user.id,
+      role: membership.role,
+      rolePack: membership.rolePack,
+      moduleKey: OrganizationModule.STAFF,
+      required: "EDIT",
+    });
+    if (!access.ok) {
       return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 

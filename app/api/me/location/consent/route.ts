@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { appendEventLog } from "@/domain/eventLog/append";
-import { getActiveOrganizationForUser } from "@/lib/organizationContext";
+import { getActiveOrganizationForUser, ORG_ACTIVE_ACCESS_OPTIONS } from "@/lib/organizationContext";
 import crypto from "crypto";
 
 const CONSENT_VALUES = new Set(["PENDING", "GRANTED", "DENIED"]);
@@ -50,7 +50,7 @@ export async function POST(req: NextRequest) {
         ? "COARSE"
         : preferredRaw || profile?.locationGranularity || "COARSE";
 
-    const orgContext = await getActiveOrganizationForUser(userId, { allowFallback: true });
+    const orgContext = await getActiveOrganizationForUser(userId, ORG_ACTIVE_ACCESS_OPTIONS);
     const organizationId = orgContext.organization?.id ?? null;
     const hasMembership = Boolean(orgContext.membership);
 

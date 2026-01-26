@@ -43,6 +43,7 @@ export default async function OrganizationEventLivePrepPage({ params }: PageProp
 
   const { organization, membership } = await getActiveOrganizationForUser(data.user.id, {
     organizationId: event.organizationId,
+    allowFallback: true,
   });
 
   if (!organization || !membership) redirect("/organizacao");

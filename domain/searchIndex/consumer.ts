@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { SearchIndexVisibility, SourceType } from "@prisma/client";
 import { deriveIsFreeEvent } from "@/domain/events/derivedIsFree";
-import { normalizeSourceType } from "@/domain/sourceType";
+import { normalizeAgendaSourceType } from "@/domain/sourceType";
 
 const ALLOWLIST = new Set([
   "event.created",
@@ -247,7 +247,7 @@ export async function consumeSearchIndexEvent(eventLogId: string): Promise<Searc
 
   const payload = (log.payload ?? {}) as Record<string, unknown>;
   const sourceType =
-    normalizeSourceType(payload.sourceType as string | null) ?? log.sourceType ?? SourceType.EVENT;
+    normalizeAgendaSourceType(payload.sourceType as string | null) ?? log.sourceType ?? SourceType.EVENT;
   if (sourceType !== SourceType.EVENT) return { ok: true, deduped: true };
 
   const sourceId =

@@ -10,7 +10,7 @@ import { OrganizationMemberRole, StoreBundlePricingMode, StoreBundleStatus } fro
 import { z } from "zod";
 import { computeBundleTotals } from "@/lib/store/bundles";
 
-const ALLOWED_ROLES: OrganizationMemberRole[] = [
+const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
   OrganizationMemberRole.CO_OWNER,
   OrganizationMemberRole.ADMIN,
@@ -43,7 +43,7 @@ async function getOrganizationContext(req: NextRequest, userId: string, options?
   const organizationId = resolveOrganizationIdFromRequest(req);
   const { organization, membership } = await getActiveOrganizationForUser(userId, {
     organizationId: organizationId ?? undefined,
-    roles: [...ALLOWED_ROLES],
+    roles: [...ROLE_ALLOWLIST],
   });
 
   if (!organization || !membership) {

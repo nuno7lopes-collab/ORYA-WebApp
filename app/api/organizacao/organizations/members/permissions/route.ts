@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { parseOrganizationId, resolveOrganizationIdFromParams, resolveOrganizationIdFromRequest } from "@/lib/organizationId";
-import { canManageMembers, isOrgAdminOrAbove } from "@/lib/organizationPermissions";
+import { canManageMembers } from "@/lib/organizationPermissions";
+import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { recordOutboxEvent } from "@/domain/outbox/producer";
 import { appendEventLog } from "@/domain/eventLog/append";
@@ -47,7 +48,19 @@ export async function GET(req: NextRequest) {
 
     const callerMembership = await resolveGroupMemberForOrg({ organizationId, userId: user.id });
 
-    if (!callerMembership || !isOrgAdminOrAbove(callerMembership.role)) {
+    if (!callerMembership) {
+      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    }
+
+    const access = await ensureMemberModuleAccess({
+      organizationId,
+      userId: user.id,
+      role: callerMembership.role,
+      rolePack: callerMembership.rolePack,
+      moduleKey: OrganizationModule.STAFF,
+      required: "EDIT",
+    });
+    if (!access.ok) {
       return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 

@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
     });
 
     await paymentEventRepo(prisma).updateMany({
-      where: { stripePaymentIntentId: paymentIntentId },
+      where: { purchaseId: paymentIntentId },
       data: { status: "PROCESSING", errorMessage: null, updatedAt: new Date() },
     });
 

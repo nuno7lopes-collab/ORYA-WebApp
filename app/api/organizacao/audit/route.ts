@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
-import { isOrgAdminOrAbove } from "@/lib/organizationPermissions";
+import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
+import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
+import { OrganizationModule } from "@prisma/client";
 
 export async function GET(req: NextRequest) {
   try {
@@ -16,11 +18,24 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
 
+    const organizationId = resolveOrganizationIdFromRequest(req);
     const { organization, membership } = await getActiveOrganizationForUser(user.id, {
-      allowFallback: true,
+      organizationId: organizationId ?? undefined,
     });
 
-    if (!organization || !membership || !isOrgAdminOrAbove(membership.role)) {
+    if (!organization || !membership) {
+      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    }
+
+    const access = await ensureMemberModuleAccess({
+      organizationId: organization.id,
+      userId: user.id,
+      role: membership.role,
+      rolePack: membership.rolePack,
+      moduleKey: OrganizationModule.DEFINICOES,
+      required: "VIEW",
+    });
+    if (!access.ok) {
       return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 

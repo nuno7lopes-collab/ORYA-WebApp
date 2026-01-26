@@ -7,7 +7,7 @@ import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureCrmModuleAccess } from "@/lib/crm/access";
 import { OrganizationMemberRole } from "@prisma/client";
 
-const ALLOWED_ROLES = Object.values(OrganizationMemberRole);
+const ROLE_ALLOWLIST = Object.values(OrganizationMemberRole);
 
 const MAX_TAGS = 20;
 
@@ -19,7 +19,7 @@ export async function PUT(req: NextRequest, context: { params: Promise<{ custome
     const organizationId = resolveOrganizationIdFromRequest(req);
     const { organization, membership } = await getActiveOrganizationForUser(user.id, {
       organizationId: organizationId ?? undefined,
-      roles: [...ALLOWED_ROLES],
+      roles: [...ROLE_ALLOWLIST],
     });
 
     if (!organization || !membership) {

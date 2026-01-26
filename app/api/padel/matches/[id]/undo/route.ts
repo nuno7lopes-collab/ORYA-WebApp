@@ -9,7 +9,7 @@ import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
 import { extractBracketPrefix, sortRoundsBySize } from "@/domain/padel/knockoutAdvance";
 import { updatePadelMatch } from "@/domain/padel/matches/commands";
 
-const allowedRoles: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
+const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
 const UNDO_WINDOW_MS = 60 * 1000;
 const SYSTEM_MATCH_EVENT = "PADEL_MATCH_SYSTEM_UPDATED";
 
@@ -53,7 +53,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const { organization } = await getActiveOrganizationForUser(user.id, {
     organizationId: match.event.organizationId,
-    roles: allowedRoles,
+    roles: ROLE_ALLOWLIST,
   });
   if (!organization) return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 

@@ -2,16 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
-import { isOrgAdminOrAbove } from "@/lib/organizationPermissions";
-import { resolveOrganizationIdFromParams } from "@/lib/organizationId";
-import { SaleSummaryStatus } from "@prisma/client";
+import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
+import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
+import { OrganizationModule, SaleSummaryStatus } from "@prisma/client";
 
 const resolveOrganizationId = (req: NextRequest) => {
-  const orgParam = resolveOrganizationIdFromParams(req.nextUrl.searchParams);
-  const cookieOrgId = req.cookies.get("orya_organization")?.value;
-  const raw = orgParam ?? (cookieOrgId ? Number(cookieOrgId) : null);
-  const organizationId = typeof raw === "number" && Number.isFinite(raw) ? raw : null;
-  return { organizationId, hasOrgParam: Boolean(orgParam) };
+  const organizationId = resolveOrganizationIdFromRequest(req);
+  return { organizationId };
 };
 
 async function requireOrganization(req: NextRequest) {
@@ -28,14 +25,24 @@ async function requireOrganization(req: NextRequest) {
   const profile = await prisma.profile.findUnique({ where: { id: user.id } });
   if (!profile) return { error: "PROFILE_NOT_FOUND" as const };
 
-  const { organizationId, hasOrgParam } = resolveOrganizationId(req);
+  const { organizationId } = resolveOrganizationId(req);
   const { organization, membership } = await getActiveOrganizationForUser(user.id, {
     organizationId: organizationId ?? undefined,
-    roles: ["OWNER", "CO_OWNER", "ADMIN"],
-    allowFallback: !hasOrgParam,
   });
 
-  if (!membership || !organization || !isOrgAdminOrAbove(membership.role)) {
+  if (!membership || !organization) {
+    return { error: "ORGANIZATION_NOT_FOUND" as const };
+  }
+
+  const access = await ensureMemberModuleAccess({
+    organizationId: organization.id,
+    userId: membership.userId,
+    role: membership.role,
+    rolePack: membership.rolePack,
+    moduleKey: OrganizationModule.MARKETING,
+    required: "VIEW",
+  });
+  if (!access.ok) {
     return { error: "ORGANIZATION_NOT_FOUND" as const };
   }
 

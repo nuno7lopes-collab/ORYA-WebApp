@@ -18,7 +18,7 @@ const clampLimit = (raw: string | null) => {
   return Math.min(Math.max(1, Math.floor(parsed)), 200);
 };
 
-const allowedRoles: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
+const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
 
 export async function GET(req: NextRequest) {
   const rateLimited = await enforcePublicRateLimit(req, {
@@ -200,7 +200,7 @@ export async function POST(req: NextRequest) {
 
   const { organization } = await getActiveOrganizationForUser(user.id, {
     organizationId: event.organizationId,
-    roles: allowedRoles,
+    roles: ROLE_ALLOWLIST,
   });
   if (!organization) return NextResponse.json({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });
 

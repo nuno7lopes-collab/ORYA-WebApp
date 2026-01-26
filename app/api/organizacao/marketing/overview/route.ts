@@ -2,10 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
-import { isOrgAdminOrAbove } from "@/lib/organizationPermissions";
+import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { ACTIVE_PAIRING_REGISTRATION_WHERE } from "@/domain/padelRegistration";
-import { SaleSummaryStatus, TicketStatus } from "@prisma/client";
-import { resolveOrganizationIdFromParams } from "@/lib/organizationId";
+import { OrganizationModule, SaleSummaryStatus, TicketStatus } from "@prisma/client";
+import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 
 export async function GET(req: NextRequest) {
   try {
@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
 
-    const orgParam = resolveOrganizationIdFromParams(req.nextUrl.searchParams);
+    const orgParam = resolveOrganizationIdFromRequest(req);
     const templateTypeParam = req.nextUrl.searchParams.get("templateType");
     const templateType =
       typeof templateTypeParam === "string" && templateTypeParam.trim()
@@ -36,16 +36,24 @@ export async function GET(req: NextRequest) {
         ? { NOT: { templateType: excludeTemplateType } }
         : {};
     const isPadelScope = templateType === "PADEL";
-    const cookieOrgId = req.cookies.get("orya_organization")?.value;
-    const orgRaw = orgParam ?? (cookieOrgId ? Number(cookieOrgId) : null);
-    const organizationId = typeof orgRaw === "number" && Number.isFinite(orgRaw) ? orgRaw : null;
+    const organizationId = typeof orgParam === "number" && Number.isFinite(orgParam) ? orgParam : null;
     const { organization, membership } = await getActiveOrganizationForUser(user.id, {
       organizationId: organizationId ?? undefined,
-      roles: ["OWNER", "CO_OWNER", "ADMIN"],
-      allowFallback: !orgParam,
     });
 
-    if (!organization || !membership || !isOrgAdminOrAbove(membership.role)) {
+    if (!organization || !membership) {
+      return NextResponse.json({ ok: false, error: "NOT_ORGANIZATION" }, { status: 403 });
+    }
+
+    const access = await ensureMemberModuleAccess({
+      organizationId: organization.id,
+      userId: user.id,
+      role: membership.role,
+      rolePack: membership.rolePack,
+      moduleKey: OrganizationModule.MARKETING,
+      required: "VIEW",
+    });
+    if (!access.ok) {
       return NextResponse.json({ ok: false, error: "NOT_ORGANIZATION" }, { status: 403 });
     }
 

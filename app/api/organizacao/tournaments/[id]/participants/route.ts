@@ -38,7 +38,7 @@ async function ensureOrganizationAccess(
   const access = await ensureGroupMemberRole({
     organizationId: evt.organizationId,
     userId,
-    allowedRoles: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"],
+    ROLE_ALLOWLIST: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"],
   });
   if (!access.ok) return false;
   if (options?.requireVerifiedEmail) {

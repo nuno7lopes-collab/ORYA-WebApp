@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { SourceType } from "@prisma/client";
-import { normalizeSourceType } from "@/domain/sourceType";
+import { AGENDA_SOURCE_TYPE_ALLOWLIST, normalizeAgendaSourceType, normalizeFinanceSourceType } from "@/domain/sourceType";
 import { randomUUID } from "node:crypto";
 
 type AgendaMaterializeResult =
@@ -58,9 +58,18 @@ export async function consumeAgendaMaterializationEvent(eventId: string): Promis
   if (!ALLOWLIST.has(log.eventType)) return { ok: true, deduped: true };
 
   const payload = (log.payload ?? {}) as Record<string, unknown>;
+  const payloadSourceType = payload.sourceType as string | null;
+  const agendaSource = normalizeAgendaSourceType(payloadSourceType);
+  const financeSource = normalizeFinanceSourceType(payloadSourceType);
+  const logSource =
+    log.sourceType &&
+    (AGENDA_SOURCE_TYPE_ALLOWLIST.has(log.sourceType) || log.sourceType === SourceType.BOOKING)
+      ? log.sourceType
+      : null;
   const sourceType =
-    normalizeSourceType(payload.sourceType as string | null) ??
-    log.sourceType ??
+    agendaSource ??
+    (financeSource === SourceType.BOOKING ? financeSource : null) ??
+    logSource ??
     inferSourceType(log.eventType);
 
   let sourceId =

@@ -54,6 +54,7 @@ export default async function OrganizationEventEditPage({ params }: PageProps) {
 
   const { organization, membership } = await getActiveOrganizationForUser(data.user.id, {
     organizationId: event.organizationId,
+    allowFallback: true,
   });
 
   if (!organization || !membership) {

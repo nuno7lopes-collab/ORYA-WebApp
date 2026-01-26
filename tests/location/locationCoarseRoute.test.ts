@@ -23,9 +23,16 @@ vi.mock("@/lib/supabaseServer", () => ({
   })),
 }));
 
-vi.mock("@/lib/organizationContext", () => ({
-  getActiveOrganizationForUser: vi.fn(async () => ({ organization: { id: 10 }, membership: { role: "ADMIN" } })),
-}));
+vi.mock("@/lib/organizationContext", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/organizationContext")>();
+  return {
+    ...actual,
+    getActiveOrganizationForUser: vi.fn(async () => ({
+      organization: { id: 10 },
+      membership: { role: "ADMIN" },
+    })),
+  };
+});
 
 vi.mock("@/domain/eventLog/append", () => ({
   appendEventLog: vi.fn(async () => ({ id: "evt-2" })),

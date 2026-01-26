@@ -36,7 +36,7 @@ export async function GET(req: NextRequest) {
       where.status = status;
     }
     if (intent) {
-      where.stripePaymentIntentId = { contains: intent, mode: "insensitive" };
+      where.purchaseId = { contains: intent, mode: "insensitive" };
     }
     if (slug) {
       where.event = { slug: { contains: slug, mode: "insensitive" } };
@@ -88,6 +88,7 @@ export async function GET(req: NextRequest) {
           totalPaidCents: true,
           platformFeeCents: true,
           currency: true,
+          purchaseId: true,
           stripePaymentIntentId: true,
           userId: true,
           ownerUserId: true,
@@ -119,7 +120,8 @@ export async function GET(req: NextRequest) {
       status: ticket.status,
       purchasedAt: ticket.purchasedAt,
       currency: ticket.currency,
-      stripePaymentIntentId: ticket.stripePaymentIntentId,
+      purchaseId: ticket.purchaseId,
+      paymentIntentId: ticket.stripePaymentIntentId ?? null,
       platformFeeCents: ticket.platformFeeCents,
       totalPaidCents: ticket.totalPaidCents,
       pricePaidCents: ticket.pricePaid,

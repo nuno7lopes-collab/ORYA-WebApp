@@ -51,7 +51,7 @@ export async function GET(req: NextRequest) {
       );
 
     // Filtrar intents por modo (TEST/LIVE) via payment_events
-    let paymentIntentIds: string[] | null = null;
+    let purchaseIds: string[] | null = null;
     if (modeParam === "LIVE" || modeParam === "TEST") {
       const modeFilter: Prisma.PaymentEventWhereInput = { mode: modeParam as PaymentMode };
       if (Number.isFinite(eventId)) {
@@ -59,10 +59,10 @@ export async function GET(req: NextRequest) {
       }
       const events = await prisma.paymentEvent.findMany({
         where: modeFilter,
-        select: { stripePaymentIntentId: true },
+        select: { purchaseId: true },
       });
-      paymentIntentIds = events.map((e) => e.stripePaymentIntentId).filter(Boolean) as string[];
-      if (paymentIntentIds.length === 0) {
+      purchaseIds = events.map((e) => e.purchaseId).filter(Boolean) as string[];
+      if (purchaseIds.length === 0) {
         return NextResponse.json(
           { ok: true, totals: emptyAgg, byOrganization: [], period: { from: fromDate, to: toDate } },
           { status: 200 },
@@ -77,8 +77,8 @@ export async function GET(req: NextRequest) {
     if (Number.isFinite(eventId)) {
       where.eventId = Number(eventId);
     }
-    if (paymentIntentIds) {
-      where.paymentIntentId = { in: paymentIntentIds };
+    if (purchaseIds) {
+      where.purchaseId = { in: purchaseIds };
     }
     if (fromDate || toDate) {
       where.createdAt = {};

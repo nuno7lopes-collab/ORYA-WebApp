@@ -91,6 +91,7 @@ export default async function LojaPage({ searchParams }: PageProps) {
   }
 
   const { organization } = await getActiveOrganizationForUser(user.id, {
+    allowFallback: true,
     allowedStatuses: [OrganizationStatus.ACTIVE, OrganizationStatus.SUSPENDED],
   });
 

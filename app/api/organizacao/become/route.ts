@@ -3,7 +3,7 @@
 // app/api/organizacao/become/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getActiveOrganizationForUser } from "@/lib/organizationContext";
+import { getActiveOrganizationForUser, ORG_ACTIVE_ACCESS_OPTIONS } from "@/lib/organizationContext";
 import { normalizeAndValidateUsername, setUsernameForOwner, UsernameTakenError } from "@/lib/globalUsernames";
 import { AuthRequiredError, requireUser } from "@/lib/auth/requireUser";
 import {
@@ -47,8 +47,8 @@ export async function GET() {
   }
   const profileSafe = profile;
 
-    const { organization: activeOrganization } = await getActiveOrganizationForUser(profileSafe.id);
-    const fallbackOrganization = activeOrganization ?? null;
+    const { organization: currentOrganization } = await getActiveOrganizationForUser(profileSafe.id, ORG_ACTIVE_ACCESS_OPTIONS);
+    const fallbackOrganization = currentOrganization ?? null;
     const organizationModules = fallbackOrganization
       ? await prisma.organizationModuleEntry.findMany({
           where: { organizationId: fallbackOrganization.id, enabled: true },
@@ -179,10 +179,10 @@ export async function POST(req: NextRequest) {
     }
 
     // Procurar organization existente para este user
-    const { organization: activeOrganization, membership } = await getActiveOrganizationForUser(profile.id);
+    const { organization: currentOrganization, membership } = await getActiveOrganizationForUser(profile.id, ORG_ACTIVE_ACCESS_OPTIONS);
 
     // Se já existe organização ativo e o caller não é OWNER dessa organização, bloquear promoção
-    if (activeOrganization) {
+    if (currentOrganization) {
       const isOwner = membership?.role === "OWNER";
       if (!isOwner) {
         return NextResponse.json(
@@ -192,7 +192,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    let organization = activeOrganization ?? null;
+    let organization = currentOrganization ?? null;
 
     const publicNameValue =
       businessName ||
