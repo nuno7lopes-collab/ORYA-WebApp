@@ -12,6 +12,7 @@ import {
   Prisma,
   StoreOrderStatus,
 } from "@prisma/client";
+import { FINANCE_OUTBOX_EVENTS } from "@/domain/finance/events";
 import { paymentEventRepo, saleLineRepo, saleSummaryRepo } from "@/domain/finance/readModelConsumer";
 import { enqueueOperation } from "@/lib/operations/enqueue";
 import {
@@ -38,9 +39,14 @@ export async function handleFinanceOutboxEvent(params: {
   if (eventType === "payment.free_checkout.requested") {
     return handleFreeCheckoutOutbox(payload);
   }
-  if (eventType === "payment.status.changed") {
-    // Intencional: reservado para reconciliação futura.
-    return { ok: true, noop: true };
+  if (eventType === FINANCE_OUTBOX_EVENTS.PAYMENT_CREATED) {
+    return handlePaymentCreatedOutbox(payload);
+  }
+  if (eventType === FINANCE_OUTBOX_EVENTS.PAYMENT_STATUS_CHANGED) {
+    return handlePaymentStatusChangedOutbox(payload);
+  }
+  if (eventType === FINANCE_OUTBOX_EVENTS.PAYMENT_FEES_RECONCILED) {
+    return handlePaymentFeesReconciledOutbox(payload);
   }
   return { ok: true, skipped: true };
 }
@@ -107,6 +113,228 @@ function parseLines(value: unknown) {
       return { ticketTypeId, quantity: Math.max(1, quantity), unitPriceCents: Math.max(0, unitPriceCents) };
     })
     .filter(Boolean) as Array<{ ticketTypeId: number; quantity: number; unitPriceCents: number }>;
+}
+
+type PaymentCreatedPayload = {
+  eventLogId?: string;
+  paymentId?: string;
+  eventId?: number;
+  status?: string;
+  amountCents?: number;
+  platformFeeCents?: number;
+  grossCents?: number;
+  netToOrgCents?: number;
+  currency?: string;
+  organizationId?: number;
+  sourceType?: string;
+  sourceId?: string;
+};
+
+async function handlePaymentCreatedOutbox(payload: Record<string, unknown>) {
+  const data = payload as PaymentCreatedPayload;
+  const eventLogId = readString(data.eventLogId);
+  const paymentId = readString(data.paymentId);
+  if (!eventLogId) throw new Error("EVENT_LOG_ID_REQUIRED");
+  if (!paymentId) throw new Error("PAYMENT_ID_REQUIRED");
+  const status = readString(data.status) ?? "CREATED";
+  const amountCents = readNumber(data.amountCents);
+  const platformFeeCents = readNumber(data.platformFeeCents);
+  const grossCents = readNumber(data.grossCents);
+  const netToOrgCents = readNumber(data.netToOrgCents);
+  const currency = readString(data.currency);
+  const eventId = readNumber(data.eventId);
+  const organizationId = readNumber(data.organizationId);
+  const sourceType = readString(data.sourceType);
+  const sourceId = readString(data.sourceId);
+
+  await paymentEventRepo(prisma).upsert({
+    where: { purchaseId: paymentId },
+    update: {
+      status,
+      amountCents,
+      platformFeeCents,
+      ...(eventId ? { eventId } : {}),
+      updatedAt: new Date(),
+      source: PaymentEventSource.API,
+    },
+    create: {
+      purchaseId: paymentId,
+      status,
+      amountCents,
+      platformFeeCents,
+      eventId,
+      source: PaymentEventSource.API,
+    },
+  });
+
+  await upsertPaymentSnapshot({
+    eventLogId,
+    paymentId,
+    organizationId,
+    sourceType,
+    sourceId,
+    status,
+    currency,
+    grossCents,
+    platformFeeCents,
+    netToOrgCents,
+  });
+
+  return { ok: true };
+}
+
+type PaymentStatusChangedPayload = {
+  eventLogId?: string;
+  paymentId?: string;
+  status?: string;
+};
+
+async function handlePaymentStatusChangedOutbox(payload: Record<string, unknown>) {
+  const data = payload as PaymentStatusChangedPayload;
+  const eventLogId = readString(data.eventLogId);
+  const paymentId = readString(data.paymentId);
+  if (!eventLogId) throw new Error("EVENT_LOG_ID_REQUIRED");
+  if (!paymentId) throw new Error("PAYMENT_ID_REQUIRED");
+  const status = readString(data.status) ?? "UNKNOWN";
+
+  await paymentEventRepo(prisma).upsert({
+    where: { purchaseId: paymentId },
+    update: {
+      status,
+      updatedAt: new Date(),
+      source: PaymentEventSource.API,
+    },
+    create: {
+      purchaseId: paymentId,
+      status,
+      source: PaymentEventSource.API,
+    },
+  });
+
+  await upsertPaymentSnapshot({
+    eventLogId,
+    paymentId,
+    status,
+  });
+
+  return { ok: true };
+}
+
+type PaymentFeesReconciledPayload = {
+  eventLogId?: string;
+  paymentId?: string;
+  processorFeesActual?: number;
+  netToOrgFinal?: number;
+};
+
+async function handlePaymentFeesReconciledOutbox(payload: Record<string, unknown>) {
+  const data = payload as PaymentFeesReconciledPayload;
+  const eventLogId = readString(data.eventLogId);
+  const paymentId = readString(data.paymentId);
+  if (!eventLogId) throw new Error("EVENT_LOG_ID_REQUIRED");
+  if (!paymentId) throw new Error("PAYMENT_ID_REQUIRED");
+  const stripeFeeCents = readNumber(data.processorFeesActual);
+  const netToOrgCents = readNumber(data.netToOrgFinal);
+
+  await paymentEventRepo(prisma).upsert({
+    where: { purchaseId: paymentId },
+    update: {
+      stripeFeeCents,
+      updatedAt: new Date(),
+      source: PaymentEventSource.API,
+    },
+    create: {
+      purchaseId: paymentId,
+      status: "CREATED",
+      stripeFeeCents,
+      source: PaymentEventSource.API,
+    },
+  });
+
+  await upsertPaymentSnapshot({
+    eventLogId,
+    paymentId,
+    processorFeesCents: stripeFeeCents,
+    netToOrgCents,
+  });
+
+  return { ok: true };
+}
+
+type UpsertPaymentSnapshotInput = {
+  eventLogId: string;
+  paymentId: string;
+  organizationId?: number | null;
+  sourceType?: string | null;
+  sourceId?: string | null;
+  status?: string | null;
+  currency?: string | null;
+  grossCents?: number | null;
+  platformFeeCents?: number | null;
+  processorFeesCents?: number | null;
+  netToOrgCents?: number | null;
+};
+
+async function upsertPaymentSnapshot(input: UpsertPaymentSnapshotInput) {
+  const existing = await prisma.paymentSnapshot.findUnique({
+    where: { paymentId: input.paymentId },
+    select: { lastEventId: true },
+  });
+  if (existing?.lastEventId === input.eventLogId) return { ok: true, deduped: true };
+
+  const payment =
+    input.organizationId && input.sourceType && input.sourceId
+      ? null
+      : await prisma.payment.findUnique({
+          where: { id: input.paymentId },
+          select: {
+            organizationId: true,
+            sourceType: true,
+            sourceId: true,
+            status: true,
+            pricingSnapshotJson: true,
+          },
+        });
+
+  const organizationId = input.organizationId ?? payment?.organizationId ?? null;
+  const sourceType = input.sourceType ?? (payment?.sourceType as string | undefined) ?? null;
+  const sourceId = input.sourceId ?? payment?.sourceId ?? null;
+  const status = input.status ?? payment?.status ?? null;
+  const snapshotCurrency =
+    (payment?.pricingSnapshotJson as { currency?: string } | null)?.currency ?? null;
+  const currency = input.currency ?? snapshotCurrency ?? null;
+
+  if (!organizationId || !sourceType || !sourceId || !status || !currency) {
+    throw new Error("PAYMENT_SNAPSHOT_BASE_MISSING");
+  }
+
+  await prisma.paymentSnapshot.upsert({
+    where: { paymentId: input.paymentId },
+    update: {
+      lastEventId: input.eventLogId,
+      status,
+      currency,
+      ...(input.grossCents != null ? { grossCents: input.grossCents } : {}),
+      ...(input.platformFeeCents != null ? { platformFeeCents: input.platformFeeCents } : {}),
+      ...(input.processorFeesCents != null ? { processorFeesCents: input.processorFeesCents } : {}),
+      ...(input.netToOrgCents != null ? { netToOrgCents: input.netToOrgCents } : {}),
+    },
+    create: {
+      paymentId: input.paymentId,
+      organizationId,
+      sourceType: sourceType as any,
+      sourceId,
+      status: status as any,
+      currency,
+      grossCents: input.grossCents ?? null,
+      platformFeeCents: input.platformFeeCents ?? null,
+      processorFeesCents: input.processorFeesCents ?? null,
+      netToOrgCents: input.netToOrgCents ?? null,
+      lastEventId: input.eventLogId,
+    },
+  });
+
+  return { ok: true };
 }
 
 async function handleStripeWebhookOutbox(payload: Record<string, unknown>) {

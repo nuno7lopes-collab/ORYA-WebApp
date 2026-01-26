@@ -5,6 +5,8 @@ import { isStoreFeatureEnabled } from "@/lib/storeAccess";
 import { StoreAddressType } from "@prisma/client";
 import { buildStoreOrderTimeline } from "@/lib/store/orderTimeline";
 import { buildPersonalizationSummary } from "@/lib/store/personalization";
+import { resolvePaymentStatusMap } from "@/domain/finance/resolvePaymentStatus";
+import type { CheckoutStatus } from "@/domain/finance/status";
 
 const lookupSchema = z.object({
   orderNumber: z.string().trim().min(3).max(120),
@@ -35,6 +37,21 @@ function buildStoreLabel(store: {
     supportEmail: store.supportEmail ?? null,
     supportPhone: store.supportPhone ?? null,
   };
+}
+
+function mapCheckoutStatus(status: CheckoutStatus) {
+  switch (status) {
+    case "PAID":
+      return "PAID";
+    case "REFUNDED":
+      return "REFUNDED";
+    case "DISPUTED":
+      return "DISPUTED";
+    case "FAILED":
+      return "FAILED";
+    default:
+      return "PROCESSING";
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -177,6 +194,9 @@ export async function POST(req: NextRequest) {
       orderBy: [{ createdAt: "asc" }],
       select: { status: true, createdAt: true },
     });
+    const statusMap = await resolvePaymentStatusMap(order.purchaseId ? [order.purchaseId] : []);
+    const resolved = order.purchaseId ? statusMap.get(order.purchaseId) : null;
+    const paymentStatus = resolved ? mapCheckoutStatus(resolved.status) : "PROCESSING";
 
     const shipments = order.shipments.map((shipment) => ({
       id: shipment.id,
@@ -195,6 +215,7 @@ export async function POST(req: NextRequest) {
       orderStatus: order.status,
       createdAt: order.createdAt,
       updatedAt: order.updatedAt,
+      paymentStatus,
       paymentEvents,
       shipments: order.shipments.map((shipment) => ({
         id: shipment.id,
@@ -212,6 +233,7 @@ export async function POST(req: NextRequest) {
         id: order.id,
         orderNumber: order.orderNumber,
         status: order.status,
+        paymentStatus,
         subtotalCents: order.subtotalCents,
         discountCents: order.discountCents,
         shippingCents: order.shippingCents,

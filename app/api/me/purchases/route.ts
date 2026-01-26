@@ -1,8 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
+import { resolvePaymentStatusMap } from "@/domain/finance/resolvePaymentStatus";
+import type { CheckoutStatus } from "@/domain/finance/status";
 
 type PurchaseStatus = "PAID" | "PROCESSING" | "REFUNDED" | "DISPUTED" | "FAILED";
+
+function mapCheckoutStatus(status: CheckoutStatus): PurchaseStatus {
+  switch (status) {
+    case "PAID":
+      return "PAID";
+    case "REFUNDED":
+      return "REFUNDED";
+    case "DISPUTED":
+      return "DISPUTED";
+    case "FAILED":
+      return "FAILED";
+    default:
+      return "PROCESSING";
+  }
+}
 
 export async function GET(req: NextRequest) {
   const supabase = await createSupabaseServer();
@@ -60,6 +77,7 @@ export async function GET(req: NextRequest) {
 
   const paymentIntentIds = summaries.map((s) => s.paymentIntentId).filter(Boolean);
   const purchaseIds = summaries.map((s) => s.purchaseId).filter((p): p is string => !!p);
+  const statusMap = await resolvePaymentStatusMap(purchaseIds);
   const paymentEvents =
     paymentIntentIds.length || purchaseIds.length
       ? await prisma.paymentEvent.findMany({
@@ -100,15 +118,8 @@ export async function GET(req: NextRequest) {
         source: e.source,
         errorMessage: e.errorMessage,
       })) ?? [];
-    const status: PurchaseStatus = timeline.some((t) => t.status === "DISPUTED")
-      ? "DISPUTED"
-      : timeline.some((t) => t.status === "REFUNDED")
-        ? "REFUNDED"
-        : timeline.some((t) => t.status === "ERROR" || t.status === "FAILED")
-          ? "FAILED"
-          : timeline.some((t) => t.status === "OK")
-            ? "PAID"
-            : "PROCESSING";
+    const resolved = s.purchaseId ? statusMap.get(s.purchaseId) : null;
+    const status: PurchaseStatus = resolved ? mapCheckoutStatus(resolved.status) : "PROCESSING";
 
     const badge = s.totalCents === 0 ? "FREE" : "SINGLE";
 

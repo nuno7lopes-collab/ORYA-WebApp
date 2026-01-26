@@ -81,6 +81,35 @@ export async function GET(req: NextRequest) {
           { status: 200, headers: NO_STORE_HEADERS },
         );
       }
+
+      const snapshot = await prisma.paymentSnapshot.findUnique({
+        where: { paymentId: resolvedPaymentId },
+        select: { status: true },
+      });
+      if (snapshot) {
+        const status = deriveCheckoutStatusFromPayment({
+          paymentStatus: snapshot.status,
+          ledgerEntries: [],
+        });
+        const final = FINAL_STATUSES.includes(status);
+        const nextAction =
+          status === "REQUIRES_ACTION" ? "PAY_NOW" : status === "FAILED" ? "CONTACT_SUPPORT" : "NONE";
+        const retryable = status === "PENDING" || status === "PROCESSING" || status === "REQUIRES_ACTION";
+        return NextResponse.json(
+          {
+            ok: true,
+            status,
+            final,
+            purchaseId: resolvedPaymentId,
+            paymentIntentId,
+            code: status,
+            retryable,
+            nextAction,
+            errorMessage: null,
+          },
+          { status: 200, headers: NO_STORE_HEADERS },
+        );
+      }
     }
 
     // -------------------------
@@ -164,39 +193,18 @@ export async function GET(req: NextRequest) {
     });
 
     if (paymentEvent) {
-      // Mapeamento conservador: OK != PAID (até existir SaleSummary)
-      const statusMap: Record<string, Status> = {
-        OK: "PROCESSING",
-        PROCESSING: "PROCESSING",
-        REQUIRES_ACTION: "REQUIRES_ACTION",
-        ERROR: "FAILED",
-        FAILED: "FAILED",
-        CANCELED: "FAILED",
-        CANCELLED: "FAILED",
-        REFUNDED: "REFUNDED",
-        DISPUTED: "DISPUTED",
-      };
-
-      const mapped: Status = statusMap[paymentEvent.status] ?? "PROCESSING";
-      const final = FINAL_STATUSES.includes(mapped);
-
-      // Contrato simples para o FE (sem adivinhar)
-      const nextAction =
-        mapped === "REQUIRES_ACTION" ? "PAY_NOW" : mapped === "FAILED" ? "CONTACT_SUPPORT" : "NONE";
-
-      const retryable =
-        mapped === "PENDING" || mapped === "PROCESSING" || mapped === "REQUIRES_ACTION";
-
+      // PaymentEvent é apenas telemetria; não inferimos estado final daqui.
+      const status: Status = "PROCESSING";
       return NextResponse.json(
         {
           ok: true,
-          status: mapped,
-          final,
+          status,
+          final: false,
           purchaseId: paymentEvent.purchaseId ?? purchaseId ?? paymentIntentId,
           paymentIntentId: paymentEvent.stripePaymentIntentId ?? paymentIntentId,
-          code: mapped,
-          retryable,
-          nextAction,
+          code: status,
+          retryable: true,
+          nextAction: "NONE",
           errorMessage: paymentEvent.errorMessage ?? null,
         },
         { status: 200, headers: NO_STORE_HEADERS },

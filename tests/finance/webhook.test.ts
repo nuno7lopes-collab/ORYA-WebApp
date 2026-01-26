@@ -38,10 +38,14 @@ vi.mock("@/lib/prisma", () => {
   const ticket = {
     updateMany: vi.fn(() => ({ count: 0 })),
   };
+  const eventLog = {
+    create: vi.fn(({ data }: any) => data),
+  };
   const prisma = {
     payment,
     entitlement,
     ticket,
+    eventLog,
     $transaction: async (fn: any) => fn(prisma),
   };
   return { prisma };
@@ -51,7 +55,13 @@ const prismaMock = vi.mocked(prisma);
 
 describe("handleStripeWebhook", () => {
   beforeEach(() => {
-    paymentState = { id: "pay_1", status: PaymentStatus.CREATED };
+    paymentState = {
+      id: "pay_1",
+      status: PaymentStatus.CREATED,
+      organizationId: 10,
+      sourceType: "BOOKING",
+      sourceId: "booking_1",
+    };
     prismaMock.payment.findUnique.mockReturnValue(paymentState as any);
     prismaMock.entitlement.updateMany.mockClear();
     prismaMock.ticket.updateMany.mockClear();

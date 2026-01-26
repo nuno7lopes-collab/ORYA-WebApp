@@ -3,10 +3,11 @@ import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
-import { isOrgAdminOrAbove } from "@/lib/organizationPermissions";
+import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { getStripeBaseFees } from "@/lib/platformSettings";
 import { ACTIVE_PAIRING_REGISTRATION_WHERE } from "@/domain/padelRegistration";
-import { PendingPayoutStatus, SaleSummaryStatus } from "@prisma/client";
+import { resolvePaymentStatusMap } from "@/domain/finance/resolvePaymentStatus";
+import { OrganizationModule, PendingPayoutStatus, SaleSummaryStatus } from "@prisma/client";
 
 type Aggregate = {
   grossCents: number;
@@ -49,7 +50,19 @@ export async function GET(req: NextRequest) {
       organizationId: organizationId ?? undefined,
     });
 
-    if (!organization || !membership || !isOrgAdminOrAbove(membership.role)) {
+    if (!organization || !membership) {
+      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    }
+
+    const access = await ensureMemberModuleAccess({
+      organizationId: organization.id,
+      userId: user.id,
+      role: membership.role,
+      rolePack: membership.rolePack,
+      moduleKey: OrganizationModule.FINANCEIRO,
+      required: "VIEW",
+    });
+    if (!access.ok) {
       return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
@@ -107,6 +120,7 @@ export async function GET(req: NextRequest) {
       select: {
         id: true,
         eventId: true,
+        purchaseId: true,
         createdAt: true,
         subtotalCents: true,
         discountCents: true,
@@ -138,6 +152,41 @@ export async function GET(req: NextRequest) {
       target.netCents += net;
       target.tickets += qty;
     };
+
+    const purchaseIds = summaries.map((s) => s.purchaseId).filter((p): p is string => Boolean(p));
+    if (summaries.length && purchaseIds.length !== summaries.length) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "FINANCE_STATUS_INCOMPLETE",
+          totals: { grossCents: 0, netCents: 0, feesCents: 0, tickets: 0, eventsWithSales: 0 },
+          rolling: { last7: agg7, last30: agg30 },
+          upcomingPayoutCents: 0,
+          payoutAlerts: { holdUntil: null, nextAttemptAt: null, actionRequired: false },
+          events: [],
+        },
+        { status: 503 }
+      );
+    }
+
+    const statusMap = await resolvePaymentStatusMap(purchaseIds);
+    for (const summary of summaries) {
+      const resolved = summary.purchaseId ? statusMap.get(summary.purchaseId) : null;
+      if (!resolved || resolved.status !== "PAID") {
+        return NextResponse.json(
+          {
+            ok: false,
+            error: "FINANCE_STATUS_INCOMPLETE",
+            totals: { grossCents: 0, netCents: 0, feesCents: 0, tickets: 0, eventsWithSales: 0 },
+            rolling: { last7: agg7, last30: agg30 },
+            upcomingPayoutCents: 0,
+            payoutAlerts: { holdUntil: null, nextAttemptAt: null, actionRequired: false },
+            events: [],
+          },
+          { status: 503 }
+        );
+      }
+    }
 
     for (const s of summaries) {
       const qty = s.lines.reduce((q, l) => q + (l.quantity ?? 0), 0);

@@ -25,25 +25,27 @@ export const ORG_ACTIVE_ALLOWED_STATUSES = [
 
 export const ORG_ACTIVE_ACCESS_OPTIONS = {
   allowedStatuses: ORG_ACTIVE_ALLOWED_STATUSES,
+  allowFallback: true,
 } as const;
 
 export const getActiveOrganizationForUser = cache(
   async (userId: string, opts: Options = {}) => {
   const { roles } = opts;
-  const allowFallback = typeof opts.allowFallback === "boolean" ? opts.allowFallback : !opts.organizationId;
+  const allowFallback = typeof opts.allowFallback === "boolean" ? opts.allowFallback : false;
   const allowedStatuses = opts.allowedStatuses ?? [OrganizationStatus.ACTIVE];
   const directOrganizationId =
     typeof opts.organizationId === "number" && Number.isFinite(opts.organizationId)
       ? opts.organizationId
       : null;
-  const profileActive = directOrganizationId
-    ? null
-    : await prisma.profile.findUnique({
-        where: { id: userId },
-        select: { activeOrganizationId: true },
-      });
+  const profileActive =
+    directOrganizationId || !allowFallback
+      ? null
+      : await prisma.profile.findUnique({
+          where: { id: userId },
+          select: { activeOrganizationId: true },
+        });
   const cookieOrganizationId =
-    directOrganizationId || profileActive?.activeOrganizationId
+    directOrganizationId || !allowFallback || profileActive?.activeOrganizationId
       ? null
       : await resolveOrganizationIdFromCookies();
   const organizationId = directOrganizationId ?? profileActive?.activeOrganizationId ?? cookieOrganizationId;
@@ -129,6 +131,14 @@ export const getActiveOrganizationForUser = cache(
   return { organization: null, membership: null };
   },
 );
+
+export async function getActiveOrganizationIdForUser(userId: string) {
+  const profile = await prisma.profile.findUnique({
+    where: { id: userId },
+    select: { activeOrganizationId: true },
+  });
+  return profile?.activeOrganizationId ?? null;
+}
 
 export async function setActiveOrganizationForUser(params: {
   userId: string;

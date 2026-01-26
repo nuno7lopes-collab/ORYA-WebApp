@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { resolvePaymentStatusMap } from "@/domain/finance/resolvePaymentStatus";
 
 const INTERNAL_HEADER = "X-ORYA-CRON-SECRET";
 
@@ -73,11 +74,33 @@ export async function GET(req: NextRequest) {
       })
     : [];
 
+  const resolvedPurchaseId = summary?.purchaseId ?? purchaseId ?? null;
+  const statusMap = resolvedPurchaseId
+    ? await resolvePaymentStatusMap([resolvedPurchaseId])
+    : new Map();
+  const resolved = resolvedPurchaseId ? statusMap.get(resolvedPurchaseId) : null;
+  const payment = resolvedPurchaseId
+    ? await prisma.payment.findUnique({
+        where: { id: resolvedPurchaseId },
+        select: { id: true, status: true, sourceType: true, sourceId: true, createdAt: true },
+      })
+    : null;
+  const snapshot = resolvedPurchaseId
+    ? await prisma.paymentSnapshot.findUnique({
+        where: { paymentId: resolvedPurchaseId },
+        select: { paymentId: true, status: true, grossCents: true, netToOrgCents: true, updatedAt: true },
+      })
+    : null;
+
   return NextResponse.json(
     {
       ok: true,
-      purchaseId: summary?.purchaseId ?? purchaseId ?? null,
+      purchaseId: resolvedPurchaseId,
       paymentIntentId: summary?.paymentIntentId ?? paymentIntentId ?? null,
+      resolvedStatus: resolved?.status ?? "PROCESSING",
+      resolvedStatusSource: resolved?.source ?? "NONE",
+      payment,
+      paymentSnapshot: snapshot,
       saleSummary: summary,
       paymentEvents,
       tickets,

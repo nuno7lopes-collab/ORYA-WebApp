@@ -6,6 +6,8 @@ import { isStoreFeatureEnabled } from "@/lib/storeAccess";
 import { StoreAddressType } from "@prisma/client";
 import { buildStoreOrderTimeline } from "@/lib/store/orderTimeline";
 import { buildPersonalizationSummary } from "@/lib/store/personalization";
+import { resolvePaymentStatusMap } from "@/domain/finance/resolvePaymentStatus";
+import type { CheckoutStatus } from "@/domain/finance/status";
 
 function resolveOrderId(params: { orderId: string }) {
   const orderId = Number(params.orderId);
@@ -39,6 +41,21 @@ function buildStoreLabel(store: {
     supportEmail: store.supportEmail ?? null,
     supportPhone: store.supportPhone ?? null,
   };
+}
+
+function mapCheckoutStatus(status: CheckoutStatus) {
+  switch (status) {
+    case "PAID":
+      return "PAID";
+    case "REFUNDED":
+      return "REFUNDED";
+    case "DISPUTED":
+      return "DISPUTED";
+    case "FAILED":
+      return "FAILED";
+    default:
+      return "PROCESSING";
+  }
 }
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ orderId: string }> }) {
@@ -193,6 +210,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ ord
     });
 
     const paidEvent = paymentEvents.find((event) => event.status === "OK");
+    const statusMap = await resolvePaymentStatusMap(order.purchaseId ? [order.purchaseId] : []);
+    const resolved = order.purchaseId ? statusMap.get(order.purchaseId) : null;
+    const paymentStatus = resolved ? mapCheckoutStatus(resolved.status) : "PROCESSING";
 
     const shippingAddress = order.addresses.find((address) => address.addressType === StoreAddressType.SHIPPING);
     const billingAddress = order.addresses.find((address) => address.addressType === StoreAddressType.BILLING);
@@ -213,6 +233,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ ord
       orderStatus: order.status,
       createdAt: order.createdAt,
       updatedAt: order.updatedAt,
+      paymentStatus,
       paymentEvents,
       shipments: order.shipments.map((shipment) => ({
         id: shipment.id,
@@ -242,6 +263,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ ord
         createdAt: order.createdAt.toISOString(),
         updatedAt: order.updatedAt.toISOString(),
         paidAt: paidEvent?.createdAt.toISOString() ?? null,
+        paymentStatus,
         store: buildStoreLabel(order.store),
         shipping: {
           zoneName: order.shippingZone?.name ?? null,

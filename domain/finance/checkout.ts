@@ -5,6 +5,9 @@ import { getPlatformFees } from "@/lib/platformSettings";
 import { getLatestPolicyForEvent } from "@/lib/checkin/accessPolicy";
 import { consumeInviteToken } from "@/lib/invites/inviteTokens";
 import { evaluateEventAccess } from "@/domain/access/evaluateAccess";
+import { appendEventLog } from "@/domain/eventLog/append";
+import { recordOutboxEvent } from "@/domain/outbox/producer";
+import { FINANCE_OUTBOX_EVENTS } from "@/domain/finance/events";
 import { FeeMode, LedgerEntryType, PaymentStatus, ProcessorFeesStatus, SourceType } from "@prisma/client";
 
 export type CreateCheckoutInput = {
@@ -543,6 +546,48 @@ export async function createCheckout(input: CreateCheckoutInput): Promise<Create
     await tx.ledgerEntry.createMany({
       data: [grossEntry, platformFeeEntry],
     });
+
+    const eventLogId = crypto.randomUUID();
+    const payload = {
+      eventLogId,
+      paymentId,
+      organizationId: resolved.organizationId,
+      eventId: resolved.eventId ?? null,
+      sourceType: pricingSnapshot.sourceType,
+      sourceId: pricingSnapshot.sourceId,
+      status: PaymentStatus.CREATED,
+      grossCents: pricingSnapshot.gross,
+      amountCents: pricingSnapshot.total,
+      platformFeeCents: pricingSnapshot.platformFee,
+      netToOrgCents: pricingSnapshot.netToOrgPending,
+      currency: pricingSnapshot.currency,
+      pricingSnapshotHash,
+    };
+    const log = await appendEventLog(
+      {
+        eventId: eventLogId,
+        organizationId: resolved.organizationId,
+        eventType: FINANCE_OUTBOX_EVENTS.PAYMENT_CREATED,
+        idempotencyKey: input.idempotencyKey,
+        sourceType: pricingSnapshot.sourceType,
+        sourceId: pricingSnapshot.sourceId,
+        correlationId: paymentId,
+        payload,
+      },
+      tx,
+    );
+    if (log) {
+      await recordOutboxEvent(
+        {
+          eventId: eventLogId,
+          eventType: FINANCE_OUTBOX_EVENTS.PAYMENT_CREATED,
+          payload,
+          causationId: input.idempotencyKey,
+          correlationId: paymentId,
+        },
+        tx,
+      );
+    }
   });
 
   return {

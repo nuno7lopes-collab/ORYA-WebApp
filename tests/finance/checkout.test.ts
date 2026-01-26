@@ -94,6 +94,12 @@ vi.mock("@/lib/prisma", () => {
       return { count: data.length };
     }),
   };
+  const eventLog = {
+    create: vi.fn(({ data }: any) => data),
+  };
+  const outboxEvent = {
+    create: vi.fn(({ data }: any) => data),
+  };
   const prisma = {
     ticketOrder,
     padelRegistration,
@@ -102,6 +108,8 @@ vi.mock("@/lib/prisma", () => {
     emailIdentity,
     payment,
     ledgerEntry,
+    eventLog,
+    outboxEvent,
     $transaction: async (fn: any) => fn(prisma),
   };
   return { prisma };

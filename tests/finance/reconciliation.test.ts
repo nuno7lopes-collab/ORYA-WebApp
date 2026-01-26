@@ -64,9 +64,17 @@ vi.mock("@/lib/prisma", () => {
       return paymentState;
     }),
   };
+  const eventLog = {
+    create: vi.fn(({ data }: any) => data),
+  };
+  const outboxEvent = {
+    create: vi.fn(({ data }: any) => data),
+  };
   const prisma = {
     ledgerEntry,
     payment,
+    eventLog,
+    outboxEvent,
     $transaction: async (fn: any) => fn(prisma),
   };
   return { prisma };
@@ -79,6 +87,7 @@ describe("reconcilePaymentFees", () => {
     const sourceId = "1";
     paymentState = {
       id: "pay_1",
+      organizationId: 10,
       sourceType: SourceType.BOOKING,
       sourceId,
       pricingSnapshotJson: { currency: "EUR" },
