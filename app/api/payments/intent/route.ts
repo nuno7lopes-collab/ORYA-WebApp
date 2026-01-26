@@ -44,7 +44,7 @@ import { formatPaidSalesGateMessage, getPaidSalesGate } from "@/lib/organization
 
 const FREE_PLACEHOLDER_INTENT_ID = "FREE_CHECKOUT";
 const ORYA_CARD_FEE_BPS = 100;
-const LEGACY_INTENT_DISABLED = true;
+const LEGACY_INTENT_DISABLED = process.env.LEGACY_INTENT_DISABLED !== "false";
 
 type CheckoutItem = {
   ticketId: string | number;
