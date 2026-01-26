@@ -3,6 +3,7 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { ensureGroupMemberRole } from "@/lib/organizationGroupAccess";
+import { updateTournament } from "@/domain/tournaments/commands";
 
 type ParticipantInput = {
   id?: number;
@@ -164,10 +165,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     ...(bracketSize ? { bracketSize } : {}),
   };
 
-  await prisma.tournament.update({
-    where: { id: tournament.id },
+  const result = await updateTournament({
+    tournamentId: tournament.id,
     data: { config: nextConfig },
+    actorUserId: authData.user.id,
   });
+  if (!result.ok) {
+    if (result.error === "EVENT_NOT_PADEL") {
+      return NextResponse.json({ ok: false, error: "EVENT_NOT_PADEL" }, { status: 400 });
+    }
+    return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
+  }
 
   const res = NextResponse.json(
     {
