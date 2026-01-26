@@ -126,6 +126,12 @@ const jobs = [
     intervalMs: getInterval("CRON_CRM_REBUILD_INTERVAL_MS", 86400000),
   },
   {
+    name: "analytics-rollup",
+    method: "POST",
+    path: "/api/internal/analytics/rollup",
+    intervalMs: getInterval("CRON_ANALYTICS_INTERVAL_MS", 86400000),
+  },
+  {
     name: "crm-campanhas",
     method: "POST",
     path: "/api/cron/crm/campanhas",
