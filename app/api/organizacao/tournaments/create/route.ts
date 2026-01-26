@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
   const eventId = Number(body?.eventId);
   if (!Number.isFinite(eventId)) {
-    return NextResponse.json({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "EVENT_ID_REQUIRED" }, { status: 400 });
   }
 
   const supabase = await createSupabaseServer();
@@ -82,8 +82,8 @@ export async function POST(req: NextRequest) {
     actorUserId: authData.user.id,
   });
   if (!result.ok) {
-    if (result.error === "INVALID_EVENT_ID") {
-      return NextResponse.json({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
+    if (result.error === "EVENT_ID_REQUIRED") {
+      return NextResponse.json({ ok: false, error: "EVENT_ID_REQUIRED" }, { status: 400 });
     }
     if (result.error === "EVENT_NOT_PADEL") {
       return NextResponse.json({ ok: false, error: "EVENT_NOT_PADEL" }, { status: 400 });
