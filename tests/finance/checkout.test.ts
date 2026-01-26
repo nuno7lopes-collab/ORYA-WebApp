@@ -174,6 +174,8 @@ describe("createCheckout", () => {
       feeFixedCents: 30,
     });
     vi.spyOn(crypto, "randomUUID").mockReturnValue("payment-1");
+    prismaMock.payment.create.mockClear();
+    prismaMock.ledgerEntry.createMany.mockClear();
   });
 
   it("cria snapshot e ledger entries para TICKET_ORDER", async () => {
@@ -197,6 +199,28 @@ describe("createCheckout", () => {
     const platformFee = createdLedgerEntries.find((e) => e.entryType === "PLATFORM_FEE");
     expect(gross.amount).toBe(1000);
     expect(platformFee.amount).toBe(-200);
+  });
+
+  it("idempotency key evita duplicar ledger entries", async () => {
+    prismaMock.payment.findUnique.mockReset();
+    prismaMock.payment.findUnique
+      .mockReturnValueOnce(null as any)
+      .mockReturnValueOnce({ id: "payment-1", status: "CREATED", pricingSnapshotHash: "hash" } as any);
+
+    await createCheckout({
+      sourceType: SourceType.TICKET_ORDER,
+      sourceId: ORDER_ID,
+      idempotencyKey: "idem-1",
+    });
+
+    await createCheckout({
+      sourceType: SourceType.TICKET_ORDER,
+      sourceId: ORDER_ID,
+      idempotencyKey: "idem-1",
+    });
+
+    expect(prismaMock.payment.create).toHaveBeenCalledTimes(1);
+    expect(prismaMock.ledgerEntry.createMany).toHaveBeenCalledTimes(1);
   });
 
   it("cria snapshot para PADEL_REGISTRATION", async () => {

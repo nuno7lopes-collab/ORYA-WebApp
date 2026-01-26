@@ -16,8 +16,10 @@ vi.mock("@/lib/prisma", () => {
     }),
   };
   const paymentEvent = {
+    findFirst: vi.fn().mockResolvedValue(null),
     findUnique: vi.fn().mockResolvedValue(null),
     update: vi.fn().mockResolvedValue(null),
+    updateMany: vi.fn().mockResolvedValue({ count: 0 }),
     create: vi.fn().mockResolvedValue(null),
   };
   return { prisma: { pendingPayout, paymentEvent } };

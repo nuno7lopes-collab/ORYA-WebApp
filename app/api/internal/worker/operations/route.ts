@@ -38,6 +38,8 @@ import { getAppBaseUrl } from "@/lib/appBaseUrl";
 import { getLatestPolicyVersionForEvent } from "@/lib/checkin/accessPolicy";
 import { maybeReconcileStripeFees } from "@/domain/finance/reconciliationTrigger";
 import { handleStripeWebhook } from "@/domain/finance/webhook";
+import { paymentEventRepo, saleLineRepo, saleSummaryRepo } from "@/domain/finance/readModelConsumer";
+import { handleFinanceOutboxEvent } from "@/domain/finance/outbox";
 import { sweepPendingProcessorFees } from "@/domain/finance/reconciliationSweep";
 import { publishOutboxBatch } from "@/domain/outbox/publisher";
 import { consumeOpsFeedBatch } from "@/domain/opsFeed/consumer";
@@ -386,6 +388,12 @@ async function processOperation(op: OperationRecord) {
         attempts: op.attempts,
       });
       if (!eventType) throw new Error("OUTBOX_EVENT_MISSING_TYPE");
+      if (eventType.startsWith("payment.")) {
+        return handleFinanceOutboxEvent({
+          eventType,
+          payload: eventPayload as any,
+        });
+      }
       if (eventType.startsWith("PADREG_")) {
         return handlePadelRegistrationOutboxEvent({
           eventType,
@@ -509,7 +517,7 @@ async function processStripeEvent(op: OperationRecord) {
       if (!handled) {
         throw new Error("PAYMENT_INTENT_NOT_HANDLED");
       }
-      await prisma.paymentEvent.updateMany({
+      await paymentEventRepo(prisma).updateMany({
         where: { stripePaymentIntentId: piId },
         data: {
           status: "OK",
@@ -519,7 +527,7 @@ async function processStripeEvent(op: OperationRecord) {
       });
       return;
     } catch (err) {
-      await prisma.paymentEvent.updateMany({
+      await paymentEventRepo(prisma).updateMany({
         where: { stripePaymentIntentId: piId },
         data: {
           status: "ERROR",
@@ -568,7 +576,7 @@ async function processFulfillPayment(op: OperationRecord) {
     if (!handled) {
       throw new Error("PAYMENT_INTENT_NOT_HANDLED");
     }
-    await prisma.paymentEvent.updateMany({
+    await paymentEventRepo(prisma).updateMany({
       where: { stripePaymentIntentId: piId },
       data: {
         status: "OK",
@@ -577,7 +585,7 @@ async function processFulfillPayment(op: OperationRecord) {
       },
     });
   } catch (err) {
-    await prisma.paymentEvent.updateMany({
+    await paymentEventRepo(prisma).updateMany({
       where: { stripePaymentIntentId: piId },
       data: {
         status: "ERROR",
@@ -647,7 +655,7 @@ async function processUpsertLedger(op: OperationRecord) {
   );
 
   await prisma.$transaction(async (tx) => {
-    const saleSummary = await tx.saleSummary.upsert({
+    const saleSummary = await saleSummaryRepo(tx).upsert({
       where: { paymentIntentId: purchaseId },
       update: {
         eventId: event.id,
@@ -707,7 +715,7 @@ async function processUpsertLedger(op: OperationRecord) {
       ticketsByType.set(ticket.ticketTypeId, typeMap);
     }
 
-    await tx.saleLine.deleteMany({ where: { saleSummaryId: saleSummary.id } });
+    await saleLineRepo(tx).deleteMany({ where: { saleSummaryId: saleSummary.id } });
 
     let remainingDiscount = discountCents;
     let remainingPlatformFee = platformFeeCents;
@@ -734,7 +742,7 @@ async function processUpsertLedger(op: OperationRecord) {
       const discountPerUnitCents = qty > 0 ? Math.floor(discountForLine / qty) : 0;
       const netCents = Math.max(0, lineSubtotal - discountForLine);
 
-      const saleLine = await tx.saleLine.create({
+      const saleLine = await saleLineRepo(tx).create({
         data: {
           saleSummaryId: saleSummary.id,
           eventId: event.id,
@@ -867,7 +875,7 @@ async function processUpsertLedger(op: OperationRecord) {
   });
 
   // Marcar PaymentEvent como OK (free flow)
-  await prisma.paymentEvent.updateMany({
+  await paymentEventRepo(prisma).updateMany({
     where: { stripePaymentIntentId: purchaseId },
     data: {
       status: "OK",
@@ -922,7 +930,7 @@ async function processRefundSingle(op: OperationRecord) {
     throw new Error("Refund not created (saleSummary missing or Stripe failure)");
   }
 
-  await prisma.paymentEvent.updateMany({
+  await paymentEventRepo(prisma).updateMany({
     where: {
       OR: [
         purchaseId ? { purchaseId } : undefined,

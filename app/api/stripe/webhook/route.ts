@@ -38,8 +38,11 @@ import { computeCombinedFees } from "@/lib/fees";
 import { getStripeBaseFees } from "@/lib/platformSettings";
 import { normalizePaymentScenario } from "@/lib/paymentScenario";
 import { checkoutMetadataSchema, normalizeItemsForMetadata, parseCheckoutItems } from "@/lib/checkoutSchemas";
+import { paymentEventRepo, saleLineRepo, saleSummaryRepo } from "@/domain/finance/readModelConsumer";
 import { computeGraceUntil } from "@/domain/padelDeadlines";
-import { enqueueOperation } from "@/lib/operations/enqueue";
+import { appendEventLog } from "@/domain/eventLog/append";
+import { recordOutboxEvent } from "@/domain/outbox/producer";
+import { consumeStripeWebhookEvent } from "@/domain/finance/outbox";
 import { ensureEntriesForConfirmedPairing } from "@/domain/tournaments/ensureEntriesForConfirmedPairing";
 import { resolveOwner } from "@/lib/ownership/resolveOwner";
 import { mapRegistrationToPairingLifecycle, upsertPadelRegistrationForPairing } from "@/domain/padelRegistration";
@@ -49,17 +52,135 @@ import {
   queueDeadlineExpired,
   queueOffsessionActionRequired,
 } from "@/domain/notifications/splitPayments";
-import {
-  blockPendingPayout,
-  cancelPendingPayout,
-  createPendingPayout,
-  parsePendingPayoutMetadata,
-  unblockPendingPayout,
-} from "@/lib/payments/pendingPayout";
 
 const webhookSecret = env.stripeWebhookSecret;
 const FREE_PLACEHOLDER_INTENT_ID = "FREE_CHECKOUT";
 const LEGACY_FULFILLMENT_DISABLED = true;
+const STRIPE_OUTBOX_TYPE = "payment.webhook.received";
+
+type StripeMetadata = Record<string, string | undefined>;
+
+function extractStripeMetadata(event: Stripe.Event): StripeMetadata {
+  const obj = event?.data?.object as Record<string, unknown> | undefined;
+  const metadata = obj?.metadata;
+  if (!metadata || typeof metadata !== "object") return {};
+  return metadata as StripeMetadata;
+}
+
+function parseNumber(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim() !== "" && Number.isFinite(Number(value))) return Number(value);
+  return null;
+}
+
+function resolvePaymentIntentId(event: Stripe.Event): string | null {
+  const obj = event?.data?.object as any;
+  if (!obj || typeof obj !== "object") return null;
+  if (typeof obj.id === "string" && event.type.startsWith("payment_intent.")) return obj.id;
+  if (typeof obj.payment_intent === "string") return obj.payment_intent;
+  if (typeof obj.payment_intent === "object" && typeof obj.payment_intent?.id === "string") return obj.payment_intent.id;
+  return null;
+}
+
+async function resolveOrganizationIdFromStripeEvent(
+  event: Stripe.Event,
+  tx = prisma,
+): Promise<number | null> {
+  const metadata = extractStripeMetadata(event);
+  const orgId = parseNumber(metadata.organizationId);
+  if (orgId) return orgId;
+
+  const paymentId = typeof metadata.paymentId === "string" && metadata.paymentId.trim() !== "" ? metadata.paymentId.trim() : null;
+  if (paymentId) {
+    const payment = await tx.payment.findUnique({ where: { id: paymentId }, select: { organizationId: true } });
+    if (payment?.organizationId) return payment.organizationId;
+  }
+
+  const eventId = parseNumber(metadata.eventId);
+  if (eventId) {
+    const eventRow = await tx.event.findUnique({ where: { id: eventId }, select: { organizationId: true } });
+    if (eventRow?.organizationId) return eventRow.organizationId;
+  }
+
+  const bookingId = parseNumber(metadata.bookingId);
+  if (bookingId) {
+    const booking = await tx.booking.findUnique({ where: { id: bookingId }, select: { organizationId: true } });
+    if (booking?.organizationId) return booking.organizationId;
+  }
+
+  const storeOrderId = parseNumber(metadata.storeOrderId);
+  if (storeOrderId) {
+    const order = await tx.storeOrder.findUnique({
+      where: { id: storeOrderId },
+      select: { store: { select: { ownerOrganizationId: true } } },
+    });
+    if (order?.store?.ownerOrganizationId) return order.store.ownerOrganizationId;
+  }
+
+  const storeId = parseNumber(metadata.storeId);
+  if (storeId) {
+    const store = await tx.store.findUnique({ where: { id: storeId }, select: { ownerOrganizationId: true } });
+    if (store?.ownerOrganizationId) return store.ownerOrganizationId;
+  }
+
+  return null;
+}
+
+async function recordStripeWebhookOutbox(event: Stripe.Event) {
+  const metadata = extractStripeMetadata(event);
+  const correlationId =
+    (typeof metadata.purchaseId === "string" && metadata.purchaseId.trim() !== "" && metadata.purchaseId.trim()) ||
+    (typeof metadata.paymentId === "string" && metadata.paymentId.trim() !== "" && metadata.paymentId.trim()) ||
+    resolvePaymentIntentId(event) ||
+    event.id;
+  const organizationId = await resolveOrganizationIdFromStripeEvent(event);
+  if (!organizationId) {
+    console.warn("[Webhook] organizationId em falta, a ignorar outbox", {
+      eventId: event.id,
+      eventType: event.type,
+    });
+    return { ok: false, reason: "ORG_NOT_RESOLVED" };
+  }
+  const sourceType = typeof metadata.sourceType === "string" && metadata.sourceType.trim() !== "" ? metadata.sourceType : null;
+  const sourceId = typeof metadata.sourceId === "string" && metadata.sourceId.trim() !== "" ? metadata.sourceId : null;
+  const paymentIntentId = resolvePaymentIntentId(event);
+  const purchaseId = typeof metadata.purchaseId === "string" && metadata.purchaseId.trim() !== "" ? metadata.purchaseId.trim() : null;
+  const paymentId = typeof metadata.paymentId === "string" && metadata.paymentId.trim() !== "" ? metadata.paymentId.trim() : null;
+
+  const eventLogId = crypto.randomUUID();
+  return prisma.$transaction(async (tx) => {
+    const log = await appendEventLog(
+      {
+        eventId: eventLogId,
+        organizationId,
+        eventType: STRIPE_OUTBOX_TYPE,
+        idempotencyKey: event.id,
+        correlationId: correlationId ?? null,
+        payload: {
+          stripeEventId: event.id,
+          stripeEventType: event.type,
+          paymentIntentId,
+          purchaseId,
+          paymentId,
+        },
+        ...(sourceType && sourceId ? { sourceType, sourceId } : {}),
+      },
+      tx,
+    );
+    if (!log) return { ok: true, deduped: true };
+    await recordOutboxEvent(
+      {
+        eventId: eventLogId,
+        eventType: STRIPE_OUTBOX_TYPE,
+        payload: { stripeEvent: event },
+        causationId: event.id,
+        correlationId: correlationId ?? null,
+      },
+      tx,
+    );
+    return { ok: true, deduped: false };
+  });
+}
 
 export async function POST(req: NextRequest) {
   if (LEGACY_FULFILLMENT_DISABLED) {
@@ -96,7 +217,7 @@ export async function POST(req: NextRequest) {
   });
 
   try {
-    await handleStripeEvent(event);
+    await recordStripeWebhookOutbox(event);
   } catch (err) {
     console.error("[Webhook] Error processing event:", err);
     // devolvemos 200 na mesma para o Stripe não re-tentar para sempre
@@ -106,259 +227,7 @@ export async function POST(req: NextRequest) {
 }
 
 export async function handleStripeEvent(event: Stripe.Event) {
-  switch (event.type) {
-      case "payment_intent.succeeded": {
-        const intent = event.data.object as Stripe.PaymentIntent;
-        if (intent.id === FREE_PLACEHOLDER_INTENT_ID) {
-          console.log("[Webhook] payment_intent.succeeded ignorado (FREE_CHECKOUT placeholder)");
-          break;
-        }
-        console.log("[Webhook] payment_intent.succeeded", {
-          id: intent.id,
-          amount: intent.amount,
-          currency: intent.currency,
-          metadata: intent.metadata,
-        });
-        const purchaseAnchor =
-          typeof intent.metadata?.purchaseId === "string" && intent.metadata.purchaseId.trim() !== ""
-            ? intent.metadata.purchaseId.trim()
-            : intent.id;
-        const chargeId =
-          typeof intent.latest_charge === "string"
-            ? intent.latest_charge
-            : intent.latest_charge?.id ?? null;
-        const chargeCreated =
-          typeof intent.latest_charge === "object" && intent.latest_charge?.created
-            ? intent.latest_charge.created
-            : null;
-        const paidAtUnix =
-          chargeCreated ?? event.created ?? intent.created ?? Math.floor(Date.now() / 1000);
-        const paidAt = new Date(paidAtUnix * 1000);
-        const pendingMeta = parsePendingPayoutMetadata(intent.metadata ?? {}, intent.id, paidAt, chargeId);
-        if (pendingMeta) {
-          await createPendingPayout(pendingMeta);
-        } else if (intent.metadata?.recipientConnectAccountId) {
-          console.warn("[Webhook] PendingPayout metadata em falta", {
-            paymentIntentId: intent.id,
-            purchaseId: purchaseAnchor,
-          });
-        }
-        // Registar PaymentEvent ingest-only (tolerante a PI múltiplos para o mesmo purchaseId)
-        try {
-          const updateData = {
-            stripePaymentIntentId: intent.id,
-            status: "PROCESSING",
-            purchaseId: purchaseAnchor,
-            stripeEventId: event.id,
-            source: PaymentEventSource.WEBHOOK,
-            dedupeKey: event.id,
-            amountCents: intent.amount ?? null,
-            userId: typeof intent.metadata?.userId === "string" ? intent.metadata.userId : undefined,
-            updatedAt: new Date(),
-            errorMessage: null,
-            mode: intent.livemode ? "LIVE" : "TEST",
-            isTest: !intent.livemode,
-          };
-          const createData = {
-            stripePaymentIntentId: intent.id,
-            status: "PROCESSING",
-            purchaseId: purchaseAnchor,
-            stripeEventId: event.id,
-            source: PaymentEventSource.WEBHOOK,
-            dedupeKey: event.id,
-            attempt: 1,
-            eventId:
-              typeof intent.metadata?.eventId === "string" && Number.isFinite(Number(intent.metadata.eventId))
-                ? Number(intent.metadata.eventId)
-                : undefined,
-            userId: typeof intent.metadata?.userId === "string" ? intent.metadata.userId : undefined,
-            amountCents: intent.amount ?? null,
-            platformFeeCents:
-              typeof intent.metadata?.platformFeeCents === "string"
-                ? Number(intent.metadata.platformFeeCents)
-                : null,
-            mode: intent.livemode ? "LIVE" : "TEST",
-            isTest: !intent.livemode,
-          };
-
-          const existing = await prisma.paymentEvent.findFirst({
-            where: {
-              OR: [
-                { stripePaymentIntentId: intent.id },
-                { purchaseId: purchaseAnchor },
-              ],
-            },
-            select: { id: true },
-          });
-
-          if (existing) {
-            await prisma.paymentEvent.update({
-              where: { id: existing.id },
-              data: updateData,
-            });
-          } else {
-            await prisma.paymentEvent.create({ data: createData });
-          }
-        } catch (logErr) {
-          if (logErr instanceof Prisma.PrismaClientKnownRequestError && logErr.code === "P2002") {
-            await prisma.paymentEvent.updateMany({
-              where: { stripePaymentIntentId: intent.id },
-              data: {
-                status: "PROCESSING",
-                purchaseId: purchaseAnchor,
-                stripeEventId: event.id,
-                updatedAt: new Date(),
-                errorMessage: null,
-              },
-            });
-          } else {
-            console.warn("[Webhook] Falha ao registar PaymentEvent ingest-only", logErr);
-          }
-        }
-
-        await enqueueOperation({
-          operationType: "FULFILL_PAYMENT",
-          dedupeKey: intent.id,
-          correlations: { paymentIntentId: intent.id, stripeEventId: event.id, purchaseId: purchaseAnchor },
-          payload: { paymentIntentId: intent.id, stripeEventType: event.type, stripeEventId: event.id },
-        });
-
-        break;
-      }
-
-      case "payment_intent.payment_failed":
-      case "payment_intent.canceled": {
-        const intent = event.data.object as Stripe.PaymentIntent;
-        await cancelPendingPayout(intent.id, event.type);
-        const metadata = intent.metadata ?? {};
-        if (metadata.sourceType === "STORE_ORDER") {
-          const orderIdRaw = typeof metadata.storeOrderId === "string" ? Number(metadata.storeOrderId) : null;
-          const orderId = orderIdRaw && Number.isFinite(orderIdRaw) ? orderIdRaw : null;
-          const cartId = typeof metadata.cartId === "string" ? metadata.cartId : null;
-          if (orderId) {
-            await prisma.storeOrder.updateMany({
-              where: { id: orderId, paymentIntentId: intent.id, status: StoreOrderStatus.PENDING },
-              data: { status: StoreOrderStatus.CANCELLED },
-            });
-          }
-          if (cartId) {
-            await prisma.storeCart.updateMany({
-              where: { id: cartId, status: "CHECKOUT_LOCKED" },
-              data: { status: "ACTIVE" },
-            });
-          }
-          await prisma.paymentEvent.updateMany({
-            where: { stripePaymentIntentId: intent.id },
-            data: {
-              status: "ERROR",
-              errorMessage: `PAYMENT_INTENT_${event.type.toUpperCase()}`,
-              updatedAt: new Date(),
-            },
-          });
-        }
-        break;
-      }
-
-      case "charge.refunded": {
-        const charge = event.data.object as Stripe.Charge;
-        console.log("[Webhook] charge.refunded", {
-          id: charge.id,
-          payment_intent: charge.payment_intent,
-        });
-        const paymentIntentId =
-          typeof charge.payment_intent === "string"
-            ? charge.payment_intent
-            : charge.payment_intent?.id ?? null;
-        if (paymentIntentId) {
-          if ((charge.amount_refunded ?? 0) >= charge.amount) {
-            await cancelPendingPayout(paymentIntentId, "REFUND_FULL");
-          } else if ((charge.amount_refunded ?? 0) > 0) {
-            await blockPendingPayout(paymentIntentId, "REFUND_PARTIAL");
-          }
-        }
-        await enqueueOperation({
-          operationType: "PROCESS_STRIPE_EVENT",
-          dedupeKey: event.id,
-          correlations: {
-            paymentIntentId:
-              typeof charge.payment_intent === "string"
-                ? charge.payment_intent
-                : charge.payment_intent?.id ?? null,
-            stripeEventId: event.id,
-          },
-          payload: {
-            stripeEventType: event.type,
-            chargeId: charge.id,
-            paymentIntentId:
-              typeof charge.payment_intent === "string"
-                ? charge.payment_intent
-                : charge.payment_intent?.id ?? null,
-          },
-        });
-        break;
-      }
-
-      case "charge.dispute.created": {
-        const dispute = event.data.object as Stripe.Dispute;
-        const paymentIntentId =
-          typeof dispute.payment_intent === "string"
-            ? dispute.payment_intent
-            : dispute.payment_intent?.id ?? null;
-        if (paymentIntentId) {
-          await blockPendingPayout(paymentIntentId, `DISPUTE_${dispute.reason ?? "UNKNOWN"}`);
-        }
-        await enqueueOperation({
-          operationType: "PROCESS_STRIPE_EVENT",
-          dedupeKey: event.id,
-          correlations: { stripeEventId: event.id },
-          payload: {
-            stripeEventType: event.type,
-            stripeEventId: event.id,
-            stripeEventObject: dispute,
-          },
-        });
-        break;
-      }
-
-      case "charge.dispute.closed": {
-        const dispute = event.data.object as Stripe.Dispute;
-        const paymentIntentId =
-          typeof dispute.payment_intent === "string"
-            ? dispute.payment_intent
-            : dispute.payment_intent?.id ?? null;
-        if (paymentIntentId) {
-          if (dispute.status === "lost") {
-            await cancelPendingPayout(paymentIntentId, "DISPUTE_LOST");
-          } else {
-            await unblockPendingPayout(paymentIntentId);
-          }
-        }
-        break;
-      }
-
-      case "dispute.created":
-      case "dispute.won":
-      case "dispute.lost": {
-        const dispute = event.data.object as Stripe.Dispute;
-        await enqueueOperation({
-          operationType: "PROCESS_STRIPE_EVENT",
-          dedupeKey: event.id,
-          correlations: { stripeEventId: event.id },
-          payload: {
-            stripeEventType: event.type,
-            stripeEventId: event.id,
-            stripeEventObject: dispute,
-          },
-        });
-        break;
-      }
-
-    default: {
-      // outros eventos, por agora, podem ser ignorados
-      console.log("[Webhook] Evento ignorado:", event.type);
-      break;
-    }
-  }
+  return consumeStripeWebhookEvent(event);
 }
 
 type PromoSnapshot = { code: string; label?: string | null; type: PromoType | null; value: number | null };
@@ -486,7 +355,7 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent, stripeEventId
           },
         });
 
-        await tx.paymentEvent.upsert({
+        await paymentEventRepo(tx).upsert({
           where: { stripePaymentIntentId: intent.id },
           update: {
             status: "OK",
@@ -810,7 +679,7 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent, stripeEventId
   if (already && !process.env.ENABLE_WORKER_PAYMENTS) {
     console.log("[fulfillPayment] INTENT JÁ PROCESSADO — evitando duplicação:", intent.id);
     try {
-      await prisma.paymentEvent.updateMany({
+      await paymentEventRepo(prisma).updateMany({
         where: { stripePaymentIntentId: intent.id },
         data: {
           status: "OK",
@@ -864,14 +733,14 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent, stripeEventId
       mode: intent.livemode ? "LIVE" : "TEST",
       isTest: !intent.livemode,
     };
-    const updated = await prisma.paymentEvent.updateMany({
+    const updated = await paymentEventRepo(prisma).updateMany({
       where: purchaseAnchor
         ? { OR: [{ stripePaymentIntentId: intent.id }, { purchaseId: purchaseAnchor }] }
         : { stripePaymentIntentId: intent.id },
       data: updateData,
     });
     if (updated.count === 0) {
-      await prisma.paymentEvent.upsert({
+      await paymentEventRepo(prisma).upsert({
         where: { stripePaymentIntentId: intent.id },
         update: updateData,
         create: createData,
@@ -955,7 +824,7 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent, stripeEventId
             cardPlatformFeeCents -
             stripeFee,
         );
-        const summary = await tx.saleSummary.upsert({
+        const summary = await saleSummaryRepo(tx).upsert({
           where: { paymentIntentId: intent.id },
           update: {
             eventId: eventRecord.id,
@@ -1006,7 +875,7 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent, stripeEventId
         saleSummaryId = summary.id;
 
         // limpar linhas anteriores e regravar
-        await tx.saleLine.deleteMany({ where: { saleSummaryId: summary.id } });
+        await saleLineRepo(tx).deleteMany({ where: { saleSummaryId: summary.id } });
         for (const line of parsedBreakdown.lines) {
           const linePromo = line.promoCodeId ? promoSnapshots.get(line.promoCodeId) ?? null : summaryPromo;
           const computed = computedLineMap.get(line.ticketTypeId);
@@ -1027,7 +896,7 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent, stripeEventId
                     ),
                 )
               : grossCents);
-          await tx.saleLine.create({
+          await saleLineRepo(tx).create({
             data: {
               saleSummaryId: summary.id,
               eventId: eventRecord.id,
@@ -1222,7 +1091,7 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent, stripeEventId
 
     if (createdTicketsCount === 0) {
       // Nada criado, marcamos paymentEvent como erro
-      await tx.paymentEvent.updateMany({
+      await paymentEventRepo(tx).updateMany({
         where: { stripePaymentIntentId: intent.id },
         data: {
           status: "ERROR",
@@ -1250,7 +1119,7 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent, stripeEventId
       });
     }
 
-    await tx.paymentEvent.updateMany({
+    await paymentEventRepo(tx).updateMany({
       where: { stripePaymentIntentId: intent.id },
       data: {
         status: "OK",
@@ -1425,7 +1294,7 @@ async function handlePadelSplitPayment(intent: Stripe.PaymentIntent) {
           where: { pairingId, status: "ACTIVE" },
           data: { status: "CANCELLED" },
         });
-        await tx.paymentEvent.upsert({
+        await paymentEventRepo(tx).upsert({
           where: { stripePaymentIntentId: intent.id },
           update: {
             status: "ERROR",
@@ -1527,16 +1396,16 @@ async function handlePadelSplitPayment(intent: Stripe.PaymentIntent) {
     };
 
     const sale = saleSummary
-      ? await tx.saleSummary.update({
+      ? await saleSummaryRepo(tx).update({
           where: { id: saleSummary.id },
           data: { ...summaryData, paymentIntentId: intent.id },
         })
-      : await tx.saleSummary.create({
+      : await saleSummaryRepo(tx).create({
           data: { ...summaryData, paymentIntentId: intent.id },
         });
 
-    await tx.saleLine.deleteMany({ where: { saleSummaryId: sale.id } });
-    const saleLine = await tx.saleLine.create({
+    await saleLineRepo(tx).deleteMany({ where: { saleSummaryId: sale.id } });
+    const saleLine = await saleLineRepo(tx).create({
       data: {
         saleSummaryId: sale.id,
         eventId,
@@ -1668,7 +1537,7 @@ async function handlePadelSplitPayment(intent: Stripe.PaymentIntent) {
     }
 
     // log payment_event
-    await tx.paymentEvent.upsert({
+    await paymentEventRepo(tx).upsert({
       where: { stripePaymentIntentId: intent.id },
       update: {
         status: "OK",
@@ -1751,7 +1620,7 @@ async function handleSecondCharge(intent: Stripe.PaymentIntent) {
         where: { pairingId, status: "ACTIVE" },
         data: { status: "CANCELLED" },
       });
-      await tx.paymentEvent.upsert({
+      await paymentEventRepo(tx).upsert({
         where: { stripePaymentIntentId: intent.id },
         update: {
           status: "OK",
@@ -1890,7 +1759,7 @@ async function handlePadelFullPayment(intent: Stripe.PaymentIntent) {
           where: { pairingId, status: "ACTIVE" },
           data: { status: "CANCELLED" },
         });
-        await tx.paymentEvent.upsert({
+        await paymentEventRepo(tx).upsert({
           where: { stripePaymentIntentId: intent.id },
           update: {
             status: "ERROR",
@@ -1926,7 +1795,7 @@ async function handlePadelFullPayment(intent: Stripe.PaymentIntent) {
     select: { id: true },
   });
   if (existingTicket) {
-    await prisma.paymentEvent.updateMany({
+    await paymentEventRepo(prisma).updateMany({
       where: { stripePaymentIntentId: intent.id },
       data: {
         status: "OK",
@@ -2050,16 +1919,16 @@ async function handlePadelFullPayment(intent: Stripe.PaymentIntent) {
     };
 
     const sale = saleSummary
-      ? await tx.saleSummary.update({
+      ? await saleSummaryRepo(tx).update({
           where: { id: saleSummary.id },
           data: { ...summaryData, paymentIntentId: intent.id },
         })
-      : await tx.saleSummary.create({
+      : await saleSummaryRepo(tx).create({
           data: { ...summaryData, paymentIntentId: intent.id },
         });
 
-    await tx.saleLine.deleteMany({ where: { saleSummaryId: sale.id } });
-    const saleLine = await tx.saleLine.create({
+    await saleLineRepo(tx).deleteMany({ where: { saleSummaryId: sale.id } });
+    const saleLine = await saleLineRepo(tx).create({
       data: {
         saleSummaryId: sale.id,
         eventId,
@@ -2171,7 +2040,7 @@ async function handlePadelFullPayment(intent: Stripe.PaymentIntent) {
 
     shouldEnsureEntries = partnerFilled;
 
-    await tx.paymentEvent.upsert({
+    await paymentEventRepo(tx).upsert({
       where: { stripePaymentIntentId: intent.id },
       update: {
         status: "OK",
@@ -2273,7 +2142,7 @@ export async function handleRefund(charge: Stripe.Charge) {
       data: { status: "REFUNDED" },
     }),
     ...stockUpdates,
-    prisma.paymentEvent.updateMany({
+    paymentEventRepo(prisma).updateMany({
       where: { stripePaymentIntentId: paymentIntentId },
       data: {
         status: "REFUNDED",
@@ -2292,7 +2161,7 @@ export async function handleRefund(charge: Stripe.Charge) {
                 }),
               ]
             : []),
-          prisma.saleSummary.update({
+          saleSummaryRepo(prisma).update({
             where: { id: saleSummary.id },
             data: { status: SaleSummaryStatus.REFUNDED, updatedAt: new Date() },
           }),
@@ -2355,7 +2224,7 @@ async function handlePadelSplitRefund(
       });
     }
 
-    await tx.paymentEvent.updateMany({
+    await paymentEventRepo(tx).updateMany({
       where: { stripePaymentIntentId: paymentIntentId },
       data: {
         status: "REFUNDED",
@@ -2367,7 +2236,7 @@ async function handlePadelSplitRefund(
     });
 
     if (saleSummary?.id) {
-      await tx.saleSummary.update({
+      await saleSummaryRepo(tx).update({
         where: { id: saleSummary.id },
         data: { status: SaleSummaryStatus.REFUNDED, updatedAt: new Date() },
       });
