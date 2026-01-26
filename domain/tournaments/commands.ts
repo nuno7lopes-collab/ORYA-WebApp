@@ -14,7 +14,7 @@ export async function createTournamentForEvent(input: {
 }) {
   const { eventId, format, config, actorUserId, correlationId } = input;
   if (!Number.isFinite(eventId)) {
-    return { ok: false as const, error: "INVALID_EVENT_ID" };
+    return { ok: false as const, error: "EVENT_ID_REQUIRED" };
   }
 
   return prisma.$transaction(async (tx) => {
@@ -71,6 +71,18 @@ export async function updateTournament(input: {
   correlationId?: string | null;
 }) {
   const { tournamentId, data, actorUserId, correlationId } = input;
+  const dataEvent = (data as { eventId?: number | { set?: number | null } | null }).eventId;
+  if (dataEvent !== undefined) {
+    const resolved =
+      typeof dataEvent === "number"
+        ? dataEvent
+        : dataEvent && typeof dataEvent === "object" && "set" in dataEvent
+          ? dataEvent.set ?? null
+          : null;
+    if (!Number.isFinite(resolved)) {
+      return { ok: false as const, error: "EVENT_ID_REQUIRED" };
+    }
+  }
   return prisma.$transaction(async (tx) => {
     const existing = await tx.tournament.findUnique({
       where: { id: tournamentId },
