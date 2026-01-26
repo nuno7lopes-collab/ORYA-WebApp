@@ -14,6 +14,12 @@
 - Funcao: `OrganizationChatPage`
 - Origem orgId: `getActiveOrganizationForUser` (server); passar `organization.id` para o client.
 
+## TODO (handshake)
+
+- Match: `app/organizacao/(dashboard)/chat/ChatInternoV2Client.tsx:610`
+- Match: `app/organizacao/(dashboard)/chat/preview/useChatPreviewData.ts:484`
+- Remover fallback `/api/organizacao/me` quando orgId prop existe.
+
 ## Plano do commit (1 commit, sem refactor)
 
 Commit: `chat: pass orgId`
