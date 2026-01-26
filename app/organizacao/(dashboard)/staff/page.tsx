@@ -314,22 +314,22 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
 
   const [toasts, setToasts] = useState<Toast[]>([]);
 
-  const { data: meData } = useSWR<{ ok: boolean; organization?: { id: number; publicName?: string | null } | null; orgTransferEnabled?: boolean | null }>(
-    user ? "/api/organizacao/me" : null,
-    fetcher,
-    { revalidateOnFocus: false },
-  );
-
   const eventIdParam = searchParams?.get("eventId");
   const eventId = eventIdParam ? Number(eventIdParam) : null;
+  const organizationIdParam = searchParams?.get("organizationId") ?? null;
+  const organizationIdParsed = organizationIdParam ? Number(organizationIdParam) : null;
+  const organizationId = organizationIdParsed && Number.isFinite(organizationIdParsed) ? organizationIdParsed : null;
+  const orgMeUrl = user && organizationId ? `/api/organizacao/me?organizationId=${organizationId}` : null;
+  const { data: meData } = useSWR<{
+    ok: boolean;
+    organization?: { id: number; publicName?: string | null } | null;
+    orgTransferEnabled?: boolean | null;
+  }>(orgMeUrl, fetcher, { revalidateOnFocus: false });
   const staffTabParam = searchParams?.get("staff");
   const activeStaffTab: StaffTabKey =
     staffTabParam === "convidados" || staffTabParam === "permissoes" || staffTabParam === "auditoria"
       ? staffTabParam
       : "membros";
-  const organizationIdParam =
-    searchParams?.get("organizationId") ?? (meData?.organization?.id ? String(meData.organization.id) : null);
-  const organizationId = organizationIdParam ? Number(organizationIdParam) : null;
   const orgTransferEnabled = meData?.orgTransferEnabled ?? false;
 
   const membersKey = useMemo(() => {

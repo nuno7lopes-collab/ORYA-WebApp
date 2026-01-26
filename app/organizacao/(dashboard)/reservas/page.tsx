@@ -375,6 +375,12 @@ const normalizeHourHeight = (value: number) =>
 
 export default function ReservasDashboardPage() {
   const searchParams = useSearchParams();
+  const organizationIdParam = searchParams?.get("organizationId") ?? null;
+  const organizationId = organizationIdParam ? Number(organizationIdParam) : null;
+  const orgMeUrl =
+    organizationId && Number.isFinite(organizationId)
+      ? `/api/organizacao/me?organizationId=${organizationId}`
+      : null;
   const [calendarView, setCalendarView] = useState<CalendarView>("week");
   const [calendarTab, setCalendarTab] = useState<CalendarTab>("agenda");
   const [hourHeight, setHourHeight] = useState(() => normalizeHourHeight(DEFAULT_HOUR_HEIGHT));
@@ -431,7 +437,7 @@ export default function ReservasDashboardPage() {
       primaryModule?: string | null;
     };
     membershipRole?: string | null;
-  }>("/api/organizacao/me", fetcher);
+  }>(orgMeUrl, fetcher);
 
   const services = servicesData?.items ?? [];
   const activeServices = services.filter((service) => service.isActive);
@@ -888,7 +894,10 @@ export default function ReservasDashboardPage() {
     if (modeSaving || assignmentMode === mode) return;
     setModeSaving(mode);
     try {
-      const res = await fetch("/api/organizacao/me", {
+      if (!organizationId || Number.isNaN(organizationId)) {
+        throw new Error("Seleciona uma organização primeiro.");
+      }
+      const res = await fetch(`/api/organizacao/me?organizationId=${organizationId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ reservationAssignmentMode: mode }),

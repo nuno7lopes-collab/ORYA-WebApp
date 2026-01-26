@@ -495,10 +495,12 @@ function OrganizacaoPageInner({
   }, [toolsModalOpen]);
 
   const organizationIdParam = searchParams?.get("organizationId");
+  const organizationId = organizationIdParam ? Number(organizationIdParam) : null;
   const orgMeUrl = useMemo(() => {
     if (!user) return null;
-    return organizationIdParam ? `/api/organizacao/me?organizationId=${organizationIdParam}` : "/api/organizacao/me";
-  }, [user, organizationIdParam]);
+    if (!organizationId || Number.isNaN(organizationId)) return null;
+    return `/api/organizacao/me?organizationId=${organizationId}`;
+  }, [user, organizationId]);
 
   const { data: organizationData, isLoading: organizationLoading, mutate: mutateOrganization } = useSWR<
     OrganizationStatus & {
@@ -713,9 +715,9 @@ function OrganizacaoPageInner({
         if (organization.primaryModule !== primary) {
           payload.primaryModule = primary;
         }
-        const patchUrl = organizationIdParam
-          ? `/api/organizacao/me?organizationId=${organizationIdParam}`
-          : "/api/organizacao/me";
+        const organizationIdForPatch = organization?.id ?? (organizationIdParam ? Number(organizationIdParam) : null);
+        if (!organizationIdForPatch || Number.isNaN(organizationIdForPatch)) return;
+        const patchUrl = `/api/organizacao/me?organizationId=${organizationIdForPatch}`;
         const res = await fetch(patchUrl, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
