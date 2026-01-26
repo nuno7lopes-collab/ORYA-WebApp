@@ -39,3 +39,14 @@ Objetivo: checklist executavel para release (DoD de producao).
 ## Notas
 - Se `db:gates` falhar por infra/DB indisponivel, bloquear release ate resolver.
 - Qualquer nova suite critica deve ser adicionada a este checklist.
+
+## Troubleshooting comum
+- Prisma EPERM / cache:
+  - Fazer: apagar cache local do Prisma em `/tmp` e correr `npm run db:gates:offline` de novo.
+  - Nao fazer: forcar permissoes globais ou mexer em `/var` sem necessidade.
+- `.git` nao writable:
+  - Mover o repo para um path writable antes de correr gates/testes.
+- 401 em cron endpoints:
+  - Esperado sem `X-ORYA-CRON-SECRET`; confirmar header.
+- Dashboards a zeros:
+  - Suspeitar de read-models/materializers atrasados; verificar outbox/ops feed e SLO (`/api/internal/ops/slo`).
