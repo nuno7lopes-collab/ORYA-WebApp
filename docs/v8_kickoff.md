@@ -214,3 +214,6 @@ Provas / Gates
 - Gates: npm run db:gates:offline; npx vitest run tests/fiscal tests/finance tests/rbac tests/outbox tests/ops; RG exports sem writes.
 - Regra: 0€ tickets só quando Event.pricingMode=FREE_ONLY (erro: EVENT_ZERO_PRICE_REQUIRES_EXPLICIT_FREE_MODE; FREE_ONLY bloqueia tickets pagos).
 - Anti-drift (sempre corre): rg -n "EventLog\\.(create|createMany)|eventLog\\.(create|createMany)" app/api/organizacao/events -S = 0; rg -n "OutboxEvent\\.create|outboxEvent\\.create" app/api/organizacao/events -S = 0; rg -n "\\bEvent\\.isFree\\b|\\bisFree\\b" app -S = 0.
+
+### Nota — Ambiente local (não bloqueante)
+- Warning Next.js: "middleware" deprecated → migrar para "proxy" (deixar ticket/nota; não bloqueia runtime local).
