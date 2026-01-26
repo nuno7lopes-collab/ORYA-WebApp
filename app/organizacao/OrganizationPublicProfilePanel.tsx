@@ -474,6 +474,7 @@ export default function OrganizationPublicProfilePanel({
   const { openModal } = useAuthModal();
   const router = useRouter();
   const canEdit = membershipRole === "OWNER" || membershipRole === "ADMIN";
+  const organizationId = organization?.id ?? null;
 
   const [name, setName] = useState("");
   const [username, setUsername] = useState("");
@@ -945,10 +946,14 @@ export default function OrganizationPublicProfilePanel({
       return;
     }
 
+    if (!organizationId) {
+      setMessage("Seleciona uma organização primeiro.");
+      return;
+    }
     setSaving(true);
     setMessage(null);
     try {
-      const res = await fetch("/api/organizacao/me", {
+      const res = await fetch(`/api/organizacao/me?organizationId=${organizationId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -982,10 +987,14 @@ export default function OrganizationPublicProfilePanel({
       return;
     }
     if (!canEdit) return;
+    if (!organizationId) {
+      setLayoutMessage("Seleciona uma organização primeiro.");
+      return;
+    }
     setSavingLayout(true);
     setLayoutMessage(null);
     try {
-      const res = await fetch("/api/organizacao/me", {
+      const res = await fetch(`/api/organizacao/me?organizationId=${organizationId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ publicProfileLayout: profileLayout }),

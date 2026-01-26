@@ -24,10 +24,7 @@ type InvoiceSummary = { grossCents: number; discountCents: number; platformFeeCe
 type InvoiceResponse =
   | { ok: true; items: InvoiceItem[]; summary: InvoiceSummary }
   | { ok: false; error?: string };
-type OrganizationMeResponse = { organization?: { id?: number | null } | null };
-
 const fetcher = (url: string) => fetch(url).then((r) => r.json() as Promise<InvoiceResponse>);
-const orgFetcher = (url: string) => fetch(url).then((r) => r.json() as Promise<OrganizationMeResponse>);
 
 const toQuery = (params: Record<string, string | number | null | undefined>) => {
   const url = new URLSearchParams();
@@ -60,16 +57,9 @@ export default function InvoicesClient({
   const from = searchParams?.get("from") ?? "";
   const to = searchParams?.get("to") ?? "";
   const organizationIdQuery = organizationIdParam ? Number(organizationIdParam) : null;
-  const shouldFetchOrganization = !organizationIdProp && !organizationIdQuery;
-  const { data: organizationData } = useSWR<OrganizationMeResponse>(
-    () => (shouldFetchOrganization ? "/api/organizacao/me" : null),
-    orgFetcher,
-  );
-  const organizationIdFromMe = organizationData?.organization?.id ?? null;
   const organizationId =
     organizationIdProp ??
     (organizationIdQuery && !Number.isNaN(organizationIdQuery) ? organizationIdQuery : null) ??
-    organizationIdFromMe ??
     null;
   const qs = toQuery({ organizationId, from, to });
   const { data, isLoading, mutate } = useSWR(
