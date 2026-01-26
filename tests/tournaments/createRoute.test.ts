@@ -32,6 +32,17 @@ beforeEach(async () => {
 });
 
 describe("tournament create route", () => {
+  it("rejeita payload sem eventId", async () => {
+    const req = new NextRequest("http://localhost/api/organizacao/tournaments/create", {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+    const res = await POST(req);
+    const body = await res.json();
+    expect(res.status).toBe(400);
+    expect(body.error).toBe("EVENT_ID_REQUIRED");
+  });
+
   it("bloqueia sem acesso", async () => {
     prisma.event.findUnique.mockResolvedValue({
       id: 1,
