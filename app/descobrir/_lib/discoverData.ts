@@ -1,8 +1,16 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { mapEventToCardDTO, type EventCardDTO } from "@/lib/events";
+import { deriveIsFreeEvent } from "@/domain/events/derivedIsFree";
 
-type DiscoverEvent = EventCardDTO & {
+type DiscoverEvent = {
+  id: number;
+  slug: string;
+  title: string;
+  startsAt: Date | null;
+  endsAt: Date | null;
+  locationCity: string | null;
+  coverImageUrl: string | null;
+  priceFrom: number | null;
   locationName: string | null;
   latitude: number | null;
   longitude: number | null;
@@ -32,8 +40,8 @@ const EVENT_SELECT = {
   locationCity: true,
   latitude: true,
   longitude: true,
-  isFree: true,
   coverImageUrl: true,
+  pricingMode: true,
   ticketTypes: {
     select: {
       price: true,
@@ -63,11 +71,36 @@ function addDays(date: Date, days: number) {
 }
 
 function mapDiscoverEvent(event: RawEvent): DiscoverEvent | null {
-  const base = mapEventToCardDTO(event);
-  if (!base) return null;
+  if (
+    typeof event.id !== "number" ||
+    typeof event.slug !== "string" ||
+    typeof event.title !== "string"
+  ) {
+    return null;
+  }
+
+  const ticketPrices = event.ticketTypes
+    .map((tt) => (typeof tt?.price === "number" ? tt.price : null))
+    .filter((price): price is number => price !== null);
+
+  const isGratis = deriveIsFreeEvent({
+    pricingMode: event.pricingMode ?? undefined,
+    ticketPrices,
+  });
+  const priceFromCents =
+    isGratis ? 0 : ticketPrices.length > 0 ? Math.min(...ticketPrices) : null;
+  const priceFrom = priceFromCents !== null ? priceFromCents / 100 : null;
+
   return {
-    ...base,
-    isGratis: base.isFree,
+    id: event.id,
+    slug: event.slug,
+    title: event.title,
+    startsAt: event.startsAt ?? null,
+    endsAt: event.endsAt ?? null,
+    locationCity: event.locationCity ?? null,
+    coverImageUrl: event.coverImageUrl ?? null,
+    priceFrom,
+    isGratis,
     locationName: event.locationName ?? null,
     latitude: event.latitude ?? null,
     longitude: event.longitude ?? null,
