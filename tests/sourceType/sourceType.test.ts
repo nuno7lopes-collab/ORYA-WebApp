@@ -14,6 +14,8 @@ describe("sourceType allowlist", () => {
     expect(SOURCE_TYPE_ALLOWLIST.has(SourceType.TOURNAMENT)).toBe(true);
     expect(SOURCE_TYPE_ALLOWLIST.has(SourceType.MATCH)).toBe(true);
     expect(SOURCE_TYPE_ALLOWLIST.has(SourceType.LOYALTY_TX)).toBe(true);
+    expect(SOURCE_TYPE_ALLOWLIST.has(SourceType.SOFT_BLOCK)).toBe(true);
+    expect(SOURCE_TYPE_ALLOWLIST.has(SourceType.HARD_BLOCK)).toBe(true);
   });
 
   it("normaliza legados (RESERVATION -> BOOKING)", () => {

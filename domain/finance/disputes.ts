@@ -1,17 +1,18 @@
 import { prisma } from "@/lib/prisma";
 import { PaymentEventSource, SaleSummaryStatus } from "@prisma/client";
 import { logFinanceError } from "@/lib/observability/finance";
+import { paymentEventRepo, saleSummaryRepo } from "@/domain/finance/readModelConsumer";
 
 export async function markSaleDisputed(params: { saleSummaryId: number; paymentIntentId?: string | null; purchaseId?: string | null; reason?: string | null }) {
   const { saleSummaryId, paymentIntentId, purchaseId, reason } = params;
   try {
     return await prisma.$transaction(async (tx) => {
-      const sale = await tx.saleSummary.update({
+      const sale = await saleSummaryRepo(tx).update({
         where: { id: saleSummaryId },
         data: { status: SaleSummaryStatus.DISPUTED },
       });
 
-      await tx.paymentEvent.create({
+      await paymentEventRepo(tx).create({
         data: {
           stripePaymentIntentId: paymentIntentId ?? sale.paymentIntentId,
           status: "DISPUTED",

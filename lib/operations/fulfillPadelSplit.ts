@@ -18,6 +18,7 @@ import { checkoutKey } from "@/lib/stripe/idempotency";
 import { ingestCrmInteraction } from "@/lib/crm/ingest";
 import { getLatestPolicyVersionForEvent } from "@/lib/checkin/accessPolicy";
 import { upsertPadelRegistrationForPairing } from "@/domain/padelRegistration";
+import { paymentEventRepo, saleLineRepo, saleSummaryRepo } from "@/domain/finance/readModelConsumer";
 
 type IntentLike = {
   id: string;
@@ -244,16 +245,16 @@ export async function fulfillPadelSplitIntent(intent: IntentLike, stripeFeeForIn
     };
 
     const sale = saleSummary
-      ? await tx.saleSummary.update({
+      ? await saleSummaryRepo(tx).update({
           where: { id: saleSummary.id },
           data: { ...summaryData, paymentIntentId: intent.id },
         })
-      : await tx.saleSummary.create({
+      : await saleSummaryRepo(tx).create({
           data: { ...summaryData, paymentIntentId: intent.id },
         });
 
-    await tx.saleLine.deleteMany({ where: { saleSummaryId: sale.id } });
-    const saleLine = await tx.saleLine.create({
+    await saleLineRepo(tx).deleteMany({ where: { saleSummaryId: sale.id } });
+    const saleLine = await saleLineRepo(tx).create({
       data: {
         saleSummaryId: sale.id,
         eventId,
@@ -406,7 +407,7 @@ export async function fulfillPadelSplitIntent(intent: IntentLike, stripeFeeForIn
       }
     }
 
-    await tx.paymentEvent.upsert({
+    await paymentEventRepo(tx).upsert({
       where: { stripePaymentIntentId: intent.id },
       update: {
         status: "OK",

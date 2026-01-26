@@ -92,6 +92,16 @@ Provas / Gates
 - Guardrails: org-context tokens obrigatórios; metadata org resolution só no allowlist.
 - Risco aceite: endpoint resolve org via account.metadata.organizationId com fallback stripeAccountId (input externo).
 
+#### D2 — DONE (audited)
+- Payments: Payment + Ledger SSOT; SaleSummary/SaleLine/PaymentEvent apenas read-model via consumer.
+- Access: Entitlement-first em gates críticos; remove atalhos por ticket.status/free-entry/SaleSummary.
+- Booking: guardrails de booking.status com allowlist de workflow; anti-drift em tests/ops.
+- Org-context: fail-closed + allowlist para resolução via metadata externa (risco aceite).
+- Guardrails: writes EventLog/Outbox apenas em append.ts/producer.ts; read-model writes só no consumer.
+- Provas: db:gates:offline + vitest ops/outbox/finance/entitlements OK (audited).
+- Commits: acf6f3b (docs+tests D2), 22f5b34 (agenda guardrail allowlist), 977cf0f (payments intent access gate).
+- Nota de escopo: D3 (agenda) segue no CHAT B; não mexer aqui.
+
 ### D3 — Agenda (read-model) — DONE
 - AgendaItem canónico (orgId, sourceType, sourceId, title snapshot, startsAt/endsAt, status, lastEventId) + unique (org, sourceType, sourceId).
 - Consumer idempotente: EventLog allowlist → materializa AgendaItem (dedupe por lastEventId) via outbox/worker.

@@ -16,6 +16,8 @@ export const SOURCE_TYPE_ALLOWLIST = new Set<SourceType>([
   SourceType.TOURNAMENT,
   SourceType.MATCH,
   SourceType.LOYALTY_TX,
+  SourceType.SOFT_BLOCK,
+  SourceType.HARD_BLOCK,
 ]);
 
 const LEGACY_SOURCE_TYPE_MAP: Record<string, SourceType> = {

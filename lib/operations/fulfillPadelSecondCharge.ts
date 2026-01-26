@@ -10,6 +10,7 @@ import { computeGraceUntil } from "@/domain/padelDeadlines";
 import { queueOffsessionActionRequired, queueDeadlineExpired } from "@/domain/notifications/splitPayments";
 import { ensureEntriesForConfirmedPairing } from "@/domain/tournaments/ensureEntriesForConfirmedPairing";
 import { upsertPadelRegistrationForPairing } from "@/domain/padelRegistration";
+import { paymentEventRepo } from "@/domain/finance/readModelConsumer";
 
 type IntentLike = {
   id: string;
@@ -68,7 +69,7 @@ export async function fulfillPadelSecondCharge(intent: IntentLike): Promise<bool
         where: { pairingId, status: "ACTIVE" },
         data: { status: "CANCELLED" },
       });
-      await tx.paymentEvent.upsert({
+      await paymentEventRepo(tx).upsert({
         where: { stripePaymentIntentId: intent.id },
         update: {
           status: "OK",

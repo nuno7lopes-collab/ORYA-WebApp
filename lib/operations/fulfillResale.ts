@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { PaymentEventSource } from "@prisma/client";
 import { checkoutKey } from "@/lib/stripe/idempotency";
+import { paymentEventRepo } from "@/domain/finance/readModelConsumer";
 
 type IntentLike = {
   id: string;
@@ -58,7 +59,7 @@ export async function fulfillResaleIntent(intent: IntentLike): Promise<boolean> 
         },
       });
 
-      await tx.paymentEvent.upsert({
+      await paymentEventRepo(tx).upsert({
         where: { stripePaymentIntentId: intent.id },
         update: {
           status: "OK",

@@ -1,15 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
+import { CheckoutStatus, deriveCheckoutStatusFromPayment } from "@/domain/finance/status";
 
-type Status =
-  | "PENDING"
-  | "PROCESSING"
-  | "REQUIRES_ACTION"
-  | "PAID"
-  | "FAILED"
-  | "REFUNDED"
-  | "DISPUTED";
+type Status = CheckoutStatus;
 
 const FINAL_STATUSES: Status[] = ["PAID", "FAILED", "REFUNDED", "DISPUTED"];
 const FREE_PLACEHOLDER_INTENT_ID = "FREE_CHECKOUT";
@@ -43,43 +37,54 @@ export async function GET(req: NextRequest) {
 
   try {
     // -------------------------
-    // 1) SSOT: SaleSummary (DB confirmou a compra)
+    // 1) SSOT: Payment + Ledger (estado deriva do ledger)
     // -------------------------
-    const summaryWhere: Prisma.SaleSummaryWhereInput = { OR: [] };
-    if (purchaseId) summaryWhere.OR!.push({ purchaseId });
-    if (paymentIntentId) summaryWhere.OR!.push({ paymentIntentId });
+    let resolvedPaymentId = purchaseId ?? null;
+    if (!resolvedPaymentId && paymentIntentId) {
+      const event = await prisma.paymentEvent.findFirst({
+        where: { stripePaymentIntentId: paymentIntentId },
+        select: { purchaseId: true },
+      });
+      resolvedPaymentId = event?.purchaseId ?? null;
+    }
 
-    const summary = await prisma.saleSummary.findFirst({
-      where: summaryWhere,
-      select: {
-        id: true,
-        paymentIntentId: true,
-        purchaseId: true,
-        totalCents: true,
-        createdAt: true,
-      },
-    });
-
-    if (summary) {
-      return NextResponse.json(
-        {
-          ok: true,
-          status: "PAID" as Status,
-          final: true,
-          // purchaseId é a âncora universal; se não existir (edge), fazemos fallback seguro.
-          purchaseId: summary.purchaseId ?? purchaseId ?? paymentIntentId,
-          paymentIntentId: summary.paymentIntentId ?? paymentIntentId,
-          code: "PAID",
-          retryable: false,
-          nextAction: "NONE",
-          errorMessage: null,
-        },
-        { status: 200, headers: NO_STORE_HEADERS },
-      );
+    if (resolvedPaymentId) {
+      const payment = await prisma.payment.findUnique({
+        where: { id: resolvedPaymentId },
+        select: { id: true, status: true },
+      });
+      if (payment) {
+        const ledgerEntries = await prisma.ledgerEntry.findMany({
+          where: { paymentId: payment.id },
+          select: { entryType: true },
+        });
+        const status = deriveCheckoutStatusFromPayment({
+          paymentStatus: payment.status,
+          ledgerEntries,
+        });
+        const final = FINAL_STATUSES.includes(status);
+        const nextAction =
+          status === "REQUIRES_ACTION" ? "PAY_NOW" : status === "FAILED" ? "CONTACT_SUPPORT" : "NONE";
+        const retryable = status === "PENDING" || status === "PROCESSING" || status === "REQUIRES_ACTION";
+        return NextResponse.json(
+          {
+            ok: true,
+            status,
+            final,
+            purchaseId: payment.id,
+            paymentIntentId,
+            code: status,
+            retryable,
+            nextAction,
+            errorMessage: null,
+          },
+          { status: 200, headers: NO_STORE_HEADERS },
+        );
+      }
     }
 
     // -------------------------
-    // 1b) Operations (modo worker): se não há SaleSummary ainda, ver estado da Operation
+    // 1b) Operations (modo worker): processamento em curso
     // -------------------------
     if (paymentIntentId || purchaseId) {
       const op = await prisma.operation.findFirst({
@@ -135,8 +140,7 @@ export async function GET(req: NextRequest) {
 
     // -------------------------
     // 2) PaymentEvent (telemetria / processamento)
-    // Regra: NÃO marcamos como PAID apenas por PaymentEvent=OK;
-    // PAID é SSOT via SaleSummary.
+    // Regra: NÃO marcamos como PAID apenas por PaymentEvent.
     // -------------------------
     const eventWhere: Prisma.PaymentEventWhereInput = { OR: [] };
     if (purchaseId) eventWhere.OR!.push({ purchaseId });

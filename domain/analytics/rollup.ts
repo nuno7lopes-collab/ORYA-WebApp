@@ -15,6 +15,8 @@ const SOURCE_TYPE_TO_MODULE: Record<SourceType, string> = {
   TOURNAMENT: "TORNEIOS",
   MATCH: "TORNEIOS",
   LOYALTY_TX: "CRM",
+  SOFT_BLOCK: "RESERVAS",
+  HARD_BLOCK: "RESERVAS",
 };
 
 type LedgerAggregateRow = {
