@@ -108,7 +108,14 @@ Provas / Gates
 - Workflow v8: state write + EventLog + Outbox na mesma tx (append.ts/producer.ts); outbox AGENDA_ITEM_UPSERT_REQUESTED → consumer idempotente (AgendaItem).
 - Conflitos: prioridade HardBlock > MatchSlot > Booking > SoftBlock; SoftBlock nunca bloqueia prioridades acima.
 - Gates: db:gates:offline; vitest tests/agenda tests/outbox tests/ops; RG agenda writes só no consumer; RG Outbox/EventLog writes fora dos canónicos = 0.
-- Dívida técnica (drift): writes diretos legacy ainda existem em app/api/padel/calendar/*, app/api/padel/matches/*, app/api/organizacao/reservas/*, app/api/servicos/* (rebuild cobre). Refactor para EventLog+Outbox fica para D3.5.
+- Dívida técnica (drift): refactor concluído em D3.5 (writes diretos eliminados).
+
+### D3.5 — Agenda canonical writes + rebuild parity (DONE, audited)
+- HardBlock/MatchSlot/Booking/SoftBlock writes canónicos em domain/**/commands.ts (EventLog+Outbox na mesma tx).
+- Rebuild: script `node scripts/rebuild_agenda.js --orgId <ID> --batchSize 200` (parity V1; sem hard delete, marca DELETED).
+- Rebuild CLI validado; execucao depende de DB acessivel (P1001 no ambiente atual).
+- RG finais (fora commands) = 0: padelCourtBlock/padelMatch/booking/softBlock.
+- Gates: npm run db:gates:offline; npx vitest run tests/agenda tests/outbox tests/ops.
 
 ### D4 — Finanças determinística (Stripe Connect + Fees ORYA)
 - Objetivo: Payment + Ledger SSOT; Stripe Connect obrigatório; idempotência total.

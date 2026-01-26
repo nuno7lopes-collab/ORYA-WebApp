@@ -17,6 +17,9 @@ import { ensureReservasModuleAccess } from "@/lib/reservas/access";
 import { getResourceModeBlockedPayload, resolveServiceAssignmentMode } from "@/lib/reservas/serviceAssignment";
 import { createNotification, shouldNotify } from "@/lib/notifications";
 import { OrganizationMemberRole } from "@prisma/client";
+import { evaluateCandidate, type AgendaCandidate } from "@/domain/agenda/conflictEngine";
+import { buildAgendaConflictPayload } from "@/domain/agenda/conflictResponse";
+import { updateBooking } from "@/domain/bookings/commands";
 
 const ALLOWED_ROLES: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -61,6 +64,13 @@ function buildBlocks(
     professionalId: booking.professionalId,
     resourceId: booking.resourceId,
   }));
+}
+
+function agendaConflictResponse(decision?: Parameters<typeof buildAgendaConflictPayload>[0]["decision"]) {
+  return {
+    ok: false,
+    ...buildAgendaConflictPayload({ decision: decision ?? null, fallbackReason: "MISSING_EXISTING_DATA" }),
+  };
 }
 
 export async function POST(
@@ -247,7 +257,8 @@ export async function POST(
     const dayStart = makeUtcDateFromLocal({ ...dateParts, hour: 0, minute: 0 }, timezone);
     const dayEnd = makeUtcDateFromLocal({ ...dateParts, hour: 23, minute: 59 }, timezone);
 
-    const [templates, overrides, blockingBookings] = await Promise.all([
+    const bookingEndsAt = new Date(startsAt.getTime() + booking.durationMinutes * 60 * 1000);
+    const [templates, overrides, blockingBookings, softBlocks] = await Promise.all([
       prisma.weeklyAvailabilityTemplate.findMany({
         where: {
           organizationId: booking.service.organizationId,
@@ -274,13 +285,25 @@ export async function POST(
         where: {
           organizationId: booking.service.organizationId,
           id: { not: booking.id },
-          startsAt: { lt: new Date(startsAt.getTime() + booking.durationMinutes * 60 * 1000) },
+          startsAt: { lt: bookingEndsAt },
           OR: [
             { status: { in: ["CONFIRMED", "DISPUTED", "NO_SHOW"] } },
             { status: { in: ["PENDING_CONFIRMATION", "PENDING"] }, pendingExpiresAt: { gt: new Date() } },
           ],
         },
-        select: { startsAt: true, durationMinutes: true, professionalId: true, resourceId: true },
+        select: { id: true, startsAt: true, durationMinutes: true, professionalId: true, resourceId: true },
+      }),
+      prisma.softBlock.findMany({
+        where: {
+          organizationId: booking.service.organizationId,
+          startsAt: { lt: bookingEndsAt },
+          endsAt: { gt: startsAt },
+          OR: [
+            { scopeType: "ORGANIZATION" },
+            ...(scopeIds.length > 0 ? [{ scopeType, scopeId: { in: scopeIds } }] : []),
+          ],
+        },
+        select: { id: true, scopeType: true, scopeId: true, startsAt: true, endsAt: true },
       }),
     ]);
 
@@ -329,9 +352,56 @@ export async function POST(
       professionalId = assignedScopeId;
     }
 
+    const scopeIdForConflict = assignmentMode === "RESOURCE" ? resourceId : professionalId;
+    if (!scopeIdForConflict) {
+      return NextResponse.json(agendaConflictResponse(), { status: 503 });
+    }
+
+    const candidate: AgendaCandidate = {
+      type: "BOOKING",
+      sourceId: String(booking.id),
+      startsAt,
+      endsAt: bookingEndsAt,
+    };
+    const existing: AgendaCandidate[] = blockingBookings
+      .filter((item) =>
+        assignmentMode === "RESOURCE" ? item.resourceId === scopeIdForConflict : item.professionalId === scopeIdForConflict,
+      )
+      .map((item) => ({
+        type: "BOOKING" as const,
+        sourceId: String(item.id),
+        startsAt: item.startsAt,
+        endsAt: new Date(item.startsAt.getTime() + item.durationMinutes * 60 * 1000),
+      }));
+    softBlocks.forEach((block) => {
+      if (block.scopeType === "ORGANIZATION") {
+        existing.push({
+          type: "SOFT_BLOCK",
+          sourceId: String(block.id),
+          startsAt: block.startsAt,
+          endsAt: block.endsAt,
+        });
+        return;
+      }
+      if (block.scopeId !== scopeIdForConflict) return;
+      existing.push({
+        type: "SOFT_BLOCK",
+        sourceId: String(block.id),
+        startsAt: block.startsAt,
+        endsAt: block.endsAt,
+      });
+    });
+
+    const decision = evaluateCandidate({ candidate, existing });
+    if (!decision.allowed) {
+      return NextResponse.json(agendaConflictResponse(decision), { status: 409 });
+    }
+
     const { ip, userAgent } = getRequestMeta(req);
-    const updated = await prisma.booking.update({
-      where: { id: booking.id },
+    const { booking: updated } = await updateBooking({
+      bookingId: booking.id,
+      organizationId: booking.organizationId,
+      actorUserId: profile.id,
       data: {
         startsAt,
         professionalId,

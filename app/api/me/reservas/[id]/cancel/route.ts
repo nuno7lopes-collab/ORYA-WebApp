@@ -5,6 +5,7 @@ import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { decideCancellation } from "@/lib/bookingCancellation";
 import { refundBookingPayment } from "@/lib/reservas/bookingRefund";
+import { cancelBooking } from "@/domain/bookings/commands";
 
 function parseId(value: string) {
   const parsed = Number(value);
@@ -109,8 +110,11 @@ export async function POST(
         return { error: NextResponse.json({ ok: false, error: "O prazo de cancelamento já passou." }, { status: 400 }) };
       }
 
-      const updated = await tx.booking.update({
-        where: { id: booking.id },
+      const { booking: updated } = await cancelBooking({
+        tx,
+        bookingId: booking.id,
+        organizationId: booking.organizationId,
+        actorUserId: user.id,
         data: { status: "CANCELLED_BY_CLIENT" },
       });
 

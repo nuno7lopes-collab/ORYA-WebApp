@@ -211,6 +211,7 @@ model Organization {
   eventLogs               EventLog[]
   activityFeedItems       ActivityFeedItem[]
   agendaItems             AgendaItem[]
+  softBlocks              SoftBlock[]
   searchIndexItems        SearchIndexItem[]
   events                  Event[]
   promoCodes              PromoCode[]
@@ -2007,6 +2008,26 @@ model ActivityFeedItem {
   @@index([organizationId, createdAt], map: "activity_feed_org_time_idx")
   @@index([organizationId, eventType], map: "activity_feed_org_type_idx")
   @@map("activity_feed_items")
+  @@schema("app_v3")
+}
+
+model SoftBlock {
+  id             Int             @id @default(autoincrement())
+  organizationId Int             @map("organization_id")
+  scopeType      SoftBlockScope  @default(ORGANIZATION) @map("scope_type")
+  scopeId        Int             @default(0) @map("scope_id")
+  startsAt       DateTime        @map("starts_at") @db.Timestamptz(6)
+  endsAt         DateTime        @map("ends_at") @db.Timestamptz(6)
+  reason         String?         @map("reason")
+  createdAt      DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId], map: "soft_blocks_org_idx")
+  @@index([organizationId, scopeType, scopeId], map: "soft_blocks_scope_idx")
+  @@index([organizationId, startsAt], map: "soft_blocks_org_start_idx")
+  @@map("soft_blocks")
   @@schema("app_v3")
 }
 
@@ -3899,6 +3920,17 @@ enum SourceType {
   TOURNAMENT
   MATCH
   LOYALTY_TX
+  SOFT_BLOCK
+  HARD_BLOCK
+
+  @@schema("app_v3")
+}
+
+enum SoftBlockScope {
+  ORGANIZATION
+  PROFESSIONAL
+  RESOURCE
+  COURT
 
   @@schema("app_v3")
 }

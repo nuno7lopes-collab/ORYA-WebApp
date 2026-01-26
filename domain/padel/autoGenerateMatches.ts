@@ -2,6 +2,7 @@ import { padel_format, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { queueBracketPublished } from "@/domain/notifications/tournament";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
+import { createPadelMatch, deletePadelMatch, updatePadelMatch } from "@/domain/padel/matches/commands";
 import {
   comparePadelStandingsRows,
   computePadelStandingsByGroup,
@@ -11,6 +12,10 @@ import {
 } from "@/domain/padel/standings";
 import { autoAdvancePadelByes } from "@/domain/padel/knockoutAdvance";
 import { normalizePadelScoreRules } from "@/domain/padel/score";
+
+const MATCH_SYSTEM_EVENT = "PADEL_MATCH_SYSTEM_UPDATED";
+const MATCH_GENERATED_EVENT = "PADEL_MATCH_GENERATED";
+const MATCH_DELETED_EVENT = "PADEL_MATCH_DELETED";
 
 type GroupsConfig = {
   mode: "AUTO" | "MANUAL";
@@ -115,6 +120,40 @@ function roundRobinSchedule(ids: Array<number | null>) {
   return rounds;
 }
 
+async function createMatchList(params: {
+  matches: Array<Prisma.PadelMatchCreateManyInput>;
+  eventId: number;
+  organizationId: number;
+  actorUserId: string | null;
+}) {
+  for (const data of params.matches) {
+    await createPadelMatch({
+      data,
+      eventId: params.eventId,
+      organizationId: params.organizationId,
+      actorUserId: params.actorUserId,
+      eventType: MATCH_GENERATED_EVENT,
+    });
+  }
+}
+
+async function deleteMatchList(params: {
+  matchIds: number[];
+  eventId: number;
+  organizationId: number;
+  actorUserId: string | null;
+}) {
+  for (const matchId of params.matchIds) {
+    await deletePadelMatch({
+      matchId,
+      eventId: params.eventId,
+      organizationId: params.organizationId,
+      actorUserId: params.actorUserId,
+      eventType: MATCH_DELETED_EVENT,
+    });
+  }
+}
+
 export async function autoGeneratePadelMatches({
   eventId,
   categoryId,
@@ -215,8 +254,15 @@ export async function autoGeneratePadelMatches({
         return { ok: false, error: "GROUPS_ALREADY_GENERATED" };
       }
       if (existingPolicy === "replace") {
-        await prisma.padelMatch.deleteMany({
+        const existingMatches = await prisma.padelMatch.findMany({
           where: { eventId, roundType: "GROUPS", ...matchCategoryFilter },
+          select: { id: true },
+        });
+        await deleteMatchList({
+          matchIds: existingMatches.map((m) => m.id),
+          eventId,
+          organizationId: event.organizationId,
+          actorUserId,
         });
       } else {
         return { ok: true, skipped: true, stage: "GROUPS" };
@@ -313,7 +359,12 @@ export async function autoGeneratePadelMatches({
     });
     if (!matchesToCreate.length) return { ok: false, error: "NO_MATCHES_GENERATED" };
 
-    await prisma.padelMatch.createMany({ data: matchesToCreate });
+    await createMatchList({
+      matches: matchesToCreate,
+      eventId,
+      organizationId: event.organizationId,
+      actorUserId,
+    });
     if (notifyUsers && userIds.length) await queueBracketPublished(userIds, eventId);
     await recordOrganizationAuditSafe({
       organizationId: event.organizationId,
@@ -358,8 +409,15 @@ export async function autoGeneratePadelMatches({
         return { ok: false, error: "KNOCKOUT_ALREADY_GENERATED" };
       }
       if (existingPolicy === "replace") {
-        await prisma.padelMatch.deleteMany({
+        const existingMatches = await prisma.padelMatch.findMany({
           where: { eventId, roundType: "KNOCKOUT", ...matchCategoryFilter },
+          select: { id: true },
+        });
+        await deleteMatchList({
+          matchIds: existingMatches.map((m) => m.id),
+          eventId,
+          organizationId: event.organizationId,
+          actorUserId,
         });
       } else {
         return { ok: true, skipped: true, stage: "KNOCKOUT" };
@@ -557,7 +615,12 @@ export async function autoGeneratePadelMatches({
 
     if (!matchCreateData.length) return { ok: false, error: "NO_MATCHES_GENERATED" };
 
-    await prisma.padelMatch.createMany({ data: matchCreateData });
+    await createMatchList({
+      matches: matchCreateData,
+      eventId,
+      organizationId: event.organizationId,
+      actorUserId,
+    });
     const koMatches = await prisma.padelMatch.findMany({
       where: { eventId, roundType: "KNOCKOUT", ...matchCategoryFilter },
       select: { id: true, roundLabel: true, pairingAId: true, pairingBId: true, winnerPairingId: true },
@@ -565,12 +628,24 @@ export async function autoGeneratePadelMatches({
     });
     await autoAdvancePadelByes({
       matches: koMatches,
-      updateMatch: (matchId, data) =>
-        prisma.padelMatch.update({
-          where: { id: matchId },
+      updateMatch: async (matchId, data) => {
+        const { match } = await updatePadelMatch({
+          matchId,
           data,
+          eventId,
+          organizationId: event.organizationId,
+          actorUserId,
+          eventType: MATCH_SYSTEM_EVENT,
           select: { id: true, roundLabel: true, pairingAId: true, pairingBId: true, winnerPairingId: true },
-        }),
+        });
+        return match as {
+          id: number;
+          roundLabel: string | null;
+          pairingAId: number | null;
+          pairingBId: number | null;
+          winnerPairingId: number | null;
+        };
+      },
       scoreRules,
     });
     const existingAdvanced = (config?.advancedSettings as Record<string, unknown>) ?? {};
@@ -626,7 +701,16 @@ export async function autoGeneratePadelMatches({
       return { ok: false, error: "MATCHES_ALREADY_EXIST" };
     }
     if (existingPolicy === "replace") {
-      await prisma.padelMatch.deleteMany({ where: { eventId, ...matchCategoryFilter } });
+      const existingMatches = await prisma.padelMatch.findMany({
+        where: { eventId, ...matchCategoryFilter },
+        select: { id: true },
+      });
+      await deleteMatchList({
+        matchIds: existingMatches.map((m) => m.id),
+        eventId,
+        organizationId: event.organizationId,
+        actorUserId,
+      });
     } else {
       return { ok: true, skipped: true };
     }
@@ -816,7 +900,12 @@ export async function autoGeneratePadelMatches({
 
   if (!matchCreateData.length) return { ok: false, error: "NO_MATCHES_GENERATED" };
 
-  await prisma.padelMatch.createMany({ data: matchCreateData });
+  await createMatchList({
+    matches: matchCreateData,
+    eventId,
+    organizationId: event.organizationId,
+    actorUserId,
+  });
   if (isKnockout) {
     const koMatches = await prisma.padelMatch.findMany({
       where: { eventId, roundType: "KNOCKOUT", ...matchCategoryFilter },
@@ -825,12 +914,24 @@ export async function autoGeneratePadelMatches({
     });
     await autoAdvancePadelByes({
       matches: koMatches,
-      updateMatch: (matchId, data) =>
-        prisma.padelMatch.update({
-          where: { id: matchId },
+      updateMatch: async (matchId, data) => {
+        const { match } = await updatePadelMatch({
+          matchId,
           data,
+          eventId,
+          organizationId: event.organizationId,
+          actorUserId,
+          eventType: MATCH_SYSTEM_EVENT,
           select: { id: true, roundLabel: true, pairingAId: true, pairingBId: true, winnerPairingId: true },
-        }),
+        });
+        return match as {
+          id: number;
+          roundLabel: string | null;
+          pairingAId: number | null;
+          pairingBId: number | null;
+          winnerPairingId: number | null;
+        };
+      },
       scoreRules,
     });
   }

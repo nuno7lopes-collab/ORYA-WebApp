@@ -1,6 +1,14 @@
 import { NextResponse } from "next/server";
+import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { requireAdminUser } from "@/lib/admin/auth";
+import { appendEventLog } from "@/domain/eventLog/append";
+import { recordOutboxEvent } from "@/domain/outbox/producer";
+import { recordSearchIndexOutbox } from "@/domain/searchIndex/outbox";
+import { paymentEventRepo, saleLineRepo, saleSummaryRepo } from "@/domain/finance/readModelConsumer";
+import { deleteHardBlocksByEvent } from "@/domain/hardBlocks/commands";
+import { deleteMatchSlotsByEvent } from "@/domain/padel/matchSlots/commands";
+import { SourceType } from "@prisma/client";
 
 type PurgePayload = {
   eventId?: number;
@@ -21,7 +29,7 @@ export async function POST(req: Request) {
 
     const event = await prisma.event.findUnique({
       where: { id: eventId },
-      select: { id: true, title: true, slug: true },
+      select: { id: true, title: true, slug: true, organizationId: true },
     });
     if (!event) {
       return NextResponse.json({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
@@ -65,95 +73,162 @@ export async function POST(req: Request) {
         ).map((m) => m.id)
       : [];
 
-    await prisma.padelPairing.updateMany({
-      where: { eventId },
-      data: { createdByTicketId: null },
+    await prisma.$transaction(async (tx) => {
+      const eventLogId = crypto.randomUUID();
+      await appendEventLog(
+        {
+          eventId: eventLogId,
+          organizationId: event.organizationId ?? null,
+          eventType: "event.cancelled",
+          idempotencyKey: `event.cancelled:${eventId}:${eventLogId}`,
+          actorUserId: admin.userId ?? null,
+          sourceType: SourceType.EVENT,
+          sourceId: String(eventId),
+          correlationId: String(eventId),
+          payload: {
+            eventId,
+            title: event.title,
+            status: "CANCELLED",
+            organizationId: event.organizationId ?? null,
+          },
+        },
+        tx,
+      );
+      await recordOutboxEvent(
+        {
+          eventId: eventLogId,
+          eventType: "event.cancelled",
+          payload: {
+            eventId,
+            title: event.title,
+            status: "CANCELLED",
+          },
+          correlationId: String(eventId),
+        },
+        tx,
+      );
+      await recordSearchIndexOutbox(
+        {
+          eventLogId,
+          organizationId: event.organizationId ?? null,
+          sourceType: SourceType.EVENT,
+          sourceId: String(eventId),
+          correlationId: String(eventId),
+        },
+        tx,
+      );
+
+      await tx.padelPairing.updateMany({
+        where: { eventId },
+        data: { createdByTicketId: null },
+      });
+      await tx.ticket.updateMany({
+        where: { eventId },
+        data: { pairingId: null },
+      });
+
+      const notificationOr = [{ eventId }];
+      if (ticketIds.length) {
+        notificationOr.push({ ticketId: { in: ticketIds } });
+      }
+      await tx.notification.deleteMany({ where: { OR: notificationOr } });
+
+      await tx.entitlementCheckin.deleteMany({ where: { eventId } });
+      if (entitlementIds.length) {
+        await tx.entitlementQrToken.deleteMany({ where: { entitlementId: { in: entitlementIds } } });
+      }
+      await tx.entitlement.deleteMany({ where: { eventId } });
+
+      if (pairingIds.length) {
+        await tx.padelPairingSlot.deleteMany({ where: { pairingId: { in: pairingIds } } });
+      }
+      const matchDeleteRes = await deleteMatchSlotsByEvent({
+        organizationId: event.organizationId,
+        eventId,
+        actorUserId: admin.userId ?? null,
+        correlationId: String(eventId),
+        tx,
+      });
+      if (!matchDeleteRes.ok) {
+        throw new Error(`MATCH_PURGE_FAILED:${matchDeleteRes.error}`);
+      }
+      await tx.padelPairingHold.deleteMany({ where: { eventId } });
+      await tx.padelWaitlistEntry.deleteMany({ where: { eventId } });
+      await tx.tournamentEntry.deleteMany({ where: { eventId } });
+
+      if (matchIds.length) {
+        await tx.matchNotification.deleteMany({ where: { matchId: { in: matchIds } } });
+      }
+      if (stageIds.length) {
+        await tx.tournamentMatch.deleteMany({ where: { stageId: { in: stageIds } } });
+        await tx.tournamentGroup.deleteMany({ where: { stageId: { in: stageIds } } });
+      }
+      if (tournamentIds.length) {
+        await tx.tournamentStage.deleteMany({ where: { tournamentId: { in: tournamentIds } } });
+        await tx.tournamentAuditLog.deleteMany({ where: { tournamentId: { in: tournamentIds } } });
+        await tx.tournament.deleteMany({ where: { id: { in: tournamentIds } } });
+      }
+
+      await tx.padelAvailability.deleteMany({ where: { eventId } });
+      if (!Number.isFinite(event.organizationId)) {
+        throw new Error("EVENT_ORG_MISSING");
+      }
+      const hardBlocksRes = await deleteHardBlocksByEvent({
+        organizationId: event.organizationId,
+        eventId,
+        actorUserId: admin.userId ?? null,
+        correlationId: String(eventId),
+        tx,
+      });
+      if (!hardBlocksRes.ok) {
+        throw new Error(`HARD_BLOCK_PURGE_FAILED:${hardBlocksRes.error}`);
+      }
+      await tx.padelRankingEntry.deleteMany({ where: { eventId } });
+      await tx.padelTournamentConfig.deleteMany({ where: { eventId } });
+      await tx.padelEventCategoryLink.deleteMany({ where: { eventId } });
+
+      if (ticketIds.length) {
+        await tx.ticketResale.deleteMany({ where: { ticketId: { in: ticketIds } } });
+        await tx.guestTicketLink.deleteMany({ where: { ticketId: { in: ticketIds } } });
+      }
+      await tx.ticketReservation.deleteMany({ where: { eventId } });
+      await tx.ticket.deleteMany({ where: { eventId } });
+      await tx.ticketType.deleteMany({ where: { eventId } });
+
+      await saleLineRepo(tx).deleteMany({ where: { eventId } });
+      if (promoCodeIds.length) {
+        await tx.promoRedemption.deleteMany({ where: { promoCodeId: { in: promoCodeIds } } });
+      }
+      await tx.promoCode.deleteMany({ where: { eventId } });
+      await saleSummaryRepo(tx).deleteMany({ where: { eventId } });
+      await tx.refund.deleteMany({ where: { eventId } });
+      await paymentEventRepo(tx).deleteMany({ where: { eventId } });
+
+      if (salePaymentIntentIds.length || salePurchaseIds.length) {
+        const operationOr = [{ eventId }];
+        if (salePaymentIntentIds.length) {
+          operationOr.push({ paymentIntentId: { in: salePaymentIntentIds } });
+        }
+        if (salePurchaseIds.length) {
+          operationOr.push({ purchaseId: { in: salePurchaseIds } });
+        }
+        await tx.operation.deleteMany({ where: { OR: operationOr } });
+        if (salePaymentIntentIds.length) {
+          await tx.pendingPayout.deleteMany({
+            where: { paymentIntentId: { in: salePaymentIntentIds } },
+          });
+          await tx.transaction.deleteMany({
+            where: { stripePaymentIntentId: { in: salePaymentIntentIds } },
+          });
+        }
+      } else {
+        await tx.operation.deleteMany({ where: { eventId } });
+      }
+
+      await tx.eventInvite.deleteMany({ where: { eventId } });
+      await tx.padelPairing.deleteMany({ where: { eventId } });
+      await tx.event.delete({ where: { id: eventId } });
     });
-    await prisma.ticket.updateMany({
-      where: { eventId },
-      data: { pairingId: null },
-    });
-
-    const notificationOr = [{ eventId }];
-    if (ticketIds.length) {
-      notificationOr.push({ ticketId: { in: ticketIds } });
-    }
-    await prisma.notification.deleteMany({ where: { OR: notificationOr } });
-
-    await prisma.entitlementCheckin.deleteMany({ where: { eventId } });
-    if (entitlementIds.length) {
-      await prisma.entitlementQrToken.deleteMany({ where: { entitlementId: { in: entitlementIds } } });
-    }
-    await prisma.entitlement.deleteMany({ where: { eventId } });
-
-    if (pairingIds.length) {
-      await prisma.padelPairingSlot.deleteMany({ where: { pairingId: { in: pairingIds } } });
-    }
-    await prisma.padelMatch.deleteMany({ where: { eventId } });
-    await prisma.padelPairingHold.deleteMany({ where: { eventId } });
-    await prisma.padelWaitlistEntry.deleteMany({ where: { eventId } });
-    await prisma.tournamentEntry.deleteMany({ where: { eventId } });
-
-    if (matchIds.length) {
-      await prisma.matchNotification.deleteMany({ where: { matchId: { in: matchIds } } });
-    }
-    if (stageIds.length) {
-      await prisma.tournamentMatch.deleteMany({ where: { stageId: { in: stageIds } } });
-      await prisma.tournamentGroup.deleteMany({ where: { stageId: { in: stageIds } } });
-    }
-    if (tournamentIds.length) {
-      await prisma.tournamentStage.deleteMany({ where: { tournamentId: { in: tournamentIds } } });
-      await prisma.tournamentAuditLog.deleteMany({ where: { tournamentId: { in: tournamentIds } } });
-      await prisma.tournament.deleteMany({ where: { id: { in: tournamentIds } } });
-    }
-
-    await prisma.padelAvailability.deleteMany({ where: { eventId } });
-    await prisma.padelCourtBlock.deleteMany({ where: { eventId } });
-    await prisma.padelRankingEntry.deleteMany({ where: { eventId } });
-    await prisma.padelTournamentConfig.deleteMany({ where: { eventId } });
-    await prisma.padelEventCategoryLink.deleteMany({ where: { eventId } });
-
-    if (ticketIds.length) {
-      await prisma.ticketResale.deleteMany({ where: { ticketId: { in: ticketIds } } });
-      await prisma.guestTicketLink.deleteMany({ where: { ticketId: { in: ticketIds } } });
-    }
-    await prisma.ticketReservation.deleteMany({ where: { eventId } });
-    await prisma.ticket.deleteMany({ where: { eventId } });
-    await prisma.ticketType.deleteMany({ where: { eventId } });
-
-    await prisma.saleLine.deleteMany({ where: { eventId } });
-    if (promoCodeIds.length) {
-      await prisma.promoRedemption.deleteMany({ where: { promoCodeId: { in: promoCodeIds } } });
-    }
-    await prisma.promoCode.deleteMany({ where: { eventId } });
-    await prisma.saleSummary.deleteMany({ where: { eventId } });
-    await prisma.refund.deleteMany({ where: { eventId } });
-    await prisma.paymentEvent.deleteMany({ where: { eventId } });
-
-    if (salePaymentIntentIds.length || salePurchaseIds.length) {
-      const operationOr = [{ eventId }];
-      if (salePaymentIntentIds.length) {
-        operationOr.push({ paymentIntentId: { in: salePaymentIntentIds } });
-      }
-      if (salePurchaseIds.length) {
-        operationOr.push({ purchaseId: { in: salePurchaseIds } });
-      }
-      await prisma.operation.deleteMany({ where: { OR: operationOr } });
-      if (salePaymentIntentIds.length) {
-        await prisma.pendingPayout.deleteMany({
-          where: { paymentIntentId: { in: salePaymentIntentIds } },
-        });
-        await prisma.transaction.deleteMany({
-          where: { stripePaymentIntentId: { in: salePaymentIntentIds } },
-        });
-      }
-    } else {
-      await prisma.operation.deleteMany({ where: { eventId } });
-    }
-
-    await prisma.eventInvite.deleteMany({ where: { eventId } });
-    await prisma.padelPairing.deleteMany({ where: { eventId } });
-    await prisma.event.delete({ where: { id: eventId } });
 
     return NextResponse.json({ ok: true, eventId, title: event.title, slug: event.slug }, { status: 200 });
   } catch (error) {

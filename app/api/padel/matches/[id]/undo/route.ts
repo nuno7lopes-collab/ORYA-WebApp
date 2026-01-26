@@ -7,9 +7,11 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
 import { extractBracketPrefix, sortRoundsBySize } from "@/domain/padel/knockoutAdvance";
+import { updatePadelMatch } from "@/domain/padel/matches/commands";
 
 const allowedRoles: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
 const UNDO_WINDOW_MS = 60 * 1000;
+const SYSTEM_MATCH_EVENT = "PADEL_MATCH_SYSTEM_UPDATED";
 
 const asObject = (value: unknown) =>
   value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
@@ -247,11 +249,25 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       if (target.clearA) data.pairingAId = null;
       if (target.clearB) data.pairingBId = null;
       if (target.clearA || target.clearB) data.winnerPairingId = null;
-      await tx.padelMatch.update({ where: { id: target.id }, data });
+      await updatePadelMatch({
+        tx,
+        matchId: target.id,
+        eventId: match.eventId,
+        organizationId: match.event.organizationId,
+        actorUserId: user.id,
+        eventType: SYSTEM_MATCH_EVENT,
+        data,
+      });
     }
 
-    return tx.padelMatch.update({
-      where: { id: matchId },
+    const { match: restored } = await updatePadelMatch({
+      tx,
+      matchId,
+      eventId: match.eventId,
+      organizationId: match.event.organizationId,
+      actorUserId: user.id,
+      beforeStatus,
+      eventType: SYSTEM_MATCH_EVENT,
       data: {
         status: beforeStatus as any,
         winnerPairingId: beforeWinner,
@@ -259,6 +275,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         scoreSets: (beforeScoreSets ?? null) as Prisma.InputJsonValue | null,
       },
     });
+
+    return restored;
   });
 
   await recordOrganizationAuditSafe({

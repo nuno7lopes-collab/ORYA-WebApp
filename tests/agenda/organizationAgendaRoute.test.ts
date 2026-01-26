@@ -5,7 +5,7 @@ const getAgendaItemsForOrganization = vi.hoisted(() => vi.fn());
 const getActiveOrganizationForUser = vi.hoisted(() => vi.fn());
 const ensureMemberModuleAccess = vi.hoisted(() => vi.fn());
 
-vi.mock("@/domain/agenda/query", () => ({ getAgendaItemsForOrganization }));
+vi.mock("@/domain/agendaReadModel/query", () => ({ getAgendaItemsForOrganization }));
 vi.mock("@/lib/organizationContext", () => ({ getActiveOrganizationForUser }));
 vi.mock("@/lib/organizationMemberAccess", () => ({ ensureMemberModuleAccess }));
 vi.mock("@/lib/organizationId", () => ({ resolveOrganizationIdFromRequest: () => null }));

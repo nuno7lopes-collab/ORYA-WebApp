@@ -11,6 +11,7 @@ import { computeCombinedFees } from "@/lib/fees";
 import { SourceType } from "@prisma/client";
 import { formatPaidSalesGateMessage, getPaidSalesGate } from "@/lib/organizationPayments";
 import { ensureReservasModuleAccess } from "@/lib/reservas/access";
+import { cancelBooking, updateBooking } from "@/domain/bookings/commands";
 
 const HOLD_MINUTES = 10;
 const ORYA_CARD_FEE_BPS = 100;
@@ -100,8 +101,10 @@ export async function POST(
     const pendingExpiry =
       booking.pendingExpiresAt ?? new Date(booking.createdAt.getTime() + HOLD_MINUTES * 60 * 1000);
     if (pendingExpiry < new Date()) {
-      await prisma.booking.update({
-        where: { id: booking.id },
+      await cancelBooking({
+        bookingId: booking.id,
+        organizationId: booking.organizationId,
+        actorUserId: user.id,
         data: { status: "CANCELLED_BY_CLIENT" },
       });
       return NextResponse.json({ ok: false, error: "RESERVA_EXPIRADA" }, { status: 410 });
@@ -241,8 +244,10 @@ export async function POST(
       },
     );
 
-    await prisma.booking.update({
-      where: { id: booking.id },
+    await updateBooking({
+      bookingId: booking.id,
+      organizationId: booking.organizationId,
+      actorUserId: user.id,
       data: { paymentIntentId: intent.id },
     });
 

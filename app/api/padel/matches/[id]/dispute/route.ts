@@ -6,9 +6,11 @@ import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
+import { updatePadelMatch } from "@/domain/padel/matches/commands";
 
 const allowedRoles: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
 const adminRoles = new Set<OrganizationMemberRole>(["OWNER", "CO_OWNER", "ADMIN"]);
+const SYSTEM_MATCH_EVENT = "PADEL_MATCH_SYSTEM_UPDATED";
 
 const asScoreObject = (value: unknown) =>
   value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
@@ -74,8 +76,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   const nowIso = new Date().toISOString();
-  const updated = await prisma.padelMatch.update({
-    where: { id: match.id },
+  const { match: updated } = await updatePadelMatch({
+    matchId: match.id,
+    eventId: match.event.id,
+    organizationId: match.event.organizationId,
+    actorUserId: user.id,
+    beforeStatus: match.status ?? null,
+    eventType: SYSTEM_MATCH_EVENT,
     data: {
       score: {
         ...score,
@@ -143,8 +150,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const resolutionNote = normalizeReason(body?.resolutionNote ?? body?.note);
 
   const nowIso = new Date().toISOString();
-  const updated = await prisma.padelMatch.update({
-    where: { id: match.id },
+  const { match: updated } = await updatePadelMatch({
+    matchId: match.id,
+    eventId: match.event.id,
+    organizationId: match.event.organizationId,
+    actorUserId: user.id,
+    beforeStatus: match.status ?? null,
+    eventType: SYSTEM_MATCH_EVENT,
     data: {
       score: {
         ...score,

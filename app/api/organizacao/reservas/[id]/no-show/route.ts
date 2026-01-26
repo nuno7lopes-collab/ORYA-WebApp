@@ -8,6 +8,7 @@ import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { ensureReservasModuleAccess } from "@/lib/reservas/access";
 import { createNotification, shouldNotify } from "@/lib/notifications";
 import { OrganizationMemberRole } from "@prisma/client";
+import { markNoShowBooking } from "@/domain/bookings/commands";
 
 const ALLOWED_ROLES: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -87,8 +88,10 @@ export async function POST(
       return NextResponse.json({ ok: false, error: "Reserva ainda não ocorreu." }, { status: 409 });
     }
 
-    const updated = await prisma.booking.update({
-      where: { id: booking.id },
+    const { booking: updated } = await markNoShowBooking({
+      bookingId: booking.id,
+      organizationId: booking.organizationId,
+      actorUserId: profile.id,
       data: { status: "NO_SHOW" },
       select: { id: true, status: true },
     });

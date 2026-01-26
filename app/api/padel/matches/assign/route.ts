@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
+import { updatePadelMatch } from "@/domain/padel/matches/commands";
 
 const allowedRoles: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
 
@@ -111,8 +112,12 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  const updated = await prisma.padelMatch.update({
-    where: { id: match.id },
+  const { match: updated } = await updatePadelMatch({
+    matchId: match.id,
+    eventId: match.eventId,
+    organizationId: match.event.organizationId,
+    actorUserId: user.id,
+    beforeStatus: match.status ?? null,
     data: {
       pairingAId: pairingAId ?? null,
       pairingBId: pairingBId ?? null,

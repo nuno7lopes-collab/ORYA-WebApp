@@ -5,7 +5,7 @@ import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { OrganizationModule } from "@prisma/client";
-import { getAgendaItemsForOrganization } from "@/domain/agenda/query";
+import { getAgendaItemsForOrganization } from "@/domain/agendaReadModel/query";
 
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);

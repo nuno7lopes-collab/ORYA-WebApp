@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { getAgendaItemsForOrganization } from "@/domain/agenda/query";
+import { getAgendaItemsForOrganization } from "@/domain/agendaReadModel/query";
 import { SourceType } from "@prisma/client";
 
 const mocks = vi.hoisted(() => ({

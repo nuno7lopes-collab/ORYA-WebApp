@@ -14,6 +14,7 @@ import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { enqueueOperation } from "@/lib/operations/enqueue";
 import { refundKey } from "@/lib/stripe/idempotency";
 import { transitionPadelRegistrationStatus } from "@/domain/padelRegistration";
+import { updatePadelMatch } from "@/domain/padel/matches/commands";
 
 const allowedRoles: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
 
@@ -76,8 +77,8 @@ async function queueCategoryRefunds(params: {
   return summaries.length;
 }
 
-async function cancelCategoryActivity(params: { eventId: number; categoryId: number }) {
-  const { eventId, categoryId } = params;
+async function cancelCategoryActivity(params: { eventId: number; categoryId: number; organizationId: number; actorUserId: string }) {
+  const { eventId, categoryId, organizationId, actorUserId } = params;
   await prisma.$transaction(async (tx) => {
     await tx.padelPairingSlot.updateMany({
       where: { pairing: { eventId, categoryId } },
@@ -110,10 +111,21 @@ async function cancelCategoryActivity(params: { eventId: number; categoryId: num
       where: { pairing: { eventId, categoryId }, status: "ACTIVE" },
       data: { status: "CANCELLED" },
     });
-    await tx.padelMatch.updateMany({
+    const matches = await tx.padelMatch.findMany({
       where: { eventId, categoryId },
-      data: { status: "CANCELLED" },
+      select: { id: true },
     });
+    for (const match of matches) {
+      await updatePadelMatch({
+        tx,
+        matchId: match.id,
+        eventId,
+        organizationId,
+        actorUserId,
+        eventType: "PADEL_MATCH_SYSTEM_UPDATED",
+        data: { status: "CANCELLED" },
+      });
+    }
     await tx.tournamentEntry.updateMany({
       where: { eventId, categoryId },
       data: { status: "CANCELLED" },
@@ -262,7 +274,12 @@ export async function POST(req: NextRequest) {
       const previous = existingByCategory.get(link.padelCategoryId);
       if (previous?.isEnabled && !link.isEnabled) {
         const count = await queueCategoryRefunds({ eventId, linkId: link.id, refundedBy: user.id });
-        await cancelCategoryActivity({ eventId, categoryId: link.padelCategoryId });
+        await cancelCategoryActivity({
+          eventId,
+          categoryId: link.padelCategoryId,
+          organizationId: organization.id,
+          actorUserId: user.id,
+        });
         refundsTriggered.push({ linkId: link.id, count });
       }
     }

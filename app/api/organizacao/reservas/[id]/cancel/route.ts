@@ -11,6 +11,7 @@ import { ensureReservasModuleAccess } from "@/lib/reservas/access";
 import { decideCancellation } from "@/lib/bookingCancellation";
 import { ingestCrmInteraction } from "@/lib/crm/ingest";
 import { createNotification, shouldNotify } from "@/lib/notifications";
+import { cancelBooking } from "@/domain/bookings/commands";
 
 const ALLOWED_ROLES: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -132,8 +133,11 @@ export async function POST(
         new Date(),
       );
 
-      const updated = await tx.booking.update({
-        where: { id: booking.id },
+      const { booking: updated } = await cancelBooking({
+        tx,
+        bookingId: booking.id,
+        organizationId: booking.organizationId,
+        actorUserId: profile.id,
         data: { status: "CANCELLED_BY_ORG" },
       });
       const refundRequired =

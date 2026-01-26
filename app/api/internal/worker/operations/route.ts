@@ -48,7 +48,7 @@ import { handleLoyaltyOutboxEvent } from "@/domain/loyaltyOutbox";
 import { handleTournamentOutboxEvent } from "@/domain/tournaments/outbox";
 import { handlePadelOutboxEvent } from "@/domain/padel/outbox";
 import { handleOwnerTransferOutboxEvent } from "@/domain/organization/ownerTransferOutbox";
-import { consumeAgendaMaterializationEvent } from "@/domain/agenda/consumer";
+import { consumeAgendaMaterializationEvent } from "@/domain/agendaReadModel/consumer";
 import { handleSearchIndexOutboxEvent } from "@/domain/searchIndex/consumer";
 
 const MAX_ATTEMPTS = 5;
@@ -423,6 +423,11 @@ async function processOperation(op: OperationRecord) {
         eventType.startsWith("tournament.") ||
         eventType.startsWith("reservation.")
       ) {
+        const eventId = typeof payload.eventId === "string" ? payload.eventId : null;
+        if (!eventId) throw new Error("OUTBOX_EVENT_MISSING_ID");
+        return consumeAgendaMaterializationEvent(eventId);
+      }
+      if (eventType === "AGENDA_ITEM_UPSERT_REQUESTED") {
         const eventId = typeof payload.eventId === "string" ? payload.eventId : null;
         if (!eventId) throw new Error("OUTBOX_EVENT_MISSING_ID");
         return consumeAgendaMaterializationEvent(eventId);

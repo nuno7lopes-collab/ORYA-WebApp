@@ -9,6 +9,8 @@ import { resolveOrganizationIdFromParams } from "@/lib/organizationId";
 import { computeAutoSchedulePlan } from "@/domain/padel/autoSchedule";
 import { recordOutboxEvent } from "@/domain/outbox/producer";
 import { appendEventLog } from "@/domain/eventLog/append";
+import { evaluateCandidate, type AgendaCandidate } from "@/domain/agenda/conflictEngine";
+import { buildAgendaConflictPayload } from "@/domain/agenda/conflictResponse";
 
 const allowedRoles: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
 const DEFAULT_DURATION_MINUTES = 60;
@@ -49,6 +51,36 @@ const getRequestMeta = (req: NextRequest) => {
   const userAgent = req.headers.get("user-agent") || null;
   return { ip, userAgent };
 };
+
+const isActiveBooking = (booking: { status: string; pendingExpiresAt: Date | null }) => {
+  if (["CONFIRMED", "DISPUTED", "NO_SHOW"].includes(booking.status)) return true;
+  if (["PENDING_CONFIRMATION", "PENDING"].includes(booking.status)) {
+    return booking.pendingExpiresAt ? booking.pendingExpiresAt > new Date() : false;
+  }
+  return false;
+};
+
+const buildMatchWindow = (match: {
+  plannedStartAt: Date | null;
+  plannedEndAt: Date | null;
+  plannedDurationMinutes: number | null;
+  startTime: Date | null;
+}) => {
+  const start = match.plannedStartAt ?? match.startTime;
+  const end =
+    match.plannedEndAt ||
+    (start && match.plannedDurationMinutes
+      ? new Date(start.getTime() + Number(match.plannedDurationMinutes) * 60 * 1000)
+      : match.startTime);
+  return { start, end: end ?? start };
+};
+
+function agendaConflictResponse(decision?: Parameters<typeof buildAgendaConflictPayload>[0]["decision"]) {
+  return {
+    ok: false,
+    ...buildAgendaConflictPayload({ decision: decision ?? null, fallbackReason: "MISSING_EXISTING_DATA" }),
+  };
+}
 
 export async function POST(req: NextRequest) {
   const check = await ensureOrganization(req);
@@ -364,7 +396,33 @@ export async function POST(req: NextRequest) {
 
     const courtBlocks = await prisma.padelCourtBlock.findMany({
       where: { eventId: event.id, organizationId: organization.id },
-      select: { courtId: true, startAt: true, endAt: true },
+      select: { id: true, courtId: true, startAt: true, endAt: true },
+    });
+
+    const now = new Date();
+    const bookings = await prisma.booking.findMany({
+      where: {
+        courtId: { in: courts.map((court) => court.id) },
+        startsAt: { lt: windowEnd },
+        OR: [
+          { status: { in: ["CONFIRMED", "DISPUTED", "NO_SHOW"] } },
+          { status: { in: ["PENDING_CONFIRMATION", "PENDING"] }, pendingExpiresAt: { gt: now } },
+        ],
+      },
+      select: { id: true, courtId: true, startsAt: true, durationMinutes: true, status: true, pendingExpiresAt: true },
+    });
+
+    const softBlocks = await prisma.softBlock.findMany({
+      where: {
+        organizationId: organization.id,
+        startsAt: { lt: windowEnd },
+        endsAt: { gt: windowStart },
+        OR: [
+          { scopeType: "ORGANIZATION" },
+          { scopeType: "COURT", scopeId: { in: courts.map((court) => court.id) } },
+        ],
+      },
+      select: { id: true, scopeType: true, scopeId: true, startsAt: true, endsAt: true },
     });
 
     const scheduleResult = computeAutoSchedulePlan({
@@ -385,7 +443,7 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    const nowIso = new Date().toISOString();
+    const nowIso = now.toISOString();
     const scoreByMatchId = new Map<number, Record<string, unknown>>();
     unscheduledMatches.forEach((match) => {
       const score = match.score && typeof match.score === "object" ? (match.score as Record<string, unknown>) : {};
@@ -418,6 +476,107 @@ export async function POST(req: NextRequest) {
       };
     });
     const skipped = scheduleResult.skipped;
+
+    const existingByCourt = new Map<number, AgendaCandidate[]>();
+    courts.forEach((court) => {
+      existingByCourt.set(court.id, []);
+    });
+
+    let missingExisting = false;
+    const addExisting = (courtId: number, candidate: AgendaCandidate) => {
+      const bucket = existingByCourt.get(courtId);
+      if (!bucket) {
+        missingExisting = true;
+        return;
+      }
+      bucket.push(candidate);
+    };
+
+    courtBlocks.forEach((block) => {
+      if (!block.courtId) return;
+      addExisting(block.courtId, {
+        type: "HARD_BLOCK",
+        sourceId: String(block.id),
+        startsAt: block.startAt,
+        endsAt: block.endAt,
+      });
+    });
+
+    scheduledMatches.forEach((match) => {
+      if (!match.courtId) return;
+      const { start, end } = buildMatchWindow(match);
+      if (!start || !end) {
+        missingExisting = true;
+        return;
+      }
+      addExisting(match.courtId, {
+        type: "MATCH_SLOT",
+        sourceId: String(match.id),
+        startsAt: start,
+        endsAt: end,
+      });
+    });
+
+    bookings.forEach((booking) => {
+      if (!booking.courtId || !isActiveBooking(booking)) return;
+      const end = new Date(booking.startsAt.getTime() + booking.durationMinutes * 60 * 1000);
+      addExisting(booking.courtId, {
+        type: "BOOKING",
+        sourceId: String(booking.id),
+        startsAt: booking.startsAt,
+        endsAt: end,
+      });
+    });
+
+    softBlocks.forEach((block) => {
+      if (block.scopeType === "ORGANIZATION") {
+        courts.forEach((court) => {
+          addExisting(court.id, {
+            type: "SOFT_BLOCK",
+            sourceId: String(block.id),
+            startsAt: block.startsAt,
+            endsAt: block.endsAt,
+          });
+        });
+        return;
+      }
+      if (block.scopeType !== "COURT" || !block.scopeId) return;
+      addExisting(block.scopeId, {
+        type: "SOFT_BLOCK",
+        sourceId: String(block.id),
+        startsAt: block.startsAt,
+        endsAt: block.endsAt,
+      });
+    });
+
+    if (missingExisting) {
+      return NextResponse.json(agendaConflictResponse(), { status: 503 });
+    }
+
+    const sortedUpdates = [...scheduledUpdates].sort((a, b) => {
+      if (a.courtId !== b.courtId) return a.courtId - b.courtId;
+      const startDiff = a.start.getTime() - b.start.getTime();
+      if (startDiff !== 0) return startDiff;
+      return a.matchId - b.matchId;
+    });
+
+    for (const update of sortedUpdates) {
+      const bucket = existingByCourt.get(update.courtId);
+      if (!bucket) {
+        return NextResponse.json(agendaConflictResponse(), { status: 503 });
+      }
+      const candidate: AgendaCandidate = {
+        type: "MATCH_SLOT",
+        sourceId: String(update.matchId),
+        startsAt: update.start,
+        endsAt: update.end,
+      };
+      const decision = evaluateCandidate({ candidate, existing: bucket });
+      if (!decision.allowed) {
+        return NextResponse.json(agendaConflictResponse(decision), { status: 409 });
+      }
+      bucket.push(candidate);
+    }
 
     let outboxEventId: string | null = null;
     if (!dryRun && scheduledUpdates.length > 0) {

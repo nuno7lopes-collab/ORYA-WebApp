@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { ingestCrmInteraction } from "@/lib/crm/ingest";
 import { CrmInteractionSource, CrmInteractionType } from "@prisma/client";
+import { cancelBooking, updateBooking } from "@/domain/bookings/commands";
 
 const HOLD_MINUTES = 10;
 const COMPLETION_GRACE_HOURS = 2;
@@ -42,12 +43,14 @@ export async function GET(req: NextRequest) {
 
     await prisma.$transaction(async (tx) => {
       if (bookingIds.length) {
-        await tx.booking.updateMany({
-          where: { id: { in: bookingIds } },
-          data: { status: "CANCELLED_BY_CLIENT" },
-        });
-
         for (const booking of expired) {
+          await cancelBooking({
+            tx,
+            bookingId: booking.id,
+            organizationId: booking.organizationId,
+            actorUserId: null,
+            data: { status: "CANCELLED_BY_CLIENT" },
+          });
           await recordOrganizationAudit(tx, {
             organizationId: booking.organizationId,
             actorUserId: null,
@@ -86,8 +89,10 @@ export async function GET(req: NextRequest) {
     for (const booking of candidates) {
       const endAt = new Date(booking.startsAt.getTime() + booking.durationMinutes * 60 * 1000);
       if (endAt.getTime() + COMPLETION_GRACE_HOURS * 60 * 60 * 1000 <= now.getTime()) {
-        await prisma.booking.update({
-          where: { id: booking.id },
+        await updateBooking({
+          bookingId: booking.id,
+          organizationId: booking.organizationId,
+          actorUserId: null,
           data: { status: "COMPLETED" },
         });
         completed += 1;
