@@ -29,5 +29,5 @@ export async function GET(req: NextRequest) {
     take: limit,
   });
 
-  return NextResponse.json({ ok: true, items }, { status: 200 });
+  return NextResponse.json({ ok: true, items, data: { items } }, { status: 200 });
 }

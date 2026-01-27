@@ -40,7 +40,7 @@ export async function GET(req: NextRequest) {
       },
     });
 
-    return NextResponse.json({ ok: true, items });
+    return NextResponse.json({ ok: true, items, data: { items } });
   } catch (err) {
     console.error("GET /api/internal/ops/feed error:", err);
     return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
