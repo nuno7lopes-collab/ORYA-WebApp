@@ -50,11 +50,13 @@ jobs:
       - name: Guardrails (rg)
         run: |
           rg_expect_none() {
-            rg -q "$1" ${@:2}
+            set +e
+            rg -q "$1" "${@:2}"
             code=$?
+            set -e
             if [ $code -eq 0 ]; then
               echo "Guardrail failed (matches found): $1"
-              rg -n -m 20 "$1" ${@:2}
+              rg -n -m 20 "$1" "${@:2}"
               exit 1
             elif [ $code -gt 1 ]; then
               exit $code
