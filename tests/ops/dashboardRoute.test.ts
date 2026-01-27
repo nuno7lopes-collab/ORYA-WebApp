@@ -21,7 +21,7 @@ beforeEach(async () => {
 
 describe("ops dashboard route", () => {
   it("devolve health + slo", async () => {
-    requireInternalSecret.mockReturnValue({ ok: true });
+    requireInternalSecret.mockReturnValue(true);
     getOpsHealth.mockResolvedValue({ ok: true, ts: "now", db: { ok: true } });
     getOpsSlo.mockResolvedValue({ ts: "now", outbox: { pendingCountCapped: 0 }, eventLog: { last1hCount: 0 } });
     const req = new NextRequest("http://localhost/api/internal/ops/dashboard");

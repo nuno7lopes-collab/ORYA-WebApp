@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createNotification } from "@/lib/notifications";
+import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
 
 export async function GET(req: NextRequest) {
   try {
-    const secret = req.headers.get("X-ORYA-CRON-SECRET");
-    if (!secret || secret !== process.env.ORYA_CRON_SECRET) {
+    if (!requireInternalSecret(req)) {
       return NextResponse.json({ ok: false, error: "Unauthorized cron call." }, { status: 401 });
     }
 

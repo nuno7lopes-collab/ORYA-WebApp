@@ -3,13 +3,10 @@ export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
 import { runOperationsBatch } from "@/app/api/internal/worker/operations/route";
-
-const CRON_HEADER = "X-ORYA-CRON-SECRET";
+import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
 
 export async function POST(req: NextRequest) {
-  const secret = req.headers.get(CRON_HEADER);
-  const expected = process.env.ORYA_CRON_SECRET;
-  if (!expected || !secret || secret !== expected) {
+  if (!requireInternalSecret(req)) {
     return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
   }
 

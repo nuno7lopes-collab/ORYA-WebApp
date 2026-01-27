@@ -18,14 +18,14 @@ beforeEach(async () => {
 
 describe("ops slo route", () => {
   it("bloqueia sem secret", async () => {
-    requireInternalSecret.mockReturnValue({ ok: false, response: new Response(null, { status: 401 }) });
+    requireInternalSecret.mockReturnValue(false);
     const req = new NextRequest("http://localhost/api/internal/ops/slo");
     const res = await GET(req);
     expect(res.status).toBe(401);
   });
 
   it("devolve shape estável", async () => {
-    requireInternalSecret.mockReturnValue({ ok: true });
+    requireInternalSecret.mockReturnValue(true);
     getOpsSlo.mockResolvedValue({ ts: "now", outbox: { pendingCountCapped: 0 }, eventLog: { last1hCount: 0 } });
     const req = new NextRequest("http://localhost/api/internal/ops/slo");
     const res = await GET(req);

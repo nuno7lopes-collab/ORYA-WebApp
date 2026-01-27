@@ -5,16 +5,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { queueTournamentEve } from "@/domain/notifications/tournament";
 import { shouldNotify } from "@/lib/notifications";
-
-const CRON_HEADER = "X-ORYA-CRON-SECRET";
+import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
 const REMINDER_HOURS = 24;
 const WINDOW_MINUTES = 60;
 const MAX_EVENTS = 50;
 
 export async function POST(req: NextRequest) {
-  const secret = req.headers.get(CRON_HEADER);
-  const expected = process.env.ORYA_CRON_SECRET;
-  if (!expected || !secret || secret !== expected) {
+  if (!requireInternalSecret(req)) {
     return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
   }
 
