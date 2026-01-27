@@ -10,6 +10,18 @@ jobs:
   gates:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      SUPABASE_URL: http://127.0.0.1:54321
+      NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+      SUPABASE_ANON_KEY: dummy
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: dummy
+      SUPABASE_SERVICE_ROLE: dummy
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+      DIRECT_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+      STRIPE_SECRET_KEY: sk_test_dummy
+      STRIPE_WEBHOOK_SECRET: whsec_dummy
+      QR_SECRET_KEY: dummy
+      RESEND_API_KEY: dummy
     steps:
       - uses: actions/checkout@v4
 
@@ -21,13 +33,27 @@ jobs:
       - name: Install
         run: npm ci
 
-      - name: DB gates (online)
-        run: npm run db:gates
+      - name: DB gates offline
+        run: npm run db:gates:offline
 
       - name: Tests (core)
-        run: npx vitest run tests/rbac tests/access tests/ops tests/outbox
+        run: npx vitest run tests/contracts tests/access tests/ops
 
       - name: Guardrails (rg)
         run: |
-          rg -n "organizationMember\.findFirst|ownerId\s*=" app lib domain tests -S
-          rg -n "if \(!.*can|hasPermission\(|isOwner\(" app/api/organizacao -S
+          rg_expect_none() {
+            rg -q "$1" ${@:2}
+            code=$?
+            if [ $code -eq 0 ]; then
+              echo "Guardrail failed (matches found): $1"
+              rg -n -m 20 "$1" ${@:2}
+              exit 1
+            elif [ $code -gt 1 ]; then
+              exit $code
+            fi
+          }
+          rg_expect_none 'stripe\.paymentIntents\.create' app lib domain -S -g '!domain/finance/gateway/**'
+          rg_expect_none 'ledgerEntry\.(update|delete)' app lib domain -S
+          rg_expect_none 'outbox.*create' app/api -S -g '!domain/outbox/**'
+          rg_expect_none 'organizationMember\.findFirst|ownerId\s*=' app lib domain tests -S
+          rg_expect_none 'if \(!.*can|hasPermission\(|isOwner\(' app/api/organizacao -S
