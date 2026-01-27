@@ -1,5 +1,6 @@
 // lib/events.ts
 import type { Event, TicketType } from "@prisma/client";
+import { deriveIsFreeEvent } from "@/domain/events/derivedIsFree";
 
 type EventLike = {
   startsAt: Date | string;
@@ -74,7 +75,7 @@ export type EventCardDTO = {
   startsAt: Date | null;
   endsAt: Date | null;
   locationCity: string | null;
-  isFree: boolean;
+  isGratis: boolean;
   priceFrom: number | null;
   coverImageUrl: string | null;
 };
@@ -97,17 +98,16 @@ export function mapEventToCardDTO(
     return null;
   }
 
-  let priceFrom: number | null = null;
-
-  if (event.ticketTypes && event.ticketTypes.length > 0) {
-    const prices = event.ticketTypes
-      .filter((tt): tt is { price: number } => Boolean(tt) && typeof tt?.price === "number")
-      .map((tt) => tt.price);
-
-    if (prices.length > 0) {
-      priceFrom = Math.min(...prices);
-    }
-  }
+  const prices = event.ticketTypes
+    ? event.ticketTypes
+        .filter((tt): tt is { price: number } => Boolean(tt) && typeof tt?.price === "number")
+        .map((tt) => tt.price)
+    : [];
+  const priceFromCents = prices.length > 0 ? Math.min(...prices) : null;
+  const isFree = deriveIsFreeEvent({
+    pricingMode: event.pricingMode ?? undefined,
+    ticketPrices: prices,
+  });
 
   return {
     id: event.id,
@@ -116,8 +116,8 @@ export function mapEventToCardDTO(
     startsAt: event.startsAt ?? null,
     endsAt: event.endsAt ?? null,
     locationCity: event.locationCity ?? null,
-    isFree: Boolean(event.isFree),
-    priceFrom: priceFrom !== null ? priceFrom / 100 : null,
+    isGratis: isFree,
+    priceFrom: priceFromCents !== null ? priceFromCents / 100 : null,
     coverImageUrl: event.coverImageUrl ?? null,
   };
 }

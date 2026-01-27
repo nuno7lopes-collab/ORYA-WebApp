@@ -178,11 +178,19 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
         body: JSON.stringify({ organizationId: organization.id, email: officialEmail.trim() }),
       });
       const json = await res.json().catch(() => null);
-      if (!res.ok || json?.ok === false) {
+      if (json?.ok) {
+        const alreadyVerified = json?.status === "VERIFIED";
+        setOfficialEmailMessage(
+          alreadyVerified
+            ? "Este email já está verificado."
+            : "Pedido enviado. Verifica a caixa de email para confirmar.",
+        );
+        await mutate();
+      } else if (json?.error === "EMAIL_ALREADY_VERIFIED") {
+        setOfficialEmailMessage("Este email já está verificado.");
+        await mutate();
+      } else if (!res.ok || json?.ok === false) {
         setOfficialEmailMessage(json?.error || "Não foi possível iniciar a verificação.");
-      } else {
-        setOfficialEmailMessage("Pedido enviado. Verifica a caixa de email para confirmar.");
-        mutate();
       }
     } catch (err) {
       console.error("[organização/settings] official-email", err);

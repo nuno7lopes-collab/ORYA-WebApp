@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getOrgTransferEnabled, getPlatformFees } from "@/lib/platformSettings";
 import { isValidPhone, normalizePhone } from "@/lib/phone";
-import { getActiveOrganizationForUser } from "@/lib/organizationContext";
+import { getActiveOrganizationForUser, ORGANIZATION_SELECT_SETTINGS } from "@/lib/organizationContext";
 import { isValidWebsite } from "@/lib/validation/organization";
 import { normalizeOrganizationAvatarUrl, normalizeOrganizationCoverUrl } from "@/lib/profileMedia";
 import { Resend } from "resend";
@@ -19,11 +19,75 @@ import {
   parsePrimaryModule,
   parseOrganizationModules,
 } from "@/lib/organizationCategories";
-import { OrganizationStatus } from "@prisma/client";
+import { OrganizationStatus, Prisma } from "@prisma/client";
 
 const resendApiKey = process.env.RESEND_API_KEY;
 const resendFromEmail = process.env.RESEND_FROM_EMAIL;
 const resendClient = resendApiKey ? new Resend(resendApiKey) : null;
+
+type OrganizationSettingsPayload = Prisma.OrganizationGetPayload<{
+  select: typeof ORGANIZATION_SELECT_SETTINGS;
+}>;
+
+function buildOrganizationPayload(
+  organization: OrganizationSettingsPayload,
+  modules: string[],
+) {
+  return {
+    id: organization.id,
+    username: organization.username,
+    stripeAccountId: organization.stripeAccountId,
+    status: organization.status,
+    stripeChargesEnabled: organization.stripeChargesEnabled,
+    stripePayoutsEnabled: organization.stripePayoutsEnabled,
+    feeMode: organization.feeMode,
+    platformFeeBps: organization.platformFeeBps,
+    platformFeeFixedCents: organization.platformFeeFixedCents,
+    businessName: organization.businessName,
+    entityType: organization.entityType,
+    city: organization.city,
+    payoutIban: organization.payoutIban,
+    language: organization.language ?? "pt",
+    timezone: organization.timezone ?? "Europe/Lisbon",
+    alertsEmail: organization.alertsEmail ?? null,
+    alertsSalesEnabled: organization.alertsSalesEnabled ?? true,
+    alertsPayoutEnabled: organization.alertsPayoutEnabled ?? false,
+    officialEmail: organization.officialEmail ?? null,
+    officialEmailVerifiedAt: organization.officialEmailVerifiedAt ?? null,
+    brandingAvatarUrl: organization.brandingAvatarUrl ?? null,
+    brandingCoverUrl: organization.brandingCoverUrl ?? null,
+    brandingPrimaryColor: organization.brandingPrimaryColor ?? null,
+    brandingSecondaryColor: organization.brandingSecondaryColor ?? null,
+    organizationKind: organization.organizationKind ?? "PESSOA_SINGULAR",
+    primaryModule: organization.primaryModule ?? DEFAULT_PRIMARY_MODULE,
+    reservationAssignmentMode: organization.reservationAssignmentMode ?? "PROFESSIONAL",
+    modules,
+    publicName: organization.publicName,
+    address: organization.address ?? null,
+    showAddressPublicly: organization.showAddressPublicly ?? false,
+    publicWebsite: organization.publicWebsite ?? null,
+    publicInstagram: organization.publicInstagram ?? null,
+    publicYoutube: organization.publicYoutube ?? null,
+    publicDescription: organization.publicDescription ?? null,
+    publicHours: organization.publicHours ?? null,
+    publicProfileLayout: organization.publicProfileLayout ?? null,
+    infoRules: organization.infoRules ?? null,
+    infoFaq: organization.infoFaq ?? null,
+    infoRequirements: organization.infoRequirements ?? null,
+    infoPolicies: organization.infoPolicies ?? null,
+    infoLocationNotes: organization.infoLocationNotes ?? null,
+    padelDefaults: {
+      shortName: organization.padelDefaultShortName ?? null,
+      city: organization.padelDefaultCity ?? null,
+      address: organization.padelDefaultAddress ?? null,
+      courts: organization.padelDefaultCourts ?? 0,
+      hours: organization.padelDefaultHours ?? null,
+      ruleSetId: organization.padelDefaultRuleSetId ?? null,
+      favoriteCategories: organization.padelFavoriteCategories ?? [],
+    },
+    orgType: organization.orgType ?? "EXTERNAL",
+  };
+}
 
 export async function GET(req: NextRequest) {
   try {
@@ -64,6 +128,7 @@ export async function GET(req: NextRequest) {
       organizationId: Number.isFinite(forcedOrgId) ? forcedOrgId : undefined,
       allowFallback: !urlOrg,
       allowedStatuses: [OrganizationStatus.ACTIVE, OrganizationStatus.SUSPENDED],
+      includeOrganizationFields: "settings",
     });
     const memberPermissionsModel = (prisma as {
       organizationMemberPermission?: { findMany?: (args: unknown) => Promise<unknown[]> };
@@ -108,62 +173,10 @@ export async function GET(req: NextRequest) {
     const isAdmin = profileRoles.some((r) => r?.toLowerCase() === "admin");
 
     const organizationPayload = organization
-      ? {
-          id: organization.id,
-          username: organization.username,
-          stripeAccountId: organization.stripeAccountId,
-          status: organization.status,
-          stripeChargesEnabled: organization.stripeChargesEnabled,
-          stripePayoutsEnabled: organization.stripePayoutsEnabled,
-          feeMode: organization.feeMode,
-          platformFeeBps: organization.platformFeeBps,
-          platformFeeFixedCents: organization.platformFeeFixedCents,
-          businessName: organization.businessName,
-          entityType: organization.entityType,
-          city: organization.city,
-          payoutIban: organization.payoutIban,
-          language: (organization as { language?: string | null }).language ?? "pt",
-          timezone: (organization as { timezone?: string | null }).timezone ?? "Europe/Lisbon",
-          alertsEmail: (organization as { alertsEmail?: string | null }).alertsEmail ?? null,
-          alertsSalesEnabled: (organization as { alertsSalesEnabled?: boolean | null }).alertsSalesEnabled ?? true,
-          alertsPayoutEnabled: (organization as { alertsPayoutEnabled?: boolean | null }).alertsPayoutEnabled ?? false,
-          officialEmail: (organization as { officialEmail?: string | null }).officialEmail ?? null,
-          officialEmailVerifiedAt: (organization as { officialEmailVerifiedAt?: Date | null }).officialEmailVerifiedAt ?? null,
-          brandingAvatarUrl: (organization as { brandingAvatarUrl?: string | null }).brandingAvatarUrl ?? null,
-          brandingCoverUrl: (organization as { brandingCoverUrl?: string | null }).brandingCoverUrl ?? null,
-          brandingPrimaryColor: (organization as { brandingPrimaryColor?: string | null }).brandingPrimaryColor ?? null,
-          brandingSecondaryColor: (organization as { brandingSecondaryColor?: string | null }).brandingSecondaryColor ?? null,
-          organizationKind: (organization as any).organizationKind ?? "PESSOA_SINGULAR",
-          primaryModule:
-            (organization as { primaryModule?: string | null }).primaryModule ??
-            DEFAULT_PRIMARY_MODULE,
-          reservationAssignmentMode:
-            (organization as { reservationAssignmentMode?: string | null }).reservationAssignmentMode ?? "PROFESSIONAL",
-          modules: organizationModules.map((module) => module.moduleKey),
-          publicName: organization.publicName,
-          address: (organization as { address?: string | null }).address ?? null,
-          showAddressPublicly: (organization as { showAddressPublicly?: boolean | null }).showAddressPublicly ?? false,
-          publicWebsite: (organization as { publicWebsite?: string | null }).publicWebsite ?? null,
-          publicInstagram: (organization as { publicInstagram?: string | null }).publicInstagram ?? null,
-          publicYoutube: (organization as { publicYoutube?: string | null }).publicYoutube ?? null,
-          publicDescription: (organization as { publicDescription?: string | null }).publicDescription ?? null,
-          publicHours: (organization as { publicHours?: string | null }).publicHours ?? null,
-          publicProfileLayout: (organization as { publicProfileLayout?: unknown }).publicProfileLayout ?? null,
-          infoRules: (organization as { infoRules?: string | null }).infoRules ?? null,
-          infoFaq: (organization as { infoFaq?: string | null }).infoFaq ?? null,
-          infoRequirements: (organization as { infoRequirements?: string | null }).infoRequirements ?? null,
-          infoPolicies: (organization as { infoPolicies?: string | null }).infoPolicies ?? null,
-          infoLocationNotes: (organization as { infoLocationNotes?: string | null }).infoLocationNotes ?? null,
-          padelDefaults: {
-            shortName: (organization as any).padelDefaultShortName ?? null,
-            city: (organization as any).padelDefaultCity ?? null,
-            address: (organization as any).padelDefaultAddress ?? null,
-            courts: (organization as any).padelDefaultCourts ?? 0,
-            hours: (organization as any).padelDefaultHours ?? null,
-            ruleSetId: (organization as any).padelDefaultRuleSetId ?? null,
-            favoriteCategories: (organization as any).padelFavoriteCategories ?? [],
-          },
-        }
+      ? buildOrganizationPayload(
+          organization as OrganizationSettingsPayload,
+          organizationModules.map((module) => module.moduleKey),
+        )
       : null;
 
     const profileStatus =
@@ -336,6 +349,7 @@ export async function PATCH(req: NextRequest) {
       organizationId: Number.isFinite(forcedOrgId) ? forcedOrgId : undefined,
       roles: ["OWNER", "CO_OWNER", "ADMIN"],
       allowFallback: !urlOrg,
+      includeOrganizationFields: "settings",
     });
 
     if (!organization) {
@@ -621,16 +635,27 @@ export async function PATCH(req: NextRequest) {
       });
     }
 
+    const refreshedOrganization = await prisma.organization.findUnique({
+      where: { id: organization.id },
+      select: ORGANIZATION_SELECT_SETTINGS,
+    });
+    const finalOrganization =
+      refreshedOrganization ?? (organization as OrganizationSettingsPayload);
     const verifiedOfficialEmail =
-      organization && (organization as { officialEmailVerifiedAt?: Date | null })?.officialEmailVerifiedAt
-        ? (organization as { officialEmail?: string | null }).officialEmail ?? null
-        : null;
+      finalOrganization.officialEmailVerifiedAt ? finalOrganization.officialEmail ?? null : null;
     const alertsTarget =
       verifiedOfficialEmail ??
-      (typeof alertsEmail === "string" && alertsEmail.trim().length > 0 ? alertsEmail.trim() : organization.alertsEmail);
-    const alertsSales = typeof alertsSalesEnabled === "boolean" ? alertsSalesEnabled : organization.alertsSalesEnabled;
+      (typeof alertsEmail === "string" && alertsEmail.trim().length > 0
+        ? alertsEmail.trim()
+        : finalOrganization.alertsEmail);
+    const alertsSales =
+      typeof alertsSalesEnabled === "boolean"
+        ? alertsSalesEnabled
+        : finalOrganization.alertsSalesEnabled;
     const shouldNotifyAlertsEnabled =
-      alertsSalesProvided && alertsSalesEnabled === true && organization.alertsSalesEnabled !== true;
+      alertsSalesProvided &&
+      alertsSalesEnabled === true &&
+      finalOrganization.alertsSalesEnabled !== true;
     if (alertsTarget && alertsSales && shouldNotifyAlertsEnabled && resendClient && resendFromEmail) {
       try {
         await resendClient.emails.send({
@@ -647,13 +672,7 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json(
       {
         ok: true,
-        organization: {
-          primaryModule:
-            primaryModule ??
-            (organization as { primaryModule?: string | null }).primaryModule ??
-            DEFAULT_PRIMARY_MODULE,
-          modules: nextModules,
-        },
+        organization: buildOrganizationPayload(finalOrganization, nextModules),
       },
       { status: 200 },
     );
