@@ -82,6 +82,12 @@ export async function POST(req: NextRequest) {
     actorUserId: authData.user.id,
   });
   if (!result.ok) {
+    if (result.error === "INVALID_EVENT_ID") {
+      return NextResponse.json({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
+    }
+    if (result.error === "EVENT_NOT_PADEL") {
+      return NextResponse.json({ ok: false, error: "EVENT_NOT_PADEL" }, { status: 400 });
+    }
     return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
   }
 

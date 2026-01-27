@@ -17,6 +17,7 @@ type TimelineInput = {
   orderStatus: StoreOrderStatus | string;
   createdAt: Date;
   updatedAt: Date;
+  paymentStatus?: string | null;
   paymentEvents?: PaymentEvent[];
   shipments?: Shipment[];
 };
@@ -39,30 +40,31 @@ export function buildStoreOrderTimeline(input: TimelineInput): TimelineEntry[] {
   const paidEvent = paymentEvents.find((event) => event.status === "OK");
   const disputeEvent = paymentEvents.find((event) => event.status === "DISPUTED");
   const refundEvent = paymentEvents.find((event) => event.status === "REFUNDED");
+  const paymentStatus = input.paymentStatus ?? null;
 
-  if (paidEvent) {
+  if (paymentStatus === "PAID") {
     entries.push({
       key: "paid",
       label: "Pagamento confirmado",
-      date: paidEvent.createdAt.toISOString(),
+      date: paidEvent?.createdAt?.toISOString() ?? input.updatedAt.toISOString(),
     });
   }
-  if (disputeEvent) {
+  if (paymentStatus === "DISPUTED") {
     entries.push({
       key: "dispute",
       label: "Em disputa",
-      date: disputeEvent.createdAt.toISOString(),
+      date: disputeEvent?.createdAt?.toISOString() ?? input.updatedAt.toISOString(),
     });
   }
-  if (refundEvent) {
+  if (paymentStatus === "REFUNDED") {
     entries.push({
       key: "refund",
       label: "Reembolsada",
-      date: refundEvent.createdAt.toISOString(),
+      date: refundEvent?.createdAt?.toISOString() ?? input.updatedAt.toISOString(),
     });
   }
 
-  if (!paidEvent && input.orderStatus === StoreOrderStatus.PENDING) {
+  if (paymentStatus !== "PAID" && input.orderStatus === StoreOrderStatus.PENDING) {
     entries.push({
       key: "pending",
       label: "Pagamento pendente",

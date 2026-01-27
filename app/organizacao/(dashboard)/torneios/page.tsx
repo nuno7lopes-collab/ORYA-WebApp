@@ -20,6 +20,7 @@ export default async function OrganizationTorneiosPage() {
   }
 
   const { organization } = await getActiveOrganizationForUser(user.id, {
+    allowFallback: true,
     allowedStatuses: [OrganizationStatus.ACTIVE, OrganizationStatus.SUSPENDED],
   });
 

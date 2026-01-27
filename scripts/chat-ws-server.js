@@ -291,7 +291,8 @@ if (redis) {
 }
 
 const port = Number(process.env.CHAT_WS_PORT || 4001);
-const wss = new WebSocketServer({ port });
+const host = process.env.CHAT_WS_HOST || "127.0.0.1";
+const wss = new WebSocketServer({ port, host });
 
 wss.on("connection", async (ws, req) => {
   const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);

@@ -1,6 +1,9 @@
+import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { PaymentStatus } from "@prisma/client";
 import { applyPaymentStatusToEntitlements } from "@/domain/finance/fulfillment";
+import { FINANCE_OUTBOX_EVENTS } from "@/domain/finance/events";
+import { appendEventLog } from "@/domain/eventLog/append";
 import { recordOutboxEvent } from "@/domain/outbox/producer";
 
 export type StripeDisputeEvent = {
@@ -59,10 +62,33 @@ export async function handleStripeWebhook(event: StripeDisputeEvent): Promise<{
       data: { status: nextStatus },
     });
     await applyPaymentStatusToEntitlements({ paymentId, status: nextStatus, tx });
+    const eventLogId = crypto.randomUUID();
+    const payload = {
+      eventLogId,
+      paymentId,
+      status: nextStatus,
+      source: "stripe.webhook",
+      eventType: event.type,
+    };
+    const log = await appendEventLog(
+      {
+        eventId: eventLogId,
+        organizationId: payment.organizationId,
+        eventType: FINANCE_OUTBOX_EVENTS.PAYMENT_STATUS_CHANGED,
+        idempotencyKey: event.id,
+        sourceType: payment.sourceType,
+        sourceId: payment.sourceId,
+        correlationId: paymentId,
+        payload,
+      },
+      tx,
+    );
+    if (!log) return;
     await recordOutboxEvent(
       {
-        eventType: "payment.status.changed",
-        payload: { paymentId, status: nextStatus, source: "stripe.webhook", eventType: event.type },
+        eventId: eventLogId,
+        eventType: FINANCE_OUTBOX_EVENTS.PAYMENT_STATUS_CHANGED,
+        payload,
         causationId: event.id,
         correlationId: paymentId,
       },

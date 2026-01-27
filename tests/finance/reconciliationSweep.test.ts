@@ -77,10 +77,18 @@ vi.mock("@/lib/prisma", () => {
       ) ?? null,
     ),
   };
+  const eventLog = {
+    create: vi.fn(({ data }: any) => data),
+  };
+  const outboxEvent = {
+    create: vi.fn(({ data }: any) => data),
+  };
   const prismaMock = {
     payment,
     ledgerEntry,
     paymentEvent,
+    eventLog,
+    outboxEvent,
     $transaction: async (fn: any) => fn(prismaMock),
   };
   return { prisma: prismaMock };
@@ -111,6 +119,7 @@ describe("sweepPendingProcessorFees", () => {
     payments = [
       {
         id: "pay_1",
+        organizationId: 10,
         sourceType: SourceType.TICKET_ORDER,
         sourceId: sourceId1,
         pricingSnapshotJson: { currency: "EUR" },
@@ -119,6 +128,7 @@ describe("sweepPendingProcessorFees", () => {
       },
       {
         id: "pay_2",
+        organizationId: 11,
         sourceType: SourceType.TICKET_ORDER,
         sourceId: sourceId2,
         pricingSnapshotJson: { currency: "EUR" },

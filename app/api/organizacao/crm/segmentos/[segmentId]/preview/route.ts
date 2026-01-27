@@ -8,7 +8,7 @@ import { ensureCrmModuleAccess } from "@/lib/crm/access";
 import { OrganizationMemberRole } from "@prisma/client";
 import { resolveSegmentUserIds } from "@/lib/crm/segmentQuery";
 
-const ALLOWED_ROLES = Object.values(OrganizationMemberRole);
+const ROLE_ALLOWLIST = Object.values(OrganizationMemberRole);
 
 const MAX_SAMPLE = 50;
 
@@ -20,7 +20,7 @@ export async function GET(req: NextRequest, context: { params: Promise<{ segment
     const organizationId = resolveOrganizationIdFromRequest(req);
     const { organization, membership } = await getActiveOrganizationForUser(user.id, {
       organizationId: organizationId ?? undefined,
-      roles: [...ALLOWED_ROLES],
+      roles: [...ROLE_ALLOWLIST],
     });
 
     if (!organization || !membership) {

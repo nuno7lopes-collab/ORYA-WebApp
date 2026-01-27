@@ -24,8 +24,22 @@ vi.mock("@/lib/prisma", () => {
     }),
     findUnique: vi.fn(() => matchState),
   };
+  const outboxEvent = {
+    create: vi.fn(({ data }: any) => ({
+      ...data,
+      eventId: data.eventId ?? "evt-1",
+    })),
+  };
+  const eventLog = {
+    create: vi.fn(({ data }: any) => ({
+      ...data,
+      id: data.id ?? data.eventId ?? "evt-1",
+    })),
+  };
   const prisma = {
     padelMatch,
+    outboxEvent,
+    eventLog,
     $transaction: async (fn: any) => fn(prisma),
   };
   return { prisma };

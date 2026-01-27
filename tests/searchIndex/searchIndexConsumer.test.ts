@@ -145,4 +145,80 @@ describe("searchIndex consumer", () => {
       }),
     );
   });
+
+  it("oculta quando evento não existe", async () => {
+    const createdAt = new Date("2025-04-01T10:00:00Z");
+    mocks.eventLogFindUnique.mockResolvedValue({
+      id: "evt-4",
+      organizationId: 3,
+      eventType: "event.cancelled",
+      payload: { eventId: 20, sourceType: SourceType.EVENT, sourceId: "20" },
+      createdAt,
+    });
+    mocks.eventFindUnique.mockResolvedValue(null);
+
+    const res = await consumeSearchIndexEvent("evt-4");
+    expect(res.ok).toBe(true);
+    expect(mocks.searchIndexUpdateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          organizationId: 3,
+          sourceType: SourceType.EVENT,
+          sourceId: "20",
+        },
+        data: expect.objectContaining({
+          visibility: SearchIndexVisibility.HIDDEN,
+          lastEventId: "evt-4",
+        }),
+      }),
+    );
+  });
+
+  it("recalcula priceFrom/isGratis com ticketTypes", async () => {
+    const createdAt = new Date("2025-05-01T10:00:00Z");
+    mocks.eventLogFindUnique.mockResolvedValue({
+      id: "evt-5",
+      organizationId: 4,
+      eventType: "event.updated",
+      payload: { eventId: 30, sourceType: SourceType.EVENT, sourceId: "30" },
+      createdAt,
+    });
+    mocks.searchIndexFindUnique.mockResolvedValue({ lastEventId: "old", updatedAt: new Date("2025-04-01T10:00:00Z") });
+    mocks.eventFindUnique.mockResolvedValue({
+      id: 30,
+      slug: "evento-30",
+      title: "Evento",
+      description: "Desc",
+      startsAt: createdAt,
+      endsAt: createdAt,
+      status: "PUBLISHED",
+      templateType: null,
+      pricingMode: "STANDARD",
+      isDeleted: false,
+      coverImageUrl: null,
+      locationName: "Local",
+      locationCity: "Lisboa",
+      address: null,
+      locationFormattedAddress: null,
+      latitude: null,
+      longitude: null,
+      locationSource: null,
+      ownerUserId: null,
+      organizationId: 4,
+      organization: { status: "ACTIVE", publicName: "Org" },
+      ticketTypes: [{ price: 1500 }, { price: 2500 }],
+    });
+    mocks.profileFindUnique.mockResolvedValue(null);
+
+    const res = await consumeSearchIndexEvent("evt-5");
+    expect(res.ok).toBe(true);
+    expect(mocks.searchIndexUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        update: expect.objectContaining({
+          isGratis: false,
+          priceFromCents: 1500,
+        }),
+      }),
+    );
+  });
 });

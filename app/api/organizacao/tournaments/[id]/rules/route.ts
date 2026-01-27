@@ -3,6 +3,7 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { ensureGroupMemberRole } from "@/lib/organizationGroupAccess";
+import { updateTournament } from "@/domain/tournaments/commands";
 
 async function ensureOrganizationAccess(userId: string, eventId: number) {
   const evt = await prisma.event.findUnique({
@@ -26,7 +27,7 @@ async function ensureOrganizationAccess(userId: string, eventId: number) {
   const access = await ensureGroupMemberRole({
     organizationId: evt.organizationId,
     userId,
-    allowedRoles: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"],
+    ROLE_ALLOWLIST: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"],
   });
   return access.ok;
 }
@@ -84,10 +85,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     },
   };
 
-  await prisma.tournament.update({
-    where: { id: tournamentId },
+  const result = await updateTournament({
+    tournamentId,
     data: { config: nextConfig },
+    actorUserId: authData.user.id,
   });
+  if (!result.ok) {
+    if (result.error === "EVENT_NOT_PADEL") {
+      return NextResponse.json({ ok: false, error: "EVENT_NOT_PADEL" }, { status: 400 });
+    }
+    return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
+  }
 
   const res = NextResponse.json(
     {

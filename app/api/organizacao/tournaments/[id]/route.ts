@@ -87,11 +87,17 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (bracketSize !== null) data.config = { bracketSize };
   if (inscriptionDeadlineAt) data.inscriptionDeadlineAt = inscriptionDeadlineAt;
 
-  await updateTournament({
+  const result = await updateTournament({
     tournamentId,
     data,
     actorUserId: user.id,
   });
+  if (!result.ok) {
+    if (result.error === "EVENT_NOT_PADEL") {
+      return NextResponse.json({ ok: false, error: "EVENT_NOT_PADEL" }, { status: 400 });
+    }
+    return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
+  }
 
   return NextResponse.json({ ok: true }, { status: 200 });
 }

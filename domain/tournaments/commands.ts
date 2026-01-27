@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { appendEventLog } from "@/domain/eventLog/append";
 import { recordOutboxEvent } from "@/domain/outbox/producer";
 import type { Prisma, TournamentFormat } from "@prisma/client";
-import { SourceType } from "@prisma/client";
+import { EventTemplateType, SourceType } from "@prisma/client";
 
 export async function createTournamentForEvent(input: {
   eventId: number;
@@ -13,13 +13,19 @@ export async function createTournamentForEvent(input: {
   correlationId?: string | null;
 }) {
   const { eventId, format, config, actorUserId, correlationId } = input;
+  if (!Number.isFinite(eventId)) {
+    return { ok: false as const, error: "INVALID_EVENT_ID" };
+  }
 
   return prisma.$transaction(async (tx) => {
     const event = await tx.event.findUnique({
       where: { id: eventId },
-      select: { id: true, organizationId: true, tournament: { select: { id: true } } },
+      select: { id: true, organizationId: true, templateType: true, tournament: { select: { id: true } } },
     });
     if (!event?.organizationId) return { ok: false as const, error: "NOT_FOUND" };
+    if (event.templateType !== EventTemplateType.PADEL) {
+      return { ok: false as const, error: "EVENT_NOT_PADEL" };
+    }
     if (event.tournament?.id) {
       return { ok: true as const, tournamentId: event.tournament.id, created: false };
     }
@@ -66,6 +72,15 @@ export async function updateTournament(input: {
 }) {
   const { tournamentId, data, actorUserId, correlationId } = input;
   return prisma.$transaction(async (tx) => {
+    const existing = await tx.tournament.findUnique({
+      where: { id: tournamentId },
+      select: { id: true, eventId: true, event: { select: { organizationId: true, templateType: true } } },
+    });
+    if (!existing?.event) return { ok: false as const, error: "NOT_FOUND" };
+    if (existing.event.templateType !== EventTemplateType.PADEL) {
+      return { ok: false as const, error: "EVENT_NOT_PADEL" };
+    }
+
     const tournament = await tx.tournament.update({
       where: { id: tournamentId },
       data,

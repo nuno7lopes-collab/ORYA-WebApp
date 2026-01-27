@@ -8,6 +8,7 @@ import { enqueueOperation } from "@/lib/operations/enqueue";
 import { normalizeEmail } from "@/lib/utils/email";
 import { checkoutKey } from "@/lib/stripe/idempotency";
 import { ingestCrmInteraction } from "@/lib/crm/ingest";
+import { paymentEventRepo, saleLineRepo, saleSummaryRepo } from "@/domain/finance/readModelConsumer";
 
 const LEGACY_FULFILLMENT_DISABLED = true;
 
@@ -148,11 +149,11 @@ export async function fulfillPaidIntent(intent: IntentLike, stripeEventId?: stri
     };
 
     const saleSummary = existingSummary
-      ? await tx.saleSummary.update({
+      ? await saleSummaryRepo(tx).update({
           where: { id: existingSummary.id },
           data: baseData,
         })
-      : await tx.saleSummary.create({
+      : await saleSummaryRepo(tx).create({
           data: {
             ...baseData,
             paymentIntentId: intent.id,
@@ -181,9 +182,9 @@ export async function fulfillPaidIntent(intent: IntentLike, stripeEventId?: stri
       ticketsByType.set(ticket.ticketTypeId, typeMap);
     }
 
-    await tx.saleLine.deleteMany({ where: { saleSummaryId: saleSummary.id } });
+    await saleLineRepo(tx).deleteMany({ where: { saleSummaryId: saleSummary.id } });
     for (const line of breakdown.lines) {
-      const saleLine = await tx.saleLine.create({
+      const saleLine = await saleLineRepo(tx).create({
         data: {
           saleSummaryId: saleSummary.id,
           eventId: event.id,
@@ -333,7 +334,7 @@ export async function fulfillPaidIntent(intent: IntentLike, stripeEventId?: stri
       }
     }
 
-    await tx.paymentEvent.updateMany({
+    await paymentEventRepo(tx).updateMany({
       where: { stripePaymentIntentId: intent.id },
       data: {
         status: "OK",

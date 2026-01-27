@@ -3,8 +3,7 @@ export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
 import { rebuildCrmCustomers } from "@/lib/crm/rebuild";
-
-const CRON_HEADER = "X-ORYA-CRON-SECRET";
+import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
 
 function parseOrganizationId(value: string | null): number | null {
   if (!value) return null;
@@ -13,9 +12,7 @@ function parseOrganizationId(value: string | null): number | null {
 }
 
 export async function POST(req: NextRequest) {
-  const secret = req.headers.get(CRON_HEADER);
-  const expected = process.env.ORYA_CRON_SECRET;
-  if (!expected || !secret || secret !== expected) {
+  if (!requireInternalSecret(req)) {
     return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
   }
 

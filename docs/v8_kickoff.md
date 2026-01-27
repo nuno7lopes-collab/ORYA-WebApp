@@ -81,19 +81,51 @@ Provas / Gates
 - Gates: db:gates:offline + vitest search/ops/outbox; RG EventLog/Outbox=0 nas routes; RG writes=0 em search/discover; RG sourceType/sourceId=0 fora do módulo canónico.
 
 ### D2 — Owners (fontes de verdade) — DONE
-- Owner transfer canónico (initiate/confirm) com 1 pending por org (unique index) e idempotência.
-- State change → EventLog + Outbox na mesma tx; side‑effects via consumer idempotente (emails).
-- Gates: db:gates:offline + vitest (rbac/audit/outbox/orgContext) OK; RG audit/outbox/eventlog bypass=0.
+- Owners: transfer canónico (initiate/confirm) com 1 pending por org + idempotência.
+- Payments: Payment+Ledger SSOT; SaleSummary/SaleLine/PaymentEvent = read-models via outbox consumer.
+- Access: Entitlement é prova; Ticket/Booking/Registration são estado operacional.
+- Drift removido: gate por ticket.status (padel pairing) → Entitlement-first.
+- Drift removido: free-entry por SaleSummary/Ticket → Entitlement-first.
+- Guardrails: routes só state + EventLog/Outbox; read-model writes só no consumer; ledger append-only.
+- Guardrails: writes de Entitlement apenas nos módulos canónicos (finance/outbox/ops).
+- Guardrails: booking.status só em allowlist de workflow/scheduling.
+- Guardrails: org-context tokens obrigatórios; metadata org resolution só no allowlist.
+- Risco aceite: endpoint resolve org via account.metadata.organizationId com fallback stripeAccountId (input externo).
+
+#### D2 — DONE (audited)
+- Payments: Payment + Ledger SSOT; SaleSummary/SaleLine/PaymentEvent apenas read-model via consumer.
+- Access: Entitlement-first em gates críticos; remove atalhos por ticket.status/free-entry/SaleSummary.
+- Booking: guardrails de booking.status com allowlist de workflow; anti-drift em tests/ops.
+- Org-context: fail-closed + allowlist para resolução via metadata externa (risco aceite).
+- Guardrails: writes EventLog/Outbox apenas em append.ts/producer.ts; read-model writes só no consumer.
+- Provas: db:gates:offline + vitest ops/outbox/finance/entitlements OK (audited).
+- Commits: acf6f3b (docs+tests D2), 22f5b34 (agenda guardrail allowlist), 977cf0f (payments intent access gate).
+- Nota de escopo: D3 (agenda) segue no CHAT B; não mexer aqui.
 
 ### D3 — Agenda (read-model) — DONE
 - AgendaItem canónico (orgId, sourceType, sourceId, title snapshot, startsAt/endsAt, status, lastEventId) + unique (org, sourceType, sourceId).
 - Consumer idempotente: EventLog allowlist → materializa AgendaItem (dedupe por lastEventId) via outbox/worker.
 - Gates: db:gates:offline + vitest agenda/outbox/ops/rbac OK; RG agenda writes só no consumer.
+- Semântica de overlap (canónica): intervalos [start,end) com boundaries “touching allowed”.
 
 ### D3.2 — Calendar outbound (ICS) — DONE
 - Rotas read‑only: /api/me/reservas/[id]/calendar.ics (owner‑only).
 - Helpers: lib/calendar/ics.ts + lib/calendar/links.ts; UI usa links canónicos (ICS/Google/Outlook).
 - Gates: db:gates:offline + vitest agenda/outbox/ops OK; RG EventLog/Outbox=0 nas routes ICS.
+
+### D3.3 — SoftBlock + AgendaItem coverage (DONE, audited)
+- SoftBlock canónico (schema+migração) com comandos em domain/softBlocks e rotas org‑scoped; validações de intervalo e scope.
+- Workflow v8: state write + EventLog + Outbox na mesma tx (append.ts/producer.ts); outbox AGENDA_ITEM_UPSERT_REQUESTED → consumer idempotente (AgendaItem).
+- Conflitos: prioridade HardBlock > MatchSlot > Booking > SoftBlock; SoftBlock nunca bloqueia prioridades acima.
+- Gates: db:gates:offline; vitest tests/agenda tests/outbox tests/ops; RG agenda writes só no consumer; RG Outbox/EventLog writes fora dos canónicos = 0.
+- Dívida técnica (drift): refactor concluído em D3.5 (writes diretos eliminados).
+
+### D3.5 — Agenda canonical writes + rebuild parity (DONE, audited)
+- HardBlock/MatchSlot/Booking/SoftBlock writes canónicos em domain/**/commands.ts (EventLog+Outbox na mesma tx).
+- Rebuild: script `node scripts/rebuild_agenda.js --orgId <ID> --batchSize 200` (parity V1; sem hard delete, marca DELETED).
+- Rebuild CLI validado; execucao depende de DB acessivel (P1001 no ambiente atual).
+- RG finais (fora commands) = 0: padelCourtBlock/padelMatch/booking/softBlock.
+- Gates: npm run db:gates:offline; npx vitest run tests/agenda tests/outbox tests/ops.
 
 ### D4 — Finanças determinística (Stripe Connect + Fees ORYA)
 - Objetivo: Payment + Ledger SSOT; Stripe Connect obrigatório; idempotência total.
@@ -104,6 +136,10 @@ Provas / Gates
 - D4.2: EventLog + Outbox na mesma tx em refunds (booking + ticket).
 - D4.2: gates OK (RG stripe.refunds.create=0 fora do gateway; vitest finance/outbox).
 - D4.x: DONE — legacy finance routes sem side‑effects (checkout/status read‑only; payments/intent desativado). Gates OK (RG stripe.*=0 fora do gateway; db:gates:offline + vitest finance/outbox).
+- D4.9: DONE (audited*) — SSOT Payment → fallback PaymentSnapshot; PaymentEvent apenas metadata/timeline; finance overview fail‑closed.
+- Guardrails: EventLog/Outbox só canónicos; PaymentSnapshot writes só no consumer.
+- Provas: db:gates:offline OK; vitest finance/outbox/ops OK; vitest full OK; RG guardrails 0.
+- Nota: `npx prisma migrate deploy` falhou com "Schema engine error" no ambiente atual (requer validação em ambiente com engine ok).
 
 ### D5 — RBAC mínimo viável + Role Packs
 - Objetivo: roles/scopes canónicos com packs definidos.
@@ -128,17 +164,29 @@ Provas / Gates
 - Helpers canónicos: domain/ops/health.ts + domain/ops/slo.ts (queries baratas com janelas/take).
 - Gates: db:gates:offline; vitest ops/outbox; RG Outbox/EventLog/create=0 nas rotas ops; requireInternalSecret() em todas.
 
-### D11 — Search Index (EventLog → SearchIndexItem)
+### D11 — Search Index (EventLog → SearchIndexItem) (DONE, audited)
 - Objetivo: materializar SearchIndexItem via consumer idempotente e migrar search/discover para read‑model.
 - Outputs mínimos: SearchIndexItem (visibility PUBLIC|HIDDEN) + consumer por outbox; search/discover lê apenas SearchIndexItem.
 - Estado: DONE (event/org status emitindo SEARCH_INDEX_*; consumer dedupe por lastEventId).
 - Gates: db:gates:offline; vitest tests/searchIndex tests/search tests/outbox tests/ops; RG SearchIndexItem writes só em domain/searchIndex/**; RG EventLog/Outbox writes fora dos helpers = 0.
+- TicketType pricing/visibility writes ⇒ MUST call domain/searchIndex/triggers.ts
+- soldQuantity updates ⇒ OUT_OF_SCOPE (no search impact)
 
-### D11.1 — Discover/Explore → SearchIndexItem (DONE)
+### D11.1 — Discover/Explore → SearchIndexItem (DONE, audited)
 - /api/explorar/list agora lê exclusivamente SearchIndexItem (read‑model).
 - DTO canónico mantém‑se (publicEventCard); filtros paritários e paginação por cursor string.
-- Nota: sem fallback para Event; index lag aceite e documentado.
+- Nota anti‑drift: sem fallback para Event; index lag aceite e documentado.
 - Gates: db:gates:offline; vitest tests/search tests/outbox tests/ops; RG prisma writes=0 nas rotas; RG Outbox/EventLog writes=0 fora dos produtores.
+
+### D11.2 — SearchIndex coverage expansion (DONE, audited)
+- Triggers V1: event create/update/cancel/isDeleted; ticketType updates; admin purge; org status ACTIVE/INACTIVE.
+- Dedupe por lastEventId; quando evento não existe → visibilidade HIDDEN (fail closed).
+- /api/public/v1/events e /api/public/v1/tournaments mantêm 410 (PUBLIC_API_GONE) até read‑model dedicado.
+- Gates: db:gates:offline; vitest tests/searchIndex tests/search tests/publicApi tests/outbox tests/ops; RG SearchIndexItem/Outbox/EventLog writes=0 fora dos canónicos.
+- TicketType pricing/visibility writes ⇒ MUST call domain/searchIndex/triggers.ts
+- soldQuantity updates ⇒ OUT_OF_SCOPE (no search impact)
+- D11.2 coverage audit: ticketType writes mapped; triggers enforced
+- Anti-drift: qualquer novo write de TicketType deve chamar triggers.ts
 
 ### D7 — sourceType canónico
 - Objetivo: sourceType único para Finanças/ledger/check‑in.
@@ -148,6 +196,11 @@ Provas / Gates
 - Decisões necessárias: não criar sourceType fora da lista (D7).
 - Estado: DONE (writers EventLog/Outbox/Agenda/Notifications/Analytics normalizados).
 - Gates: db:gates:offline; vitest tests/sourceType tests/agenda tests/analytics tests/notifications tests/ops tests/outbox tests/finance; rg sourceType/sourceId string-literals = 0.
+
+Nota SSOT D7 (v9): separar enums.
+- `FinanceSourceType` = TICKET_ORDER, BOOKING, PADEL_REGISTRATION, STORE_ORDER, SUBSCRIPTION, MEMBERSHIP.
+- `AgendaSourceType` = EVENT, TOURNAMENT, MATCH, SOFT_BLOCK, HARD_BLOCK.
+- Normalização e validação por domínio (finanças vs agenda) para evitar drift.
 
 ### D8 — EventAccessPolicy (acesso + convites)
 - Objetivo: policy única para acesso/convites/guest checkout/check‑in.
@@ -170,3 +223,6 @@ Provas / Gates
 - Gates: npm run db:gates:offline; npx vitest run tests/fiscal tests/finance tests/rbac tests/outbox tests/ops; RG exports sem writes.
 - Regra: 0€ tickets só quando Event.pricingMode=FREE_ONLY (erro: EVENT_ZERO_PRICE_REQUIRES_EXPLICIT_FREE_MODE; FREE_ONLY bloqueia tickets pagos).
 - Anti-drift (sempre corre): rg -n "EventLog\\.(create|createMany)|eventLog\\.(create|createMany)" app/api/organizacao/events -S = 0; rg -n "OutboxEvent\\.create|outboxEvent\\.create" app/api/organizacao/events -S = 0; rg -n "\\bEvent\\.isFree\\b|\\bisFree\\b" app -S = 0.
+
+### Nota — Ambiente local (não bloqueante)
+- Warning Next.js: "middleware" deprecated → migrar para "proxy" (deixar ticket/nota; não bloqueia runtime local).

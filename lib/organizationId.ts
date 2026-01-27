@@ -27,9 +27,12 @@ export async function resolveOrganizationIdFromCookies(): Promise<number | null>
   }
 }
 
-export function resolveOrganizationIdFromRequest(req: NextRequest): number | null {
-  return (
-    resolveOrganizationIdFromParams(req.nextUrl.searchParams) ??
-    parseOrganizationId(req.cookies.get(ORGANIZATION_COOKIE_NAME)?.value)
-  );
+export function resolveOrganizationIdFromRequest(
+  req: NextRequest,
+  options?: { allowFallback?: boolean },
+): number | null {
+  const resolved = resolveOrganizationIdFromParams(req.nextUrl.searchParams);
+  if (resolved) return resolved;
+  if (!options?.allowFallback) return null;
+  return parseOrganizationId(req.cookies.get(ORGANIZATION_COOKIE_NAME)?.value);
 }

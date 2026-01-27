@@ -1,19 +1,18 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
-import { OrganizationMemberRole, SourceType, padel_match_status, Prisma } from "@prisma/client";
+import { OrganizationMemberRole, padel_match_status, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { isValidScore } from "@/lib/padel/validation";
 import { resolvePadelCompetitionState } from "@/domain/padelCompetitionState";
-import { recordOutboxEvent } from "@/domain/outbox/producer";
-import { appendEventLog } from "@/domain/eventLog/append";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
 import { normalizePadelScoreRules, resolvePadelMatchStats } from "@/domain/padel/score";
 import { enforcePublicRateLimit } from "@/lib/padel/publicRateLimit";
+import { updatePadelMatch } from "@/domain/padel/matches/commands";
 
-const allowedRoles: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
+const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
 const adminRoles = new Set<OrganizationMemberRole>(["OWNER", "CO_OWNER", "ADMIN"]);
 
 export async function GET(req: NextRequest) {
@@ -63,7 +62,7 @@ export async function GET(req: NextRequest) {
   if (user && !isPublicEvent) {
     const { organization } = await getActiveOrganizationForUser(user.id, {
       organizationId: event.organizationId,
-      roles: allowedRoles,
+      roles: ROLE_ALLOWLIST,
     });
     if (!organization) return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
   }
@@ -129,7 +128,7 @@ export async function POST(req: NextRequest) {
 
   const { organization, membership } = await getActiveOrganizationForUser(user.id, {
     organizationId: match.event.organizationId,
-    roles: allowedRoles,
+    roles: ROLE_ALLOWLIST,
   });
   if (!organization || !membership) {
     return NextResponse.json({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });
@@ -227,59 +226,25 @@ export async function POST(req: NextRequest) {
     courtNumberValue = Math.floor(courtNumberRaw as number);
   }
 
-  const { updated, outboxEventId } = await prisma.$transaction(async (tx) => {
-    const updated = await tx.padelMatch.update({
-      where: { id: matchId },
-      data: {
-        status: nextStatus,
-        score: scoreValue,
-        scoreSets: scoreSetsValue,
-        winnerPairingId: shouldSetWinner ? winnerPairingId ?? match.winnerPairingId : match.winnerPairingId,
-        startTime: startAtRaw ?? match.startTime,
-        courtId: courtIdValue ?? match.courtId,
-        ...(typeof courtNumberValue === "number" ? { courtNumber: courtNumberValue } : {}),
-      },
-      include: {
-        pairingA: { include: { slots: { include: { playerProfile: true } } } },
-        pairingB: { include: { slots: { include: { playerProfile: true } } } },
-      },
-    });
-
-    const outbox = await recordOutboxEvent(
-      {
-        eventType: "PADEL_MATCH_UPDATED",
-        payload: {
-          matchId: updated.id,
-          eventId: updated.eventId,
-          organizationId: match.event.organizationId,
-          actorUserId: user.id,
-          beforeStatus: match.status ?? null,
-        },
-      },
-      tx,
-    );
-
-    await appendEventLog(
-      {
-        eventId: outbox.eventId,
-        organizationId: match.event.organizationId,
-        eventType: "PADEL_MATCH_UPDATED",
-        idempotencyKey: outbox.eventId,
-        actorUserId: user.id,
-        sourceType: SourceType.MATCH,
-        sourceId: String(updated.id),
-        correlationId: outbox.eventId,
-        payload: {
-          matchId: updated.id,
-          eventId: updated.eventId,
-          status: updated.status,
-          winnerPairingId: updated.winnerPairingId ?? null,
-        },
-      },
-      tx,
-    );
-
-    return { updated, outboxEventId: outbox.eventId };
+  const { match: updated, outboxEventId } = await updatePadelMatch({
+    matchId,
+    eventId: match.eventId,
+    organizationId: match.event.organizationId,
+    actorUserId: user.id,
+    beforeStatus: match.status ?? null,
+    data: {
+      status: nextStatus,
+      score: scoreValue,
+      scoreSets: scoreSetsValue,
+      winnerPairingId: shouldSetWinner ? winnerPairingId ?? match.winnerPairingId : match.winnerPairingId,
+      startTime: startAtRaw ?? match.startTime,
+      courtId: courtIdValue ?? match.courtId,
+      ...(typeof courtNumberValue === "number" ? { courtNumber: courtNumberValue } : {}),
+    },
+    include: {
+      pairingA: { include: { slots: { include: { playerProfile: true } } } },
+      pairingB: { include: { slots: { include: { playerProfile: true } } } },
+    },
   });
 
   const beforeScore = match.score && typeof match.score === "object" ? match.score : null;

@@ -1,17 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
 
-const INTERNAL_HEADER = "X-ORYA-CRON-SECRET";
 // DLQ: listar via GET /api/internal/outbox/dlq; replay via POST /api/internal/outbox/replay.
-
-function requireInternalSecret(req: NextRequest) {
-  const provided = req.headers.get(INTERNAL_HEADER);
-  const expected = process.env.ORYA_CRON_SECRET;
-  if (!expected || !provided || provided !== expected) {
-    return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
-  }
-  return null;
-}
 
 function parseLimit(value: string | null) {
   const parsed = Number(value);
@@ -20,8 +11,9 @@ function parseLimit(value: string | null) {
 }
 
 export async function GET(req: NextRequest) {
-  const unauthorized = requireInternalSecret(req);
-  if (unauthorized) return unauthorized;
+  if (!requireInternalSecret(req)) {
+    return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
+  }
 
   const eventType = req.nextUrl.searchParams.get("eventType")?.trim() || null;
   const limit = parseLimit(req.nextUrl.searchParams.get("limit"));

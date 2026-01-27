@@ -7,7 +7,7 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
 
-const allowedRoles: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
+const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
 
 export async function POST(req: NextRequest) {
   const supabase = await createSupabaseServer();
@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
 
   const { organization } = await getActiveOrganizationForUser(user.id, {
     organizationId: event.organizationId,
-    roles: allowedRoles,
+    roles: ROLE_ALLOWLIST,
   });
   if (!organization) return NextResponse.json({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });
   if (!event.padelTournamentConfig) return NextResponse.json({ ok: false, error: "NO_TOURNAMENT" }, { status: 404 });

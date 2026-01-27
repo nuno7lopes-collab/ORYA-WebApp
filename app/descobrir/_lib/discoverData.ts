@@ -31,7 +31,7 @@ const EVENT_SELECT = {
   locationCity: true,
   latitude: true,
   longitude: true,
-  isGratis: true,
+  pricingMode: true,
   coverImageUrl: true,
   ticketTypes: {
     select: {

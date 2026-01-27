@@ -26,12 +26,12 @@ export async function GET(req: NextRequest) {
     if (!organization || !membership) {
       return NextResponse.json({ ok: false, error: "INVALID_ORGANIZATION" }, { status: 400 });
     }
-    const allowedRoles: OrganizationMemberRole[] = [
+    const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
       OrganizationMemberRole.OWNER,
       OrganizationMemberRole.CO_OWNER,
       OrganizationMemberRole.ADMIN,
     ];
-    if (!allowedRoles.includes(membership.role)) {
+    if (!ROLE_ALLOWLIST.includes(membership.role)) {
       return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 

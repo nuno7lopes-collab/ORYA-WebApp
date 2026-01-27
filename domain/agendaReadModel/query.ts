@@ -2,10 +2,11 @@ import { prisma } from "@/lib/prisma";
 import { SourceType } from "@prisma/client";
 
 export type AgendaItem = {
-  kind: "EVENT" | "TOURNAMENT" | "RESERVATION";
+  kind: "EVENT" | "TOURNAMENT" | "RESERVATION" | "SOFT_BLOCK";
   eventId?: number | null;
   tournamentId?: number | null;
   reservationId?: number | null;
+  softBlockId?: number | null;
   title: string;
   startsAt: Date;
   endsAt: Date;
@@ -24,6 +25,8 @@ export async function getAgendaItemsForOrganization(params: {
       organizationId,
       startsAt: { lte: to },
       endsAt: { gte: from },
+      sourceType: { in: [SourceType.EVENT, SourceType.TOURNAMENT, SourceType.BOOKING, SourceType.SOFT_BLOCK] },
+      status: { not: "DELETED" },
     },
     select: {
       title: true,
@@ -55,6 +58,13 @@ export async function getAgendaItemsForOrganization(params: {
         ...base,
         kind: "RESERVATION",
         reservationId: Number(item.sourceId),
+      } satisfies AgendaItem;
+    }
+    if (item.sourceType === SourceType.SOFT_BLOCK) {
+      return {
+        ...base,
+        kind: "SOFT_BLOCK",
+        softBlockId: Number(item.sourceId),
       } satisfies AgendaItem;
     }
     return {

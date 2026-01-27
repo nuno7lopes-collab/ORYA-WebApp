@@ -110,7 +110,7 @@ describe("organization context", () => {
       rolePack: null,
     } as any);
 
-    const result = await getActiveOrganizationForUser("user-3");
+    const result = await getActiveOrganizationForUser("user-3", { allowFallback: true });
     expect(result.organization?.id).toBe(10);
     expect(result.membership?.groupId).toBe(1);
   });

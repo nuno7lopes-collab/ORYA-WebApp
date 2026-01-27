@@ -1,24 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-
-const INTERNAL_HEADER = "X-ORYA-CRON-SECRET";
-
-function requireInternalSecret(req: NextRequest) {
-  const provided = req.headers.get(INTERNAL_HEADER);
-  const expected = process.env.ORYA_CRON_SECRET;
-  if (!expected || !provided || provided !== expected) {
-    return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
-  }
-  return null;
-}
+import { resolvePaymentStatusMap } from "@/domain/finance/resolvePaymentStatus";
+import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
 
 /**
  * Endpoint interno para inspecionar a timeline de checkout.
  * Uso: /api/internal/checkout/timeline?purchaseId=... ou ?paymentIntentId=...
  */
 export async function GET(req: NextRequest) {
-  const unauthorized = requireInternalSecret(req);
-  if (unauthorized) return unauthorized;
+  if (!requireInternalSecret(req)) {
+    return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
+  }
 
   const url = new URL(req.url);
   const purchaseId = (url.searchParams.get("purchaseId") || "").trim();
@@ -73,11 +65,33 @@ export async function GET(req: NextRequest) {
       })
     : [];
 
+  const resolvedPurchaseId = summary?.purchaseId ?? purchaseId ?? null;
+  const statusMap = resolvedPurchaseId
+    ? await resolvePaymentStatusMap([resolvedPurchaseId])
+    : new Map();
+  const resolved = resolvedPurchaseId ? statusMap.get(resolvedPurchaseId) : null;
+  const payment = resolvedPurchaseId
+    ? await prisma.payment.findUnique({
+        where: { id: resolvedPurchaseId },
+        select: { id: true, status: true, sourceType: true, sourceId: true, createdAt: true },
+      })
+    : null;
+  const snapshot = resolvedPurchaseId
+    ? await prisma.paymentSnapshot.findUnique({
+        where: { paymentId: resolvedPurchaseId },
+        select: { paymentId: true, status: true, grossCents: true, netToOrgCents: true, updatedAt: true },
+      })
+    : null;
+
   return NextResponse.json(
     {
       ok: true,
-      purchaseId: summary?.purchaseId ?? purchaseId ?? null,
+      purchaseId: resolvedPurchaseId,
       paymentIntentId: summary?.paymentIntentId ?? paymentIntentId ?? null,
+      resolvedStatus: resolved?.status ?? "PROCESSING",
+      resolvedStatusSource: resolved?.source ?? "NONE",
+      payment,
+      paymentSnapshot: snapshot,
       saleSummary: summary,
       paymentEvents,
       tickets,

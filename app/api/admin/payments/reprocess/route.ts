@@ -3,6 +3,7 @@ import { requireAdminUser } from "@/lib/admin/auth";
 import { enqueueOperation } from "@/lib/operations/enqueue";
 import { prisma } from "@/lib/prisma";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
+import { paymentEventRepo } from "@/domain/finance/readModelConsumer";
 
 export async function POST(req: NextRequest) {
   try {
@@ -25,8 +26,8 @@ export async function POST(req: NextRequest) {
       payload: { paymentIntentId },
     });
 
-    await prisma.paymentEvent.updateMany({
-      where: { stripePaymentIntentId: paymentIntentId },
+    await paymentEventRepo(prisma).updateMany({
+      where: { purchaseId: paymentIntentId },
       data: { status: "PROCESSING", errorMessage: null, updatedAt: new Date() },
     });
 

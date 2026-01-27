@@ -38,6 +38,8 @@ import { getAppBaseUrl } from "@/lib/appBaseUrl";
 import { getLatestPolicyVersionForEvent } from "@/lib/checkin/accessPolicy";
 import { maybeReconcileStripeFees } from "@/domain/finance/reconciliationTrigger";
 import { handleStripeWebhook } from "@/domain/finance/webhook";
+import { paymentEventRepo, saleLineRepo, saleSummaryRepo } from "@/domain/finance/readModelConsumer";
+import { handleFinanceOutboxEvent } from "@/domain/finance/outbox";
 import { sweepPendingProcessorFees } from "@/domain/finance/reconciliationSweep";
 import { publishOutboxBatch } from "@/domain/outbox/publisher";
 import { consumeOpsFeedBatch } from "@/domain/opsFeed/consumer";
@@ -46,12 +48,12 @@ import { handleLoyaltyOutboxEvent } from "@/domain/loyaltyOutbox";
 import { handleTournamentOutboxEvent } from "@/domain/tournaments/outbox";
 import { handlePadelOutboxEvent } from "@/domain/padel/outbox";
 import { handleOwnerTransferOutboxEvent } from "@/domain/organization/ownerTransferOutbox";
-import { consumeAgendaMaterializationEvent } from "@/domain/agenda/consumer";
+import { consumeAgendaMaterializationEvent } from "@/domain/agendaReadModel/consumer";
 import { handleSearchIndexOutboxEvent } from "@/domain/searchIndex/consumer";
+import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
 
 const MAX_ATTEMPTS = 5;
 const BATCH_SIZE = 5;
-const INTERNAL_HEADER = "X-ORYA-CRON-SECRET";
 
 const BASE_URL = getAppBaseUrl();
 const absUrl = (path: string) => (/^https?:\/\//i.test(path) ? path : `${BASE_URL}${path.startsWith("/") ? path : `/${path}`}`);
@@ -252,15 +254,6 @@ async function processSendEmailOutbox(op: OperationRecord) {
   }
 }
 
-function requireInternalSecret(req: NextRequest) {
-  const provided = req.headers.get(INTERNAL_HEADER);
-  const expected = process.env.ORYA_CRON_SECRET;
-  if (!expected || !provided || provided !== expected) {
-    return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
-  }
-  return null;
-}
-
 export async function POST(req: NextRequest) {
   if (LEGACY_OPERATIONS_DISABLED) {
     return NextResponse.json(
@@ -268,8 +261,9 @@ export async function POST(req: NextRequest) {
       { status: 410 }
     );
   }
-  const unauthorized = requireInternalSecret(req);
-  if (unauthorized) return unauthorized;
+  if (!requireInternalSecret(req)) {
+    return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
+  }
 
   const results = await runOperationsBatch();
   return NextResponse.json({ ok: true, processed: results.length, results }, { status: 200 });
@@ -292,8 +286,15 @@ export async function runOperationsBatch() {
 
   for (const op of pending as OperationRecord[]) {
     const now = new Date();
-    await prisma.operation.update({
-      where: { id: op.id },
+    const claim = await prisma.operation.updateMany({
+      where: {
+        id: op.id,
+        lockedAt: null,
+        OR: [
+          { status: "PENDING" },
+          { status: "FAILED", nextRetryAt: { lte: now } },
+        ],
+      },
       data: {
         status: "RUNNING",
         attempts: { increment: 1 },
@@ -301,6 +302,7 @@ export async function runOperationsBatch() {
         updatedAt: now,
       },
     });
+    if (claim.count === 0) continue;
 
     try {
       await processOperation(op);
@@ -386,6 +388,12 @@ async function processOperation(op: OperationRecord) {
         attempts: op.attempts,
       });
       if (!eventType) throw new Error("OUTBOX_EVENT_MISSING_TYPE");
+      if (eventType.startsWith("payment.")) {
+        return handleFinanceOutboxEvent({
+          eventType,
+          payload: eventPayload as any,
+        });
+      }
       if (eventType.startsWith("PADREG_")) {
         return handlePadelRegistrationOutboxEvent({
           eventType,
@@ -415,6 +423,11 @@ async function processOperation(op: OperationRecord) {
         eventType.startsWith("tournament.") ||
         eventType.startsWith("reservation.")
       ) {
+        const eventId = typeof payload.eventId === "string" ? payload.eventId : null;
+        if (!eventId) throw new Error("OUTBOX_EVENT_MISSING_ID");
+        return consumeAgendaMaterializationEvent(eventId);
+      }
+      if (eventType === "AGENDA_ITEM_UPSERT_REQUESTED") {
         const eventId = typeof payload.eventId === "string" ? payload.eventId : null;
         if (!eventId) throw new Error("OUTBOX_EVENT_MISSING_ID");
         return consumeAgendaMaterializationEvent(eventId);
@@ -509,7 +522,7 @@ async function processStripeEvent(op: OperationRecord) {
       if (!handled) {
         throw new Error("PAYMENT_INTENT_NOT_HANDLED");
       }
-      await prisma.paymentEvent.updateMany({
+      await paymentEventRepo(prisma).updateMany({
         where: { stripePaymentIntentId: piId },
         data: {
           status: "OK",
@@ -519,7 +532,7 @@ async function processStripeEvent(op: OperationRecord) {
       });
       return;
     } catch (err) {
-      await prisma.paymentEvent.updateMany({
+      await paymentEventRepo(prisma).updateMany({
         where: { stripePaymentIntentId: piId },
         data: {
           status: "ERROR",
@@ -568,7 +581,7 @@ async function processFulfillPayment(op: OperationRecord) {
     if (!handled) {
       throw new Error("PAYMENT_INTENT_NOT_HANDLED");
     }
-    await prisma.paymentEvent.updateMany({
+    await paymentEventRepo(prisma).updateMany({
       where: { stripePaymentIntentId: piId },
       data: {
         status: "OK",
@@ -577,7 +590,7 @@ async function processFulfillPayment(op: OperationRecord) {
       },
     });
   } catch (err) {
-    await prisma.paymentEvent.updateMany({
+    await paymentEventRepo(prisma).updateMany({
       where: { stripePaymentIntentId: piId },
       data: {
         status: "ERROR",
@@ -647,7 +660,7 @@ async function processUpsertLedger(op: OperationRecord) {
   );
 
   await prisma.$transaction(async (tx) => {
-    const saleSummary = await tx.saleSummary.upsert({
+    const saleSummary = await saleSummaryRepo(tx).upsert({
       where: { paymentIntentId: purchaseId },
       update: {
         eventId: event.id,
@@ -707,7 +720,7 @@ async function processUpsertLedger(op: OperationRecord) {
       ticketsByType.set(ticket.ticketTypeId, typeMap);
     }
 
-    await tx.saleLine.deleteMany({ where: { saleSummaryId: saleSummary.id } });
+    await saleLineRepo(tx).deleteMany({ where: { saleSummaryId: saleSummary.id } });
 
     let remainingDiscount = discountCents;
     let remainingPlatformFee = platformFeeCents;
@@ -734,7 +747,7 @@ async function processUpsertLedger(op: OperationRecord) {
       const discountPerUnitCents = qty > 0 ? Math.floor(discountForLine / qty) : 0;
       const netCents = Math.max(0, lineSubtotal - discountForLine);
 
-      const saleLine = await tx.saleLine.create({
+      const saleLine = await saleLineRepo(tx).create({
         data: {
           saleSummaryId: saleSummary.id,
           eventId: event.id,
@@ -867,7 +880,7 @@ async function processUpsertLedger(op: OperationRecord) {
   });
 
   // Marcar PaymentEvent como OK (free flow)
-  await prisma.paymentEvent.updateMany({
+  await paymentEventRepo(prisma).updateMany({
     where: { stripePaymentIntentId: purchaseId },
     data: {
       status: "OK",
@@ -922,7 +935,7 @@ async function processRefundSingle(op: OperationRecord) {
     throw new Error("Refund not created (saleSummary missing or Stripe failure)");
   }
 
-  await prisma.paymentEvent.updateMany({
+  await paymentEventRepo(prisma).updateMany({
     where: {
       OR: [
         purchaseId ? { purchaseId } : undefined,

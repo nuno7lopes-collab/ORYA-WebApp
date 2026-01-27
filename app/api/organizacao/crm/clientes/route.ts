@@ -7,7 +7,7 @@ import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureCrmModuleAccess } from "@/lib/crm/access";
 import { ConsentStatus, ConsentType, OrganizationMemberRole, Prisma } from "@prisma/client";
 
-const ALLOWED_ROLES = Object.values(OrganizationMemberRole);
+const ROLE_ALLOWLIST = Object.values(OrganizationMemberRole);
 
 const MAX_LIMIT = 50;
 
@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
     const organizationId = resolveOrganizationIdFromRequest(req);
     const { organization, membership } = await getActiveOrganizationForUser(user.id, {
       organizationId: organizationId ?? undefined,
-      roles: [...ALLOWED_ROLES],
+      roles: [...ROLE_ALLOWLIST],
     });
 
     if (!organization || !membership) {

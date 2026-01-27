@@ -34,7 +34,8 @@ export async function GET(req: NextRequest) {
       const qNum = Number(q);
       const maybeNumber = Number.isFinite(qNum) ? qNum : null;
       where.OR = [
-        { stripePaymentIntentId: { contains: q, mode: "insensitive" } },
+        { purchaseId: { contains: q, mode: "insensitive" } },
+        { stripeEventId: { contains: q, mode: "insensitive" } },
         { errorMessage: { contains: q, mode: "insensitive" } },
         ...(maybeNumber ? [{ eventId: maybeNumber }] : []),
         { userId: q },
@@ -52,37 +53,43 @@ export async function GET(req: NextRequest) {
     const trimmed = hasMore ? items.slice(0, PAGE_SIZE) : items;
     const nextCursor = hasMore ? trimmed[trimmed.length - 1]?.id ?? null : null;
 
-    const intentIds = Array.from(
-      new Set(trimmed.map((item) => item.stripePaymentIntentId).filter(Boolean)),
+    const purchaseIds = Array.from(
+      new Set(trimmed.map((item) => item.purchaseId).filter(Boolean)),
     ) as string[];
-    const [payouts, summaries] = await Promise.all([
-      intentIds.length
-        ? prisma.pendingPayout.findMany({
-            where: { paymentIntentId: { in: intentIds } },
-            select: {
-              paymentIntentId: true,
-              status: true,
-              holdUntil: true,
-              transferId: true,
-              amountCents: true,
-            },
-          })
-        : [],
-      intentIds.length
-        ? prisma.saleSummary.findMany({
-            where: { paymentIntentId: { in: intentIds } },
-            select: { id: true, paymentIntentId: true, status: true },
-          })
-        : [],
-    ]);
+    const summaries = purchaseIds.length
+      ? await prisma.saleSummary.findMany({
+          where: { purchaseId: { in: purchaseIds } },
+          select: { id: true, purchaseId: true, paymentIntentId: true, status: true },
+        })
+      : [];
+    const intentIds = Array.from(
+      new Set(summaries.map((summary) => summary.paymentIntentId).filter(Boolean)),
+    ) as string[];
+    const payouts = intentIds.length
+      ? await prisma.pendingPayout.findMany({
+          where: { paymentIntentId: { in: intentIds } },
+          select: {
+            paymentIntentId: true,
+            status: true,
+            holdUntil: true,
+            transferId: true,
+            amountCents: true,
+          },
+        })
+      : [];
     const payoutByIntent = new Map(payouts.map((p) => [p.paymentIntentId, p]));
-    const summaryByIntent = new Map(summaries.map((s) => [s.paymentIntentId, s]));
+    const summaryByPurchaseId = new Map(
+      summaries.map((summary) => [summary.purchaseId, summary]),
+    );
 
     const enriched = trimmed.map((item) => {
-      const payout = payoutByIntent.get(item.stripePaymentIntentId);
-      const summary = summaryByIntent.get(item.stripePaymentIntentId);
+      const summary = item.purchaseId ? summaryByPurchaseId.get(item.purchaseId) : null;
+      const payout = summary?.paymentIntentId
+        ? payoutByIntent.get(summary.paymentIntentId)
+        : null;
       return {
         ...item,
+        paymentIntentId: summary?.paymentIntentId ?? null,
         saleSummaryId: summary?.id ?? null,
         saleStatus: summary?.status ?? null,
         payoutStatus: payout?.status ?? null,

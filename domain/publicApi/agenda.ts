@@ -16,6 +16,7 @@ export async function listPublicAgenda(params: {
       sourceType: sourceTypes?.length ? { in: sourceTypes } : undefined,
       startsAt: from ? { gte: from } : undefined,
       endsAt: to ? { lte: to } : undefined,
+      status: { not: "DELETED" },
     },
     orderBy: { startsAt: "asc" },
     take: Math.min(limit, 500),

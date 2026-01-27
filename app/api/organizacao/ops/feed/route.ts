@@ -5,7 +5,7 @@ import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { OrganizationMemberRole } from "@prisma/client";
 
-const ALLOWED_ROLES: OrganizationMemberRole[] = [
+const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
   OrganizationMemberRole.CO_OWNER,
   OrganizationMemberRole.ADMIN,
@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
     const user = await ensureAuthenticated(supabase);
 
     const { organization, membership } = await getActiveOrganizationForUser(user.id, {
-      roles: [...ALLOWED_ROLES],
+      roles: [...ROLE_ALLOWLIST],
     });
     if (!organization || !membership) {
       return NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 });

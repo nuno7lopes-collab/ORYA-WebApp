@@ -6,8 +6,8 @@ import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
-import { isOrgAdminOrAbove } from "@/lib/organizationPermissions";
-import { PendingPayoutStatus, TicketStatus } from "@prisma/client";
+import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
+import { OrganizationModule, PendingPayoutStatus, TicketStatus } from "@prisma/client";
 
 export async function GET(req: NextRequest) {
   try {
@@ -26,7 +26,19 @@ export async function GET(req: NextRequest) {
       organizationId: organizationId ?? undefined,
     });
 
-    if (!organization || !membership || !isOrgAdminOrAbove(membership.role)) {
+    if (!organization || !membership) {
+      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    }
+
+    const access = await ensureMemberModuleAccess({
+      organizationId: organization.id,
+      userId: user.id,
+      role: membership.role,
+      rolePack: membership.rolePack,
+      moduleKey: OrganizationModule.FINANCEIRO,
+      required: "VIEW",
+    });
+    if (!access.ok) {
       return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 

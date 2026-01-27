@@ -31,7 +31,15 @@ if (!secret) {
   process.exit(1);
 }
 
-const url = process.env.WORKER_API_URL || "http://localhost:3000/api/cron/operations";
+const baseUrlRaw =
+  process.env.WORKER_BASE_URL ||
+  process.env.ORYA_BASE_URL ||
+  process.env.APP_BASE_URL ||
+  process.env.BASE_URL ||
+  process.env.NEXT_PUBLIC_BASE_URL ||
+  `http://localhost:${process.env.NEXT_PORT || process.env.PORT || "3000"}`;
+const baseUrl = baseUrlRaw.replace(/\/+$/, "");
+const url = process.env.WORKER_API_URL || `${baseUrl}/api/cron/operations`;
 const method = (process.env.WORKER_METHOD || "POST").toUpperCase();
 const intervalMs = Number(process.env.WORKER_INTERVAL_MS || "1000");
 

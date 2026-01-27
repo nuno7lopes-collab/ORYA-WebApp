@@ -512,6 +512,10 @@ D4.5 SaleSummary (se existir) — read model derivado
   - nunca decide estados (pago/reembolsado)
   - é re‑gerável a partir de Ledger + Payment
   - falhas são reparáveis por replay (EventLog/Jobs)
+- Definição (read‑model):
+  - `SaleSummary`: resumo por compra (`purchaseId`/`paymentIntentId`), totais/fees (`subtotal/discount/platformFee/cardFee/stripeFee/total/net`), `status`, owner (`ownerUserId`/`ownerIdentityId`), modo/teste (`mode`/`isTest`) e snapshots de promo (`promoCodeSnapshot/label/type/value`).
+  - `SaleLine`: linhas por ticketType (`ticketTypeId`), `quantity`, `unitPrice`, `gross/net/platformFee` + snapshots de promo.
+- Owner: apenas o consumer de finanças (domain/finance read‑model consumer) escreve; resto é read‑only.
 
 D4.6 FeeMode e pricing têm um resolvedor único (FECHADO)
 - `computePricing()` (Finanças) decide de forma determinística e versionada:
@@ -2274,6 +2278,11 @@ Regra:
 - Ledger e check‑in guardam apenas `sourceType` canónico.
 - Não criar “sourceType por módulo” fora desta lista; se precisares, adiciona aqui com versionamento.
 
+Separação de enums (SSOT D7):
+- `FinanceSourceType` = lista acima (SSOT para Finanças/ledger/check‑in).
+- `AgendaSourceType` = `EVENT`, `TOURNAMENT`, `MATCH`, `SOFT_BLOCK`, `HARD_BLOCK` (apenas agenda/check‑in).
+- Normalização deve escolher o enum certo por domínio (finance vs agenda).  
+
 7.6 Segurança de Entitlements (mínimo v1–v2)
 - QR tokens nunca reversíveis (guardar **hash**, nunca token em claro) + expiração.
 - `EntitlementQrToken` separado (rota de rotação/revogação).
@@ -3860,6 +3869,21 @@ Qualquer controlo fino de transferências/payout holds é fora do v1.x e requer 
   - `risk.flagged` pode activar: step‑up, limits, bloqueio temporário de criação de eventos/checkouts e revisão manual (D4/D9).
 
 19.3 Suporte & Operação (quando falha às 02:00) — **FECHADO**
+19.3.0 Kill Switches & Degraded Modes (NORMATIVE)
+The platform MUST support operational kill switches to limit blast radius.
+
+Examples include:
+- disabling new checkouts while allowing check-in
+- pausing payouts while preserving ledger integrity
+- freezing promotions or codes during abuse spikes
+
+Kill switches MUST:
+- be reversible
+- be auditable
+- not violate SSOT or ledger invariants
+
+Degraded operation is preferred over full outage.
+
 - Support Playbook (runbooks) obrigatório:
   - Pagamento preso (PROCESSING / REQUIRES_ACTION)
   - Webhook falhou / DLQ a crescer
@@ -3897,6 +3921,24 @@ Como o DB está em Supabase na Fase 1, a estratégia de backup é:
   - 1º restore test obrigatório antes do Go‑Live (19.0).
 
 19.4 Governança de Dados (RGPD / DSAR) — **FECHADO**
+19.4.0 Data Classification & Purpose Binding (NORMATIVE)
+All data within the ORYA platform is classified and handled according to its sensitivity and purpose.
+
+### Data Classes
+- **PII:** personal identifiers (email, name, phone)
+- **FINANCIAL:** ledger entries, payouts, fees, invoices
+- **AUDIT:** immutable logs, access trails, reconciliation records
+- **OPERATIONAL:** configs, schedules, availability
+- **PUBLIC:** content explicitly marked as public
+
+### Purpose Binding
+Each data class MUST:
+- be collected for an explicit purpose
+- not be reused for unrelated purposes
+- respect least-retention necessary for that purpose
+
+Access outside declared purpose is forbidden.
+
 - Direitos do titular (DSAR) — fluxos obrigatórios:
   - Exportar dados (“download my data”) em formato portátil.
   - Eliminar conta (“delete account”) com:
@@ -3948,6 +3990,24 @@ ADITAMENTO FECHADO: procedimento técnico mínimo.
   - segredos, chaves, regras internas de risco, notas internas de moderação, evidência sensível de terceiros.
 
 19.5 Account Security (ATO / Account Takeover) — **FECHADO**
+19.5.0 Threat Model (NORMATIVE)
+The platform explicitly defends against the following primary threats:
+- Account Takeover (ATO)
+- Cross-organization data leakage
+- Replay and duplicate execution
+- Webhook spoofing
+- Privilege escalation via RBAC
+- Financial double-spend or reconciliation drift
+
+Mitigations include:
+- strict org isolation
+- idempotency at all side-effect boundaries
+- append-only ledger
+- fail-closed authorization
+- audit trails for all sensitive actions
+
+Any new feature MUST be evaluated against this threat model.
+
 - Email verificado obrigatório para acções de risco:
   - comprar, revender/transferir, alterar email, alterar payout settings (org), aceder a Finanças (org).
 - Rate limit global por IP/device/identity em:

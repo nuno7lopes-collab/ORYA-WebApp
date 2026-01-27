@@ -4,8 +4,9 @@ import { ensureAuthenticated } from "@/lib/security";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
+import { ensureReservasModuleAccess } from "@/lib/reservas/access";
 import { OrganizationModule } from "@prisma/client";
-import { getAgendaItemsForOrganization } from "@/domain/agenda/query";
+import { getAgendaItemsForOrganization } from "@/domain/agendaReadModel/query";
 
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
@@ -31,6 +32,11 @@ export async function GET(req: NextRequest) {
   });
   if (!organization || !membership) {
     return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  }
+
+  const reservasAccess = await ensureReservasModuleAccess(organization);
+  if (!reservasAccess.ok) {
+    return NextResponse.json({ ok: false, error: reservasAccess.error }, { status: 403 });
   }
 
   const tournamentsAccess = await ensureMemberModuleAccess({

@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { OrganizationMemberRole } from "@prisma/client";
 import { resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
+import { updateTournament } from "@/domain/tournaments/commands";
 
 async function getOrganizationRole(userId: string, eventId: number) {
   const evt = await prisma.event.findUnique({
@@ -80,10 +81,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     featuredMatchUpdatedAt: new Date().toISOString(),
   };
 
-  await prisma.tournament.update({
-    where: { id: tournamentId },
+  const result = await updateTournament({
+    tournamentId,
     data: { config: nextConfig },
+    actorUserId: authData.user.id,
   });
+  if (!result.ok) {
+    if (result.error === "EVENT_NOT_PADEL") {
+      return NextResponse.json({ ok: false, error: "EVENT_NOT_PADEL" }, { status: 400 });
+    }
+    return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
+  }
 
   const res = NextResponse.json({ ok: true, featuredMatchId: matchId }, { status: 200 });
   res.headers.set("Cache-Control", "no-store");

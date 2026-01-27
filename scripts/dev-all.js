@@ -1,7 +1,8 @@
 // Run the local dev server plus all cron loops in one command.
-const { spawn } = require("child_process");
+const { spawn, execSync } = require("child_process");
 const fs = require("fs");
 const path = require("path");
+const repoRoot = path.resolve(__dirname, "..");
 
 function loadEnv() {
   if (process.env.ORYA_CRON_SECRET && process.env.NEXT_PUBLIC_BASE_URL) return;
@@ -58,8 +59,233 @@ function run(label, cmd, args, extraEnv) {
   return child;
 }
 
+function runCmd(command) {
+  try {
+    return execSync(command, {
+      stdio: ["ignore", "pipe", "pipe"],
+      encoding: "utf8",
+    }).trim();
+  } catch (err) {
+    return String(err?.stdout || "").trim();
+  }
+}
+
+function listProcesses() {
+  const psOutput = runCmd("ps -ax -o pid=,command=");
+  return psOutput
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const parts = line.split(/\s+/);
+      const pid = Number(parts[0]);
+      const command = parts.slice(1).join(" ");
+      return { pid, command };
+    })
+    .filter(({ pid }) => Number.isFinite(pid));
+}
+
+function findListeningPids(port) {
+  const output = runCmd(`lsof -nP -iTCP:${port} -sTCP:LISTEN -Fp`);
+  if (!output) return [];
+  return output
+    .split("\n")
+    .filter((line) => line.startsWith("p"))
+    .map((line) => Number(line.slice(1)))
+    .filter((pid) => Number.isFinite(pid));
+}
+
+function getCommandForPid(pid) {
+  return runCmd(`ps -p ${pid} -o command=`) || "";
+}
+
+function maybeKillPid(pid, patterns, requireRepo = true) {
+  const command = getCommandForPid(pid);
+  if (!command) return false;
+  const matchesRepo = command.includes(repoRoot);
+  const matchesPattern = patterns.some((pattern) => command.includes(pattern));
+  if (!matchesPattern) return false;
+  if (requireRepo && !matchesRepo) return false;
+  try {
+    process.kill(pid, "SIGKILL");
+    console.log(`[dev-all] Killed PID ${pid} (${command.trim()}).`);
+    return true;
+  } catch (err) {
+    console.log(`[dev-all] Failed to kill PID ${pid}: ${err?.message || err}`);
+    return false;
+  }
+}
+
+function killProcessesMatching(patterns, requireRepo = true) {
+  const processes = listProcesses();
+  for (const proc of processes) {
+    if (!patterns.some((pattern) => proc.command.includes(pattern))) continue;
+    if (requireRepo && !proc.command.includes(repoRoot)) continue;
+    maybeKillPid(proc.pid, patterns, requireRepo);
+  }
+}
+
+function killPortProcesses(port, patterns, requireRepo = true) {
+  const pids = findListeningPids(port);
+  if (!pids.length) return;
+  for (const pid of pids) {
+    const command = getCommandForPid(pid);
+    if (!patterns.some((pattern) => command.includes(pattern))) continue;
+    maybeKillPid(pid, patterns, requireRepo);
+  }
+}
+
+function cleanupPort(port, patterns) {
+  const pids = findListeningPids(port);
+  if (!pids.length) return;
+  for (const pid of pids) {
+    maybeKillPid(pid, patterns);
+  }
+}
+
+function findAvailablePort(startPort, maxAttempts = 5) {
+  for (let offset = 0; offset <= maxAttempts; offset += 1) {
+    const port = startPort + offset;
+    if (!findListeningPids(port).length) return port;
+  }
+  return startPort;
+}
+
+function findRepoNextDevPids() {
+  return listProcesses()
+    .filter(
+      ({ command }) =>
+        command.includes(repoRoot) &&
+        (command.includes("next dev") || command.includes("node_modules/.bin/next")),
+    )
+    .map(({ pid }) => pid);
+}
+
+function cleanupNextDevLockIfIdle() {
+  const lockPath = path.join(repoRoot, ".next", "dev", "lock");
+  if (!fs.existsSync(lockPath)) return;
+  const hasLsof = Boolean(runCmd("command -v lsof"));
+  if (hasLsof) {
+    const output = runCmd(`lsof -nP ${lockPath} -Fp`);
+    const pids = output
+      .split("\n")
+      .filter((line) => line.startsWith("p"))
+      .map((line) => Number(line.slice(1)))
+      .filter((pid) => Number.isFinite(pid));
+    if (pids.length > 0) {
+      for (const pid of pids) {
+        maybeKillPid(pid, ["next dev", "node_modules/.bin/next"]);
+      }
+      const remaining = findRepoNextDevPids();
+      if (remaining.length === 0) {
+        fs.rmSync(lockPath, { force: true });
+        console.log("[dev-all] Removed .next/dev/lock after killing Next dev.");
+      }
+      return;
+    }
+  }
+
+  const repoNextPids = findRepoNextDevPids();
+  if (repoNextPids.length > 0) {
+    for (const pid of repoNextPids) {
+      maybeKillPid(pid, ["next dev", "node_modules/.bin/next"]);
+    }
+  }
+  const remaining = findRepoNextDevPids();
+  if (remaining.length === 0) {
+    fs.rmSync(lockPath, { force: true });
+    console.log("[dev-all] Removed stale .next/dev/lock.");
+  }
+}
+
+function sanitizeStripeCliEnv(env) {
+  const stripeEnv = { ...env };
+  const apiKey = stripeEnv.STRIPE_API_KEY;
+  const secretKey = stripeEnv.STRIPE_SECRET_KEY;
+
+  const isLiveKey = (val) =>
+    typeof val === "string" &&
+    (val.startsWith("sk_live_") || val.startsWith("rk_live_"));
+  const isTestSecretKey = (val) =>
+    typeof val === "string" && val.startsWith("sk_test_");
+
+  if (apiKey && isLiveKey(apiKey)) {
+    delete stripeEnv.STRIPE_API_KEY;
+  }
+
+  if (!stripeEnv.STRIPE_API_KEY && secretKey) {
+    if (isTestSecretKey(secretKey)) {
+      stripeEnv.STRIPE_API_KEY = secretKey;
+    } else if (isLiveKey(secretKey)) {
+      delete stripeEnv.STRIPE_SECRET_KEY;
+    }
+  }
+
+  if (!stripeEnv.STRIPE_API_KEY) {
+    console.log(
+      "[dev-all] Stripe CLI: no test key detected. Using `stripe login` session if available.",
+    );
+  }
+
+  return stripeEnv;
+}
+
+function resetDevState() {
+  // Kill repo-scoped dev processes.
+  killProcessesMatching(["operations-loop.js", "cron-loop.js", "chat-ws-server.js"], true);
+  killProcessesMatching(["stripe listen"], false);
+  // Kill Next servers bound to common dev ports.
+  [3000, 3001, 3002, 3003].forEach((port) => {
+    killPortProcesses(port, ["next dev", "next-server", "node_modules/.bin/next"], false);
+  });
+  // Clean Next cache to avoid stale locks.
+  const nextDir = path.join(repoRoot, ".next");
+  if (fs.existsSync(nextDir)) {
+    fs.rmSync(nextDir, { recursive: true, force: true });
+    console.log("[dev-all] Removed .next cache.");
+  }
+}
+
+resetDevState();
+
+cleanupPort(3000, ["next dev", "node_modules/.bin/next"]);
+cleanupPort(3001, ["next dev", "node_modules/.bin/next"]);
+cleanupPort(4001, ["chat-ws-server.js"]);
+cleanupNextDevLockIfIdle();
+
+const localHost = process.env.HOSTNAME || "127.0.0.1";
+process.env.HOSTNAME = localHost;
+
+const baseNextPort = Number(process.env.NEXT_PORT || process.env.PORT || 3000);
+const nextPort = findAvailablePort(baseNextPort, 5);
+if (nextPort !== baseNextPort) {
+  console.log(`[dev-all] NEXT_PORT ${baseNextPort} ocupado. Usando ${nextPort}.`);
+}
+process.env.NEXT_PORT = String(nextPort);
+process.env.PORT = String(nextPort);
+if (!process.env.ORYA_BASE_URL) {
+  process.env.ORYA_BASE_URL = `http://${localHost}:${nextPort}`;
+}
+if (!process.env.WORKER_BASE_URL) {
+  process.env.WORKER_BASE_URL = process.env.ORYA_BASE_URL;
+}
+
+const baseChatWsPort = Number(process.env.CHAT_WS_PORT || 4001);
+const chatWsPort = findAvailablePort(baseChatWsPort, 5);
+if (chatWsPort !== baseChatWsPort) {
+  console.log(`[dev-all] CHAT_WS_PORT ${baseChatWsPort} ocupado. Usando ${chatWsPort}.`);
+}
+
+process.env.CHAT_WS_PORT = String(chatWsPort);
+if (!process.env.CHAT_WS_HOST) {
+  process.env.CHAT_WS_HOST = localHost;
+}
+if (!process.env.NEXT_PUBLIC_CHAT_WS_URL) {
+  process.env.NEXT_PUBLIC_CHAT_WS_URL = `ws://${localHost}:${chatWsPort}`;
+}
+
 const children = [
-  run("dev", npmCmd, ["run", "dev"]),
+  run("dev", npmCmd, ["run", "dev", "--", "--hostname", localHost]),
   run("cron", npmCmd, ["run", "cron:local"]),
 ];
 
@@ -96,10 +322,7 @@ if (startStripe) {
     process.env.STRIPE_CONNECT_FORWARD_URL ||
     `${baseUrl}/api/organizacao/payouts/webhook`;
 
-  const stripeEnv = { ...process.env };
-  if (!stripeEnv.STRIPE_API_KEY && stripeEnv.STRIPE_SECRET_KEY) {
-    stripeEnv.STRIPE_API_KEY = stripeEnv.STRIPE_SECRET_KEY;
-  }
+  const stripeEnv = sanitizeStripeCliEnv(process.env);
 
   children.push(
     run("stripe", stripeCmd, ["listen", "--forward-to", forwardTo], stripeEnv),

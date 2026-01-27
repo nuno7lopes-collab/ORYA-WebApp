@@ -7,7 +7,7 @@ import { parseOrganizationId } from "@/lib/organizationId";
 import { createNotification } from "@/lib/notifications";
 import { normalizeProfileCoverUrl } from "@/lib/profileMedia";
 
-const ALLOWED_ROLES: OrganizationMemberRole[] = [
+const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
   OrganizationMemberRole.CO_OWNER,
   OrganizationMemberRole.ADMIN,
@@ -52,7 +52,7 @@ export async function GET(req: NextRequest) {
 
     const { organization, membership } = await getActiveOrganizationForUser(user.id, {
       organizationId: organizationId ?? undefined,
-      roles: ALLOWED_ROLES,
+      roles: ROLE_ALLOWLIST,
     });
 
     if (!organization || !membership) {
@@ -100,7 +100,7 @@ export async function PATCH(req: NextRequest) {
 
     const { organization, membership } = await getActiveOrganizationForUser(user.id, {
       organizationId: organizationId ?? undefined,
-      roles: ALLOWED_ROLES,
+      roles: ROLE_ALLOWLIST,
     });
 
     if (!organization || !membership) {

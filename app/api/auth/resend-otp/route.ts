@@ -7,6 +7,7 @@ import { env } from "@/lib/env";
 import { getAppBaseUrl } from "@/lib/appBaseUrl";
 import { isSameOriginOrApp } from "@/lib/auth/requestValidation";
 import { rateLimit } from "@/lib/auth/rateLimit";
+import { getRequestContext } from "@/lib/http/requestContext";
 
 export async function POST(req: NextRequest) {
   try {
@@ -14,6 +15,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
     }
 
+    const ctx = getRequestContext(req);
     const { email } = await req.json();
 
     if (!email) {
@@ -59,7 +61,11 @@ export async function POST(req: NextRequest) {
           { status: 409 },
         );
       }
-      console.error("[resend-otp] generateLink error:", error);
+      console.error("[resend-otp] generateLink error", {
+        error,
+        requestId: ctx.requestId,
+        correlationId: ctx.correlationId,
+      });
       return NextResponse.json(
         { error: "Não foi possível reenviar o código. Tenta mais tarde." },
         { status: 500 }
@@ -67,7 +73,10 @@ export async function POST(req: NextRequest) {
     }
 
     if (!data?.properties?.email_otp) {
-      console.error("[resend-otp] missing email_otp in response");
+      console.error("[resend-otp] missing email_otp in response", {
+        requestId: ctx.requestId,
+        correlationId: ctx.correlationId,
+      });
       return NextResponse.json(
         { error: "Não foi possível gerar o código. Tenta mais tarde." },
         { status: 500 },
@@ -115,7 +124,12 @@ export async function POST(req: NextRequest) {
         html,
       });
     } catch (mailErr) {
-      console.error("[resend-otp] resend error", { mailErr, email, env: process.env.NODE_ENV });
+      console.error("[resend-otp] resend error", {
+        mailErr,
+        env: process.env.NODE_ENV,
+        requestId: ctx.requestId,
+        correlationId: ctx.correlationId,
+      });
       return NextResponse.json(
         { error: "Não foi possível reenviar o código. Tenta mais tarde." },
         { status: 502 },
@@ -124,7 +138,12 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ success: true });
   } catch (err) {
-    console.error("Erro em /api/auth/resend-otp:", err);
+    const ctx = getRequestContext(req);
+    console.error("Erro em /api/auth/resend-otp:", {
+      err,
+      requestId: ctx.requestId,
+      correlationId: ctx.correlationId,
+    });
     return NextResponse.json(
       { error: "Erro interno." },
       { status: 500 }

@@ -35,7 +35,8 @@ export async function GET(req: NextRequest) {
       const qNum = Number(q);
       const maybeNumber = Number.isFinite(qNum) ? qNum : null;
       where.OR = [
-        { stripePaymentIntentId: { contains: q, mode: "insensitive" } },
+        { purchaseId: { contains: q, mode: "insensitive" } },
+        { stripeEventId: { contains: q, mode: "insensitive" } },
         { errorMessage: { contains: q, mode: "insensitive" } },
         ...(maybeNumber ? [{ eventId: maybeNumber }] : []),
         { userId: q },
@@ -50,7 +51,8 @@ export async function GET(req: NextRequest) {
 
     const headers = [
       "id",
-      "payment_intent_id",
+      "purchase_id",
+      "stripe_event_id",
       "status",
       "mode",
       "event_id",
@@ -66,7 +68,8 @@ export async function GET(req: NextRequest) {
     const rows = items.map((item) =>
       [
         item.id,
-        item.stripePaymentIntentId,
+        item.purchaseId,
+        item.stripeEventId,
         item.status,
         item.mode,
         item.eventId ?? "",

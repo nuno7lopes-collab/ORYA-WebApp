@@ -4,8 +4,7 @@ export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { LoyaltyEntryType, LoyaltyProgramStatus, LoyaltySourceType, Prisma } from "@prisma/client";
-
-const CRON_HEADER = "X-ORYA-CRON-SECRET";
+import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
 
 type ExpireRow = {
   user_id: string;
@@ -14,9 +13,7 @@ type ExpireRow = {
 
 export async function POST(req: NextRequest) {
   try {
-    const secret = req.headers.get(CRON_HEADER);
-    const expected = process.env.ORYA_CRON_SECRET;
-    if (!expected || !secret || secret !== expected) {
+    if (!requireInternalSecret(req)) {
       return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
     }
 

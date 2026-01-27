@@ -1,5 +1,9 @@
+import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { LedgerEntryType, ProcessorFeesStatus } from "@prisma/client";
+import { FINANCE_OUTBOX_EVENTS } from "@/domain/finance/events";
+import { appendEventLog } from "@/domain/eventLog/append";
+import { recordOutboxEvent } from "@/domain/outbox/producer";
 
 export type ReconcilePaymentFeesInput = {
   paymentId: string;
@@ -84,6 +88,39 @@ export async function reconcilePaymentFees(
       });
 
       const netToOrgFinal = await computeNetToOrgFinal(tx, payment.id);
+      const eventLogId = crypto.randomUUID();
+      const payload = {
+        eventLogId,
+        paymentId: payment.id,
+        processorFeesActual: feeCents,
+        processorFeesStatus: ProcessorFeesStatus.FINAL,
+        netToOrgFinal,
+      };
+      const log = await appendEventLog(
+        {
+          eventId: eventLogId,
+          organizationId: payment.organizationId,
+          eventType: FINANCE_OUTBOX_EVENTS.PAYMENT_FEES_RECONCILED,
+          idempotencyKey: input.causationId,
+          sourceType: payment.sourceType,
+          sourceId: payment.sourceId,
+          correlationId: payment.id,
+          payload,
+        },
+        tx,
+      );
+      if (log) {
+        await recordOutboxEvent(
+          {
+            eventId: eventLogId,
+            eventType: FINANCE_OUTBOX_EVENTS.PAYMENT_FEES_RECONCILED,
+            payload,
+            causationId: input.causationId,
+            correlationId: payment.id,
+          },
+          tx,
+        );
+      }
       return { status: "FINALIZED", paymentId: payment.id, netToOrgFinal };
     }
 
@@ -106,13 +143,49 @@ export async function reconcilePaymentFees(
     const currentActual = payment.processorFeesActual ?? currentFromLedger;
 
     if (feeCents === currentActual) {
-      if (payment.processorFeesActual !== feeCents) {
+      const updatedActual = payment.processorFeesActual !== feeCents;
+      if (updatedActual) {
         await tx.payment.update({
           where: { id: payment.id },
           data: { processorFeesActual: feeCents },
         });
       }
       const netToOrgFinal = await computeNetToOrgFinal(tx, payment.id);
+      if (updatedActual) {
+        const eventLogId = crypto.randomUUID();
+        const payload = {
+          eventLogId,
+          paymentId: payment.id,
+          processorFeesActual: feeCents,
+          processorFeesStatus: payment.processorFeesStatus,
+          netToOrgFinal,
+        };
+        const log = await appendEventLog(
+          {
+            eventId: eventLogId,
+            organizationId: payment.organizationId,
+            eventType: FINANCE_OUTBOX_EVENTS.PAYMENT_FEES_RECONCILED,
+            idempotencyKey: input.causationId,
+            sourceType: payment.sourceType,
+            sourceId: payment.sourceId,
+            correlationId: payment.id,
+            payload,
+          },
+          tx,
+        );
+        if (log) {
+          await recordOutboxEvent(
+            {
+              eventId: eventLogId,
+              eventType: FINANCE_OUTBOX_EVENTS.PAYMENT_FEES_RECONCILED,
+              payload,
+              causationId: input.causationId,
+              correlationId: payment.id,
+            },
+            tx,
+          );
+        }
+      }
       return { status: "NOOP", paymentId: payment.id, netToOrgFinal };
     }
 
@@ -131,6 +204,39 @@ export async function reconcilePaymentFees(
     });
 
     const netToOrgFinal = await computeNetToOrgFinal(tx, payment.id);
+    const eventLogId = crypto.randomUUID();
+    const payload = {
+      eventLogId,
+      paymentId: payment.id,
+      processorFeesActual: feeCents,
+      processorFeesStatus: ProcessorFeesStatus.FINAL,
+      netToOrgFinal,
+    };
+    const log = await appendEventLog(
+      {
+        eventId: eventLogId,
+        organizationId: payment.organizationId,
+        eventType: FINANCE_OUTBOX_EVENTS.PAYMENT_FEES_RECONCILED,
+        idempotencyKey: input.causationId,
+        sourceType: payment.sourceType,
+        sourceId: payment.sourceId,
+        correlationId: payment.id,
+        payload,
+      },
+      tx,
+    );
+    if (log) {
+      await recordOutboxEvent(
+        {
+          eventId: eventLogId,
+          eventType: FINANCE_OUTBOX_EVENTS.PAYMENT_FEES_RECONCILED,
+          payload,
+          causationId: input.causationId,
+          correlationId: payment.id,
+        },
+        tx,
+      );
+    }
     return { status: "ADJUSTED", paymentId: payment.id, netToOrgFinal };
   });
 }

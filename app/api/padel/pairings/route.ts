@@ -39,8 +39,9 @@ import { getPadelOnboardingMissing, isPadelOnboardingComplete } from "@/domain/p
 import { validatePadelCategoryAccess } from "@/domain/padelCategoryAccess";
 import { resolveUserIdentifier } from "@/lib/userResolver";
 import { queuePairingInvite } from "@/domain/notifications/splitPayments";
+import { requireActiveEntitlementForTicket } from "@/lib/entitlements/accessChecks";
 
-const allowedRoles: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
+const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
 
 async function syncPlayersFromSlots({
   organizationId,
@@ -567,9 +568,6 @@ export async function POST(req: NextRequest) {
       select: {
         id: true,
         eventId: true,
-        status: true,
-        userId: true,
-        ownerUserId: true,
         pairingId: true,
         ticketType: {
           select: {
@@ -579,11 +577,19 @@ export async function POST(req: NextRequest) {
         },
       },
     });
-    if (!ticket || ticket.eventId !== eventId || ticket.status !== "ACTIVE") {
+    if (!ticket || ticket.eventId !== eventId) {
       return NextResponse.json({ ok: false, error: "INVALID_TICKET" }, { status: 400 });
     }
-    if (ticket.userId !== user.id && ticket.ownerUserId !== user.id) {
-      return NextResponse.json({ ok: false, error: "FORBIDDEN_TICKET" }, { status: 403 });
+    const entitlementGate = await requireActiveEntitlementForTicket({
+      ticketId: ticket.id,
+      eventId,
+      userId: user.id,
+    });
+    if (!entitlementGate.ok) {
+      return NextResponse.json(
+        { ok: false, error: entitlementGate.reason ?? "ENTITLEMENT_REQUIRED" },
+        { status: 403 },
+      );
     }
     if (ticket.pairingId) {
       return NextResponse.json({ ok: false, error: "TICKET_ALREADY_USED" }, { status: 409 });
@@ -901,7 +907,7 @@ export async function GET(req: NextRequest) {
     if (!isParticipant) {
       const { organization } = await getActiveOrganizationForUser(user.id, {
         organizationId: pairing.organizationId,
-        roles: allowedRoles,
+        roles: ROLE_ALLOWLIST,
       });
       if (!organization) {
         return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
@@ -938,7 +944,7 @@ export async function GET(req: NextRequest) {
   }
   const { organization } = await getActiveOrganizationForUser(user.id, {
     organizationId: event.organizationId,
-    roles: allowedRoles,
+    roles: ROLE_ALLOWLIST,
   });
   if (!organization) {
     return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });

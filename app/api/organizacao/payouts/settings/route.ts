@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
       roles: ["OWNER", "CO_OWNER", "ADMIN"],
     });
 
-    if (!organization || !membership || !isOrgOwner(membership.role)) {
+    if (!organization || !membership || !hasOrgOwnerAccess(membership.role)) {
       return NextResponse.json({ ok: false, error: "APENAS_OWNER" }, { status: 403 });
     }
     if (organization.status !== "ACTIVE") {

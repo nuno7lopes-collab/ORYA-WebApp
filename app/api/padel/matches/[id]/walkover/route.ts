@@ -9,8 +9,9 @@ import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { readNumericParam } from "@/lib/routeParams";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
 import { buildWalkoverSets, normalizePadelScoreRules } from "@/domain/padel/score";
+import { updatePadelMatch } from "@/domain/padel/matches/commands";
 
-const allowedRoles: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
+const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const resolved = await params;
@@ -53,7 +54,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const { organization } = await getActiveOrganizationForUser(authData.user.id, {
     organizationId: match.event.organizationId,
-    roles: allowedRoles,
+    roles: ROLE_ALLOWLIST,
   });
   if (!organization) {
     return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
@@ -82,8 +83,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   );
 
   const updated = await prisma.$transaction(async (tx) => {
-    const updatedMatch = await tx.padelMatch.update({
-      where: { id: matchId },
+    const { match: updatedMatch } = await updatePadelMatch({
+      tx,
+      matchId,
+      eventId: match.eventId,
+      organizationId: match.event.organizationId,
+      actorUserId: authData.user.id,
+      beforeStatus: match.status ?? null,
       data: {
         status: padel_match_status.DONE,
         winnerPairingId,

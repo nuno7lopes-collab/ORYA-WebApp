@@ -8,7 +8,7 @@ import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { parseOrganizationId } from "@/lib/organizationId";
 import { normalizePadelScoreRules, type PadelScoreRules } from "@/domain/padel/score";
 
-const allowedRoles: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
+const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
 
 export async function GET(req: NextRequest) {
   const supabase = await createSupabaseServer();
@@ -30,7 +30,7 @@ export async function GET(req: NextRequest) {
 
   const { organization, membership } = await getActiveOrganizationForUser(user.id, {
     organizationId: event.organizationId,
-    roles: allowedRoles,
+    roles: ROLE_ALLOWLIST,
   });
   if (!organization || !membership) return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
@@ -398,7 +398,7 @@ export async function POST(req: NextRequest) {
 
   const { organization } = await getActiveOrganizationForUser(user.id, {
     organizationId: organizationIdBody,
-    roles: allowedRoles,
+    roles: ROLE_ALLOWLIST,
   });
   if (!organization || organization.id !== organizationIdBody) {
     return NextResponse.json({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });

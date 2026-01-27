@@ -211,6 +211,7 @@ model Organization {
   eventLogs               EventLog[]
   activityFeedItems       ActivityFeedItem[]
   agendaItems             AgendaItem[]
+  softBlocks              SoftBlock[]
   searchIndexItems        SearchIndexItem[]
   events                  Event[]
   promoCodes              PromoCode[]
@@ -1609,6 +1610,8 @@ model Event {
   inviteTokens                      InviteToken[]
   ticketOrders                      TicketOrder[]
   padelRegistrations                PadelRegistration[]
+  saleSummaries                     SaleSummary[]
+  saleLines                         SaleLine[]
 
   @@index([type, status])
   @@index([ownerUserId])
@@ -1708,6 +1711,7 @@ model TicketType {
   padelEventCategoryLink PadelEventCategoryLink? @relation(fields: [padelEventCategoryLinkId], references: [id], onDelete: SetNull)
   inviteTokens  InviteToken[]
   ticketOrderLines TicketOrderLine[]
+  saleLines     SaleLine[]
 
   @@index([eventId])
   @@index([padelEventCategoryLinkId], map: "ticket_types_padel_category_link_idx")
@@ -1733,7 +1737,9 @@ model Ticket {
   pairingId             Int?              @map("pairing_id")
   padelSplitShareCents  Int?              @map("padel_split_share_cents")
   purchaseId            String?           @map("purchase_id") @db.Text
+  stripePaymentIntentId String?           @map("stripe_payment_intent_id")
   emissionIndex         Int               @default(0) @map("emission_index")
+  saleSummaryId         Int?              @map("sale_summary_id")
   guestLink             GuestTicketLink?
   notifications         Notification[]    @relation("NotificationTicket")
   pairingSlot           PadelPairingSlot? @relation("TicketPairingSlot")
@@ -1747,12 +1753,15 @@ model Ticket {
   ownerIdentityId       String?           @map("owner_identity_id") @db.Uuid
   tournamentEntryId     Int?              @map("tournament_entry_id")
   tournamentEntry       TournamentEntry?  @relation("TicketTournamentEntry", fields: [tournamentEntryId], references: [id], onDelete: SetNull)
+  saleSummary           SaleSummary?      @relation(fields: [saleSummaryId], references: [id], onDelete: SetNull)
 
   @@unique([purchaseId, ticketTypeId, emissionIndex], map: "tickets_purchase_ticket_idx")
   @@index([eventId])
   @@index([userId])
   @@index([ticketTypeId])
   @@index([pairingId])
+  @@index([stripePaymentIntentId], map: "tickets_stripe_intent_idx")
+  @@index([saleSummaryId], map: "tickets_sale_summary_idx")
   @@map("tickets")
   @@schema("app_v3")
 }
@@ -1896,6 +1905,28 @@ model LedgerEntry {
   @@schema("app_v3")
 }
 
+/// Read-model financeiro (snapshot derivado) — gerado via consumer
+model PaymentSnapshot {
+  paymentId          String        @id @map("payment_id")
+  organizationId     Int           @map("organization_id")
+  sourceType         SourceType    @map("source_type")
+  sourceId           String        @map("source_id") @db.Text
+  status             PaymentStatus @map("status")
+  currency           String        @map("currency")
+  grossCents         Int?          @map("gross_cents")
+  platformFeeCents   Int?          @map("platform_fee_cents")
+  processorFeesCents Int?          @map("processor_fees_cents")
+  netToOrgCents      Int?          @map("net_to_org_cents")
+  lastEventId        String?       @map("last_event_id")
+  createdAt          DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([organizationId], map: "payment_snapshots_org_idx")
+  @@index([sourceType, sourceId], map: "payment_snapshots_source_idx")
+  @@map("payment_snapshots")
+  @@schema("app_v3")
+}
+
 /// Registo de eventos de pagamento (auditoria webhooks/intent)
 model PaymentEvent {
   id                    Int                @id @default(autoincrement())
@@ -1920,6 +1951,77 @@ model PaymentEvent {
   @@index([purchaseId])
   @@index([eventId])
   @@map("payment_events")
+  @@schema("app_v3")
+}
+
+/// Read-model financeiro (derivado) — resumo por compra
+model SaleSummary {
+  id                    Int               @id @default(autoincrement())
+  eventId               Int               @map("event_id")
+  userId                String?           @map("user_id") @db.Uuid
+  ownerUserId           String?           @map("owner_user_id") @db.Uuid
+  ownerIdentityId       String?           @map("owner_identity_id") @db.Uuid
+  purchaseId            String?           @unique @map("purchase_id") @db.Text
+  paymentIntentId       String?           @unique @map("payment_intent_id")
+  promoCodeId           Int?              @map("promo_code_id")
+  promoCodeSnapshot     String?           @map("promo_code_snapshot")
+  promoLabelSnapshot    String?           @map("promo_label_snapshot")
+  promoTypeSnapshot     PromoType?        @map("promo_type_snapshot")
+  promoValueSnapshot    Int?              @map("promo_value_snapshot")
+  subtotalCents         Int?              @map("subtotal_cents")
+  discountCents         Int?              @map("discount_cents")
+  platformFeeCents      Int?              @map("platform_fee_cents")
+  cardPlatformFeeCents  Int?              @map("card_platform_fee_cents")
+  stripeFeeCents        Int?              @map("stripe_fee_cents")
+  totalCents            Int?              @map("total_cents")
+  netCents              Int?              @map("net_cents")
+  feeMode               FeeMode?          @map("fee_mode")
+  paymentMethod         String?           @map("payment_method")
+  currency              String            @default("EUR")
+  status                SaleSummaryStatus @default(PAID)
+  createdAt             DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  event                 Event             @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  promoCode             PromoCode?        @relation(fields: [promoCodeId], references: [id], onDelete: SetNull)
+  lines                 SaleLine[]
+  tickets               Ticket[]
+
+  @@index([eventId], map: "sale_summaries_event_idx")
+  @@index([status], map: "sale_summaries_status_idx")
+  @@index([promoCodeId], map: "sale_summaries_promo_idx")
+  @@map("sale_summaries")
+  @@schema("app_v3")
+}
+
+/// Linhas por venda (read-model financeiro)
+model SaleLine {
+  id                   Int        @id @default(autoincrement())
+  saleSummaryId        Int        @map("sale_summary_id")
+  eventId              Int        @map("event_id")
+  ticketTypeId         Int        @map("ticket_type_id")
+  promoCodeId          Int?       @map("promo_code_id")
+  promoCodeSnapshot    String?    @map("promo_code_snapshot")
+  promoLabelSnapshot   String?    @map("promo_label_snapshot")
+  promoTypeSnapshot    PromoType? @map("promo_type_snapshot")
+  promoValueSnapshot   Int?       @map("promo_value_snapshot")
+  quantity             Int        @default(1)
+  unitPriceCents       Int?       @map("unit_price_cents")
+  discountPerUnitCents Int?       @map("discount_per_unit_cents")
+  grossCents           Int?       @map("gross_cents")
+  netCents             Int?       @map("net_cents")
+  platformFeeCents     Int?       @map("platform_fee_cents")
+  createdAt            DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  saleSummary          SaleSummary @relation(fields: [saleSummaryId], references: [id], onDelete: Cascade)
+  event                Event       @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  ticketType           TicketType  @relation(fields: [ticketTypeId], references: [id], onDelete: Cascade)
+  promoCode            PromoCode?  @relation(fields: [promoCodeId], references: [id], onDelete: SetNull)
+  entitlements         Entitlement[]
+
+  @@index([saleSummaryId], map: "sale_lines_summary_idx")
+  @@index([eventId], map: "sale_lines_event_idx")
+  @@index([ticketTypeId], map: "sale_lines_ticket_type_idx")
+  @@index([promoCodeId], map: "sale_lines_promo_idx")
+  @@map("sale_lines")
   @@schema("app_v3")
 }
 
@@ -2007,6 +2109,26 @@ model ActivityFeedItem {
   @@index([organizationId, createdAt], map: "activity_feed_org_time_idx")
   @@index([organizationId, eventType], map: "activity_feed_org_type_idx")
   @@map("activity_feed_items")
+  @@schema("app_v3")
+}
+
+model SoftBlock {
+  id             Int             @id @default(autoincrement())
+  organizationId Int             @map("organization_id")
+  scopeType      SoftBlockScope  @default(ORGANIZATION) @map("scope_type")
+  scopeId        Int             @default(0) @map("scope_id")
+  startsAt       DateTime        @map("starts_at") @db.Timestamptz(6)
+  endsAt         DateTime        @map("ends_at") @db.Timestamptz(6)
+  reason         String?         @map("reason")
+  createdAt      DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId], map: "soft_blocks_org_idx")
+  @@index([organizationId, scopeType, scopeId], map: "soft_blocks_scope_idx")
+  @@index([organizationId, startsAt], map: "soft_blocks_org_start_idx")
+  @@map("soft_blocks")
   @@schema("app_v3")
 }
 
@@ -2105,6 +2227,8 @@ model PromoCode {
   organization     Organization?        @relation(fields: [organizationId], references: [id], onUpdate: NoAction)
   promoter      Profile?          @relation("PromoCodePromoter", fields: [promoterUserId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   redemptions   PromoRedemption[]
+  saleSummaries SaleSummary[]
+  saleLines     SaleLine[]
 
   @@index([eventId])
   @@index([organizationId])
@@ -2900,6 +3024,7 @@ model Entitlement {
   policyVersionApplied Int?              @map("policy_version_applied")
   createdAt        DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt        DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  saleLine         SaleLine              @relation(fields: [saleLineId], references: [id], onDelete: Cascade)
   ticket           Ticket?               @relation("TicketEntitlement", fields: [ticketId], references: [id], onDelete: SetNull)
   checkins         EntitlementCheckin[]
   qrTokens         EntitlementQrToken[]
@@ -3845,6 +3970,17 @@ enum PaymentStatus {
   @@schema("app_v3")
 }
 
+enum SaleSummaryStatus {
+  PAID
+  REFUNDED
+  DISPUTED
+  PARTIAL_REFUND
+  FAILED
+  CANCELLED
+
+  @@schema("app_v3")
+}
+
 enum ProcessorFeesStatus {
   PENDING
   FINAL
@@ -3899,6 +4035,17 @@ enum SourceType {
   TOURNAMENT
   MATCH
   LOYALTY_TX
+  SOFT_BLOCK
+  HARD_BLOCK
+
+  @@schema("app_v3")
+}
+
+enum SoftBlockScope {
+  ORGANIZATION
+  PROFESSIONAL
+  RESOURCE
+  COURT
 
   @@schema("app_v3")
 }

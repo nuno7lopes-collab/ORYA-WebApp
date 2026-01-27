@@ -21,6 +21,7 @@ export default async function CrmLayout({ children }: { children: ReactNode }) {
   }
 
   const { organization, membership } = await getActiveOrganizationForUser(user.id, {
+    allowFallback: true,
     allowedStatuses: [OrganizationStatus.ACTIVE, OrganizationStatus.SUSPENDED],
     roles: Object.values(OrganizationMemberRole),
   });

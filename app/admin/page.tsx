@@ -9,6 +9,7 @@ import { AdminLayout } from "./components/AdminLayout";
 import AdminDataPurgeTools from "@/app/admin/components/AdminDataPurgeTools";
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 function formatCurrencyFromCents(value: number | null | undefined) {
   if (!value || Number.isNaN(value)) return "0,00 €";
@@ -120,7 +121,8 @@ export default async function AdminDashboardPage() {
     take: 8,
     select: {
       id: true,
-      stripePaymentIntentId: true,
+      purchaseId: true,
+      stripeEventId: true,
       status: true,
       eventId: true,
       amountCents: true,
@@ -254,7 +256,7 @@ export default async function AdminDashboardPage() {
                       <Badge tone={toneForStatus(p.status)}>{p.status ?? "—"}</Badge>
                       <div className="space-y-0.5">
                         <p className="font-medium text-white/90">
-                          {p.stripePaymentIntentId ?? "Intent"}
+                          {p.purchaseId ?? p.stripeEventId ?? "Ref"}
                         </p>
                         <p className="text-[12px] text-white/55">
                           Atualizado {formatDateTime(p.updatedAt)}

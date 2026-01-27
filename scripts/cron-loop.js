@@ -29,10 +29,23 @@ if (!secret) {
   process.exit(1);
 }
 
-const baseUrlRaw =
+const explicitBaseUrl =
+  process.env.ORYA_BASE_URL ||
+  process.env.APP_BASE_URL ||
+  process.env.BASE_URL ||
   process.env.WORKER_BASE_URL ||
-  process.env.NEXT_PUBLIC_BASE_URL ||
-  "http://localhost:3000";
+  process.env.NEXT_PUBLIC_BASE_URL;
+
+const isDev = process.env.NODE_ENV === "development";
+const nextPort = process.env.NEXT_PORT || process.env.PORT || "3000";
+const baseUrlRaw = explicitBaseUrl || (isDev ? `http://localhost:${nextPort}` : "http://localhost:3000");
+
+if (isDev && baseUrlRaw.includes("orya.pt")) {
+  console.error(
+    `[cron-loop] Refusing to run against production URL in development: ${baseUrlRaw}`,
+  );
+  process.exit(1);
+}
 const baseUrl = baseUrlRaw.replace(/\/+$/, "");
 const verbose = process.env.CRON_VERBOSE === "1" || process.env.CRON_VERBOSE === "true";
 

@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { SearchIndexVisibility, SourceType } from "@prisma/client";
 import { deriveIsFreeEvent } from "@/domain/events/derivedIsFree";
-import { normalizeSourceType } from "@/domain/sourceType";
+import { normalizeAgendaSourceType } from "@/domain/sourceType";
 
 const ALLOWLIST = new Set([
   "event.created",
@@ -32,6 +32,7 @@ async function upsertFromEvent(params: {
   eventId: number;
   eventLogId: string;
   eventLogCreatedAt: Date;
+  organizationId?: number | null;
 }): Promise<SearchIndexConsumeResult> {
   const event = await prisma.event.findUnique({
     where: { id: params.eventId },
@@ -61,7 +62,24 @@ async function upsertFromEvent(params: {
     },
   });
 
-  if (!event) return { ok: false, code: "EVENT_NOT_FOUND" };
+  if (!event) {
+    if (params.organizationId) {
+      await prisma.searchIndexItem.updateMany({
+        where: {
+          organizationId: params.organizationId,
+          sourceType: SourceType.EVENT,
+          sourceId: String(params.eventId),
+        },
+        data: {
+          visibility: SearchIndexVisibility.HIDDEN,
+          lastEventId: params.eventLogId,
+          updatedAt: params.eventLogCreatedAt,
+        },
+      });
+      return { ok: true };
+    }
+    return { ok: false, code: "EVENT_NOT_FOUND" };
+  }
   if (!event.organizationId) return { ok: false, code: "EVENT_ORG_MISSING" };
 
   const ownerProfile = event.ownerUserId
@@ -199,6 +217,7 @@ async function handleOrgStatusUpdate(params: {
       eventId: event.id,
       eventLogId: params.eventLogId,
       eventLogCreatedAt: params.eventLogCreatedAt,
+      organizationId: params.organizationId,
     });
   }
 
@@ -228,7 +247,7 @@ export async function consumeSearchIndexEvent(eventLogId: string): Promise<Searc
 
   const payload = (log.payload ?? {}) as Record<string, unknown>;
   const sourceType =
-    normalizeSourceType(payload.sourceType as string | null) ?? log.sourceType ?? SourceType.EVENT;
+    normalizeAgendaSourceType(payload.sourceType as string | null) ?? log.sourceType ?? SourceType.EVENT;
   if (sourceType !== SourceType.EVENT) return { ok: true, deduped: true };
 
   const sourceId =
@@ -246,6 +265,7 @@ export async function consumeSearchIndexEvent(eventLogId: string): Promise<Searc
     eventId,
     eventLogId: log.id,
     eventLogCreatedAt: log.createdAt,
+    organizationId: log.organizationId,
   });
 }
 

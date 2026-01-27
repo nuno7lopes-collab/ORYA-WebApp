@@ -28,7 +28,7 @@ export async function GET(req: NextRequest) {
       organizationId: organizationId ?? undefined,
     });
 
-    if (!organization || !membership || !isOrgOwner(membership.role)) {
+    if (!organization || !membership || !hasOrgOwnerAccess(membership.role)) {
       return NextResponse.json({ ok: false, error: "APENAS_OWNER" }, { status: 403 });
     }
 

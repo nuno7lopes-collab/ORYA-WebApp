@@ -54,7 +54,10 @@ export default async function OrganizationDashboardLayout({ children }: { childr
       where: { id: user.id },
       select: { fullName: true, username: true, avatarUrl: true, updatedAt: true },
     });
-    const activeOrgPromise = getActiveOrganizationForUser(user.id, ORG_ACTIVE_ACCESS_OPTIONS);
+    const activeOrgPromise = getActiveOrganizationForUser(user.id, {
+      ...ORG_ACTIVE_ACCESS_OPTIONS,
+      includeOrganizationFields: "settings",
+    });
     const membershipsPromise = prisma.organizationMember.findMany({
       where: { userId: user.id },
       include: { organization: true },

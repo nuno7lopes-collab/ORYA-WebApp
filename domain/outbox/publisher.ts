@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 export const OUTBOX_MAX_ATTEMPTS = 5;
 const BATCH_SIZE = 50;
 const BASE_BACKOFF_MS = 5 * 60 * 1000;
+const CLAIM_LOCK_MS = 60 * 1000;
 
 function computeBackoffMs(attempts: number) {
   const backoff = attempts * BASE_BACKOFF_MS;
@@ -26,10 +27,32 @@ export async function publishOutboxBatch(params?: { now?: Date; batchSize?: numb
   const results: { eventId: string; status: "PUBLISHED" | "RETRY" | "DEAD_LETTER" }[] = [];
 
   for (const event of pending) {
+    const lockUntil = new Date(now.getTime() + CLAIM_LOCK_MS);
+    let claimCount = 0;
+    if (typeof prisma.outboxEvent.updateMany === "function") {
+      const claim = await prisma.outboxEvent.updateMany({
+        where: {
+          eventId: event.eventId,
+          publishedAt: null,
+          deadLetteredAt: null,
+          OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: now } }],
+        },
+        data: { nextAttemptAt: lockUntil },
+      });
+      claimCount = claim.count;
+    } else {
+      await prisma.outboxEvent.update({
+        where: { eventId: event.eventId },
+        data: { nextAttemptAt: lockUntil },
+      });
+      claimCount = 1;
+    }
+    if (claimCount === 0) continue;
+
     if (event.attempts >= OUTBOX_MAX_ATTEMPTS) {
       await prisma.outboxEvent.update({
         where: { eventId: event.eventId },
-        data: { deadLetteredAt: now },
+        data: { deadLetteredAt: now, nextAttemptAt: null },
       });
       console.warn("[outbox] dead-letter", {
         eventId: event.eventId,

@@ -4,6 +4,7 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { linkAppleIdentity } from "@/domain/apple/linkIdentity";
 import { verifyAppleIdToken } from "@/lib/apple/signin";
 import { prisma } from "@/lib/prisma";
+import { getActiveOrganizationIdForUser } from "@/lib/organizationContext";
 
 type AppleLinkBody = { idToken?: string | null };
 
@@ -54,11 +55,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "APPLE_IDENTITY_INVALID" }, { status: 400 });
   }
 
-  const profile = await prisma.profile.findUnique({
-    where: { id: data.user.id },
-    select: { activeOrganizationId: true },
-  });
-  const orgId = profile?.activeOrganizationId ?? null;
+  const orgId = await getActiveOrganizationIdForUser(data.user.id);
 
   try {
     const identity = await linkAppleIdentity({

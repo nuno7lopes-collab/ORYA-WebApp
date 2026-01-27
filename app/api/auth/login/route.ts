@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { isSameOriginOrApp } from "@/lib/auth/requestValidation";
 import { rateLimit } from "@/lib/auth/rateLimit";
+import { getRequestContext } from "@/lib/http/requestContext";
 
 function isUnconfirmedError(err: unknown) {
   if (!err) return false;
@@ -27,6 +28,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
   }
 
+  const ctx = getRequestContext(req);
   const body = (await req.json().catch(() => null)) as
     | { identifier?: string; password?: string }
     | null;
@@ -106,7 +108,12 @@ export async function POST(req: NextRequest) {
       },
     });
   } catch (err) {
-    console.error("[auth/login] error:", err);
+    console.error("[auth/login] error:", {
+      err,
+      requestId: ctx.requestId,
+      correlationId: ctx.correlationId,
+      orgId: ctx.orgId,
+    });
     return NextResponse.json(
       { ok: false, error: "SERVER_ERROR" },
       { status: 500 }

@@ -11,8 +11,11 @@ import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { ensureReservasModuleAccess } from "@/lib/reservas/access";
 import { getResourceModeBlockedPayload, resolveServiceAssignmentMode } from "@/lib/reservas/serviceAssignment";
 import { OrganizationMemberRole } from "@prisma/client";
+import { evaluateCandidate, type AgendaCandidate } from "@/domain/agenda/conflictEngine";
+import { buildAgendaConflictPayload } from "@/domain/agenda/conflictResponse";
+import { createBooking } from "@/domain/bookings/commands";
 
-const ALLOWED_ROLES: OrganizationMemberRole[] = [
+const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
   OrganizationMemberRole.CO_OWNER,
   OrganizationMemberRole.ADMIN,
@@ -52,6 +55,13 @@ function buildBlocks(
   }));
 }
 
+function agendaConflictResponse(decision?: Parameters<typeof buildAgendaConflictPayload>[0]["decision"]) {
+  return {
+    ok: false,
+    ...buildAgendaConflictPayload({ decision: decision ?? null, fallbackReason: "MISSING_EXISTING_DATA" }),
+  };
+}
+
 export async function GET(req: NextRequest) {
   try {
     const url = new URL(req.url);
@@ -82,7 +92,7 @@ export async function GET(req: NextRequest) {
     const organizationId = resolveOrganizationIdFromRequest(req);
     const { organization, membership } = await getActiveOrganizationForUser(profile.id, {
       organizationId: organizationId ?? undefined,
-      roles: [...ALLOWED_ROLES],
+      roles: [...ROLE_ALLOWLIST],
     });
 
     if (!organization || !membership) {
@@ -198,7 +208,7 @@ export async function POST(req: NextRequest) {
     const organizationId = resolveOrganizationIdFromRequest(req);
     const { organization, membership } = await getActiveOrganizationForUser(profile.id, {
       organizationId: organizationId ?? undefined,
-      roles: [...ALLOWED_ROLES],
+      roles: [...ROLE_ALLOWLIST],
     });
 
     if (!organization || !membership) {
@@ -418,7 +428,8 @@ export async function POST(req: NextRequest) {
     }
 
     const shouldUseOrgOnly = false;
-    const [templates, overrides, blockingBookings] = await Promise.all([
+    const bookingEndsAt = new Date(startsAt.getTime() + service.durationMinutes * 60 * 1000);
+    const [templates, overrides, blockingBookings, softBlocks] = await Promise.all([
       prisma.weeklyAvailabilityTemplate.findMany({
         where: {
           organizationId: service.organizationId,
@@ -452,13 +463,25 @@ export async function POST(req: NextRequest) {
       prisma.booking.findMany({
         where: {
           organizationId: service.organizationId,
-          startsAt: { lt: new Date(startsAt.getTime() + service.durationMinutes * 60 * 1000) },
+          startsAt: { lt: bookingEndsAt },
           OR: [
             { status: { in: ["CONFIRMED", "DISPUTED", "NO_SHOW"] } },
             { status: { in: ["PENDING_CONFIRMATION", "PENDING"] }, pendingExpiresAt: { gt: now } },
           ],
         },
-        select: { startsAt: true, durationMinutes: true, professionalId: true, resourceId: true },
+        select: { id: true, startsAt: true, durationMinutes: true, professionalId: true, resourceId: true },
+      }),
+      prisma.softBlock.findMany({
+        where: {
+          organizationId: service.organizationId,
+          startsAt: { lt: bookingEndsAt },
+          endsAt: { gt: startsAt },
+          OR: [
+            { scopeType: "ORGANIZATION" },
+            ...(scopeIds.length > 0 ? [{ scopeType, scopeId: { in: scopeIds } }] : []),
+          ],
+        },
+        select: { id: true, scopeType: true, scopeId: true, startsAt: true, endsAt: true },
       }),
     ]);
 
@@ -511,6 +534,51 @@ export async function POST(req: NextRequest) {
       professionalId = assignedScopeId;
     }
 
+    const scopeIdForConflict = assignmentMode === "RESOURCE" ? resourceId : professionalId;
+    if (!scopeIdForConflict) {
+      return NextResponse.json(agendaConflictResponse(), { status: 503 });
+    }
+
+    const candidate: AgendaCandidate = {
+      type: "BOOKING",
+      sourceId: `booking:new:${service.id}:${startsAt.toISOString()}`,
+      startsAt,
+      endsAt: bookingEndsAt,
+    };
+    const existing: AgendaCandidate[] = blockingBookings
+      .filter((booking) =>
+        assignmentMode === "RESOURCE" ? booking.resourceId === scopeIdForConflict : booking.professionalId === scopeIdForConflict,
+      )
+      .map((booking) => ({
+        type: "BOOKING" as const,
+        sourceId: String(booking.id),
+        startsAt: booking.startsAt,
+        endsAt: new Date(booking.startsAt.getTime() + booking.durationMinutes * 60 * 1000),
+      }));
+    softBlocks.forEach((block) => {
+      if (block.scopeType === "ORGANIZATION") {
+        existing.push({
+          type: "SOFT_BLOCK",
+          sourceId: String(block.id),
+          startsAt: block.startsAt,
+          endsAt: block.endsAt,
+        });
+        return;
+      }
+      if (block.scopeId !== scopeIdForConflict) return;
+      existing.push({
+        type: "SOFT_BLOCK",
+        sourceId: String(block.id),
+        startsAt: block.startsAt,
+        endsAt: block.endsAt,
+      });
+    });
+
+    const decision = evaluateCandidate({ candidate, existing });
+    if (!decision.allowed) {
+      return NextResponse.json(agendaConflictResponse(decision), { status: 409 });
+    }
+
     const pendingExpiresAt = new Date(now.getTime() + PENDING_HOLD_MINUTES * 60 * 1000);
     const locationText =
       service.locationMode === "CHOOSE_AT_BOOKING"
@@ -520,7 +588,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "Local obrigatório para esta marcação." }, { status: 400 });
     }
 
-    const booking = await prisma.booking.create({
+    const { booking } = await createBooking({
+      organizationId: service.organizationId,
+      actorUserId: profile.id,
       data: {
         serviceId: service.id,
         organizationId: service.organizationId,

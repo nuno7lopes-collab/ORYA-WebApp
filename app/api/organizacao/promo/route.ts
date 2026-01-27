@@ -2,16 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
-import { isOrgAdminOrAbove } from "@/lib/organizationPermissions";
-import { resolveOrganizationIdFromParams } from "@/lib/organizationId";
+import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
+import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
+import { OrganizationModule } from "@prisma/client";
 
 const resolveOrganizationId = (req: NextRequest) => {
-  const orgParam = resolveOrganizationIdFromParams(req.nextUrl.searchParams);
-  const cookieOrgId = req.cookies.get("orya_organization")?.value;
-  const raw = orgParam ?? (cookieOrgId ? Number(cookieOrgId) : null);
-  const organizationId = typeof raw === "number" && Number.isFinite(raw) ? raw : null;
-  return { organizationId, hasOrgParam: Boolean(orgParam) };
+  const organizationId = resolveOrganizationIdFromRequest(req);
+  return { organizationId };
 };
 
 async function requireOrganization(req: NextRequest) {
@@ -28,11 +26,9 @@ async function requireOrganization(req: NextRequest) {
   const profile = await prisma.profile.findUnique({ where: { id: user.id } });
   if (!profile) return { error: "PROFILE_NOT_FOUND" as const };
 
-  const { organizationId, hasOrgParam } = resolveOrganizationId(req);
+  const { organizationId } = resolveOrganizationId(req);
   const { organization, membership } = await getActiveOrganizationForUser(user.id, {
     organizationId: organizationId ?? undefined,
-    roles: ["OWNER", "CO_OWNER", "ADMIN", "PROMOTER"],
-    allowFallback: !hasOrgParam,
   });
 
   if (!membership || !organization) {
@@ -54,7 +50,15 @@ export async function GET(req: NextRequest) {
     if (!emailGate.ok) {
       return NextResponse.json({ ok: false, error: emailGate.error }, { status: 403 });
     }
-    if (!isOrgAdminOrAbove(ctx.membership.role) && ctx.membership.role !== "PROMOTER") {
+    const access = await ensureMemberModuleAccess({
+      organizationId: ctx.organization.id,
+      userId: ctx.membership.userId,
+      role: ctx.membership.role,
+      rolePack: ctx.membership.rolePack,
+      moduleKey: OrganizationModule.MARKETING,
+      required: "VIEW",
+    });
+    if (!access.ok) {
       return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
@@ -237,6 +241,17 @@ export async function POST(req: NextRequest) {
     if (!emailGate.ok) {
       return NextResponse.json({ ok: false, error: emailGate.error }, { status: 403 });
     }
+    const access = await ensureMemberModuleAccess({
+      organizationId: ctx.organization.id,
+      userId: ctx.membership.userId,
+      role: ctx.membership.role,
+      rolePack: ctx.membership.rolePack,
+      moduleKey: OrganizationModule.MARKETING,
+      required: "EDIT",
+    });
+    if (!access.ok) {
+      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    }
 
     const body = await req.json().catch(() => null);
     if (!body) {
@@ -373,6 +388,17 @@ export async function PATCH(req: NextRequest) {
     const emailGate = ensureOrganizationEmailVerified(ctx.organization);
     if (!emailGate.ok) {
       return NextResponse.json({ ok: false, error: emailGate.error }, { status: 403 });
+    }
+    const access = await ensureMemberModuleAccess({
+      organizationId: ctx.organization.id,
+      userId: ctx.membership.userId,
+      role: ctx.membership.role,
+      rolePack: ctx.membership.rolePack,
+      moduleKey: OrganizationModule.MARKETING,
+      required: "EDIT",
+    });
+    if (!access.ok) {
+      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
     const body = await req.json().catch(() => null);
@@ -527,6 +553,17 @@ export async function DELETE(req: NextRequest) {
       const status =
         ctx.error === "UNAUTHENTICATED" ? 401 : ctx.error === "PROFILE_NOT_FOUND" ? 404 : 403;
       return NextResponse.json({ ok: false, error: ctx.error }, { status });
+    }
+    const access = await ensureMemberModuleAccess({
+      organizationId: ctx.organization.id,
+      userId: ctx.membership.userId,
+      role: ctx.membership.role,
+      rolePack: ctx.membership.rolePack,
+      moduleKey: OrganizationModule.MARKETING,
+      required: "EDIT",
+    });
+    if (!access.ok) {
+      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
     const body = await req.json().catch(() => null);
     if (!body || typeof body.id !== "number") {

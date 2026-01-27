@@ -19,7 +19,7 @@ async function ensureOrganizationAccess(userId: string, eventId: number) {
   const access = await ensureGroupMemberRole({
     organizationId: evt.organizationId,
     userId,
-    allowedRoles: ["OWNER", "CO_OWNER", "ADMIN"],
+    ROLE_ALLOWLIST: ["OWNER", "CO_OWNER", "ADMIN"],
   });
   return { ok: access.ok };
 }

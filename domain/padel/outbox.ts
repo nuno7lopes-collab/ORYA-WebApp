@@ -6,6 +6,7 @@ import { createNotification, shouldNotify } from "@/lib/notifications";
 import { computePadelStandingsByGroup, normalizePadelPointsTable, normalizePadelTieBreakRules } from "@/domain/padel/standings";
 import { advancePadelKnockoutWinner, extractBracketPrefix, sortRoundsBySize } from "@/domain/padel/knockoutAdvance";
 import { autoGeneratePadelMatches } from "@/domain/padel/autoGenerateMatches";
+import { updatePadelMatch } from "@/domain/padel/matches/commands";
 import { Prisma } from "@prisma/client";
 
 type AutoScheduleRequestedPayload = {
@@ -42,6 +43,10 @@ type MatchUpdatedPayload = {
   beforeStatus: string | null;
 };
 
+const SYSTEM_MATCH_EVENT = "PADEL_MATCH_SYSTEM_UPDATED";
+const MATCH_BATCH_GENERATED = "PADEL_MATCH_GENERATED";
+const MATCH_DELETED_EVENT = "PADEL_MATCH_DELETED";
+
 export async function handlePadelOutboxEvent(params: { eventType: string; payload: Prisma.JsonValue }) {
   switch (params.eventType) {
     case "PADEL_AUTO_SCHEDULE_REQUESTED":
@@ -50,6 +55,10 @@ export async function handlePadelOutboxEvent(params: { eventType: string; payloa
       return handleMatchDelayRequested(params.payload as MatchDelayRequestedPayload);
     case "PADEL_MATCH_UPDATED":
       return handleMatchUpdated(params.payload as MatchUpdatedPayload);
+    case SYSTEM_MATCH_EVENT:
+    case MATCH_BATCH_GENERATED:
+    case MATCH_DELETED_EVENT:
+      return { ok: true } as const;
     default:
       return { ok: false, code: "PADEL_OUTBOX_UNHANDLED" } as const;
   }
@@ -59,8 +68,13 @@ async function handleAutoScheduleRequested(payload: AutoScheduleRequestedPayload
   if (!payload?.scheduledUpdates?.length) return { ok: true } as const;
   await prisma.$transaction(async (tx) => {
     for (const update of payload.scheduledUpdates) {
-      await tx.padelMatch.update({
-        where: { id: update.matchId },
+      await updatePadelMatch({
+        tx,
+        matchId: update.matchId,
+        eventId: payload.eventId,
+        organizationId: payload.organizationId,
+        actorUserId: payload.actorUserId,
+        eventType: SYSTEM_MATCH_EVENT,
         data: {
           plannedStartAt: new Date(update.start),
           plannedEndAt: new Date(update.end),
@@ -102,8 +116,12 @@ async function handleMatchDelayRequested(payload: MatchDelayRequestedPayload) {
     delayReason: payload.reason ?? null,
   };
 
-  await prisma.padelMatch.update({
-    where: { id: match.id },
+  await updatePadelMatch({
+    matchId: match.id,
+    eventId: match.event.id,
+    organizationId: match.event.organizationId,
+    actorUserId: payload.actorUserId,
+    eventType: SYSTEM_MATCH_EVENT,
     data: {
       ...(payload.clearSchedule !== false
         ? { plannedStartAt: null, plannedEndAt: null, plannedDurationMinutes: null, courtId: null, startTime: null }
@@ -233,8 +251,12 @@ async function handleMatchDelayRequested(payload: MatchDelayRequestedPayload) {
 
       const next = scheduleResult.scheduled[0];
       if (next) {
-        await prisma.padelMatch.update({
-          where: { id: next.matchId },
+        await updatePadelMatch({
+          matchId: next.matchId,
+          eventId: match.event.id,
+          organizationId: match.event.organizationId,
+          actorUserId: payload.actorUserId,
+          eventType: SYSTEM_MATCH_EVENT,
           data: {
             plannedStartAt: next.start,
             plannedEndAt: next.end,
@@ -279,6 +301,13 @@ async function handleMatchUpdated(payload: MatchUpdatedPayload) {
     },
   });
   if (!updated || !updated.event?.organizationId) return { ok: false, code: "MATCH_NOT_FOUND" } as const;
+
+  const systemContext = {
+    eventId: updated.event.id,
+    organizationId: updated.event.organizationId,
+    actorUserId: payload.actorUserId,
+    eventType: SYSTEM_MATCH_EVENT,
+  };
 
   const involvedUserIds = [
     ...((updated.pairingA?.slots ?? []).map((s) => s.profileId).filter(Boolean) as string[]),
@@ -355,12 +384,21 @@ async function handleMatchUpdated(payload: MatchUpdatedPayload) {
       if (shouldAutoAdvance) {
         await advancePadelKnockoutWinner({
           matches: koMatches,
-          updateMatch: (matchId, data) =>
-            prisma.padelMatch.update({
-              where: { id: matchId },
+          updateMatch: async (matchId, data) => {
+            const { match } = await updatePadelMatch({
+              matchId,
               data,
+              ...systemContext,
               select: { id: true, roundLabel: true, pairingAId: true, pairingBId: true, winnerPairingId: true },
-            }),
+            });
+            return match as {
+              id: number;
+              roundLabel: string | null;
+              pairingAId: number | null;
+              pairingBId: number | null;
+              winnerPairingId: number | null;
+            };
+          },
           winnerMatchId: updated.id,
           winnerPairingId: resolvedWinnerPairingId,
         });
@@ -407,9 +445,10 @@ async function handleMatchUpdated(payload: MatchUpdatedPayload) {
                   else if (!target.pairingAId) updateTarget.pairingAId = loserPairingId;
                 }
                 if (Object.keys(updateTarget).length > 0) {
-                  await prisma.padelMatch.update({
-                    where: { id: target.id },
+                  await updatePadelMatch({
+                    matchId: target.id,
                     data: updateTarget,
+                    ...systemContext,
                   });
                 }
               }
@@ -445,9 +484,10 @@ async function handleMatchUpdated(payload: MatchUpdatedPayload) {
                 else if (!target.pairingAId) updateTarget.pairingAId = loserPairingId;
               }
               if (Object.keys(updateTarget).length > 0) {
-                await prisma.padelMatch.update({
-                  where: { id: target.id },
+                await updatePadelMatch({
+                  matchId: target.id,
                   data: updateTarget,
+                  ...systemContext,
                 });
               }
             }
@@ -466,9 +506,10 @@ async function handleMatchUpdated(payload: MatchUpdatedPayload) {
             if (!grandFinal.pairingAId) updateTarget.pairingAId = resolvedWinnerPairingId;
             else if (!grandFinal.pairingBId) updateTarget.pairingBId = resolvedWinnerPairingId;
             if (Object.keys(updateTarget).length > 0) {
-              await prisma.padelMatch.update({
-                where: { id: grandFinal.id },
+              await updatePadelMatch({
+                matchId: grandFinal.id,
                 data: updateTarget,
+                ...systemContext,
               });
             }
           }
@@ -496,8 +537,8 @@ async function handleMatchUpdated(payload: MatchUpdatedPayload) {
           if (gfResetNeeded) {
             const pairingAId = grandFinal?.pairingAId ?? winnersFinalWinner ?? null;
             const pairingBId = grandFinal?.pairingBId ?? resolvedWinnerPairingId ?? null;
-            await prisma.padelMatch.update({
-              where: { id: grandFinalReset.id },
+            await updatePadelMatch({
+              matchId: grandFinalReset.id,
               data: {
                 pairingAId,
                 pairingBId,
@@ -506,10 +547,11 @@ async function handleMatchUpdated(payload: MatchUpdatedPayload) {
                 score: {},
                 scoreSets: null,
               },
+              ...systemContext,
             });
           } else {
-            await prisma.padelMatch.update({
-              where: { id: grandFinalReset.id },
+            await updatePadelMatch({
+              matchId: grandFinalReset.id,
               data: {
                 pairingAId: null,
                 pairingBId: null,
@@ -518,6 +560,7 @@ async function handleMatchUpdated(payload: MatchUpdatedPayload) {
                 score: {},
                 scoreSets: null,
               },
+              ...systemContext,
             });
           }
         }

@@ -8,7 +8,7 @@ import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { recordOutboxEvent } from "@/domain/outbox/producer";
 import { appendEventLog } from "@/domain/eventLog/append";
 
-const allowedRoles: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
+const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
 const normalizeReason = (value: unknown) => (typeof value === "string" ? value.trim() : "");
 const parseDate = (value: unknown) => {
   if (typeof value !== "string") return null;
@@ -66,7 +66,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const { organization } = await getActiveOrganizationForUser(user.id, {
     organizationId: match.event.organizationId,
-    roles: allowedRoles,
+    roles: ROLE_ALLOWLIST,
   });
   if (!organization) return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 

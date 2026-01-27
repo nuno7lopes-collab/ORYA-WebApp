@@ -38,7 +38,8 @@ type AdminTicket = {
   pricePaidCents?: number | null;
   currency?: string | null;
   purchasedAt?: string | null;
-  stripePaymentIntentId?: string | null;
+  purchaseId?: string | null;
+  paymentIntentId?: string | null;
   paymentEventStatus?: string | null;
 };
 
@@ -264,7 +265,7 @@ export default function AdminTicketsPage() {
                 />
               </div>
               <div>
-                <label className="mb-1 block text-[10px] uppercase tracking-[0.2em] text-white/45">Intent</label>
+                <label className="mb-1 block text-[10px] uppercase tracking-[0.2em] text-white/45">Pagamento</label>
                 <input
                   type="text"
                   value={intentFilter}
@@ -374,7 +375,7 @@ export default function AdminTicketsPage() {
                       <th className="px-3 py-3">Preço / Fees</th>
                       <th className="px-3 py-3">Estado</th>
                       <th className="px-3 py-3">Comprado em</th>
-                      <th className="px-3 py-3">Intent</th>
+                      <th className="px-3 py-3">Pagamento</th>
                       <th className="px-3 py-3 text-right">Ações</th>
                     </tr>
                   </thead>
@@ -444,21 +445,21 @@ export default function AdminTicketsPage() {
                           </td>
                           <td className="px-3 py-3 align-top max-w-[160px] truncate font-mono text-[10px] text-white/50">
                             <div className="flex flex-col gap-1">
-                              <span className="truncate">{t.stripePaymentIntentId || "—"}</span>
-                              {t.stripePaymentIntentId && (
+                              <span className="truncate">{(t.purchaseId ?? t.paymentIntentId) || "—"}</span>
+                              {(t.purchaseId ?? t.paymentIntentId) && (
                                 <div className="flex flex-wrap gap-1">
                                   <button
                                     type="button"
-                                    onClick={() => navigator.clipboard?.writeText(t.stripePaymentIntentId || "")}
+                                    onClick={() => navigator.clipboard?.writeText(t.purchaseId ?? t.paymentIntentId ?? "")}
                                     className="admin-button-secondary px-2 py-0.5 text-[10px]"
                                   >
                                     Copiar
                                   </button>
                                   <Link
-                                    href={`/admin/finance?payment_q=${encodeURIComponent(t.stripePaymentIntentId)}#pagamentos`}
+                                    href={`/admin/finance?payment_q=${encodeURIComponent(t.purchaseId ?? t.paymentIntentId ?? "")}#pagamentos`}
                                     className="admin-button-secondary px-2 py-0.5 text-[10px]"
                                   >
-                                    Ver intent
+                                    Ver pagamento
                                   </Link>
                                 </div>
                               )}
@@ -467,15 +468,15 @@ export default function AdminTicketsPage() {
                           <td className="px-3 py-3 align-top text-right">
                             <div className="flex flex-wrap justify-end gap-2">
                               <Link
-                                href={`/admin/finance?payment_q=${encodeURIComponent(t.stripePaymentIntentId || "")}#pagamentos`}
+                                href={`/admin/finance?payment_q=${encodeURIComponent(t.purchaseId ?? t.paymentIntentId ?? "")}#pagamentos`}
                                 className="admin-button-secondary px-2.5 py-1 text-[11px]"
                               >
                                 Pagamento
                               </Link>
-                              {t.stripePaymentIntentId && t.paymentEventStatus !== "REFUNDED" && (
+                              {(t.purchaseId ?? t.paymentIntentId) && t.paymentEventStatus !== "REFUNDED" && (
                                 <button
                                   type="button"
-                                  onClick={() => handleRefund(t.stripePaymentIntentId)}
+                                  onClick={() => handleRefund(t.purchaseId ?? t.paymentIntentId)}
                                   className="admin-button-secondary px-2.5 py-1 text-[11px]"
                                 >
                                   Refund
