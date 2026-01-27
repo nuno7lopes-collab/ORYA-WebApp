@@ -4,8 +4,9 @@ import { getOpsHealth } from "@/domain/ops/health";
 import { getOpsSlo } from "@/domain/ops/slo";
 
 export async function GET(req: NextRequest) {
-  const guard = requireInternalSecret(req);
-  if (!guard.ok) return guard.response;
+  if (!requireInternalSecret(req)) {
+    return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
+  }
 
   const [health, slo] = await Promise.all([getOpsHealth(), getOpsSlo()]);
   return NextResponse.json({ ts: new Date().toISOString(), health, slo });

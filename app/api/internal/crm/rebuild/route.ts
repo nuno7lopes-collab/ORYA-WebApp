@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { rebuildCrmCustomers } from "@/lib/crm/rebuild";
-
-const INTERNAL_HEADER = "X-ORYA-CRON-SECRET";
+import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
 
 function parseOrganizationId(value: string | null): number | null {
   if (!value) return null;
@@ -11,8 +10,7 @@ function parseOrganizationId(value: string | null): number | null {
 
 export async function POST(req: NextRequest) {
   try {
-    const secret = req.headers.get(INTERNAL_HEADER);
-    if (!secret || secret !== process.env.ORYA_CRON_SECRET) {
+    if (!requireInternalSecret(req)) {
       return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
     }
 

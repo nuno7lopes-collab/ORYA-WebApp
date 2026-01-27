@@ -1,13 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-
-const INTERNAL_HEADER = "X-ORYA-CRON-SECRET";
+import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
 
 export async function GET(req: NextRequest) {
   try {
-    const secret = req.headers.get(INTERNAL_HEADER);
-    if (!secret || secret !== process.env.ORYA_CRON_SECRET) {
+    if (!requireInternalSecret(req)) {
       return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
 

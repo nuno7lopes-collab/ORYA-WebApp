@@ -1,16 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { replayOutboxEvents } from "@/lib/ops/outboxReplay";
-
-const INTERNAL_HEADER = "X-ORYA-CRON-SECRET";
-
-function requireInternalSecret(req: NextRequest) {
-  const provided = req.headers.get(INTERNAL_HEADER);
-  const expected = process.env.ORYA_CRON_SECRET;
-  if (!expected || !provided || provided !== expected) {
-    return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
-  }
-  return null;
-}
+import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
 
 function parseRequestId(req: NextRequest) {
   return req.headers.get("Idempotency-Key") || req.headers.get("X-Request-Id");
@@ -29,8 +19,9 @@ function parseEventIds(payload: unknown) {
 }
 
 export async function POST(req: NextRequest) {
-  const unauthorized = requireInternalSecret(req);
-  if (unauthorized) return unauthorized;
+  if (!requireInternalSecret(req)) {
+    return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
+  }
 
   const requestId = parseRequestId(req);
   const payload = (await req.json().catch(() => null)) as unknown;

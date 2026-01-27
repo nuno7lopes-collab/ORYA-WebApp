@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { CrmInteractionSource, CrmInteractionType } from "@prisma/client";
 import { ingestCrmInteraction } from "@/lib/crm/ingest";
-
-const INTERNAL_HEADER = "X-ORYA-CRON-SECRET";
+import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
 
 function parseDate(value: unknown): Date | null {
   if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
@@ -15,8 +14,7 @@ function parseDate(value: unknown): Date | null {
 
 export async function POST(req: NextRequest) {
   try {
-    const secret = req.headers.get(INTERNAL_HEADER);
-    if (!secret || secret !== process.env.ORYA_CRON_SECRET) {
+    if (!requireInternalSecret(req)) {
       return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
     }
 

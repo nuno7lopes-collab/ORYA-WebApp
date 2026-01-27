@@ -1,21 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-
-function requireInternalSecret(req: NextRequest) {
-  const expected = process.env.ORYA_CRON_SECRET;
-  if (!expected) {
-    return NextResponse.json({ ok: false, error: "MISSING_SECRET" }, { status: 500 });
-  }
-  const provided = req.headers.get("X-ORYA-CRON-SECRET");
-  if (!provided || provided !== expected) {
-    return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
-  }
-  return null;
-}
+import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
 
 export async function GET(req: NextRequest) {
-  const unauthorized = requireInternalSecret(req);
-  if (unauthorized) return unauthorized;
+  if (!process.env.ORYA_CRON_SECRET) {
+    return NextResponse.json({ ok: false, error: "MISSING_SECRET" }, { status: 500 });
+  }
+  if (!requireInternalSecret(req)) {
+    return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
+  }
 
   const url = new URL(req.url);
   const limit = Math.min(Number(url.searchParams.get("limit") ?? 200), 500);
