@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
-import { createPaymentIntent } from "@/domain/finance/gateway/stripeGateway";
-import { SourceType } from "@prisma/client";
+import { ensurePaymentIntent } from "@/domain/finance/paymentIntent";
+import { computeFeePolicyVersion } from "@/domain/finance/checkout";
+import { FeeMode, ProcessorFeesStatus, SourceType } from "@prisma/client";
 import { getStripeBaseFees } from "@/lib/platformSettings";
 import { autoChargeKey } from "@/lib/stripe/idempotency";
 import { computeGraceUntil } from "@/domain/padelDeadlines";
@@ -23,7 +24,13 @@ export async function attemptPadelSecondChargeForPairing(params: { pairingId: nu
   if (pairing.secondChargePaymentIntentId) return { ok: true, code: "ALREADY_CHARGED" } as const;
 
   const priorAttempts = await prisma.paymentEvent.count({
-    where: { dedupeKey: { startsWith: `auto_charge:${pairing.id}:` } },
+    where: {
+      OR: [
+        { purchaseId: { startsWith: `auto_charge:${pairing.id}:` } },
+        { dedupeKey: { startsWith: `auto_charge:${pairing.id}:` } },
+        { dedupeKey: { startsWith: `checkout:auto_charge:${pairing.id}:` } },
+      ],
+    },
   });
   if (priorAttempts >= 1) {
     await prisma.$transaction(async (tx) => {
@@ -95,42 +102,97 @@ export async function attemptPadelSecondChargeForPairing(params: { pairingId: nu
   });
   const recipientConnectAccountId = event?.organization?.stripeAccountId ?? "";
 
+  const registration = await prisma.padelRegistration.findUnique({
+    where: { pairingId: pairing.id },
+    select: {
+      id: true,
+      buyerIdentityId: true,
+      organizationId: true,
+      currency: true,
+    },
+  });
+  if (!registration) {
+    return { ok: false, code: "REGISTRATION_NOT_FOUND" } as const;
+  }
+
   const attempt = 1;
-  const idempotencyKey = autoChargeKey(pairing.id, attempt);
-  const intent = await createPaymentIntent(
-    {
-      amount,
-      currency: (paidTicket?.currency ?? "EUR").toUpperCase(),
+  const purchaseId = autoChargeKey(pairing.id, attempt);
+  const currency = (paidTicket?.currency ?? registration.currency ?? "EUR").toUpperCase();
+  const feeMode = FeeMode.INCLUDED;
+  const feeBps = amount > 0 ? Math.round((platformFeeCents * 10_000) / amount) : 0;
+  const feeFixed = 0;
+  const feePolicyVersion = computeFeePolicyVersion({ feeMode, feeBps, feeFixed });
+  const { paymentIntent: intent } = await ensurePaymentIntent({
+    purchaseId,
+    sourceType: SourceType.PADEL_REGISTRATION,
+    sourceId: registration.id,
+    amountCents: amount,
+    currency,
+    intentParams: {
       payment_method: paymentMethodId,
       off_session: true,
       confirm: true,
-      metadata: {
-        pairingId: pairing.id,
-        eventId: pairing.eventId,
-        scenario: "GROUP_SPLIT_SECOND_CHARGE",
-        idempotencyKey,
-        recipientConnectAccountId,
-        payoutAmountCents: String(payoutAmountCents),
-        grossAmountCents: String(amount),
-        platformFeeCents: String(platformFeeCents),
-        feeMode: "INCLUDED",
+    },
+    metadata: {
+      pairingId: String(pairing.id),
+      eventId: String(pairing.eventId),
+      scenario: "GROUP_SPLIT_SECOND_CHARGE",
+      recipientConnectAccountId,
+      payoutAmountCents: String(payoutAmountCents),
+      grossAmountCents: String(amount),
+      platformFeeCents: String(platformFeeCents),
+      feeMode: "INCLUDED",
+      sourceType: SourceType.PADEL_REGISTRATION,
+      sourceId: registration.id,
+      currency,
+      stripeFeeEstimateCents: String(stripeFeeEstimateCents),
+    },
+    orgContext: {
+      stripeAccountId: event?.organization?.stripeAccountId ?? null,
+      stripeChargesEnabled: event?.organization?.stripeChargesEnabled ?? null,
+      stripePayoutsEnabled: event?.organization?.stripePayoutsEnabled ?? null,
+      orgType: null,
+    },
+    requireStripe: true,
+    buyerIdentityRef: registration.buyerIdentityId ?? null,
+    resolvedSnapshot: {
+      organizationId: registration.organizationId,
+      buyerIdentityId: registration.buyerIdentityId ?? null,
+      snapshot: {
+        currency,
+        gross: amount,
+        discounts: 0,
+        taxes: 0,
+        platformFee: platformFeeCents,
+        total: amount,
+        netToOrgPending: Math.max(0, amount - platformFeeCents),
+        processorFeesStatus: ProcessorFeesStatus.PENDING,
+        processorFeesActual: null,
+        feeMode,
+        feeBps,
+        feeFixed,
+        feePolicyVersion,
+        promoPolicyVersion: null,
         sourceType: SourceType.PADEL_REGISTRATION,
-        sourceId: String(pairing.id),
-        currency: (paidTicket?.currency ?? "EUR").toUpperCase(),
-        stripeFeeEstimateCents: String(stripeFeeEstimateCents),
+        sourceId: registration.id,
+        lineItems: [
+          {
+            quantity: 1,
+            unitPriceCents: amount,
+            totalAmountCents: amount,
+            currency,
+            sourceLineId: registration.id,
+            label: `Padel pairing ${pairing.id}`,
+          },
+        ],
       },
     },
-    {
-      idempotencyKey,
-      requireStripe: true,
-      org: {
-        stripeAccountId: event?.organization?.stripeAccountId ?? null,
-        stripeChargesEnabled: event?.organization?.stripeChargesEnabled ?? null,
-        stripePayoutsEnabled: event?.organization?.stripePayoutsEnabled ?? null,
-        orgType: null,
-      },
+    paymentEvent: {
+      eventId: pairing.eventId,
+      amountCents: amount,
+      platformFeeCents,
     },
-  );
+  });
 
   if (intent.status === "succeeded") {
     await prisma.$transaction(async (tx) => {

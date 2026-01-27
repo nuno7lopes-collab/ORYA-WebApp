@@ -1,15 +1,15 @@
 export const runtime = "nodejs";
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
-import { createPaymentIntent } from "@/domain/finance/gateway/stripeGateway";
+import { ensurePaymentIntent } from "@/domain/finance/paymentIntent";
+import { computeFeePolicyVersion } from "@/domain/finance/checkout";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { isStoreFeatureEnabled, canCheckoutStore } from "@/lib/storeAccess";
-import { SourceType, StoreAddressType, StoreOrderStatus, StoreStockPolicy } from "@prisma/client";
+import { ProcessorFeesStatus, SourceType, StoreAddressType, StoreOrderStatus, StoreStockPolicy } from "@prisma/client";
 import type { Prisma } from "@prisma/client";
 import { z } from "zod";
-import { createPurchaseId } from "@/lib/checkoutSchemas";
 import { computePricing } from "@/lib/pricing";
 import { computeCombinedFees } from "@/lib/fees";
 import { getPlatformFees, getStripeBaseFees } from "@/lib/platformSettings";
@@ -18,6 +18,8 @@ import { computeStoreShippingQuote } from "@/lib/store/shipping";
 import { validateStorePersonalization } from "@/lib/store/personalization";
 import { computeBundleTotals } from "@/lib/store/bundles";
 import { computePromoDiscountCents } from "@/lib/promoMath";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { respondError, respondOk } from "@/lib/http/envelope";
 
 const CART_SESSION_COOKIE = "orya_store_cart";
 
@@ -82,14 +84,17 @@ function buildOrderNumber(storeId: number) {
 }
 
 export async function POST(req: NextRequest) {
+  const ctx = getRequestContext(req);
+  const fail = (errorCode: string, message: string, status: number, retryable = false, details?: Record<string, unknown>) =>
+    respondError(ctx, { errorCode, message, retryable, ...(details ? { details } : {}) }, { status });
   try {
     if (!isStoreFeatureEnabled()) {
-      return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return fail("STORE_DISABLED", "Loja desativada.", 403);
     }
 
     const storeParsed = parseStoreId(req);
     if (!storeParsed.ok) {
-      return NextResponse.json({ ok: false, error: storeParsed.error }, { status: 400 });
+      return fail("INVALID_STORE", storeParsed.error, 400);
     }
 
     const store = await prisma.store.findFirst({
@@ -106,19 +111,19 @@ export async function POST(req: NextRequest) {
       },
     });
     if (!store) {
-      return NextResponse.json({ ok: false, error: "Store nao encontrada." }, { status: 404 });
+      return fail("STORE_NOT_FOUND", "Store nao encontrada.", 404);
     }
     if (!canCheckoutStore(store)) {
-      return NextResponse.json({ ok: false, error: "Checkout indisponivel." }, { status: 403 });
+      return fail("CHECKOUT_UNAVAILABLE", "Checkout indisponivel.", 403);
     }
     if (store.catalogLocked) {
-      return NextResponse.json({ ok: false, error: "Catalogo bloqueado." }, { status: 403 });
+      return fail("CATALOG_LOCKED", "Catalogo bloqueado.", 403);
     }
 
     const body = await req.json().catch(() => null);
     const parsed = checkoutSchema.safeParse(body);
     if (!parsed.success) {
-      return NextResponse.json({ ok: false, error: "Dados invalidos." }, { status: 400 });
+      return fail("INVALID_BODY", "Dados invalidos.", 400);
     }
 
     const payload = parsed.data;
@@ -130,10 +135,10 @@ export async function POST(req: NextRequest) {
     const sessionId = userId ? null : cookieSession;
     const cart = await resolveCart(store.id, userId, sessionId);
     if (!cart.ok) {
-      return NextResponse.json({ ok: false, error: cart.error }, { status: 404 });
+      return fail("CART_NOT_FOUND", cart.error, 404);
     }
     if (!cart.cart.items.length) {
-      return NextResponse.json({ ok: false, error: "Carrinho vazio." }, { status: 409 });
+      return fail("EMPTY_CART", "Carrinho vazio.", 409);
     }
 
     const bundleItems = cart.cart.items.filter((item) => item.bundleKey);
@@ -238,17 +243,17 @@ export async function POST(req: NextRequest) {
     for (const item of cart.cart.items) {
       const product = productMap.get(item.productId);
       if (!product || product.status !== "ACTIVE" || !product.isVisible) {
-        return NextResponse.json({ ok: false, error: "Produto indisponivel." }, { status: 409 });
+        return fail("PRODUCT_UNAVAILABLE", "Produto indisponivel.", 409);
       }
       if (product.currency !== store.currency) {
-        return NextResponse.json({ ok: false, error: "Moeda invalida." }, { status: 400 });
+        return fail("INVALID_CURRENCY", "Moeda invalida.", 400);
       }
 
       let variant: typeof variants[number] | null = null;
       if (item.variantId) {
         const found = variantMap.get(item.variantId);
         if (!found || found.productId !== product.id || !found.isActive) {
-          return NextResponse.json({ ok: false, error: "Variante invalida." }, { status: 400 });
+          return fail("INVALID_VARIANT", "Variante invalida.", 400);
         }
         variant = found;
       }
@@ -258,7 +263,7 @@ export async function POST(req: NextRequest) {
         const requestedQty = requestedQtyMap.get(key) ?? item.quantity;
         const available = variant ? variant.stockQty ?? 0 : product.stockQty ?? 0;
         if (requestedQty > available) {
-          return NextResponse.json({ ok: false, error: "Stock insuficiente." }, { status: 409 });
+          return fail("INSUFFICIENT_STOCK", "Stock insuficiente.", 409);
         }
       }
     }
@@ -274,11 +279,11 @@ export async function POST(req: NextRequest) {
     for (const [bundleKey, groupItems] of bundleGroups.entries()) {
       const bundleId = groupItems[0]?.bundleId;
       if (!bundleId) {
-        return NextResponse.json({ ok: false, error: "Bundle invalido." }, { status: 400 });
+        return fail("INVALID_BUNDLE", "Bundle invalido.", 400);
       }
       const bundle = bundleMap.get(bundleId);
       if (!bundle || bundle.status !== "ACTIVE" || !bundle.isVisible) {
-        return NextResponse.json({ ok: false, error: "Bundle indisponivel." }, { status: 409 });
+        return fail("BUNDLE_UNAVAILABLE", "Bundle indisponivel.", 409);
       }
 
       const definitionMap = new Map<string, number>();
@@ -309,7 +314,7 @@ export async function POST(req: NextRequest) {
             entry.variantId === (item.variantId ?? null),
         );
         if (!match || match.quantity % item.quantity !== 0) {
-          return NextResponse.json({ ok: false, error: "Bundle invalido." }, { status: 409 });
+          return fail("INVALID_BUNDLE", "Bundle invalido.", 409);
         }
       }
 
@@ -322,7 +327,7 @@ export async function POST(req: NextRequest) {
         bundleQuantity,
       });
       if (bundle.items.length < 2 || baseCents <= 0 || totals.totalCents >= baseCents) {
-        return NextResponse.json({ ok: false, error: "Bundle invalido." }, { status: 409 });
+        return fail("INVALID_BUNDLE", "Bundle invalido.", 409);
       }
 
       baseSubtotalCents += baseCents;
@@ -333,10 +338,10 @@ export async function POST(req: NextRequest) {
         const product = productMap.get(item.productId);
         const variant = item.variantId ? variantMap.get(item.variantId) : null;
         if (!product) {
-          return NextResponse.json({ ok: false, error: "Produto indisponivel." }, { status: 409 });
+          return fail("PRODUCT_UNAVAILABLE", "Produto indisponivel.", 409);
         }
         if (item.variantId && !variant) {
-          return NextResponse.json({ ok: false, error: "Variante invalida." }, { status: 400 });
+          return fail("INVALID_VARIANT", "Variante invalida.", 400);
         }
         draftItems.push({
           productId: item.productId,
@@ -364,7 +369,7 @@ export async function POST(req: NextRequest) {
         const item = groupItems[index];
         const product = productMap.get(item.productId);
         if (!product) {
-          return NextResponse.json({ ok: false, error: "Produto indisponivel." }, { status: 409 });
+          return fail("PRODUCT_UNAVAILABLE", "Produto indisponivel.", 409);
         }
         const variant = item.variantId ? variantMap.get(item.variantId) : null;
         const personalizationDelta = await validateStorePersonalization({
@@ -407,14 +412,14 @@ export async function POST(req: NextRequest) {
     for (const item of standaloneItems) {
       const product = productMap.get(item.productId);
       if (!product) {
-        return NextResponse.json({ ok: false, error: "Produto indisponivel." }, { status: 409 });
+        return fail("PRODUCT_UNAVAILABLE", "Produto indisponivel.", 409);
       }
 
       let variant: typeof variants[number] | null = null;
       if (item.variantId) {
         const found = variantMap.get(item.variantId);
         if (!found || found.productId !== product.id || !found.isActive) {
-          return NextResponse.json({ ok: false, error: "Variante invalida." }, { status: 400 });
+          return fail("INVALID_VARIANT", "Variante invalida.", 400);
         }
         variant = found;
       }
@@ -424,7 +429,7 @@ export async function POST(req: NextRequest) {
         personalization: item.personalization,
       });
       if (!personalizationDelta.ok) {
-        return NextResponse.json({ ok: false, error: personalizationDelta.error }, { status: 400 });
+        return fail("INVALID_PERSONALIZATION", personalizationDelta.error, 400);
       }
 
       const unitPriceCents = item.unitPriceCents;
@@ -486,36 +491,36 @@ export async function POST(req: NextRequest) {
       });
 
       if (!promo) {
-        return NextResponse.json({ ok: false, error: "Codigo promocional invalido." }, { status: 400 });
+        return fail("PROMO_INVALID", "Codigo promocional invalido.", 400);
       }
       if (promo.validFrom && promo.validFrom > nowDate) {
-        return NextResponse.json({ ok: false, error: "Codigo promocional ainda nao esta ativo." }, { status: 400 });
+        return fail("PROMO_NOT_ACTIVE", "Codigo promocional ainda nao esta ativo.", 400);
       }
       if (promo.validUntil && promo.validUntil < nowDate) {
-        return NextResponse.json({ ok: false, error: "Codigo promocional expirado." }, { status: 400 });
+        return fail("PROMO_EXPIRED", "Codigo promocional expirado.", 400);
       }
       if (promo.minQuantity !== null && totalQuantity < promo.minQuantity) {
-        return NextResponse.json({ ok: false, error: "Quantidade insuficiente para aplicar o codigo." }, { status: 400 });
+        return fail("PROMO_MIN_QUANTITY", "Quantidade insuficiente para aplicar o codigo.", 400);
       }
       if (promo.minTotalCents !== null && subtotalCents < promo.minTotalCents) {
-        return NextResponse.json({ ok: false, error: "Valor minimo nao atingido para aplicar o codigo." }, { status: 400 });
+        return fail("PROMO_MIN_TOTAL", "Valor minimo nao atingido para aplicar o codigo.", 400);
       }
       const totalUses = await prisma.promoRedemption.count({ where: { promoCodeId: promo.id } });
       if (promo.maxUses !== null && totalUses >= promo.maxUses) {
-        return NextResponse.json({ ok: false, error: "Codigo promocional esgotado." }, { status: 400 });
+        return fail("PROMO_MAX_USES", "Codigo promocional esgotado.", 400);
       }
       if (promo.perUserLimit !== null) {
         if (userId) {
           const userUses = await prisma.promoRedemption.count({ where: { promoCodeId: promo.id, userId } });
           if (userUses >= promo.perUserLimit) {
-            return NextResponse.json({ ok: false, error: "Ja usaste este codigo o maximo de vezes." }, { status: 400 });
+            return fail("PROMO_USER_LIMIT", "Ja usaste este codigo o maximo de vezes.", 400);
           }
         } else if (payload.customer.email) {
           const guestUses = await prisma.promoRedemption.count({
             where: { promoCodeId: promo.id, guestEmail: { equals: payload.customer.email, mode: "insensitive" } },
           });
           if (guestUses >= promo.perUserLimit) {
-            return NextResponse.json({ ok: false, error: "Ja usaste este codigo o maximo de vezes." }, { status: 400 });
+            return fail("PROMO_USER_LIMIT", "Ja usaste este codigo o maximo de vezes.", 400);
           }
         }
       }
@@ -531,7 +536,7 @@ export async function POST(req: NextRequest) {
         amountInCents: subtotalCents,
       });
       if (promoDiscountCents <= 0) {
-        return NextResponse.json({ ok: false, error: "Codigo promocional nao aplicavel." }, { status: 400 });
+        return fail("PROMO_NOT_APPLICABLE", "Codigo promocional nao aplicavel.", 400);
       }
       promoCodeId = promo.id;
       promoCodeLabel = promo.code;
@@ -540,7 +545,7 @@ export async function POST(req: NextRequest) {
     const orderDiscountCents = bundleDiscountCents + promoDiscountCents;
 
     if (requiresShipping && !payload.shippingAddress) {
-      return NextResponse.json({ ok: false, error: "Morada obrigatoria." }, { status: 400 });
+      return fail("ADDRESS_REQUIRED", "Morada obrigatoria.", 400);
     }
 
     const organization = store.ownerOrganizationId
@@ -560,6 +565,17 @@ export async function POST(req: NextRequest) {
           },
         })
       : null;
+    const platformOrganization =
+      organization || store.ownerOrganizationId
+        ? null
+        : await prisma.organization.findFirst({
+            where: { orgType: "PLATFORM" },
+            select: { id: true },
+          });
+    const organizationId = organization?.id ?? platformOrganization?.id ?? null;
+    if (!organizationId) {
+      throw new Error("STORE_ORG_NOT_FOUND");
+    }
 
     const isPlatformOrg = organization?.orgType === "PLATFORM" || !organization;
 
@@ -573,20 +589,17 @@ export async function POST(req: NextRequest) {
         requireStripe: !isPlatformOrg,
       });
       if (!gate.ok) {
-        return NextResponse.json(
-          {
-            ok: false,
-            error: "PAYMENTS_NOT_READY",
-            message: formatPaidSalesGateMessage(gate, "Pagamentos indisponiveis. Para ativar,"),
-            missingEmail: gate.missingEmail,
-            missingStripe: gate.missingStripe,
-          },
-          { status: 409 },
+        return fail(
+          "PAYMENTS_NOT_READY",
+          formatPaidSalesGateMessage(gate, "Pagamentos indisponiveis. Para ativar,"),
+          409,
+          false,
+          { missingEmail: gate.missingEmail, missingStripe: gate.missingStripe },
         );
       }
     }
 
-    const purchaseId = payload.purchaseId?.trim() || createPurchaseId();
+    const providedPurchaseId = payload.purchaseId?.trim() || null;
     let shippingCents = 0;
     let shippingMethodId: number | null = null;
     let shippingZoneId: number | null = null;
@@ -598,7 +611,7 @@ export async function POST(req: NextRequest) {
         methodId: payload.shippingMethodId ?? null,
       });
       if (!quote.ok) {
-        return NextResponse.json({ ok: false, error: quote.error }, { status: 400 });
+        return fail("SHIPPING_QUOTE_FAILED", quote.error, 400);
       }
       shippingCents = quote.quote.shippingCents;
       shippingMethodId = quote.quote.methodId;
@@ -649,7 +662,7 @@ export async function POST(req: NextRequest) {
           customerName: payload.customer.name,
           customerPhone: payload.customer.phone ?? null,
           notes: payload.notes ?? null,
-          purchaseId,
+          purchaseId: providedPurchaseId ?? null,
           addresses: {
             create: [
               payload.shippingAddress
@@ -729,66 +742,134 @@ export async function POST(req: NextRequest) {
 
       return created;
     });
+    const purchaseId = providedPurchaseId ?? `store_order_${order.id}`;
+
+    const feePolicyVersion = computeFeePolicyVersion({
+      feeMode: pricing.feeMode,
+      feeBps: pricing.feeBpsApplied,
+      feeFixed: pricing.feeFixedApplied,
+    });
+    const resolvedSnapshot = {
+      organizationId,
+      buyerIdentityId: userId ?? null,
+      snapshot: {
+        currency: store.currency,
+        gross: totalCents,
+        discounts: orderDiscountCents,
+        taxes: 0,
+        platformFee: Math.min(pricing.platformFeeCents, totalCents),
+        total: totalCents,
+        netToOrgPending: Math.max(0, totalCents - Math.min(pricing.platformFeeCents, totalCents)),
+        processorFeesStatus: ProcessorFeesStatus.PENDING,
+        processorFeesActual: null,
+        feeMode: pricing.feeMode,
+        feeBps: pricing.feeBpsApplied,
+        feeFixed: pricing.feeFixedApplied,
+        feePolicyVersion,
+        promoPolicyVersion: null,
+        sourceType: SourceType.STORE_ORDER,
+        sourceId: String(order.id),
+        lineItems: lineDrafts.map((line, index) => ({
+          quantity: line.quantity,
+          unitPriceCents: line.unitPriceCents,
+          totalAmountCents: line.totalCents,
+          currency: store.currency,
+          sourceLineId: line.bundleKey
+            ? `${line.productId}:${line.variantId ?? "base"}:${line.bundleKey}:${index}`
+            : `${line.productId}:${line.variantId ?? "base"}:${index}`,
+          label: line.nameSnapshot,
+        })),
+      },
+    };
 
     let intent;
     try {
-      intent = await createPaymentIntent(
-        {
-          amount: totalCents,
-          currency: store.currency.toLowerCase(),
-          payment_method_types: ["card"],
-          receipt_email: payload.customer.email ?? undefined,
-          metadata: {
-            storeOrderId: String(order.id),
-            storeId: String(store.id),
-            cartId: cart.cart.id,
-            purchaseId,
-            userId: userId ?? "",
-            orderNumber: order.orderNumber ?? "",
-            grossAmountCents: String(totalCents),
-            platformFeeCents: String(pricing.platformFeeCents),
-            feeMode: pricing.feeMode,
-            payoutAmountCents: String(payoutAmountCents),
-            discountCents: String(orderDiscountCents),
-            promoCodeId: promoCodeId ? String(promoCodeId) : "",
-            promoCode: promoCodeLabel ?? "",
-            recipientConnectAccountId: organization && !isPlatformOrg ? organization.stripeAccountId ?? "" : "",
-            sourceType: SourceType.STORE_ORDER,
-            sourceId: `store_order_${order.id}`,
-            currency: store.currency,
-            stripeFeeEstimateCents: String(stripeFeeEstimateCents),
-            shippingCents: String(shippingCents),
-            shippingMethodId: shippingMethodId ? String(shippingMethodId) : "",
-            shippingZoneId: shippingZoneId ? String(shippingZoneId) : "",
-          },
-          description: order.orderNumber ? `Loja ${order.orderNumber}` : `Loja ${order.id}`,
+      const ensured = await ensurePaymentIntent({
+        purchaseId,
+        sourceType: SourceType.STORE_ORDER,
+        sourceId: String(order.id),
+        amountCents: totalCents,
+        currency: store.currency,
+        intentParams: {
+        payment_method_types: ["card"],
+        receipt_email: payload.customer.email ?? undefined,
+        description: order.orderNumber ? `Loja ${order.orderNumber}` : `Loja ${order.id}`,
+      },
+        metadata: {
+          storeOrderId: String(order.id),
+          storeId: String(store.id),
+          cartId: cart.cart.id,
+          userId: userId ?? "",
+          orderNumber: order.orderNumber ?? "",
+          grossAmountCents: String(totalCents),
+          platformFeeCents: String(Math.min(pricing.platformFeeCents, totalCents)),
+          feeMode: pricing.feeMode,
+          payoutAmountCents: String(payoutAmountCents),
+          discountCents: String(orderDiscountCents),
+          promoCodeId: promoCodeId ? String(promoCodeId) : "",
+          promoCode: promoCodeLabel ?? "",
+          recipientConnectAccountId: organization && !isPlatformOrg ? organization.stripeAccountId ?? "" : "",
+          sourceType: SourceType.STORE_ORDER,
+          sourceId: String(order.id),
+          currency: store.currency,
+          stripeFeeEstimateCents: String(stripeFeeEstimateCents),
+          shippingCents: String(shippingCents),
+          shippingMethodId: shippingMethodId ? String(shippingMethodId) : "",
+          shippingZoneId: shippingZoneId ? String(shippingZoneId) : "",
         },
-        {
-          idempotencyKey: purchaseId,
-          requireStripe: !isPlatformOrg,
-          org: {
-            stripeAccountId: organization?.stripeAccountId ?? null,
-            stripeChargesEnabled: organization?.stripeChargesEnabled ?? null,
-            stripePayoutsEnabled: organization?.stripePayoutsEnabled ?? null,
-            orgType: organization?.orgType ?? null,
-          },
+        orgContext: {
+          stripeAccountId: organization?.stripeAccountId ?? null,
+          stripeChargesEnabled: organization?.stripeChargesEnabled ?? null,
+          stripePayoutsEnabled: organization?.stripePayoutsEnabled ?? null,
+          orgType: organization?.orgType ?? null,
         },
-      );
+        requireStripe: !isPlatformOrg,
+        resolvedSnapshot,
+        buyerIdentityRef: userId ?? null,
+        paymentEvent: {
+          userId: userId ?? null,
+          amountCents: totalCents,
+          platformFeeCents: Math.min(pricing.platformFeeCents, totalCents),
+        },
+      });
+      intent = ensured.paymentIntent;
     } catch (err) {
       await prisma.storeOrder.update({
         where: { id: order.id },
         data: { status: StoreOrderStatus.CANCELLED },
       });
+      if (err instanceof Error && err.message === "IDEMPOTENCY_KEY_PAYLOAD_MISMATCH") {
+        return fail(
+          "IDEMPOTENCY_KEY_PAYLOAD_MISMATCH",
+          "Chave de idempotência reutilizada com um carrinho diferente.",
+          409,
+        );
+      }
+      if (err instanceof Error && err.message === "PAYMENT_INTENT_TERMINAL") {
+        return fail(
+          "PAYMENT_INTENT_TERMINAL",
+          "Sessão de pagamento expirada. Tenta novamente.",
+          409,
+          true,
+        );
+      }
+      if (err instanceof Error && err.message === "PAYMENT_INTENT_RETRIEVE_FAILED") {
+        return fail(
+          "PAYMENT_INTENT_RETRIEVE_FAILED",
+          "Não foi possível retomar o pagamento. Tenta novamente.",
+          503,
+          true,
+        );
+      }
       throw err;
     }
 
     await prisma.storeOrder.update({
       where: { id: order.id },
-      data: { paymentIntentId: intent.id },
+      data: { paymentIntentId: intent.id, ...(providedPurchaseId ? {} : { purchaseId }) },
     });
 
-    return NextResponse.json({
-      ok: true,
+    return respondOk(ctx, {
       orderId: order.id,
       orderNumber: order.orderNumber,
       paymentIntentId: intent.id,
@@ -802,6 +883,6 @@ export async function POST(req: NextRequest) {
     });
   } catch (err) {
     console.error("POST /api/store/checkout error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao iniciar checkout." }, { status: 500 });
+    return fail("CHECKOUT_FAILED", "Erro ao iniciar checkout.", 500, true);
   }
 }
