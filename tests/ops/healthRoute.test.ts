@@ -18,14 +18,14 @@ beforeEach(async () => {
 
 describe("ops health route", () => {
   it("bloqueia sem secret", async () => {
-    requireInternalSecret.mockReturnValue({ ok: false, response: new Response(null, { status: 401 }) });
+    requireInternalSecret.mockReturnValue(false);
     const req = new NextRequest("http://localhost/api/internal/ops/health");
     const res = await GET(req);
     expect(res.status).toBe(401);
   });
 
   it("devolve health", async () => {
-    requireInternalSecret.mockReturnValue({ ok: true });
+    requireInternalSecret.mockReturnValue(true);
     getOpsHealth.mockResolvedValue({ ok: true, ts: "now", db: { ok: true } });
     const req = new NextRequest("http://localhost/api/internal/ops/health");
     const res = await GET(req);

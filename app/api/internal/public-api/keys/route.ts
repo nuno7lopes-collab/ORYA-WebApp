@@ -2,14 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { PublicApiScope } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createPublicApiKey, revokePublicApiKey } from "@/domain/publicApi/keys";
-
-function requireInternalSecret(req: NextRequest) {
-  const secret = req.headers.get("X-ORYA-CRON-SECRET");
-  if (!secret || secret !== process.env.ORYA_CRON_SECRET) {
-    return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
-  }
-  return null;
-}
+import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
 
 function parseScopes(value: unknown): PublicApiScope[] {
   const allowed = new Set(Object.values(PublicApiScope));
@@ -20,8 +13,9 @@ function parseScopes(value: unknown): PublicApiScope[] {
 }
 
 export async function GET(req: NextRequest) {
-  const unauthorized = requireInternalSecret(req);
-  if (unauthorized) return unauthorized;
+  if (!requireInternalSecret(req)) {
+    return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
+  }
 
   const params = req.nextUrl.searchParams;
   const organizationId = Number(params.get("organizationId"));
@@ -46,8 +40,9 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const unauthorized = requireInternalSecret(req);
-  if (unauthorized) return unauthorized;
+  if (!requireInternalSecret(req)) {
+    return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
+  }
 
   const body = await req.json().catch(() => ({}));
   const organizationId = Number(body.organizationId);
@@ -78,8 +73,9 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
-  const unauthorized = requireInternalSecret(req);
-  if (unauthorized) return unauthorized;
+  if (!requireInternalSecret(req)) {
+    return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
+  }
 
   const body = await req.json().catch(() => ({}));
   const id = String(body.id ?? "");

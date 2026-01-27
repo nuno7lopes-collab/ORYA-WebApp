@@ -1,7 +1,7 @@
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import {
   PadelPairingStatus,
@@ -9,10 +9,14 @@ import {
 } from "@prisma/client";
 import { expireHolds } from "@/domain/padelPairingHold";
 import { INACTIVE_REGISTRATION_STATUSES, transitionPadelRegistrationStatus } from "@/domain/padelRegistration";
+import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
 
 // Expira pairings SPLIT com locked_until ultrapassado: cancela slots e liberta tickets sem refunds automáticos.
 // Pode ser executado via cron. Não expõe dados sensíveis, mas requer permissão server-side.
-export async function POST() {
+export async function POST(req: NextRequest) {
+  if (!requireInternalSecret(req)) {
+    return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
+  }
   const now = new Date();
   await expireHolds(prisma, now);
 

@@ -6,8 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { ensureCrmModuleAccess } from "@/lib/crm/access";
 import { sendCrmCampaign } from "@/lib/crm/campaignSend";
 import { CrmCampaignStatus } from "@prisma/client";
-
-const CRON_HEADER = "X-ORYA-CRON-SECRET";
+import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
 const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 50;
 
@@ -20,9 +19,7 @@ function parseLimit(value: string | null) {
 
 export async function POST(req: NextRequest) {
   try {
-    const secret = req.headers.get(CRON_HEADER);
-    const expected = process.env.ORYA_CRON_SECRET;
-    if (!expected || !secret || secret !== expected) {
+    if (!requireInternalSecret(req)) {
       return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
     }
 

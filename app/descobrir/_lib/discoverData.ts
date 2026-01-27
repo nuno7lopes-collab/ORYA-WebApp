@@ -6,7 +6,6 @@ type DiscoverEvent = EventCardDTO & {
   locationName: string | null;
   latitude: number | null;
   longitude: number | null;
-  isGratis: boolean;
 };
 
 type DiscoverData = {
@@ -32,7 +31,7 @@ const EVENT_SELECT = {
   locationCity: true,
   latitude: true,
   longitude: true,
-  isFree: true,
+  pricingMode: true,
   coverImageUrl: true,
   ticketTypes: {
     select: {
@@ -67,7 +66,6 @@ function mapDiscoverEvent(event: RawEvent): DiscoverEvent | null {
   if (!base) return null;
   return {
     ...base,
-    isGratis: base.isFree,
     locationName: event.locationName ?? null,
     latitude: event.latitude ?? null,
     longitude: event.longitude ?? null,

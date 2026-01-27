@@ -18,54 +18,43 @@
 ## Validação única
 - `npm run db:gates`
 
-## Backlog D0–D9 (plano)
+## Backlog D0–D9 (estado final v9)
 ### D0 API pública (fora de scope v1–v3)
-- Objetivo: manter sem API pública/SDK/webhooks externos.
-- Outputs mínimos: contratos internos versionados + exports.
-- Riscos/decisões: limites de integração externa.
+- Estado: DONE — API pública desativada (410) e contratos internos/exports ativos.
+- Evidência: `domain/publicApi/auth.ts`, `app/api/public/v1/*`, `app/api/organizacao/finance/exports/*`.
 
 ### D1 Evento base obrigatório para torneios
-- Objetivo: garantir eventId em torneios.
-- Outputs mínimos: validações + migração de dados existentes.
-- Riscos/decisões: backfill e compat.
+- Estado: DONE — Torneio/Padel ancorado em Event.
+- Evidência: `prisma/schema.prisma` (eventId obrigatório em Tournament/PadelTournamentConfig), `domain/tournaments/*`.
 
 ### D2 Owners / SSOT por domínio
-- Objetivo: remover duplicações de estado entre módulos.
-- Outputs mínimos: guardrails/architecture tests.
-- Riscos/decisões: refactors por módulo.
+- Estado: DONE — SSOT Payment+Ledger, Entitlement e Identity; guardrails por domínio.
+- Evidência: `domain/finance/*`, `domain/entitlements/*`, `domain/outbox/*`, `domain/eventLog/append.ts`.
 
 ### D3 Agenda engine & conflitos
-- Objetivo: prioridade HardBlock > MatchSlot > Booking > SoftBlock.
-- Outputs mínimos: motor de agenda único + validações.
-- Riscos/decisões: migração de dados legacy.
+- Estado: DONE — AgendaItem canónico + consumer idempotente + rebuild parity.
+- Evidência: `domain/agendaReadModel/*`, `domain/softBlocks/commands.ts`, `scripts/rebuild_agenda.js`.
 
 ### D4 Finanças determinística
-- Objetivo: Payment+Ledger SSOT, fees determinísticas.
-- Outputs mínimos: snapshot + ledger types + reconciliação.
-- Riscos/decisões: integração Stripe e idempotência E2E.
 - Estado: DONE (audited*) — Payment SSOT com fallback PaymentSnapshot; PaymentEvent só metadata/timeline; finance overview fail‑closed.
+- Evidência: `domain/finance/checkout.ts`, `domain/finance/reconciliation*.ts`, `domain/finance/gateway/stripeGateway.ts`, `app/api/organizacao/finance/reconciliation/route.ts`.
 
 ### D5 RBAC mínimo + Role Packs
-- Objetivo: roles/scopes canónicos + packs.
-- Outputs mínimos: guardrails em rotas críticas.
-- Riscos/decisões: migração de permissões legacy.
+- Estado: DONE — roles/scopes canónicos + role packs aplicados; guardrails em rotas críticas.
+- Evidência: `lib/organizationRbac.ts`, `lib/organizationMemberAccess.ts`, `app/api/organizacao/organizations/members/*`.
 
 ### D6 Notificações como serviço
-- Objetivo: outbox + templates + logs.
-- Outputs mínimos: delivery log + preferências.
-- Riscos/decisões: consentimentos RGPD.
+- Estado: DONE — outbox + templates + logs + idempotência por sourceEventId.
+- Evidência: `domain/notifications/*`, `domain/outbox/*`, `app/api/internal/worker/operations/route.ts`.
 
 ### D7 sourceType canónico
-- Objetivo: unificação em Finanças/Entitlements/Check-in.
-- Outputs mínimos: enums + validações.
-- Riscos/decisões: migração de dados antigos.
+- Estado: DONE — allowlists e normalização por domínio (finanças/agenda).
+- Evidência: `domain/sourceType/index.ts`.
 
 ### D8 EventAccessPolicy & convites
-- Objetivo: política canónica com tokens de convite.
-- Outputs mínimos: policy versionada + lock pós-venda.
-- Riscos/decisões: migração de flags legacy.
+- Estado: DONE — policy versionada com locks pós‑venda + convites por token.
+- Evidência: `lib/checkin/accessPolicy.ts`, `domain/access/evaluateAccess.ts`, `app/api/organizacao/events/*/invite*`.
 
 ### D9 Merchant of Record + faturação
-- Objetivo: MoR=Org, fees ORYA B2B.
-- Outputs mínimos: settings + exports.
-- Riscos/decisões: compliance e integrações fiscais.
+- Estado: DONE — MoR=Org, configuração fiscal e exports (CSV).
+- Evidência: `prisma/schema.prisma` (OrganizationSettings), `app/api/organizacao/finance/exports/*`, `app/api/organizacao/payouts/settings/route.ts`.

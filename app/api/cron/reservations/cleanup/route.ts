@@ -3,6 +3,7 @@
 // app/api/cron/reservations/cleanup/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
 
 /**
  * ⚠️ IMPORTANT
@@ -19,13 +20,8 @@ import { prisma } from "@/lib/prisma";
 
 export async function GET(req: NextRequest) {
   try {
-    const secret = req.headers.get("X-ORYA-CRON-SECRET");
-
-    if (!secret || secret !== process.env.ORYA_CRON_SECRET) {
-      return NextResponse.json(
-        { ok: false, error: "Unauthorized cron call." },
-        { status: 401 }
-      );
+    if (!requireInternalSecret(req)) {
+      return NextResponse.json({ ok: false, error: "Unauthorized cron call." }, { status: 401 });
     }
 
     const now = new Date();
