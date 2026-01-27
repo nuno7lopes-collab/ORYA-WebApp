@@ -635,6 +635,11 @@ Plano SSOT para fechar o Blueprint v9 e alinhar a repo inteira. Cada bloco fecha
 - Backfill dedicado:
   - `scripts/backfill_booking_confirmation_snapshot.ts`
   - SSOT helper: `lib/reservas/backfillConfirmationSnapshot.ts`
+- PR2 metadata:
+  - PR: #3 https://github.com/nuno7lopes-collab/ORYA-WebApp/pull/3
+  - Branch: `chat3/block7-pr2-snapshot`
+  - Commits: `18e3f71` (code), `487e11c` (metadata), `7532de4` (PR link), `f9aec4a` (commit list), `e4aead2` (guardrail fix), `01e66f1` (ci retrigger)
+  - Gates/tests: `npm run db:gates:offline` PASS (local), `npx vitest run tests/agenda` PASS (local)
 
 ### Backfill obrigatorio antes de deploy (PR2)
 - Dry-run (recomendado primeiro):

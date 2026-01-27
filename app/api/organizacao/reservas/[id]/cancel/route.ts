@@ -12,6 +12,12 @@ import { decideCancellation } from "@/lib/bookingCancellation";
 import { ingestCrmInteraction } from "@/lib/crm/ingest";
 import { createNotification, shouldNotify } from "@/lib/notifications";
 import { cancelBooking } from "@/domain/bookings/commands";
+import { getRequestContext } from "@/lib/http/requestContext";
+import {
+  computeCancellationRefundFromSnapshot,
+  getSnapshotCancellationWindowMinutes,
+  parseBookingConfirmationSnapshot,
+} from "@/lib/reservas/confirmationSnapshot";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -37,8 +43,21 @@ export async function POST(
 ) {
   const resolved = await params;
   const bookingId = parseId(resolved.id);
+  const ctx = getRequestContext(req);
+  const errorWithCtx = (status: number, error: string, errorCode = error, details?: Record<string, unknown>) =>
+    NextResponse.json(
+      {
+        ok: false,
+        error,
+        errorCode,
+        requestId: ctx.requestId,
+        correlationId: ctx.correlationId,
+        ...(details ? { details } : {}),
+      },
+      { status },
+    );
   if (!bookingId) {
-    return NextResponse.json({ ok: false, error: "ID inválido." }, { status: 400 });
+    return errorWithCtx(400, "ID inválido.", "BOOKING_ID_INVALID");
   }
 
   try {
@@ -63,43 +82,42 @@ export async function POST(
       requireVerifiedEmail: true,
     });
     if (!reservasAccess.ok) {
-      return NextResponse.json({ ok: false, error: reservasAccess.error }, { status: 403 });
+      return NextResponse.json(reservasAccess, { status: 403 });
     }
 
     const payload = await req.json().catch(() => ({}));
     const reason = typeof payload?.reason === "string" ? payload.reason.trim().slice(0, 200) : null;
     const { ip, userAgent } = getRequestMeta(req);
+    const now = new Date();
 
     let crmPayload: { organizationId: number; userId: string; bookingId: number } | null = null;
     let bookingUserId: string | null = null;
     const result = await prisma.$transaction(async (tx) => {
       const booking = await tx.booking.findFirst({
         where: { id: bookingId, organizationId: organization.id },
-        include: {
-          service: {
-            select: {
-              id: true,
-              policyId: true,
-              policy: { select: { id: true, cancellationWindowMinutes: true } },
-            },
-          },
+        select: {
+          id: true,
+          userId: true,
+          status: true,
+          startsAt: true,
+          paymentIntentId: true,
+          organizationId: true,
+          serviceId: true,
+          availabilityId: true,
+          snapshotTimezone: true,
+          confirmationSnapshot: true,
           professional: { select: { userId: true } },
-          policyRef: {
-            select: {
-              policy: { select: { id: true, cancellationWindowMinutes: true } },
-            },
-          },
         },
       });
 
       if (!booking) {
-        return { error: NextResponse.json({ ok: false, error: "Reserva não encontrada." }, { status: 404 }) };
+        return { error: errorWithCtx(404, "Reserva não encontrada.", "BOOKING_NOT_FOUND") };
       }
       if (
         membership.role === OrganizationMemberRole.STAFF &&
         (!booking.professional?.userId || booking.professional.userId !== profile.id)
       ) {
-        return { error: NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 }) };
+        return { error: errorWithCtx(403, "Sem permissões.", "FORBIDDEN") };
       }
       if (["CANCELLED_BY_CLIENT", "CANCELLED_BY_ORG", "CANCELLED"].includes(booking.status)) {
         return { booking, already: true };
@@ -107,31 +125,34 @@ export async function POST(
 
       bookingUserId = booking.userId;
       const isPending = ["PENDING_CONFIRMATION", "PENDING"].includes(booking.status);
-      const fallbackPolicy =
-        booking.service?.policyId &&
-        (await tx.organizationPolicy.findFirst({
-          where: { id: booking.service.policyId, organizationId: booking.organizationId },
-          select: { id: true, cancellationWindowMinutes: true },
-        }));
-      const policy =
-        booking.policyRef?.policy ??
-        booking.service?.policy ??
-        fallbackPolicy ??
-        (await tx.organizationPolicy.findFirst({
-          where: { organizationId: booking.organizationId, policyType: "MODERATE" },
-          select: { id: true, cancellationWindowMinutes: true },
-        })) ??
-        (await tx.organizationPolicy.findFirst({
-          where: { organizationId: booking.organizationId },
-          orderBy: { createdAt: "asc" },
-          select: { id: true, cancellationWindowMinutes: true },
-        }));
+      const snapshot = parseBookingConfirmationSnapshot(booking.confirmationSnapshot);
+      if (!isPending && booking.status === "CONFIRMED" && !snapshot) {
+        return {
+          error: errorWithCtx(
+            409,
+            "Reserva confirmada sem snapshot. Corre o backfill antes de cancelar.",
+            "BOOKING_CONFIRMATION_SNAPSHOT_REQUIRED",
+            { bookingId: booking.id },
+          ),
+        };
+      }
 
       const decision = decideCancellation(
         booking.startsAt,
-        policy?.cancellationWindowMinutes ?? null,
-        new Date(),
+        isPending ? null : getSnapshotCancellationWindowMinutes(snapshot),
+        now,
       );
+      const canCancel = isPending || (booking.status === "CONFIRMED" && decision.allowed);
+      if (!canCancel) {
+        return {
+          error: errorWithCtx(
+            400,
+            "O prazo de cancelamento já passou.",
+            "BOOKING_CANCELLATION_WINDOW_EXPIRED",
+            { deadline: decision.deadline?.toISOString() ?? null },
+          ),
+        };
+      }
 
       const { booking: updated } = await cancelBooking({
         tx,
@@ -143,6 +164,8 @@ export async function POST(
       const refundRequired =
         !!booking.paymentIntentId &&
         (isPending || (booking.status === "CONFIRMED" && decision.allowed));
+      const refundComputation = snapshot ? computeCancellationRefundFromSnapshot(snapshot) : null;
+      const refundAmountCents = refundComputation?.refundCents ?? null;
 
       await recordOrganizationAudit(tx, {
         organizationId: organization.id,
@@ -157,6 +180,9 @@ export async function POST(
           reason,
           refundRequired,
           deadline: decision.deadline?.toISOString() ?? null,
+          refundAmountCents,
+          snapshotVersion: snapshot?.version ?? null,
+          snapshotTimezone: booking.snapshotTimezone,
         },
         ip,
         userAgent,
@@ -168,7 +194,14 @@ export async function POST(
         bookingId: booking.id,
       };
 
-      return { booking: updated, already: false, refundRequired, paymentIntentId: booking.paymentIntentId };
+      return {
+        booking: updated,
+        already: false,
+        refundRequired,
+        paymentIntentId: booking.paymentIntentId,
+        refundAmountCents,
+        snapshotTimezone: booking.snapshotTimezone,
+      };
     });
 
     if ("error" in result) return result.error;
@@ -179,10 +212,11 @@ export async function POST(
           bookingId: result.booking.id,
           paymentIntentId: result.paymentIntentId,
           reason: "ORG_CANCEL",
+          amountCents: result.refundAmountCents,
         });
       } catch (refundErr) {
         console.error("[organizacao/cancel] refund failed", refundErr);
-        return NextResponse.json({ ok: false, error: "Reserva cancelada, mas o reembolso falhou." }, { status: 502 });
+        return errorWithCtx(502, "Reserva cancelada, mas o reembolso falhou.", "BOOKING_REFUND_FAILED");
       }
     }
 
@@ -228,12 +262,13 @@ export async function POST(
       ok: true,
       booking: { id: result.booking.id, status: result.booking.status },
       alreadyCancelled: result.already,
+      snapshotTimezone: result.snapshotTimezone,
     });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return errorWithCtx(401, "Não autenticado.", "UNAUTHENTICATED");
     }
     console.error("POST /api/organizacao/reservas/[id]/cancel error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao cancelar reserva." }, { status: 500 });
+    return errorWithCtx(500, "Erro ao cancelar reserva.", "BOOKING_CANCEL_FAILED");
   }
 }
