@@ -217,6 +217,11 @@ Plano SSOT para fechar o Blueprint v9 e alinhar a repo inteira. Cada bloco fecha
 - [x] **ERROS** com envelope canonico + requestId.
 - [x] **LOGS**: correlacao `paymentIntentId` + `purchaseId`.
 
+### PR/merge metadata (PR1)
+- PR #2: https://github.com/nuno7lopes-collab/ORYA-WebApp/pull/2
+- Branch: `block1/payments-checkout-ledger-outbox`
+- Merge commit (developer): 67b8b45
+
 ### Criterios de DONE (producao)
 - Todos os entrypoints criam PI via fluxo canonico.
 - Se falhar em producao: runbook permite reprocess/replay sem duplos charges.

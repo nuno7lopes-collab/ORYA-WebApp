@@ -69,6 +69,11 @@ Catalogo canonico do que e verdade no sistema. Quando um item passa a DONE aqui,
 - `lib/checkoutSchemas.ts`
 - `lib/stripe/idempotency.ts`
 
+**PR/merge metadata (PR1)**
+- PR #2: https://github.com/nuno7lopes-collab/ORYA-WebApp/pull/2
+- Branch: `block1/payments-checkout-ledger-outbox`
+- Merge commit (developer): 67b8b45
+
 **Status**: DONE
 **DONE (data/commit/nota)**: 2026-01-27 — Block 1: canonical PI + idempotency + refunds/disputes status sync + guardrails/tests.
 
