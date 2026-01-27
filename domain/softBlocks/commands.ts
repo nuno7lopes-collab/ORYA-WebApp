@@ -14,6 +14,31 @@ const buildTitle = (reason?: string | null) => {
   return trimmed || "Bloqueio";
 };
 
+const buildSoftBlockIdempotencyKey = (input: {
+  action: "updated" | "deleted";
+  softBlockId: number;
+  correlationId?: string | null;
+  startsAt: Date;
+  endsAt: Date;
+  reason: string | null;
+  scopeType: SoftBlockScope;
+  scopeId: number;
+}) => {
+  if (input.correlationId) {
+    return `soft_block.${input.action}:${input.softBlockId}:${input.correlationId}`;
+  }
+  const payload = [
+    input.softBlockId,
+    input.startsAt.toISOString(),
+    input.endsAt.toISOString(),
+    input.reason ?? "",
+    input.scopeType,
+    input.scopeId,
+  ].join("|");
+  const hash = crypto.createHash("sha256").update(payload).digest("hex");
+  return `soft_block.${input.action}:${input.softBlockId}:${hash}`;
+};
+
 const normalizeScope = (input?: { scopeType?: SoftBlockScope | string | null; scopeId?: number | null }) => {
   const rawType = typeof input?.scopeType === "string" ? input?.scopeType : input?.scopeType?.toString();
   const scopeType =
@@ -209,13 +234,23 @@ export async function updateSoftBlock(input: {
     const eventId = crypto.randomUUID();
     const nextReason = typeof reason === "string" ? reason.trim() || null : existing.reason;
     const title = buildTitle(nextReason);
+    const idempotencyKey = buildSoftBlockIdempotencyKey({
+      action: "updated",
+      softBlockId: updated.id,
+      correlationId,
+      startsAt: nextStartsAt,
+      endsAt: nextEndsAt,
+      reason: nextReason,
+      scopeType: normalizedScope.scopeType,
+      scopeId: normalizedScope.scopeId ?? 0,
+    });
 
     await appendEventLog(
       {
         eventId,
         organizationId,
         eventType: "soft_block.updated",
-        idempotencyKey: `soft_block.updated:${updated.id}:${Date.now()}`,
+        idempotencyKey,
         actorUserId,
         sourceType: SourceType.SOFT_BLOCK,
         sourceId: String(updated.id),
@@ -274,13 +309,23 @@ export async function deleteSoftBlock(input: {
 
     const eventId = crypto.randomUUID();
     const title = buildTitle(existing.reason ?? null);
+    const idempotencyKey = buildSoftBlockIdempotencyKey({
+      action: "deleted",
+      softBlockId: existing.id,
+      correlationId,
+      startsAt: existing.startsAt,
+      endsAt: existing.endsAt,
+      reason: existing.reason ?? null,
+      scopeType: existing.scopeType,
+      scopeId: existing.scopeId,
+    });
 
     await appendEventLog(
       {
         eventId,
         organizationId,
         eventType: "soft_block.deleted",
-        idempotencyKey: `soft_block.deleted:${existing.id}:${Date.now()}`,
+        idempotencyKey,
         actorUserId,
         sourceType: SourceType.SOFT_BLOCK,
         sourceId: String(existing.id),
