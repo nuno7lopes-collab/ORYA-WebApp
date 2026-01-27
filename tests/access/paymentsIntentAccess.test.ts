@@ -114,7 +114,19 @@ describe("payments intent access gate", () => {
     });
     const res = await POST(req);
     const body = await res.json();
-    expect(body.code).toBe("INVITE_ONLY");
+    expect({ status: res.status, code: body.code }).toMatchInlineSnapshot(`
+      {
+        "code": "INVITE_ONLY",
+        "status": 403,
+      }
+    `);
     expect(evaluateEventAccess).toHaveBeenCalled();
+  });
+
+  it("guardrail: LEGACY_INTENT_DISABLED nao pode voltar ao default invertido", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { resolve } = await import("node:path");
+    const file = readFileSync(resolve(process.cwd(), "app/api/payments/intent/route.ts"), "utf8");
+    expect(file).not.toContain('LEGACY_INTENT_DISABLED !== "false"');
   });
 });
