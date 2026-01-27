@@ -58,4 +58,32 @@ describe("finance read-model guardrails", () => {
       "Direct OutboxEvent writes",
     );
   });
+
+  it("blocks direct Stripe PaymentIntent creation outside gateway", () => {
+    assertNoMatches(
+      [
+        "rg -n",
+        "\"stripe\\\\.paymentIntents\\\\.create\"",
+        "app lib domain -S",
+        "-g '!domain/finance/gateway/stripeGateway.ts'",
+      ].join(" "),
+      "Direct Stripe PaymentIntent create",
+    );
+  });
+
+  it("blocks Date.now purchaseId in checkout entrypoints", () => {
+    assertNoMatches(
+      [
+        "rg -n",
+        "\"purchaseId\\\\s*=.*Date\\\\.now\\\\(\"",
+        "app/api/servicos/[id]/checkout/route.ts",
+        "app/api/servicos/[id]/creditos/checkout/route.ts",
+        "app/api/organizacao/reservas/[id]/checkout/route.ts",
+        "app/api/store/checkout/route.ts",
+        "domain/padelSecondCharge.ts",
+        "-S",
+      ].join(" "),
+      "Date.now purchaseId",
+    );
+  });
 });

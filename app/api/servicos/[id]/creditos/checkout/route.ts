@@ -1,15 +1,18 @@
 export const runtime = "nodejs";
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { createPaymentIntent } from "@/domain/finance/gateway/stripeGateway";
+import { ensurePaymentIntent } from "@/domain/finance/paymentIntent";
+import { computeFeePolicyVersion } from "@/domain/finance/checkout";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { getPlatformFees, getStripeBaseFees } from "@/lib/platformSettings";
 import { computePricing } from "@/lib/pricing";
-import { SourceType } from "@prisma/client";
+import { PaymentStatus, ProcessorFeesStatus, SourceType } from "@prisma/client";
 import { computeCombinedFees } from "@/lib/fees";
 import { formatPaidSalesGateMessage, getPaidSalesGate } from "@/lib/organizationPayments";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { respondError, respondOk } from "@/lib/http/envelope";
 
 type CheckoutError =
   | "SERVICO_INVALIDO"
@@ -32,10 +35,13 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const ctx = getRequestContext(req);
+  const fail = (errorCode: string, message: string, status: number, retryable = false, details?: Record<string, unknown>) =>
+    respondError(ctx, { errorCode, message, retryable, ...(details ? { details } : {}) }, { status });
   const resolved = await params;
   const serviceId = Number(resolved.id);
   if (!Number.isFinite(serviceId)) {
-    return NextResponse.json({ ok: false, error: "SERVICO_INVALIDO" }, { status: 400 });
+    return fail("SERVICO_INVALIDO", "Serviço inválido.", 400);
   }
 
   try {
@@ -77,15 +83,12 @@ export async function POST(
     });
 
     if (!service) {
-      return NextResponse.json({ ok: false, error: "SERVICO_INVALIDO" }, { status: 404 });
+      return fail("SERVICO_INVALIDO", "Serviço inválido.", 404);
     }
 
     const currency = (service.currency || "EUR").toUpperCase();
     if (currency !== "EUR") {
-      return NextResponse.json(
-        { ok: false, error: "CURRENCY_NOT_SUPPORTED", message: ERROR_MAP.CURRENCY_NOT_SUPPORTED.message },
-        { status: ERROR_MAP.CURRENCY_NOT_SUPPORTED.status },
-      );
+      return fail("CURRENCY_NOT_SUPPORTED", ERROR_MAP.CURRENCY_NOT_SUPPORTED.message, ERROR_MAP.CURRENCY_NOT_SUPPORTED.status);
     }
 
     let units = 1;
@@ -97,10 +100,7 @@ export async function POST(
         select: { id: true, quantity: true, packPriceCents: true },
       });
       if (!pack) {
-        return NextResponse.json(
-          { ok: false, error: "PACK_INVALIDO", message: ERROR_MAP.PACK_INVALIDO.message },
-          { status: ERROR_MAP.PACK_INVALIDO.status },
-        );
+        return fail("PACK_INVALIDO", ERROR_MAP.PACK_INVALIDO.message, ERROR_MAP.PACK_INVALIDO.status);
       }
       units = pack.quantity;
       amountCents = pack.packPriceCents;
@@ -120,15 +120,12 @@ export async function POST(
       requireStripe: !isPlatformOrg,
     });
     if (!gate.ok) {
-      return NextResponse.json(
-        {
-          ok: false,
-          error: "PAYMENTS_NOT_READY",
-          message: formatPaidSalesGateMessage(gate, "Pagamentos indisponíveis. Para ativar,"),
-          missingEmail: gate.missingEmail,
-          missingStripe: gate.missingStripe,
-        },
-        { status: ERROR_MAP.PAYMENTS_NOT_READY.status },
+      return fail(
+        "PAYMENTS_NOT_READY",
+        formatPaidSalesGateMessage(gate, "Pagamentos indisponíveis. Para ativar,"),
+        ERROR_MAP.PAYMENTS_NOT_READY.status,
+        false,
+        { missingEmail: gate.missingEmail, missingStripe: gate.missingStripe },
       );
     }
 
@@ -156,45 +153,126 @@ export async function POST(
     const stripeFeeEstimateCents = combinedFees.stripeFeeCentsEstimate ?? 0;
     const payoutAmountCents = Math.max(0, totalCents - platformFeeCents - stripeFeeEstimateCents);
 
-    const purchaseId = `service_credit_${service.id}_${user.id}_${Date.now()}`;
-    const intentParams = {
-      amount: totalCents,
-      currency: currency.toLowerCase(),
-      automatic_payment_methods: { enabled: true },
-      metadata: {
-        serviceCreditPurchase: "1",
-        serviceId: String(service.id),
-        organizationId: String(service.organizationId),
-        userId: user.id,
-        units: String(units),
-        packId: resolvedPackId ? String(resolvedPackId) : "",
-        purchaseId,
-        platformFeeCents: String(platformFeeCents),
-        feeMode: pricing.feeMode,
-        grossAmountCents: String(totalCents),
-        payoutAmountCents: String(payoutAmountCents),
-        recipientConnectAccountId: isPlatformOrg ? "" : service.organization.stripeAccountId ?? "",
+    const sourceId = `service_credit:${service.id}:${user.id}:${resolvedPackId ?? units}:${amountCents}`;
+    const pendingPayment = await prisma.payment.findFirst({
+      where: {
         sourceType: SourceType.STORE_ORDER,
-        sourceId: purchaseId,
-        currency,
-        stripeFeeEstimateCents: String(stripeFeeEstimateCents),
+        sourceId,
+        status: { in: [PaymentStatus.CREATED, PaymentStatus.REQUIRES_ACTION, PaymentStatus.PROCESSING] },
       },
-      description: `Créditos serviço ${service.id}`,
-    } as const;
+      select: { id: true },
+    });
+    const purchaseId = pendingPayment
+      ? pendingPayment.id
+      : `service_credit_${service.id}_${user.id}_v${(await prisma.payment.count({
+          where: { sourceType: SourceType.STORE_ORDER, sourceId },
+        })) + 1}`;
 
-    const intent = await createPaymentIntent(intentParams, {
-      idempotencyKey: purchaseId,
-      requireStripe: !isPlatformOrg,
-      org: {
-        stripeAccountId: service.organization.stripeAccountId ?? null,
-        stripeChargesEnabled: service.organization.stripeChargesEnabled ?? false,
-        stripePayoutsEnabled: service.organization.stripePayoutsEnabled ?? false,
-        orgType: service.organization.orgType ?? null,
-      },
+    const feePolicyVersion = computeFeePolicyVersion({
+      feeMode: pricing.feeMode,
+      feeBps: pricing.feeBpsApplied,
+      feeFixed: pricing.feeFixedApplied,
     });
 
-    return NextResponse.json({
-      ok: true,
+    let intent;
+    try {
+      const ensured = await ensurePaymentIntent({
+        purchaseId,
+        sourceType: SourceType.STORE_ORDER,
+        sourceId,
+        amountCents: totalCents,
+        currency,
+        intentParams: {
+          automatic_payment_methods: { enabled: true },
+          description: `Créditos serviço ${service.id}`,
+        },
+        metadata: {
+          serviceCreditPurchase: "1",
+          serviceId: String(service.id),
+          organizationId: String(service.organizationId),
+          userId: user.id,
+          units: String(units),
+          packId: resolvedPackId ? String(resolvedPackId) : "",
+          platformFeeCents: String(platformFeeCents),
+          feeMode: pricing.feeMode,
+          grossAmountCents: String(totalCents),
+          payoutAmountCents: String(payoutAmountCents),
+          recipientConnectAccountId: isPlatformOrg ? "" : service.organization.stripeAccountId ?? "",
+          sourceType: SourceType.STORE_ORDER,
+          sourceId,
+          currency,
+          stripeFeeEstimateCents: String(stripeFeeEstimateCents),
+        },
+        orgContext: {
+          stripeAccountId: service.organization.stripeAccountId ?? null,
+          stripeChargesEnabled: service.organization.stripeChargesEnabled ?? false,
+          stripePayoutsEnabled: service.organization.stripePayoutsEnabled ?? false,
+          orgType: service.organization.orgType ?? null,
+        },
+        requireStripe: !isPlatformOrg,
+        buyerIdentityRef: user.id,
+        resolvedSnapshot: {
+          organizationId: service.organizationId,
+          buyerIdentityId: user.id,
+          snapshot: {
+            currency,
+            gross: totalCents,
+            discounts: 0,
+            taxes: 0,
+            platformFee: platformFeeCents,
+            total: totalCents,
+            netToOrgPending: Math.max(0, totalCents - platformFeeCents),
+            processorFeesStatus: ProcessorFeesStatus.PENDING,
+            processorFeesActual: null,
+            feeMode: pricing.feeMode,
+            feeBps: pricing.feeBpsApplied,
+            feeFixed: pricing.feeFixedApplied,
+            feePolicyVersion,
+            promoPolicyVersion: null,
+            sourceType: SourceType.STORE_ORDER,
+            sourceId,
+            lineItems: [
+              {
+                quantity: 1,
+                unitPriceCents: amountCents,
+                totalAmountCents: amountCents,
+                currency,
+                sourceLineId: sourceId,
+                label: `Créditos serviço ${service.id}`,
+              },
+            ],
+          },
+        },
+      });
+      intent = ensured.paymentIntent;
+    } catch (err) {
+      if (err instanceof Error && err.message === "IDEMPOTENCY_KEY_PAYLOAD_MISMATCH") {
+        return fail(
+          "IDEMPOTENCY_KEY_PAYLOAD_MISMATCH",
+          "Chave de idempotência reutilizada com um carrinho diferente.",
+          409,
+        );
+      }
+      if (err instanceof Error && err.message === "PAYMENT_INTENT_TERMINAL") {
+        return fail(
+          "PAYMENT_INTENT_TERMINAL",
+          "Sessão de pagamento expirada. Tenta novamente.",
+          409,
+          true,
+        );
+      }
+      if (err instanceof Error && err.message === "PAYMENT_INTENT_RETRIEVE_FAILED") {
+        return fail(
+          "PAYMENT_INTENT_RETRIEVE_FAILED",
+          "Não foi possível retomar o pagamento. Tenta novamente.",
+          503,
+          true,
+        );
+      }
+      throw err;
+    }
+
+    return respondOk(ctx, {
       units,
       amountCents: totalCents,
       currency,
@@ -203,9 +281,9 @@ export async function POST(
     });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return fail("UNAUTHENTICATED", "Sessão inválida.", 401);
     }
     console.error("POST /api/servicos/[id]/creditos/checkout error:", err);
-    return NextResponse.json({ ok: false, error: "CHECKOUT_FAILED" }, { status: 500 });
+    return fail("CHECKOUT_FAILED", "Erro ao iniciar checkout.", 500, true);
   }
 }
