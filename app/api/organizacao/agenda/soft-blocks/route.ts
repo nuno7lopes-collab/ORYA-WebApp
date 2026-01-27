@@ -4,6 +4,7 @@ import { ensureAuthenticated } from "@/lib/security";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { prisma } from "@/lib/prisma";
+import { ensureReservasModuleAccess } from "@/lib/reservas/access";
 import { SoftBlockScope } from "@prisma/client";
 import { evaluateCandidate, type AgendaCandidate } from "@/domain/agenda/conflictEngine";
 import { buildAgendaConflictPayload } from "@/domain/agenda/conflictResponse";
@@ -256,6 +257,10 @@ export async function POST(req: NextRequest) {
   if (!organization || !membership) {
     return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
   }
+  const reservasAccess = await ensureReservasModuleAccess(organization);
+  if (!reservasAccess.ok) {
+    return NextResponse.json({ ok: false, error: reservasAccess.error }, { status: 403 });
+  }
 
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
   if (!body) return NextResponse.json({ ok: false, error: "INVALID_BODY" }, { status: 400 });
@@ -332,6 +337,10 @@ export async function PATCH(req: NextRequest) {
   });
   if (!organization || !membership) {
     return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  }
+  const reservasAccess = await ensureReservasModuleAccess(organization);
+  if (!reservasAccess.ok) {
+    return NextResponse.json({ ok: false, error: reservasAccess.error }, { status: 403 });
   }
 
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
@@ -428,6 +437,10 @@ export async function DELETE(req: NextRequest) {
   });
   if (!organization || !membership) {
     return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  }
+  const reservasAccess = await ensureReservasModuleAccess(organization);
+  if (!reservasAccess.ok) {
+    return NextResponse.json({ ok: false, error: reservasAccess.error }, { status: 403 });
   }
 
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
