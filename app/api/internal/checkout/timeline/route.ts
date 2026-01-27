@@ -1,25 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { resolvePaymentStatusMap } from "@/domain/finance/resolvePaymentStatus";
-
-const INTERNAL_HEADER = "X-ORYA-CRON-SECRET";
-
-function requireInternalSecret(req: NextRequest) {
-  const provided = req.headers.get(INTERNAL_HEADER);
-  const expected = process.env.ORYA_CRON_SECRET;
-  if (!expected || !provided || provided !== expected) {
-    return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
-  }
-  return null;
-}
+import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
 
 /**
  * Endpoint interno para inspecionar a timeline de checkout.
  * Uso: /api/internal/checkout/timeline?purchaseId=... ou ?paymentIntentId=...
  */
 export async function GET(req: NextRequest) {
-  const unauthorized = requireInternalSecret(req);
-  if (unauthorized) return unauthorized;
+  if (!requireInternalSecret(req)) {
+    return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
+  }
 
   const url = new URL(req.url);
   const purchaseId = (url.searchParams.get("purchaseId") || "").trim();
