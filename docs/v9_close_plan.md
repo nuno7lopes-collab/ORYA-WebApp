@@ -137,11 +137,6 @@ Plano SSOT para fechar o Blueprint v9 e alinhar a repo inteira. Cada bloco fecha
 - [ ] **IDEMPOTENCIA**: respostas de erro incluem `retryable` e `nextAction`.
 - [ ] **LOGS**: requestId/correlationId em logs de erro.
 
-### PR/merge metadata
-- PR #1 (CI seed gates): https://github.com/nuno7lopes-collab/ORYA-WebApp/pull/1
-- Branch: `chore/seed-gates`
-- Merge commit (origin/developer): UNKNOWN (PR ainda nao mergeado)
-
 ### Criterios de DONE (producao)
 - 100% das rotas criticas devolvem envelope canonico.
 - Headers `x-orya-request-id` e `x-orya-correlation-id` presentes em todas as respostas HTTP.
