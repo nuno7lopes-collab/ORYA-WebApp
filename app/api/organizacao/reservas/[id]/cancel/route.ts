@@ -143,7 +143,7 @@ export async function POST(
         now,
       );
       const canCancel = isPending || (booking.status === "CONFIRMED" && decision.allowed);
-      if (!canCancel) {
+      if (canCancel === false) {
         return {
           error: errorWithCtx(
             400,
