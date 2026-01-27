@@ -6,6 +6,7 @@ import { getAppBaseUrl } from "@/lib/appBaseUrl";
 import { normalizeAndValidateUsername, checkUsernameAvailability } from "@/lib/globalUsernames";
 import { isSameOriginOrApp } from "@/lib/auth/requestValidation";
 import { rateLimit } from "@/lib/auth/rateLimit";
+import { getRequestContext } from "@/lib/http/requestContext";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -48,6 +49,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
+    const ctx = getRequestContext(req);
     const body = (await req.json().catch(() => null)) as
       | { email?: string; password?: string | null; username?: string | null; fullName?: string | null }
       | null;
@@ -153,7 +155,11 @@ export async function POST(req: NextRequest) {
           { status: 400 },
         );
       }
-      console.error("[send-otp] generateLink error:", error);
+      console.error("[send-otp] generateLink error", {
+        error,
+        requestId: ctx.requestId,
+        correlationId: ctx.correlationId,
+      });
       return NextResponse.json(
         {
           ok: false,
@@ -166,7 +172,10 @@ export async function POST(req: NextRequest) {
 
     const otp = data?.properties?.email_otp ?? null;
     if (!otp) {
-      console.error("[send-otp] missing email_otp in response");
+      console.error("[send-otp] missing email_otp in response", {
+        requestId: ctx.requestId,
+        correlationId: ctx.correlationId,
+      });
       return NextResponse.json(
         { ok: false, error: "Não foi possível gerar o código. Tenta novamente." },
         { status: 500 },
@@ -181,7 +190,12 @@ export async function POST(req: NextRequest) {
         html: buildEmailHtml(otp),
       });
     } catch (mailErr) {
-      console.error("[send-otp] resend error", { mailErr, email: rawEmail, env: process.env.NODE_ENV });
+      console.error("[send-otp] resend error", {
+        mailErr,
+        env: process.env.NODE_ENV,
+        requestId: ctx.requestId,
+        correlationId: ctx.correlationId,
+      });
       return NextResponse.json(
         {
           ok: false,
@@ -193,7 +207,12 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true });
   } catch (err) {
-    console.error("[send-otp] error:", err);
+    const ctx = getRequestContext(req);
+    console.error("[send-otp] error:", {
+      err,
+      requestId: ctx.requestId,
+      correlationId: ctx.correlationId,
+    });
     return NextResponse.json(
       { ok: false, error: "Erro inesperado ao enviar código." },
       { status: 500 },
