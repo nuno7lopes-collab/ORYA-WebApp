@@ -1,4 +1,4 @@
-import { OrganizationMemberRole, OrganizationStatus } from "@prisma/client";
+import { OrganizationMemberRole, OrganizationRolePack, OrganizationStatus } from "@prisma/client";
 import { cache } from "react";
 import { prisma } from "@/lib/prisma";
 import { resolveOrganizationIdFromCookies } from "@/lib/organizationId";
@@ -18,14 +18,43 @@ type Options = {
   // Se quisermos forçar leitura de cookie, basta fornecer organizationId externamente
 };
 
+export type OrganizationContextResult = {
+  organization:
+    | {
+        id: number;
+        status: OrganizationStatus;
+        groupId: number;
+      }
+    | null;
+  membership:
+    | {
+        id: number;
+        organizationId: number;
+        userId: string;
+        groupId: number;
+        role: OrganizationMemberRole;
+        rolePack?: OrganizationRolePack | null;
+      }
+    | null;
+};
+
+type OrganizationContextGuard = { ok: true; context: OrganizationContextResult } | { ok: false; error: string };
+
 export const ORG_ACTIVE_ALLOWED_STATUSES = [
   OrganizationStatus.ACTIVE,
   OrganizationStatus.SUSPENDED,
 ] as const;
 
+// Read-only flows podem usar fallback (profile/cookie).
 export const ORG_ACTIVE_ACCESS_OPTIONS = {
   allowedStatuses: ORG_ACTIVE_ALLOWED_STATUSES,
   allowFallback: true,
+} as const;
+
+// Mutacoes devem exigir orgId explicito (sem fallback).
+export const ORG_ACTIVE_WRITE_OPTIONS = {
+  allowedStatuses: ORG_ACTIVE_ALLOWED_STATUSES,
+  allowFallback: false,
 } as const;
 
 export const getActiveOrganizationForUser = cache(
@@ -131,6 +160,25 @@ export const getActiveOrganizationForUser = cache(
   return { organization: null, membership: null };
   },
 );
+
+export async function getActiveOrganizationForUserForWrite(userId: string, opts: Options = {}) {
+  return getActiveOrganizationForUser(userId, { ...opts, allowFallback: false });
+}
+
+export function ensureOrganizationContext(
+  context: OrganizationContextResult,
+  opts?: { requireOrganization?: boolean; requireMembership?: boolean },
+): OrganizationContextGuard {
+  const requireOrganization = opts?.requireOrganization ?? true;
+  const requireMembership = opts?.requireMembership ?? true;
+  if (requireOrganization && !context.organization) {
+    return { ok: false, error: "Sem permissoes." };
+  }
+  if (requireMembership && !context.membership) {
+    return { ok: false, error: "Sem permissoes." };
+  }
+  return { ok: true, context };
+}
 
 export async function getActiveOrganizationIdForUser(userId: string) {
   const profile = await prisma.profile.findUnique({
