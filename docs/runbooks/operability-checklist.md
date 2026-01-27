@@ -2,6 +2,17 @@
 
 Objetivo: checklist minimo para producao operavel (sem depender de legal/DSAR/safety).
 
+## P0 vs P1 (prioridade operacional)
+- P0 (bloqueia go-live):
+  - backups + restore test
+  - alertas minimos ativos
+  - DLQ controlada + replay seguro
+  - cron health confirmado
+  - rollups confirmados
+- P1 (operabilidade):
+  - dashboards estaveis e com dados
+  - runbooks completos e atualizados
+
 ## Backups / restore (infra fora do repo)
 - Validar backups existentes (provider/DB):
   - confirmar politica de retencao
@@ -36,7 +47,7 @@ Objetivo: checklist minimo para producao operavel (sem depender de legal/DSAR/sa
   - `GET /api/internal/ops/health`
   - `GET /api/internal/ops/slo`
   - `GET /api/internal/ops/dashboard`
-  - auth: `X-ORYA-CRON-SECRET`
+  - auth: `X-ORYA-CRON-SECRET` (sem header e esperado 401)
 
 ## Criterio PASS/FAIL
 - PASS:
