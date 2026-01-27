@@ -1,0 +1,31 @@
+name: PR Gates
+
+on:
+  pull_request:
+    branches: [ developer, main ]
+
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
+
+      - name: Install
+        run: npm ci
+
+      - name: DB gates offline
+        run: npm run db:gates:offline
+
+      - name: Tests (core)
+        run: npx vitest run tests/rbac tests/access tests/ops tests/outbox
+
+      - name: Guardrails (rg)
+        run: |
+          rg -n "organizationMember\.findFirst|ownerId\s*=" app lib domain tests -S
+          rg -n "if \(!.*can|hasPermission\(|isOwner\(" app/api/organizacao -S
