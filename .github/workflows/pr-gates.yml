@@ -28,6 +28,14 @@ jobs:
           node-version: 20
           cache: "npm"
 
+      - name: Install ripgrep
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ripgrep
+
+      - name: Sanity check ripgrep
+        run: rg --version
+
       - name: Install
         run: npm ci
 
