@@ -391,6 +391,11 @@ Plano SSOT para fechar o Blueprint v9 e alinhar a repo inteira. Cada bloco fecha
 - Nenhuma pagina mostra "nao verificado" quando esta verificado.
 - Se falhar, runbook de reenvio/confirmacao recupera em minutos.
 
+### Metadata (PR/merge)
+- PR: https://github.com/nuno7lopes-collab/ORYA-WebApp/pull/13
+- Merge SHA: 2b1728efda31f4432b228cce2f6b6267c9fdc720
+- Status: CLOSED (E2E OK + gates)
+
 ### Riscos/Drifts conhecidos + mitigacao
 - Divergencia UI/API → alinhar org context e refetch.
 
@@ -457,6 +462,11 @@ Plano SSOT para fechar o Blueprint v9 e alinhar a repo inteira. Cada bloco fecha
 ### Criterios de DONE (producao)
 - Admin console operavel end-to-end.
 - Se falhar em producao: runbook para regressar a dados minimos e recuperar.
+
+### Metadata (PR/merge)
+- PR: https://github.com/nuno7lopes-collab/ORYA-WebApp/pull/14
+- Merge SHA: 658da4ff7af2f375588d475993f0d216d94d2024
+- Status: CLOSED (E2E OK + gates)
 
 ### Riscos/Drifts conhecidos + mitigacao
 - UI depende de stats legacy → substituir por ops feed/rollups.
