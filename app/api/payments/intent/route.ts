@@ -47,6 +47,8 @@ import { formatPaidSalesGateMessage, getPaidSalesGate } from "@/lib/organization
 
 const FREE_PLACEHOLDER_INTENT_ID = "FREE_CHECKOUT";
 const ORYA_CARD_FEE_BPS = 100;
+const LEGACY_INTENT_DISABLED = process.env.LEGACY_INTENT_DISABLED === "true";
+const INTENT_BUILD_FINGERPRINT = "INTENT_PATCH_v2";
 
 type CheckoutItem = {
   ticketId: string | number;
@@ -192,7 +194,7 @@ function intentError(
     extra?: Record<string, unknown>;
   },
 ) {
-  return jsonWrap(
+  const res = jsonWrap(
     {
       ok: false,
       code,
@@ -204,6 +206,11 @@ function intentError(
     },
     { status: opts?.httpStatus ?? 400 },
   );
+  if (process.env.NODE_ENV === "development" && (opts?.httpStatus ?? 400) === 410) {
+    res.headers.set("X-Orya-Intent-Handler", "app/api/payments/intent/route.ts");
+    res.headers.set("X-Orya-Intent-Fingerprint", INTENT_BUILD_FINGERPRINT);
+  }
+  return res;
 }
 
 function normalizePhone(phone: string | null | undefined, defaultCountry: CountryCode = "PT") {
@@ -235,6 +242,17 @@ async function hasExistingFreeEntryForUser(params: { eventId: number; userId: st
 }
 
 async function _POST(req: NextRequest) {
+  if (process.env.NODE_ENV === "development") {
+    console.info(
+      "[payments/intent] buildFingerprint=",
+      INTENT_BUILD_FINGERPRINT,
+      "LEGACY_INTENT_DISABLED=",
+      process.env.LEGACY_INTENT_DISABLED ?? "<undefined>",
+    );
+  }
+  if (LEGACY_INTENT_DISABLED) {
+    return intentError("LEGACY_INTENT_DISABLED", "Endpoint desativado.", { httpStatus: 410 });
+  }
   try {
     const body = (await req.json().catch(() => null)) as Body | null;
 
