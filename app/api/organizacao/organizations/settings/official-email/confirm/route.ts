@@ -76,7 +76,15 @@ export async function POST(req: NextRequest) {
       });
     });
 
-    return NextResponse.json({ ok: true, verifiedAt: now }, { status: 200 });
+    return NextResponse.json(
+      {
+        ok: true,
+        status: "VERIFIED",
+        verifiedAt: now,
+        email: request.newEmail,
+      },
+      { status: 200 },
+    );
   } catch (err) {
     console.error("[official-email/confirm][POST]", err);
     return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });

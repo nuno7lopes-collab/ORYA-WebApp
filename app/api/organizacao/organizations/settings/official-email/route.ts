@@ -54,7 +54,15 @@ export async function POST(req: NextRequest) {
     }
 
     if (organization.officialEmailVerifiedAt && organization.officialEmail === emailRaw) {
-      return NextResponse.json({ ok: false, error: "EMAIL_ALREADY_VERIFIED" }, { status: 400 });
+      return NextResponse.json(
+        {
+          ok: true,
+          status: "VERIFIED",
+          verifiedAt: organization.officialEmailVerifiedAt,
+          email: organization.officialEmail,
+        },
+        { status: 200 },
+      );
     }
 
     await prisma.organization.update({

@@ -1,4 +1,4 @@
-import { OrganizationMemberRole, OrganizationStatus } from "@prisma/client";
+import { OrganizationMemberRole, OrganizationStatus, Prisma } from "@prisma/client";
 import { cache } from "react";
 import { prisma } from "@/lib/prisma";
 import { resolveOrganizationIdFromCookies } from "@/lib/organizationId";
@@ -13,10 +13,89 @@ type Options = {
   roles?: OrganizationMemberRole[];
   allowFallback?: boolean;
   allowedStatuses?: OrganizationStatus[];
+  includeOrganizationFields?: "minimal" | "settings" | "full";
+  selectOrganization?: Prisma.OrganizationSelect;
   // apenas quando se quer forçar persistência do contexto
   persistActiveOrganization?: boolean;
   // Se quisermos forçar leitura de cookie, basta fornecer organizationId externamente
 };
+
+export const ORGANIZATION_SELECT_MINIMAL = {
+  id: true,
+  status: true,
+  groupId: true,
+} satisfies Prisma.OrganizationSelect;
+
+export const ORGANIZATION_SELECT_SETTINGS = {
+  id: true,
+  status: true,
+  groupId: true,
+  username: true,
+  stripeAccountId: true,
+  stripeChargesEnabled: true,
+  stripePayoutsEnabled: true,
+  feeMode: true,
+  platformFeeBps: true,
+  platformFeeFixedCents: true,
+  businessName: true,
+  entityType: true,
+  city: true,
+  payoutIban: true,
+  language: true,
+  timezone: true,
+  alertsEmail: true,
+  alertsSalesEnabled: true,
+  alertsPayoutEnabled: true,
+  officialEmail: true,
+  officialEmailVerifiedAt: true,
+  brandingAvatarUrl: true,
+  brandingCoverUrl: true,
+  brandingPrimaryColor: true,
+  brandingSecondaryColor: true,
+  organizationKind: true,
+  primaryModule: true,
+  reservationAssignmentMode: true,
+  publicName: true,
+  address: true,
+  showAddressPublicly: true,
+  publicWebsite: true,
+  publicInstagram: true,
+  publicYoutube: true,
+  publicDescription: true,
+  publicHours: true,
+  publicProfileLayout: true,
+  infoRules: true,
+  infoFaq: true,
+  infoRequirements: true,
+  infoPolicies: true,
+  infoLocationNotes: true,
+  padelDefaultShortName: true,
+  padelDefaultCity: true,
+  padelDefaultAddress: true,
+  padelDefaultCourts: true,
+  padelDefaultHours: true,
+  padelDefaultRuleSetId: true,
+  padelFavoriteCategories: true,
+  orgType: true,
+} satisfies Prisma.OrganizationSelect;
+
+function resolveOrganizationSelect(opts: Options): {
+  select: Prisma.OrganizationSelect | null;
+  kind: "minimal" | "settings" | "full" | "custom";
+} {
+  if (opts.selectOrganization) {
+    return {
+      select: { ...ORGANIZATION_SELECT_MINIMAL, ...opts.selectOrganization },
+      kind: "custom",
+    };
+  }
+  const kind = opts.includeOrganizationFields ?? "minimal";
+  if (kind === "full") return { select: null, kind };
+  if (kind === "settings") {
+    return { select: ORGANIZATION_SELECT_SETTINGS, kind };
+  }
+  return { select: ORGANIZATION_SELECT_MINIMAL, kind: "minimal" };
+}
 
 export const ORG_ACTIVE_ALLOWED_STATUSES = [
   OrganizationStatus.ACTIVE,
@@ -33,6 +112,8 @@ export const getActiveOrganizationForUser = cache(
   const { roles } = opts;
   const allowFallback = typeof opts.allowFallback === "boolean" ? opts.allowFallback : false;
   const allowedStatuses = opts.allowedStatuses ?? [OrganizationStatus.ACTIVE];
+  const { select: organizationSelect, kind: organizationSelectKind } = resolveOrganizationSelect(opts);
+  const shouldHydrateOrganization = organizationSelectKind !== "minimal";
   const directOrganizationId =
     typeof opts.organizationId === "number" && Number.isFinite(opts.organizationId)
       ? opts.organizationId
@@ -54,7 +135,7 @@ export const getActiveOrganizationForUser = cache(
   if (organizationId) {
     const organization = await prisma.organization.findUnique({
       where: { id: organizationId },
-      select: { id: true, status: true, groupId: true },
+      ...(organizationSelect ? { select: organizationSelect } : {}),
     });
     if (organization && allowedStatuses.includes(organization.status)) {
       const member = await resolveGroupMemberForOrg({ organizationId, userId });
@@ -114,8 +195,17 @@ export const getActiveOrganizationForUser = cache(
       if (override?.revokedAt) continue;
       const effectiveRole = override?.roleOverride ?? member.role;
       if (roles && !roles.includes(effectiveRole)) continue;
+      let organization = org;
+      if (shouldHydrateOrganization) {
+        const hydrated = await prisma.organization.findUnique({
+          where: { id: org.id },
+          ...(organizationSelect ? { select: organizationSelect } : {}),
+        });
+        if (!hydrated || !allowedStatuses.includes(hydrated.status)) continue;
+        organization = hydrated;
+      }
       return {
-        organization: org,
+        organization,
         membership: {
           id: member.id,
           organizationId: org.id,
