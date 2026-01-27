@@ -28,6 +28,8 @@ import { getTicketCopy } from "@/app/components/checkout/checkoutCopy";
 import { resolveEventLocation } from "@/lib/location/eventLocation";
 import { getAppBaseUrl } from "@/lib/appBaseUrl";
 import { deriveIsFreeEvent } from "@/domain/events/derivedIsFree";
+import { EventAccessMode } from "@prisma/client";
+import { isPublicAccessMode, resolveEventAccessMode } from "@/lib/events/accessPolicy";
 
 type EventPageParams = { slug: string };
 type EventPageParamsInput = EventPageParams | Promise<EventPageParams>;
@@ -252,6 +254,11 @@ export default async function EventPage({
         include: { category: { select: { label: true } } },
       },
       padelTournamentConfig: true,
+      accessPolicies: {
+        orderBy: { policyVersion: "desc" },
+        take: 1,
+        select: { mode: true },
+      },
       organization: {
         select: {
           username: true,
@@ -280,6 +287,11 @@ export default async function EventPage({
             include: { category: { select: { label: true } } },
           },
           padelTournamentConfig: true,
+          accessPolicies: {
+            orderBy: { policyVersion: "desc" },
+            take: 1,
+            select: { mode: true },
+          },
           organization: {
             select: {
               username: true,
@@ -303,20 +315,16 @@ export default async function EventPage({
   });
   const ticketTypesWithVisibility = event.ticketTypes as TicketTypeWithVisibility[];
   const visibleTicketTypes = ticketTypesWithVisibility.filter((t) => t.isVisible ?? true);
-  const publicAccessMode = event.publicAccessMode ?? (event.inviteOnly ? "INVITE" : "OPEN");
-  const inviteOnly = publicAccessMode === "INVITE";
-  const publicTicketTypeIds = event.publicTicketTypeIds ?? [];
-  const hasPerTicketAccess = publicAccessMode === "TICKET" && publicTicketTypeIds.length > 0;
-  const hasInviteOnlyTickets =
-    hasPerTicketAccess && publicTicketTypeIds.length < visibleTicketTypes.length;
+  const accessPolicy = event.accessPolicies?.[0] ?? null;
+  const accessMode = resolveEventAccessMode(accessPolicy);
+  const isInviteRestricted = accessMode === EventAccessMode.INVITE_ONLY;
   const isPublicEvent =
-    publicAccessMode !== "INVITE" &&
-    !event.inviteOnly &&
+    isPublicAccessMode(accessMode) &&
     ["PUBLISHED", "DATE_CHANGED", "FINISHED", "CANCELLED"].includes(event.status);
   const userEmailNormalized = user ? normalizeEmail(user.email ?? null) : null;
   const usernameNormalized = profile?.username ? sanitizeUsername(profile.username) : null;
   const hasUsername = Boolean(usernameNormalized);
-  const needsInviteCheck = inviteOnly || hasInviteOnlyTickets;
+  const needsInviteCheck = isInviteRestricted;
   let isInvited = !needsInviteCheck;
   if (needsInviteCheck && !isAdmin && user) {
     const identifiers: string[] = [];
@@ -334,8 +342,8 @@ export default async function EventPage({
   } else if (needsInviteCheck && isAdmin) {
     isInvited = true;
   }
-  const showInviteGate = inviteOnly && !isInvited;
-  const canFreeCheckout = Boolean(user) && hasUsername && (!inviteOnly || isInvited);
+  const showInviteGate = isInviteRestricted && !isInvited;
+  const canFreeCheckout = Boolean(user) && hasUsername && (!isInviteRestricted || isInvited);
   const allowCheckoutBase = !showInviteGate && (isGratis ? canFreeCheckout : true);
   const isPadel = event.templateType === "PADEL";
   const ticketCopy = getTicketCopy(isPadel ? "PADEL" : "DEFAULT");
@@ -513,15 +521,12 @@ export default async function EventPage({
 
   const nowDate = new Date();
   const eventEnded = endDateObj < nowDate;
-  const publicTicketTypeIdSet = new Set(publicTicketTypeIds);
-  const canSeeInviteTickets = isInvited || isAdmin;
+  const canSeeTickets = !isInviteRestricted || isInvited || isAdmin;
 
   const orderedTickets = visibleTicketTypes
     .filter((t) => {
-      if (inviteOnly) return canSeeInviteTickets;
-      if (!hasPerTicketAccess) return true;
-      const isPublicTicket = publicTicketTypeIdSet.has(t.id);
-      return isPublicTicket || canSeeInviteTickets;
+      if (!t) return false;
+      return canSeeTickets;
     })
     .sort((a, b) => {
       const ao = a.sortOrder ?? 0;
@@ -843,7 +848,7 @@ export default async function EventPage({
                     <span className={`rounded-full border px-3 py-1.5 text-[11px] font-semibold ${availabilityTone}`}>
                       {availabilityLabel}
                     </span>
-                    {inviteOnly && (
+                    {isInviteRestricted && (
                       <span className="rounded-full border border-white/30 bg-white/10 px-3 py-1.5 text-[11px] font-semibold text-white/80">
                         Só por convite
                       </span>

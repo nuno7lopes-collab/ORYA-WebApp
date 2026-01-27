@@ -38,6 +38,19 @@ export default async function OrganizationEventEditPage({ params }: PageProps) {
           },
         },
       },
+      accessPolicies: {
+        orderBy: { policyVersion: "desc" },
+        take: 1,
+        select: {
+          mode: true,
+          guestCheckoutAllowed: true,
+          inviteTokenAllowed: true,
+          inviteIdentityMatch: true,
+          inviteTokenTtlSeconds: true,
+          requiresEntitlementForEntry: true,
+          checkinMethods: true,
+        },
+      },
     },
   });
 
@@ -128,14 +141,10 @@ export default async function OrganizationEventEditPage({ params }: PageProps) {
           longitude: event.longitude,
           templateType: event.templateType,
           isGratis: isGratis,
-          inviteOnly: event.inviteOnly,
           coverImageUrl: event.coverImageUrl,
           liveHubVisibility: event.liveHubVisibility,
           liveStreamUrl: event.liveStreamUrl,
-          publicAccessMode: event.publicAccessMode,
-          participantAccessMode: event.participantAccessMode,
-          publicTicketTypeIds: event.publicTicketTypeIds ?? [],
-          participantTicketTypeIds: event.participantTicketTypeIds ?? [],
+          accessPolicy: event.accessPolicies?.[0] ?? null,
           payoutMode: event.payoutMode,
         }}
         tickets={tickets}

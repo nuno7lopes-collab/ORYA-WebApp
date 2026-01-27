@@ -1,4 +1,5 @@
 import { resolveConnectStatus } from "@/domain/finance/stripeConnectStatus";
+import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmail";
 
 type PaidSalesGateInput = {
   officialEmail?: string | null;
@@ -16,7 +17,7 @@ export type PaidSalesGate = {
 };
 
 export function getPaidSalesGate(input: PaidSalesGateInput): PaidSalesGate {
-  const emailVerified = Boolean(input.officialEmail && input.officialEmailVerifiedAt);
+  const emailVerified = Boolean(normalizeOfficialEmail(input.officialEmail ?? null) && input.officialEmailVerifiedAt);
   const requireStripe = input.requireStripe !== false;
   const stripeReady = requireStripe
     ? resolveConnectStatus(

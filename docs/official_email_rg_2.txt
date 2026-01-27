@@ -1,0 +1,4 @@
+app/hooks/useUser.ts:77:  // Claim guest purchases após email verificado (best-effort)
+app/organizacao/OrganizationDashboardShell.tsx:174:              <p className="text-[11px] uppercase tracking-[0.22em] text-amber-100/80">Email oficial obrigatório</p>
+app/api/email/verified/route.ts:5:// Endpoint para ser chamado pelo frontend após evento de email verificado (Supabase)
+app/api/organizacao/organizations/settings/official-email/confirm/route.ts:91:    return NextResponse.json({ ok: true, verifiedAt: now, email: normalizedEmail }, { status: 200 });

@@ -1931,6 +1931,7 @@ model PaymentSnapshot {
 model PaymentEvent {
   id                    Int                @id @default(autoincrement())
   status                String             @default("PROCESSING")
+  stripePaymentIntentId String             @unique @map("stripe_payment_intent_id") @db.Text
   stripeEventId         String?            @unique @map("stripe_event_id")
   stripePaymentIntentId String?            @map("stripe_payment_intent_id")
   purchaseId            String?            @unique @map("purchase_id") @db.Text
@@ -3392,6 +3393,9 @@ model Booking {
   status          BookingStatus @default(PENDING_CONFIRMATION)
   pendingExpiresAt DateTime?    @map("pending_expires_at") @db.Timestamptz(6)
   snapshotTimezone String       @default("Europe/Lisbon") @map("snapshot_timezone")
+  confirmationSnapshot Json?    @map("confirmation_snapshot")
+  confirmationSnapshotVersion Int? @map("confirmation_snapshot_version")
+  confirmationSnapshotCreatedAt DateTime? @map("confirmation_snapshot_created_at") @db.Timestamptz(6)
   locationMode    ServiceLocationMode @default(FIXED) @map("location_mode")
   locationText    String?       @map("location_text")
   confirmationSnapshot Json?    @map("confirmation_snapshot")

@@ -69,6 +69,10 @@ describe("owner transfer confirm", () => {
       status: "CONFIRMED",
       toUserId: "u1",
     });
+    mocks.orgFindUnique.mockResolvedValue({
+      officialEmail: "owner@org.pt",
+      officialEmailVerifiedAt: new Date(),
+    });
 
     const req = new Request("http://localhost/api/organizacao/organizations/owner/confirm", {
       method: "POST",
@@ -93,7 +97,12 @@ describe("owner transfer confirm", () => {
       expiresAt: new Date(Date.now() + 10000),
     });
     mocks.resolveGroupMemberForOrg.mockResolvedValue({ role: "OWNER", groupId: 99 });
-    mocks.orgFindUnique.mockResolvedValue({ id: 10, publicName: "Org", username: "org", groupId: 99 });
+    mocks.orgFindUnique
+      .mockResolvedValueOnce({
+        officialEmail: "owner@org.pt",
+        officialEmailVerifiedAt: new Date(),
+      })
+      .mockResolvedValueOnce({ id: 10, publicName: "Org", username: "org", groupId: 99 });
     mocks.recordOutboxEvent.mockResolvedValue({ eventId: "evt-1" });
     mocks.transaction.mockImplementation(async (fn: any) =>
       fn({
@@ -125,6 +134,10 @@ describe("owner transfer confirm", () => {
       fromUserId: "u1",
       toUserId: "u2",
       expiresAt: new Date(Date.now() - 1000),
+    });
+    mocks.orgFindUnique.mockResolvedValue({
+      officialEmail: "owner@org.pt",
+      officialEmailVerifiedAt: new Date(),
     });
     mocks.recordOutboxEvent.mockResolvedValue({ eventId: "evt-exp" });
     mocks.transaction.mockImplementation(async (fn: any) =>

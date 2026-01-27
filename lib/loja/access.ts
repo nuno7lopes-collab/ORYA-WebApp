@@ -12,12 +12,14 @@ type OrganizationContext = {
 export async function ensureLojaModuleAccess(
   organization: OrganizationContext,
   client?: Prisma.TransactionClient,
-  options?: { requireVerifiedEmail?: boolean },
+  options?: { requireVerifiedEmail?: boolean; reasonCode?: string },
 ) {
   if (options?.requireVerifiedEmail) {
-    const emailGate = ensureOrganizationEmailVerified(organization);
+    const emailGate = ensureOrganizationEmailVerified(organization, {
+      reasonCode: options?.reasonCode ?? "LOJA",
+    });
     if (!emailGate.ok) {
-      return { ok: false as const, error: emailGate.error };
+      return emailGate;
     }
   }
   const { activeModules } = await getOrganizationActiveModules(

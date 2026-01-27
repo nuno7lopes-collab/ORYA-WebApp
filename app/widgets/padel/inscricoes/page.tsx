@@ -1,5 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { resolvePadelCompetitionState } from "@/domain/padelCompetitionState";
+import { EventAccessMode } from "@prisma/client";
+import { isPublicAccessMode, resolveEventAccessMode } from "@/lib/events/accessPolicy";
 import { resolveLocale, t } from "@/lib/i18n";
 
 type PageProps = {
@@ -23,8 +25,11 @@ export default async function WidgetInscricoesPage({ searchParams }: PageProps) 
     select: {
       title: true,
       status: true,
-      inviteOnly: true,
-      publicAccessMode: true,
+      accessPolicies: {
+        orderBy: { policyVersion: "desc" },
+        take: 1,
+        select: { mode: true },
+      },
       padelTournamentConfig: { select: { advancedSettings: true } },
     },
   });
@@ -40,9 +45,9 @@ export default async function WidgetInscricoesPage({ searchParams }: PageProps) 
     eventStatus: event.status,
     competitionState: (event.padelTournamentConfig?.advancedSettings as any)?.competitionState ?? null,
   });
+  const accessMode = resolveEventAccessMode(event.accessPolicies?.[0], EventAccessMode.INVITE_ONLY);
   const isPublicEvent =
-    event.publicAccessMode !== "INVITE" &&
-    !event.inviteOnly &&
+    isPublicAccessMode(accessMode) &&
     ["PUBLISHED", "DATE_CHANGED", "FINISHED", "CANCELLED"].includes(event.status) &&
     competitionState === "PUBLIC";
 

@@ -21,8 +21,6 @@ const TicketTypeStatus = {
 
 type TicketTypeStatus = (typeof TicketTypeStatus)[keyof typeof TicketTypeStatus];
 
-type PublicAccessMode = "OPEN" | "TICKET" | "INVITE";
-type ParticipantAccessMode = "NONE" | "TICKET" | "INSCRIPTION" | "INVITE";
 type LiveHubVisibility = "PUBLIC" | "PRIVATE" | "DISABLED";
 type LocationMode = "OSM" | "MANUAL";
 type LocationSource = "OSM" | "MANUAL";
@@ -116,14 +114,18 @@ type EventEditClientProps = {
     longitude?: number | null;
     templateType: string | null;
     isGratis: boolean;
-    inviteOnly: boolean;
     coverImageUrl: string | null;
     liveHubVisibility: LiveHubVisibility;
     liveStreamUrl: string | null;
-    publicAccessMode: PublicAccessMode;
-    participantAccessMode: ParticipantAccessMode;
-    publicTicketTypeIds: number[];
-    participantTicketTypeIds: number[];
+    accessPolicy?: {
+      mode?: string | null;
+      guestCheckoutAllowed?: boolean | null;
+      inviteTokenAllowed?: boolean | null;
+      inviteIdentityMatch?: string | null;
+      inviteTokenTtlSeconds?: number | null;
+      requiresEntitlementForEntry?: boolean | null;
+      checkinMethods?: string[] | null;
+    } | null;
     payoutMode?: string | null;
   };
   tickets: TicketTypeUI[];
@@ -242,13 +244,11 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
     event.liveHubVisibility ?? "PUBLIC",
   );
   const [liveStreamUrl, setLiveStreamUrl] = useState(event.liveStreamUrl ?? "");
-  const [publicTicketTypeIds, setPublicTicketTypeIds] = useState<number[]>(() => {
-    if (event.publicAccessMode === "INVITE") return [];
-    if (event.publicTicketTypeIds && event.publicTicketTypeIds.length > 0) {
-      return event.publicTicketTypeIds;
-    }
-    return tickets.map((ticket) => ticket.id);
-  });
+  const accessMode =
+    typeof event.accessPolicy?.mode === "string"
+      ? event.accessPolicy.mode.trim().toUpperCase()
+      : "INVITE_ONLY";
+  const isInviteRestricted = accessMode === "INVITE_ONLY";
   const { data: padelEventCategories, mutate: mutatePadelEventCategories } = useSWR<{ ok?: boolean; items?: PadelCategoryLink[] }>(
     isPadel ? `/api/padel/event-categories?eventId=${event.id}` : null,
     fetcher,
@@ -588,15 +588,6 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
     }
   };
 
-  const setTicketVisibility = (id: number, isPublic: boolean) => {
-    setPublicTicketTypeIds((prev) => {
-      if (isPublic) {
-        return prev.includes(id) ? prev : [...prev, id];
-      }
-      return prev.filter((ticketId) => ticketId !== id);
-    });
-  };
-
   const updatePadelCategoryDraft = (categoryId: number, patch: Partial<PadelCategoryDraft>) => {
     setPadelCategoryDrafts((prev) => {
       const current = prev[categoryId] ?? { isEnabled: true, isHidden: false, capacityTeams: "" };
@@ -671,23 +662,21 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
     }
   };
 
-  const hasPublicTickets = publicTicketTypeIds.length > 0 || ticketList.length === 0;
-  const hasInviteOnlyTickets = ticketList.length > 0 && publicTicketTypeIds.length < ticketList.length;
   const accessWarnings = useMemo(() => {
     const warnings: string[] = [];
-    if (!hasPublicTickets && ticketList.length > 0) {
+    if (isInviteRestricted) {
       warnings.push(`${primaryLabelTitle} apenas por convite.`);
     }
-    if (hasInviteOnlyTickets && !publicInvitesLoading && publicInvites.length === 0) {
+    if (isInviteRestricted && !publicInvitesLoading && publicInvites.length === 0) {
       warnings.push("Sem convites de público.");
     }
     return warnings;
-  }, [hasInviteOnlyTickets, hasPublicTickets, publicInvites.length, publicInvitesLoading, ticketList.length]);
+  }, [isInviteRestricted, primaryLabelTitle, publicInvites.length, publicInvitesLoading]);
 
   const inviteGroups = [
     {
       scope: "PUBLIC" as const,
-      enabled: hasInviteOnlyTickets,
+      enabled: isInviteRestricted,
       title: "Convites do público",
       description: `Quem pode ver ${ticketLabelPlural} por convite.`,
       footer: `Convites por email permitem checkout como convidado. ${primaryLabelPlural} grátis continuam a exigir conta e username.`,
@@ -983,9 +972,6 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
       return;
     }
 
-    const hasPublicTickets = publicTicketTypeIds.length > 0 || ticketList.length === 0;
-    const publicAccessMode = hasPublicTickets ? "TICKET" : "INVITE";
-    const publicTicketTypeIdsToSend = hasPublicTickets ? publicTicketTypeIds : [];
     const resolvedLocationSource: LocationSource =
       locationMode === "OSM" && locationProviderId ? "OSM" : "MANUAL";
     const resolvedLocationOverrides =
@@ -1059,12 +1045,9 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
           longitude: resolvedLocationSource === "OSM" ? locationLng : null,
           templateType,
           isGratis,
-          inviteOnly: publicAccessMode === "INVITE",
           coverImageUrl: coverUrl,
           liveHubVisibility,
           liveStreamUrl: liveStreamUrl.trim() || null,
-          publicAccessMode,
-          publicTicketTypeIds: publicTicketTypeIdsToSend,
           ticketTypeUpdates,
           newTicketTypes: newTicketsPayload,
         }),
@@ -1801,7 +1784,6 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
                 ? t.totalQuantity - t.soldQuantity
                 : null;
             const isEnding = endingIds.includes(t.id) || t.status === TicketTypeStatus.CLOSED;
-            const isPublic = publicTicketTypeIds.includes(t.id);
 
             return (
               <div
@@ -1834,29 +1816,6 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
                   >
                     Terminar venda
                   </button>
-                </div>
-                <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-[11px] text-white/75">
-                  <span className="text-[10px] uppercase tracking-[0.18em] text-white/60">Visibilidade</span>
-                  <div className="inline-flex rounded-full border border-white/15 bg-black/30 p-1 text-[10px]">
-                    <button
-                      type="button"
-                      onClick={() => setTicketVisibility(t.id, true)}
-                      className={`rounded-full px-2.5 py-1 font-semibold transition ${
-                        isPublic ? "bg-white text-black shadow" : "text-white/70"
-                      }`}
-                    >
-                      Público
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setTicketVisibility(t.id, false)}
-                      className={`rounded-full px-2.5 py-1 font-semibold transition ${
-                        !isPublic ? "bg-white text-black shadow" : "text-white/70"
-                      }`}
-                    >
-                      Por convite
-                    </button>
-                  </div>
                 </div>
               </div>
             );

@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmail";
 
 export type PlatformFeeConfig = {
   feeBps: number;
@@ -11,7 +12,7 @@ type FeeKeys =
   | "stripe_fee_bps_eu"
   | "stripe_fee_fixed_cents_eu";
 
-type PlatformSettingKey = FeeKeys | "org_transfer_enabled";
+type PlatformSettingKey = FeeKeys | "org_transfer_enabled" | "platform.officialEmail";
 
 const envPlatformFeeBps = process.env.PLATFORM_FEE_BPS ?? process.env.NEXT_PUBLIC_PLATFORM_FEE_BPS;
 const envPlatformFeePercent = process.env.PLATFORM_FEE_PERCENT ?? process.env.NEXT_PUBLIC_PLATFORM_FEE_PERCENT;
@@ -19,6 +20,8 @@ const envPlatformFeeFixedCents =
   process.env.PLATFORM_FEE_FIXED_CENTS ?? process.env.NEXT_PUBLIC_PLATFORM_FEE_FIXED_CENTS;
 const envPlatformFeeFixedEur =
   process.env.PLATFORM_FEE_FIXED_EUR ?? process.env.NEXT_PUBLIC_PLATFORM_FEE_FIXED_EUR;
+const envPlatformOfficialEmail =
+  process.env.PLATFORM_OFFICIAL_EMAIL ?? process.env.NEXT_PUBLIC_PLATFORM_OFFICIAL_EMAIL;
 
 const DEFAULT_PLATFORM_FEE_BPS = Number.isFinite(Number(envPlatformFeeBps))
   ? Number(envPlatformFeeBps)
@@ -33,6 +36,9 @@ const DEFAULT_STRIPE_FEE_BPS_EU = Number.isFinite(Number(process.env.STRIPE_FEE_
 const DEFAULT_STRIPE_FEE_FIXED_CENTS_EU = Number.isFinite(Number(process.env.STRIPE_FEE_FIXED_CENTS_EU))
   ? Number(process.env.STRIPE_FEE_FIXED_CENTS_EU)
   : Math.round(Number(process.env.STRIPE_FEE_FIXED_EUR_EU ?? 0.25) * 100) || 25; // €0.25
+
+const PLATFORM_OFFICIAL_EMAIL_KEY: PlatformSettingKey = "platform.officialEmail";
+const DEFAULT_PLATFORM_OFFICIAL_EMAIL = "admin@orya.pt";
 
 function parseNumber(raw: unknown, fallback: number) {
   const n = Number(raw);
@@ -145,4 +151,23 @@ export async function getPlatformAndStripeFees() {
 export async function getOrgTransferEnabled(): Promise<boolean> {
   const map = await getSettingsMap(["org_transfer_enabled"]);
   return parseBoolean(map["org_transfer_enabled"], false);
+}
+
+export async function getPlatformOfficialEmail(): Promise<string> {
+  const map = await getSettingsMap([PLATFORM_OFFICIAL_EMAIL_KEY]);
+  const stored = normalizeOfficialEmail(map[PLATFORM_OFFICIAL_EMAIL_KEY] ?? null);
+  if (stored) return stored;
+  const envEmail = normalizeOfficialEmail(envPlatformOfficialEmail ?? null);
+  if (envEmail) return envEmail;
+  console.warn("[platformSettings] PLATFORM_OFFICIAL_EMAIL not set; using default admin@orya.pt");
+  return DEFAULT_PLATFORM_OFFICIAL_EMAIL;
+}
+
+export async function setPlatformOfficialEmail(email: string): Promise<string> {
+  const normalized = normalizeOfficialEmail(email);
+  if (!normalized) {
+    throw new Error("INVALID_EMAIL");
+  }
+  await upsertSettings([{ key: PLATFORM_OFFICIAL_EMAIL_KEY, value: normalized }]);
+  return normalized;
 }

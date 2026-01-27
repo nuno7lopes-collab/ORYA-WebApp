@@ -13,6 +13,7 @@ import {
   normalizePadelTieBreakRules,
 } from "@/domain/padel/standings";
 import { enforcePublicRateLimit } from "@/lib/padel/publicRateLimit";
+import { isPublicAccessMode, resolveEventAccessMode } from "@/lib/events/accessPolicy";
 
 async function _GET(req: NextRequest) {
   try {
@@ -32,9 +33,12 @@ async function _GET(req: NextRequest) {
       select: {
         organizationId: true,
         status: true,
-        publicAccessMode: true,
-        inviteOnly: true,
         padelTournamentConfig: { select: { ruleSetId: true, advancedSettings: true } },
+        accessPolicies: {
+          orderBy: { policyVersion: "desc" },
+          take: 1,
+          select: { mode: true },
+        },
       },
     });
     if (!event?.organizationId) {
@@ -52,9 +56,9 @@ async function _GET(req: NextRequest) {
       eventStatus: event.status,
       competitionState: (event.padelTournamentConfig?.advancedSettings as any)?.competitionState ?? null,
     });
+    const accessMode = resolveEventAccessMode(event.accessPolicies?.[0]);
     const isPublicEvent =
-      event.publicAccessMode !== "INVITE" &&
-      !event.inviteOnly &&
+      isPublicAccessMode(accessMode) &&
       ["PUBLISHED", "DATE_CHANGED", "FINISHED", "CANCELLED"].includes(event.status) &&
       competitionState === "PUBLIC";
 

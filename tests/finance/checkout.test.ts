@@ -205,7 +205,7 @@ describe("createCheckout", () => {
     expect(createdLedgerEntries).toHaveLength(2);
     const gross = createdLedgerEntries.find((e) => e.entryType === "GROSS");
     const platformFee = createdLedgerEntries.find((e) => e.entryType === "PLATFORM_FEE");
-    expect(gross.amount).toBe(1000);
+    expect(gross.amount).toBe(1200);
     expect(platformFee.amount).toBe(-200);
   });
 

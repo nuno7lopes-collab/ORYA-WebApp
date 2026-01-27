@@ -19,8 +19,8 @@ async function getOrganizationRole(userId: string, eventId: number) {
     select: { officialEmail: true, officialEmailVerifiedAt: true },
   });
   if (!organization) return null;
-  const emailGate = ensureOrganizationEmailVerified(organization);
-  if (!emailGate.ok) return null;
+  const emailGate = ensureOrganizationEmailVerified(organization, { reasonCode: "TOURNAMENTS_FEATURED_MATCH" });
+  if (!emailGate.ok) return { ...emailGate, status: 403 };
   const profile = await prisma.profile.findUnique({
     where: { id: userId },
     select: { onboardingDone: true, fullName: true, username: true },
@@ -53,6 +53,9 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
   if (!tournament) return jsonWrap({ ok: false, error: "NOT_FOUND" }, { status: 404 });
 
   const organizationRole = await getOrganizationRole(authData.user.id, tournament.eventId);
+  if (organizationRole && typeof organizationRole === "object" && "error" in organizationRole) {
+    return NextResponse.json(organizationRole, { status: organizationRole.status ?? 403 });
+  }
   const liveOperatorRoles: OrganizationMemberRole[] = [
     OrganizationMemberRole.OWNER,
     OrganizationMemberRole.CO_OWNER,

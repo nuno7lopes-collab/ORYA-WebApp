@@ -12,10 +12,14 @@ const mocks = vi.hoisted(() => ({
   updateMany: vi.fn(),
   create: vi.fn(),
   transaction: vi.fn(),
+  findOrganization: vi.fn(),
 }));
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
+    organization: {
+      findUnique: mocks.findOrganization,
+    },
     organizationOwnerTransfer: {
       updateMany: mocks.updateMany,
       create: mocks.create,
@@ -76,6 +80,10 @@ describe("owner transfer initiate", () => {
   it("cria transferência e escreve outbox/eventlog", async () => {
     mocks.getUser.mockResolvedValue({ data: { user: { id: "u1" } }, error: null });
     mocks.resolveGroupMemberForOrg.mockResolvedValue({ role: "OWNER", groupId: 9 });
+    mocks.findOrganization.mockResolvedValue({
+      officialEmail: "owner@org.pt",
+      officialEmailVerifiedAt: new Date(),
+    });
     mocks.resolveUserIdentifier.mockResolvedValue({ userId: "u2" });
     mocks.recordOutboxEvent.mockResolvedValue({ eventId: "evt-1" });
     mocks.transaction.mockImplementation(async (fn: any) =>
@@ -108,6 +116,10 @@ describe("owner transfer initiate", () => {
   it("se já houver pending (P2002), falha 409", async () => {
     mocks.getUser.mockResolvedValue({ data: { user: { id: "u1" } }, error: null });
     mocks.resolveGroupMemberForOrg.mockResolvedValue({ role: "OWNER", groupId: 9 });
+    mocks.findOrganization.mockResolvedValue({
+      officialEmail: "owner@org.pt",
+      officialEmailVerifiedAt: new Date(),
+    });
     mocks.resolveUserIdentifier.mockResolvedValue({ userId: "u2" });
     mocks.transaction.mockRejectedValue(
       new Prisma.PrismaClientKnownRequestError("dup", {

@@ -8,6 +8,7 @@ import { sendImportantUpdateEmail } from "@/lib/emailSender";
 import { getAppBaseUrl } from "@/lib/appBaseUrl";
 import { PendingPayoutStatus, Prisma, NotificationType } from "@prisma/client";
 import { logFinanceError } from "@/lib/observability/finance";
+import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmail";
 
 type ReleaseResult = {
   id: number;
@@ -76,7 +77,8 @@ function resolveAlertsTarget(org: {
   officialEmailVerifiedAt?: Date | null;
   alertsEmail?: string | null;
 }) {
-  if (org.officialEmailVerifiedAt && org.officialEmail) return org.officialEmail;
+  const normalized = normalizeOfficialEmail(org.officialEmail ?? null);
+  if (org.officialEmailVerifiedAt && normalized) return normalized;
   if (typeof org.alertsEmail === "string" && org.alertsEmail.trim().length > 0) {
     return org.alertsEmail.trim();
   }

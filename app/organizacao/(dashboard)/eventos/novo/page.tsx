@@ -22,6 +22,7 @@ import { OrganizationMemberRole, OrganizationModule, OrganizationRolePack } from
 import { parseOrganizationModules, resolvePrimaryModule } from "@/lib/organizationCategories";
 import { fetchGeoAutocomplete, fetchGeoDetails } from "@/lib/geo/client";
 import { AppleMapsLoader } from "@/app/components/maps/AppleMapsLoader";
+import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmail";
 import type { GeoAutocompleteItem, GeoDetailsItem } from "@/lib/geo/provider";
 
 type TicketTypeRow = {
@@ -504,12 +505,16 @@ export default function NewOrganizationEventPage({
   const timeSlots = useMemo(() => buildTimeSlots(), []);
   const startCalendarCells = useMemo(() => buildCalendarCells(startCalendarView), [startCalendarView]);
   const endCalendarCells = useMemo(() => buildCalendarCells(endCalendarView), [endCalendarView]);
-  const organizationOfficialEmail =
-    (organizationStatus?.organization as { officialEmail?: string | null } | null)?.officialEmail ?? null;
-  const organizationOfficialEmailVerified = Boolean(
-    (organizationStatus?.organization as { officialEmailVerifiedAt?: string | null } | null)?.officialEmailVerifiedAt,
+  const organizationOfficialEmailNormalized = normalizeOfficialEmail(
+    (organizationStatus?.organization as { officialEmail?: string | null } | null)?.officialEmail ?? null,
   );
-  const needsOfficialEmailVerification = !isAdmin && (!organizationOfficialEmail || !organizationOfficialEmailVerified);
+  const organizationOfficialEmailVerifiedAt =
+    (organizationStatus?.organization as { officialEmailVerifiedAt?: string | null } | null)?.officialEmailVerifiedAt ??
+    null;
+  const organizationOfficialEmailVerified = Boolean(
+    organizationOfficialEmailNormalized && organizationOfficialEmailVerifiedAt,
+  );
+  const needsOfficialEmailVerification = !isAdmin && !organizationOfficialEmailVerified;
   const stripeNotReady = !isAdmin && paymentsStatus !== "READY";
   const paidTicketsBlocked = stripeNotReady || needsOfficialEmailVerification;
   const paidTicketsBlockedMessage = useMemo(() => {
@@ -518,7 +523,7 @@ export default function NewOrganizationEventPage({
     if (stripeNotReady) actions.push("liga o Stripe");
     if (needsOfficialEmailVerification) {
       actions.push(
-        organizationOfficialEmail ? "verifica o email oficial" : "define e verifica o email oficial",
+        organizationOfficialEmailNormalized ? "verifica o email oficial" : "define e verifica o email oficial",
       );
     }
     const actionsText = actions.join(" e ");
@@ -1858,12 +1863,12 @@ export default function NewOrganizationEventPage({
     if (ticketTypes.length === 0) return true;
     return ticketTypes.some((ticket) => ticket.publicAccess !== false);
   }, [isGratisEvent, freeTicketPublicAccess, ticketTypes]);
-  const hasInviteOnlyTickets = useMemo(() => {
+  const hasInviteRestrictedTickets = useMemo(() => {
     if (isGratisEvent) return !freeTicketPublicAccess;
     if (ticketTypes.length === 0) return false;
     return ticketTypes.some((ticket) => ticket.publicAccess === false);
   }, [isGratisEvent, freeTicketPublicAccess, ticketTypes]);
-  const accessSummary = hasInviteOnlyTickets
+  const accessSummary = hasInviteRestrictedTickets
     ? hasPublicTickets
       ? "Misto"
       : "Convite"
@@ -2452,12 +2457,18 @@ export default function NewOrganizationEventPage({
         };
       });
       const hasTicketsPayload = preparedTickets.length > 0;
-      const hasPublicTicket =
-        !hasTicketsPayload || preparedTickets.some((ticket) => ticket.publicAccess);
-      const publicAccessMode = hasTicketsPayload ? (hasPublicTicket ? "TICKET" : "INVITE") : "OPEN";
-      const publicTicketScope = hasTicketsPayload ? "SPECIFIC" : "ALL";
-      const participantAccessMode = hasTicketsPayload ? "TICKET" : "NONE";
-      const participantTicketScope = hasTicketsPayload ? "SPECIFIC" : "ALL";
+      const hasInviteRestrictedTickets =
+        hasTicketsPayload && preparedTickets.some((ticket) => ticket.publicAccess === false);
+      const accessMode = hasInviteRestrictedTickets ? "INVITE_ONLY" : "PUBLIC";
+      const accessPolicy = {
+        mode: accessMode,
+        guestCheckoutAllowed: false,
+        inviteTokenAllowed: accessMode === "INVITE_ONLY",
+        inviteIdentityMatch: "BOTH",
+        inviteTokenTtlSeconds: accessMode === "INVITE_ONLY" ? 60 * 60 * 24 * 7 : null,
+        requiresEntitlementForEntry: false,
+        checkinMethods: selectedPreset === "padel" ? ["QR_REGISTRATION"] : ["QR_TICKET"],
+      };
       const resolvedLocationSource: LocationSource =
         locationMode === "OSM" && locationProviderId ? "OSM" : "MANUAL";
       const resolvedLocationOverrides =
@@ -2511,11 +2522,7 @@ export default function NewOrganizationEventPage({
         longitude: resolvedLocationSource === "OSM" ? locationLng : null,
         ticketTypes: preparedTickets,
         coverImageUrl: coverUrl,
-        inviteOnly: publicAccessMode === "INVITE",
-        publicAccessMode,
-        participantAccessMode,
-        publicTicketScope,
-        participantTicketScope,
+        accessPolicy,
         liveHubVisibility,
         payoutMode: isPlatformPayout || (stripeNotReady && hasPaidTicket) ? "PLATFORM" : "ORGANIZATION",
         padel:
@@ -3704,7 +3711,7 @@ export default function NewOrganizationEventPage({
         </div>
       )}
 
-      {hasInviteOnlyTickets && (
+      {hasInviteRestrictedTickets && (
         <div className="rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-[12px] text-white/70">
           {ticketLabelPluralCap} por convite exigem convites adicionados depois de criares o {primaryLabel}.
         </div>

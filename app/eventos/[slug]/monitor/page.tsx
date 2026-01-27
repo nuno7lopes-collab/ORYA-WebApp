@@ -1,6 +1,8 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { resolvePadelCompetitionState } from "@/domain/padelCompetitionState";
+import { EventAccessMode } from "@prisma/client";
+import { isPublicAccessMode, resolveEventAccessMode } from "@/lib/events/accessPolicy";
 import { formatTime, resolveLocale, t } from "@/lib/i18n";
 
 type PageProps = {
@@ -34,10 +36,13 @@ export default async function PadelMonitorPage({ params, searchParams }: PagePro
       id: true,
       title: true,
       status: true,
-      publicAccessMode: true,
-      inviteOnly: true,
       timezone: true,
       padelTournamentConfig: { select: { advancedSettings: true } },
+      accessPolicies: {
+        orderBy: { policyVersion: "desc" },
+        take: 1,
+        select: { mode: true },
+      },
     },
   });
   if (!event) notFound();
@@ -46,9 +51,9 @@ export default async function PadelMonitorPage({ params, searchParams }: PagePro
     eventStatus: event.status,
     competitionState: (event.padelTournamentConfig?.advancedSettings as any)?.competitionState ?? null,
   });
+  const accessMode = resolveEventAccessMode(event.accessPolicies?.[0], EventAccessMode.INVITE_ONLY);
   const isPublicEvent =
-    event.publicAccessMode !== "INVITE" &&
-    !event.inviteOnly &&
+    isPublicAccessMode(accessMode) &&
     ["PUBLISHED", "DATE_CHANGED", "FINISHED", "CANCELLED"].includes(event.status) &&
     competitionState === "PUBLIC";
   if (!isPublicEvent) notFound();

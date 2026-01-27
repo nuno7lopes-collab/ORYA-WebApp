@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { ORG_SHELL_GUTTER } from "@/app/organizacao/layoutTokens";
 import OrganizationTopBar from "@/app/organizacao/OrganizationTopBar";
+import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmail";
 
 export type OrganizationShellOrgOption = {
   organizationId: number;
@@ -82,6 +83,7 @@ export default function OrganizationDashboardShell({
   role,
   isSuspended,
   emailVerification,
+  platformOfficialEmail,
   children,
 }: {
   activeOrg: OrganizationShellActiveOrg | null;
@@ -90,6 +92,7 @@ export default function OrganizationDashboardShell({
   role?: string | null;
   isSuspended: boolean;
   emailVerification?: { isVerified: boolean; email: string | null } | null;
+  platformOfficialEmail?: string | null;
   children: ReactNode;
 }) {
   const pathname = usePathname();
@@ -119,9 +122,8 @@ export default function OrganizationDashboardShell({
         if (!orgMeUrl) return;
         const res = await fetch(orgMeUrl, { cache: "no-store" });
         const json = await res.json().catch(() => null);
-        const verified = Boolean(
-          json?.organization?.officialEmail && json?.organization?.officialEmailVerifiedAt,
-        );
+        const officialEmailNormalized = normalizeOfficialEmail(json?.organization?.officialEmail ?? null);
+        const verified = Boolean(officialEmailNormalized && json?.organization?.officialEmailVerifiedAt);
         if (isMounted && verified) {
           setEmailGateDismissed(true);
           setEmailGateToast({
@@ -224,14 +226,21 @@ export default function OrganizationDashboardShell({
                 <div className="space-y-1">
                   <p className="font-semibold">Organizacao suspensa.</p>
                   <p className="text-[12px] text-amber-100/80">
-                    Apenas leitura. Se precisares de ajuda, contacta{" "}
-                    <a
-                      href="mailto:oryapt@gmail.com"
-                      className="underline decoration-amber-200/70 underline-offset-4"
-                    >
-                      oryapt@gmail.com
-                    </a>
-                    .
+                    Apenas leitura. Se precisares de ajuda,{" "}
+                    {platformOfficialEmail ? (
+                      <>
+                        contacta{" "}
+                        <a
+                          href={`mailto:${platformOfficialEmail}`}
+                          className="underline decoration-amber-200/70 underline-offset-4"
+                        >
+                          {platformOfficialEmail}
+                        </a>
+                        .
+                      </>
+                    ) : (
+                      "contacta o suporte."
+                    )}
                   </p>
                 </div>
               </div>

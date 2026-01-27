@@ -63,7 +63,7 @@ export default function NovoServicoPage() {
 
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
-        throw new Error(json?.error || "Erro ao criar serviço.");
+        throw new Error(json?.message || json?.error || "Erro ao criar serviço.");
       }
 
       router.push(`/organizacao/reservas/${json.service.id}`);

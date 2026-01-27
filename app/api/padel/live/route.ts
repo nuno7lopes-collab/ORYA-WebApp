@@ -12,6 +12,7 @@ import {
   normalizePadelTieBreakRules,
 } from "@/domain/padel/standings";
 import { enforcePublicRateLimit } from "@/lib/padel/publicRateLimit";
+import { isPublicAccessMode, resolveEventAccessMode } from "@/lib/events/accessPolicy";
 
 const REFRESH_MS = 15000;
 
@@ -24,9 +25,12 @@ async function buildPayload(eventId: number, categoryId?: number | null) {
       select: {
         id: true,
         status: true,
-        publicAccessMode: true,
-        inviteOnly: true,
         padelTournamentConfig: { select: { ruleSetId: true, advancedSettings: true } },
+        accessPolicies: {
+          orderBy: { policyVersion: "desc" },
+          take: 1,
+          select: { mode: true },
+        },
       },
     }),
     prisma.padelMatch.findMany({
@@ -46,13 +50,13 @@ async function buildPayload(eventId: number, categoryId?: number | null) {
 
   if (!event) return { error: "EVENT_NOT_FOUND" as const };
 
+  const accessMode = resolveEventAccessMode(event.accessPolicies?.[0]);
   const competitionState = resolvePadelCompetitionState({
     eventStatus: event.status,
     competitionState: (event.padelTournamentConfig?.advancedSettings as any)?.competitionState ?? null,
   });
   const isPublicEvent =
-    event.publicAccessMode !== "INVITE" &&
-    !event.inviteOnly &&
+    isPublicAccessMode(accessMode) &&
     ["PUBLISHED", "DATE_CHANGED", "FINISHED", "CANCELLED"].includes(event.status) &&
     competitionState === "PUBLIC";
   if (!isPublicEvent) return { error: "FORBIDDEN" as const };

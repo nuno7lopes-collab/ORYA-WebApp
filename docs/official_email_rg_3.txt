@@ -1,0 +1,314 @@
+lib/organizationPayments.ts:6:  officialEmailVerifiedAt?: Date | string | null;
+lib/organizationPayments.ts:20:  const emailVerified = Boolean(normalizeOfficialEmail(input.officialEmail ?? null) && input.officialEmailVerifiedAt);
+lib/reservas/access.ts:3:import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
+lib/reservas/access.ts:9:  officialEmailVerifiedAt?: Date | string | null;
+lib/reservas/access.ts:15:  options?: { requireVerifiedEmail?: boolean; reasonCode?: string },
+lib/reservas/access.ts:17:  if (options?.requireVerifiedEmail) {
+lib/reservas/access.ts:18:    const emailGate = ensureOrganizationEmailVerified(organization, {
+lib/loja/access.ts:3:import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
+lib/loja/access.ts:9:  officialEmailVerifiedAt?: Date | string | null;
+lib/loja/access.ts:15:  options?: { requireVerifiedEmail?: boolean; reasonCode?: string },
+lib/loja/access.ts:17:  if (options?.requireVerifiedEmail) {
+lib/loja/access.ts:18:    const emailGate = ensureOrganizationEmailVerified(organization, {
+lib/organizationContext.ts:28:  officialEmailVerifiedAt: true,
+lib/organizationContext.ts:52:  officialEmailVerifiedAt: true,
+app/[username]/page.tsx:362:        officialEmailVerifiedAt: true,
+app/[username]/page.tsx:419:    const isVerified = Boolean(organizationProfile.officialEmailVerifiedAt);
+app/[username]/page.tsx:445:      officialEmailVerifiedAt: organizationProfile.officialEmailVerifiedAt ?? null,
+lib/organizationWriteAccess.ts:7:  officialEmailVerifiedAt?: Date | string | null;
+lib/organizationWriteAccess.ts:39:export function isOfficialEmailVerified(org: OrganizationWriteContext) {
+lib/organizationWriteAccess.ts:41:  return Boolean(normalized && org.officialEmailVerifiedAt);
+lib/organizationWriteAccess.ts:44:export function ensureOrganizationEmailVerified(
+lib/organizationWriteAccess.ts:59:  if (!org.officialEmailVerifiedAt) {
+lib/organizationWriteAccess.ts:72:export async function requireOfficialEmailVerified(params: {
+lib/organizationWriteAccess.ts:83:      select: { officialEmail: true, officialEmailVerifiedAt: true },
+lib/organizationWriteAccess.ts:88:  return ensureOrganizationEmailVerified(org, { reasonCode });
+lib/organizationWriteAccess.ts:112:  opts?: { requireStripeForServices?: boolean; reasonCode?: string; skipEmailGate?: boolean },
+lib/organizationWriteAccess.ts:115:    const emailGate = ensureOrganizationEmailVerified(org, { reasonCode: opts?.reasonCode });
+lib/payments/releaseWorker.ts:77:  officialEmailVerifiedAt?: Date | null;
+lib/payments/releaseWorker.ts:81:  if (org.officialEmailVerifiedAt && normalized) return normalized;
+lib/payments/releaseWorker.ts:127:          officialEmailVerifiedAt: true,
+domain/organization/ownerTransferOutbox.ts:16:async function ensureEmailDedupe(dedupeKey: string, recipient: string) {
+domain/organization/ownerTransferOutbox.ts:51:    const shouldSend = await ensureEmailDedupe(dedupeKey, targetEmail);
+domain/organization/ownerTransferOutbox.ts:83:    const shouldSend = await ensureEmailDedupe(dedupeKey, fromEmail);
+lib/crm/campaignSend.ts:278:          select: { publicName: true, officialEmail: true, officialEmailVerifiedAt: true },
+lib/crm/campaignSend.ts:282:    const replyTo = organization?.officialEmailVerifiedAt ? organization?.officialEmail ?? null : null;
+app/admin/organizacoes/page.tsx:28:  officialEmailVerifiedAt?: string | null;
+app/admin/organizacoes/page.tsx:300:                officialEmailVerifiedAt: data.organization?.officialEmailVerifiedAt ?? new Date().toISOString(),
+app/admin/organizacoes/page.tsx:480:                Boolean(org.officialEmailVerifiedAt);
+app/api/servicos/[id]/slots/route.ts:77:            officialEmailVerifiedAt: true,
+app/api/servicos/[id]/slots/route.ts:96:        officialEmailVerifiedAt: service.organization?.officialEmailVerifiedAt ?? null,
+app/api/payments/intent/route.ts:993:        officialEmailVerifiedAt: event.org_official_email_verified_at ?? null,
+app/api/organizacao/servicos/[id]/route.ts:391:      requireVerifiedEmail: true,
+app/organizacao/(dashboard)/settings/page.tsx:35:    officialEmailVerifiedAt?: string | null;
+app/organizacao/(dashboard)/settings/page.tsx:110:  const officialEmailVerifiedAt = organization?.officialEmailVerifiedAt ? new Date(organization.officialEmailVerifiedAt) : null;
+app/organizacao/(dashboard)/settings/page.tsx:111:  const officialEmailStatusLabel = officialEmailVerifiedAt
+app/organizacao/(dashboard)/settings/page.tsx:112:    ? `Verificado ${officialEmailVerifiedAt.toLocaleDateString()}`
+app/organizacao/(dashboard)/settings/page.tsx:116:  const officialEmailBadgeClass = officialEmailVerifiedAt
+app/organizacao/(dashboard)/settings/page.tsx:324:              {!officialEmailVerifiedAt && organization?.officialEmail && (
+app/organizacao/(dashboard)/settings/page.tsx:339:                  {officialEmailSaving ? "A enviar…" : officialEmailVerifiedAt ? "Revalidar email" : "Enviar verificação"}
+app/organizacao/(dashboard)/settings/page.tsx:343:              {(!organization?.officialEmail || !officialEmailVerifiedAt) && (
+app/organizacao/OrganizationPublicProfilePanel.tsx:234:  officialEmailVerifiedAt?: string | Date | null;
+app/api/servicos/[id]/route.ts:71:            officialEmailVerifiedAt: true,
+app/api/servicos/[id]/route.ts:85:        officialEmailVerifiedAt: service.organization?.officialEmailVerifiedAt ?? null,
+app/api/servicos/[id]/route.ts:114:      officialEmailVerifiedAt: _officialEmailVerifiedAt,
+app/organizacao/DashboardClient.tsx:253:  officialEmailVerifiedAt?: string | null;
+app/organizacao/DashboardClient.tsx:1590:  const officialEmailVerified = Boolean(organization?.officialEmail && organization?.officialEmailVerifiedAt);
+app/organizacao/DashboardClient.tsx:1631:      done: officialEmailVerified,
+app/api/servicos/[id]/disponibilidade/route.ts:111:            officialEmailVerifiedAt: true,
+app/api/servicos/[id]/disponibilidade/route.ts:130:        officialEmailVerifiedAt: service.organization?.officialEmailVerifiedAt ?? null,
+app/api/servicos/[id]/reservar/route.ts:128:            officialEmailVerifiedAt: true,
+app/api/servicos/[id]/reservar/route.ts:147:        officialEmailVerifiedAt: service.organization?.officialEmailVerifiedAt ?? null,
+app/api/servicos/[id]/checkout/route.ts:72:                officialEmailVerifiedAt: true,
+app/api/servicos/[id]/checkout/route.ts:151:        officialEmailVerifiedAt: booking.service.organization.officialEmailVerifiedAt ?? null,
+app/organizacao/OrganizationTopBar.tsx:68:    officialEmailVerifiedAt?: string | null;
+app/organizacao/OrganizationTopBar.tsx:312:    const emailVerified = Boolean(orgData.organization?.officialEmailVerifiedAt);
+app/organizacao/OrganizationTopBar.tsx:340:    const officialEmailVerifiedAt = orgData.organization?.officialEmailVerifiedAt ?? null;
+app/organizacao/OrganizationTopBar.tsx:345:    if (!officialEmailVerifiedAt) {
+app/api/servicos/[id]/creditos/checkout/route.ts:70:            officialEmailVerifiedAt: true,
+app/api/servicos/[id]/creditos/checkout/route.ts:116:      officialEmailVerifiedAt: service.organization.officialEmailVerifiedAt ?? null,
+app/organizacao/OrganizationDashboardShell.tsx:113:          json?.organization?.officialEmail && json?.organization?.officialEmailVerifiedAt,
+app/api/servicos/[id]/calendario/route.ts:94:            officialEmailVerifiedAt: true,
+app/api/servicos/[id]/calendario/route.ts:113:        officialEmailVerifiedAt: service.organization?.officialEmailVerifiedAt ?? null,
+app/api/organizacao/me/route.ts:15:import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
+app/api/organizacao/me/route.ts:131:          officialEmailVerifiedAt: (organization as { officialEmailVerifiedAt?: Date | null }).officialEmailVerifiedAt ?? null,
+app/api/organizacao/me/route.ts:350:    const emailGate = ensureOrganizationEmailVerified(organization, { reasonCode: "ORG_SETTINGS" });
+app/api/organizacao/me/route.ts:625:      organization && (organization as { officialEmailVerifiedAt?: Date | null })?.officialEmailVerifiedAt
+app/api/servicos/list/route.ts:140:            officialEmailVerifiedAt: { not: null },
+app/organizacao/(dashboard)/eventos/novo/page.tsx:234:      officialEmailVerifiedAt?: string | null;
+app/organizacao/(dashboard)/eventos/novo/page.tsx:503:    (organizationStatus?.organization as { officialEmailVerifiedAt?: string | null } | null)?.officialEmailVerifiedAt,
+app/api/organizacao/events/create/route.ts:443:        officialEmailVerifiedAt: organization?.officialEmailVerifiedAt ?? null,
+app/api/organizacao/events/[id]/invites/route.ts:8:import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
+app/api/organizacao/events/[id]/invites/route.ts:56:  options?: { requireVerifiedEmail?: boolean },
+app/api/organizacao/events/[id]/invites/route.ts:62:      organization: { select: { officialEmail: true, officialEmailVerifiedAt: true } },
+app/api/organizacao/events/[id]/invites/route.ts:107:  if (options?.requireVerifiedEmail && event.organization) {
+app/api/organizacao/events/[id]/invites/route.ts:108:    const emailGate = ensureOrganizationEmailVerified(event.organization, { reasonCode: "EVENTS_INVITES" });
+app/api/organizacao/events/[id]/invites/route.ts:127:    const access = await ensureInviteAccess(user.id, eventId, { requireVerifiedEmail: true });
+app/api/organizacao/events/[id]/invites/route.ts:179:    const access = await ensureInviteAccess(user.id, eventId, { requireVerifiedEmail: true });
+app/api/organizacao/padel/imports/inscritos/route.ts:19:import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
+app/api/organizacao/padel/imports/inscritos/route.ts:86:  const emailGate = ensureOrganizationEmailVerified(organization, { reasonCode: "PADEL_IMPORTS" });
+app/api/organizacao/events/[id]/invite-token/route.ts:9:import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
+app/api/organizacao/events/[id]/invite-token/route.ts:35:        organization: { select: { officialEmail: true, officialEmailVerifiedAt: true } },
+app/api/organizacao/events/[id]/invite-token/route.ts:56:      const emailGate = ensureOrganizationEmailVerified(event.organization, { reasonCode: "EVENTS_INVITE_TOKEN" });
+app/organizacao/(dashboard)/layout.tsx:32:    officialEmailVerifiedAt?: Date | null;
+app/organizacao/(dashboard)/layout.tsx:90:          officialEmailVerifiedAt: (organization as { officialEmailVerifiedAt?: Date | null }).officialEmailVerifiedAt ?? null,
+app/organizacao/(dashboard)/layout.tsx:130:            officialEmailVerifiedAt: (m.organization as { officialEmailVerifiedAt?: Date | null }).officialEmailVerifiedAt ?? null,
+app/organizacao/(dashboard)/layout.tsx:155:  const officialEmailVerifiedAt =
+app/organizacao/(dashboard)/layout.tsx:156:    (activeOrganization as { officialEmailVerifiedAt?: Date | null })?.officialEmailVerifiedAt ?? null;
+app/organizacao/(dashboard)/layout.tsx:157:  const isEmailVerified = Boolean(officialEmail && officialEmailVerifiedAt);
+app/api/organizacao/reservas/[id]/reschedule/route.ts:106:      requireVerifiedEmail: true,
+app/api/organizacao/reservas/[id]/checkout/route.ts:62:                officialEmailVerifiedAt: true,
+app/api/organizacao/reservas/[id]/checkout/route.ts:88:      requireVerifiedEmail: true,
+app/api/organizacao/reservas/[id]/checkout/route.ts:136:        officialEmailVerifiedAt: booking.service.organization.officialEmailVerifiedAt ?? null,
+app/api/organizacao/events/update/route.ts:25:import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
+app/api/organizacao/events/update/route.ts:172:        officialEmailVerifiedAt?: Date | null;
+app/api/organizacao/events/update/route.ts:211:                  officialEmailVerifiedAt: true,
+app/api/organizacao/events/update/route.ts:285:                    officialEmailVerifiedAt: organizationRows[0].official_email_verified_at,
+app/api/organizacao/events/update/route.ts:352:      const emailGate = ensureOrganizationEmailVerified(event.organization, { reasonCode: "EVENTS_UPDATE" });
+app/api/organizacao/events/update/route.ts:574:        officialEmailVerifiedAt: organization?.officialEmailVerifiedAt ?? null,
+app/api/organizacao/padel/mix/create/route.ts:10:import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
+app/api/organizacao/padel/mix/create/route.ts:73:    const emailGate = ensureOrganizationEmailVerified(organization, { reasonCode: "PADEL_MIX" });
+app/api/organizacao/servicos/[id]/disponibilidade/route.ts:199:      requireVerifiedEmail: true,
+app/api/organizacao/padel/waitlist/promote/route.ts:4:import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
+app/api/organizacao/padel/waitlist/promote/route.ts:14:      organization: { select: { officialEmail: true, officialEmailVerifiedAt: true } },
+app/api/organizacao/padel/waitlist/promote/route.ts:18:  const emailGate = ensureOrganizationEmailVerified(evt.organization ?? {}, { reasonCode: "PADEL_WAITLIST" });
+app/api/store/checkout/route.ts:556:            officialEmailVerifiedAt: true,
+app/api/store/checkout/route.ts:569:        officialEmailVerifiedAt: organization.officialEmailVerifiedAt ?? null,
+app/api/organizacao/organizations/members/invites/route.ts:16:import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
+app/api/organizacao/organizations/members/invites/route.ts:299:      select: { officialEmail: true, officialEmailVerifiedAt: true },
+app/api/organizacao/organizations/members/invites/route.ts:301:    const emailGate = ensureOrganizationEmailVerified(organization ?? {}, { reasonCode: "ORG_MEMBER_INVITES" });
+app/api/organizacao/organizations/members/invites/route.ts:535:      select: { officialEmail: true, officialEmailVerifiedAt: true },
+app/api/organizacao/organizations/members/invites/route.ts:537:    const emailGate = ensureOrganizationEmailVerified(organization ?? {}, { reasonCode: "ORG_MEMBER_INVITES" });
+app/api/organizacao/organizations/members/route.ts:9:import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
+app/api/organizacao/organizations/members/route.ts:129:      select: { officialEmail: true, officialEmailVerifiedAt: true },
+app/api/organizacao/organizations/members/route.ts:131:    const emailGate = ensureOrganizationEmailVerified(organization ?? {}, { reasonCode: "ORG_MEMBERS" });
+app/api/organizacao/organizations/members/route.ts:320:      select: { officialEmail: true, officialEmailVerifiedAt: true },
+app/api/organizacao/organizations/members/route.ts:322:    const emailGate = ensureOrganizationEmailVerified(organization ?? {}, { reasonCode: "ORG_MEMBERS" });
+app/api/organizacao/organizations/settings/official-email/route.ts:51:        officialEmailVerifiedAt: true,
+app/api/organizacao/organizations/settings/official-email/route.ts:61:    if (organization.officialEmailVerifiedAt && currentNormalized === emailNormalized) {
+app/api/organizacao/organizations/settings/official-email/route.ts:89:        data: { officialEmail: emailNormalized, officialEmailVerifiedAt: null },
+app/api/organizacao/organizations/settings/official-email/confirm/route.ts:72:        data: { officialEmail: normalizedEmail, officialEmailVerifiedAt: now },
+app/api/organizacao/policies/[id]/route.ts:8:import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
+app/api/organizacao/policies/[id]/route.ts:53:    const emailGate = ensureOrganizationEmailVerified(organization, { reasonCode: "POLICIES" });
+app/api/organizacao/policies/[id]/route.ts:143:    const emailGate = ensureOrganizationEmailVerified(organization, { reasonCode: "POLICIES" });
+app/api/organizacao/policies/route.ts:9:import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
+app/api/organizacao/policies/route.ts:47:    const emailGate = ensureOrganizationEmailVerified(organization, { reasonCode: "POLICIES" });
+app/api/organizacao/reservas/route.ts:218:      requireVerifiedEmail: true,
+app/api/organizacao/reservas/profissionais/[id]/route.ts:57:      requireVerifiedEmail: true,
+app/api/organizacao/reservas/profissionais/[id]/route.ts:149:      requireVerifiedEmail: true,
+app/api/organizacao/reservas/disponibilidade/route.ts:173:      requireVerifiedEmail: true,
+app/api/organizacao/reservas/profissionais/route.ts:117:      requireVerifiedEmail: true,
+app/api/organizacao/reservas/recursos/[id]/route.ts:50:      requireVerifiedEmail: true,
+app/api/organizacao/reservas/recursos/[id]/route.ts:126:      requireVerifiedEmail: true,
+app/api/organizacao/reservas/[id]/cancel/route.ts:63:      requireVerifiedEmail: true,
+app/api/organizacao/reservas/recursos/route.ts:83:      requireVerifiedEmail: true,
+app/api/organizacao/reservas/[id]/no-show/route.ts:61:      requireVerifiedEmail: true,
+app/api/organizacao/checkin/route.ts:7:import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
+app/api/organizacao/checkin/route.ts:36:    select: { officialEmail: true, officialEmailVerifiedAt: true },
+app/api/organizacao/checkin/route.ts:39:  const emailGate = ensureOrganizationEmailVerified(organization, { reasonCode: "CHECKIN" });
+app/api/organizacao/finance/exports/payouts/route.ts:12:import { requireOfficialEmailVerified } from "@/lib/organizationWriteAccess";
+app/api/organizacao/finance/exports/payouts/route.ts:41:  const emailGate = await requireOfficialEmailVerified({
+app/api/organizacao/loja/bundles/[id]/items/route.ts:25:async function getOrganizationContext(req: NextRequest, userId: string, options?: { requireVerifiedEmail?: boolean }) {
+app/api/organizacao/loja/bundles/[id]/items/route.ts:81:    const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
+app/api/organizacao/loja/bundles/[id]/items/route.ts:129:    const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
+app/api/organizacao/servicos/[id]/disponibilidade/[availabilityId]/route.ts:59:      requireVerifiedEmail: true,
+app/api/organizacao/loja/bundles/[id]/items/[itemId]/route.ts:27:async function getOrganizationContext(req: NextRequest, userId: string, options?: { requireVerifiedEmail?: boolean }) {
+app/api/organizacao/loja/bundles/[id]/items/[itemId]/route.ts:86:    const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
+app/api/organizacao/loja/bundles/[id]/items/[itemId]/route.ts:189:    const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
+app/api/organizacao/inscricoes/[id]/submissions/route.ts:6:import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
+app/api/organizacao/inscricoes/[id]/submissions/route.ts:39:    const emailGate = ensureOrganizationEmailVerified(organization, { reasonCode: "INSCRICOES" });
+app/api/organizacao/servicos/route.ts:10:import { ensureOrganizationWriteAccess, requireOfficialEmailVerified } from "@/lib/organizationWriteAccess";
+app/api/organizacao/servicos/route.ts:124:    const emailGate = await requireOfficialEmailVerified({
+app/api/organizacao/reservas/disponibilidade/[overrideId]/route.ts:46:      requireVerifiedEmail: true,
+app/api/organizacao/finance/exports/fees/route.ts:12:import { requireOfficialEmailVerified } from "@/lib/organizationWriteAccess";
+app/api/organizacao/finance/exports/fees/route.ts:41:  const emailGate = await requireOfficialEmailVerified({
+app/api/organizacao/finance/exports/ledger/route.ts:12:import { requireOfficialEmailVerified } from "@/lib/organizationWriteAccess";
+app/api/organizacao/finance/exports/ledger/route.ts:41:  const emailGate = await requireOfficialEmailVerified({
+app/api/organizacao/loja/shipping/tiers/[tierId]/route.ts:39:async function getOrganizationContext(req: NextRequest, userId: string, options?: { requireVerifiedEmail?: boolean }) {
+app/api/organizacao/loja/shipping/tiers/[tierId]/route.ts:76:    const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
+app/api/organizacao/loja/shipping/tiers/[tierId]/route.ts:121:    const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
+app/api/organizacao/loja/shipping/tiers/[tierId]/route.ts:215:    const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
+app/api/organizacao/promo/route.ts:7:import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
+app/api/organizacao/promo/route.ts:49:    const emailGate = ensureOrganizationEmailVerified(ctx.organization, { reasonCode: "PROMO" });
+app/api/organizacao/promo/route.ts:240:    const emailGate = ensureOrganizationEmailVerified(ctx.organization, { reasonCode: "PROMO" });
+app/api/organizacao/promo/route.ts:388:    const emailGate = ensureOrganizationEmailVerified(ctx.organization, { reasonCode: "PROMO" });
+app/api/organizacao/loja/shipping/zones/route.ts:32:async function getOrganizationContext(req: NextRequest, userId: string, options?: { requireVerifiedEmail?: boolean }) {
+app/api/organizacao/loja/shipping/zones/route.ts:69:    const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
+app/api/organizacao/loja/shipping/zones/route.ts:104:    const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
+app/api/organizacao/checkin/preview/route.ts:7:import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
+app/api/organizacao/checkin/preview/route.ts:35:    select: { officialEmail: true, officialEmailVerifiedAt: true },
+app/api/organizacao/checkin/preview/route.ts:38:  const emailGate = ensureOrganizationEmailVerified(organization, { reasonCode: "CHECKIN" });
+app/api/admin/organizacoes/verify-platform-email/route.ts:45:        officialEmailVerifiedAt: true,
+app/api/admin/organizacoes/verify-platform-email/route.ts:57:      Boolean(organization.officialEmailVerifiedAt);
+app/api/admin/organizacoes/verify-platform-email/route.ts:78:        officialEmailVerifiedAt: new Date(),
+app/api/admin/organizacoes/verify-platform-email/route.ts:80:      select: { id: true, orgType: true, officialEmail: true, officialEmailVerifiedAt: true },
+app/api/admin/organizacoes/verify-platform-email/route.ts:93:          officialEmailVerifiedAt: organization.officialEmailVerifiedAt,
+app/api/admin/organizacoes/verify-platform-email/route.ts:98:          officialEmailVerifiedAt: updated.officialEmailVerifiedAt,
+app/api/admin/organizacoes/verify-platform-email/route.ts:113:        officialEmailVerifiedAt: updated.officialEmailVerifiedAt,
+app/api/organizacao/inscricoes/[id]/route.ts:7:import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
+app/api/organizacao/inscricoes/[id]/route.ts:57:    const emailGate = ensureOrganizationEmailVerified(organization, { reasonCode: "INSCRICOES" });
+app/api/organizacao/inscricoes/[id]/route.ts:130:    const emailGate = ensureOrganizationEmailVerified(organization, { reasonCode: "INSCRICOES" });
+app/api/organizacao/loja/shipping/zones/[zoneId]/route.ts:40:async function getOrganizationContext(req: NextRequest, userId: string, options?: { requireVerifiedEmail?: boolean }) {
+app/api/organizacao/loja/shipping/zones/[zoneId]/route.ts:77:    const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
+app/api/organizacao/loja/shipping/zones/[zoneId]/route.ts:116:    const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
+app/api/organizacao/loja/shipping/zones/[zoneId]/route.ts:203:    const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
+app/api/organizacao/loja/bundles/[id]/route.ts:42:async function getOrganizationContext(req: NextRequest, userId: string, options?: { requireVerifiedEmail?: boolean }) {
+app/api/organizacao/loja/bundles/[id]/route.ts:104:    const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
+app/api/organizacao/loja/bundles/[id]/route.ts:249:    const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
+app/api/organizacao/payouts/connect/route.ts:15:import { requireOfficialEmailVerified } from "@/lib/organizationWriteAccess";
+app/api/organizacao/payouts/connect/route.ts:56:    const emailGate = await requireOfficialEmailVerified({
+app/api/organizacao/loja/shipping/zones/[zoneId]/methods/route.ts:38:async function getOrganizationContext(req: NextRequest, userId: string, options?: { requireVerifiedEmail?: boolean }) {
+app/api/organizacao/loja/shipping/zones/[zoneId]/methods/route.ts:75:    const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
+app/api/organizacao/loja/shipping/zones/[zoneId]/methods/route.ts:130:    const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
+app/api/organizacao/loja/bundles/route.ts:48:async function getOrganizationContext(req: NextRequest, userId: string, options?: { requireVerifiedEmail?: boolean }) {
+app/api/organizacao/loja/bundles/route.ts:85:    const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
+app/api/organizacao/loja/bundles/route.ts:125:    const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
+app/api/organizacao/inscricoes/route.ts:6:import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
+app/api/organizacao/inscricoes/route.ts:35:    const emailGate = ensureOrganizationEmailVerified(organization, { reasonCode: "INSCRICOES" });
+app/api/organizacao/loja/shipping/methods/[methodId]/route.ts:38:async function getOrganizationContext(req: NextRequest, userId: string, options?: { requireVerifiedEmail?: boolean }) {
+app/api/organizacao/loja/shipping/methods/[methodId]/route.ts:75:    const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
+app/api/organizacao/loja/shipping/methods/[methodId]/route.ts:124:    const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
+app/api/organizacao/loja/shipping/methods/[methodId]/route.ts:243:    const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
+app/api/organizacao/payouts/settings/route.ts:11:import { requireOfficialEmailVerified } from "@/lib/organizationWriteAccess";
+app/api/organizacao/payouts/settings/route.ts:43:    const emailGate = await requireOfficialEmailVerified({
+app/api/organizacao/loja/shipping/methods/[methodId]/tiers/route.ts:39:async function getOrganizationContext(req: NextRequest, userId: string, options?: { requireVerifiedEmail?: boolean }) {
+app/api/organizacao/loja/shipping/methods/[methodId]/tiers/route.ts:76:    const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
+app/api/organizacao/loja/shipping/methods/[methodId]/tiers/route.ts:126:    const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
+app/api/organizacao/loja/shipping/settings/route.ts:23:async function getOrganizationContext(req: NextRequest, userId: string, options?: { requireVerifiedEmail?: boolean }) {
+app/api/organizacao/loja/shipping/settings/route.ts:60:    const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
+app/api/organizacao/loja/shipping/settings/route.ts:90:    const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
+app/api/organizacao/loja/categories/[id]/route.ts:39:async function getOrganizationContext(req: NextRequest, userId: string, options?: { requireVerifiedEmail?: boolean }) {
+app/api/organizacao/loja/categories/[id]/route.ts:76:    const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
+app/api/organizacao/loja/categories/[id]/route.ts:151:    const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
+app/api/organizacao/tournaments/create/route.ts:5:import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
+app/api/organizacao/tournaments/create/route.ts:16:      organization: { select: { officialEmail: true, officialEmailVerifiedAt: true } },
+app/api/organizacao/tournaments/create/route.ts:20:  const emailGate = ensureOrganizationEmailVerified(evt.organization ?? {}, { reasonCode: "TOURNAMENTS_CREATE" });
+app/api/organizacao/loja/categories/route.ts:37:async function getOrganizationContext(req: NextRequest, userId: string, options?: { requireVerifiedEmail?: boolean }) {
+app/api/organizacao/loja/categories/route.ts:74:    const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
+app/api/organizacao/loja/categories/route.ts:103:    const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
+app/api/organizacao/loja/overview/route.ts:18:async function getOrganizationContext(req: NextRequest, userId: string, options?: { requireVerifiedEmail?: boolean }) {
+app/api/organizacao/loja/overview/route.ts:55:    const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
+app/api/organizacao/username/route.ts:9:import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
+app/api/organizacao/username/route.ts:41:    const emailGate = ensureOrganizationEmailVerified(organization, { reasonCode: "USERNAME" });
+app/api/organizacao/loja/products/[id]/digital-assets/[assetId]/route.ts:31:async function getOrganizationContext(req: NextRequest, userId: string, options?: { requireVerifiedEmail?: boolean }) {
+app/api/organizacao/loja/products/[id]/digital-assets/[assetId]/route.ts:79:    const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
+app/api/organizacao/loja/products/[id]/digital-assets/[assetId]/route.ts:162:    const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
+app/api/organizacao/loja/products/[id]/digital-assets/route.ts:56:async function getOrganizationContext(req: NextRequest, userId: string, options?: { requireVerifiedEmail?: boolean }) {
+app/api/organizacao/loja/products/[id]/digital-assets/route.ts:101:    const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
+app/api/organizacao/loja/products/[id]/digital-assets/route.ts:153:    const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
+app/api/organizacao/loja/orders/route.ts:18:async function getOrganizationContext(req: NextRequest, userId: string, options?: { requireVerifiedEmail?: boolean }) {
+app/api/organizacao/loja/orders/route.ts:55:    const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
+app/api/organizacao/loja/products/[id]/variants/route.ts:28:async function getOrganizationContext(req: NextRequest, userId: string, options?: { requireVerifiedEmail?: boolean }) {
+app/api/organizacao/loja/products/[id]/variants/route.ts:73:    const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
+app/api/organizacao/loja/products/[id]/variants/route.ts:125:    const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
+app/api/organizacao/loja/orders/[orderId]/route.ts:34:async function getOrganizationContext(req: NextRequest, userId: string, options?: { requireVerifiedEmail?: boolean }) {
+app/api/organizacao/loja/orders/[orderId]/route.ts:71:    const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
+app/api/organizacao/loja/orders/[orderId]/route.ts:168:    const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
+app/api/organizacao/loja/products/[id]/variants/[variantId]/route.ts:30:async function getOrganizationContext(req: NextRequest, userId: string, options?: { requireVerifiedEmail?: boolean }) {
+app/api/organizacao/loja/products/[id]/variants/[variantId]/route.ts:78:    const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
+app/api/organizacao/loja/products/[id]/variants/[variantId]/route.ts:173:    const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
+app/api/organizacao/loja/products/[id]/route.ts:48:async function getOrganizationContext(req: NextRequest, userId: string, options?: { requireVerifiedEmail?: boolean }) {
+app/api/organizacao/loja/products/[id]/route.ts:85:    const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
+app/api/organizacao/loja/products/[id]/route.ts:205:    const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
+app/api/organizacao/tournaments/[id]/participants/route.ts:4:import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
+app/api/organizacao/tournaments/[id]/participants/route.ts:20:  options?: { requireVerifiedEmail?: boolean },
+app/api/organizacao/tournaments/[id]/participants/route.ts:26:      organization: { select: { officialEmail: true, officialEmailVerifiedAt: true } },
+app/api/organizacao/tournaments/[id]/participants/route.ts:44:  if (options?.requireVerifiedEmail) {
+app/api/organizacao/tournaments/[id]/participants/route.ts:45:    const emailGate = ensureOrganizationEmailVerified(evt.organization ?? {}, {
+app/api/organizacao/tournaments/[id]/participants/route.ts:154:    requireVerifiedEmail: true,
+app/api/organizacao/tournaments/[id]/featured-match/route.ts:4:import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
+app/api/organizacao/tournaments/[id]/featured-match/route.ts:17:    select: { officialEmail: true, officialEmailVerifiedAt: true },
+app/api/organizacao/tournaments/[id]/featured-match/route.ts:20:  const emailGate = ensureOrganizationEmailVerified(organization, { reasonCode: "TOURNAMENTS_FEATURED_MATCH" });
+app/api/organizacao/tournaments/[id]/sponsors/route.ts:4:import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
+app/api/organizacao/tournaments/[id]/sponsors/route.ts:19:      organization: { select: { officialEmail: true, officialEmailVerifiedAt: true } },
+app/api/organizacao/tournaments/[id]/sponsors/route.ts:23:  const emailGate = ensureOrganizationEmailVerified(evt.organization ?? {}, { reasonCode: "TOURNAMENTS_SPONSORS" });
+app/api/organizacao/loja/orders/[orderId]/shipments/route.ts:43:async function getOrganizationContext(req: NextRequest, userId: string, options?: { requireVerifiedEmail?: boolean }) {
+app/api/organizacao/loja/orders/[orderId]/shipments/route.ts:80:    const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
+app/api/organizacao/loja/products/[id]/images/route.ts:26:async function getOrganizationContext(req: NextRequest, userId: string, options?: { requireVerifiedEmail?: boolean }) {
+app/api/organizacao/loja/products/[id]/images/route.ts:71:    const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
+app/api/organizacao/loja/products/[id]/images/route.ts:121:    const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
+app/api/organizacao/tournaments/[id]/generate/route.ts:5:import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
+app/api/organizacao/tournaments/[id]/generate/route.ts:14:    select: { officialEmail: true, officialEmailVerifiedAt: true },
+app/api/organizacao/tournaments/[id]/generate/route.ts:17:  const emailGate = ensureOrganizationEmailVerified(organization, { reasonCode: "TOURNAMENTS_GENERATE" });
+app/api/organizacao/loja/products/route.ts:46:async function getOrganizationContext(req: NextRequest, userId: string, options?: { requireVerifiedEmail?: boolean }) {
+app/api/organizacao/loja/products/route.ts:83:    const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
+app/api/organizacao/loja/products/route.ts:129:    const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
+app/api/organizacao/loja/products/[id]/options/route.ts:30:async function getOrganizationContext(req: NextRequest, userId: string, options?: { requireVerifiedEmail?: boolean }) {
+app/api/organizacao/loja/products/[id]/options/route.ts:75:    const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
+app/api/organizacao/loja/products/[id]/options/route.ts:129:    const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
+app/api/organizacao/loja/products/[id]/options/[optionId]/route.ts:32:async function getOrganizationContext(req: NextRequest, userId: string, options?: { requireVerifiedEmail?: boolean }) {
+app/api/organizacao/loja/products/[id]/options/[optionId]/route.ts:80:    const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
+app/api/organizacao/loja/products/[id]/options/[optionId]/route.ts:181:    const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
+app/api/organizacao/loja/route.ts:9:import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
+app/api/organizacao/loja/route.ts:65:    const emailGate = ensureOrganizationEmailVerified(organization, { reasonCode: "LOJA" });
+app/api/organizacao/loja/route.ts:116:    const emailGate = ensureOrganizationEmailVerified(organization, { reasonCode: "LOJA" });
+app/api/organizacao/loja/shipments/[shipmentId]/route.ts:46:async function getOrganizationContext(req: NextRequest, userId: string, options?: { requireVerifiedEmail?: boolean }) {
+app/api/organizacao/loja/shipments/[shipmentId]/route.ts:83:    const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
+app/api/organizacao/loja/shipments/[shipmentId]/route.ts:176:    const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
+app/api/organizacao/tournaments/[id]/rules/route.ts:4:import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
+app/api/organizacao/tournaments/[id]/rules/route.ts:13:      organization: { select: { officialEmail: true, officialEmailVerifiedAt: true } },
+app/api/organizacao/tournaments/[id]/rules/route.ts:17:  const emailGate = ensureOrganizationEmailVerified(evt.organization ?? {}, { reasonCode: "TOURNAMENTS_RULES" });
+app/api/organizacao/tournaments/[id]/matches/[matchId]/result/route.ts:4:import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
+app/api/organizacao/tournaments/[id]/matches/[matchId]/result/route.ts:15:    select: { officialEmail: true, officialEmailVerifiedAt: true },
+app/api/organizacao/tournaments/[id]/matches/[matchId]/result/route.ts:18:  const emailGate = ensureOrganizationEmailVerified(organization, { reasonCode: "TOURNAMENTS_MATCH_RESULT" });
+app/api/organizacao/tournaments/[id]/matches/schedule/route.ts:4:import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
+app/api/organizacao/tournaments/[id]/matches/schedule/route.ts:14:      organization: { select: { officialEmail: true, officialEmailVerifiedAt: true } },
+app/api/organizacao/tournaments/[id]/matches/schedule/route.ts:18:  const emailGate = ensureOrganizationEmailVerified(evt.organization ?? {}, { reasonCode: "TOURNAMENTS_MATCH_SCHEDULE" });
+app/api/organizacao/tournaments/[id]/matches/[matchId]/undo/route.ts:4:import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
+app/api/organizacao/tournaments/[id]/matches/[matchId]/undo/route.ts:15:    select: { officialEmail: true, officialEmailVerifiedAt: true },
+app/api/organizacao/tournaments/[id]/matches/[matchId]/undo/route.ts:18:  const emailGate = ensureOrganizationEmailVerified(organization, { reasonCode: "TOURNAMENTS_MATCH_UNDO" });
+app/api/organizacao/loja/products/[id]/images/[imageId]/route.ts:28:async function getOrganizationContext(req: NextRequest, userId: string, options?: { requireVerifiedEmail?: boolean }) {
+app/api/organizacao/loja/products/[id]/images/[imageId]/route.ts:76:    const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
+app/api/organizacao/loja/products/[id]/images/[imageId]/route.ts:174:    const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
+app/api/organizacao/loja/products/[id]/options/[optionId]/values/route.ts:26:async function getOrganizationContext(req: NextRequest, userId: string, options?: { requireVerifiedEmail?: boolean }) {
+app/api/organizacao/loja/products/[id]/options/[optionId]/values/route.ts:74:    const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
+app/api/organizacao/loja/products/[id]/options/[optionId]/values/route.ts:140:    const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
+app/api/organizacao/loja/products/[id]/options/[optionId]/values/[valueId]/route.ts:28:async function getOrganizationContext(req: NextRequest, userId: string, options?: { requireVerifiedEmail?: boolean }) {
+app/api/organizacao/loja/products/[id]/options/[optionId]/values/[valueId]/route.ts:76:    const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
+app/api/organizacao/loja/products/[id]/options/[optionId]/values/[valueId]/route.ts:181:    const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
+app/api/organizacao/tournaments/[id]/matches/[matchId]/notify/route.ts:4:import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
+app/api/organizacao/tournaments/[id]/matches/[matchId]/notify/route.ts:15:      organization: { select: { officialEmail: true, officialEmailVerifiedAt: true } },
+app/api/organizacao/tournaments/[id]/matches/[matchId]/notify/route.ts:19:  const emailGate = ensureOrganizationEmailVerified(evt.organization ?? {}, { reasonCode: "TOURNAMENTS_MATCH_NOTIFY" });
+app/api/organizacao/tournaments/[id]/matches/[matchId]/edit/route.ts:4:import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
+app/api/organizacao/tournaments/[id]/matches/[matchId]/edit/route.ts:13:      organization: { select: { officialEmail: true, officialEmailVerifiedAt: true } },
+app/api/organizacao/tournaments/[id]/matches/[matchId]/edit/route.ts:17:  const emailGate = ensureOrganizationEmailVerified(evt.organization ?? {}, { reasonCode: "TOURNAMENTS_MATCH_EDIT" });

@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import type { Prisma, PrismaClient, SourceType } from "@prisma/client";
 import { normalizeAnySourceType } from "@/domain/sourceType";
+import { getRequestContext } from "@/lib/http/requestContext";
 
 export type EventLogInput = {
   eventId?: string;
@@ -23,6 +24,7 @@ export async function appendEventLog(
   const eventId = input.eventId ?? crypto.randomUUID();
   const idempotencyKey = input.idempotencyKey ?? eventId;
   const normalizedSourceType = input.sourceType ? normalizeAnySourceType(input.sourceType) : null;
+  const correlationId = input.correlationId ?? getRequestContext().correlationId;
   if ((input.sourceType || input.sourceId) && (!normalizedSourceType || !input.sourceId)) {
     throw new Error("EVENTLOG_SOURCE_REF_INVALID");
   }
@@ -38,7 +40,7 @@ export async function appendEventLog(
         actorUserId: input.actorUserId ?? null,
         sourceType: normalizedSourceType ?? null,
         sourceId: normalizedSourceType ? input.sourceId ?? null : null,
-        correlationId: input.correlationId ?? null,
+        correlationId,
         createdAt: input.createdAt ?? new Date(),
       },
     });

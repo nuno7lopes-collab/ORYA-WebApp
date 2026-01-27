@@ -22,6 +22,7 @@ import {
 import { normalizeInterestSelection, resolveInterestLabel } from "@/lib/interests";
 import { getPaidSalesGate } from "@/lib/organizationPayments";
 import { isStoreFeatureEnabled, isStorePublic } from "@/lib/storeAccess";
+import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmail";
 import { OrganizationFormStatus } from "@prisma/client";
 import { deriveIsFreeEvent } from "@/domain/events/derivedIsFree";
 import ReservasBookingSection from "@/app/[username]/_components/ReservasBookingSection";
@@ -416,8 +417,9 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
       organizationProfile.publicName?.trim() ||
       organizationProfile.businessName?.trim() ||
       "Organização ORYA";
-    const isVerified = Boolean(organizationProfile.officialEmailVerifiedAt);
-    const contactEmail = isVerified ? organizationProfile.officialEmail?.trim() || null : null;
+    const officialEmailNormalized = normalizeOfficialEmail(organizationProfile.officialEmail ?? null);
+    const isVerified = Boolean(officialEmailNormalized && organizationProfile.officialEmailVerifiedAt);
+    const contactEmail = isVerified ? officialEmailNormalized : null;
     const publicWebsite = organizationProfile.publicWebsite?.trim() || null;
     const publicInstagram = organizationProfile.publicInstagram?.trim() || null;
     const publicYoutube = organizationProfile.publicYoutube?.trim() || null;

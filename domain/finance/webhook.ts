@@ -26,7 +26,7 @@ const EVENT_STATUS_MAP: Record<StripeDisputeEvent["type"], PaymentStatus> = {
 
 function resolvePaymentId(event: StripeDisputeEvent): string | null {
   const metadata = event.data?.object?.metadata ?? null;
-  const paymentId = metadata?.paymentId ?? null;
+  const paymentId = metadata?.paymentId ?? metadata?.purchaseId ?? null;
   return paymentId && paymentId.trim() !== "" ? paymentId : null;
 }
 

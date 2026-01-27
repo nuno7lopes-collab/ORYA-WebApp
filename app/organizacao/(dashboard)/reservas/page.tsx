@@ -904,7 +904,7 @@ export default function ReservasDashboardPage() {
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
-        throw new Error(json?.error || "Erro ao atualizar modo.");
+        throw new Error(json?.message || json?.error || "Erro ao atualizar modo.");
       }
       setSelectedProfessionalId(null);
       setSelectedResourceId(null);
@@ -930,7 +930,7 @@ export default function ReservasDashboardPage() {
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
-        throw new Error(json?.error || "Erro ao cancelar reserva.");
+        throw new Error(json?.message || json?.error || "Erro ao cancelar reserva.");
       }
       mutateBookings();
       if (json.booking) {
@@ -971,7 +971,7 @@ export default function ReservasDashboardPage() {
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
-        throw new Error(json?.error || "Erro ao reagendar reserva.");
+        throw new Error(json?.message || json?.error || "Erro ao reagendar reserva.");
       }
       mutateBookings();
       if (json.booking) {
@@ -996,7 +996,7 @@ export default function ReservasDashboardPage() {
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
-        throw new Error(json?.error || "Erro ao atualizar reserva.");
+        throw new Error(json?.message || json?.error || "Erro ao atualizar reserva.");
       }
       mutateBookings();
       if (json.booking) {
@@ -1085,7 +1085,7 @@ export default function ReservasDashboardPage() {
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
-        throw new Error(json?.error || "Erro ao criar serviço.");
+        throw new Error(json?.message || json?.error || "Erro ao criar serviço.");
       }
       closeServiceDrawer();
       setCreateServiceId(json.service?.id ?? null);
@@ -1206,7 +1206,7 @@ export default function ReservasDashboardPage() {
         const errorMsg =
           json?.error === "PHONE_REQUIRED"
             ? "O cliente precisa de telemóvel no perfil para reservar."
-            : json?.error || "Erro ao criar reserva.";
+            : json?.message || json?.error || "Erro ao criar reserva.";
         setCreateError(errorMsg);
         return;
       }
@@ -1225,7 +1225,7 @@ export default function ReservasDashboardPage() {
       });
       const checkoutJson = await checkoutRes.json().catch(() => null);
       if (!checkoutRes.ok || !checkoutJson?.ok) {
-        throw new Error(checkoutJson?.error || "Erro ao iniciar checkout.");
+        throw new Error(checkoutJson?.message || checkoutJson?.error || "Erro ao iniciar checkout.");
       }
 
       setCheckout({

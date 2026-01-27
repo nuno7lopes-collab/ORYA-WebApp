@@ -96,11 +96,6 @@ async function _GET(_req: NextRequest, { params }: { params: Promise<{ slug: str
         liveHubVisibility: true,
         liveStreamUrl: true,
         timezone: true,
-        inviteOnly: true,
-        publicAccessMode: true,
-        participantAccessMode: true,
-        publicTicketTypeIds: true,
-        participantTicketTypeIds: true,
         organization: {
           select: {
             id: true,
@@ -147,11 +142,6 @@ async function _GET(_req: NextRequest, { params }: { params: Promise<{ slug: str
             liveHubVisibility: true,
             liveStreamUrl: true,
             timezone: true,
-            inviteOnly: true,
-            publicAccessMode: true,
-            participantAccessMode: true,
-            publicTicketTypeIds: true,
-            participantTicketTypeIds: true,
             organization: {
               select: {
                 id: true,
@@ -228,13 +218,11 @@ async function _GET(_req: NextRequest, { params }: { params: Promise<{ slug: str
       : null;
   const isParticipantInvited = Boolean(participantInviteMatch);
 
-  const publicAccessMode = event.publicAccessMode ?? (event.inviteOnly ? "INVITE" : "OPEN");
-  const participantAccessMode = event.participantAccessMode ?? "NONE";
-  const publicTicketTypeIds = event.publicTicketTypeIds ?? [];
-  const participantTicketTypeIds = event.participantTicketTypeIds ?? [];
   const hasAnyTicket = tickets.length > 0;
-  const ticketMatches = (ids: number[]) =>
-    ids.length === 0 ? hasAnyTicket : tickets.some((t) => ids.includes(t.ticketTypeId));
+  const hasParticipantTicket =
+    event.templateType === "PADEL"
+      ? tickets.some((t) => Boolean(t.tournamentEntryId || t.pairingId))
+      : hasAnyTicket;
 
   const hasInscription =
     Boolean(
@@ -242,16 +230,7 @@ async function _GET(_req: NextRequest, { params }: { params: Promise<{ slug: str
         (await prisma.tournamentEntry.findFirst({ where: { eventId: event.id, userId }, select: { id: true } })),
     ) || tickets.some((t) => Boolean(t.tournamentEntryId));
 
-  const isParticipant =
-    participantAccessMode === "NONE"
-      ? false
-      : participantAccessMode === "TICKET"
-        ? ticketMatches(participantTicketTypeIds)
-        : participantAccessMode === "INSCRIPTION"
-          ? hasInscription
-          : participantAccessMode === "INVITE"
-            ? isParticipantInvited
-            : false;
+  const isParticipant = hasParticipantTicket || hasInscription || isParticipantInvited;
 
   const viewerRole = isOrganization ? "ORGANIZATION" : isParticipant ? "PARTICIPANT" : "PUBLIC";
   const liveHubVisibility = event.liveHubVisibility ?? "PUBLIC";
@@ -797,10 +776,6 @@ async function _GET(_req: NextRequest, { params }: { params: Promise<{ slug: str
           liveStreamUrl: event.liveStreamUrl,
           timezone: event.timezone,
           liveHubVisibility,
-          publicAccessMode,
-          participantAccessMode,
-          publicTicketTypeIds,
-          participantTicketTypeIds,
         },
         organization: event.organization
           ? {
@@ -816,8 +791,6 @@ async function _GET(_req: NextRequest, { params }: { params: Promise<{ slug: str
         organizationRole,
         canEditMatches,
         access: {
-          publicAccessMode,
-          participantAccessMode,
           liveHubVisibility,
           liveHubAllowed,
           isParticipant,

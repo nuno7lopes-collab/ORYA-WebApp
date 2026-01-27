@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import WavesSectionClient, { type WaveTicket } from "./WavesSectionClient";
 import { getTicketCopy } from "@/app/components/checkout/checkoutCopy";
 
@@ -48,8 +49,65 @@ export default function InviteGateClient({
   const [inviteType, setInviteType] = useState<"email" | "username" | null>(null);
   const [inviteNormalized, setInviteNormalized] = useState<string | null>(null);
   const [validated, setValidated] = useState(false);
+  const [inviteTicketTypeId, setInviteTicketTypeId] = useState<number | null>(null);
+  const searchParams = useSearchParams();
+  const inviteTokenParam = searchParams.get("inviteToken");
+  const tokenHandledRef = useRef<string | null>(null);
   const ticketCopy = getTicketCopy(checkoutUiVariant);
   const freeLabelLower = ticketCopy.freeLabel.toLowerCase();
+
+  useEffect(() => {
+    if (!inviteTokenParam || checkoutUiVariant === "PADEL") return;
+    if (tokenHandledRef.current === inviteTokenParam) return;
+    tokenHandledRef.current = inviteTokenParam;
+
+    let cancelled = false;
+
+    const resolveToken = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await fetch(`/api/eventos/${encodeURIComponent(slug)}/invite-token`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token: inviteTokenParam }),
+        });
+        const json = (await res.json().catch(() => null)) as
+          | {
+              ok?: boolean;
+              allow?: boolean;
+              normalized?: string;
+              ticketTypeId?: number | null;
+              reason?: string;
+            }
+          | null;
+        if (cancelled) return;
+        if (!res.ok || !json?.ok || !json.allow) {
+          throw new Error(json?.reason || "Convite inválido.");
+        }
+        setInviteType("email");
+        setInviteNormalized(typeof json.normalized === "string" ? json.normalized : null);
+        setInviteTicketTypeId(
+          typeof json.ticketTypeId === "number" && Number.isFinite(json.ticketTypeId) ? json.ticketTypeId : null,
+        );
+        setValidated(true);
+      } catch (err) {
+        setValidated(false);
+        setInviteType(null);
+        setInviteNormalized(null);
+        setInviteTicketTypeId(null);
+        setError(err instanceof Error ? err.message : "Não foi possível validar o convite.");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
+    void resolveToken();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [inviteTokenParam, checkoutUiVariant, slug]);
 
   const handleCheck = async () => {
     const trimmed = identifier.trim();
@@ -104,6 +162,10 @@ export default function InviteGateClient({
 
   const paidInviteMatches = inviteMatchesAccount && !isGratis;
   const freeInviteMatches = inviteMatchesAccount && isGratis && hasUsername;
+  const restrictedTickets =
+    inviteTicketTypeId && Number.isFinite(inviteTicketTypeId)
+      ? uiTickets.filter((ticket) => Number(ticket.id) === inviteTicketTypeId)
+      : uiTickets;
 
   const gateMessage = (() => {
     if (!validated) return null;
@@ -184,7 +246,7 @@ export default function InviteGateClient({
       {paidInviteMatches && (
         <WavesSectionClient
           slug={slug}
-          tickets={uiTickets}
+          tickets={restrictedTickets}
           checkoutUiVariant={checkoutUiVariant}
           padelMeta={padelMeta}
           inviteEmail={inviteType === "email" ? inviteNormalized ?? undefined : undefined}
@@ -194,7 +256,7 @@ export default function InviteGateClient({
       {freeInviteMatches && (
         <WavesSectionClient
           slug={slug}
-          tickets={uiTickets}
+          tickets={restrictedTickets}
           isGratisEvent
           checkoutUiVariant={checkoutUiVariant}
           padelMeta={padelMeta}

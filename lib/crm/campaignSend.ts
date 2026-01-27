@@ -4,6 +4,8 @@ import { resolveSegmentUserIds } from "@/lib/crm/segmentQuery";
 import { normalizeCampaignChannels } from "@/lib/crm/campaignChannels";
 import { sendCrmCampaignEmail } from "@/lib/emailSender";
 import { assertResendReady } from "@/lib/resendClient";
+import { getPlatformOfficialEmail } from "@/lib/platformSettings";
+import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmail";
 import {
   ConsentStatus,
   ConsentType,
@@ -279,7 +281,12 @@ export async function sendCrmCampaign(options: SendCrmCampaignOptions): Promise<
         })
       : null;
     const organizationName = organization?.publicName ?? "Organização";
-    const replyTo = organization?.officialEmailVerifiedAt ? organization?.officialEmail ?? null : null;
+    const officialEmailNormalized = normalizeOfficialEmail(organization?.officialEmail ?? null);
+    const platformOfficialEmail = emailEnabled ? await getPlatformOfficialEmail() : null;
+    const replyTo =
+      organization?.officialEmailVerifiedAt && officialEmailNormalized
+        ? officialEmailNormalized
+        : platformOfficialEmail;
 
     const sentAt = new Date();
     let sentCount = 0;
