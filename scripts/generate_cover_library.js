@@ -10,7 +10,7 @@ const THUMBS_DIR = path.resolve(
   process.env.COVER_THUMBS || "public/covers/library/thumbs"
 );
 const OUT_FILE = path.resolve(ROOT, "lib/coverLibrary.ts");
-const THUMB_SIZE = Number(process.env.COVER_THUMB_SIZE || "512");
+const THUMB_SIZE = Number(process.env.COVER_THUMB_SIZE || "400");
 const FORCE = process.argv.includes("--force");
 const NO_THUMBS = process.argv.includes("--no-thumbs");
 
@@ -32,6 +32,18 @@ const CATEGORY_MAP = {
   padel: "PADEL",
   reservas: "RESERVAS",
   geral: "GERAL",
+};
+const SCENARIO_MAP = {
+  EVENTOS: "EVENT",
+  PADEL: "TOURNAMENT",
+  RESERVAS: "RESERVATION",
+  GERAL: "GENERAL",
+};
+const USE_CASE_MAP = {
+  EVENT: "cover:event",
+  TOURNAMENT: "cover:tournament",
+  RESERVATION: "cover:reservation",
+  GENERAL: "cover:general",
 };
 
 function commandExists(cmd) {
@@ -81,6 +93,22 @@ function inferCategory(relPath) {
   const parts = relPath.split(path.sep);
   const first = parts[0] ? parts[0].toLowerCase() : "";
   return CATEGORY_MAP[first] || undefined;
+}
+
+function inferScenario(category) {
+  return category ? SCENARIO_MAP[category] : undefined;
+}
+
+function inferUseCase(scenario) {
+  return scenario ? USE_CASE_MAP[scenario] : undefined;
+}
+
+function inferPriority(name) {
+  const match = name.match(/^(\d{1,3})/);
+  if (!match) return 100;
+  const value = Number(match[1]);
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, 100 - value);
 }
 
 function toUrl(relPath) {
@@ -148,15 +176,24 @@ function main() {
     const id = toId(base);
     const label = toLabel(base) || id;
     const category = inferCategory(rel);
+    const scenario = inferScenario(category);
+    const useCase = inferUseCase(scenario);
     const imageUrl = toUrl(rel);
-    const thumbRel = path.join("thumbs", rel);
+    const relDir = path.dirname(rel);
+    const thumbRel = path.join("thumbs", relDir, `${base}.thumb.jpg`);
     const thumbUrl = toUrl(thumbRel);
-    makeThumb(file, path.join(THUMBS_DIR, rel));
+    const thumbPath = path.join(THUMBS_DIR, relDir, `${base}.thumb.jpg`);
+    makeThumb(file, thumbPath);
     const tags = tagsFromFilename(base);
     return {
       id,
       label,
       category,
+      scenario,
+      businessType: "GENERAL",
+      useCase: useCase ? [useCase] : [],
+      priority: inferPriority(base),
+      active: true,
       tags,
       imageUrl,
       thumbUrl,
@@ -177,7 +214,12 @@ function main() {
   lines.push("  imageUrl: string;");
   lines.push("  thumbUrl?: string;");
   lines.push('  category?: "EVENTOS" | "PADEL" | "RESERVAS" | "GERAL";');
+  lines.push('  scenario?: "TOURNAMENT" | "EVENT" | "RESERVATION" | "GENERAL";');
+  lines.push('  businessType?: "CLUB" | "BAR" | "RESTAURANT" | "HOTEL" | "ACADEMY" | "GENERAL";');
+  lines.push("  useCase?: string[];");
   lines.push("  tags?: string[];");
+  lines.push("  priority?: number;");
+  lines.push("  active?: boolean;");
   lines.push("};");
   lines.push("");
   lines.push("export const REAL_COVER_LIBRARY: CoverLibraryEntry[] = [");
@@ -186,6 +228,11 @@ function main() {
       `id: "${entry.id}"`,
       `label: "${entry.label}"`,
       entry.category ? `category: "${entry.category}"` : null,
+      entry.scenario ? `scenario: "${entry.scenario}"` : null,
+      entry.businessType ? `businessType: "${entry.businessType}"` : null,
+      entry.useCase && entry.useCase.length > 0 ? `useCase: ${JSON.stringify(entry.useCase)}` : null,
+      typeof entry.priority === "number" ? `priority: ${entry.priority}` : null,
+      entry.active === false ? "active: false" : "active: true",
       `imageUrl: "${entry.imageUrl}"`,
       entry.thumbUrl ? `thumbUrl: "${entry.thumbUrl}"` : null,
       entry.tags && entry.tags.length > 0 ? `tags: ${JSON.stringify(entry.tags)}` : null,

@@ -212,6 +212,8 @@ const MODAL_CONTENT_WRAP_CLASS =
 const MODAL_PANEL_CLASS =
   "rounded-[28px] border border-white/15 bg-[rgba(10,12,18,0.85)] backdrop-blur-2xl shadow-[0_26px_80px_rgba(0,0,0,0.6)]";
 const MODAL_HEADER_CLASS = "flex items-center justify-between gap-3 border-b border-white/10 px-5 py-4";
+const MAX_ITEMS_UI = 1111;
+const COVER_PAGE_SIZE = 40;
 
 type NewOrganizationEventPageProps = {
   forcePreset?: "padel" | "default";
@@ -315,6 +317,7 @@ export default function NewOrganizationEventPage({
   const [coverSearch, setCoverSearch] = useState("");
   const [coverCategory, setCoverCategory] =
     useState<"SUGESTOES" | "ALL" | "EVENTOS" | "PADEL" | "RESERVAS" | "GERAL">("SUGESTOES");
+  const [coverPage, setCoverPage] = useState(1);
   const [isGratisEvent, setIsFreeEvent] = useState(false);
   const [liveHubVisibility, setLiveHubVisibility] = useState<LiveHubVisibility>("PUBLIC");
   const [freeTicketName, setFreeTicketName] = useState("Inscrição");
@@ -446,16 +449,31 @@ export default function NewOrganizationEventPage({
     { value: "GERAL", label: "Geral" },
     { value: "ALL", label: "Todas" },
   ] as const;
+  const sortCoverList = (items: typeof coverLibrary) =>
+    [...items].sort((a, b) => {
+      const activeA = a.active !== false ? 1 : 0;
+      const activeB = b.active !== false ? 1 : 0;
+      if (activeA !== activeB) return activeB - activeA;
+      const priorityA = a.priority ?? 100;
+      const priorityB = b.priority ?? 100;
+      if (priorityA !== priorityB) return priorityB - priorityA;
+      return a.label.localeCompare(b.label);
+    });
   const filteredCoverLibrary = useMemo(() => {
     const query = coverSearch.trim().toLowerCase();
-    return coverLibrary.filter((cover) => {
+    const filtered = coverLibrary.filter((cover) => {
       if (coverCategory === "SUGESTOES") return false;
       if (coverCategory !== "ALL" && cover.category !== coverCategory) return false;
       if (!query) return true;
       const labelMatch = cover.label.toLowerCase().includes(query);
       const tagMatch = (cover.tags ?? []).some((tag) => tag.toLowerCase().includes(query));
-      return labelMatch || tagMatch;
+      const scenarioMatch = cover.scenario?.toLowerCase().includes(query) ?? false;
+      const businessMatch = cover.businessType?.toLowerCase().includes(query) ?? false;
+      const useCaseMatch = (cover.useCase ?? []).some((useCase) => useCase.toLowerCase().includes(query));
+      const categoryMatch = cover.category?.toLowerCase().includes(query) ?? false;
+      return labelMatch || tagMatch || scenarioMatch || businessMatch || useCaseMatch || categoryMatch;
     });
+    return sortCoverList(filtered);
   }, [coverCategory, coverLibrary, coverSearch]);
   const coverGridItems = coverCategory === "SUGESTOES" ? suggestedCovers : filteredCoverLibrary;
   const selectedCoverToken = parseEventCoverToken(coverUrl);
@@ -692,6 +710,10 @@ export default function NewOrganizationEventPage({
       setCoverUrl(randomCover.token);
     }
   }, [coverLibrary, coverUrl, draftLoaded]);
+
+  useEffect(() => {
+    setCoverPage(1);
+  }, [coverCategory, coverSearch]);
 
   useEffect(() => {
     if (!draftLoaded || scheduleInitializedRef.current) return;
@@ -2687,7 +2709,14 @@ export default function NewOrganizationEventPage({
         ? `Resultados: ${searchValue}`
         : categoryTitle;
     const activeCollectionCovers = isSuggestions ? suggestedCovers : coverGridItems;
-    const coverCount = activeCollectionCovers.length;
+    const totalAvailable = activeCollectionCovers.length;
+    const limitedCollectionCovers = activeCollectionCovers.slice(0, MAX_ITEMS_UI);
+    const coverCount = limitedCollectionCovers.length;
+    const pageLimit = Math.min(coverPage * COVER_PAGE_SIZE, coverCount);
+    const pagedCovers = limitedCollectionCovers.slice(0, pageLimit);
+    const hasOverflow = totalAvailable > MAX_ITEMS_UI;
+    const showCapNotice = !isSuggestions && !hasSearch && coverCategory === "ALL" && hasOverflow;
+    const hasMoreCovers = coverCount > pagedCovers.length;
     const featuredCover = activeCollectionCovers[0] ?? null;
     const featuredCoverUrl = featuredCover?.url ?? featuredCover?.thumbUrl ?? null;
     const featuredTitle = hasSearch ? titleLabel : categoryTitle;
@@ -2740,7 +2769,7 @@ export default function NewOrganizationEventPage({
 
     return (
       <div className="flex h-full min-h-0 flex-col gap-5 animate-fade-slide">
-        <div className="grid min-h-0 flex-1 gap-6 md:grid-cols-[220px_minmax(0,1fr)]">
+        <div className="grid min-h-0 h-full flex-1 grid-rows-[minmax(0,1fr)] gap-6 md:grid-cols-[220px_minmax(0,1fr)]">
           <div className="hidden md:block">
             <div className="rounded-2xl border border-white/10 bg-[#0a0f18]/90 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] sticky top-3">
               <p className="text-[10px] uppercase tracking-[0.24em] text-white/50">Coleções</p>
@@ -2776,7 +2805,7 @@ export default function NewOrganizationEventPage({
             </div>
           </div>
 
-          <div className="min-h-0 min-w-0 space-y-5 overflow-y-auto overscroll-contain pr-1">
+          <div className="min-h-0 h-full min-w-0 space-y-5 overflow-y-auto overscroll-contain pr-1">
             <div className="flex gap-2 overflow-x-auto pb-1 md:hidden">
               {coverCategoryOptions.map((option) => {
                 const isActive = coverCategory === option.value;
@@ -2944,17 +2973,34 @@ export default function NewOrganizationEventPage({
               </div>
             </div>
 
-            <div className="flex items-center justify-between text-[11px] uppercase tracking-[0.18em] text-white/45">
+            <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] uppercase tracking-[0.18em] text-white/45">
               <span>Galeria</span>
               <span>{coverCount} imagens</span>
             </div>
+            <p className="text-[11px] text-white/50">
+              A mostrar {coverCount === 0 ? 0 : 1}–{pageLimit} de {coverCount}
+              {showCapNotice ? " (filtra para ver mais relevante)" : ""}
+            </p>
 
             {coverCount === 0 ? (
               <div className="rounded-xl border border-white/12 bg-white/[0.06] p-4 text-[12px] text-white/65">
                 {emptyMessage}
               </div>
             ) : (
-              renderCoverGrid(activeCollectionCovers)
+              <>
+                {renderCoverGrid(pagedCovers)}
+                {hasMoreCovers && (
+                  <div className="flex justify-center pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setCoverPage((prev) => prev + 1)}
+                      className="rounded-full border border-white/20 bg-white/5 px-4 py-2 text-[11px] font-semibold text-white/80 transition hover:border-white/40 hover:bg-white/10"
+                    >
+                      Mostrar mais
+                    </button>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>
@@ -3907,7 +3953,7 @@ export default function NewOrganizationEventPage({
               }}
             >
               <div
-                className={`flex w-full max-w-[980px] max-h-[calc(100vh-6rem)] flex-col ${MODAL_PANEL_CLASS} border-white/20 bg-[rgba(14,20,30,0.78)]`}
+                className={`flex w-full max-w-[980px] h-[720px] max-h-[calc(100vh-6rem)] flex-col ${MODAL_PANEL_CLASS} border-white/20 bg-[rgba(14,20,30,0.78)]`}
                 role="dialog"
                 aria-modal="true"
                 aria-label="Biblioteca de capas"
@@ -3957,7 +4003,7 @@ export default function NewOrganizationEventPage({
                 </div>
                 <div
                   ref={coverModalRef}
-                  className="min-h-0 flex-1 overflow-hidden px-5 pb-5 pt-4"
+                  className="flex min-h-0 flex-1 flex-col overflow-hidden px-5 pb-5 pt-4"
                 >
                   {renderCoverPanel()}
                 </div>

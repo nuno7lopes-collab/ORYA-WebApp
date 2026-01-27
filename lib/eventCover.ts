@@ -126,24 +126,42 @@ type CoverLibraryItem = {
   url: string;
   thumbUrl?: string;
   category?: CoverLibraryEntry["category"];
+  scenario?: CoverLibraryEntry["scenario"];
+  businessType?: CoverLibraryEntry["businessType"];
+  useCase?: CoverLibraryEntry["useCase"];
   tags?: string[];
+  priority?: number;
+  active?: boolean;
 };
 
-const BUILTIN_COVER_LIBRARY: CoverLibraryItem[] = COVER_THEMES.map((theme) => ({
+const BUILTIN_COVER_LIBRARY: CoverLibraryItem[] = COVER_THEMES.map((theme, index) => ({
   id: theme.id,
   label: theme.label,
   url: `data:image/svg+xml;utf8,${encodeURIComponent(buildCoverSvg(theme))}`,
   thumbUrl: `data:image/svg+xml;utf8,${encodeURIComponent(buildCoverSvg(theme))}`,
+  category: "GERAL",
+  scenario: "GENERAL",
+  businessType: "GENERAL",
+  useCase: ["cover:general"],
+  priority: Math.max(0, 50 - index),
+  active: true,
 }));
 
-const REAL_COVER_LIBRARY_MAPPED: CoverLibraryItem[] = REAL_COVER_LIBRARY.map((cover) => ({
-  id: cover.id,
-  label: cover.label,
-  url: cover.imageUrl,
-  thumbUrl: cover.thumbUrl ?? cover.imageUrl,
-  category: cover.category,
-  tags: cover.tags,
-}));
+const REAL_COVER_LIBRARY_MAPPED: CoverLibraryItem[] = REAL_COVER_LIBRARY.filter((cover) => cover.active !== false).map(
+  (cover) => ({
+    id: cover.id,
+    label: cover.label,
+    url: cover.imageUrl,
+    thumbUrl: cover.thumbUrl ?? cover.imageUrl,
+    category: cover.category,
+    scenario: cover.scenario,
+    businessType: cover.businessType,
+    useCase: cover.useCase,
+    tags: cover.tags,
+    priority: cover.priority ?? 100,
+    active: cover.active ?? true,
+  }),
+);
 
 const COVER_LIBRARY = REAL_COVER_LIBRARY_MAPPED.length > 0 ? REAL_COVER_LIBRARY_MAPPED : BUILTIN_COVER_LIBRARY;
 const DEFAULT_COVER = COVER_LIBRARY[0]?.url ?? "";
@@ -226,7 +244,7 @@ export function getEventCoverUrl(
 }
 
 export function listEventCoverFallbacks() {
-  return COVER_LIBRARY.map((cover) => ({
+  return COVER_LIBRARY.filter((cover) => cover.active !== false).map((cover) => ({
     ...cover,
     thumbUrl: cover.thumbUrl ?? cover.url,
     token: getEventCoverToken(cover.id),
@@ -242,17 +260,34 @@ export function getEventCoverSuggestionIds(input: CoverSuggestionInput = {}) {
   const templateType = input.templateType ?? null;
   const primaryModule = typeof input.primaryModule === "string" ? input.primaryModule.trim().toUpperCase() : null;
 
-  const pickTop = (items: CoverLibraryItem[]) =>
-    items.slice(0, 4).map((item) => item.id);
+  const sortByPriority = (items: CoverLibraryItem[]) =>
+    [...items].sort((a, b) => {
+      const priorityA = a.priority ?? 100;
+      const priorityB = b.priority ?? 100;
+      if (priorityA !== priorityB) return priorityB - priorityA;
+      return a.label.localeCompare(b.label);
+    });
+  const pickTop = (items: CoverLibraryItem[]) => sortByPriority(items).slice(0, 4).map((item) => item.id);
+  const byScenario = (scenario: CoverLibraryEntry["scenario"]) =>
+    pickTop(COVER_LIBRARY.filter((item) => item.scenario === scenario));
   const byCategory = (category: CoverLibraryEntry["category"]) =>
     pickTop(COVER_LIBRARY.filter((item) => item.category === category));
   const fallback = pickTop(COVER_LIBRARY);
 
   if (templateType === "PADEL" || primaryModule === "TORNEIOS") {
-    return byCategory("PADEL").length > 0 ? byCategory("PADEL") : fallback;
+    const tournament = byScenario("TOURNAMENT");
+    if (tournament.length > 0) return tournament;
+    const padel = byCategory("PADEL");
+    return padel.length > 0 ? padel : fallback;
   }
   if (primaryModule === "RESERVAS") {
-    return byCategory("RESERVAS").length > 0 ? byCategory("RESERVAS") : fallback;
+    const reservation = byScenario("RESERVATION");
+    if (reservation.length > 0) return reservation;
+    const reservas = byCategory("RESERVAS");
+    return reservas.length > 0 ? reservas : fallback;
   }
-  return byCategory("EVENTOS").length > 0 ? byCategory("EVENTOS") : fallback;
+  const eventScenario = byScenario("EVENT");
+  if (eventScenario.length > 0) return eventScenario;
+  const eventos = byCategory("EVENTOS");
+  return eventos.length > 0 ? eventos : fallback;
 }
