@@ -4,6 +4,7 @@ import { resend } from "@/lib/resend";
 import { env } from "@/lib/env";
 import { isSameOriginOrApp } from "@/lib/auth/requestValidation";
 import { rateLimit } from "@/lib/auth/rateLimit";
+import { getRequestContext } from "@/lib/http/requestContext";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -47,6 +48,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
+    const ctx = getRequestContext(req);
     const body = (await req.json().catch(() => null)) as { email?: string } | null;
     const rawEmail = body?.email?.toLowerCase().trim() ?? "";
 
@@ -87,7 +89,11 @@ export async function POST(req: NextRequest) {
         // Não revelar existência de contas
         return NextResponse.json({ ok: true });
       }
-      console.error("[password/reset-request] generateLink error:", error);
+      console.error("[password/reset-request] generateLink error", {
+        error,
+        requestId: ctx.requestId,
+        correlationId: ctx.correlationId,
+      });
       return NextResponse.json(
         { ok: false, error: "Não foi possível gerar o link de recuperação. Tenta mais tarde." },
         { status: 500 },
@@ -96,7 +102,10 @@ export async function POST(req: NextRequest) {
 
     const baseActionLink = data?.properties?.action_link;
     if (!baseActionLink) {
-      console.error("[password/reset-request] missing action_link", data);
+      console.error("[password/reset-request] missing action_link", {
+        requestId: ctx.requestId,
+        correlationId: ctx.correlationId,
+      });
       return NextResponse.json(
         { ok: false, error: "Não foi possível gerar o link de recuperação. Tenta mais tarde." },
         { status: 500 },
@@ -110,7 +119,11 @@ export async function POST(req: NextRequest) {
       url.searchParams.set("redirect_to", redirectTo);
       actionLink = url.toString();
     } catch (e) {
-      console.warn("[password/reset-request] action_link parse failed, fallback ao original", e);
+    console.warn("[password/reset-request] action_link parse failed, fallback ao original", {
+      error: e,
+      requestId: ctx.requestId,
+      correlationId: ctx.correlationId,
+    });
     }
 
     try {
@@ -122,7 +135,11 @@ export async function POST(req: NextRequest) {
         text: `Recebemos um pedido de redefinição de password. Abre o link para escolher nova password: ${actionLink}`,
       });
     } catch (mailErr) {
-      console.error("[password/reset-request] resend error", mailErr);
+      console.error("[password/reset-request] resend error", {
+        mailErr,
+        requestId: ctx.requestId,
+        correlationId: ctx.correlationId,
+      });
       return NextResponse.json(
         { ok: false, error: "Não conseguimos enviar o email agora. Tenta novamente em breve." },
         { status: 502 },
@@ -131,7 +148,12 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true });
   } catch (err) {
-    console.error("[password/reset-request] error:", err);
+    const ctx = getRequestContext(req);
+    console.error("[password/reset-request] error:", {
+      err,
+      requestId: ctx.requestId,
+      correlationId: ctx.correlationId,
+    });
     return NextResponse.json(
       { ok: false, error: "Erro inesperado ao pedir recuperação." },
       { status: 500 },

@@ -3,9 +3,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { AuthRequiredError, requireUser } from "@/lib/auth/requireUser";
 import { NotificationType } from "@prisma/client";
 import { getUserFollowingSet } from "@/domain/social/follows";
+import { getRequestContext } from "@/lib/http/requestContext";
 
 // Lista notificações com badge de não lidas; só o próprio utilizador pode ver
 export async function GET(req: NextRequest) {
+  let ctx = getRequestContext(req);
   try {
     const user = await requireUser();
 
@@ -23,6 +25,7 @@ export async function GET(req: NextRequest) {
     const orgIdRaw = req.nextUrl.searchParams.get("organizationId");
     const organizationId = orgIdRaw ? Number(orgIdRaw) : null;
     const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 200) : 100;
+    ctx = getRequestContext(req, { orgId: Number.isFinite(organizationId ?? NaN) ? organizationId : null });
 
     const validTypes = new Set(Object.values(NotificationType));
     const types = typesParam
@@ -94,12 +97,18 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    console.error("[notifications][GET] erro inesperado", err);
+    console.error("[notifications][GET] erro inesperado", {
+      err,
+      requestId: ctx.requestId,
+      correlationId: ctx.correlationId,
+      orgId: ctx.orgId,
+    });
     return NextResponse.json({ ok: false, code: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
 
 export async function DELETE(req: NextRequest) {
+  const ctx = getRequestContext(req);
   try {
     const user = await requireUser();
     const body = await req.json().catch(() => ({}));
@@ -127,7 +136,12 @@ export async function DELETE(req: NextRequest) {
     if (err instanceof AuthRequiredError) {
       return NextResponse.json({ ok: false, code: "UNAUTHENTICATED" }, { status: err.status ?? 401 });
     }
-    console.error("[notifications][DELETE] erro inesperado", err);
+    console.error("[notifications][DELETE] erro inesperado", {
+      err,
+      requestId: ctx.requestId,
+      correlationId: ctx.correlationId,
+      orgId: ctx.orgId,
+    });
     return NextResponse.json({ ok: false, code: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
