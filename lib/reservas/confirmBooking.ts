@@ -4,18 +4,35 @@ import { getAvailableSlotsForScope } from "@/lib/reservas/availabilitySelect";
 import { groupByScope, type AvailabilityScopeType, type ScopedOverride, type ScopedTemplate } from "@/lib/reservas/scopedAvailability";
 import { ensureReservasModuleAccess } from "@/lib/reservas/access";
 import { resolveServiceAssignmentMode } from "@/lib/reservas/serviceAssignment";
+import {
+  BOOKING_CONFIRMATION_SNAPSHOT_VERSION,
+  buildBookingConfirmationSnapshot,
+  type BookingConfirmationPaymentMeta,
+} from "@/lib/reservas/confirmationSnapshot";
 
 const SLOT_STEP_MINUTES = 15;
 
 type ConfirmBookingResult =
   | { ok: true; bookingId: number; alreadyConfirmed: boolean; professionalId: number | null; resourceId: number | null }
-  | { ok: false; code: "NOT_FOUND" | "INVALID_STATUS" | "SLOT_TAKEN" | "INVALID_CAPACITY" | "SERVICE_INACTIVE"; message: string };
+  | {
+      ok: false;
+      code:
+        | "NOT_FOUND"
+        | "INVALID_STATUS"
+        | "SLOT_TAKEN"
+        | "INVALID_CAPACITY"
+        | "SERVICE_INACTIVE"
+        | "POLICY_SNAPSHOT_MISSING"
+        | "PRICING_SNAPSHOT_MISSING";
+      message: string;
+    };
 
 type ConfirmBookingParams = {
   tx: Prisma.TransactionClient;
   bookingId: number;
   now?: Date;
   ignoreExpiry?: boolean;
+  paymentMeta?: BookingConfirmationPaymentMeta | null;
 };
 
 function buildBlocks(bookings: Array<{ startsAt: Date; durationMinutes: number; professionalId: number | null; resourceId: number | null }>) {
@@ -27,49 +44,44 @@ function buildBlocks(bookings: Array<{ startsAt: Date; durationMinutes: number; 
   }));
 }
 
-async function resolvePolicyId(params: {
-  tx: Prisma.TransactionClient;
-  organizationId: number;
-  servicePolicyId?: number | null;
-}) {
-  if (params.servicePolicyId) {
-    const policy = await params.tx.organizationPolicy.findFirst({
-      where: { id: params.servicePolicyId, organizationId: params.organizationId },
-      select: { id: true },
-    });
-    if (policy) return policy.id;
-  }
+const toInt = (value: unknown) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.round(parsed) : null;
+};
 
-  const fallback =
-    (await params.tx.organizationPolicy.findFirst({
-      where: { organizationId: params.organizationId, policyType: "MODERATE" },
-      select: { id: true },
-    })) ??
-    (await params.tx.organizationPolicy.findFirst({
-      where: { organizationId: params.organizationId },
-      orderBy: { createdAt: "asc" },
-      select: { id: true },
-    }));
+const extractPolicyIdFromSnapshot = (snapshot: unknown) => {
+  if (!snapshot || typeof snapshot !== "object") return null;
+  const policyId = toInt((snapshot as any)?.policySnapshot?.policyId);
+  return policyId && policyId > 0 ? policyId : null;
+};
 
-  return fallback?.id ?? null;
-}
+const extractSnapshotCreatedAt = (snapshot: unknown, fallback: Date) => {
+  if (!snapshot || typeof snapshot !== "object") return fallback;
+  const raw = (snapshot as any)?.createdAt;
+  if (typeof raw !== "string") return fallback;
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? fallback : parsed;
+};
 
 export async function confirmPendingBooking({
   tx,
   bookingId,
   now = new Date(),
   ignoreExpiry = false,
+  paymentMeta = null,
 }: ConfirmBookingParams): Promise<ConfirmBookingResult> {
   const booking = await tx.booking.findUnique({
     where: { id: bookingId },
     include: {
-      policyRef: { select: { id: true } },
+      policyRef: { select: { id: true, policyId: true } },
       service: {
         select: {
           id: true,
           policyId: true,
           kind: true,
           isActive: true,
+          unitPriceCents: true,
+          currency: true,
           organizationId: true,
           professionalLinks: {
             select: { professionalId: true, professional: { select: { isActive: true } } },
@@ -82,6 +94,10 @@ export async function confirmPendingBooking({
               primaryModule: true,
               reservationAssignmentMode: true,
               timezone: true,
+              feeMode: true,
+              platformFeeBps: true,
+              platformFeeFixedCents: true,
+              orgType: true,
             },
           },
         },
@@ -304,6 +320,43 @@ export async function confirmPendingBooking({
     assignedProfessionalId = assignedScope.scopeType === "PROFESSIONAL" ? assignedScope.scopeId : null;
   }
 
+  const existingSnapshot = booking.confirmationSnapshot ?? null;
+  const existingPolicyId = extractPolicyIdFromSnapshot(existingSnapshot);
+  const snapshotResult =
+    existingSnapshot
+      ? { ok: true as const, snapshot: existingSnapshot, policyId: existingPolicyId }
+      : await buildBookingConfirmationSnapshot({
+          tx,
+          booking,
+          now,
+          policyIdHint: booking.policyRef?.policyId ?? null,
+          paymentMeta,
+        });
+  if (!snapshotResult.ok) {
+    const message =
+      snapshotResult.code === "POLICY_SNAPSHOT_MISSING"
+        ? "Não foi possível fixar a política da reserva."
+        : "Não foi possível fixar o preço da reserva.";
+    return { ok: false, code: snapshotResult.code, message };
+  }
+
+  const snapshot = snapshotResult.snapshot;
+  const snapshotPolicyId = extractPolicyIdFromSnapshot(snapshot) ?? snapshotResult.policyId;
+  if (!snapshotPolicyId) {
+    return {
+      ok: false,
+      code: "POLICY_SNAPSHOT_MISSING",
+      message: "Não foi possível fixar a política da reserva.",
+    };
+  }
+
+  const snapshotCreatedAt =
+    booking.confirmationSnapshotCreatedAt ?? extractSnapshotCreatedAt(snapshot, now);
+  const snapshotVersion =
+    booking.confirmationSnapshotVersion ??
+    toInt((snapshot as any)?.version) ??
+    BOOKING_CONFIRMATION_SNAPSHOT_VERSION;
+
   const updated = await tx.booking.update({
     where: { id: booking.id },
     data: {
@@ -312,21 +365,17 @@ export async function confirmPendingBooking({
       assignmentMode,
       professionalId: assignedProfessionalId,
       resourceId: assignedResourceId,
+      confirmationSnapshot: snapshot,
+      confirmationSnapshotVersion: snapshotVersion,
+      confirmationSnapshotCreatedAt: snapshotCreatedAt,
     },
     select: { id: true },
   });
 
   if (!booking.policyRef) {
-    const policyId = await resolvePolicyId({
-      tx,
-      organizationId: booking.organizationId,
-      servicePolicyId: booking.service.policyId ?? undefined,
+    await tx.bookingPolicyRef.create({
+      data: { bookingId: booking.id, policyId: snapshotPolicyId },
     });
-    if (policyId) {
-      await tx.bookingPolicyRef.create({
-        data: { bookingId: booking.id, policyId },
-      });
-    }
   }
 
   await tx.userActivity.create({

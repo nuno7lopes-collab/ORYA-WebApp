@@ -9,6 +9,12 @@ import { ensureReservasModuleAccess } from "@/lib/reservas/access";
 import { createNotification, shouldNotify } from "@/lib/notifications";
 import { OrganizationMemberRole } from "@prisma/client";
 import { markNoShowBooking } from "@/domain/bookings/commands";
+import { getRequestContext } from "@/lib/http/requestContext";
+import {
+  computeNoShowRefundFromSnapshot,
+  parseBookingConfirmationSnapshot,
+} from "@/lib/reservas/confirmationSnapshot";
+import { refundBookingPayment } from "@/lib/reservas/bookingRefund";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -34,8 +40,21 @@ export async function POST(
 ) {
   const resolved = await params;
   const bookingId = parseId(resolved.id);
+  const ctx = getRequestContext(req);
+  const errorWithCtx = (status: number, error: string, errorCode = error, details?: Record<string, unknown>) =>
+    NextResponse.json(
+      {
+        ok: false,
+        error,
+        errorCode,
+        requestId: ctx.requestId,
+        correlationId: ctx.correlationId,
+        ...(details ? { details } : {}),
+      },
+      { status },
+    );
   if (!bookingId) {
-    return NextResponse.json({ ok: false, error: "ID inválido." }, { status: 400 });
+    return errorWithCtx(400, "ID inválido.", "BOOKING_ID_INVALID");
   }
 
   try {
@@ -61,60 +80,131 @@ export async function POST(
       requireVerifiedEmail: true,
     });
     if (!reservasAccess.ok) {
-      return NextResponse.json({ ok: false, error: reservasAccess.error }, { status: 403 });
+      return NextResponse.json(reservasAccess, { status: 403 });
     }
-
-    const booking = await prisma.booking.findFirst({
-      where: { id: bookingId, organizationId: organization.id },
-      include: {
-        professional: { select: { userId: true } },
-      },
-    });
-
-    if (!booking) {
-      return NextResponse.json({ ok: false, error: "Reserva não encontrada." }, { status: 404 });
-    }
-    if (
-      membership.role === OrganizationMemberRole.STAFF &&
-      (!booking.professional?.userId || booking.professional.userId !== profile.id)
-    ) {
-      return NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 });
-    }
-    if (["CANCELLED", "CANCELLED_BY_CLIENT", "CANCELLED_BY_ORG", "COMPLETED", "DISPUTED", "NO_SHOW"].includes(booking.status)) {
-      return NextResponse.json({ ok: false, error: "Reserva já encerrada." }, { status: 409 });
-    }
-
-    if (booking.startsAt > new Date()) {
-      return NextResponse.json({ ok: false, error: "Reserva ainda não ocorreu." }, { status: 409 });
-    }
-
-    const { booking: updated } = await markNoShowBooking({
-      bookingId: booking.id,
-      organizationId: booking.organizationId,
-      actorUserId: profile.id,
-      data: { status: "NO_SHOW" },
-      select: { id: true, status: true },
-    });
 
     const { ip, userAgent } = getRequestMeta(req);
-    await recordOrganizationAudit(prisma, {
-      organizationId: organization.id,
-      actorUserId: profile.id,
-      action: "BOOKING_NO_SHOW",
-      metadata: {
+    const now = new Date();
+
+    const result = await prisma.$transaction(async (tx) => {
+      const booking = await tx.booking.findFirst({
+        where: { id: bookingId, organizationId: organization.id },
+        select: {
+          id: true,
+          userId: true,
+          status: true,
+          startsAt: true,
+          paymentIntentId: true,
+          organizationId: true,
+          serviceId: true,
+          snapshotTimezone: true,
+          confirmationSnapshot: true,
+          professional: { select: { userId: true } },
+        },
+      });
+
+      if (!booking) {
+        return { error: errorWithCtx(404, "Reserva não encontrada.", "BOOKING_NOT_FOUND") };
+      }
+      if (
+        membership.role === OrganizationMemberRole.STAFF &&
+        (!booking.professional?.userId || booking.professional.userId !== profile.id)
+      ) {
+        return { error: errorWithCtx(403, "Sem permissões.", "FORBIDDEN") };
+      }
+      if (
+        ["CANCELLED", "CANCELLED_BY_CLIENT", "CANCELLED_BY_ORG", "COMPLETED", "DISPUTED", "NO_SHOW"].includes(
+          booking.status,
+        )
+      ) {
+        return { error: errorWithCtx(409, "Reserva já encerrada.", "BOOKING_ALREADY_CLOSED") };
+      }
+
+      if (booking.startsAt > now) {
+        return { error: errorWithCtx(409, "Reserva ainda não ocorreu.", "BOOKING_NOT_STARTED") };
+      }
+
+      const snapshot = parseBookingConfirmationSnapshot(booking.confirmationSnapshot);
+      if (!snapshot) {
+        return {
+          error: errorWithCtx(
+            409,
+            "Reserva sem snapshot. Corre o backfill antes de marcar no-show.",
+            "BOOKING_CONFIRMATION_SNAPSHOT_REQUIRED",
+            { bookingId: booking.id },
+          ),
+        };
+      }
+
+      const refundComputation = computeNoShowRefundFromSnapshot(snapshot);
+      if (!refundComputation) {
+        return {
+          error: errorWithCtx(
+            409,
+            "Snapshot inválido. Corre o backfill antes de marcar no-show.",
+            "BOOKING_CONFIRMATION_SNAPSHOT_INVALID",
+            { bookingId: booking.id },
+          ),
+        };
+      }
+
+      const { booking: updated } = await markNoShowBooking({
         bookingId: booking.id,
-        serviceId: booking.serviceId,
-        actorRole: membership.role,
-      },
-      ip,
-      userAgent,
+        organizationId: booking.organizationId,
+        actorUserId: profile.id,
+        data: { status: "NO_SHOW" },
+        select: { id: true, status: true },
+        tx,
+      });
+
+      await recordOrganizationAudit(tx, {
+        organizationId: organization.id,
+        actorUserId: profile.id,
+        action: "BOOKING_NO_SHOW",
+        metadata: {
+          bookingId: booking.id,
+          serviceId: booking.serviceId,
+          actorRole: membership.role,
+          snapshotVersion: snapshot.version,
+          snapshotTimezone: booking.snapshotTimezone,
+          penaltyCents: refundComputation.penaltyCents,
+          refundAmountCents: refundComputation.refundCents,
+          refundRule: refundComputation.rule,
+        },
+        ip,
+        userAgent,
+      });
+
+      return {
+        booking: updated,
+        userId: booking.userId,
+        paymentIntentId: booking.paymentIntentId,
+        refundAmountCents: refundComputation.refundCents,
+        snapshotTimezone: booking.snapshotTimezone,
+      };
     });
 
-    if (booking.userId) {
-      const shouldSend = await shouldNotify(booking.userId, "SYSTEM_ANNOUNCE");
+    if ("error" in result) return result.error;
+
+    if (result.paymentIntentId && result.refundAmountCents > 0) {
+      try {
+        await refundBookingPayment({
+          bookingId: result.booking.id,
+          paymentIntentId: result.paymentIntentId,
+          reason: "NO_SHOW_REFUND",
+          amountCents: result.refundAmountCents,
+        });
+      } catch (refundErr) {
+        console.error("[organizacao/no-show] refund failed", refundErr);
+        return errorWithCtx(502, "No-show registado, mas o reembolso falhou.", "BOOKING_REFUND_FAILED");
+      }
+    }
+
+    if (result.userId) {
+      const shouldSend = await shouldNotify(result.userId, "SYSTEM_ANNOUNCE");
       if (shouldSend) {
         await createNotification({
-          userId: booking.userId,
+          userId: result.userId,
           type: "SYSTEM_ANNOUNCE",
           title: "Reserva marcada como no-show",
           body: "A tua reserva foi marcada como não compareceu.",
@@ -125,12 +215,16 @@ export async function POST(
       }
     }
 
-    return NextResponse.json({ ok: true, booking: updated });
+    return NextResponse.json({
+      ok: true,
+      booking: result.booking,
+      snapshotTimezone: result.snapshotTimezone,
+    });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return errorWithCtx(401, "Não autenticado.", "UNAUTHENTICATED");
     }
     console.error("POST /api/organizacao/reservas/[id]/no-show error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao atualizar reserva." }, { status: 500 });
+    return errorWithCtx(500, "Erro ao atualizar reserva.", "BOOKING_NO_SHOW_FAILED");
   }
 }

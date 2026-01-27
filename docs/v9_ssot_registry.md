@@ -256,6 +256,11 @@ Catalogo canonico do que e verdade no sistema. Quando um item passa a DONE aqui,
   - `app/api/me/reservas/route.ts`
 
 **Status**: IN PROGRESS (PR1+PR2 done: snapshot SSOT + cancel/refund/no-show por snapshot)
+**PR2 metadata**
+- PR: #3 https://github.com/nuno7lopes-collab/ORYA-WebApp/pull/3
+- Branch: `chat3/block7-pr2-snapshot`
+- Commits: `18e3f71` (code), `487e11c` (metadata), `7532de4` (PR link), `f9aec4a` (commit list), `e4aead2` (guardrail fix), `01e66f1` (ci retrigger)
+- Gates/tests: `npm run db:gates:offline` PASS (local), `npx vitest run tests/agenda` PASS (local)
 
 ---
 

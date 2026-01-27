@@ -6,6 +6,12 @@ import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { decideCancellation } from "@/lib/bookingCancellation";
 import { refundBookingPayment } from "@/lib/reservas/bookingRefund";
 import { cancelBooking } from "@/domain/bookings/commands";
+import { getRequestContext } from "@/lib/http/requestContext";
+import {
+  computeCancellationRefundFromSnapshot,
+  getSnapshotCancellationWindowMinutes,
+  parseBookingConfirmationSnapshot,
+} from "@/lib/reservas/confirmationSnapshot";
 
 function parseId(value: string) {
   const parsed = Number(value);
@@ -24,8 +30,21 @@ export async function POST(
 ) {
   const resolved = await params;
   const bookingId = parseId(resolved.id);
+  const ctx = getRequestContext(req);
+  const errorWithCtx = (status: number, error: string, errorCode = error, details?: Record<string, unknown>) =>
+    NextResponse.json(
+      {
+        ok: false,
+        error,
+        errorCode,
+        requestId: ctx.requestId,
+        correlationId: ctx.correlationId,
+        ...(details ? { details } : {}),
+      },
+      { status },
+    );
   if (!bookingId) {
-    return NextResponse.json({ ok: false, error: "ID inválido." }, { status: 400 });
+    return errorWithCtx(400, "ID inválido.", "BOOKING_ID_INVALID");
   }
 
   try {
@@ -39,39 +58,26 @@ export async function POST(
     const result = await prisma.$transaction(async (tx) => {
       const booking = await tx.booking.findUnique({
         where: { id: bookingId },
-        include: {
-          service: {
-            select: {
-              id: true,
-              organizationId: true,
-              policyId: true,
-              policy: {
-                select: {
-                  id: true,
-                  cancellationWindowMinutes: true,
-                },
-              },
-            },
-          },
-          policyRef: {
-            select: {
-              policy: {
-                select: {
-                  id: true,
-                  cancellationWindowMinutes: true,
-                },
-              },
-            },
-          },
+        select: {
+          id: true,
+          userId: true,
+          status: true,
+          startsAt: true,
+          paymentIntentId: true,
+          organizationId: true,
+          serviceId: true,
+          availabilityId: true,
+          snapshotTimezone: true,
+          confirmationSnapshot: true,
         },
       });
 
       if (!booking) {
-        return { error: NextResponse.json({ ok: false, error: "Reserva não encontrada." }, { status: 404 }) };
+        return { error: errorWithCtx(404, "Reserva não encontrada.", "BOOKING_NOT_FOUND") };
       }
 
       if (booking.userId !== user.id) {
-        return { error: NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 }) };
+        return { error: errorWithCtx(403, "Sem permissões.", "FORBIDDEN") };
       }
 
       if (["CANCELLED_BY_CLIENT", "CANCELLED_BY_ORG", "CANCELLED"].includes(booking.status)) {
@@ -79,35 +85,38 @@ export async function POST(
       }
 
       const isPending = ["PENDING_CONFIRMATION", "PENDING"].includes(booking.status);
-      const fallbackPolicy =
-        booking.service?.policyId &&
-        (await tx.organizationPolicy.findFirst({
-          where: { id: booking.service.policyId, organizationId: booking.organizationId },
-          select: { id: true, cancellationWindowMinutes: true },
-        }));
-      const policy =
-        booking.policyRef?.policy ??
-        booking.service?.policy ??
-        fallbackPolicy ??
-        (await tx.organizationPolicy.findFirst({
-          where: { organizationId: booking.organizationId, policyType: "MODERATE" },
-          select: { id: true, cancellationWindowMinutes: true },
-        })) ??
-        (await tx.organizationPolicy.findFirst({
-          where: { organizationId: booking.organizationId },
-          orderBy: { createdAt: "asc" },
-          select: { id: true, cancellationWindowMinutes: true },
-        }));
+      const snapshot = parseBookingConfirmationSnapshot(booking.confirmationSnapshot);
+      if (!isPending && booking.status === "CONFIRMED" && !snapshot) {
+        return {
+          error: errorWithCtx(
+            409,
+            "Reserva confirmada sem snapshot. Corre o backfill antes de cancelar.",
+            "BOOKING_CONFIRMATION_SNAPSHOT_REQUIRED",
+            { bookingId: booking.id },
+          ),
+        };
+      }
+
+      const cancellationWindowMinutes = snapshot
+        ? getSnapshotCancellationWindowMinutes(snapshot)
+        : null;
 
       const decision = decideCancellation(
         booking.startsAt,
-        policy?.cancellationWindowMinutes ?? null,
+        isPending ? null : cancellationWindowMinutes,
         now,
       );
       const canCancel = isPending || (booking.status === "CONFIRMED" && decision.allowed);
 
       if (!canCancel) {
-        return { error: NextResponse.json({ ok: false, error: "O prazo de cancelamento já passou." }, { status: 400 }) };
+        return {
+          error: errorWithCtx(
+            400,
+            "O prazo de cancelamento já passou.",
+            "BOOKING_CANCELLATION_WINDOW_EXPIRED",
+            { deadline: decision.deadline?.toISOString() ?? null },
+          ),
+        };
       }
 
       const { booking: updated } = await cancelBooking({
@@ -121,6 +130,8 @@ export async function POST(
       const refundRequired =
         !!booking.paymentIntentId &&
         (isPending || (booking.status === "CONFIRMED" && decision.allowed));
+      const refundComputation = snapshot ? computeCancellationRefundFromSnapshot(snapshot) : null;
+      const refundAmountCents = refundComputation?.refundCents ?? null;
 
       await recordOrganizationAudit(tx, {
         organizationId: booking.organizationId,
@@ -134,12 +145,22 @@ export async function POST(
           reason,
           deadline: decision.deadline?.toISOString() ?? null,
           refundRequired,
+          refundAmountCents,
+          snapshotVersion: snapshot?.version ?? null,
+          snapshotTimezone: booking.snapshotTimezone,
         },
         ip,
         userAgent,
       });
 
-      return { booking: updated, already: false, refundRequired, paymentIntentId: booking.paymentIntentId };
+      return {
+        booking: updated,
+        already: false,
+        refundRequired,
+        paymentIntentId: booking.paymentIntentId,
+        refundAmountCents,
+        snapshotTimezone: booking.snapshotTimezone,
+      };
     });
 
     if ("error" in result) return result.error;
@@ -150,10 +171,11 @@ export async function POST(
           bookingId: result.booking.id,
           paymentIntentId: result.paymentIntentId,
           reason: "CLIENT_CANCEL",
+          amountCents: result.refundAmountCents,
         });
       } catch (refundErr) {
         console.error("[reservas/cancel] refund failed", refundErr);
-        return NextResponse.json({ ok: false, error: "Reserva cancelada, mas o reembolso falhou." }, { status: 502 });
+        return errorWithCtx(502, "Reserva cancelada, mas o reembolso falhou.", "BOOKING_REFUND_FAILED");
       }
     }
 
@@ -164,12 +186,13 @@ export async function POST(
         status: result.booking.status,
       },
       alreadyCancelled: result.already,
+      snapshotTimezone: result.snapshotTimezone,
     });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return errorWithCtx(401, "Não autenticado.", "UNAUTHENTICATED");
     }
     console.error("POST /api/me/reservas/[id]/cancel error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao cancelar reserva." }, { status: 500 });
+    return errorWithCtx(500, "Erro ao cancelar reserva.", "BOOKING_CANCEL_FAILED");
   }
 }
