@@ -286,8 +286,15 @@ export async function runOperationsBatch() {
 
   for (const op of pending as OperationRecord[]) {
     const now = new Date();
-    await prisma.operation.update({
-      where: { id: op.id },
+    const claim = await prisma.operation.updateMany({
+      where: {
+        id: op.id,
+        lockedAt: null,
+        OR: [
+          { status: "PENDING" },
+          { status: "FAILED", nextRetryAt: { lte: now } },
+        ],
+      },
       data: {
         status: "RUNNING",
         attempts: { increment: 1 },
@@ -295,6 +302,7 @@ export async function runOperationsBatch() {
         updatedAt: now,
       },
     });
+    if (claim.count === 0) continue;
 
     try {
       await processOperation(op);

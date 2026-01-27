@@ -13,6 +13,14 @@ type RefundBookingParams = {
   bookingId: number;
   paymentIntentId: string;
   reason: string;
+  amountCents?: number | null;
+  idempotencyKey?: string | null;
+};
+
+const toAmountCents = (value: number | null | undefined) => {
+  if (!Number.isFinite(value)) return null;
+  const parsed = Math.round(value as number);
+  return parsed > 0 ? parsed : null;
 };
 
 export async function refundBookingPayment(params: RefundBookingParams) {
@@ -42,7 +50,9 @@ export async function refundBookingPayment(params: RefundBookingParams) {
     select: { amountCents: true },
   });
 
-  const idempotencyKey = `refund:BOOKING:${params.bookingId}`;
+  const idempotencyKey =
+    params.idempotencyKey ??
+    `refund:BOOKING:${params.bookingId}:${params.reason}`;
   const paymentIntent = await retrievePaymentIntent(params.paymentIntentId, {
     expand: ["charges"],
   });
@@ -70,14 +80,26 @@ export async function refundBookingPayment(params: RefundBookingParams) {
     return null;
   }
 
-  const amountCents = transaction?.amountCents ?? paymentIntent.amount_received ?? undefined;
-  const refundAmount = amountCents && amountCents > 0 ? amountCents : undefined;
+  const amountAvailable =
+    transaction?.amountCents ?? paymentIntent.amount_received ?? paymentIntent.amount ?? 0;
+  const requestedAmount = toAmountCents(params.amountCents);
+  const refundAmountCents =
+    requestedAmount && amountAvailable > 0
+      ? Math.min(requestedAmount, amountAvailable)
+      : amountAvailable > 0
+        ? amountAvailable
+        : null;
+
+  if (!refundAmountCents) {
+    await cancelPendingPayout(params.paymentIntentId, params.reason);
+    return null;
+  }
 
   try {
     const refund = await createRefund(
       {
         payment_intent: params.paymentIntentId,
-        amount: refundAmount,
+        amount: refundAmountCents,
       },
       { idempotencyKey, org, requireStripe: true },
     );
@@ -92,6 +114,7 @@ export async function refundBookingPayment(params: RefundBookingParams) {
             bookingId: params.bookingId,
             paymentIntentId: params.paymentIntentId,
             reason: params.reason,
+            amountCents: refundAmountCents,
           },
         },
         tx,
@@ -111,6 +134,7 @@ export async function refundBookingPayment(params: RefundBookingParams) {
             bookingId: params.bookingId,
             paymentIntentId: params.paymentIntentId,
             reason: params.reason,
+            amountCents: refundAmountCents,
           },
         },
         tx,

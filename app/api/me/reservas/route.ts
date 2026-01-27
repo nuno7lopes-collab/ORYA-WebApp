@@ -3,6 +3,10 @@ import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { decideCancellation } from "@/lib/bookingCancellation";
+import {
+  getSnapshotCancellationWindowMinutes,
+  parseBookingConfirmationSnapshot,
+} from "@/lib/reservas/confirmationSnapshot";
 
 export async function GET(_req: NextRequest) {
   try {
@@ -26,6 +30,8 @@ export async function GET(_req: NextRequest) {
         pendingExpiresAt: true,
         assignmentMode: true,
         partySize: true,
+        snapshotTimezone: true,
+        confirmationSnapshot: true,
         professional: {
           select: {
             id: true,
@@ -110,28 +116,44 @@ export async function GET(_req: NextRequest) {
     const now = new Date();
 
     const items = bookings.map((booking) => {
+      const snapshot = parseBookingConfirmationSnapshot(booking.confirmationSnapshot);
       const policyRaw =
         booking.policyRef?.policy ??
         booking.service?.policy ??
         defaultByOrganization.get(booking.organizationId) ??
         null;
 
-      const policy = policyRaw
+      const policy = snapshot
         ? {
-            id: policyRaw.id,
-            name: policyRaw.name,
-            policyType: policyRaw.policyType,
-            cancellationWindowMinutes: policyRaw.cancellationWindowMinutes,
+            id: snapshot.policySnapshot.policyId,
+            name: snapshot.policySnapshot.policyType,
+            policyType: snapshot.policySnapshot.policyType,
+            cancellationWindowMinutes: snapshot.policySnapshot.cancellationWindowMinutes,
+            snapshotVersion: snapshot.version,
           }
-        : null;
+        : policyRaw
+          ? {
+              id: policyRaw.id,
+              name: policyRaw.name,
+              policyType: policyRaw.policyType,
+              cancellationWindowMinutes: policyRaw.cancellationWindowMinutes,
+              snapshotVersion: null,
+            }
+          : null;
 
       const isPending = ["PENDING_CONFIRMATION", "PENDING"].includes(booking.status);
+      const cancellationWindowMinutes = snapshot
+        ? getSnapshotCancellationWindowMinutes(snapshot)
+        : policy?.cancellationWindowMinutes ?? null;
       const cancellationDecision = decideCancellation(
         booking.startsAt,
-        policy?.cancellationWindowMinutes ?? null,
+        isPending ? null : cancellationWindowMinutes,
         now,
       );
-      const canCancel = isPending || (booking.status === "CONFIRMED" && cancellationDecision.allowed);
+      const snapshotRequired = booking.status === "CONFIRMED" && !snapshot;
+      const canCancel =
+        !snapshotRequired &&
+        (isPending || (booking.status === "CONFIRMED" && cancellationDecision.allowed));
 
       return {
         id: booking.id,
@@ -156,9 +178,10 @@ export async function GET(_req: NextRequest) {
         court: booking.court ? { id: booking.court.id, name: booking.court.name } : null,
         organization: booking.service?.organization ?? null,
         policy,
+        snapshotTimezone: booking.snapshotTimezone,
         cancellation: {
           allowed: canCancel,
-          reason: canCancel ? null : cancellationDecision.reason,
+          reason: canCancel ? null : snapshotRequired ? "SNAPSHOT_REQUIRED" : cancellationDecision.reason,
           deadline: cancellationDecision.deadline,
         },
       };

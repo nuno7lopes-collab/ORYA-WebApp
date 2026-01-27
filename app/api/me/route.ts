@@ -1,6 +1,7 @@
 // app/api/me/route.ts
 import { NextResponse } from "next/server";
 import { createSupabaseServer } from "@/lib/supabaseServer";
+import { getRequestContext } from "@/lib/http/requestContext";
 
 // Tipagem simples devolvida ao frontend
 interface SupabaseUser {
@@ -13,8 +14,9 @@ interface AuthErrorLike {
   name?: string;
 }
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
+    const ctx = getRequestContext(req);
     const supabase = await createSupabaseServer();
 
     const {
@@ -37,7 +39,12 @@ const isAuthMissing =
       }
 
       // Outros erros
-      console.warn("[GET /api/me] Erro inesperado em getUser:", userError);
+      console.warn("[GET /api/me] Erro inesperado em getUser:", {
+        userError,
+        requestId: ctx.requestId,
+        correlationId: ctx.correlationId,
+        orgId: ctx.orgId,
+      });
       return NextResponse.json(
         { success: false, error: "Erro ao obter sessão." },
         { status: 500 },
@@ -66,7 +73,12 @@ const isAuthMissing =
       .single();
 
     if (profileError) {
-      console.warn("[GET /api/me] Erro ao carregar profile:", profileError);
+      console.warn("[GET /api/me] Erro ao carregar profile:", {
+        profileError,
+        requestId: ctx.requestId,
+        correlationId: ctx.correlationId,
+        orgId: ctx.orgId,
+      });
     }
 
     return NextResponse.json({
@@ -75,7 +87,13 @@ const isAuthMissing =
       profile: profile ?? null,
     });
   } catch (err) {
-    console.error("[GET /api/me] Erro inesperado:", err);
+    const ctx = getRequestContext(req);
+    console.error("[GET /api/me] Erro inesperado:", {
+      err,
+      requestId: ctx.requestId,
+      correlationId: ctx.correlationId,
+      orgId: ctx.orgId,
+    });
     return NextResponse.json(
       { success: false, error: "Erro ao carregar o perfil." },
       { status: 500 },

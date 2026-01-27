@@ -151,7 +151,7 @@ Catalogo canonico do que e verdade no sistema. Quando um item passa a DONE aqui,
 - `tests/access/officialEmailOrgWriteGuardrails.test.ts`
 
 **Status**: DONE
-**DONE (data/commit/nota)**: 2026-01-27 — Bloco 3 (PR2/PR3)
+**DONE (data/commit/nota)**: 2026-01-27 — PR https://github.com/nuno7lopes-collab/ORYA-WebApp/pull/13 — merge 2b1728efda31f4432b228cce2f6b6267c9fdc720
 
 ---
 
@@ -178,8 +178,8 @@ Catalogo canonico do que e verdade no sistema. Quando um item passa a DONE aqui,
 - `domain/opsFeed/**`
 - `domain/eventLog/**`
 
-**Status**: TODO
-**DONE (data/commit/nota)**: —
+**Status**: DONE
+**DONE (data/commit/nota)**: 2026-01-27 — PR https://github.com/nuno7lopes-collab/ORYA-WebApp/pull/14 — merge 658da4ff7af2f375588d475993f0d216d94d2024
 
 ---
 
@@ -256,6 +256,11 @@ Catalogo canonico do que e verdade no sistema. Quando um item passa a DONE aqui,
   - `app/api/me/reservas/route.ts`
 
 **Status**: IN PROGRESS (PR1+PR2 done: snapshot SSOT + cancel/refund/no-show por snapshot)
+**PR2 metadata**
+- PR: #3 https://github.com/nuno7lopes-collab/ORYA-WebApp/pull/3
+- Branch: `chat3/block7-pr2-snapshot`
+- Commits: `18e3f71` (code), `487e11c` (metadata), `7532de4` (PR link), `f9aec4a` (commit list), `e4aead2` (guardrail fix), `01e66f1` (ci retrigger)
+- Gates/tests: `npm run db:gates:offline` PASS (local), `npx vitest run tests/agenda` PASS (local)
 
 ---
 
