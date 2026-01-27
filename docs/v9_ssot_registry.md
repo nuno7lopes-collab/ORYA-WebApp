@@ -33,6 +33,12 @@ Catalogo canonico do que e verdade no sistema. Quando um item passa a DONE aqui,
 **Status**: TODO (implementacao em curso)
 **DONE (data/commit/nota)**: —
 
+**CI gates**
+- PR #1: https://github.com/nuno7lopes-collab/ORYA-WebApp/pull/1
+- Branch: `chore/seed-gates`
+- Merge commit (developer): f4d2a6a
+- Required check: `gates`
+
 ---
 
 ## Bloco 1 — Payments/Checkout/Ledger/Webhooks/Refunds/Reconciliation/Outbox
@@ -68,6 +74,11 @@ Catalogo canonico do que e verdade no sistema. Quando um item passa a DONE aqui,
 - `app/api/stripe/webhook/route.ts`
 - `lib/checkoutSchemas.ts`
 - `lib/stripe/idempotency.ts`
+
+**PR/merge metadata (PR1)**
+- PR #2: https://github.com/nuno7lopes-collab/ORYA-WebApp/pull/2
+- Branch: `block1/payments-checkout-ledger-outbox`
+- Merge commit (developer): 67b8b45
 
 **Status**: DONE
 **DONE (data/commit/nota)**: 2026-01-27 — Block 1: canonical PI + idempotency + refunds/disputes status sync + guardrails/tests.

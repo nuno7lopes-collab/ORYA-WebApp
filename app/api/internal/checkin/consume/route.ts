@@ -16,8 +16,7 @@ import {
   resolvePolicyForCheckin,
 } from "@/lib/checkin/accessPolicy";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
-
-const INTERNAL_HEADER = "X-ORYA-CRON-SECRET";
+import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
 
 type Body = {
   qrPayload?: string;
@@ -29,22 +28,14 @@ type Body = {
   correlationId?: string | null;
 };
 
-function requireInternalSecret(req: NextRequest) {
-  const provided = req.headers.get(INTERNAL_HEADER);
-  const expected = process.env.ORYA_CRON_SECRET;
-  if (!expected || !provided || provided !== expected) {
-    return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
-  }
-  return null;
-}
-
 function hashToken(token: string) {
   return crypto.createHash("sha256").update(token).digest("hex");
 }
 
 export async function POST(req: NextRequest) {
-  const unauthorized = requireInternalSecret(req);
-  if (unauthorized) return unauthorized;
+  if (!requireInternalSecret(req)) {
+    return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
+  }
 
   const body = (await req.json().catch(() => null)) as Body | null;
   const qrPayload = typeof body?.qrPayload === "string" ? body.qrPayload.trim() : "";

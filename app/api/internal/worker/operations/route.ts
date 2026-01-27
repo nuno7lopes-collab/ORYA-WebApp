@@ -50,10 +50,10 @@ import { handlePadelOutboxEvent } from "@/domain/padel/outbox";
 import { handleOwnerTransferOutboxEvent } from "@/domain/organization/ownerTransferOutbox";
 import { consumeAgendaMaterializationEvent } from "@/domain/agendaReadModel/consumer";
 import { handleSearchIndexOutboxEvent } from "@/domain/searchIndex/consumer";
+import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
 
 const MAX_ATTEMPTS = 5;
 const BATCH_SIZE = 5;
-const INTERNAL_HEADER = "X-ORYA-CRON-SECRET";
 
 const BASE_URL = getAppBaseUrl();
 const absUrl = (path: string) => (/^https?:\/\//i.test(path) ? path : `${BASE_URL}${path.startsWith("/") ? path : `/${path}`}`);
@@ -254,15 +254,6 @@ async function processSendEmailOutbox(op: OperationRecord) {
   }
 }
 
-function requireInternalSecret(req: NextRequest) {
-  const provided = req.headers.get(INTERNAL_HEADER);
-  const expected = process.env.ORYA_CRON_SECRET;
-  if (!expected || !provided || provided !== expected) {
-    return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
-  }
-  return null;
-}
-
 export async function POST(req: NextRequest) {
   if (LEGACY_OPERATIONS_DISABLED) {
     return NextResponse.json(
@@ -270,8 +261,9 @@ export async function POST(req: NextRequest) {
       { status: 410 }
     );
   }
-  const unauthorized = requireInternalSecret(req);
-  if (unauthorized) return unauthorized;
+  if (!requireInternalSecret(req)) {
+    return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
+  }
 
   const results = await runOperationsBatch();
   return NextResponse.json({ ok: true, processed: results.length, results }, { status: 200 });

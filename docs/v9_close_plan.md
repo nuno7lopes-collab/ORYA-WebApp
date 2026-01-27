@@ -137,6 +137,12 @@ Plano SSOT para fechar o Blueprint v9 e alinhar a repo inteira. Cada bloco fecha
 - [ ] **IDEMPOTENCIA**: respostas de erro incluem `retryable` e `nextAction`.
 - [ ] **LOGS**: requestId/correlationId em logs de erro.
 
+### PR/merge metadata (CI gates)
+- PR #1: https://github.com/nuno7lopes-collab/ORYA-WebApp/pull/1
+- Branch: `chore/seed-gates`
+- Merge commit (developer): f4d2a6a
+- Required check: `gates`
+
 ### Criterios de DONE (producao)
 - 100% das rotas criticas devolvem envelope canonico.
 - Headers `x-orya-request-id` e `x-orya-correlation-id` presentes em todas as respostas HTTP.
@@ -216,6 +222,11 @@ Plano SSOT para fechar o Blueprint v9 e alinhar a repo inteira. Cada bloco fecha
 - [x] **IDEMPOTENCIA**: dedupeKey baseada em `purchaseId` (checkoutKey).
 - [x] **ERROS** com envelope canonico + requestId.
 - [x] **LOGS**: correlacao `paymentIntentId` + `purchaseId`.
+
+### PR/merge metadata (PR1)
+- PR #2: https://github.com/nuno7lopes-collab/ORYA-WebApp/pull/2
+- Branch: `block1/payments-checkout-ledger-outbox`
+- Merge commit (developer): 67b8b45
 
 ### Criterios de DONE (producao)
 - Todos os entrypoints criam PI via fluxo canonico.

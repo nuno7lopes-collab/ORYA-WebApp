@@ -4,14 +4,14 @@ import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { ingestCrmInteraction } from "@/lib/crm/ingest";
 import { CrmInteractionSource, CrmInteractionType } from "@prisma/client";
 import { cancelBooking, updateBooking } from "@/domain/bookings/commands";
+import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
 
 const HOLD_MINUTES = 10;
 const COMPLETION_GRACE_HOURS = 2;
 
 export async function GET(req: NextRequest) {
   try {
-    const secret = req.headers.get("X-ORYA-CRON-SECRET");
-    if (!secret || secret !== process.env.ORYA_CRON_SECRET) {
+    if (!requireInternalSecret(req)) {
       return NextResponse.json({ ok: false, error: "Unauthorized cron call." }, { status: 401 });
     }
 

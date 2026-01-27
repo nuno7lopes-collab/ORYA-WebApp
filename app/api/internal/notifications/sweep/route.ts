@@ -4,7 +4,9 @@ import { consumeNotificationEventLogBatch } from "@/domain/notifications/consume
 
 export async function GET(req: Request) {
   try {
-    requireInternalSecret(req.headers);
+    if (!requireInternalSecret(req.headers)) {
+      return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
+    }
     const url = new URL(req.url);
     const limitRaw = Number(url.searchParams.get("limit") ?? 200);
     const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 500) : 200;

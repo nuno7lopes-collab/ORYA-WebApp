@@ -3,8 +3,9 @@ import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
 import { getOpsSlo } from "@/domain/ops/slo";
 
 export async function GET(req: NextRequest) {
-  const guard = requireInternalSecret(req);
-  if (!guard.ok) return guard.response;
+  if (!requireInternalSecret(req)) {
+    return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
+  }
 
   const slo = await getOpsSlo();
   return NextResponse.json(slo);
