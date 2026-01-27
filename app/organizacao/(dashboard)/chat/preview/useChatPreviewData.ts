@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabaseBrowser";
 import { useUser } from "@/app/hooks/useUser";
 import type {
@@ -53,6 +54,12 @@ const fetcher = async <T,>(url: string, options?: RequestInit): Promise<T> => {
   }
   return json as T;
 };
+
+function parseOrganizationId(value: string | null): number | null {
+  if (!value) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
 
 function formatTimeLabel(value: string | null | undefined) {
   if (!value) return "—";
@@ -360,9 +367,14 @@ export function useChatPreviewData() {
   const { user, profile } = useUser();
   const viewerId = user?.id ?? null;
   const viewerLabel = profile?.fullName || profile?.username || "Tu";
+  const searchParams = useSearchParams();
   const mentionTokens = useMemo(
     () => buildMentionTokens(profile?.username ?? null, profile?.fullName ?? null),
     [profile?.fullName, profile?.username],
+  );
+  const organizationIdFromQuery = useMemo(
+    () => parseOrganizationId(searchParams.get("organizationId")),
+    [searchParams],
   );
 
   const [conversations, setConversations] = useState<ConversationItem[]>([]);
@@ -382,7 +394,7 @@ export function useChatPreviewData() {
   const [isOffline, setIsOffline] = useState(false);
   const [typingByConversation, setTypingByConversation] = useState<Record<string, string[]>>({});
   const [mentionByConversation, setMentionByConversation] = useState<Record<string, boolean>>({});
-  const [organizationId, setOrganizationId] = useState<number | null>(null);
+  const [organizationId, setOrganizationId] = useState<number | null>(organizationIdFromQuery);
 
   const wsRef = useRef<WebSocket | null>(null);
   const wsPingRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -400,6 +412,12 @@ export function useChatPreviewData() {
   const messagesLoadingRef = useRef<Record<string, boolean>>({});
   const lastMessagesFetchAtRef = useRef<Record<string, number>>({});
   const initialMessagesLoadedRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (organizationIdFromQuery && organizationId !== organizationIdFromQuery) {
+      setOrganizationId(organizationIdFromQuery);
+    }
+  }, [organizationId, organizationIdFromQuery]);
 
   const wsBaseUrl = useMemo(() => {
     if (typeof window === "undefined") return "";
@@ -478,18 +496,10 @@ export function useChatPreviewData() {
   }, [messagesByConversation, pendingByConversation, membersByConversation, viewerId, viewerLabel]);
 
   const loadOrganizationId = useCallback(async () => {
+    if (organizationIdFromQuery) return organizationIdFromQuery;
     if (organizationId) return organizationId;
-    try {
-      const data = await fetcher<{ organization?: { id?: number | null } | null }>(
-        "/api/organizacao/me",
-      );
-      const id = data.organization?.id ?? null;
-      if (id) setOrganizationId(id);
-      return id;
-    } catch {
-      return null;
-    }
-  }, [organizationId]);
+    return null;
+  }, [organizationId, organizationIdFromQuery]);
 
   const loadOrganizationMembers = useCallback(async (): Promise<OrganizationMemberDirectoryItem[]> => {
     const orgId = organizationId ?? (await loadOrganizationId());

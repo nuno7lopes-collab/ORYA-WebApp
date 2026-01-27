@@ -231,13 +231,6 @@ type MemberDirectoryItem = {
   avatarUrl: string | null;
 };
 
-type OrganizationContextResponse = {
-  ok: boolean;
-  organization?: {
-    id: number;
-  } | null;
-};
-
 type TimelineItem =
   | { type: "date"; key: string; label: string }
   | { type: "message"; key: string; message: Message; messageIndex: number; isPending?: boolean; pending?: PendingMessage };
@@ -357,11 +350,21 @@ function groupReactions(reactions?: Reaction[]) {
   return Array.from(map.entries()).map(([emoji, entry]) => ({ emoji, count: entry.count, users: entry.users }));
 }
 
+function parseOrganizationId(value: string | null): number | null {
+  if (!value) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
 export default function ChatInternoV2Client() {
   const { user, profile } = useUser();
   const searchParams = useSearchParams();
   const requestedConversationId = searchParams.get("conversationId");
   const requestedMessageId = searchParams.get("messageId");
+  const organizationIdFromQuery = useMemo(
+    () => parseOrganizationId(searchParams.get("organizationId")),
+    [searchParams],
+  );
 
   const [conversations, setConversations] = useState<ConversationItem[]>([]);
   const [conversationsLoading, setConversationsLoading] = useState(true);
@@ -393,7 +396,7 @@ export default function ChatInternoV2Client() {
   const [directory, setDirectory] = useState<MemberDirectoryItem[]>([]);
   const [directoryLoading, setDirectoryLoading] = useState(false);
   const [directoryError, setDirectoryError] = useState<string | null>(null);
-  const [organizationId, setOrganizationId] = useState<number | null>(null);
+  const [organizationId, setOrganizationId] = useState<number | null>(organizationIdFromQuery);
   const [newConversationOpen, setNewConversationOpen] = useState(false);
   const [newConversationStep, setNewConversationStep] = useState<"DIRECT" | "GROUP" | "CHANNEL">("DIRECT");
 
@@ -439,6 +442,12 @@ export default function ChatInternoV2Client() {
   const conversationListRef = useRef<HTMLDivElement | null>(null);
   const centerPaneRef = useRef<HTMLDivElement | null>(null);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
+
+  useEffect(() => {
+    if (organizationIdFromQuery && organizationId !== organizationIdFromQuery) {
+      setOrganizationId(organizationIdFromQuery);
+    }
+  }, [organizationId, organizationIdFromQuery]);
 
   const activeConversation = useMemo(
     () => conversations.find((conv) => conv.id === activeConversationId) ?? conversations[0] ?? null,
@@ -606,16 +615,10 @@ export default function ChatInternoV2Client() {
   );
 
   const loadOrganizationId = useCallback(async () => {
+    if (organizationIdFromQuery) return organizationIdFromQuery;
     if (organizationId) return organizationId;
-    try {
-      const data = await fetcher<OrganizationContextResponse>("/api/organizacao/me");
-      const id = data.organization?.id ?? null;
-      if (id) setOrganizationId(id);
-      return id;
-    } catch {
-      return null;
-    }
-  }, [organizationId]);
+    return null;
+  }, [organizationId, organizationIdFromQuery]);
 
   const loadDirectory = useCallback(async () => {
     setDirectoryLoading(true);
