@@ -11,11 +11,7 @@ import { cn } from "@/lib/utils";
 import { OrganizationMemberRole } from "@prisma/client";
 import ChatPreviewClient from "./preview/ChatPreviewClient";
 
-type OrganizationChatPageProps = {
-  searchParams?: Record<string, string | string[] | undefined>;
-};
-
-export default async function OrganizationChatPage({ searchParams }: OrganizationChatPageProps) {
+export default async function OrganizationChatPage() {
   const { user } = await getCurrentUser();
 
   if (!user) {
@@ -63,26 +59,6 @@ export default async function OrganizationChatPage({ searchParams }: Organizatio
         </div>
       </div>
     );
-  }
-
-  const urlParams = new URLSearchParams();
-  if (searchParams) {
-    Object.entries(searchParams).forEach(([key, value]) => {
-      if (Array.isArray(value)) {
-        value.forEach((entry) => {
-          if (typeof entry === "string") urlParams.append(key, entry);
-        });
-      } else if (typeof value === "string") {
-        urlParams.set(key, value);
-      }
-    });
-  }
-  const currentOrgId = urlParams.get("organizationId");
-  const expectedOrgId = String(organization.id);
-  if (currentOrgId !== expectedOrgId) {
-    urlParams.set("organizationId", expectedOrgId);
-    const query = urlParams.toString();
-    redirect(query ? `/organizacao/chat?${query}` : "/organizacao/chat");
   }
 
   return (
