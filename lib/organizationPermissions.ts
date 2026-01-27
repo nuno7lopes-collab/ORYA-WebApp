@@ -71,3 +71,21 @@ export function canManageMembers(
 
   return false;
 }
+
+type PermissionResult = { ok: true } | { ok: false; error: string };
+
+function denyPermission(): PermissionResult {
+  return { ok: false, error: "Sem permissoes." };
+}
+
+export function ensureOrgOwner(role: OrganizationMemberRole | null | undefined): PermissionResult {
+  return isOrgOwner(role) ? { ok: true } : denyPermission();
+}
+
+export function ensureOrgCoOwnerOrAbove(role: OrganizationMemberRole | null | undefined): PermissionResult {
+  return isOrgCoOwnerOrAbove(role) ? { ok: true } : denyPermission();
+}
+
+export function ensureOrgAdminOrAbove(role: OrganizationMemberRole | null | undefined): PermissionResult {
+  return isOrgAdminOrAbove(role) ? { ok: true } : denyPermission();
+}
