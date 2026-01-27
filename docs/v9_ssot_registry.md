@@ -104,8 +104,8 @@ Catalogo canonico do que e verdade no sistema. Quando um item passa a DONE aqui,
 - `app/api/internal/outbox/replay/route.ts`
 - `app/api/internal/outbox/dlq/route.ts`
 
-**Status**: TODO
-**DONE (data/commit/nota)**: —
+**Status**: DONE
+**DONE (data/commit/nota)**: 2026-01-27 — PR https://github.com/nuno7lopes-collab/ORYA-WebApp/pull/8 — merge aabb7b5c7f0fbc492f9f17c057a78342cbc30d25 — claim/lock winner-only + gates ops/outbox.
 
 ---
 
@@ -300,7 +300,9 @@ Catalogo canonico do que e verdade no sistema. Quando um item passa a DONE aqui,
 **SSOTs canonicos**
 - Secret unico para rotas internas/cron.
 
-**Status**: TODO
+**Status**: DONE
+**DONE (data/commit/nota)**: 2026-01-27 — PR https://github.com/nuno7lopes-collab/ORYA-WebApp/pull/7 — merge b1136f5a0166a3cc7e50e5bcdca875d47890acc5 — helper canónico.
+**DONE (data/commit/nota)**: 2026-01-27 — PR https://github.com/nuno7lopes-collab/ORYA-WebApp/pull/12 — merge d574ae20ce1fba019b19ce08b6c9efbacea484fc — envelope ops feed/audit.
 
 ---
 

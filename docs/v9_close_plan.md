@@ -289,17 +289,30 @@ Plano SSOT para fechar o Blueprint v9 e alinhar a repo inteira. Cada bloco fecha
 - `domain/opsFeed/consumer.ts`
 
 ### Checklist de fecho
-- [ ] **EXISTE** claim/lock explicito (winner-only) com reconciliacao.
-- [ ] **REMOVER** processamento concorrente sem dedupe.
-- [ ] **FAIL-CLOSED**: worker sem secret nao executa.
-- [ ] **AJUSTAR** schema se precisar de deadLetteredAt/backoff.
-- [ ] **IDEMPOTENCIA**: dedupeKey obrigatoria em todos os eventos.
-- [ ] **ERROS** canonicos em replay/dlq.
-- [ ] **LOGS** com correlationId.
+- [x] **EXISTE** claim/lock explicito (winner-only) com reconciliacao.
+- [x] **REMOVER** processamento concorrente sem dedupe.
+- [x] **FAIL-CLOSED**: worker sem secret nao executa.
+- [x] **AJUSTAR** schema se precisar de deadLetteredAt/backoff.
+- [x] **IDEMPOTENCIA**: dedupeKey obrigatoria em todos os eventos.
+- [x] **ERROS** canonicos em replay/dlq.
+- [x] **LOGS** com correlationId.
 
 ### Criterios de DONE (producao)
 - Double-publish = 0 (provado por testes + logs).
 - Runbook permite replay seguro apos crash.
+
+### Metadata (PR/merge)
+- PR: https://github.com/nuno7lopes-collab/ORYA-WebApp/pull/8
+- Merge SHA: aabb7b5c7f0fbc492f9f17c057a78342cbc30d25
+- Resumo (3-6 linhas):
+  - Claim/lock winner-only em outbox publisher (avoid double publish).
+  - Claim winner-only no worker operations (skip concorrencia).
+  - Cron operations alinhado com worker e guard interno.
+  - Sem refactors fora do scope do bloco.
+  - Gates executados localmente.
+- Comandos de verificacao:
+  - `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres DIRECT_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres npm run db:gates:offline`
+  - `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres DIRECT_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres npx vitest run tests/outbox tests/ops`
 
 ### Riscos/Drifts conhecidos + mitigacao
 - Concurrency sem lock → adotar SKIP LOCKED/claim seguro.
@@ -706,6 +719,21 @@ Plano SSOT para fechar o Blueprint v9 e alinhar a repo inteira. Cada bloco fecha
 ### Guardrails (rg/tests/CI)
 - `rg -n "X-ORYA-CRON-SECRET" app/api/internal app/api/cron -S`
 - `npx vitest run tests/ops`
+
+### Metadata (PR/merge)
+- PR12.1 (helper canónico): https://github.com/nuno7lopes-collab/ORYA-WebApp/pull/7
+- Merge SHA (PR12.1): b1136f5a0166a3cc7e50e5bcdca875d47890acc5
+- PR12.2 (envelope/response): https://github.com/nuno7lopes-collab/ORYA-WebApp/pull/12
+- Merge SHA (PR12.2): d574ae20ce1fba019b19ce08b6c9efbacea484fc
+- Resumo (3-6 linhas):
+  - Helper canónico aplicado a todas as rotas cron/internal.
+  - feed/audit internos normalizados para envelope canónico.
+  - Status codes preservados (200/401/500).
+  - Sem refactors extra fora do scope.
+  - Gates executados localmente.
+- Comandos de verificacao:
+  - `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres DIRECT_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres npm run db:gates:offline`
+  - `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres DIRECT_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres npx vitest run tests/ops`
 
 ---
 
