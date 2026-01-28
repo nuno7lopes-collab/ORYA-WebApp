@@ -1,4 +1,3 @@
-import { NextResponse } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { AuthRequiredError, requireUser } from "@/lib/auth/requireUser";
 import { markNotificationRead } from "@/domain/notifications/consumer";

@@ -1,5 +1,5 @@
 // app/api/payments/intent/route.ts
-// @deprecated Slice 4 cleanup: legacy payment intent endpoint (see cleanup plan).
+// Canonical Payment Intent endpoint (V9 checkout gateway).
 export const runtime = "nodejs";
 
 import { NextRequest } from "next/server";
@@ -17,6 +17,7 @@ import {
   PadelPairingPaymentStatus,
   PadelPairingSlotStatus,
   PadelRegistrationStatus,
+  Prisma,
   SourceType,
 } from "@prisma/client";
 import type { FeeMode } from "@prisma/client";
@@ -46,7 +47,6 @@ import { formatPaidSalesGateMessage, getPaidSalesGate } from "@/lib/organization
 
 const FREE_PLACEHOLDER_INTENT_ID = "FREE_CHECKOUT";
 const ORYA_CARD_FEE_BPS = 100;
-const LEGACY_INTENT_DISABLED = process.env.LEGACY_INTENT_DISABLED !== "false";
 
 type CheckoutItem = {
   ticketId: string | number;
@@ -115,7 +115,7 @@ async function recordFreeCheckoutOutbox(params: {
   purchaseId: string;
   actorUserId?: string | null;
   idempotencyKey: string;
-  payload: Record<string, unknown>;
+  payload: Prisma.InputJsonObject;
 }) {
   const { organizationId, eventId, purchaseId, actorUserId, idempotencyKey, payload } = params;
   const eventLogId = crypto.randomUUID();
@@ -235,16 +235,12 @@ async function hasExistingFreeEntryForUser(params: { eventId: number; userId: st
 }
 
 async function _POST(req: NextRequest) {
-  if (LEGACY_INTENT_DISABLED) {
-    return intentError("LEGACY_INTENT_DISABLED", "Endpoint desativado.", { httpStatus: 410 });
-  }
   try {
     const body = (await req.json().catch(() => null)) as Body | null;
 
     if (!body || !body.slug || !Array.isArray(body.items) || body.items.length === 0) {
       return intentError("INVALID_INPUT", "Dados inválidos.", { httpStatus: 400, status: "FAILED", nextAction: "NONE", retryable: false });
     }
-
     const {
       slug,
       items,
@@ -326,7 +322,8 @@ async function _POST(req: NextRequest) {
     }
 
     let ownerResolved = await resolveOwner({ sessionUserId: userId, guestEmail });
-    let ownerForMetadata =
+    type OwnerMetadata = { ownerUserId?: string | null; ownerIdentityId?: string | null; emailNormalized?: string | null };
+    let ownerForMetadata: OwnerMetadata | undefined =
       ownerResolved.ownerUserId || ownerResolved.ownerIdentityId || ownerResolved.emailNormalized
         ? {
             ownerUserId: ownerResolved.ownerUserId ?? undefined,
@@ -970,6 +967,8 @@ async function _POST(req: NextRequest) {
 
     // Stripe account rules
     const stripeAccountId = event.org_stripe_account_id ?? null;
+    const stripeChargesEnabled = event.org_stripe_charges_enabled ?? false;
+    const stripePayoutsEnabled = event.org_stripe_payouts_enabled ?? false;
     const payoutModeRaw = (event.payout_mode || "ORGANIZATION").toString().toUpperCase();
 
     // Plataforma ORYA: usa conta da plataforma, não exige Connect
@@ -1089,9 +1088,10 @@ async function _POST(req: NextRequest) {
     }
 
     let groupPairing:
-        | {
+      | {
           id: number;
           eventId: number;
+          player1UserId: string | null;
           lifecycleStatus: string;
           registrationStatus?: PadelRegistrationStatus | null;
           payment_mode: string;
@@ -1102,8 +1102,11 @@ async function _POST(req: NextRequest) {
             id: number;
             profileId: string | null;
             ticketId: string | null;
+            slotStatus: string;
             paymentStatus: string;
             invitedContact: string | null;
+            invitedUserId: string | null;
+            slot_role: string;
           }>;
         }
       | null = null;
@@ -1683,7 +1686,7 @@ async function _POST(req: NextRequest) {
           purchaseId,
           actorUserId: userId ?? null,
           idempotencyKey: clientIdempotencyKey ?? effectiveDedupeKey,
-          payload: outboxPayload,
+          payload: outboxPayload as Prisma.InputJsonObject,
         });
 
         return jsonWrap({
@@ -1769,7 +1772,7 @@ async function _POST(req: NextRequest) {
         purchaseId,
         actorUserId: userId ?? null,
         idempotencyKey: clientIdempotencyKey ?? effectiveDedupeKey,
-        payload: outboxPayload,
+        payload: outboxPayload as Prisma.InputJsonObject,
       });
 
       const createdTicketsCount = 0;
@@ -1890,7 +1893,7 @@ async function _POST(req: NextRequest) {
           stripeAccountId,
           stripeChargesEnabled,
           stripePayoutsEnabled,
-          orgType: organization?.orgType ?? null,
+          orgType: event.org_type ?? null,
         },
       });
 

@@ -35,6 +35,16 @@ type SettingsSub = "preferences" | "policies";
 
 type OrdersSub = "orders";
 
+type StoreSnapshot = {
+  id: number;
+  status: string;
+  catalogLocked: boolean;
+  checkoutEnabled: boolean;
+  showOnProfile: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
 const VIEW_SET = new Set<StoreView>([
   "overview",
   "catalog",
@@ -88,7 +98,7 @@ export default async function MinhaLojaPage({ searchParams }: PageProps) {
     redirect("/me");
   }
 
-  const store = await prisma.store.findFirst({
+  const store = (await prisma.store.findFirst({
     where: { ownerUserId: user.id },
     select: {
       id: true,
@@ -99,7 +109,19 @@ export default async function MinhaLojaPage({ searchParams }: PageProps) {
       createdAt: true,
       updatedAt: true,
     },
-  });
+  })) as StoreSnapshot | null;
+
+  const initialStore = store
+    ? {
+        id: store.id,
+        status: store.status,
+        catalogLocked: store.catalogLocked,
+        checkoutEnabled: store.checkoutEnabled,
+        showOnProfile: store.showOnProfile,
+        createdAt: store.createdAt.toISOString(),
+        updatedAt: store.updatedAt.toISOString(),
+      }
+    : null;
 
   const view = resolveView(viewParam);
   const sub = resolveSub(view, subParam);
@@ -116,19 +138,7 @@ export default async function MinhaLojaPage({ searchParams }: PageProps) {
             description="A tua loja pessoal comeca fechada e com o catalogo bloqueado."
             endpoint="/api/me/store"
             storeEnabled={isStoreFeatureEnabled()}
-            initialStore={
-              store
-                ? {
-                    id: store.id,
-                    status: store.status,
-                    catalogLocked: store.catalogLocked,
-                    checkoutEnabled: store.checkoutEnabled,
-                    showOnProfile: store.showOnProfile,
-                    createdAt: store.createdAt.toISOString(),
-                    updatedAt: store.updatedAt.toISOString(),
-                  }
-                : null
-            }
+            initialStore={initialStore}
           />
         ) : null}
 

@@ -9,6 +9,8 @@ import {
   PadelPairingSlotStatus,
   PadelRegistrationStatus,
   PaymentEventSource,
+  PaymentMode,
+  PaymentStatus,
   Prisma,
   StoreOrderStatus,
 } from "@prisma/client";
@@ -136,7 +138,10 @@ async function handlePaymentCreatedOutbox(payload: Record<string, unknown>) {
   const paymentId = readString(data.paymentId);
   if (!eventLogId) throw new Error("EVENT_LOG_ID_REQUIRED");
   if (!paymentId) throw new Error("PAYMENT_ID_REQUIRED");
-  const status = readString(data.status) ?? "CREATED";
+  const status = parsePaymentStatus(readString(data.status) ?? "CREATED");
+  if (!status) {
+    throw new Error("PAYMENT_STATUS_INVALID");
+  }
   const amountCents = readNumber(data.amountCents);
   const platformFeeCents = readNumber(data.platformFeeCents);
   const grossCents = readNumber(data.grossCents);
@@ -195,7 +200,10 @@ async function handlePaymentStatusChangedOutbox(payload: Record<string, unknown>
   const paymentId = readString(data.paymentId);
   if (!eventLogId) throw new Error("EVENT_LOG_ID_REQUIRED");
   if (!paymentId) throw new Error("PAYMENT_ID_REQUIRED");
-  const status = readString(data.status) ?? "UNKNOWN";
+  const status = parsePaymentStatus(readString(data.status));
+  if (!status) {
+    throw new Error("PAYMENT_STATUS_INVALID");
+  }
 
   await paymentEventRepo(prisma).upsert({
     where: { purchaseId: paymentId },
@@ -267,13 +275,18 @@ type UpsertPaymentSnapshotInput = {
   organizationId?: number | null;
   sourceType?: string | null;
   sourceId?: string | null;
-  status?: string | null;
+  status?: PaymentStatus | null;
   currency?: string | null;
   grossCents?: number | null;
   platformFeeCents?: number | null;
   processorFeesCents?: number | null;
   netToOrgCents?: number | null;
 };
+
+function parsePaymentStatus(raw: string | null): PaymentStatus | null {
+  if (!raw) return null;
+  return (Object.values(PaymentStatus) as string[]).includes(raw) ? (raw as PaymentStatus) : null;
+}
 
 async function upsertPaymentSnapshot(input: UpsertPaymentSnapshotInput) {
   const existing = await prisma.paymentSnapshot.findUnique({
@@ -397,7 +410,7 @@ export async function consumeStripeWebhookEvent(event: Stripe.Event) {
           userId: typeof intent.metadata?.userId === "string" ? intent.metadata.userId : undefined,
           updatedAt: new Date(),
           errorMessage: null,
-          mode: intent.livemode ? "LIVE" : "TEST",
+          mode: intent.livemode ? PaymentMode.LIVE : PaymentMode.TEST,
           isTest: !intent.livemode,
         };
         const createData = {
@@ -418,7 +431,7 @@ export async function consumeStripeWebhookEvent(event: Stripe.Event) {
             typeof intent.metadata?.platformFeeCents === "string"
               ? Number(intent.metadata.platformFeeCents)
               : null,
-          mode: intent.livemode ? "LIVE" : "TEST",
+          mode: intent.livemode ? PaymentMode.LIVE : PaymentMode.TEST,
           isTest: !intent.livemode,
         };
 
@@ -574,23 +587,6 @@ export async function consumeStripeWebhookEvent(event: Stripe.Event) {
       break;
     }
 
-    case "dispute.created":
-    case "dispute.won":
-    case "dispute.lost": {
-      const dispute = event.data.object as Stripe.Dispute;
-      await enqueueOperation({
-        operationType: "PROCESS_STRIPE_EVENT",
-        dedupeKey: event.id,
-        correlations: { stripeEventId: event.id },
-        payload: {
-          stripeEventType: event.type,
-          stripeEventId: event.id,
-          stripeEventObject: dispute,
-        },
-      });
-      break;
-    }
-
     default: {
       // outros eventos, por agora, podem ser ignorados
       console.log("[Webhook] Evento ignorado:", event.type);
@@ -633,7 +629,7 @@ async function processStandardFreeCheckout(data: FreeCheckoutPayload & { purchas
   if (!lines.length) throw new Error("FREE_CHECKOUT_LINES_MISSING");
 
   await paymentEventRepo(prisma).upsert({
-    where: { stripePaymentIntentId: purchaseId },
+    where: { purchaseId },
     update: {
       status: "PROCESSING",
       purchaseId,
@@ -850,6 +846,9 @@ async function processPadelFreeCheckout(data: FreeCheckoutPayload & { purchaseId
       const policyVersionApplied = await getLatestPolicyVersionForEvent(event.id, tx);
       const ownerKey = `user:${ownerUserId}`;
       const entitlementPurchaseId = saleSummary.purchaseId ?? saleSummary.paymentIntentId;
+      if (!entitlementPurchaseId) {
+        throw new Error("ENTITLEMENT_PURCHASE_ID_MISSING");
+      }
       await tx.entitlement.upsert({
         where: {
           purchaseId_saleLineId_lineItemIndex_ownerKey_type: {
@@ -1086,6 +1085,9 @@ async function processPadelFreeCheckout(data: FreeCheckoutPayload & { purchaseId
       const policyVersionApplied = await getLatestPolicyVersionForEvent(event.id, tx);
       const ownerKey = `user:${userId}`;
       const entitlementPurchaseId = saleSummary.purchaseId ?? saleSummary.paymentIntentId;
+      if (!entitlementPurchaseId) {
+        throw new Error("ENTITLEMENT_PURCHASE_ID_MISSING");
+      }
       const entitlementBase = {
         purchaseId: entitlementPurchaseId,
         saleLineId: saleLine.id,
@@ -1176,7 +1178,7 @@ async function processPadelFreeCheckout(data: FreeCheckoutPayload & { purchaseId
     }
 
     await paymentEventRepo(tx).upsert({
-      where: { stripePaymentIntentId: purchaseId },
+      where: { purchaseId },
       update: {
         status: "OK",
         errorMessage: null,

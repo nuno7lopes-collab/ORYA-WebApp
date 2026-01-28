@@ -8,7 +8,7 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { FeeMode } from "@prisma/client";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
-import { isOrgOwner } from "@/lib/organizationPermissions";
+import { ensureOrgOwner } from "@/lib/organizationPermissions";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 function isValidFeeMode(value: string | null | undefined): value is FeeMode {
@@ -31,10 +31,11 @@ async function _POST(req: NextRequest) {
     const organizationId = resolveOrganizationIdFromRequest(req);
     const { organization, membership } = await getActiveOrganizationForUser(user.id, {
       organizationId: organizationId ?? undefined,
-      roles: ["OWNER", "CO_OWNER", "ADMIN"],
+      roles: ["OWNER"],
     });
 
-    if (!organization || !membership || !hasOrgOwnerAccess(membership.role)) {
+    const ownerCheck = membership ? ensureOrgOwner(membership.role) : { ok: false as const };
+    if (!organization || !membership || !ownerCheck.ok) {
       return jsonWrap({ ok: false, error: "APENAS_OWNER" }, { status: 403 });
     }
     if (organization.status !== "ACTIVE") {

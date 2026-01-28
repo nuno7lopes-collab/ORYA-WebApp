@@ -207,7 +207,7 @@ export async function validateStorePersonalization(params: {
 export function buildPersonalizationSummary(params: {
   personalization: unknown;
   options: Array<Pick<OptionSnapshot, "id" | "label" | "optionType">>;
-  values: Array<Pick<OptionValueSnapshot, "id" | "optionId" | "value" | "label">>;
+  values: Array<Pick<OptionValueSnapshot, "id" | "optionId" | "value" | "label" | "priceDeltaCents">>;
 }) {
   const selections = extractSelections(params.personalization);
   if (!selections.length) return [];

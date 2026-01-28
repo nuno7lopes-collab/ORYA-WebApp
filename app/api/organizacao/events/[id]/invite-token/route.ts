@@ -1,9 +1,9 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated } from "@/lib/security";
-import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
+import { ensureGroupMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { OrganizationModule } from "@prisma/client";
 import { issueInviteToken } from "@/lib/invites/inviteTokens";
 import { normalizeEmail } from "@/lib/utils/email";
@@ -40,12 +40,13 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     if (!event) {
       return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
     }
-    if (!event.organizationId) {
+    if (event.organizationId == null) {
       return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
+    const organizationId = event.organizationId;
 
-    const access = await ensureMemberModuleAccess({
-      organizationId: event.organizationId,
+    const access = await ensureGroupMemberModuleAccess({
+      organizationId,
       userId: user.id,
       moduleKey: OrganizationModule.EVENTOS,
       required: "EDIT",
@@ -120,7 +121,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
       await appendEventLog(
         {
           eventId: outbox.eventId,
-          organizationId: event.organizationId,
+          organizationId,
           eventType: "event.invite_token.created",
           idempotencyKey: outbox.eventId,
           payload: {

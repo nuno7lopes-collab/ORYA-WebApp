@@ -10,10 +10,12 @@ import {
   TicketTypeStatus,
   Prisma,
   EventTemplateType,
+  EventStatus,
   LiveHubVisibility,
   EventPublicAccessMode,
   EventParticipantAccessMode,
   EventPricingMode,
+  LocationSource,
   PayoutMode,
   OrganizationMemberRole,
   OrganizationRolePack,
@@ -176,6 +178,10 @@ async function _POST(req: NextRequest) {
     let event: {
       id: number;
       slug: string;
+      title: string;
+      startsAt: Date;
+      endsAt: Date | null;
+      status: EventStatus;
       organizationId: number | null;
       pricingMode: EventPricingMode | null;
       payoutMode: PayoutMode | null;
@@ -205,6 +211,10 @@ async function _POST(req: NextRequest) {
             select: {
               id: true,
               slug: true,
+              title: true,
+              startsAt: true,
+              endsAt: true,
+              status: true,
               organizationId: true,
               pricingMode: true,
               templateType: true,
@@ -244,11 +254,15 @@ async function _POST(req: NextRequest) {
               {
                 id: number;
                 slug: string;
+                title: string;
+                starts_at: Date;
+                ends_at: Date | null;
+                status: EventStatus;
                 organization_id: number | null;
                 payout_mode: PayoutMode | null;
                 pricing_mode: EventPricingMode | null;
               }[]
-            >(Prisma.sql`SELECT id, slug, organization_id, payout_mode, pricing_mode FROM app_v3.events WHERE id = ${eventId} LIMIT 1`);
+            >(Prisma.sql`SELECT id, slug, title, starts_at, ends_at, status, organization_id, payout_mode, pricing_mode FROM app_v3.events WHERE id = ${eventId} LIMIT 1`);
             const row = rows[0];
             if (!row) return null;
             const [ticketTypes, organizationRows, counts] = await Promise.all([
@@ -282,6 +296,10 @@ async function _POST(req: NextRequest) {
             return {
               id: row.id,
               slug: row.slug,
+              title: row.title,
+              startsAt: row.starts_at,
+              endsAt: row.ends_at,
+              status: row.status,
               organizationId: row.organization_id,
               pricingMode: row.pricing_mode ?? null,
               payoutMode: row.payout_mode,
@@ -467,7 +485,8 @@ async function _POST(req: NextRequest) {
     if (body.address !== undefined) dataUpdate.address = body.address ?? null;
     if (body.locationSource !== undefined) {
       const sourceRaw = typeof body.locationSource === "string" ? body.locationSource.toUpperCase() : null;
-      dataUpdate.locationSource = sourceRaw === "OSM" ? "OSM" : sourceRaw === "MANUAL" ? "MANUAL" : null;
+      if (sourceRaw === "OSM") dataUpdate.locationSource = LocationSource.OSM;
+      if (sourceRaw === "MANUAL") dataUpdate.locationSource = LocationSource.MANUAL;
     }
     if (body.locationProviderId !== undefined) {
       dataUpdate.locationProviderId = body.locationProviderId?.trim() || null;
@@ -479,7 +498,7 @@ async function _POST(req: NextRequest) {
       dataUpdate.locationComponents =
         body.locationComponents && typeof body.locationComponents === "object"
           ? (body.locationComponents as Prisma.InputJsonValue)
-          : null;
+          : Prisma.DbNull;
     }
     if (body.locationOverrides !== undefined) {
       const rawOverrides =
@@ -493,7 +512,7 @@ async function _POST(req: NextRequest) {
       dataUpdate.locationOverrides =
         overridesHouse || overridesPostal
           ? ({ houseNumber: overridesHouse, postalCode: overridesPostal } as Prisma.InputJsonValue)
-          : null;
+          : Prisma.DbNull;
     }
     if (body.latitude !== undefined) {
       const lat = typeof body.latitude === "number" || typeof body.latitude === "string" ? Number(body.latitude) : NaN;
@@ -646,7 +665,7 @@ async function _POST(req: NextRequest) {
       });
     }
 
-    let newTicketData: typeof newTicketTypes | null = null;
+    let newTicketData: Prisma.TicketTypeCreateManyInput[] = [];
     if (hasNewTickets) {
       newTicketData = newTicketTypes.map((nt) => {
         const price = Number(nt.price ?? 0);
@@ -673,7 +692,7 @@ async function _POST(req: NextRequest) {
           status: TicketTypeStatus.ON_SALE,
           startsAt: startsAt && !Number.isNaN(startsAt.getTime()) ? startsAt : null,
           endsAt: endsAt && !Number.isNaN(endsAt.getTime()) ? endsAt : null,
-          padelEventCategoryLinkId: padelLinkId ?? undefined,
+          padelEventCategoryLinkId: padelLinkId,
           currency: "EUR",
         };
       });
@@ -713,14 +732,12 @@ async function _POST(req: NextRequest) {
           );
         });
       }
-      if (hasNewTickets) {
-        if (Array.isArray(newTicketData) && newTicketData.length > 0) {
-          txOps.push(
-            tx.ticketType.createMany({
-              data: newTicketData,
-            }),
-          );
-        }
+      if (hasNewTickets && newTicketData.length > 0) {
+        txOps.push(
+          tx.ticketType.createMany({
+            data: newTicketData,
+          }),
+        );
       }
 
       if (txOps.length > 0) {

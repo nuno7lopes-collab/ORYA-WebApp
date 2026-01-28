@@ -9,9 +9,11 @@ import {
   type CSSProperties,
   type DragEvent,
   type PointerEvent as ReactPointerEvent,
+  type ReactNode,
 } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import useSWR from "swr";
 import { sanitizeUsername, validateUsername } from "@/lib/username";
 import { CTA_PRIMARY, CTA_SECONDARY, CTA_NEUTRAL } from "@/app/organizacao/dashboardUi";
@@ -1396,12 +1398,14 @@ export default function OrganizationPublicProfilePanel({
               key={product.id}
               className="rounded-2xl border border-white/10 bg-black/40 p-3 transition hover:border-white/30"
             >
-              <div className="aspect-square w-full overflow-hidden rounded-xl border border-white/10 bg-black/60">
+              <div className="relative aspect-square w-full overflow-hidden rounded-xl border border-white/10 bg-black/60">
                 {product.imageUrl ? (
-                  <img
+                  <Image
                     src={product.imageUrl}
                     alt={product.name}
-                    className="h-full w-full object-cover"
+                    fill
+                    sizes="(max-width: 640px) 160px, 200px"
+                    className="object-cover"
                   />
                 ) : (
                   <div className="flex h-full w-full items-center justify-center text-xs text-white/40">
@@ -1429,12 +1433,14 @@ export default function OrganizationPublicProfilePanel({
                 key={product.id}
                 className="rounded-2xl border border-white/10 bg-black/40 p-3"
               >
-                <div className="aspect-square w-full overflow-hidden rounded-xl border border-white/10 bg-black/60">
+                <div className="relative aspect-square w-full overflow-hidden rounded-xl border border-white/10 bg-black/60">
                   {product.imageUrl ? (
-                    <img
+                    <Image
                       src={product.imageUrl}
                       alt={product.name}
-                      className="h-full w-full object-cover"
+                      fill
+                      sizes="(max-width: 640px) 160px, 200px"
+                      className="object-cover"
                     />
                   ) : (
                     <div className="flex h-full w-full items-center justify-center text-xs text-white/40">
@@ -1479,7 +1485,7 @@ export default function OrganizationPublicProfilePanel({
     </section>
   ) : null;
 
-  const moduleContentByType: Record<PublicProfileModuleType, JSX.Element | null> = {
+  const moduleContentByType: Record<PublicProfileModuleType, ReactNode> = {
     SERVICOS: servicesModuleContent,
     AGENDA: agendaModuleContent,
     FORMULARIOS: formsModuleContent,
@@ -1518,32 +1524,32 @@ export default function OrganizationPublicProfilePanel({
   const rows = useMemo<CanvasRow[]>(() => {
     const built: CanvasRow[] = [];
     for (let i = 0; i < visibleModules.length; i += 1) {
-      const module = visibleModules[i];
-      if (module.width === "full") {
+      const moduleItem = visibleModules[i];
+      if (moduleItem.width === "full") {
         built.push({
-          id: `row-${module.id}`,
+          id: `row-${moduleItem.id}`,
           columns: 1,
-          slots: [module],
-          modules: [module],
+          slots: [moduleItem],
+          modules: [moduleItem],
         });
         continue;
       }
       const next = visibleModules[i + 1];
       if (next && next.width === "half") {
         built.push({
-          id: `row-${module.id}-${next.id}`,
+          id: `row-${moduleItem.id}-${next.id}`,
           columns: 2,
-          slots: [module, next],
-          modules: [module, next],
+          slots: [moduleItem, next],
+          modules: [moduleItem, next],
         });
         i += 1;
         continue;
       }
       built.push({
-        id: `row-${module.id}`,
+        id: `row-${moduleItem.id}`,
         columns: 2,
-        slots: [module, null],
-        modules: [module],
+        slots: [moduleItem, null],
+        modules: [moduleItem],
       });
     }
     draftRows.forEach((draft) => {

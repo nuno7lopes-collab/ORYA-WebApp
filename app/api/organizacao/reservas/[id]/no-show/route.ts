@@ -106,29 +106,30 @@ async function _POST(
       });
 
       if (!booking) {
-        return { error: errorWithCtx(404, "Reserva não encontrada.", "BOOKING_NOT_FOUND") };
+        return { ok: false as const, error: errorWithCtx(404, "Reserva não encontrada.", "BOOKING_NOT_FOUND") };
       }
       if (
         membership.role === OrganizationMemberRole.STAFF &&
         (!booking.professional?.userId || booking.professional.userId !== profile.id)
       ) {
-        return { error: errorWithCtx(403, "Sem permissões.", "FORBIDDEN") };
+        return { ok: false as const, error: errorWithCtx(403, "Sem permissões.", "FORBIDDEN") };
       }
       if (
         ["CANCELLED", "CANCELLED_BY_CLIENT", "CANCELLED_BY_ORG", "COMPLETED", "DISPUTED", "NO_SHOW"].includes(
           booking.status,
         )
       ) {
-        return { error: errorWithCtx(409, "Reserva já encerrada.", "BOOKING_ALREADY_CLOSED") };
+        return { ok: false as const, error: errorWithCtx(409, "Reserva já encerrada.", "BOOKING_ALREADY_CLOSED") };
       }
 
       if (booking.startsAt > now) {
-        return { error: errorWithCtx(409, "Reserva ainda não ocorreu.", "BOOKING_NOT_STARTED") };
+        return { ok: false as const, error: errorWithCtx(409, "Reserva ainda não ocorreu.", "BOOKING_NOT_STARTED") };
       }
 
       const snapshot = parseBookingConfirmationSnapshot(booking.confirmationSnapshot);
       if (!snapshot) {
         return {
+          ok: false as const,
           error: errorWithCtx(
             409,
             "Reserva sem snapshot. Corre o backfill antes de marcar no-show.",
@@ -141,6 +142,7 @@ async function _POST(
       const refundComputation = computeNoShowRefundFromSnapshot(snapshot);
       if (!refundComputation) {
         return {
+          ok: false as const,
           error: errorWithCtx(
             409,
             "Snapshot inválido. Corre o backfill antes de marcar no-show.",
@@ -158,6 +160,7 @@ async function _POST(
         select: { id: true, status: true },
         tx,
       });
+      const updatedSummary = { id: updated.id, status: updated.status };
 
       await recordOrganizationAudit(tx, {
         organizationId: organization.id,
@@ -178,7 +181,8 @@ async function _POST(
       });
 
       return {
-        booking: updated,
+        ok: true as const,
+        booking: updatedSummary,
         userId: booking.userId,
         paymentIntentId: booking.paymentIntentId,
         refundAmountCents: refundComputation.refundCents,
@@ -186,7 +190,7 @@ async function _POST(
       };
     });
 
-    if ("error" in result) return result.error;
+    if (!result.ok) return result.error;
 
     if (result.paymentIntentId && result.refundAmountCents > 0) {
       try {

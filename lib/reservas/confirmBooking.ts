@@ -167,7 +167,7 @@ export async function confirmPendingBooking({
   const dayStart = makeUtcDateFromLocal({ ...dayParts, hour: 0, minute: 0 }, timezone);
   const dayEnd = makeUtcDateFromLocal({ ...dayParts, hour: 23, minute: 59 }, timezone);
 
-  let scopeType: AvailabilityScopeType = assignmentMode === "RESOURCE" ? "RESOURCE" : "PROFESSIONAL";
+  const scopeType: AvailabilityScopeType = assignmentMode === "RESOURCE" ? "RESOURCE" : "PROFESSIONAL";
   let candidateScopes: Array<{ scopeType: AvailabilityScopeType; scopeId: number }> = [];
   let assignedProfessionalId = booking.professionalId ?? null;
   let assignedResourceId = assignmentConfig.isCourtService ? booking.resourceId ?? null : null;

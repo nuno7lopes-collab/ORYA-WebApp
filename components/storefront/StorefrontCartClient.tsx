@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 
 type CartItem = {
   id: number;
@@ -265,12 +266,14 @@ export default function StorefrontCartClient({
                 className="rounded-2xl border border-white/12 bg-black/35 px-3 py-3 space-y-3"
               >
                 <div className="flex flex-wrap items-center gap-3">
-                  <div className="h-14 w-14 overflow-hidden rounded-xl border border-white/10 bg-black/30">
+                  <div className="relative h-14 w-14 overflow-hidden rounded-xl border border-white/10 bg-black/30">
                     {preview ? (
-                      <img
+                      <Image
                         src={preview.url}
                         alt={preview.altText || bundle.name}
-                        className="h-full w-full object-cover"
+                        fill
+                        sizes="56px"
+                        className="object-cover"
                       />
                     ) : null}
                   </div>
@@ -344,12 +347,14 @@ export default function StorefrontCartClient({
                 key={item.id}
                 className="flex flex-wrap items-center gap-3 rounded-2xl border border-white/10 bg-black/30 px-3 py-2"
               >
-                <div className="h-14 w-14 overflow-hidden rounded-xl border border-white/10 bg-black/30">
+                <div className="relative h-14 w-14 overflow-hidden rounded-xl border border-white/10 bg-black/30">
                   {image ? (
-                    <img
+                    <Image
                       src={image.url}
                       alt={image.altText || item.product.name}
-                      className="h-full w-full object-cover"
+                      fill
+                      sizes="56px"
+                      className="object-cover"
                     />
                   ) : null}
                 </div>
@@ -456,12 +461,14 @@ export default function StorefrontCartClient({
                   href={`${storeBaseHref}/produto/${item.slug}`}
                   className="rounded-2xl border border-white/10 bg-black/30 p-2 transition hover:border-white/35"
                 >
-                  <div className="h-24 overflow-hidden rounded-xl border border-white/10 bg-black/30">
+                  <div className="relative h-24 overflow-hidden rounded-xl border border-white/10 bg-black/30">
                     {image ? (
-                      <img
+                      <Image
                         src={image.url}
                         alt={image.altText || item.name}
-                        className="h-full w-full object-cover"
+                        fill
+                        sizes="(max-width: 640px) 50vw, 25vw"
+                        className="object-cover"
                       />
                     ) : null}
                   </div>

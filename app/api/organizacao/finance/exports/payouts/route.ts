@@ -36,6 +36,7 @@ async function _GET(req: NextRequest) {
   const organizationId = resolveOrganizationIdFromRequest(req);
   const { organization, membership } = await getActiveOrganizationForUser(user.id, {
     organizationId: organizationId ?? undefined,
+    includeOrganizationFields: "settings",
   });
   if (!organization || !membership) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 

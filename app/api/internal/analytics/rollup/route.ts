@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { runAnalyticsRollupJob } from "@/domain/analytics/rollup";
 import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
@@ -20,6 +20,6 @@ async function _POST(req: NextRequest) {
     maxDays: typeof payload?.maxDays === "number" ? payload.maxDays : undefined,
   });
 
-  return jsonWrap({ ok: true, ...result }, { status: 200 });
+  return jsonWrap(result, { status: 200 });
 }
 export const POST = withApiEnvelope(_POST);

@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { deriveIsFreeEvent } from "@/domain/events/derivedIsFree";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
-import { TicketStatus, OrganizationModule } from "@prisma/client";
+import { EventTemplateType, OrganizationModule, Prisma, TicketStatus } from "@prisma/client";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
@@ -17,15 +17,16 @@ async function _GET(req: NextRequest) {
     const url = new URL(req.url);
     const limit = Math.min(Number(url.searchParams.get("limit") ?? 100), 500);
     const templateTypeParam = url.searchParams.get("templateType");
-    const templateType =
-      typeof templateTypeParam === "string" && templateTypeParam.trim()
-        ? templateTypeParam.trim().toUpperCase()
-        : null;
     const excludeTemplateTypeParam = url.searchParams.get("excludeTemplateType");
-    const excludeTemplateType =
-      typeof excludeTemplateTypeParam === "string" && excludeTemplateTypeParam.trim()
-        ? excludeTemplateTypeParam.trim().toUpperCase()
+    const parseTemplateType = (raw: string | null) => {
+      if (!raw) return null;
+      const normalized = raw.trim().toUpperCase();
+      return (Object.values(EventTemplateType) as string[]).includes(normalized)
+        ? (normalized as EventTemplateType)
         : null;
+    };
+    const templateType = parseTemplateType(templateTypeParam);
+    const excludeTemplateType = parseTemplateType(excludeTemplateTypeParam);
 
     const supabase = await createSupabaseServer();
 
@@ -96,19 +97,18 @@ async function _GET(req: NextRequest) {
       );
     }
 
-    const events = await prisma.event.findMany({
-      where: {
-        isDeleted: false,
-        organizationId: organization.id,
-        ...(templateType
-          ? { templateType }
-          : excludeTemplateType
-            ? { NOT: { templateType: excludeTemplateType } }
-            : {}),
-      },
-      orderBy: {
-        startsAt: "asc",
-      },
+    const where: Prisma.EventWhereInput = {
+      isDeleted: false,
+      organizationId: organization.id,
+      ...(templateType
+        ? { templateType }
+        : excludeTemplateType
+          ? { NOT: { templateType: excludeTemplateType } }
+          : {}),
+    };
+    const eventQuery = {
+      where,
+      orderBy: { startsAt: "asc" },
       include: {
         padelTournamentConfig: {
           select: { padelClubId: true, partnerClubIds: true, advancedSettings: true },
@@ -121,10 +121,11 @@ async function _GET(req: NextRequest) {
         },
       },
       take: limit,
-    });
+    } satisfies Prisma.EventFindManyArgs;
+    const events = await prisma.event.findMany(eventQuery);
 
     const eventIds = events.map((e) => e.id);
-    const padelEventIds = events.filter((e) => e.templateType === "PADEL").map((e) => e.id);
+    const padelEventIds = events.filter((e) => e.templateType === EventTemplateType.PADEL).map((e) => e.id);
     const capacityAgg =
       eventIds.length > 0
         ? await prisma.ticketType.groupBy({
@@ -166,9 +167,9 @@ async function _GET(req: NextRequest) {
     ticketStats.forEach((stat) => {
       statsMap.set(stat.eventId, {
         tickets: stat._count._all,
-        revenueCents: stat._sum.pricePaid ?? 0,
-        totalPaidCents: stat._sum.totalPaidCents ?? 0,
-        platformFeeCents: stat._sum.platformFeeCents ?? 0,
+        revenueCents: stat._sum?.pricePaid ?? 0,
+        totalPaidCents: stat._sum?.totalPaidCents ?? 0,
+        platformFeeCents: stat._sum?.platformFeeCents ?? 0,
       });
     });
 
@@ -206,7 +207,7 @@ async function _GET(req: NextRequest) {
 
     const padelCapacityMap = new Map<number, number | null>();
     events.forEach((event) => {
-      if (event.templateType !== "PADEL") return;
+      if (event.templateType !== EventTemplateType.PADEL) return;
       const advancedSettings = (event.padelTournamentConfig?.advancedSettings ?? {}) as {
         maxEntriesTotal?: number | null;
       };
@@ -227,7 +228,7 @@ async function _GET(req: NextRequest) {
         padelCapacityMap.set(event.id, null);
         return;
       }
-      const total = capacities.reduce((sum, cap) => sum + (cap ?? 0), 0);
+      const total = capacities.reduce<number>((sum, cap) => sum + (cap ?? 0), 0);
       padelCapacityMap.set(event.id, total);
     });
 
@@ -253,36 +254,39 @@ async function _GET(req: NextRequest) {
         pricingMode: event.pricingMode ?? undefined,
         ticketPrices,
       });
+      const partnerClubIds = (event.padelTournamentConfig?.partnerClubIds ?? []) as number[];
 
       return {
-      id: event.id,
-      slug: event.slug,
-      title: event.title,
-      description: event.description,
-      startsAt: event.startsAt,
-      endsAt: event.endsAt,
-      locationName: event.locationName,
-      locationCity: event.locationCity,
-      status: event.status,
-      templateType: event.templateType,
-      tournamentId: event.tournament?.id ?? null,
-      isGratis,
-      coverImageUrl: event.coverImageUrl ?? null,
-      ticketsSold:
-        event.templateType === "PADEL"
-          ? padelPairingMap.get(event.id) ?? 0
-          : statsMap.get(event.id)?.tickets ?? 0,
-      revenueCents: statsMap.get(event.id)?.revenueCents ?? 0,
-      totalPaidCents: statsMap.get(event.id)?.totalPaidCents ?? 0,
-      platformFeeCents: statsMap.get(event.id)?.platformFeeCents ?? 0,
-      capacity:
-        event.templateType === "PADEL"
-          ? padelCapacityMap.get(event.id) ?? null
-          : capacityMap.get(event.id) ?? null,
-      padelClubId: event.padelTournamentConfig?.padelClubId ?? null,
-      padelPartnerClubIds: event.padelTournamentConfig?.partnerClubIds ?? [],
-      padelClubName: event.padelTournamentConfig?.padelClubId ? padelClubMap.get(event.padelTournamentConfig.padelClubId) ?? null : null,
-      padelPartnerClubNames: (event.padelTournamentConfig?.partnerClubIds || []).map((id) => padelClubMap.get(id) ?? null),
+        id: event.id,
+        slug: event.slug,
+        title: event.title,
+        description: event.description,
+        startsAt: event.startsAt,
+        endsAt: event.endsAt,
+        locationName: event.locationName,
+        locationCity: event.locationCity,
+        status: event.status,
+        templateType: event.templateType,
+        tournamentId: event.tournament?.id ?? null,
+        isGratis,
+        coverImageUrl: event.coverImageUrl ?? null,
+        ticketsSold:
+          event.templateType === EventTemplateType.PADEL
+            ? padelPairingMap.get(event.id) ?? 0
+            : statsMap.get(event.id)?.tickets ?? 0,
+        revenueCents: statsMap.get(event.id)?.revenueCents ?? 0,
+        totalPaidCents: statsMap.get(event.id)?.totalPaidCents ?? 0,
+        platformFeeCents: statsMap.get(event.id)?.platformFeeCents ?? 0,
+        capacity:
+          event.templateType === EventTemplateType.PADEL
+            ? padelCapacityMap.get(event.id) ?? null
+            : capacityMap.get(event.id) ?? null,
+        padelClubId: event.padelTournamentConfig?.padelClubId ?? null,
+        padelPartnerClubIds: partnerClubIds,
+        padelClubName: event.padelTournamentConfig?.padelClubId
+          ? padelClubMap.get(event.padelTournamentConfig.padelClubId) ?? null
+          : null,
+        padelPartnerClubNames: partnerClubIds.map((id) => padelClubMap.get(id) ?? null),
       };
     });
 

@@ -237,8 +237,11 @@ async function _POST(req: NextRequest) {
       }
     });
 
-    const response = jsonWrap({ ok: true, bundleKey });
+    const response = jsonWrap({ ok: true, bundleKey }) as NextResponse;
     if (!userId && (!cookieSession || resolved.created)) {
+      if (!sessionId) {
+        return jsonWrap({ ok: false, error: "SESSION_REQUIRED" }, { status: 500 });
+      }
       response.cookies.set(CART_SESSION_COOKIE, sessionId, {
         httpOnly: true,
         sameSite: "lax",

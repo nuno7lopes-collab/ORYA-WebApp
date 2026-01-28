@@ -2,12 +2,13 @@
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import crypto from "crypto";
 import { AuthRequiredError, requireUser } from "@/lib/auth/requireUser";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { env } from "@/lib/env";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024; // 5MB
 const UPLOAD_WINDOW_MS = 5 * 60 * 1000; // 5 minutos
@@ -15,6 +16,14 @@ const MAX_UPLOADS_PER_WINDOW = 30;
 const ipHits = new Map<string, number[]>();
 
 type DetectedImage = { ext: string; mime: string };
+
+const getStorageStatusCode = (error: unknown) => {
+  if (!error || typeof error !== "object") return null;
+  const statusCode =
+    "statusCode" in error ? (error as { statusCode?: number }).statusCode : undefined;
+  const status = "status" in error ? (error as { status?: number }).status : undefined;
+  return statusCode ?? status ?? null;
+};
 
 async function ensureBucketExists(bucket: string, isPublic: boolean) {
   const list = await supabaseAdmin.storage.listBuckets();
@@ -26,7 +35,7 @@ async function ensureBucketExists(bucket: string, isPublic: boolean) {
     return { ok: true as const };
   }
   const created = await supabaseAdmin.storage.createBucket(bucket, { public: isPublic });
-  if (created.error && created.error.statusCode !== 409) {
+  if (created.error && getStorageStatusCode(created.error) !== 409) {
     return { ok: false as const, error: created.error };
   }
   return { ok: true as const };
@@ -82,13 +91,13 @@ async function _POST(req: NextRequest) {
 
     const ip = getClientIp(req);
     if (isRateLimited(ip)) {
-      return NextResponse.json({ error: "Demasiados uploads. Tenta mais tarde." }, { status: 429 });
+      return jsonWrap({ error: "Demasiados uploads. Tenta mais tarde." }, { status: 429 });
     }
 
     const contentLengthHeader = req.headers.get("content-length");
     const declaredSize = contentLengthHeader ? Number(contentLengthHeader) : null;
     if (declaredSize && (!Number.isFinite(declaredSize) || declaredSize > MAX_UPLOAD_BYTES)) {
-      return NextResponse.json(
+      return jsonWrap(
         { error: "Ficheiro demasiado grande." },
         { status: 413 },
       );
@@ -98,22 +107,22 @@ async function _POST(req: NextRequest) {
     const file = formData.get("file");
 
     if (!(file instanceof File)) {
-      return NextResponse.json({ error: "Nenhum ficheiro enviado." }, { status: 400 });
+      return jsonWrap({ error: "Nenhum ficheiro enviado." }, { status: 400 });
     }
 
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
 
     if (buffer.byteLength === 0) {
-      return NextResponse.json({ error: "Ficheiro vazio." }, { status: 400 });
+      return jsonWrap({ error: "Ficheiro vazio." }, { status: 400 });
     }
     if (buffer.byteLength > MAX_UPLOAD_BYTES) {
-      return NextResponse.json({ error: "Ficheiro demasiado grande." }, { status: 413 });
+      return jsonWrap({ error: "Ficheiro demasiado grande." }, { status: 413 });
     }
 
     const detected = detectImageType(buffer);
     if (!detected) {
-      return NextResponse.json({ error: "Só são permitidas imagens (png, jpg, gif, webp)." }, { status: 400 });
+      return jsonWrap({ error: "Só são permitidas imagens (png, jpg, gif, webp)." }, { status: 400 });
     }
 
     const scope = req.nextUrl.searchParams.get("scope");
@@ -149,13 +158,13 @@ async function _POST(req: NextRequest) {
     })();
 
     if (!bucketResolution.bucket) {
-      return NextResponse.json({ error: "Bucket de storage não configurado." }, { status: 500 });
+      return jsonWrap({ error: "Bucket de storage não configurado." }, { status: 500 });
     }
 
     const ensured = await ensureBucketExists(bucketResolution.bucket, isPublicScope);
     if (!ensured.ok) {
       console.error("[POST /api/upload] ensure bucket error", ensured.error);
-      return NextResponse.json({ error: "Erro ao preparar storage." }, { status: 500 });
+      return jsonWrap({ error: "Erro ao preparar storage." }, { status: 500 });
     }
 
     const randomName = crypto.randomBytes(16).toString("hex");
@@ -172,7 +181,7 @@ async function _POST(req: NextRequest) {
     let uploadRes = await performUpload();
 
     if (uploadRes.error) {
-      const statusCode = Number(uploadRes.error.statusCode || uploadRes.error.status);
+      const statusCode = Number(getStorageStatusCode(uploadRes.error));
       if (statusCode === 404) {
         const retryEnsure = await ensureBucketExists(bucketResolution.bucket, isPublicScope);
         if (retryEnsure.ok) {
@@ -183,7 +192,7 @@ async function _POST(req: NextRequest) {
 
     if (uploadRes.error) {
       console.error("[POST /api/upload] supabase upload error", uploadRes.error);
-      return NextResponse.json({ error: "Erro ao fazer upload da imagem." }, { status: 500 });
+      return jsonWrap({ error: "Erro ao fazer upload da imagem." }, { status: 500 });
     }
 
     let url: string | null = null;
@@ -195,7 +204,7 @@ async function _POST(req: NextRequest) {
         .createSignedUrl(objectPath, env.storageSignedTtlSeconds);
       if (signed.error || !signed.data?.signedUrl) {
         console.error("[POST /api/upload] signed url error", signed.error);
-        return NextResponse.json({ error: "Erro ao gerar URL de download." }, { status: 500 });
+        return jsonWrap({ error: "Erro ao gerar URL de download." }, { status: 500 });
       }
       signedUrl = signed.data.signedUrl;
       url = signedUrl;
@@ -204,7 +213,7 @@ async function _POST(req: NextRequest) {
       url = publicUrlData.publicUrl;
     }
 
-    return NextResponse.json(
+    return jsonWrap(
       {
         url,
         signedUrl,
@@ -217,10 +226,10 @@ async function _POST(req: NextRequest) {
     );
   } catch (err) {
     if (err instanceof AuthRequiredError) {
-      return NextResponse.json({ error: "Precisas de iniciar sessão." }, { status: 401 });
+      return jsonWrap({ error: "Precisas de iniciar sessão." }, { status: 401 });
     }
     console.error("[POST /api/upload]", err);
-    return NextResponse.json(
+    return jsonWrap(
       { error: "Erro ao fazer upload da imagem." },
       { status: 500 }
     );

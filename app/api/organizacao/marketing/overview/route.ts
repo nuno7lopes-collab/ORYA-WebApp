@@ -5,7 +5,13 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { ACTIVE_PAIRING_REGISTRATION_WHERE } from "@/domain/padelRegistration";
-import { OrganizationModule, SaleSummaryStatus, TicketStatus } from "@prisma/client";
+import {
+  EventTemplateType,
+  OrganizationModule,
+  Prisma,
+  SaleSummaryStatus,
+  TicketStatus,
+} from "@prisma/client";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
@@ -23,21 +29,22 @@ async function _GET(req: NextRequest) {
 
     const orgParam = resolveOrganizationIdFromRequest(req);
     const templateTypeParam = req.nextUrl.searchParams.get("templateType");
-    const templateType =
-      typeof templateTypeParam === "string" && templateTypeParam.trim()
-        ? templateTypeParam.trim().toUpperCase()
-        : null;
     const excludeTemplateTypeParam = req.nextUrl.searchParams.get("excludeTemplateType");
-    const excludeTemplateType =
-      typeof excludeTemplateTypeParam === "string" && excludeTemplateTypeParam.trim()
-        ? excludeTemplateTypeParam.trim().toUpperCase()
+    const parseTemplateType = (raw: string | null) => {
+      if (!raw) return null;
+      const normalized = raw.trim().toUpperCase();
+      return (Object.values(EventTemplateType) as string[]).includes(normalized)
+        ? (normalized as EventTemplateType)
         : null;
-    const eventTemplateFilter = templateType
+    };
+    const templateType = parseTemplateType(templateTypeParam);
+    const excludeTemplateType = parseTemplateType(excludeTemplateTypeParam);
+    const eventTemplateFilter: Prisma.EventWhereInput = templateType
       ? { templateType }
       : excludeTemplateType
         ? { NOT: { templateType: excludeTemplateType } }
         : {};
-    const isPadelScope = templateType === "PADEL";
+    const isPadelScope = templateType === EventTemplateType.PADEL;
     const organizationId = typeof orgParam === "number" && Number.isFinite(orgParam) ? orgParam : null;
     const { organization, membership } = await getActiveOrganizationForUser(user.id, {
       organizationId: organizationId ?? undefined,
@@ -62,7 +69,7 @@ async function _GET(req: NextRequest) {
     const now = new Date();
     const from = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
-    const events = await prisma.event.findMany({
+    const eventQuery = {
       where: {
         organizationId: organization.id,
         ...eventTemplateFilter,
@@ -79,10 +86,11 @@ async function _GET(req: NextRequest) {
           select: { advancedSettings: true },
         },
       },
-    });
+    } satisfies Prisma.EventFindManyArgs;
+    const events = await prisma.event.findMany(eventQuery);
     const eventIds = events.map((e) => e.id);
 
-    const saleSummaries30d = await prisma.saleSummary.findMany({
+    const saleSummaryQuery = {
       where: {
         createdAt: { gte: from, lte: now },
         status: SaleSummaryStatus.PAID,
@@ -98,7 +106,8 @@ async function _GET(req: NextRequest) {
           select: { quantity: true, netCents: true },
         },
       },
-    });
+    } satisfies Prisma.SaleSummaryFindManyArgs;
+    const saleSummaries30d = await prisma.saleSummary.findMany(saleSummaryQuery);
 
     let lineTickets30d = 0;
     let totalRevenueCents = 0;
@@ -243,7 +252,9 @@ async function _GET(req: NextRequest) {
     padelPairingStats.forEach((row) => {
       padelPairingMap.set(row.eventId, row._count._all);
     });
-    const padelEventIds = events.filter((event) => event.templateType === "PADEL").map((event) => event.id);
+    const padelEventIds = events
+      .filter((event) => event.templateType === EventTemplateType.PADEL)
+      .map((event) => event.id);
     const padelCategoryLinks =
       padelEventIds.length > 0
         ? await prisma.padelEventCategoryLink.findMany({
@@ -260,7 +271,7 @@ async function _GET(req: NextRequest) {
     });
     const padelCapacityMap = new Map<number, number | null>();
     events.forEach((event) => {
-      if (event.templateType !== "PADEL") return;
+      if (event.templateType !== EventTemplateType.PADEL) return;
       const advancedSettings = (event.padelTournamentConfig?.advancedSettings ?? {}) as {
         maxEntriesTotal?: number | null;
       };
@@ -277,7 +288,7 @@ async function _GET(req: NextRequest) {
         padelCapacityMap.set(event.id, null);
         return;
       }
-      const total = capacities.reduce((sum, cap) => sum + (cap ?? 0), 0);
+      const total = capacities.reduce<number>((sum, cap) => sum + (cap ?? 0), 0);
       padelCapacityMap.set(event.id, total);
     });
 
@@ -309,11 +320,11 @@ async function _GET(req: NextRequest) {
         events: events.map((ev) => ({
           ...ev,
           capacity:
-            ev.templateType === "PADEL"
+            ev.templateType === EventTemplateType.PADEL
               ? padelCapacityMap.get(ev.id) ?? null
               : capacityMap.get(ev.id) ?? null,
           ticketsSold:
-            ev.templateType === "PADEL"
+            ev.templateType === EventTemplateType.PADEL
               ? padelPairingMap.get(ev.id) ?? 0
               : statsMap.get(ev.id)?.tickets ?? 0,
           revenueCents: statsMap.get(ev.id)?.revenueCents ?? 0,

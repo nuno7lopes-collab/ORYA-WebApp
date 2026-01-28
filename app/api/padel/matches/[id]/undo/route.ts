@@ -49,18 +49,19 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
   if (!match || !match.event?.organizationId) {
     return jsonWrap({ ok: false, error: "MATCH_NOT_FOUND" }, { status: 404 });
   }
+  const organizationId = match.event.organizationId;
   if (Number.isFinite(eventIdBody) && match.eventId !== eventIdBody) {
     return jsonWrap({ ok: false, error: "EVENT_MISMATCH" }, { status: 409 });
   }
 
   const { organization } = await getActiveOrganizationForUser(user.id, {
-    organizationId: match.event.organizationId,
+    organizationId,
     roles: ROLE_ALLOWLIST,
   });
   if (!organization) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
   const recentLogs = await prisma.organizationAuditLog.findMany({
-    where: { organizationId: match.event.organizationId, action: "PADEL_MATCH_RESULT" },
+    where: { organizationId, action: "PADEL_MATCH_RESULT" },
     orderBy: { createdAt: "desc" },
     take: 20,
   });
@@ -247,7 +248,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
   const updated = await prisma.$transaction(async (tx) => {
     for (const target of updateDownstream) {
       if (!target.clearA && !target.clearB) continue;
-      const data: Prisma.PadelMatchUpdateInput = {};
+      const data: Prisma.PadelMatchUncheckedUpdateInput = {};
       if (target.clearA) data.pairingAId = null;
       if (target.clearB) data.pairingBId = null;
       if (target.clearA || target.clearB) data.winnerPairingId = null;
@@ -255,7 +256,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
         tx,
         matchId: target.id,
         eventId: match.eventId,
-        organizationId: match.event.organizationId,
+        organizationId,
         actorUserId: user.id,
         eventType: SYSTEM_MATCH_EVENT,
         data,
@@ -266,7 +267,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
       tx,
       matchId,
       eventId: match.eventId,
-      organizationId: match.event.organizationId,
+      organizationId,
       actorUserId: user.id,
       beforeStatus,
       eventType: SYSTEM_MATCH_EVENT,
@@ -274,7 +275,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
         status: beforeStatus as any,
         winnerPairingId: beforeWinner,
         score: beforeScore as Prisma.InputJsonValue,
-        scoreSets: (beforeScoreSets ?? null) as Prisma.InputJsonValue | null,
+        scoreSets: beforeScoreSets ? (beforeScoreSets as Prisma.InputJsonValue) : Prisma.DbNull,
       },
     });
 
@@ -282,7 +283,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
   });
 
   await recordOrganizationAuditSafe({
-    organizationId: match.event.organizationId,
+    organizationId,
     actorUserId: user.id,
     action: "PADEL_MATCH_UNDO",
     metadata: {

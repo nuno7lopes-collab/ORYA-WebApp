@@ -266,7 +266,7 @@ async function _POST(req: NextRequest) {
     pairing.deadlineAt.getTime() < Date.now() &&
     pendingSlot.paymentStatus !== PadelPairingPaymentStatus.PAID
   ) {
-    return jsonWrap({ ok: false, error: "PAIRING_EXPIRED" }, { status: 410 });
+    return jsonWrap({ ok: false, error: "PAIRING_EXPIRED" }, { status: 409 });
   }
 
   if (pairing.payment_mode === PadelPaymentMode.SPLIT && pendingSlot.paymentStatus !== PadelPairingPaymentStatus.PAID) {

@@ -1,5 +1,7 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { notFound, redirect } from "next/navigation";
+import Image from "next/image";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import ProfileHeader from "@/app/components/profile/ProfileHeader";
@@ -396,9 +398,7 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
   if (!profile && organizationProfile) {
     const now = new Date();
     const moduleKeys = (organizationProfile.organizationModules ?? [])
-      .map((module) => module.moduleKey)
-      .filter((module): module is string => typeof module === "string")
-      .map((module) => module.trim().toUpperCase());
+      .map((module) => String(module.moduleKey).trim().toUpperCase());
     const normalizedModules = parseOrganizationModules(moduleKeys) ?? [];
     const primaryOperation = resolvePrimaryModule(
       organizationProfile.primaryModule ?? null,
@@ -596,6 +596,14 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
         pricingMode: event.pricingMode ?? undefined,
         ticketPrices,
       });
+      const locationComponents =
+        event.locationComponents && typeof event.locationComponents === "object"
+          ? (event.locationComponents as Record<string, unknown>)
+          : null;
+      const locationOverrides =
+        event.locationOverrides && typeof event.locationOverrides === "object"
+          ? (event.locationOverrides as Record<string, unknown>)
+          : null;
       return {
         id: event.id,
         slug: event.slug,
@@ -607,8 +615,8 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
         address: event.address,
         locationSource: event.locationSource,
         locationFormattedAddress: event.locationFormattedAddress,
-        locationComponents: event.locationComponents,
-        locationOverrides: event.locationOverrides,
+        locationComponents,
+        locationOverrides,
         timezone: event.timezone,
         templateType: event.templateType,
         coverImageUrl: event.coverImageUrl,
@@ -622,11 +630,12 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
     });
     const storeEnabled = isStoreFeatureEnabled();
     const storeVisibleOnProfile = Boolean(store?.showOnProfile);
-    const storePublic = storeEnabled && isStorePublic(store) && !store?.catalogLocked;
-    const [storeProducts, storeProductsCount] = storePublic
+    const storeId = store?.id ?? null;
+    const storePublic = storeEnabled && !!store && isStorePublic(store) && !store.catalogLocked;
+    const [storeProducts, storeProductsCount] = storePublic && storeId !== null
       ? await Promise.all([
           prisma.storeProduct.findMany({
-            where: { storeId: store.id, status: "ACTIVE", isVisible: true },
+            where: { storeId, status: "ACTIVE", isVisible: true },
             orderBy: [{ createdAt: "desc" }],
             take: 8,
             select: {
@@ -645,7 +654,7 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
             },
           }),
           prisma.storeProduct.count({
-            where: { storeId: store.id, status: "ACTIVE", isVisible: true },
+            where: { storeId, status: "ACTIVE", isVisible: true },
           }),
         ])
       : [[], 0];
@@ -1090,10 +1099,12 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
                   >
                     <div className="relative aspect-square w-full overflow-hidden rounded-xl border border-white/10 bg-black/60">
                       {image ? (
-                        <img
+                        <Image
                           src={image.url}
                           alt={image.altText || product.name}
-                          className="h-full w-full object-cover transition group-hover:scale-[1.02]"
+                          fill
+                          sizes="(max-width: 640px) 150px, (max-width: 1024px) 180px, 200px"
+                          className="object-cover transition group-hover:scale-[1.02]"
                         />
                       ) : (
                         <div className="flex h-full w-full items-center justify-center text-xs text-white/40">
@@ -1159,7 +1170,7 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
       </section>
     ) : null;
 
-    const moduleContentByType: Record<PublicProfileModuleType, JSX.Element | null> = {
+    const moduleContentByType: Record<PublicProfileModuleType, ReactNode> = {
       SERVICOS: servicesModuleContent,
       AGENDA: agendaModuleContent,
       FORMULARIOS: formsModuleContent,
@@ -1515,7 +1526,7 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
       };
 
       const eventIds = Array.from(
-        new Set(
+        new Set<number>(
           (recentEntitlements ?? [])
             .map((r: any) => r.eventId)
             .filter((id: unknown): id is number => typeof id === "number"),

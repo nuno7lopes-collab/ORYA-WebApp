@@ -92,8 +92,6 @@ async function _POST(
     const { ip, userAgent } = getRequestMeta(req);
     const now = new Date();
 
-    let crmPayload: { organizationId: number; userId: string; bookingId: number } | null = null;
-    let bookingUserId: string | null = null;
     const result = await prisma.$transaction(async (tx) => {
       const booking = await tx.booking.findFirst({
         where: { id: bookingId, organizationId: organization.id },
@@ -113,23 +111,33 @@ async function _POST(
       });
 
       if (!booking) {
-        return { error: errorWithCtx(404, "Reserva não encontrada.", "BOOKING_NOT_FOUND") };
+        return { ok: false as const, error: errorWithCtx(404, "Reserva não encontrada.", "BOOKING_NOT_FOUND") };
       }
       if (
         membership.role === OrganizationMemberRole.STAFF &&
         (!booking.professional?.userId || booking.professional.userId !== profile.id)
       ) {
-        return { error: errorWithCtx(403, "Sem permissões.", "FORBIDDEN") };
+        return { ok: false as const, error: errorWithCtx(403, "Sem permissões.", "FORBIDDEN") };
       }
       if (["CANCELLED_BY_CLIENT", "CANCELLED_BY_ORG", "CANCELLED"].includes(booking.status)) {
-        return { booking, already: true };
+        return {
+          ok: true as const,
+          booking: { id: booking.id, status: booking.status },
+          already: true,
+          refundRequired: false,
+          paymentIntentId: booking.paymentIntentId ?? null,
+          refundAmountCents: null,
+          snapshotTimezone: booking.snapshotTimezone,
+          bookingUserId: booking.userId,
+        };
       }
 
-      bookingUserId = booking.userId;
+      const bookingUserId = booking.userId;
       const isPending = ["PENDING_CONFIRMATION", "PENDING"].includes(booking.status);
       const snapshot = parseBookingConfirmationSnapshot(booking.confirmationSnapshot);
       if (!isPending && booking.status === "CONFIRMED" && !snapshot) {
         return {
+          ok: false as const,
           error: errorWithCtx(
             409,
             "Reserva confirmada sem snapshot. Corre o backfill antes de cancelar.",
@@ -147,6 +155,7 @@ async function _POST(
       const canCancel = isPending || (booking.status === "CONFIRMED" && decision.allowed);
       if (canCancel === false) {
         return {
+          ok: false as const,
           error: errorWithCtx(
             400,
             "O prazo de cancelamento já passou.",
@@ -163,6 +172,7 @@ async function _POST(
         actorUserId: profile.id,
         data: { status: "CANCELLED_BY_ORG" },
       });
+      const updatedSummary = { id: updated.id, status: updated.status };
       const refundRequired =
         !!booking.paymentIntentId &&
         (isPending || (booking.status === "CONFIRMED" && decision.allowed));
@@ -190,23 +200,19 @@ async function _POST(
         userAgent,
       });
 
-      crmPayload = {
-        organizationId: organization.id,
-        userId: booking.userId,
-        bookingId: booking.id,
-      };
-
       return {
-        booking: updated,
+        ok: true as const,
+        booking: updatedSummary,
         already: false,
         refundRequired,
-        paymentIntentId: booking.paymentIntentId,
+        paymentIntentId: booking.paymentIntentId ?? null,
         refundAmountCents,
         snapshotTimezone: booking.snapshotTimezone,
+        bookingUserId,
       };
     });
 
-    if ("error" in result) return result.error;
+    if (!result.ok) return result.error;
 
     if (result.refundRequired && result.paymentIntentId) {
       try {
@@ -222,17 +228,17 @@ async function _POST(
       }
     }
 
-    if (!result.already && crmPayload) {
+    if (!result.already && result.bookingUserId) {
       try {
         await ingestCrmInteraction({
-          organizationId: crmPayload.organizationId,
-          userId: crmPayload.userId,
+          organizationId: organization.id,
+          userId: result.bookingUserId,
           type: CrmInteractionType.BOOKING_CANCELLED,
           sourceType: CrmInteractionSource.BOOKING,
-          sourceId: String(crmPayload.bookingId),
+          sourceId: String(result.booking.id),
           occurredAt: new Date(),
           metadata: {
-            bookingId: crmPayload.bookingId,
+            bookingId: result.booking.id,
             canceledBy: "ORG",
           },
         });
@@ -241,12 +247,12 @@ async function _POST(
       }
     }
 
-    if (!result.already && bookingUserId) {
+    if (!result.already && result.bookingUserId) {
       try {
-        const shouldSend = await shouldNotify(bookingUserId, "SYSTEM_ANNOUNCE");
+        const shouldSend = await shouldNotify(result.bookingUserId, "SYSTEM_ANNOUNCE");
         if (shouldSend) {
           await createNotification({
-            userId: bookingUserId,
+            userId: result.bookingUserId,
             type: "SYSTEM_ANNOUNCE",
             title: "Reserva cancelada",
             body: "A tua reserva foi cancelada pela organização.",

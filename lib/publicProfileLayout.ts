@@ -325,11 +325,11 @@ export function sanitizePublicProfileLayout(value: unknown): PublicProfileLayout
   const normalized: PublicProfileModuleConfig[] = [];
   const seen = new Set<PublicProfileModuleType>();
   for (const entry of modulesRaw) {
-    const module = normalizeModule(entry);
-    if (!module) continue;
-    if (seen.has(module.type)) continue;
-    normalized.push(module);
-    seen.add(module.type);
+    const moduleItem = normalizeModule(entry);
+    if (!moduleItem) continue;
+    if (seen.has(moduleItem.type)) continue;
+    normalized.push(moduleItem);
+    seen.add(moduleItem.type);
   }
 
   if (normalized.length === 0) return null;
@@ -337,24 +337,24 @@ export function sanitizePublicProfileLayout(value: unknown): PublicProfileLayout
 }
 
 export function mergeLayoutWithDefaults(layout: PublicProfileLayout): PublicProfileLayout {
-  const normalized = layout.modules.map((module) => {
-    const defaults = defaultModuleByType.get(module.type);
-    const settings = sanitizeModuleSettings(module.type, module.settings, defaults?.settings);
+  const normalized = layout.modules.map((moduleItem) => {
+    const defaults = defaultModuleByType.get(moduleItem.type);
+    const settings = sanitizeModuleSettings(moduleItem.type, moduleItem.settings, defaults?.settings);
     return {
-      ...module,
-      id: defaults?.id ?? module.id,
-      enabled: typeof module.enabled === "boolean" ? module.enabled : defaults?.enabled ?? true,
-      width: module.width ?? defaults?.width ?? "half",
+      ...moduleItem,
+      id: defaults?.id ?? moduleItem.id,
+      enabled: typeof moduleItem.enabled === "boolean" ? moduleItem.enabled : defaults?.enabled ?? true,
+      width: moduleItem.width ?? defaults?.width ?? "half",
       ...(settings ? { settings } : {}),
     };
   });
 
-  const existingTypes = new Set(normalized.map((module) => module.type));
-  const missingDefaults = DEFAULT_LAYOUT.modules.filter((module) => !existingTypes.has(module.type));
+  const existingTypes = new Set(normalized.map((moduleItem) => moduleItem.type));
+  const missingDefaults = DEFAULT_LAYOUT.modules.filter((moduleItem) => !existingTypes.has(moduleItem.type));
 
   return {
     version: 1,
-    modules: [...normalized, ...missingDefaults.map((module) => cloneModule(module))],
+    modules: [...normalized, ...missingDefaults.map((moduleItem) => cloneModule(moduleItem))],
   };
 }
 

@@ -77,8 +77,8 @@ export default async function OrganizationDashboardLayout({ children }: { childr
       if (organization && membership) {
         activeOrganization = {
           id: organization.id,
-          publicName: organization.publicName,
-          businessName: organization.businessName,
+          publicName: organization.publicName ?? null,
+          businessName: organization.businessName ?? null,
           username: (organization as { username?: string | null }).username ?? null,
           brandingAvatarUrl: (organization as { brandingAvatarUrl?: string | null }).brandingAvatarUrl ?? null,
           brandingPrimaryColor: (organization as { brandingPrimaryColor?: string | null }).brandingPrimaryColor ?? null,

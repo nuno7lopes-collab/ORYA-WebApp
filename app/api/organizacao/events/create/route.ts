@@ -70,6 +70,7 @@ type CreateOrganizationEventBody = {
   latitude?: number | null;
   longitude?: number | null;
   resaleMode?: string; // ALWAYS | AFTER_SOLD_OUT | DISABLED
+  pricingMode?: string | null;
   coverImageUrl?: string | null;
   inviteOnly?: boolean;
   publicAccessMode?: string;
@@ -227,7 +228,22 @@ async function _POST(req: NextRequest) {
       return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
     const isAdmin = Array.isArray(profile.roles) ? profile.roles.includes("admin") : false;
-    const isPlatformAccount = organization?.orgType === "PLATFORM";
+    const organizationInfo = await prisma.organization.findUnique({
+      where: { id: organization.id },
+      select: {
+        id: true,
+        orgType: true,
+        officialEmail: true,
+        officialEmailVerifiedAt: true,
+        stripeAccountId: true,
+        stripeChargesEnabled: true,
+        stripePayoutsEnabled: true,
+      },
+    });
+    if (!organizationInfo) {
+      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    }
+    const isPlatformAccount = organizationInfo.orgType === "PLATFORM";
 
     const title = body.title?.trim();
     const description = body.description?.trim() ?? "";
@@ -441,11 +457,11 @@ async function _POST(req: NextRequest) {
     const hasPaidTickets = ticketTypesData.some((t) => t.price > 0);
     if (hasPaidTickets && !isAdmin) {
       const gate = getPaidSalesGate({
-        officialEmail: organization?.officialEmail ?? null,
-        officialEmailVerifiedAt: organization?.officialEmailVerifiedAt ?? null,
-        stripeAccountId: organization?.stripeAccountId ?? null,
-        stripeChargesEnabled: organization?.stripeChargesEnabled ?? false,
-        stripePayoutsEnabled: organization?.stripePayoutsEnabled ?? false,
+        officialEmail: organizationInfo.officialEmail ?? null,
+        officialEmailVerifiedAt: organizationInfo.officialEmailVerifiedAt ?? null,
+        stripeAccountId: organizationInfo.stripeAccountId ?? null,
+        stripeChargesEnabled: organizationInfo.stripeChargesEnabled ?? false,
+        stripePayoutsEnabled: organizationInfo.stripePayoutsEnabled ?? false,
         requireStripe: payoutMode === PayoutMode.ORGANIZATION && !isPlatformAccount,
       });
       if (!gate.ok) {

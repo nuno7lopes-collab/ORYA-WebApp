@@ -1,4 +1,5 @@
 "use client";
+/* eslint-disable @next/next/no-img-element */
 
 import { type PointerEvent, useEffect, useMemo, useRef, useState } from "react";
 import StorePanelModal from "@/components/store/StorePanelModal";

@@ -222,8 +222,11 @@ async function _POST(req: NextRequest) {
           },
         });
 
-    const response = jsonWrap({ ok: true, item: result });
+    const response = jsonWrap({ ok: true, item: result }) as NextResponse;
     if (!userId && (!cookieSession || resolved.created)) {
+      if (!sessionId) {
+        return jsonWrap({ ok: false, error: "SESSION_REQUIRED" }, { status: 500 });
+      }
       response.cookies.set(CART_SESSION_COOKIE, sessionId, {
         httpOnly: true,
         sameSite: "lax",

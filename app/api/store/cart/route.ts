@@ -100,7 +100,33 @@ async function _GET(req: NextRequest) {
       sessionId,
     });
 
-    let items = [] as Awaited<ReturnType<typeof prisma.storeCartItem.findMany>>;
+    type CartItemRow = Prisma.StoreCartItemGetPayload<{
+      select: {
+        id: true;
+        productId: true;
+        variantId: true;
+        bundleId: true;
+        bundleKey: true;
+        quantity: true;
+        unitPriceCents: true;
+        personalization: true;
+        product: {
+          select: {
+            id: true;
+            name: true;
+            slug: true;
+            priceCents: true;
+            compareAtPriceCents: true;
+            currency: true;
+            requiresShipping: true;
+            images: { select: { url: true; altText: true; isPrimary: true; sortOrder: true } };
+          };
+        };
+        variant: { select: { id: true; label: true; priceCents: true } };
+      };
+    }>;
+
+    let items: CartItemRow[] = [];
     try {
       items = await prisma.storeCartItem.findMany({
         where: { cartId: resolved.cart.id },
@@ -138,7 +164,7 @@ async function _GET(req: NextRequest) {
       if (!(err instanceof Prisma.PrismaClientValidationError)) {
         throw err;
       }
-      items = await prisma.storeCartItem.findMany({
+      items = (await prisma.storeCartItem.findMany({
         where: { cartId: resolved.cart.id },
         orderBy: [{ createdAt: "asc" }],
         select: {
@@ -168,7 +194,7 @@ async function _GET(req: NextRequest) {
             select: { id: true, label: true, priceCents: true },
           },
         },
-      });
+      })) as CartItemRow[];
     }
 
     const bundleItems = items.filter((item) => item.bundleKey);
@@ -287,9 +313,12 @@ async function _GET(req: NextRequest) {
         items: standaloneItems,
         bundles,
       },
-    });
+    }) as NextResponse;
 
     if (!userId && (!cookieSession || resolved.created)) {
+      if (!sessionId) {
+        return jsonWrap({ ok: false, error: "SESSION_REQUIRED" }, { status: 500 });
+      }
       response.cookies.set(CART_SESSION_COOKIE, sessionId, {
         httpOnly: true,
         sameSite: "lax",

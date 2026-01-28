@@ -4,6 +4,8 @@ import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { buildIcsEvent } from "@/lib/calendar/ics";
 import { getAppBaseUrl } from "@/lib/appBaseUrl";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { respondPlainText } from "@/lib/http/envelope";
+import { getRequestContext } from "@/lib/http/requestContext";
 
 function parseId(value: string) {
   const parsed = Number(value);
@@ -11,13 +13,14 @@ function parseId(value: string) {
 }
 
 async function _GET(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const ctx = getRequestContext(req);
   const resolved = await params;
   const bookingId = parseId(resolved.id);
   if (!bookingId) {
-    return new Response("ID inválido", { status: 400 });
+    return respondPlainText(ctx, "ID inválido", { status: 400 });
   }
 
   try {
@@ -37,7 +40,7 @@ async function _GET(
     });
 
     if (!booking) {
-      return new Response("Reserva não encontrada", { status: 404 });
+      return respondPlainText(ctx, "Reserva não encontrada", { status: 404 });
     }
 
     const startsAt = booking.startsAt;
@@ -61,7 +64,7 @@ async function _GET(
       url,
     });
 
-    return new Response(ics, {
+    return respondPlainText(ctx, ics, {
       status: 200,
       headers: {
         "Content-Type": "text/calendar; charset=utf-8",
@@ -70,10 +73,10 @@ async function _GET(
     });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return new Response("Não autenticado", { status: 401 });
+      return respondPlainText(ctx, "Não autenticado", { status: 401 });
     }
     console.error("GET /api/me/reservas/[id]/calendar.ics error:", err);
-    return new Response("Erro ao gerar calendário", { status: 500 });
+    return respondPlainText(ctx, "Erro ao gerar calendário", { status: 500 });
   }
 }
 export const GET = withApiEnvelope(_GET);

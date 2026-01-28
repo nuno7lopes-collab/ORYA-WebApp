@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-/* eslint-disable no-console */
 const path = require("node:path");
 const dns = require("node:dns").promises;
 const net = require("node:net");

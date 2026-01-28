@@ -33,7 +33,7 @@ async function _POST(_: NextRequest, { params }: { params: Promise<{ token: stri
 
   const now = new Date();
   if (pairing.partnerLinkExpiresAt && pairing.partnerLinkExpiresAt.getTime() < now.getTime()) {
-    return jsonWrap({ ok: false, error: "SWAP_CONFIRM_EXPIRED" }, { status: 410 });
+    return jsonWrap({ ok: false, error: "SWAP_CONFIRM_EXPIRED" }, { status: 409 });
   }
   if (pairing.player2UserId !== user.id) {
     return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });

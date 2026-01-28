@@ -9,20 +9,22 @@ export type EnvelopeSuccess<T> = {
   ok: true;
   requestId: string;
   correlationId: string;
-  result: T;
+  data: T;
+  result?: T;
 };
 
 export type EnvelopeError = {
   ok: false;
   requestId: string;
   correlationId: string;
-  error: {
-    errorCode: string;
-    message: string;
-    retryable: boolean;
-    nextAction?: string | null;
-    details?: Record<string, unknown> | null;
-  };
+  errorCode: string;
+  message: string;
+  retryable: boolean;
+  nextAction?: string | null;
+  details?: Record<string, unknown> | null;
+  data?: unknown;
+  error?: string;
+  code?: string;
 };
 
 export type Envelope<T = unknown> = EnvelopeSuccess<T> | EnvelopeError;
@@ -33,29 +35,41 @@ export type EnvelopeErrorInput = {
   retryable?: boolean;
   nextAction?: string | null;
   details?: Record<string, unknown> | null;
+  data?: unknown;
 };
 
 export function successEnvelope<T>(ctx: RequestContext, data: T): EnvelopeSuccess<T> {
-  return {
+  const envelope: Record<string, unknown> = {
     ok: true,
     requestId: ctx.requestId,
     correlationId: ctx.correlationId,
+    data,
     result: data,
   };
+  if (data && typeof data === "object" && !Array.isArray(data)) {
+    for (const [key, value] of Object.entries(data as Record<string, unknown>)) {
+      if (!(key in envelope)) {
+        envelope[key] = value;
+      }
+    }
+  }
+  return envelope as EnvelopeSuccess<T>;
 }
 
 export function errorEnvelope(ctx: RequestContext, input: EnvelopeErrorInput): EnvelopeError {
+  const data = input.data ?? input.details ?? undefined;
   return {
     ok: false,
     requestId: ctx.requestId,
     correlationId: ctx.correlationId,
-    error: {
-      errorCode: input.errorCode,
-      message: input.message,
-      retryable: input.retryable ?? false,
-      ...(input.nextAction ? { nextAction: input.nextAction } : {}),
-      ...(input.details ? { details: input.details } : {}),
-    },
+    errorCode: input.errorCode,
+    code: input.errorCode,
+    message: input.message,
+    error: input.message,
+    retryable: input.retryable ?? false,
+    ...(input.nextAction ? { nextAction: input.nextAction } : {}),
+    ...(input.details ? { details: input.details } : {}),
+    ...(data !== undefined ? { data } : {}),
   };
 }
 

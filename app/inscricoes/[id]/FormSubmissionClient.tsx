@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useUser } from "@/app/hooks/useUser";
 
 type FieldType = "TEXT" | "TEXTAREA" | "EMAIL" | "PHONE" | "NUMBER" | "DATE" | "SELECT" | "CHECKBOX";
@@ -50,6 +50,11 @@ export function FormSubmissionClient({ form }: { form: FormPayload }) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [nowMs, setNowMs] = useState<number | null>(null);
+
+  useEffect(() => {
+    setNowMs(Date.now());
+  }, []);
 
   const hasEmailField = useMemo(
     () => form.fields.some((field) => field.fieldType === "EMAIL"),
@@ -65,14 +70,13 @@ export function FormSubmissionClient({ form }: { form: FormPayload }) {
 
   const hasStart = Boolean(form.startAt);
   const hasEnd = Boolean(form.endAt);
-  const nowMs = Date.now();
   const startMs = form.startAt ? new Date(form.startAt).getTime() : null;
   const endMs = form.endAt ? new Date(form.endAt).getTime() : null;
   const isBeforeStart =
-    typeof startMs === "number" && Number.isFinite(startMs) ? nowMs < startMs : false;
+    nowMs !== null && typeof startMs === "number" && Number.isFinite(startMs) ? nowMs < startMs : false;
   const isAfterEnd =
-    typeof endMs === "number" && Number.isFinite(endMs) ? nowMs > endMs : false;
-  const isWithinWindow = !isBeforeStart && !isAfterEnd;
+    nowMs !== null && typeof endMs === "number" && Number.isFinite(endMs) ? nowMs > endMs : false;
+  const isWithinWindow = nowMs === null ? true : !isBeforeStart && !isAfterEnd;
   const isOpen = form.status === "PUBLISHED" && isWithinWindow;
   const statusLabel =
     form.status === "DRAFT"

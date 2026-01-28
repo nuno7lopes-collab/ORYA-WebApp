@@ -63,9 +63,10 @@ async function handleRegistrationExpired(payload: PadelRegistrationOutboxPayload
   });
   if (!registration?.pairing) return { ok: false, code: "PAIRING_NOT_FOUND" } as const;
 
+  const pairing = registration.pairing;
   const reason = typeof payload.reason === "string" ? payload.reason : null;
   const guaranteeStatus = resolveGuaranteeStatusForExpiry(reason);
-  const pairingId = registration.pairing.id;
+  const pairingId = pairing.id;
 
   await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     await tx.padelPairingSlot.updateMany({
@@ -77,7 +78,7 @@ async function handleRegistrationExpired(payload: PadelRegistrationOutboxPayload
       },
     });
 
-    const paidTicket = registration.pairing.slots.find(
+    const paidTicket = pairing.slots.find(
       (slot) => slot.paymentStatus === PadelPairingPaymentStatus.PAID && slot.ticket,
     )?.ticket;
     if (paidTicket) {

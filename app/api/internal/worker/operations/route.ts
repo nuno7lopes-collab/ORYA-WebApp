@@ -1,4 +1,4 @@
-// @deprecated Slice 4 cleanup: legacy operations batch (see cleanup plan).
+// Internal operations worker (outbox + fulfillment).
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -59,7 +59,6 @@ const BATCH_SIZE = 5;
 
 const BASE_URL = getAppBaseUrl();
 const absUrl = (path: string) => (/^https?:\/\//i.test(path) ? path : `${BASE_URL}${path.startsWith("/") ? path : `/${path}`}`);
-const LEGACY_OPERATIONS_DISABLED = true;
 
 type OperationRecord = {
   id: number;
@@ -257,9 +256,6 @@ async function processSendEmailOutbox(op: OperationRecord) {
 }
 
 async function _POST(req: NextRequest) {
-  if (LEGACY_OPERATIONS_DISABLED) {
-    return jsonWrap({ ok: false, error: "LEGACY_OPERATIONS_DISABLED" }, { status: 410 });
-  }
   if (!requireInternalSecret(req)) {
     return jsonWrap({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
   }
@@ -554,10 +550,16 @@ async function processStripeEvent(op: OperationRecord) {
         ? (payload.stripeEventObject as Record<string, any>)
         : null;
     if (!stripeEventObject) throw new Error("Missing stripeEventObject");
+    const objectId = typeof stripeEventObject.id === "string" ? stripeEventObject.id : null;
+    if (!objectId) throw new Error("Missing stripeEventObject.id");
+    const metadata =
+      stripeEventObject.metadata && typeof stripeEventObject.metadata === "object"
+        ? (stripeEventObject.metadata as Record<string, string | undefined>)
+        : null;
     return handleStripeWebhook({
       id: typeof payload.stripeEventId === "string" ? payload.stripeEventId : op.stripeEventId ?? "unknown",
       type: eventType as any,
-      data: { object: stripeEventObject },
+      data: { object: { id: objectId, metadata } },
     });
   }
   throw new Error(`Unsupported stripeEventType=${eventType ?? "unknown"}`);

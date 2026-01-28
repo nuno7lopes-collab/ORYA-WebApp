@@ -27,8 +27,8 @@ function AuthCallbackInner() {
 
         target = sanitizeRedirectPath(target, "/");
 
-        // Migração de bilhetes guest para user recém autenticado (best-effort, assíncrono)
-        fetch("/api/tickets/migrate-guest", {
+        // Migração de compras guest para user recém autenticado (best-effort, assíncrono)
+        fetch("/api/me/claim-guest", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
         }).catch((mErr) => console.warn("[auth/callback] migrate-guest falhou", mErr));

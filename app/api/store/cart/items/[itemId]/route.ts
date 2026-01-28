@@ -3,7 +3,7 @@ import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { isStoreFeatureEnabled, isStorePublic } from "@/lib/storeAccess";
-import { StoreStockPolicy } from "@prisma/client";
+import { Prisma, StoreStockPolicy } from "@prisma/client";
 import { validateStorePersonalization } from "@/lib/store/personalization";
 import { z } from "zod";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
@@ -178,11 +178,15 @@ async function _PATCH(
       nextPersonalization = personalizationDelta.normalized;
     }
 
+    const personalizationValue =
+      payload.personalization !== undefined ? nextPersonalization : existing.personalization;
+    const personalizationPayload = (personalizationValue ?? Prisma.DbNull) as Prisma.InputJsonValue;
+
     const updated = await prisma.storeCartItem.update({
       where: { id: existing.id },
       data: {
         quantity: payload.quantity ?? existing.quantity,
-        personalization: payload.personalization !== undefined ? nextPersonalization : existing.personalization,
+        personalization: personalizationPayload,
         unitPriceCents,
       },
       select: {

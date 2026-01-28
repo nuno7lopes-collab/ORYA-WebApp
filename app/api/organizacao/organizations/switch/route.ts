@@ -39,7 +39,11 @@ async function _POST(req: NextRequest) {
       where: { id: resolvedId },
       select: { id: true, status: true },
     });
-    if (!organization || ![OrganizationStatus.ACTIVE, OrganizationStatus.SUSPENDED].includes(organization.status)) {
+    const allowedStatuses = new Set<OrganizationStatus>([
+      OrganizationStatus.ACTIVE,
+      OrganizationStatus.SUSPENDED,
+    ]);
+    if (!organization || !allowedStatuses.has(organization.status)) {
       return jsonWrap({ ok: false, error: "NOT_MEMBER" }, { status: 403 });
     }
 
@@ -69,7 +73,7 @@ async function _POST(req: NextRequest) {
       ok: true,
       organizationId: resolvedId,
       role: result.membership.role,
-    });
+    }) as NextResponse;
     res.cookies.set(COOKIE_NAME, String(resolvedId), {
       httpOnly: false,
       sameSite: "lax",

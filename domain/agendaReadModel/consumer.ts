@@ -142,12 +142,12 @@ export async function consumeAgendaMaterializationEvent(eventId: string): Promis
         durationMinutes: true,
         status: true,
         organizationId: true,
-        service: { select: { name: true } },
+        service: { select: { title: true } },
       },
     });
     if (!booking) return { ok: false, code: "RESERVATION_NOT_FOUND" };
     const ends = new Date(booking.startsAt.getTime() + booking.durationMinutes * 60_000);
-    title = title ?? booking.service.name;
+    title = title ?? booking.service.title;
     startsAt = startsAt ?? booking.startsAt;
     endsAt = endsAt ?? ends;
     status = status ?? booking.status;
@@ -393,7 +393,7 @@ export async function rebuildAgendaItems(params?: {
   }
 
   const forEachBatch = async <T extends { id: number | string }>(
-    fetchPage: (cursor: T["id"] | null) => Promise<T[]>,
+    fetchPage: (cursor: T["id"] | null) => PromiseLike<T[]>,
     handler: (rows: T[]) => Promise<void> | void,
   ) => {
     let cursor: T["id"] | null = null;
@@ -405,6 +405,33 @@ export async function rebuildAgendaItems(params?: {
       cursor = rows[rows.length - 1].id;
     }
   };
+
+  type AgendaItemRow = {
+    id: string;
+    sourceType: SourceType;
+    sourceId: string;
+    title: string;
+    startsAt: Date;
+    endsAt: Date;
+    status: string;
+  };
+  type SoftBlockRow = { id: number; startsAt: Date; endsAt: Date; reason: string | null };
+  type BookingRow = {
+    id: number;
+    startsAt: Date;
+    durationMinutes: number;
+    status: string;
+    service: { title: string } | null;
+  };
+  type MatchRow = {
+    id: number;
+    plannedStartAt: Date | null;
+    plannedEndAt: Date | null;
+    plannedDurationMinutes: number | null;
+    startTime: Date | null;
+    status: string | null;
+  };
+  type CourtBlockRow = { id: number; startAt: Date; endAt: Date; label: string | null };
 
   for (const [index, orgId] of orgIds.entries()) {
     const orgResult: AgendaRebuildResult = {
@@ -422,7 +449,7 @@ export async function rebuildAgendaItems(params?: {
 
     const existingMap = new Map<string, { id: string; sourceType: SourceType; sourceId: string; title: string; startsAt: Date; endsAt: Date; status: string }>();
 
-    await forEachBatch(
+    await forEachBatch<AgendaItemRow>(
       (cursor) =>
         prisma.agendaItem.findMany({
           where: {
@@ -492,7 +519,7 @@ export async function rebuildAgendaItems(params?: {
       });
     };
 
-    await forEachBatch(
+    await forEachBatch<SoftBlockRow>(
       (cursor) =>
         prisma.softBlock.findMany({
           where: { organizationId: orgId },
@@ -520,7 +547,7 @@ export async function rebuildAgendaItems(params?: {
       },
     );
 
-    await forEachBatch(
+    await forEachBatch<BookingRow>(
       (cursor) =>
         prisma.booking.findMany({
           where: { organizationId: orgId },
@@ -532,7 +559,7 @@ export async function rebuildAgendaItems(params?: {
             startsAt: true,
             durationMinutes: true,
             status: true,
-            service: { select: { name: true } },
+            service: { select: { title: true } },
           },
         }),
       async (rows) => {
@@ -547,11 +574,15 @@ export async function rebuildAgendaItems(params?: {
             markInvalid(SourceType.BOOKING, String(booking.id));
             continue;
           }
+          const serviceTitle =
+            booking.service?.title ??
+            (booking.service as { name?: string | null } | null)?.name ??
+            "Reserva";
           await handleDesiredItem({
             organizationId: orgId,
             sourceType: SourceType.BOOKING,
             sourceId: String(booking.id),
-            title: booking.service?.name ?? "Reserva",
+            title: serviceTitle,
             startsAt: booking.startsAt,
             endsAt,
             status: booking.status,
@@ -560,7 +591,7 @@ export async function rebuildAgendaItems(params?: {
       },
     );
 
-    await forEachBatch(
+    await forEachBatch<MatchRow>(
       (cursor) =>
         prisma.padelMatch.findMany({
           where: {
@@ -599,7 +630,7 @@ export async function rebuildAgendaItems(params?: {
       },
     );
 
-    await forEachBatch(
+    await forEachBatch<CourtBlockRow>(
       (cursor) =>
         prisma.padelCourtBlock.findMany({
           where: { organizationId: orgId },

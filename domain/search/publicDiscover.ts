@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { Prisma, SearchIndexVisibility, SearchIndexItem } from "@prisma/client";
+import { EventTemplateType, Prisma, SearchIndexVisibility, SearchIndexItem } from "@prisma/client";
 import {
   toPublicEventCardWithPriceFromIndex,
   PublicEventCard,
@@ -99,13 +99,16 @@ function applyCategoryFilter(
     categoryFilters.includes("EVENTOS") ||
     categoryFilters.includes("OTHER");
 
-  const andFilters: Prisma.EventWhereInput[] = [];
+  const andFilters: Prisma.SearchIndexItemWhereInput[] = [];
 
   if (hasPadel && !hasGeneral) {
-    andFilters.push({ templateType: "PADEL" });
+    andFilters.push({ templateType: EventTemplateType.PADEL });
   } else if (!hasPadel && hasGeneral) {
     andFilters.push({
-      OR: [{ templateType: { not: "PADEL" } }, { templateType: null }],
+      OR: [
+        { templateType: { not: EventTemplateType.PADEL } },
+        { templateType: null },
+      ],
     });
   }
 

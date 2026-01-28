@@ -1,4 +1,4 @@
-import { padel_match_status } from "@prisma/client";
+import { padel_match_status, type Prisma } from "@prisma/client";
 import { buildWalkoverSets, type PadelScoreRules } from "@/domain/padel/score";
 
 export type KnockoutMatchSnapshot = {
@@ -14,8 +14,8 @@ export type KnockoutUpdateData = {
   pairingBId?: number | null;
   winnerPairingId?: number | null;
   status?: padel_match_status;
-  score?: Record<string, unknown>;
-  scoreSets?: Array<{ teamA: number; teamB: number }>;
+  score?: Prisma.InputJsonValue;
+  scoreSets?: Prisma.InputJsonValue;
 };
 
 export type KnockoutUpdateFn = (

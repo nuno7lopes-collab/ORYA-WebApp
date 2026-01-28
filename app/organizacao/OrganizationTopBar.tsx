@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState, type SyntheticEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type ComponentProps, type SyntheticEvent } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import { supabaseBrowser } from "@/lib/supabaseBrowser";
@@ -17,7 +17,7 @@ import { NotificationBell } from "@/app/components/notifications/NotificationBel
 import ObjectiveSubnav from "@/app/organizacao/ObjectiveSubnav";
 import CrmSubnav from "@/app/organizacao/(dashboard)/crm/CrmSubnav";
 import { type ObjectiveTab } from "@/app/organizacao/objectiveNav";
-import { hasModuleAccess, resolveModuleAccess } from "@/lib/organizationRbac";
+import { hasModuleAccess, normalizeAccessLevel, resolveModuleAccess } from "@/lib/organizationRbac";
 import { OrganizationMemberRole, OrganizationModule } from "@prisma/client";
 import StoreAdminSubnav from "@/components/store/StoreAdminSubnav";
 import { ORG_SHELL_GUTTER } from "@/app/organizacao/layoutTokens";
@@ -112,6 +112,7 @@ export default function OrganizationTopBar({
   user: UserInfo | null;
   role?: string | null;
 }) {
+  type RoleBadgeRole = ComponentProps<typeof RoleBadge>["role"];
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -289,7 +290,7 @@ export default function OrganizationTopBar({
       .filter((item) => item && item.moduleKey)
       .map((item) => ({
         moduleKey: item.moduleKey,
-        accessLevel: item.accessLevel,
+        accessLevel: normalizeAccessLevel(item.accessLevel) ?? "NONE",
         scopeType: item.scopeType ?? null,
         scopeId: item.scopeId ?? null,
       }));
@@ -299,6 +300,9 @@ export default function OrganizationTopBar({
     if (!Object.values(OrganizationMemberRole).includes(role as OrganizationMemberRole)) return null;
     return resolveModuleAccess(role as OrganizationMemberRole, moduleOverrides);
   }, [moduleOverrides, role]);
+  const roleBadge = role && Object.values(OrganizationMemberRole).includes(role as OrganizationMemberRole)
+    ? (role as RoleBadgeRole)
+    : null;
   const objectiveModulesWithAccess = useMemo(() => {
     if (!moduleAccess) return objectiveModules.modules;
     return objectiveModules.modules.filter((moduleKey) => {
@@ -628,9 +632,9 @@ export default function OrganizationTopBar({
           <details ref={userMenuRef} className={cn("relative", openMenu === "user" && "z-50")} onToggle={handleMenuToggle("user")}>
             <summary className="list-none cursor-pointer rounded-full border border-white/15 bg-white/5 px-2.5 text-sm text-white/80 shadow-[0_12px_38px_rgba(0,0,0,0.3)] flex h-9 items-center">
               <div className="flex items-center gap-2">
-                {role && (
+                {roleBadge && (
                   <span className="hidden lg:inline-flex">
-                    <RoleBadge role={role} subtle />
+                    <RoleBadge role={roleBadge} subtle />
                   </span>
                 )}
                 <Avatar

@@ -12,8 +12,23 @@ const DOWNLOAD_CONTENT_TYPES = [
   "text/calendar",
 ];
 
+const CANONICAL_ERROR_CODE_BY_STATUS: Record<number, string> = {
+  401: "UNAUTHENTICATED",
+  403: "FORBIDDEN",
+  404: "NOT_FOUND",
+  409: "CONFLICT",
+  410: "GONE",
+  422: "VALIDATION_FAILED",
+  429: "THROTTLED",
+  500: "INTERNAL_ERROR",
+};
+
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function hasJsonContentType(contentType: string | null) {
@@ -66,11 +81,126 @@ function normalizePlainResponse(ctx: RequestContext, res: Response) {
   });
 }
 
+function ensureSuccessEnvelope(ctx: RequestContext, payload: Record<string, unknown>) {
+  const requestId = ctx.requestId;
+  const correlationId = ctx.correlationId;
+  const dataValue =
+    ("data" in payload ? payload.data : undefined) ??
+    ("result" in payload ? payload.result : undefined);
+
+  const normalized: Record<string, unknown> = {
+    ...payload,
+    requestId,
+    correlationId,
+    ...(!("data" in payload) && dataValue !== undefined ? { data: dataValue } : {}),
+    ...(!("result" in payload) && dataValue !== undefined ? { result: dataValue } : {}),
+  };
+
+  const flattenSource = isPlainObject(dataValue) ? dataValue : null;
+  if (flattenSource) {
+    for (const [key, value] of Object.entries(flattenSource)) {
+      if (!(key in normalized)) {
+        normalized[key] = value;
+      }
+    }
+  }
+
+  return normalized;
+}
+
+function ensureErrorEnvelope(ctx: RequestContext, payload: Record<string, unknown>) {
+  const requestId = ctx.requestId;
+  const correlationId = ctx.correlationId;
+  const errorObj = isPlainObject(payload.error) ? (payload.error as Record<string, unknown>) : null;
+
+  const errorCode =
+    (typeof payload.errorCode === "string" ? payload.errorCode : undefined) ??
+    (typeof payload.code === "string" ? payload.code : undefined) ??
+    (typeof errorObj?.errorCode === "string" ? errorObj.errorCode : undefined) ??
+    (typeof payload.error === "string" ? payload.error : undefined) ??
+    "UNKNOWN_ERROR";
+  const message =
+    (typeof payload.message === "string" ? payload.message : undefined) ??
+    (typeof errorObj?.message === "string" ? errorObj.message : undefined) ??
+    (typeof payload.error === "string" ? payload.error : undefined) ??
+    String(errorCode);
+  const retryable =
+    (typeof payload.retryable === "boolean" ? payload.retryable : undefined) ??
+    (typeof errorObj?.retryable === "boolean" ? Boolean(errorObj.retryable) : undefined) ??
+    false;
+  const nextAction =
+    (typeof payload.nextAction === "string" ? payload.nextAction : undefined) ??
+    (typeof errorObj?.nextAction === "string" ? errorObj.nextAction : undefined) ??
+    (typeof (errorObj as any)?.next_action === "string" ? String((errorObj as any).next_action) : null) ??
+    null;
+  const details =
+    (payload.details as Record<string, unknown> | null | undefined) ??
+    (errorObj?.details as Record<string, unknown> | null | undefined) ??
+    null;
+
+  const normalized: Record<string, unknown> = {
+    ...payload,
+    requestId,
+    correlationId,
+    errorCode,
+    message,
+    retryable,
+    ...(nextAction ? { nextAction } : {}),
+    ...(details ? { details } : {}),
+    ...(!("data" in payload) && details ? { data: details } : {}),
+    ...(typeof payload.code === "string" ? {} : { code: errorCode }),
+  };
+
+  if (typeof payload.error !== "string") {
+    if (errorObj) normalized.errorDetail = errorObj;
+    normalized.error = message;
+  }
+
+  return normalized;
+}
+
+function enforceCanonicalErrorCode(status: number, payload: Record<string, unknown>) {
+  const canonical = CANONICAL_ERROR_CODE_BY_STATUS[status];
+  if (!canonical) return payload;
+  const current = typeof payload.errorCode === "string" ? payload.errorCode : undefined;
+  if (current) return payload;
+
+  const original =
+    (typeof payload.code === "string" ? payload.code : undefined) ??
+    (typeof payload.error === "string" ? payload.error : undefined);
+
+  const details =
+    original && original !== canonical
+      ? { ...(payload.details as Record<string, unknown> | null | undefined), originalCode: original }
+      : payload.details;
+
+  return {
+    ...payload,
+    errorCode: canonical,
+    code: typeof payload.code === "string" ? payload.code : original ?? canonical,
+    ...(details ? { details } : {}),
+  };
+}
+
+function ensureCanonicalEnvelope(ctx: RequestContext, payload: Record<string, unknown>) {
+  if (payload.ok === true) {
+    return ensureSuccessEnvelope(ctx, payload);
+  }
+  if (payload.ok === false) {
+    return ensureErrorEnvelope(ctx, payload);
+  }
+  return payload;
+}
+
 async function normalizeJsonResponse(ctx: RequestContext, res: Response) {
   const payload = await res.json();
   if (isV9Envelope(payload)) {
+    let normalized = ensureCanonicalEnvelope(ctx, payload as Record<string, unknown>);
+    if (normalized.ok === false) {
+      normalized = enforceCanonicalErrorCode(res.status, normalized);
+    }
     const headers = buildResponseHeaders(ctx, res.headers);
-    return new Response(JSON.stringify(payload), {
+    return new Response(JSON.stringify(normalized), {
       status: res.status,
       statusText: res.statusText,
       headers,
@@ -94,10 +224,10 @@ function shouldBypassEnvelope(res: Response) {
   return false;
 }
 
-export function withApiEnvelope<T extends (req: Request, ...args: any[]) => Promise<Response> | Response>(
-  handler: T,
-): (req: Request, ...args: Parameters<T> extends [any, ...infer Rest] ? Rest : never) => Promise<Response> {
-  return async (req: Request, ...args: any[]) => {
+export function withApiEnvelope<Req extends Request, Args extends any[]>(
+  handler: (req: Req, ...args: Args) => Promise<Response> | Response,
+): (req: Req, ...args: Args) => Promise<Response> {
+  return async (req: Req, ...args: Args) => {
     const ctx = getRequestContext(req);
     try {
       const result = await handler(req, ...args);

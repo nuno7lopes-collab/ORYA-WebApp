@@ -85,13 +85,8 @@ const isRootProfileHandle = (path?: string | null) => {
   return !RESERVED_ROOT_ROUTES.has(segment);
 };
 
-export function Navbar() {
+function NavbarInner({ rawPathname }: { rawPathname: string | null }) {
   const router = useRouter();
-  const rawPathname = usePathname();
-  if (rawPathname?.startsWith("/admin")) {
-    return null;
-  }
-
   const { openModal: openAuthModal, isOpen: isAuthOpen } = useAuthModal();
   const { user, profile, isLoading } = useUser();
   const isAuthenticated = !!user;
@@ -1269,6 +1264,15 @@ export function Navbar() {
       {!shouldHide && <MobileBottomNav pathname={pathname} socialBadgeCount={unreadCount} />}
     </>
   );
+}
+
+export function Navbar() {
+  const rawPathname = usePathname();
+  if (rawPathname?.startsWith("/admin")) {
+    return null;
+  }
+
+  return <NavbarInner rawPathname={rawPathname ?? null} />;
 }
 
 type IconProps = SVGProps<SVGSVGElement>;

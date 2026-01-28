@@ -1,4 +1,4 @@
-// @deprecated Slice 4 cleanup: legacy fulfillPaid path (see cleanup plan).
+// Payment fulfillment for standard event purchases.
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { normalizePaymentScenario } from "@/lib/paymentScenario";
@@ -10,7 +10,6 @@ import { checkoutKey } from "@/lib/stripe/idempotency";
 import { ingestCrmInteraction } from "@/lib/crm/ingest";
 import { paymentEventRepo, saleLineRepo, saleSummaryRepo } from "@/domain/finance/readModelConsumer";
 
-const LEGACY_FULFILLMENT_DISABLED = true;
 
 function buildOwnerKey(params: { ownerUserId?: string | null; ownerIdentityId?: string | null; guestEmail?: string | null }) {
   if (params.ownerUserId) return `user:${params.ownerUserId}`;
@@ -44,7 +43,6 @@ type IntentLike = {
  * Retorna true se tratou o intent; false se não aplicável.
  */
 export async function fulfillPaidIntent(intent: IntentLike, stripeEventId?: string): Promise<boolean> {
-  if (LEGACY_FULFILLMENT_DISABLED) return false;
   const meta = intent.metadata ?? {};
   const scenario = normalizePaymentScenario(typeof meta.paymentScenario === "string" ? meta.paymentScenario : null);
   // Deixar cenários especiais para handlers dedicados.

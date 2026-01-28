@@ -72,6 +72,10 @@ export async function fulfillPadelFullIntent(intent: IntentLike): Promise<boolea
     },
   });
   if (!event) return false;
+  if (event.organizationId == null) {
+    throw new Error("EVENT_ORG_REQUIRED");
+  }
+  const organizationId = event.organizationId;
 
   const existingTicket = await prisma.ticket.findFirst({
     where: { stripePaymentIntentId: intent.id },
@@ -290,7 +294,7 @@ export async function fulfillPadelFullIntent(intent: IntentLike): Promise<boolea
 
     await upsertPadelRegistrationForPairing(tx, {
       pairingId,
-      organizationId: event.organizationId,
+      organizationId,
       eventId,
       status: registrationStatus,
       paymentMode: PadelPaymentMode.FULL,
@@ -300,8 +304,9 @@ export async function fulfillPadelFullIntent(intent: IntentLike): Promise<boolea
 
     shouldEnsureEntries = pairingStatus === "COMPLETE";
 
+    const paymentEventKey = purchaseId ?? intent.id;
     await paymentEventRepo(tx).upsert({
-      where: { stripePaymentIntentId: intent.id },
+      where: { purchaseId: paymentEventKey },
       update: {
         status: "OK",
         amountCents: intent.amount,
@@ -311,7 +316,7 @@ export async function fulfillPadelFullIntent(intent: IntentLike): Promise<boolea
         errorMessage: null,
         mode: intent.livemode ? "LIVE" : "TEST",
         isTest: !intent.livemode,
-        purchaseId: purchaseId ?? intent.id,
+        purchaseId: paymentEventKey,
         source: PaymentEventSource.WEBHOOK,
         dedupeKey: paymentDedupeKey,
         attempt: { increment: 1 },
@@ -324,7 +329,7 @@ export async function fulfillPadelFullIntent(intent: IntentLike): Promise<boolea
         userId: userId ?? undefined,
         mode: intent.livemode ? "LIVE" : "TEST",
         isTest: !intent.livemode,
-        purchaseId: purchaseId ?? intent.id,
+        purchaseId: paymentEventKey,
         source: PaymentEventSource.WEBHOOK,
         dedupeKey: paymentDedupeKey,
         attempt: 1,
@@ -336,10 +341,10 @@ export async function fulfillPadelFullIntent(intent: IntentLike): Promise<boolea
     await ensureEntriesForConfirmedPairing(pairingId);
   }
 
-  if (event.organizationId && userId) {
+  if (organizationId && userId) {
     try {
       await ingestCrmInteraction({
-        organizationId: event.organizationId,
+        organizationId,
         userId,
         type: CrmInteractionType.PADEL_MATCH_PAYMENT,
         sourceType: CrmInteractionSource.TICKET,

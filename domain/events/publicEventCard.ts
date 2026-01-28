@@ -1,3 +1,4 @@
+import { EventPricingMode } from "@prisma/client";
 import { deriveIsFreeEvent } from "@/domain/events/derivedIsFree";
 
 export type PublicEventCard = {
@@ -116,7 +117,7 @@ export function toPublicEventCardWithPrice(params: {
     : [];
 
   const isGratis = deriveIsFreeEvent({
-    pricingMode: event.pricingMode ?? undefined,
+    pricingMode: (event.pricingMode as EventPricingMode | null | undefined) ?? undefined,
     ticketPrices,
   });
   const priceFromCents =

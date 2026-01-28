@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
@@ -16,10 +16,10 @@ const ACCESS_LEVELS = ["NONE", "VIEW", "EDIT"] as const;
 
 type AccessLevel = (typeof ACCESS_LEVELS)[number];
 
-function getPermissionModel() {
-  return (prisma as {
-    organizationMemberPermission?: { findMany?: Function; deleteMany?: Function; upsert?: Function };
-  }).organizationMemberPermission;
+type PermissionModel = typeof prisma.organizationMemberPermission;
+
+function getPermissionModel(): PermissionModel {
+  return prisma.organizationMemberPermission;
 }
 
 function resolveIp(req: NextRequest) {
@@ -67,10 +67,6 @@ async function _GET(req: NextRequest) {
     }
 
     const permissionModel = getPermissionModel();
-    if (!permissionModel?.findMany) {
-      return jsonWrap({ ok: true, items: [], organizationId }, { status: 200 });
-    }
-
     const items = await permissionModel.findMany({
       where: { organizationId },
       select: {
@@ -139,19 +135,9 @@ async function _PATCH(req: NextRequest) {
     const ip = resolveIp(req);
     const userAgent = req.headers.get("user-agent");
 
-    const permissionModel = getPermissionModel();
-    if (!permissionModel) {
-      return jsonWrap({ ok: false, error: "RBAC_NOT_READY" }, { status: 503 });
-    }
-
     if (shouldClear) {
       await prisma.$transaction(async (tx) => {
-        const permissionModelTx = (tx as typeof prisma & { organizationMemberPermission?: { deleteMany?: Function } })
-          .organizationMemberPermission;
-        if (!permissionModelTx?.deleteMany) {
-          throw new Error("RBAC_NOT_READY");
-        }
-        await permissionModelTx.deleteMany({
+        await tx.organizationMemberPermission.deleteMany({
           where: {
             organizationId,
             userId: targetUserId,
@@ -215,32 +201,34 @@ async function _PATCH(req: NextRequest) {
 
     const accessLevel = accessLevelRaw as AccessLevel;
 
-      await prisma.$transaction(async (tx) => {
-        const permissionModelTx = (tx as typeof prisma & { organizationMemberPermission?: { upsert?: Function } })
-          .organizationMemberPermission;
-        if (!permissionModelTx?.upsert) {
-          throw new Error("RBAC_NOT_READY");
-        }
-        await permissionModelTx.upsert({
+    await prisma.$transaction(async (tx) => {
+      const existing = await tx.organizationMemberPermission.findFirst({
         where: {
-          organizationId_userId_moduleKey_scopeType_scopeId: {
-            organizationId,
-            userId: targetUserId,
-            moduleKey: moduleKey as OrganizationModule,
-            scopeType: null,
-            scopeId: null,
-          },
-        },
-        create: {
           organizationId,
           userId: targetUserId,
           moduleKey: moduleKey as OrganizationModule,
-          accessLevel: accessLevel as OrganizationPermissionLevel,
           scopeType: null,
           scopeId: null,
         },
-        update: { accessLevel: accessLevel as OrganizationPermissionLevel },
+        select: { id: true },
       });
+      if (existing) {
+        await tx.organizationMemberPermission.update({
+          where: { id: existing.id },
+          data: { accessLevel: accessLevel as OrganizationPermissionLevel },
+        });
+      } else {
+        await tx.organizationMemberPermission.create({
+          data: {
+            organizationId,
+            userId: targetUserId,
+            moduleKey: moduleKey as OrganizationModule,
+            accessLevel: accessLevel as OrganizationPermissionLevel,
+            scopeType: null,
+            scopeId: null,
+          },
+        });
+      }
 
       await recordOrganizationAudit(tx, {
         organizationId,

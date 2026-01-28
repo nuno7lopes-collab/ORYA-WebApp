@@ -1,17 +1,16 @@
 // app/api/organizacao/estatisticas/time-series/route.ts
-// @deprecated Slice 5 cleanup: legacy summaries endpoint (v7 uses ledger).
+// Série temporal de vendas (V9).
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { Prisma, SaleSummaryStatus, OrganizationModule } from "@prisma/client";
+import { EventTemplateType, Prisma, SaleSummaryStatus, OrganizationModule } from "@prisma/client";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { ACTIVE_PAIRING_REGISTRATION_WHERE } from "@/domain/padelRegistration";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
-const LEGACY_STATS_DISABLED = true;
 
 function parseRangeParams(url: URL) {
   const range = url.searchParams.get("range");
@@ -66,9 +65,6 @@ function formatDayKey(date: Date) {
 }
 
 async function _GET(req: NextRequest) {
-  if (LEGACY_STATS_DISABLED) {
-    return jsonWrap({ ok: false, error: "LEGACY_STATS_DISABLED" }, { status: 410 });
-  }
   try {
     const supabase = await createSupabaseServer();
     const {
@@ -103,12 +99,20 @@ async function _GET(req: NextRequest) {
       typeof excludeTemplateTypeParam === "string" && excludeTemplateTypeParam.trim()
         ? excludeTemplateTypeParam.trim().toUpperCase()
         : null;
-    const eventTemplateFilter = templateType
-      ? { templateType }
-      : excludeTemplateType
-        ? { NOT: { templateType: excludeTemplateType } }
+    const parsedTemplateType =
+      templateType && Object.values(EventTemplateType).includes(templateType as EventTemplateType)
+        ? (templateType as EventTemplateType)
+        : null;
+    const parsedExcludeTemplateType =
+      excludeTemplateType && Object.values(EventTemplateType).includes(excludeTemplateType as EventTemplateType)
+        ? (excludeTemplateType as EventTemplateType)
+        : null;
+    const eventTemplateFilter: Prisma.EventWhereInput = parsedTemplateType
+      ? { templateType: parsedTemplateType }
+      : parsedExcludeTemplateType
+        ? { NOT: { templateType: parsedExcludeTemplateType } }
         : {};
-    const isPadelScope = templateType === "PADEL";
+    const isPadelScope = parsedTemplateType === EventTemplateType.PADEL;
 
     let eventId: number | null = null;
     if (eventIdParam) {
@@ -202,7 +206,10 @@ async function _GET(req: NextRequest) {
         };
       }
       if (!isPadelScope) {
-        const qty = s.lines.reduce((acc, l) => acc + (l.quantity ?? 0), 0);
+        const qty = s.lines.reduce(
+          (acc: number, l: { quantity: number | null }) => acc + (l.quantity ?? 0),
+          0,
+        );
         buckets[key].tickets += qty;
       }
       buckets[key].revenueCents += s.netCents ?? 0;

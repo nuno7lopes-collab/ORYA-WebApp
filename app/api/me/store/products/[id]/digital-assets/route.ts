@@ -1,6 +1,6 @@
 export const runtime = "nodejs";
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import crypto from "crypto";
 import path from "path";
 import { prisma } from "@/lib/prisma";
@@ -10,6 +10,7 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { isStoreFeatureEnabled } from "@/lib/storeAccess";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 
 const MAX_DIGITAL_BYTES = 100 * 1024 * 1024; // 100MB
 
@@ -23,7 +24,10 @@ async function ensureBucketExists(bucket: string) {
     return { ok: true as const };
   }
   const created = await supabaseAdmin.storage.createBucket(bucket, { public: false });
-  if (created.error && created.error.statusCode !== 409) {
+  const statusCode =
+    (created.error as { statusCode?: number; status?: number } | null)?.statusCode ??
+    (created.error as { status?: number } | null)?.status;
+  if (created.error && statusCode !== 409) {
     return { ok: false as const, error: created.error };
   }
   return { ok: true as const };
@@ -67,7 +71,7 @@ function parseId(value: string) {
 async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     if (!isStoreFeatureEnabled()) {
-      return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
     }
 
     const supabase = await createSupabaseServer();
@@ -75,13 +79,13 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string
 
     const context = await getStoreContext(user.id);
     if (!context.ok) {
-      return NextResponse.json({ ok: false, error: context.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: context.error }, { status: 403 });
     }
 
     const resolvedParams = await params;
     const productId = parseId(resolvedParams.id);
     if (!productId.ok) {
-      return NextResponse.json({ ok: false, error: productId.error }, { status: 400 });
+      return jsonWrap({ ok: false, error: productId.error }, { status: 400 });
     }
 
     const product = await prisma.storeProduct.findFirst({
@@ -89,7 +93,7 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string
       select: { id: true },
     });
     if (!product) {
-      return NextResponse.json({ ok: false, error: "Produto nao encontrado." }, { status: 404 });
+      return jsonWrap({ ok: false, error: "Produto nao encontrado." }, { status: 404 });
     }
 
     const items = await prisma.storeDigitalAsset.findMany({
@@ -106,20 +110,20 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string
       },
     });
 
-    return NextResponse.json({ ok: true, items });
+    return jsonWrap({ ok: true, items });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Nao autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Nao autenticado." }, { status: 401 });
     }
     console.error("GET /api/me/store/products/[id]/digital-assets error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao carregar ficheiros." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao carregar ficheiros." }, { status: 500 });
   }
 }
 
 async function _POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     if (!isStoreFeatureEnabled()) {
-      return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
     }
 
     const supabase = await createSupabaseServer();
@@ -127,17 +131,17 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
 
     const context = await getStoreContext(user.id);
     if (!context.ok) {
-      return NextResponse.json({ ok: false, error: context.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: context.error }, { status: 403 });
     }
 
     if (context.store.catalogLocked) {
-      return NextResponse.json({ ok: false, error: "Catalogo bloqueado." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Catalogo bloqueado." }, { status: 403 });
     }
 
     const resolvedParams = await params;
     const productId = parseId(resolvedParams.id);
     if (!productId.ok) {
-      return NextResponse.json({ ok: false, error: productId.error }, { status: 400 });
+      return jsonWrap({ ok: false, error: productId.error }, { status: 400 });
     }
 
     const product = await prisma.storeProduct.findFirst({
@@ -145,22 +149,22 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
       select: { id: true },
     });
     if (!product) {
-      return NextResponse.json({ ok: false, error: "Produto nao encontrado." }, { status: 404 });
+      return jsonWrap({ ok: false, error: "Produto nao encontrado." }, { status: 404 });
     }
 
     const formData = await req.formData();
     const file = formData.get("file");
     if (!(file instanceof File)) {
-      return NextResponse.json({ ok: false, error: "Ficheiro em falta." }, { status: 400 });
+      return jsonWrap({ ok: false, error: "Ficheiro em falta." }, { status: 400 });
     }
 
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
     if (buffer.byteLength === 0) {
-      return NextResponse.json({ ok: false, error: "Ficheiro vazio." }, { status: 400 });
+      return jsonWrap({ ok: false, error: "Ficheiro vazio." }, { status: 400 });
     }
     if (buffer.byteLength > MAX_DIGITAL_BYTES) {
-      return NextResponse.json({ ok: false, error: "Ficheiro demasiado grande." }, { status: 413 });
+      return jsonWrap({ ok: false, error: "Ficheiro demasiado grande." }, { status: 413 });
     }
 
     const maxDownloadsRaw = formData.get("maxDownloads");
@@ -168,7 +172,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     if (typeof maxDownloadsRaw === "string" && maxDownloadsRaw.trim()) {
       const parsed = Number(maxDownloadsRaw);
       if (!Number.isFinite(parsed) || parsed < 1) {
-        return NextResponse.json({ ok: false, error: "Max downloads invalido." }, { status: 400 });
+        return jsonWrap({ ok: false, error: "Max downloads invalido." }, { status: 400 });
       }
       maxDownloads = Math.trunc(parsed);
     }
@@ -185,7 +189,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     const ensured = await ensureBucketExists(bucket);
     if (!ensured.ok) {
       console.error("[POST /api/me/store/products/[id]/digital-assets] ensure bucket error", ensured.error);
-      return NextResponse.json({ ok: false, error: "Storage indisponivel." }, { status: 500 });
+      return jsonWrap({ ok: false, error: "Storage indisponivel." }, { status: 500 });
     }
     const uploadRes = await supabaseAdmin.storage.from(bucket).upload(objectPath, buffer, {
       contentType: file.type || "application/octet-stream",
@@ -195,7 +199,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
 
     if (uploadRes.error) {
       console.error("[POST /api/me/store/products/[id]/digital-assets] upload error", uploadRes.error);
-      return NextResponse.json({ ok: false, error: "Erro ao fazer upload." }, { status: 500 });
+      return jsonWrap({ ok: false, error: "Erro ao fazer upload." }, { status: 500 });
     }
 
     const created = await prisma.storeDigitalAsset.create({
@@ -219,13 +223,13 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
       },
     });
 
-    return NextResponse.json({ ok: true, item: created }, { status: 201 });
+    return jsonWrap({ ok: true, item: created }, { status: 201 });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Nao autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Nao autenticado." }, { status: 401 });
     }
     console.error("POST /api/me/store/products/[id]/digital-assets error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao criar ficheiro." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao criar ficheiro." }, { status: 500 });
   }
 }
 export const GET = withApiEnvelope(_GET);

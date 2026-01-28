@@ -30,8 +30,8 @@ Catalogo canonico do que e verdade no sistema. Quando um item passa a DONE aqui,
 - `domain/outbox/**`, `domain/eventLog/**` (correlationId)
 - `lib/security.ts` (auth fail-closed)
 
-**Status**: TODO (implementacao em curso)
-**DONE (data/commit/nota)**: —
+**Status**: DONE
+**DONE (data/commit/nota)**: 2026-01-28 — Envelope/headers canonicos + gates/tests + auditoria de auth/legacy (v9 close).
 
 **CI gates**
 - PR #1: https://github.com/nuno7lopes-collab/ORYA-WebApp/pull/1

@@ -188,7 +188,7 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string
   const profiles = ownerIds.length
     ? await prisma.profile.findMany({
         where: { id: { in: ownerIds } },
-        select: { id: true, fullName: true, username: true, email: true },
+        select: { id: true, fullName: true, username: true, users: { select: { email: true } } },
       })
     : [];
   const profileMap = new Map(profiles.map((profile) => [profile.id, profile]));
@@ -221,13 +221,13 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string
     const holderName =
       profile?.fullName?.trim() ||
       profile?.username?.trim() ||
-      profile?.email?.trim() ||
+      profile?.users?.email?.trim() ||
       guestName ||
       guestEmail ||
       (e.ownerKey.startsWith("email:") ? e.ownerKey.replace("email:", "") : null) ||
       "Participante";
     const holderEmail =
-      profile?.email?.trim() ||
+      profile?.users?.email?.trim() ||
       guestEmail ||
       (e.ownerKey.startsWith("email:") ? e.ownerKey.replace("email:", "") : null);
 

@@ -16,7 +16,7 @@ export type NotificationTemplate =
   | "ELIMINATED"
   | "CHAMPION";
 
-export type NotificationPayload = Record<string, unknown>;
+export type NotificationPayload = import("@prisma/client").Prisma.InputJsonValue;
 
 export type DedupeKey = string;
 
@@ -25,7 +25,7 @@ export type CreateNotificationInput = {
   type: import("@prisma/client").NotificationType;
   title?: string | null;
   body?: string | null;
-  payload?: Record<string, unknown> | null;
+  payload?: NotificationPayload | null;
   ctaUrl?: string | null;
   ctaLabel?: string | null;
   priority?: import("@prisma/client").NotificationPriority;

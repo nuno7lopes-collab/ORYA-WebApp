@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import type Stripe from "stripe";
 import {
   cancelPaymentIntent,
   createRefund,
@@ -15,6 +16,10 @@ type RefundBookingParams = {
   reason: string;
   amountCents?: number | null;
   idempotencyKey?: string | null;
+};
+
+type PaymentIntentWithCharges = Stripe.PaymentIntent & {
+  charges?: Stripe.ApiList<Stripe.Charge> | null;
 };
 
 const toAmountCents = (value: number | null | undefined) => {
@@ -56,9 +61,11 @@ export async function refundBookingPayment(params: RefundBookingParams) {
   const paymentIntent = await retrievePaymentIntent(params.paymentIntentId, {
     expand: ["charges"],
   });
-  const charges = Array.isArray(paymentIntent.charges?.data) ? paymentIntent.charges.data : [];
-  const isSucceeded = paymentIntent.status === "succeeded";
-  const hasSuccessfulCharge = charges.some((charge) => charge.status === "succeeded") || isSucceeded;
+  const intent = paymentIntent as PaymentIntentWithCharges;
+  const charges = Array.isArray(intent.charges?.data) ? intent.charges.data : [];
+  const isSucceeded = intent.status === "succeeded";
+  const hasSuccessfulCharge =
+    charges.some((charge: Stripe.Charge) => charge.status === "succeeded") || isSucceeded;
   const cancelableStatuses = new Set([
     "requires_payment_method",
     "requires_capture",
@@ -69,7 +76,7 @@ export async function refundBookingPayment(params: RefundBookingParams) {
   ]);
 
   if (!hasSuccessfulCharge) {
-    if (cancelableStatuses.has(paymentIntent.status)) {
+    if (cancelableStatuses.has(intent.status)) {
       try {
         await cancelPaymentIntent(params.paymentIntentId);
       } catch (err) {
@@ -81,7 +88,7 @@ export async function refundBookingPayment(params: RefundBookingParams) {
   }
 
   const amountAvailable =
-    transaction?.amountCents ?? paymentIntent.amount_received ?? paymentIntent.amount ?? 0;
+    transaction?.amountCents ?? intent.amount_received ?? intent.amount ?? 0;
   const requestedAmount = toAmountCents(params.amountCents);
   const refundAmountCents =
     requestedAmount && amountAvailable > 0

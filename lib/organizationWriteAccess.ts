@@ -1,6 +1,7 @@
 import { resolveConnectStatus } from "@/domain/finance/stripeConnectStatus";
 
 type OrganizationWriteContext = {
+  id?: number;
   officialEmail?: string | null;
   officialEmailVerifiedAt?: Date | string | null;
   stripeAccountId?: string | null;

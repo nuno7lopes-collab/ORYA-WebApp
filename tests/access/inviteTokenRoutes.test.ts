@@ -15,6 +15,7 @@ vi.mock("@/lib/supabaseServer", () => ({ createSupabaseServer: vi.fn() }));
 vi.mock("@/lib/security", () => ({ ensureAuthenticated: vi.fn(async () => ({ id: "user-1" })) }));
 vi.mock("@/lib/organizationMemberAccess", () => ({
   ensureMemberModuleAccess: vi.fn(async () => ({ ok: true })),
+  ensureGroupMemberModuleAccess: vi.fn(async () => ({ ok: true })),
 }));
 vi.mock("@/lib/auth/rateLimit", () => ({
   rateLimit: vi.fn(async () => ({ allowed: true })),

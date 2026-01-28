@@ -1,15 +1,18 @@
 // app/api/stripe/webhook/route.ts
-// @deprecated Slice 4 cleanup: legacy fulfillment path (see cleanup plan).
+// Stripe webhook ingress (records outbox + delegates to consumers).
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import Stripe from "stripe";
 import { prisma } from "@/lib/prisma";
 import { env } from "@/lib/env";
 import { getAppBaseUrl } from "@/lib/appBaseUrl";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { respondPlainText } from "@/lib/http/envelope";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import {
   EntitlementStatus,
   EntitlementType,
@@ -19,6 +22,7 @@ import {
   PadelPairingStatus,
   PadelPaymentMode,
   PadelRegistrationStatus,
+  PaymentMode,
   PaymentEventSource,
   Prisma,
   PromoType,
@@ -56,13 +60,12 @@ import {
 
 const webhookSecret = env.stripeWebhookSecret;
 const FREE_PLACEHOLDER_INTENT_ID = "FREE_CHECKOUT";
-const LEGACY_FULFILLMENT_DISABLED = true;
 const STRIPE_OUTBOX_TYPE = "payment.webhook.received";
 
 type StripeMetadata = Record<string, string | undefined>;
 
 function extractStripeMetadata(event: Stripe.Event): StripeMetadata {
-  const obj = event?.data?.object as Record<string, unknown> | undefined;
+  const obj = event?.data?.object as unknown as Record<string, unknown> | undefined;
   const metadata = obj?.metadata;
   if (!metadata || typeof metadata !== "object") return {};
   return metadata as StripeMetadata;
@@ -173,7 +176,7 @@ async function recordStripeWebhookOutbox(event: Stripe.Event) {
       {
         eventId: eventLogId,
         eventType: STRIPE_OUTBOX_TYPE,
-        payload: { stripeEvent: event },
+        payload: { stripeEventId: event.id, stripeEventType: event.type },
         causationId: event.id,
         correlationId: correlationId ?? null,
       },
@@ -184,20 +187,15 @@ async function recordStripeWebhookOutbox(event: Stripe.Event) {
 }
 
 async function _POST(req: NextRequest) {
-  if (LEGACY_FULFILLMENT_DISABLED) {
-    return NextResponse.json(
-      { ok: false, error: "LEGACY_FULFILLMENT_DISABLED" },
-      { status: 410 }
-    );
-  }
+  const ctx = getRequestContext(req);
   if (!webhookSecret) {
     console.error("[Webhook] Missing STRIPE webhook secret");
-    return new Response("Webhook secret not configured", { status: 500 });
+    return respondPlainText(ctx, "Webhook secret not configured", { status: 500 });
   }
   const sig = req.headers.get("stripe-signature");
   if (!sig) {
     console.error("[Webhook] Missing signature header");
-    return new Response("Missing signature", { status: 400 });
+    return respondPlainText(ctx, "Missing signature", { status: 400 });
   }
 
   const body = await req.text();
@@ -209,7 +207,7 @@ async function _POST(req: NextRequest) {
     const message =
       err instanceof Error ? err.message : "Unknown signature validation error";
     console.error("[Webhook] Invalid signature:", message);
-    return new Response("Invalid signature", { status: 400 });
+    return respondPlainText(ctx, "Invalid signature", { status: 400 });
   }
 
   console.log("[Webhook] Event recebido:", {
@@ -220,14 +218,14 @@ async function _POST(req: NextRequest) {
   try {
     const outbox = await recordStripeWebhookOutbox(event);
     if (!outbox.ok) {
-      return new Response("ORG_NOT_RESOLVED", { status: 422 });
+      return respondPlainText(ctx, "ORG_NOT_RESOLVED", { status: 422 });
     }
   } catch (err) {
     console.error("[Webhook] Error processing event:", err);
-    return new Response("WEBHOOK_PROCESSING_ERROR", { status: 500 });
+    return respondPlainText(ctx, "WEBHOOK_PROCESSING_ERROR", { status: 500 });
   }
 
-  return NextResponse.json({ received: true });
+  return jsonWrap({ ok: true, received: true }, { status: 200, req });
 }
 
 export async function handleStripeEvent(event: Stripe.Event) {
@@ -359,8 +357,9 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent, stripeEventId
           },
         });
 
+        const paymentEventAnchor = purchaseId ?? stripeEventId ?? intent.id;
         await paymentEventRepo(tx).upsert({
-          where: { stripePaymentIntentId: intent.id },
+          where: { purchaseId: paymentEventAnchor },
           update: {
             status: "OK",
             amountCents: intent.amount,
@@ -368,11 +367,11 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent, stripeEventId
             userId: buyerUserId,
             updatedAt: new Date(),
             errorMessage: null,
-            mode: intent.livemode ? "LIVE" : "TEST",
+            mode: intent.livemode ? PaymentMode.LIVE : PaymentMode.TEST,
             isTest: !intent.livemode,
-            purchaseId: purchaseId ?? intent.id,
+            purchaseId: paymentEventAnchor,
             source: PaymentEventSource.WEBHOOK,
-            dedupeKey: purchaseId ?? intent.id,
+            dedupeKey: paymentEventAnchor,
             attempt: { increment: 1 },
           },
           create: {
@@ -381,11 +380,11 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent, stripeEventId
             amountCents: intent.amount,
             eventId: resale.ticket.eventId,
             userId: buyerUserId,
-            mode: intent.livemode ? "LIVE" : "TEST",
+            mode: intent.livemode ? PaymentMode.LIVE : PaymentMode.TEST,
             isTest: !intent.livemode,
-            purchaseId: purchaseId ?? intent.id,
+            purchaseId: paymentEventAnchor,
             source: PaymentEventSource.WEBHOOK,
-            dedupeKey: purchaseId ?? intent.id,
+            dedupeKey: paymentEventAnchor,
             attempt: 1,
           },
         });
@@ -416,15 +415,15 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent, stripeEventId
       : "";
   // Padel SPLIT/FULL: tratar logo aqui e sair
   if (paymentScenario === "GROUP_SPLIT" && hasPadelPairingMeta) {
-    await handlePadelSplitPayment(intent);
+    await handlePadelSplitPayment(intent, stripeEventId);
     return;
   }
   if (paymentScenario === "GROUP_FULL" && hasPadelPairingMeta) {
-    await handlePadelFullPayment(intent);
+    await handlePadelFullPayment(intent, stripeEventId);
     return;
   }
   if (scenario === "GROUP_SPLIT_SECOND_CHARGE") {
-    await handleSecondCharge(intent);
+    await handleSecondCharge(intent, stripeEventId);
     return;
   }
 
@@ -694,7 +693,7 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent, stripeEventId
           attempt: { increment: 1 },
           updatedAt: new Date(),
           errorMessage: null,
-          mode: intent.livemode ? "LIVE" : "TEST",
+          mode: intent.livemode ? PaymentMode.LIVE : PaymentMode.TEST,
           isTest: !intent.livemode,
         },
       });
@@ -706,35 +705,36 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent, stripeEventId
 
   // Marcar log como PROCESSING (idempotência/auditoria)
   try {
+    const paymentEventAnchor = purchaseAnchor ?? stripeEventId ?? intent.id;
     const updateData = {
       status: "PROCESSING",
       eventId: eventRecord.id,
-      purchaseId: purchaseAnchor,
+      purchaseId: paymentEventAnchor,
       stripeEventId: stripeEventId ?? undefined,
       source: PaymentEventSource.WEBHOOK,
-      dedupeKey: purchaseAnchor ?? stripeEventId ?? intent.id,
+      dedupeKey: paymentEventAnchor,
       attempt: { increment: 1 },
       amountCents: intent.amount ?? null,
       platformFeeCents: platformFeeForEvents ?? null,
       userId,
       errorMessage: null,
       updatedAt: new Date(),
-      mode: intent.livemode ? "LIVE" : "TEST",
+      mode: intent.livemode ? PaymentMode.LIVE : PaymentMode.TEST,
       isTest: !intent.livemode,
     };
     const createData = {
       stripePaymentIntentId: intent.id,
       status: "PROCESSING",
-      purchaseId: purchaseAnchor,
+      purchaseId: paymentEventAnchor,
       stripeEventId: stripeEventId ?? undefined,
       source: PaymentEventSource.WEBHOOK,
-      dedupeKey: purchaseAnchor ?? stripeEventId ?? intent.id,
+      dedupeKey: paymentEventAnchor,
       attempt: 1,
       eventId: eventRecord.id,
       userId,
       amountCents: intent.amount ?? null,
       platformFeeCents: platformFeeForEvents ?? null,
-      mode: intent.livemode ? "LIVE" : "TEST",
+      mode: intent.livemode ? PaymentMode.LIVE : PaymentMode.TEST,
       isTest: !intent.livemode,
     };
     const updated = await paymentEventRepo(prisma).updateMany({
@@ -745,7 +745,7 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent, stripeEventId
     });
     if (updated.count === 0) {
       await paymentEventRepo(prisma).upsert({
-        where: { stripePaymentIntentId: intent.id },
+        where: { purchaseId: paymentEventAnchor },
         update: updateData,
         create: createData,
       });
@@ -1202,7 +1202,7 @@ async function fetchUserEmail(userId: string) {
   }
 }
 
-async function handlePadelSplitPayment(intent: Stripe.PaymentIntent) {
+async function handlePadelSplitPayment(intent: Stripe.PaymentIntent, stripeEventId?: string) {
   const meta = (intent.metadata ?? {}) as Record<string, string>;
   const pairingId = Number(meta.pairingId);
   const slotId = Number(meta.slotId);
@@ -1298,15 +1298,16 @@ async function handlePadelSplitPayment(intent: Stripe.PaymentIntent) {
           where: { pairingId, status: "ACTIVE" },
           data: { status: "CANCELLED" },
         });
+        const paymentEventAnchor = purchaseId ?? stripeEventId ?? intent.id;
         await paymentEventRepo(tx).upsert({
-          where: { stripePaymentIntentId: intent.id },
+          where: { purchaseId: paymentEventAnchor },
           update: {
             status: "ERROR",
             errorMessage: "Stock insuficiente para completar inscrição Padel.",
             updatedAt: new Date(),
-            purchaseId: purchaseId ?? intent.id,
+            purchaseId: paymentEventAnchor,
             source: PaymentEventSource.WEBHOOK,
-            dedupeKey: purchaseId ?? intent.id,
+            dedupeKey: paymentEventAnchor,
             attempt: { increment: 1 },
           },
           create: {
@@ -1315,12 +1316,12 @@ async function handlePadelSplitPayment(intent: Stripe.PaymentIntent) {
             amountCents: intent.amount,
             eventId,
             userId: userId ?? undefined,
-            purchaseId: purchaseId ?? intent.id,
+            purchaseId: paymentEventAnchor,
             errorMessage: "Stock insuficiente para completar inscrição Padel.",
             source: PaymentEventSource.WEBHOOK,
-            dedupeKey: purchaseId ?? intent.id,
+            dedupeKey: paymentEventAnchor,
             attempt: 1,
-            mode: intent.livemode ? "LIVE" : "TEST",
+            mode: intent.livemode ? PaymentMode.LIVE : PaymentMode.TEST,
             isTest: !intent.livemode,
           },
         });
@@ -1483,7 +1484,7 @@ async function handlePadelSplitPayment(intent: Stripe.PaymentIntent) {
       (!pairing.player2UserId || pairing.player2UserId === userId);
     const shouldFillSlot = slot.slot_role === "PARTNER" ? shouldSetPartner : Boolean(userId);
 
-    let updated = await tx.padelPairing.update({
+    const updated = await tx.padelPairing.update({
       where: { id: pairingId },
       data: {
         ...(shouldSetPartner
@@ -1541,8 +1542,9 @@ async function handlePadelSplitPayment(intent: Stripe.PaymentIntent) {
     }
 
     // log payment_event
+    const paymentEventAnchor = purchaseId ?? stripeEventId ?? intent.id;
     await paymentEventRepo(tx).upsert({
-      where: { stripePaymentIntentId: intent.id },
+      where: { purchaseId: paymentEventAnchor },
       update: {
         status: "OK",
         amountCents: intent.amount,
@@ -1550,12 +1552,12 @@ async function handlePadelSplitPayment(intent: Stripe.PaymentIntent) {
         userId: userId ?? undefined,
         updatedAt: new Date(),
         errorMessage: null,
-        mode: intent.livemode ? "LIVE" : "TEST",
+        mode: intent.livemode ? PaymentMode.LIVE : PaymentMode.TEST,
         isTest: !intent.livemode,
         stripeFeeCents: stripeFeeForIntentValue,
-        purchaseId: purchaseId ?? intent.id,
+        purchaseId: paymentEventAnchor,
         source: PaymentEventSource.WEBHOOK,
-        dedupeKey: purchaseId ?? intent.id,
+        dedupeKey: paymentEventAnchor,
         attempt: { increment: 1 },
       },
       create: {
@@ -1564,19 +1566,19 @@ async function handlePadelSplitPayment(intent: Stripe.PaymentIntent) {
         amountCents: intent.amount,
         eventId,
         userId: userId ?? undefined,
-        mode: intent.livemode ? "LIVE" : "TEST",
+        mode: intent.livemode ? PaymentMode.LIVE : PaymentMode.TEST,
         isTest: !intent.livemode,
         stripeFeeCents: stripeFeeForIntentValue,
-        purchaseId: purchaseId ?? intent.id,
+        purchaseId: paymentEventAnchor,
         source: PaymentEventSource.WEBHOOK,
-        dedupeKey: purchaseId ?? intent.id,
+        dedupeKey: paymentEventAnchor,
         attempt: 1,
       },
     });
   });
 }
 
-async function handleSecondCharge(intent: Stripe.PaymentIntent) {
+async function handleSecondCharge(intent: Stripe.PaymentIntent, stripeEventId?: string) {
   const meta = (intent.metadata ?? {}) as Record<string, string>;
   const pairingId = Number(meta.pairingId);
   if (!Number.isFinite(pairingId)) {
@@ -1624,16 +1626,18 @@ async function handleSecondCharge(intent: Stripe.PaymentIntent) {
         where: { pairingId, status: "ACTIVE" },
         data: { status: "CANCELLED" },
       });
+      const paymentEventAnchor =
+        ((meta as Record<string, unknown>)?.purchaseId as string | undefined) ?? stripeEventId ?? intent.id;
       await paymentEventRepo(tx).upsert({
-        where: { stripePaymentIntentId: intent.id },
+        where: { purchaseId: paymentEventAnchor },
         update: {
           status: "OK",
           updatedAt: now,
           amountCents: intent.amount,
-          purchaseId: (meta as Record<string, unknown>)?.purchaseId as string | undefined ?? intent.id,
+          purchaseId: paymentEventAnchor,
           stripeFeeCents: 0,
           source: PaymentEventSource.WEBHOOK,
-          dedupeKey: (meta as Record<string, unknown>)?.purchaseId as string | undefined ?? intent.id,
+          dedupeKey: paymentEventAnchor,
           attempt: { increment: 1 },
         },
         create: {
@@ -1642,12 +1646,12 @@ async function handleSecondCharge(intent: Stripe.PaymentIntent) {
           amountCents: intent.amount,
           eventId: Number(meta.eventId) || undefined,
           userId: typeof meta.userId === "string" ? meta.userId : undefined,
-          purchaseId: (meta as Record<string, unknown>)?.purchaseId as string | undefined ?? intent.id,
+          purchaseId: paymentEventAnchor,
           source: PaymentEventSource.WEBHOOK,
-          dedupeKey: (meta as Record<string, unknown>)?.purchaseId as string | undefined ?? intent.id,
+          dedupeKey: paymentEventAnchor,
           attempt: 1,
           stripeFeeCents: 0,
-          mode: intent.livemode ? "LIVE" : "TEST",
+          mode: intent.livemode ? PaymentMode.LIVE : PaymentMode.TEST,
           isTest: !intent.livemode,
         },
       });
@@ -1705,7 +1709,7 @@ async function handleSecondCharge(intent: Stripe.PaymentIntent) {
   }
 }
 
-async function handlePadelFullPayment(intent: Stripe.PaymentIntent) {
+async function handlePadelFullPayment(intent: Stripe.PaymentIntent, stripeEventId?: string) {
   const meta = intent.metadata ?? {};
   const pairingId = Number(meta.pairingId);
   const ticketTypeId = Number(meta.ticketTypeId);
@@ -1763,15 +1767,16 @@ async function handlePadelFullPayment(intent: Stripe.PaymentIntent) {
           where: { pairingId, status: "ACTIVE" },
           data: { status: "CANCELLED" },
         });
+        const paymentEventAnchor = purchaseId ?? stripeEventId ?? intent.id;
         await paymentEventRepo(tx).upsert({
-          where: { stripePaymentIntentId: intent.id },
+          where: { purchaseId: paymentEventAnchor },
           update: {
             status: "ERROR",
             errorMessage: "Stock insuficiente para completar inscrição Padel.",
             updatedAt: new Date(),
-            purchaseId: purchaseId ?? intent.id,
+            purchaseId: paymentEventAnchor,
             source: PaymentEventSource.WEBHOOK,
-            dedupeKey: purchaseId ?? intent.id,
+            dedupeKey: paymentEventAnchor,
             attempt: { increment: 1 },
           },
           create: {
@@ -1780,12 +1785,12 @@ async function handlePadelFullPayment(intent: Stripe.PaymentIntent) {
             amountCents: intent.amount,
             eventId,
             userId: userId ?? undefined,
-            purchaseId: purchaseId ?? intent.id,
+            purchaseId: paymentEventAnchor,
             errorMessage: "Stock insuficiente para completar inscrição Padel.",
             source: PaymentEventSource.WEBHOOK,
-            dedupeKey: purchaseId ?? intent.id,
+            dedupeKey: paymentEventAnchor,
             attempt: 1,
-            mode: intent.livemode ? "LIVE" : "TEST",
+            mode: intent.livemode ? PaymentMode.LIVE : PaymentMode.TEST,
             isTest: !intent.livemode,
           },
         });
@@ -1818,6 +1823,7 @@ async function handlePadelFullPayment(intent: Stripe.PaymentIntent) {
     where: { id: eventId },
     select: {
       id: true,
+      organizationId: true,
       title: true,
       coverImageUrl: true,
       locationName: true,
@@ -1829,6 +1835,11 @@ async function handlePadelFullPayment(intent: Stripe.PaymentIntent) {
     console.warn("[handlePadelFullPayment] evento inválido", { eventId });
     return;
   }
+  if (!event.organizationId) {
+    console.warn("[handlePadelFullPayment] evento sem organizationId", { eventId });
+    return;
+  }
+  const eventOrganizationId = event.organizationId;
 
   const qr1 = crypto.randomUUID();
   const qr2 = crypto.randomUUID();
@@ -1947,6 +1958,7 @@ async function handlePadelFullPayment(intent: Stripe.PaymentIntent) {
       },
     });
 
+    const policyVersionApplied = await getLatestPolicyVersionForEvent(eventId, tx);
     const ownerKey = userId ? `user:${userId}` : "unknown";
     const entitlementPurchaseId = sale.purchaseId ?? sale.paymentIntentId ?? intent.id;
     const entitlementBase = {
@@ -2034,7 +2046,7 @@ async function handlePadelFullPayment(intent: Stripe.PaymentIntent) {
 
     await upsertPadelRegistrationForPairing(tx, {
       pairingId,
-      organizationId: event.organizationId,
+      organizationId: eventOrganizationId,
       eventId,
       status: registrationStatus,
       paymentMode: PadelPaymentMode.FULL,
@@ -2044,8 +2056,9 @@ async function handlePadelFullPayment(intent: Stripe.PaymentIntent) {
 
     shouldEnsureEntries = partnerFilled;
 
+    const paymentEventAnchor = purchaseId ?? stripeEventId ?? intent.id;
     await paymentEventRepo(tx).upsert({
-      where: { stripePaymentIntentId: intent.id },
+      where: { purchaseId: paymentEventAnchor },
       update: {
         status: "OK",
         amountCents: intent.amount,
@@ -2053,11 +2066,11 @@ async function handlePadelFullPayment(intent: Stripe.PaymentIntent) {
         userId: userId ?? undefined,
         updatedAt: new Date(),
         errorMessage: null,
-        mode: intent.livemode ? "LIVE" : "TEST",
+        mode: intent.livemode ? PaymentMode.LIVE : PaymentMode.TEST,
         isTest: !intent.livemode,
-        purchaseId: purchaseId ?? intent.id,
+        purchaseId: paymentEventAnchor,
         source: PaymentEventSource.WEBHOOK,
-        dedupeKey: purchaseId ?? intent.id,
+        dedupeKey: paymentEventAnchor,
         attempt: { increment: 1 },
       },
       create: {
@@ -2066,11 +2079,11 @@ async function handlePadelFullPayment(intent: Stripe.PaymentIntent) {
         amountCents: intent.amount,
         eventId,
         userId: userId ?? undefined,
-        mode: intent.livemode ? "LIVE" : "TEST",
+        mode: intent.livemode ? PaymentMode.LIVE : PaymentMode.TEST,
         isTest: !intent.livemode,
-        purchaseId: purchaseId ?? intent.id,
+        purchaseId: paymentEventAnchor,
         source: PaymentEventSource.WEBHOOK,
-        dedupeKey: purchaseId ?? intent.id,
+        dedupeKey: paymentEventAnchor,
         attempt: 1,
       },
     });
@@ -2152,7 +2165,7 @@ export async function handleRefund(charge: Stripe.Charge) {
         status: "REFUNDED",
         errorMessage: null,
         updatedAt: new Date(),
-        mode: charge.livemode ? "LIVE" : "TEST",
+        mode: charge.livemode ? PaymentMode.LIVE : PaymentMode.TEST,
         isTest: !charge.livemode,
       },
     }),
@@ -2234,7 +2247,7 @@ async function handlePadelSplitRefund(
         status: "REFUNDED",
         updatedAt: new Date(),
         errorMessage: null,
-        mode: livemode ? "LIVE" : "TEST",
+        mode: livemode ? PaymentMode.LIVE : PaymentMode.TEST,
         isTest: !livemode,
       },
     });

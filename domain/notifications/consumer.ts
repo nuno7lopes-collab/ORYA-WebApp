@@ -433,8 +433,8 @@ export async function deliverNotificationOutboxItem(item: {
         : match.plannedStartAt ?? match.startTime ?? null;
     const validStartAt = startAt && !Number.isNaN(startAt.getTime()) ? startAt : null;
     const courtLabel = match.court?.name || match.courtName || match.courtNumber || match.courtId || "Quadra";
-    const teamA = pairingLabel(match.pairingA);
-    const teamB = pairingLabel(match.pairingB);
+    const teamA = pairingLabel(match.pairingA as Parameters<typeof pairingLabel>[0]);
+    const teamB = pairingLabel(match.pairingB as Parameters<typeof pairingLabel>[0]);
     const title = validStartAt ? "Horário atualizado" : "Jogo adiado";
     const body = validStartAt
       ? `${teamA} vs ${teamB} · ${formatTime(validStartAt, match.event.timezone)} · ${courtLabel}`
@@ -470,8 +470,8 @@ export async function deliverNotificationOutboxItem(item: {
     });
     if (!match?.event) throw new Error("MATCH_NOT_FOUND");
     const scoreLabel = formatScoreLabel(match);
-    const teamA = pairingLabel(match.pairingA);
-    const teamB = pairingLabel(match.pairingB);
+    const teamA = pairingLabel(match.pairingA as Parameters<typeof pairingLabel>[0]);
+    const teamB = pairingLabel(match.pairingB as Parameters<typeof pairingLabel>[0]);
     const title = "Resultado final";
     const body = scoreLabel !== "—" ? `${teamA} vs ${teamB} · ${scoreLabel}` : `${teamA} vs ${teamB}`;
     const ctaUrl = match.event.slug ? `/eventos/${match.event.slug}` : "/eventos";
@@ -668,9 +668,9 @@ function parseEventPayload(payload: Prisma.JsonValue | null) {
 
 export async function consumeNotificationEventLog(eventId: string) {
   const event = await prisma.eventLog.findUnique({
-    where: { eventId },
+    where: { id: eventId },
     select: {
-      eventId: true,
+      id: true,
       eventType: true,
       organizationId: true,
       actorUserId: true,
@@ -692,7 +692,7 @@ export async function consumeNotificationEventLog(eventId: string) {
       dedupeKey: `loyalty:${ledgerId}:${notificationType}`,
       userId: event.actorUserId ?? undefined,
       notificationType,
-      payload: { ledgerId, sourceEventId: event.eventId },
+      payload: { ledgerId, sourceEventId: event.id },
     });
     return { ok: true } as const;
   }
@@ -705,7 +705,7 @@ export async function consumeNotificationEventLog(eventId: string) {
       dedupeKey: `padelreg:${registrationId}:${notificationType}`,
       userId: event.actorUserId ?? undefined,
       notificationType,
-      payload: { registrationId, eventId: payload.eventId ?? null, sourceEventId: event.eventId },
+      payload: { registrationId, eventId: payload.eventId ?? null, sourceEventId: event.id },
     });
     return { ok: true } as const;
   }
@@ -723,7 +723,7 @@ export async function consumeNotificationEventLog(eventId: string) {
       dedupeKey: `owner-transfer:${transferId}:${notificationType}:${targetUserId}`,
       userId: targetUserId,
       notificationType,
-      payload: { transferId, organizationId: payload.organizationId ?? null, sourceEventId: event.eventId },
+      payload: { transferId, organizationId: payload.organizationId ?? null, sourceEventId: event.id },
     });
     return { ok: true } as const;
   }
@@ -736,12 +736,12 @@ export async function consumeNotificationEventLogBatch(limit = 100) {
     where: { eventType: { in: Array.from(EVENTLOG_ALLOWLIST) } },
     orderBy: { createdAt: "asc" },
     take: limit,
-    select: { eventId: true },
+    select: { id: true },
   });
 
   let processed = 0;
   for (const event of events) {
-    const res = await consumeNotificationEventLog(event.eventId);
+    const res = await consumeNotificationEventLog(event.id);
     if (res.ok) processed += 1;
   }
 

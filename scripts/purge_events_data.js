@@ -1,4 +1,3 @@
-/* eslint-disable no-console */
 const path = require("node:path");
 const fs = require("node:fs");
 const { PrismaClient } = require("@prisma/client");

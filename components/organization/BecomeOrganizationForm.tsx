@@ -733,7 +733,7 @@ export default function BecomeOrganizationForm() {
                   )}
                 />
                 {showBusinessNameError && (
-                  <p className="text-[12px] text-red-300">{form.formState.errors.businessName.message}</p>
+                  <p className="text-[12px] text-red-300">{form.formState.errors.businessName?.message}</p>
                 )}
               </div>
 
@@ -790,7 +790,7 @@ export default function BecomeOrganizationForm() {
                     </div>
                   )}
                 {showUsernameError && (
-                  <p className="text-[12px] text-red-300">{form.formState.errors.username.message}</p>
+                  <p className="text-[12px] text-red-300">{form.formState.errors.username?.message}</p>
                 )}
               </div>
               </div>

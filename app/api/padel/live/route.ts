@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { resolvePadelCompetitionState } from "@/domain/padelCompetitionState";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import {
   computePadelStandingsByGroup,
   normalizePadelPointsTable,
@@ -99,7 +100,7 @@ async function _GET(req: NextRequest) {
   const eventId = Number(req.nextUrl.searchParams.get("eventId"));
   const categoryId = Number(req.nextUrl.searchParams.get("categoryId"));
   if (!Number.isFinite(eventId)) {
-    return NextResponse.json({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
+    return jsonWrap({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
   }
 
   const rateLimited = await enforcePublicRateLimit(req, {
@@ -112,7 +113,7 @@ async function _GET(req: NextRequest) {
   const initialPayload = await buildPayload(eventId, Number.isFinite(categoryId) ? categoryId : null);
   if ("error" in initialPayload) {
     const status = initialPayload.error === "EVENT_NOT_FOUND" ? 404 : initialPayload.error === "FORBIDDEN" ? 403 : 400;
-    return NextResponse.json({ ok: false, error: initialPayload.error }, { status });
+    return jsonWrap({ ok: false, error: initialPayload.error }, { status });
   }
 
   const encoder = new TextEncoder();

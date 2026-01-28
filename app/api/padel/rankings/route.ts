@@ -261,7 +261,7 @@ async function _POST(req: NextRequest) {
         ? ((scoreObj as { sets?: unknown }).sets as any[])
         : null;
     const stats = resolvePadelMatchStats(rawSets, scoreObj);
-    let winner: "A" | "B" | null =
+    const winner: "A" | "B" | null =
       stats?.winner ??
       (scoreObj?.winnerSide === "A" || scoreObj?.winnerSide === "B"
         ? (scoreObj.winnerSide as "A" | "B")

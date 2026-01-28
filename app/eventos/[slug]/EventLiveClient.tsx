@@ -1844,6 +1844,7 @@ function OneVOneLiveLayout({
   showSponsors,
   isOrganizationEdit,
   canManageLiveConfig,
+  canPostAnnouncements,
   canResolveDispute,
   onRefresh,
   variant = "full",
@@ -1863,6 +1864,7 @@ function OneVOneLiveLayout({
   showSponsors: boolean;
   isOrganizationEdit: boolean;
   canManageLiveConfig: boolean;
+  canPostAnnouncements: boolean;
   canResolveDispute: boolean;
   onRefresh: () => void;
   variant?: "full" | "inline";
@@ -2729,6 +2731,12 @@ export default function EventLiveClient({
   const pairingIdFromQuery = searchParams?.get("pairingId");
   const showCourt = event.templateType === "PADEL";
   const ticketCopy = getTicketCopy(showCourt ? "PADEL" : "DEFAULT");
+  const locationLabel =
+    event.locationFormattedAddress ||
+    event.locationName ||
+    event.address ||
+    event.locationCity ||
+    null;
 
   if (access?.liveHubAllowed === false) {
     const visibility = access?.liveHubVisibility ?? "PUBLIC";
@@ -3031,6 +3039,7 @@ export default function EventLiveClient({
           showSponsors={showSponsors}
           isOrganizationEdit={isOrganizationEdit}
           canManageLiveConfig={canManageLiveConfig}
+          canPostAnnouncements={canPostAnnouncements}
           canResolveDispute={canResolveDispute}
           onRefresh={() => mutate()}
           variant={variant}

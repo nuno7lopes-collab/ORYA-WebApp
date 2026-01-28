@@ -128,8 +128,7 @@ export default function ObjectiveSubnav({
     )
       ? activeId
       : "overview";
-
-  if (hideWhenSingle && sections.length <= 1) return null;
+  const shouldHideNav = hideWhenSingle && sections.length <= 1;
 
   const isTopbar = variant === "topbar";
   const tabsWrapperClass = cn(
@@ -201,6 +200,8 @@ export default function ObjectiveSubnav({
     );
     setDropdownStyle({ left, top: anchorRect.bottom + 8 });
   }, [anchorRect, isTopbar, openDropdownId]);
+
+  if (shouldHideNav) return null;
 
   const tabs = (
     <div className={tabsWrapperClass}>

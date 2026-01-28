@@ -1,4 +1,5 @@
 "use client";
+/* eslint-disable @next/next/no-img-element */
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ConfirmDestructiveActionDialog } from "@/app/components/ConfirmDestructiveActionDialog";
@@ -746,8 +747,9 @@ export default function StoreProductsPanel({
       if (!res.ok || !json?.ok) {
         throw new Error(json?.error || "Erro ao criar produto.");
       }
-      created = json.item as ProductItem;
-      setItems((prev) => [created, ...prev]);
+      const createdItem = json.item as ProductItem;
+      created = createdItem;
+      setItems((prev) => [createdItem, ...prev]);
 
       await uploadProductImage(created.id);
       await syncVariants(created.id, result.payload.priceCents);

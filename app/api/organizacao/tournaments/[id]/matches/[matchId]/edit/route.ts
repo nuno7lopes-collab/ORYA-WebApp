@@ -3,8 +3,8 @@ import { jsonWrap } from "@/lib/api/wrapResponse";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
-import { Prisma, TournamentMatchStatus } from "@prisma/client";
-import { ensureGroupMemberRole } from "@/lib/organizationGroupAccess";
+import { OrganizationModule, Prisma, TournamentMatchStatus } from "@prisma/client";
+import { ensureGroupMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 async function ensureOrganizationAccess(userId: string, eventId: number) {
@@ -26,10 +26,11 @@ async function ensureOrganizationAccess(userId: string, eventId: number) {
     profile?.onboardingDone ||
     (Boolean(profile?.fullName?.trim()) && Boolean(profile?.username?.trim()));
   if (!hasUserOnboarding) return false;
-  const access = await ensureGroupMemberRole({
+  const access = await ensureGroupMemberModuleAccess({
     organizationId: evt.organizationId,
     userId,
-    ROLE_ALLOWLIST: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"],
+    moduleKey: OrganizationModule.TORNEIOS,
+    required: "EDIT",
   });
   return access.ok;
 }

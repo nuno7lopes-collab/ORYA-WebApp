@@ -1,0 +1,1274 @@
+# V9 Baseline Build Log
+Date: 2026-01-28T14:17:06Z
+
+## npm run lint
+
+> orya@0.1.0 lint
+> eslint
+
+
+/Users/nuno/orya/ORYA-WebApp/app/[username]/loja/page.tsx
+  393:39  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+  469:35  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+  534:33  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+/Users/nuno/orya/ORYA-WebApp/app/[username]/page.tsx
+  1101:25  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+/Users/nuno/orya/ORYA-WebApp/app/organizacao/(dashboard)/chat/ChatInternoV2Client.tsx
+  2328:39  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+/Users/nuno/orya/ORYA-WebApp/app/organizacao/(dashboard)/chat/preview/ChatPreviewClient.tsx
+  2123:49  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+/Users/nuno/orya/ORYA-WebApp/app/organizacao/OrganizationPublicProfilePanel.tsx
+  1401:19  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+  1434:21  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+/Users/nuno/orya/ORYA-WebApp/components/store/StoreImageCropperModal.tsx
+  262:13  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+/Users/nuno/orya/ORYA-WebApp/components/store/StoreOverviewPanel.tsx
+  124:25  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+/Users/nuno/orya/ORYA-WebApp/components/store/StoreProductImagesPanel.tsx
+  360:13  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+  489:23  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+/Users/nuno/orya/ORYA-WebApp/components/store/StoreProductsPanel.tsx
+  1107:15  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+/Users/nuno/orya/ORYA-WebApp/components/storefront/StorefrontBundleCard.tsx
+  75:13  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+/Users/nuno/orya/ORYA-WebApp/components/storefront/StorefrontCartClient.tsx
+  270:23  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+  349:21  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+  461:23  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+/Users/nuno/orya/ORYA-WebApp/components/storefront/StorefrontCartOverlay.tsx
+  437:29  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+  517:27  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+  607:29  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+/Users/nuno/orya/ORYA-WebApp/components/storefront/StorefrontProductClient.tsx
+  240:13  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+  266:17  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+/Users/nuno/orya/ORYA-WebApp/scripts/chat-ws-server.js
+  1:1  warning  Unused eslint-disable directive (no problems were reported from 'no-console')
+
+/Users/nuno/orya/ORYA-WebApp/scripts/check-db-env.js
+  1:1  warning  Unused eslint-disable directive (no problems were reported from 'no-console')
+
+/Users/nuno/orya/ORYA-WebApp/scripts/check_tournament_event_id.js
+  2:1  warning  Unused eslint-disable directive (no problems were reported from 'no-console')
+
+/Users/nuno/orya/ORYA-WebApp/scripts/cleanup_unverified_org_data.js
+  1:1  warning  Unused eslint-disable directive (no problems were reported from 'no-console')
+
+/Users/nuno/orya/ORYA-WebApp/scripts/db/gates.js
+  2:1  warning  Unused eslint-disable directive (no problems were reported from 'no-console')
+
+/Users/nuno/orya/ORYA-WebApp/scripts/db/preflight.js
+  2:1  warning  Unused eslint-disable directive (no problems were reported from 'no-console')
+
+/Users/nuno/orya/ORYA-WebApp/scripts/db/prisma-retry.js
+  2:1  warning  Unused eslint-disable directive (no problems were reported from 'no-console')
+
+/Users/nuno/orya/ORYA-WebApp/scripts/db/resolve-public-dns.js
+  1:1  warning  Unused eslint-disable directive (no problems were reported from 'no-console')
+
+/Users/nuno/orya/ORYA-WebApp/scripts/load-env.js
+  1:1  warning  Unused eslint-disable directive (no problems were reported from 'no-console')
+
+/Users/nuno/orya/ORYA-WebApp/scripts/purge_events_data.js
+  1:1  warning  Unused eslint-disable directive (no problems were reported from 'no-console')
+
+/Users/nuno/orya/ORYA-WebApp/scripts/rebuild_agenda.js
+  2:1  warning  Unused eslint-disable directive (no problems were reported from 'no-console')
+
+✖ 33 problems (0 errors, 33 warnings)
+  0 errors and 11 warnings potentially fixable with the `--fix` option.
+
+lint exit:0
+
+## npm run typecheck
+
+> orya@0.1.0 typecheck
+> cross-env NODE_OPTIONS=--max-old-space-size=4096 tsc -p tsconfig.typecheck.json --noEmit
+
+app/api/padel/tournaments/config/route.ts(485,11): error TS2322: Type '{ advancedSettings: Prisma.InputJsonValue; enabledFormats?: string[] | undefined; splitDeadlineHours?: number | null | undefined; eligibilityType?: $Enums.PadelEligibilityType | null | undefined; defaultCategoryId?: number | ... 1 more ... | undefined; ruleSetId?: number | ... 1 more ... | undefined; numberOfCourts?...' is not assignable to type 'PadelTournamentConfigUncheckedUpdateInput'.
+  Types of property 'eligibilityType' are incompatible.
+    Type 'PadelEligibilityType | null | undefined' is not assignable to type 'PadelEligibilityType | EnumPadelEligibilityTypeFieldUpdateOperationsInput | undefined'.
+      Type 'null' is not assignable to type 'PadelEligibilityType | EnumPadelEligibilityTypeFieldUpdateOperationsInput | undefined'.
+app/api/payments/intent/route.ts(136,29): error TS2339: Property 'scenario' does not exist on type 'InputJsonValue'.
+  Property 'scenario' does not exist on type 'string'.
+app/api/store/cart/bundles/route.ts(242,28): error TS2345: Argument of type '["orya_store_cart", string | null, { httpOnly: true; sameSite: "lax"; path: string; maxAge: number; }]' is not assignable to parameter of type '[key: string, value: string, cookie?: Partial<ResponseCookie> | undefined] | [options: ResponseCookie]'.
+  Type '["orya_store_cart", string | null, { httpOnly: true; sameSite: "lax"; path: string; maxAge: number; }]' is not assignable to type '[key: string, value: string, cookie?: Partial<ResponseCookie> | undefined]'.
+    Type at position 1 in source is not compatible with type at position 1 in target.
+      Type 'string | null' is not assignable to type 'string'.
+        Type 'null' is not assignable to type 'string'.
+app/api/store/cart/items/[itemId]/route.ts(185,9): error TS2322: Type 'string | number | boolean | InputJsonObject | InputJsonArray | { toJSON(): unknown; } | null' is not assignable to type 'JsonNull | InputJsonValue | undefined'.
+  Type 'null' is not assignable to type 'JsonNull | InputJsonValue | undefined'.
+app/api/store/cart/items/route.ts(227,28): error TS2345: Argument of type '["orya_store_cart", string | null, { httpOnly: true; sameSite: "lax"; path: string; maxAge: number; }]' is not assignable to parameter of type '[key: string, value: string, cookie?: Partial<ResponseCookie> | undefined] | [options: ResponseCookie]'.
+  Type '["orya_store_cart", string | null, { httpOnly: true; sameSite: "lax"; path: string; maxAge: number; }]' is not assignable to type '[key: string, value: string, cookie?: Partial<ResponseCookie> | undefined]'.
+    Type at position 1 in source is not compatible with type at position 1 in target.
+      Type 'string | null' is not assignable to type 'string'.
+        Type 'null' is not assignable to type 'string'.
+app/api/store/cart/route.ts(319,28): error TS2345: Argument of type '["orya_store_cart", string | null, { httpOnly: true; sameSite: "lax"; path: string; maxAge: number; }]' is not assignable to parameter of type '[key: string, value: string, cookie?: Partial<ResponseCookie> | undefined] | [options: ResponseCookie]'.
+  Type '["orya_store_cart", string | null, { httpOnly: true; sameSite: "lax"; path: string; maxAge: number; }]' is not assignable to type '[key: string, value: string, cookie?: Partial<ResponseCookie> | undefined]'.
+    Type at position 1 in source is not compatible with type at position 1 in target.
+      Type 'string | null' is not assignable to type 'string'.
+        Type 'null' is not assignable to type 'string'.
+app/api/stripe/webhook/route.ts(1305,50): error TS2304: Cannot find name 'stripeEventId'.
+app/api/stripe/webhook/route.ts(1549,46): error TS2304: Cannot find name 'stripeEventId'.
+app/api/stripe/webhook/route.ts(1634,82): error TS2304: Cannot find name 'stripeEventId'.
+app/api/stripe/webhook/route.ts(1774,50): error TS2304: Cannot find name 'stripeEventId'.
+app/api/stripe/webhook/route.ts(1970,7): error TS18004: No value exists in scope for the shorthand property 'policyVersionApplied'. Either declare one or provide an initializer.
+app/api/stripe/webhook/route.ts(2046,29): error TS2339: Property 'organizationId' does not exist on type '{ id: number; title: string; startsAt: Date; coverImageUrl: string | null; timezone: string; locationName: string; }'.
+app/api/stripe/webhook/route.ts(2056,46): error TS2304: Cannot find name 'stripeEventId'.
+app/api/upload/route.ts(33,45): error TS2559: Type 'StorageError' has no properties in common with type '{ statusCode?: number | undefined; status?: number | undefined; }'.
+app/api/upload/route.ts(179,54): error TS2559: Type 'StorageError' has no properties in common with type '{ statusCode?: number | undefined; status?: number | undefined; }'.
+app/components/checkout/Step2Pagamento.tsx(424,11): error TS2571: Object is of type 'unknown'.
+app/components/mobile/DoubleRange.tsx(128,42): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(type: "mousemove", listener: (this: Window, ev: MouseEvent) => any, options?: boolean | AddEventListenerOptions | undefined): void', gave the following error.
+    Argument of type '(event: MouseEvent) => void' is not assignable to parameter of type '(this: Window, ev: MouseEvent) => any'.
+      Types of parameters 'event' and 'ev' are incompatible.
+        Type 'MouseEvent' is missing the following properties from type 'MouseEvent<Element, MouseEvent>': nativeEvent, isDefaultPrevented, isPropagationStopped, persist
+  Overload 2 of 2, '(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions | undefined): void', gave the following error.
+    Argument of type '(event: MouseEvent) => void' is not assignable to parameter of type 'EventListenerOrEventListenerObject'.
+      Type '(event: MouseEvent) => void' is not assignable to type 'EventListener'.
+        Types of parameters 'event' and 'evt' are incompatible.
+          Type 'Event' is missing the following properties from type 'MouseEvent<Element, MouseEvent>': altKey, button, buttons, clientX, and 18 more.
+app/components/mobile/DoubleRange.tsx(130,42): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(type: "touchmove", listener: (this: Window, ev: TouchEvent) => any, options?: boolean | AddEventListenerOptions | undefined): void', gave the following error.
+    Argument of type '(event: TouchEvent) => void' is not assignable to parameter of type '(this: Window, ev: TouchEvent) => any'.
+      Types of parameters 'event' and 'ev' are incompatible.
+        Type 'TouchEvent' is missing the following properties from type 'TouchEvent<Element>': getModifierState, nativeEvent, isDefaultPrevented, isPropagationStopped, persist
+  Overload 2 of 2, '(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions | undefined): void', gave the following error.
+    Argument of type '(event: TouchEvent) => void' is not assignable to parameter of type 'EventListenerOrEventListenerObject'.
+      Type '(event: TouchEvent) => void' is not assignable to type 'EventListener'.
+        Types of parameters 'event' and 'evt' are incompatible.
+          Type 'Event' is missing the following properties from type 'TouchEvent<Element>': altKey, changedTouches, ctrlKey, getModifierState, and 10 more.
+app/components/mobile/DoubleRange.tsx(134,47): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(type: "mousemove", listener: (this: Window, ev: MouseEvent) => any, options?: boolean | EventListenerOptions | undefined): void', gave the following error.
+    Argument of type '(event: MouseEvent) => void' is not assignable to parameter of type '(this: Window, ev: MouseEvent) => any'.
+      Types of parameters 'event' and 'ev' are incompatible.
+        Type 'MouseEvent' is missing the following properties from type 'MouseEvent<Element, MouseEvent>': nativeEvent, isDefaultPrevented, isPropagationStopped, persist
+  Overload 2 of 2, '(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions | undefined): void', gave the following error.
+    Argument of type '(event: MouseEvent) => void' is not assignable to parameter of type 'EventListenerOrEventListenerObject'.
+      Type '(event: MouseEvent) => void' is not assignable to type 'EventListener'.
+        Types of parameters 'event' and 'evt' are incompatible.
+          Type 'Event' is missing the following properties from type 'MouseEvent<Element, MouseEvent>': altKey, button, buttons, clientX, and 18 more.
+app/components/mobile/DoubleRange.tsx(136,47): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(type: "touchmove", listener: (this: Window, ev: TouchEvent) => any, options?: boolean | EventListenerOptions | undefined): void', gave the following error.
+    Argument of type '(event: TouchEvent) => void' is not assignable to parameter of type '(this: Window, ev: TouchEvent) => any'.
+      Types of parameters 'event' and 'ev' are incompatible.
+        Type 'TouchEvent' is missing the following properties from type 'TouchEvent<Element>': getModifierState, nativeEvent, isDefaultPrevented, isPropagationStopped, persist
+  Overload 2 of 2, '(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions | undefined): void', gave the following error.
+    Argument of type '(event: TouchEvent) => void' is not assignable to parameter of type 'EventListenerOrEventListenerObject'.
+      Type '(event: TouchEvent) => void' is not assignable to type 'EventListener'.
+        Types of parameters 'event' and 'evt' are incompatible.
+          Type 'Event' is missing the following properties from type 'TouchEvent<Element>': altKey, changedTouches, ctrlKey, getModifierState, and 10 more.
+app/eventos/[slug]/EventLiveClient.tsx(2325,39): error TS2304: Cannot find name 'canPostAnnouncements'.
+app/eventos/[slug]/EventLiveClient.tsx(3061,18): error TS2304: Cannot find name 'locationLabel'.
+app/eventos/[slug]/EventLiveClient.tsx(3062,57): error TS2304: Cannot find name 'locationLabel'.
+app/me/loja/page.tsx(122,31): error TS2339: Property 'id' does not exist on type 'never'.
+app/me/loja/page.tsx(123,35): error TS2339: Property 'status' does not exist on type 'never'.
+app/me/loja/page.tsx(124,42): error TS2339: Property 'catalogLocked' does not exist on type 'never'.
+app/me/loja/page.tsx(125,44): error TS2339: Property 'checkoutEnabled' does not exist on type 'never'.
+app/me/loja/page.tsx(126,42): error TS2339: Property 'showOnProfile' does not exist on type 'never'.
+app/me/loja/page.tsx(127,38): error TS2339: Property 'createdAt' does not exist on type 'never'.
+app/me/loja/page.tsx(128,38): error TS2339: Property 'updatedAt' does not exist on type 'never'.
+app/organizacao/(dashboard)/chat/ChatInternoV2Client.tsx(469,30): error TS2339: Property 'user_metadata' does not exist on type '{ id: string; email: string | null; emailConfirmed?: boolean | undefined; emailConfirmedAt?: string | null | undefined; }'.
+app/organizacao/(dashboard)/chat/ChatInternoV2Client.tsx(470,30): error TS2339: Property 'user_metadata' does not exist on type '{ id: string; email: string | null; emailConfirmed?: boolean | undefined; emailConfirmedAt?: string | null | undefined; }'.
+app/organizacao/(dashboard)/chat/ChatInternoV2Client.tsx(471,31): error TS2339: Property 'user_metadata' does not exist on type '{ id: string; email: string | null; emailConfirmed?: boolean | undefined; emailConfirmedAt?: string | null | undefined; }'.
+app/organizacao/(dashboard)/chat/ChatInternoV2Client.tsx(1371,62): error TS2341: Property 'getScrollOffset' is private and only accessible within class 'Virtualizer<TScrollElement, TItemElement>'.
+app/organizacao/(dashboard)/chat/page.tsx(42,35): error TS2677: A type predicate's type must be assignable to its parameter's type.
+  Type 'string' is not assignable to type 'OrganizationModule'.
+app/organizacao/(dashboard)/chat/preview/ChatPreviewClient.tsx(105,31): error TS2503: Cannot find namespace 'JSX'.
+app/organizacao/(dashboard)/chat/preview/ChatPreviewClient.tsx(233,40): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(type: "keydown", listener: (this: Window, ev: KeyboardEvent) => any, options?: boolean | AddEventListenerOptions | undefined): void', gave the following error.
+    Argument of type '(event: KeyboardEvent) => void' is not assignable to parameter of type '(this: Window, ev: KeyboardEvent) => any'.
+      Types of parameters 'event' and 'ev' are incompatible.
+        Type 'KeyboardEvent' is missing the following properties from type 'KeyboardEvent<Element>': locale, nativeEvent, isDefaultPrevented, isPropagationStopped, persist
+  Overload 2 of 2, '(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions | undefined): void', gave the following error.
+    Argument of type '(event: KeyboardEvent) => void' is not assignable to parameter of type 'EventListenerOrEventListenerObject'.
+      Type '(event: KeyboardEvent) => void' is not assignable to type 'EventListener'.
+        Types of parameters 'event' and 'evt' are incompatible.
+          Type 'Event' is missing the following properties from type 'KeyboardEvent<Element>': altKey, charCode, ctrlKey, code, and 15 more.
+app/organizacao/(dashboard)/chat/preview/ChatPreviewClient.tsx(234,56): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(type: "keydown", listener: (this: Window, ev: KeyboardEvent) => any, options?: boolean | EventListenerOptions | undefined): void', gave the following error.
+    Argument of type '(event: KeyboardEvent) => void' is not assignable to parameter of type '(this: Window, ev: KeyboardEvent) => any'.
+      Types of parameters 'event' and 'ev' are incompatible.
+        Type 'KeyboardEvent' is missing the following properties from type 'KeyboardEvent<Element>': locale, nativeEvent, isDefaultPrevented, isPropagationStopped, persist
+  Overload 2 of 2, '(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions | undefined): void', gave the following error.
+    Argument of type '(event: KeyboardEvent) => void' is not assignable to parameter of type 'EventListenerOrEventListenerObject'.
+      Type '(event: KeyboardEvent) => void' is not assignable to type 'EventListener'.
+        Types of parameters 'event' and 'evt' are incompatible.
+          Type 'Event' is missing the following properties from type 'KeyboardEvent<Element>': altKey, charCode, ctrlKey, code, and 15 more.
+app/organizacao/(dashboard)/chat/preview/ChatPreviewClient.tsx(1735,37): error TS2367: This comparison appears to be unintentional because the types '"ALL" | "MENTIONS_ONLY"' and '"OFF"' have no overlap.
+app/organizacao/(dashboard)/chat/preview/ChatPreviewClient.tsx(1748,37): error TS2367: This comparison appears to be unintentional because the types '"ALL" | "MENTIONS_ONLY"' and '"OFF"' have no overlap.
+app/organizacao/(dashboard)/chat/preview/ChatPreviewClient.tsx(1761,37): error TS2367: This comparison appears to be unintentional because the types '"ALL" | "MENTIONS_ONLY"' and '"OFF"' have no overlap.
+app/organizacao/(dashboard)/chat/preview/useChatPreviewData.ts(275,5): error TS2322: Type '{ id: string; kind: string; title: string; meta: string | undefined; url: string; }[] | undefined' is not assignable to type 'AttachmentPreview[] | undefined'.
+  Type '{ id: string; kind: string; title: string; meta: string | undefined; url: string; }[]' is not assignable to type 'AttachmentPreview[]'.
+    Type '{ id: string; kind: string; title: string; meta: string | undefined; url: string; }' is not assignable to type 'AttachmentPreview'.
+      Types of property 'kind' are incompatible.
+        Type 'string' is not assignable to type '"link" | "image" | "file"'.
+app/organizacao/(dashboard)/crm/relatorios/page.tsx(36,27): error TS18048: 'data' is possibly 'undefined'.
+app/organizacao/(dashboard)/crm/relatorios/page.tsx(36,32): error TS2339: Property 'windowDays' does not exist on type 'ReportsResponse'.
+  Property 'windowDays' does not exist on type '{ ok: false; error?: string | undefined; }'.
+app/organizacao/(dashboard)/crm/relatorios/page.tsx(37,23): error TS18048: 'data' is possibly 'undefined'.
+app/organizacao/(dashboard)/crm/relatorios/page.tsx(37,28): error TS2339: Property 'totals' does not exist on type 'ReportsResponse'.
+  Property 'totals' does not exist on type '{ ok: false; error?: string | undefined; }'.
+app/organizacao/(dashboard)/crm/relatorios/page.tsx(38,26): error TS18048: 'data' is possibly 'undefined'.
+app/organizacao/(dashboard)/crm/relatorios/page.tsx(38,31): error TS2339: Property 'customers' does not exist on type 'ReportsResponse'.
+  Property 'customers' does not exist on type '{ ok: false; error?: string | undefined; }'.
+app/organizacao/(dashboard)/crm/relatorios/page.tsx(39,30): error TS18048: 'data' is possibly 'undefined'.
+app/organizacao/(dashboard)/crm/relatorios/page.tsx(39,35): error TS2339: Property 'campaignsSent' does not exist on type 'ReportsResponse'.
+  Property 'campaignsSent' does not exist on type '{ ok: false; error?: string | undefined; }'.
+app/organizacao/(dashboard)/crm/relatorios/page.tsx(40,27): error TS18048: 'data' is possibly 'undefined'.
+app/organizacao/(dashboard)/crm/relatorios/page.tsx(40,32): error TS2339: Property 'categories' does not exist on type 'ReportsResponse'.
+  Property 'categories' does not exist on type '{ ok: false; error?: string | undefined; }'.
+app/organizacao/(dashboard)/crm/relatorios/page.tsx(73,28): error TS7006: Parameter 'category' implicitly has an 'any' type.
+app/organizacao/(dashboard)/eventos/[id]/page.tsx(192,44): error TS18047: 'sum' is possibly 'null'.
+app/organizacao/(dashboard)/layout.tsx(80,11): error TS2322: Type 'string | undefined' is not assignable to type 'string | null'.
+  Type 'undefined' is not assignable to type 'string | null'.
+app/organizacao/(dashboard)/layout.tsx(81,11): error TS2322: Type 'string | null | undefined' is not assignable to type 'string | null'.
+  Type 'undefined' is not assignable to type 'string | null'.
+app/organizacao/(dashboard)/loja/page.tsx(133,31): error TS2339: Property 'id' does not exist on type 'never'.
+app/organizacao/(dashboard)/loja/page.tsx(134,35): error TS2339: Property 'status' does not exist on type 'never'.
+app/organizacao/(dashboard)/loja/page.tsx(135,42): error TS2339: Property 'catalogLocked' does not exist on type 'never'.
+app/organizacao/(dashboard)/loja/page.tsx(136,44): error TS2339: Property 'checkoutEnabled' does not exist on type 'never'.
+app/organizacao/(dashboard)/loja/page.tsx(137,42): error TS2339: Property 'showOnProfile' does not exist on type 'never'.
+app/organizacao/(dashboard)/loja/page.tsx(138,38): error TS2339: Property 'createdAt' does not exist on type 'never'.
+app/organizacao/(dashboard)/loja/page.tsx(139,38): error TS2339: Property 'updatedAt' does not exist on type 'never'.
+app/organizacao/(dashboard)/reservas/_components/AvailabilityEditor.tsx(462,44): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(type: "pointermove", listener: (this: Window, ev: PointerEvent) => any, options?: boolean | AddEventListenerOptions | undefined): void', gave the following error.
+    Argument of type '(event: PointerEvent) => void' is not assignable to parameter of type '(this: Window, ev: PointerEvent) => any'.
+      Types of parameters 'event' and 'ev' are incompatible.
+        Type 'PointerEvent' is missing the following properties from type 'PointerEvent<Element>': nativeEvent, isDefaultPrevented, isPropagationStopped, persist
+  Overload 2 of 2, '(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions | undefined): void', gave the following error.
+    Argument of type '(event: PointerEvent) => void' is not assignable to parameter of type 'EventListenerOrEventListenerObject'.
+      Type '(event: PointerEvent) => void' is not assignable to type 'EventListener'.
+        Types of parameters 'event' and 'evt' are incompatible.
+          Type 'Event' is missing the following properties from type 'PointerEvent<Element>': pointerId, pressure, tangentialPressure, tiltX, and 28 more.
+app/organizacao/(dashboard)/reservas/_components/AvailabilityEditor.tsx(466,49): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(type: "pointermove", listener: (this: Window, ev: PointerEvent) => any, options?: boolean | EventListenerOptions | undefined): void', gave the following error.
+    Argument of type '(event: PointerEvent) => void' is not assignable to parameter of type '(this: Window, ev: PointerEvent) => any'.
+      Types of parameters 'event' and 'ev' are incompatible.
+        Type 'PointerEvent' is missing the following properties from type 'PointerEvent<Element>': nativeEvent, isDefaultPrevented, isPropagationStopped, persist
+  Overload 2 of 2, '(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions | undefined): void', gave the following error.
+    Argument of type '(event: PointerEvent) => void' is not assignable to parameter of type 'EventListenerOrEventListenerObject'.
+      Type '(event: PointerEvent) => void' is not assignable to type 'EventListener'.
+        Types of parameters 'event' and 'evt' are incompatible.
+          Type 'Event' is missing the following properties from type 'PointerEvent<Element>': pointerId, pressure, tangentialPressure, tiltX, and 28 more.
+app/organizacao/(dashboard)/staff/page.tsx(814,5): error TS2322: Type '{ key: string; label: string; }' is not assignable to type '{ key: StaffTabKey; label: string; }'.
+  Types of property 'key' are incompatible.
+    Type 'string' is not assignable to type 'StaffTabKey'.
+app/organizacao/DashboardClient.tsx(619,9): error TS2322: Type '{ moduleKey: OrganizationModule; accessLevel: string; scopeType: string | null; scopeId: string | null; }[]' is not assignable to type 'MemberPermissionOverride[]'.
+  Type '{ moduleKey: $Enums.OrganizationModule; accessLevel: string; scopeType: string | null; scopeId: string | null; }' is not assignable to type 'MemberPermissionOverride'.
+    Types of property 'accessLevel' are incompatible.
+      Type 'string' is not assignable to type 'ModuleAccessLevel'.
+app/organizacao/DashboardClient.tsx(2608,15): error TS2322: Type 'OrganizationLite' is not assignable to type 'OrganizationProfileInfo'.
+  Types of property 'publicProfileLayout' are incompatible.
+    Type 'unknown' is not assignable to type 'PublicProfileLayout | null | undefined'.
+app/organizacao/DashboardClient.tsx(2613,15): error TS2322: Type 'EventItem[]' is not assignable to type 'EventPreviewItem[]'.
+  Type 'EventItem' is not assignable to type 'EventPreviewItem'.
+    Types of property 'endsAt' are incompatible.
+      Type 'string | null | undefined' is not assignable to type 'string | null'.
+        Type 'undefined' is not assignable to type 'string | null'.
+app/organizacao/OrganizationPublicProfilePanel.tsx(1482,62): error TS2503: Cannot find namespace 'JSX'.
+app/organizacao/OrganizationTopBar.tsx(300,64): error TS2345: Argument of type '{ moduleKey: OrganizationModule; accessLevel: string; scopeType: string | null; scopeId: string | null; }[]' is not assignable to parameter of type 'MemberPermissionOverride[]'.
+  Type '{ moduleKey: $Enums.OrganizationModule; accessLevel: string; scopeType: string | null; scopeId: string | null; }' is not assignable to type 'MemberPermissionOverride'.
+    Types of property 'accessLevel' are incompatible.
+      Type 'string' is not assignable to type 'ModuleAccessLevel'.
+app/organizacao/OrganizationTopBar.tsx(633,32): error TS2322: Type 'string' is not assignable to type 'Role'.
+components/organization/BecomeOrganizationForm.tsx(736,60): error TS18048: 'form.formState.errors.businessName' is possibly 'undefined'.
+components/organization/BecomeOrganizationForm.tsx(793,60): error TS18048: 'form.formState.errors.username' is possibly 'undefined'.
+components/store/StoreProductsPanel.tsx(750,16): error TS2345: Argument of type '(prev: ProductItem[]) => (ProductItem | null)[]' is not assignable to parameter of type 'SetStateAction<ProductItem[]>'.
+  Type '(prev: ProductItem[]) => (ProductItem | null)[]' is not assignable to type '(prevState: ProductItem[]) => ProductItem[]'.
+    Type '(ProductItem | null)[]' is not assignable to type 'ProductItem[]'.
+      Type 'ProductItem | null' is not assignable to type 'ProductItem'.
+        Type 'null' is not assignable to type 'ProductItem'.
+components/storefront/StorefrontCheckoutClient.tsx(326,54): error TS2339: Property 'name' does not exist on type '{}'.
+components/storefront/StorefrontCheckoutClient.tsx(327,56): error TS2339: Property 'email' does not exist on type '{}'.
+components/storefront/StorefrontCheckoutClient.tsx(328,56): error TS2339: Property 'phone' does not exist on type '{}'.
+components/storefront/StorefrontCheckoutClient.tsx(330,92): error TS2339: Property 'name' does not exist on type '{}'.
+components/storefront/StorefrontCheckoutClient.tsx(331,90): error TS2339: Property 'name' does not exist on type '{}'.
+scripts/seed_padel.ts(21,3): error TS2724: '"@prisma/client"' has no exported member named 'PadelPairingLifecycleStatus'. Did you mean 'PadelPairingStatus'?
+scripts/seed_padel.ts(37,41): error TS5097: An import path can only end with a '.ts' extension when 'allowImportingTsExtensions' is enabled.
+scripts/seed_padel.ts(398,9): error TS2353: Object literal may only specify known properties, and 'lifecycleStatus' does not exist in type 'Without<PadelPairingCreateInput, PadelPairingUncheckedCreateInput> & PadelPairingUncheckedCreateInput'.
+scripts/seed_padel.ts(456,11): error TS2322: Type '{ username: string; publicName: string; businessName: string; city: string; entityType: string; status: "ACTIVE"; primaryModule: "TORNEIOS"; }' is not assignable to type '(Without<OrganizationCreateInput, OrganizationUncheckedCreateInput> & OrganizationUncheckedCreateInput) | (Without<...> & OrganizationCreateInput)'.
+  Type '{ username: string; publicName: string; businessName: string; city: string; entityType: string; status: "ACTIVE"; primaryModule: "TORNEIOS"; }' is not assignable to type 'Without<OrganizationUncheckedCreateInput, OrganizationCreateInput> & OrganizationCreateInput'.
+    Property 'group' is missing in type '{ username: string; publicName: string; businessName: string; city: string; entityType: string; status: "ACTIVE"; primaryModule: "TORNEIOS"; }' but required in type 'OrganizationCreateInput'.
+typecheck exit:2
+
+## npm run test
+
+> orya@0.1.0 test
+> vitest run
+
+
+ RUN  v1.6.1 /Users/nuno/orya/ORYA-WebApp
+
+ ✓ tests/finance/fulfillment.test.ts  (2 tests) 7ms
+ ✓ tests/searchIndex/searchIndexConsumer.test.ts  (5 tests) 14ms
+ ✓ tests/finance/reconciliationSweep.test.ts  (1 test) 6ms
+ ✓ tests/finance/checkout.test.ts  (6 tests) 15ms
+ ✓ tests/agenda/bookingNoShowSnapshotRoute.test.ts  (1 test) 15ms
+ ❯ tests/agenda/bookingCancelSnapshotRoute.test.ts  (2 tests | 1 failed) 85ms
+   ❯ tests/agenda/bookingCancelSnapshotRoute.test.ts > booking cancel snapshot route > falha fechado quando snapshot falta numa reserva confirmada
+     → expected 'CONFLICT' to be 'BOOKING_CONFIRMATION_SNAPSHOT_REQUIRED' // Object.is equality
+ ✓ tests/checkin/policyLock.test.ts  (3 tests) 10ms
+stderr | tests/outbox/loyaltyOutbox.test.ts > loyalty outbox consumer > retry/backoff + dead-letter no publisher
+[outbox] publish failed {
+  eventId: 'evt-2',
+  eventType: 'loyalty.earned',
+  attempts: 5,
+  correlationId: null,
+  registrationId: null,
+  deadLettered: true
+}
+
+ ✓ tests/outbox/loyaltyOutbox.test.ts  (5 tests) 17ms
+ ✓ tests/agenda/conflictEngine.test.ts  (7 tests) 8ms
+ ✓ tests/agenda/agendaConsumer.test.ts  (5 tests) 13ms
+ ✓ tests/orgContext/organizationContext.test.ts  (4 tests) 12ms
+stdout | tests/payouts/payouts.test.ts > payout flow hardening > webhook creates PendingPayout on payment_intent.succeeded
+[Webhook] payment_intent.succeeded {
+  id: 'pi_123',
+  amount: 1000,
+  currency: 'eur',
+  metadata: {
+    recipientConnectAccountId: 'acct_123',
+    payoutAmountCents: '700',
+    grossAmountCents: '1000',
+    platformFeeCents: '200',
+    feeMode: 'INCLUDED',
+    sourceType: 'TICKET_ORDER',
+    sourceId: '99',
+    currency: 'EUR',
+    purchaseId: 'purchase_1'
+  }
+}
+
+ ✓ tests/checkin/consume.test.ts  (3 tests) 46ms
+stderr | tests/payouts/payouts.test.ts > payout flow hardening > release balance_insufficient retries and keeps HELD
+[payouts][release] transfer failed, retry scheduled { payoutId: 1, retryMinutes: 60, reason: 'balance_insufficient' }
+
+ ✓ tests/payouts/payouts.test.ts  (3 tests) 1324ms
+ ✓ tests/finance/reconciliation.test.ts  (2 tests) 5ms
+ ✓ tests/rbac/rolePacks.test.ts  (10 tests) 24ms
+ ✓ tests/rbac/ownerTransferConfirm.test.ts  (3 tests) 81ms
+ ✓ tests/rbac/ownerTransferInitiate.test.ts  (3 tests) 32ms
+ ✓ tests/fiscal/invoicingRoute.test.ts  (3 tests) 429ms
+ ✓ tests/padel/knockoutAdvance.test.ts  (4 tests) 6ms
+ ✓ tests/outbox/padelOutbox.test.ts  (2 tests) 8ms
+ ✓ tests/finance/webhook.test.ts  (3 tests) 30ms
+ ✓ tests/ops/opsFeedConsumer.test.ts  (4 tests) 9ms
+ ✓ tests/outbox/padelRegistrationOutbox.test.ts  (3 tests) 10ms
+ ✓ tests/rbac/groupAccess.test.ts  (5 tests) 6ms
+ ✓ tests/finance/refundService.test.ts  (2 tests) 7ms
+ ❯ tests/agenda/rebuildAgenda.test.ts  (1 test | 1 failed) 24ms
+   ❯ tests/agenda/rebuildAgenda.test.ts > agenda rebuild > rebuilds for org and marks missing as DELETED
+     → expected [ 'SOFT_BLOCK', 'BOOKING', …(2) ] to not include 'BOOKING'
+ ✓ tests/http/withApiEnvelope.test.ts  (4 tests) 38ms
+ ✓ tests/tournaments/commands.test.ts  (4 tests) 35ms
+ ✓ tests/invites/inviteTokens.test.ts  (4 tests) 14ms
+ ✓ tests/padel/registrationStatus.test.ts  (4 tests) 5ms
+ ✓ tests/outbox/publisher.test.ts  (3 tests) 9ms
+stdout | tests/outbox/publisher.test.ts > Outbox publisher > publica e marca publishedAt (idempotente)
+[outbox] published {
+  eventId: 'evt-1',
+  eventType: 'payment.status.changed',
+  attempts: 0,
+  correlationId: null,
+  registrationId: null
+}
+
+stderr | tests/outbox/publisher.test.ts > Outbox publisher > falha → backoff + attempts
+[outbox] publish failed {
+  eventId: 'evt-2',
+  eventType: 'payment.status.changed',
+  attempts: 1,
+  correlationId: null,
+  registrationId: null,
+  deadLettered: false
+}
+
+ ✓ tests/http/wrapResponse.test.ts  (7 tests) 71ms
+ ✓ tests/agenda/bookingConfirmationSnapshot.test.ts  (2 tests) 5ms
+ ✓ tests/entitlements/accessChecks.test.ts  (6 tests) 5ms
+ ✓ tests/outbox/dlqEndpoints.test.ts  (3 tests) 69ms
+ ✓ tests/agenda/conflictIntegration.test.ts  (6 tests) 10ms
+ ✓ tests/access/evaluateAccess.test.ts  (5 tests) 5ms
+ ✓ tests/tournaments/createRoute.test.ts  (2 tests) 180ms
+ ✓ tests/agenda/backfillBookingConfirmationSnapshot.test.ts  (2 tests) 7ms
+ ✓ tests/padel/registrationTransition.test.ts  (3 tests) 18ms
+ ✓ tests/notifications/notificationOutboxProcessor.test.ts  (3 tests) 10ms
+ ✓ tests/analytics/rollupJob.test.ts  (3 tests) 12ms
+stderr | tests/access/inviteTokenRoutes.test.ts > invite token routes access > bloqueia emissão org quando access engine nega
+[organizacao/eventos/invite-token][POST] Error: [vitest] No "ensureGroupMemberModuleAccess" export is defined on the "@/lib/organizationMemberAccess" mock. Did you forget to return it from "vi.mock"?
+If you need to partially mock a module, you can use "importOriginal" helper inside:
+
+    at VitestMocker.createError (file:///Users/nuno/orya/ORYA-WebApp/node_modules/vitest/dist/vendor/execute.fL3szUAI.js:79:19)
+    at Object.get (file:///Users/nuno/orya/ORYA-WebApp/node_modules/vitest/dist/vendor/execute.fL3szUAI.js:153:22)
+    at _POST (/Users/nuno/orya/ORYA-WebApp/app/api/organizacao/events/[id]/invite-token/route.ts:48:26)
+    at Module.<anonymous> (/Users/nuno/orya/ORYA-WebApp/lib/http/withApiEnvelope.ts:235:22)
+    at /Users/nuno/orya/ORYA-WebApp/tests/access/inviteTokenRoutes.test.ts:63:17
+    at runTest (file:///Users/nuno/orya/ORYA-WebApp/node_modules/@vitest/runner/dist/index.js:781:11)
+    at runSuite (file:///Users/nuno/orya/ORYA-WebApp/node_modules/@vitest/runner/dist/index.js:909:15)
+    at runSuite (file:///Users/nuno/orya/ORYA-WebApp/node_modules/@vitest/runner/dist/index.js:909:15)
+    at runFiles (file:///Users/nuno/orya/ORYA-WebApp/node_modules/@vitest/runner/dist/index.js:958:5)
+    at startTests (file:///Users/nuno/orya/ORYA-WebApp/node_modules/@vitest/runner/dist/index.js:967:3) {
+  codeFrame: 'vi.mock("@/lib/organizationMemberAccess", async (importOriginal) => {\n' +
+    '  const actual = await importOriginal()\n' +
+    '  return {\n' +
+    '    ...actual,\n' +
+    '    // your mocked methods\n' +
+    '  }\n' +
+    '})'
+}
+
+ ❯ tests/access/inviteTokenRoutes.test.ts  (2 tests | 1 failed) 64ms
+   ❯ tests/access/inviteTokenRoutes.test.ts > invite token routes access > bloqueia emissão org quando access engine nega
+     → expected 500 to be 409 // Object.is equality
+ ✓ tests/apple/appleLink.test.ts  (2 tests) 8ms
+ ✓ tests/padel/autoSchedule.test.ts  (2 tests) 16ms
+ ✓ tests/location/locationConsentRoute.test.ts  (2 tests) 54ms
+ ✓ tests/finance/readModelGuardrails.test.ts  (6 tests) 365ms
+ ✓ tests/entitlements/status.test.ts  (5 tests) 21ms
+ ✓ tests/location/locationCoarseRoute.test.ts  (2 tests) 28ms
+ ✓ tests/sourceType/sourceType.test.ts  (7 tests) 9ms
+ ✓ tests/fiscal/ledgerExportRoute.test.ts  (2 tests) 196ms
+ ✓ tests/ops/agendaDriftGuardrails.test.ts  (1 test) 66ms
+stdout | tests/ops/agendaDriftGuardrails.test.ts > agenda drift guardrails > permite apenas allowlist atual (D3.5 a apertar)
+agenda drift allowlist [
+  'domain/bookings/commands.ts',
+  'domain/hardBlocks/commands.ts',
+  'domain/padel/matchSlots/commands.ts',
+  'domain/padel/matches/commands.ts',
+  'domain/softBlocks/commands.ts'
+]
+
+ ✓ tests/apple/appleSignin.test.ts  (2 tests) 25ms
+ ✓ tests/ops/orgContextGuardrails.test.ts  (2 tests) 111ms
+ ✓ tests/finance/stripeGateway.test.ts  (2 tests) 14ms
+stderr | tests/access/paymentsIntentAccess.test.ts > payments intent access gate > bloqueia checkout quando legacy intent esta desativado
+[finance:checkout] {
+  message: "Cannot read properties of undefined (reading '0')",
+  context: { route: '/api/payments/intent' }
+}
+
+ ❯ tests/access/paymentsIntentAccess.test.ts  (2 tests | 2 failed) 639ms
+   ❯ tests/access/paymentsIntentAccess.test.ts > payments intent access gate > bloqueia checkout quando legacy intent esta desativado
+     → expected 'INTERNAL_ERROR' to be 'LEGACY_INTENT_DISABLED' // Object.is equality
+   ❯ tests/access/paymentsIntentAccess.test.ts > payments intent access gate > bloqueia checkout quando access engine nega (legacy enabled)
+     → expected 'FORBIDDEN' to be 'INVITE_ONLY' // Object.is equality
+ ✓ tests/padel/imports.test.ts  (3 tests) 7ms
+ ✓ tests/maps/appleToken.test.ts  (3 tests) 44ms
+ ✓ tests/ops/opsFeedRoutes.test.ts  (3 tests) 43ms
+ ✓ tests/agenda/organizationAgendaRoute.test.ts  (2 tests) 781ms
+ ✓ tests/notifications/notificationRoutes.test.ts  (2 tests) 119ms
+ ✓ tests/agenda/bookingCalendarIcsRoute.test.ts  (2 tests) 22ms
+ ✓ tests/search/exploreListRoute.test.ts  (1 test) 170ms
+ ❯ tests/notifications/notificationConsumer.test.ts  (2 tests | 1 failed) 45ms
+   ❯ tests/notifications/notificationConsumer.test.ts > notification eventlog consumer > idempotente: dedupeKey consistente para o mesmo eventId
+     → expected false to be true // Object.is equality
+ ✓ tests/agenda/softBlockCommands.test.ts  (2 tests) 8ms
+ ✓ tests/push/apns.test.ts  (3 tests) 14ms
+ ✓ tests/push/pushTokensRoute.test.ts  (2 tests) 27ms
+ ✓ tests/padel/standings.test.ts  (2 tests) 7ms
+ ✓ tests/padel/backfillOutbox.test.ts  (1 test) 7ms
+ ✓ tests/padel/scoreRules.test.ts  (5 tests) 8ms
+ ✓ tests/search/publicEventSearchBuilder.test.ts  (2 tests) 13ms
+ ✓ tests/http/headers.test.ts  (3 tests) 7ms
+ ✓ tests/ops/bookingGuardrails.test.ts  (1 test) 51ms
+ ✓ tests/entitlements/accessGuardrails.test.ts  (2 tests) 90ms
+ ✓ tests/tournaments/outbox.test.ts  (2 tests) 7ms
+ ✓ tests/ops/sloRoute.test.ts  (2 tests) 85ms
+ ✓ tests/ops/dashboardRoute.test.ts  (1 test) 64ms
+ ✓ tests/ops/healthRoute.test.ts  (2 tests) 50ms
+ ✓ tests/audit/organizationAudit.test.ts  (1 test) 16ms
+ ✓ tests/padel/generation.test.ts  (3 tests) 8ms
+ ✓ tests/audit/auditRoutes.test.ts  (2 tests) 44ms
+ ✓ tests/db/resolvePublicDNS.test.ts  (2 tests) 4ms
+ ✓ tests/analytics/rollupRoute.test.ts  (2 tests) 30ms
+ ✓ tests/agenda/query.test.ts  (1 test) 8ms
+ ✓ tests/fiscal/derivedIsFree.test.ts  (4 tests) 6ms
+ ✓ tests/finance/status.test.ts  (3 tests) 4ms
+ ✓ tests/agenda/calendarLinks.test.ts  (2 tests) 4ms
+ ✓ tests/fiscal/zeroPriceGuard.test.ts  (3 tests) 5ms
+ ✓ tests/outbox/outboxRoutesExposure.test.ts  (1 test) 82ms
+ ✓ tests/links/appleAppSiteAssociation.test.ts  (2 tests) 8ms
+ ❯ tests/ops/rbacGuardrails.test.ts  (1 test | 1 failed) 108ms
+   ❯ tests/ops/rbacGuardrails.test.ts > rbac drift guardrails > blocks ad-hoc RBAC tokens in app/api
+     → Ad-hoc RBAC tokens found in app/api:
+app/api/organizacao/payouts/connect/route.ts:51:    if (!organization || !membership || !isOrgOwner(membership.role)) {
+app/api/organizacao/padel/waitlist/route.ts:25:    allowedRoles: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"],
+app/api/organizacao/payouts/status/route.ts:34:    if (!organization || !membership || !isOrgOwner(membership.role)) {
+app/api/organizacao/padel/waitlist/promote/route.ts:33:    allowedRoles: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"],
+app/api/organizacao/payouts/settings/route.ts:37:    if (!organization || !membership || !isOrgOwner(membership.role)) {
+app/api/organizacao/tournaments/[id]/structure/route.ts:29:    allowedRoles: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"],
+app/api/organizacao/tournaments/[id]/finance/route.ts:24:    allowedRoles: ["OWNER", "CO_OWNER", "ADMIN"],
+app/api/organizacao/tournaments/[id]/rules/route.ts:32:    allowedRoles: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"],
+app/api/organizacao/tournaments/[id]/matches/[matchId]/edit/route.ts:32:    allowedRoles: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"],
+app/api/organizacao/tournaments/[id]/live/route.ts:29:    allowedRoles: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"],
+app/api/organizacao/tournaments/[id]/participants/route.ts:43:    allowedRoles: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"],
+app/api/organizacao/tournaments/[id]/matches/[matchId]/notify/route.ts:34:    allowedRoles: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"],
+app/api/organizacao/tournaments/[id]/matches/schedule/route.ts:33:    allowedRoles: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"],
+app/api/organizacao/tournaments/[id]/sponsors/route.ts:38:    allowedRoles: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"],
+ ✓ tests/rbac/groupBackfill.test.ts  (1 test) 4ms
+ ✓ tests/d4/financeEvents.test.ts  (1 test) 6ms
+ ✓ tests/padel/cronExpire.test.ts  (1 test) 4ms
+ ✓ tests/searchIndex/searchIndexTriggers.test.ts  (1 test) 2ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 7 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/access/inviteTokenRoutes.test.ts > invite token routes access > bloqueia emissão org quando access engine nega
+AssertionError: expected 500 to be 409 // Object.is equality
+
+- Expected
++ Received
+
+- 409
++ 500
+
+ ❯ tests/access/inviteTokenRoutes.test.ts:64:24
+     62|     });
+     63|     const res = await orgInviteToken(req, { params: Promise.resolve({ …
+     64|     expect(res.status).toBe(409);
+       |                        ^
+     65|   });
+     66| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/7]⎯
+
+ FAIL  tests/access/paymentsIntentAccess.test.ts > payments intent access gate > bloqueia checkout quando legacy intent esta desativado
+AssertionError: expected 'INTERNAL_ERROR' to be 'LEGACY_INTENT_DISABLED' // Object.is equality
+
+- Expected
++ Received
+
+- LEGACY_INTENT_DISABLED
++ INTERNAL_ERROR
+
+ ❯ tests/access/paymentsIntentAccess.test.ts:44:28
+     42|     const res = await POST(req);
+     43|     const body = await res.json();
+     44|     expect(body.errorCode).toBe("LEGACY_INTENT_DISABLED");
+       |                            ^
+     45|     expect(evaluateEventAccess).not.toHaveBeenCalled();
+     46|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/7]⎯
+
+ FAIL  tests/access/paymentsIntentAccess.test.ts > payments intent access gate > bloqueia checkout quando access engine nega (legacy enabled)
+AssertionError: expected 'FORBIDDEN' to be 'INVITE_ONLY' // Object.is equality
+
+- Expected
++ Received
+
+- INVITE_ONLY
++ FORBIDDEN
+
+ ❯ tests/access/paymentsIntentAccess.test.ts:73:28
+     71|     const res = await POST(req);
+     72|     const body = await res.json();
+     73|     expect(body.errorCode).toBe("INVITE_ONLY");
+       |                            ^
+     74|     expect(evaluateEventAccess).toHaveBeenCalled();
+     75|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/7]⎯
+
+ FAIL  tests/agenda/bookingCancelSnapshotRoute.test.ts > booking cancel snapshot route > falha fechado quando snapshot falta numa reserva confirmada
+AssertionError: expected 'CONFLICT' to be 'BOOKING_CONFIRMATION_SNAPSHOT_REQUIRED' // Object.is equality
+
+- Expected
++ Received
+
+- BOOKING_CONFIRMATION_SNAPSHOT_REQUIRED
++ CONFLICT
+
+ ❯ tests/agenda/bookingCancelSnapshotRoute.test.ts:184:28
+    182|     expect(res.status).toBe(409);
+    183|     const json = await res.json();
+    184|     expect(json.errorCode).toBe("BOOKING_CONFIRMATION_SNAPSHOT_REQUIRE…
+       |                            ^
+    185|     expect(res.headers.get("x-request-id")).toBe("req_test");
+    186|     expect(res.headers.get("x-correlation-id")).toBe("corr_test");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/7]⎯
+
+ FAIL  tests/agenda/rebuildAgenda.test.ts > agenda rebuild > rebuilds for org and marks missing as DELETED
+AssertionError: expected [ 'SOFT_BLOCK', 'BOOKING', …(2) ] to not include 'BOOKING'
+ ❯ tests/agenda/rebuildAgenda.test.ts:109:29
+    107|       expect.arrayContaining([SourceType.SOFT_BLOCK, SourceType.MATCH,…
+    108|     );
+    109|     expect(upsertTypes).not.toContain(SourceType.BOOKING);
+       |                             ^
+    110| 
+    111|     expect(mocks.agendaUpdate).toHaveBeenCalledWith(
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/7]⎯
+
+ FAIL  tests/notifications/notificationConsumer.test.ts > notification eventlog consumer > idempotente: dedupeKey consistente para o mesmo eventId
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ tests/notifications/notificationConsumer.test.ts:58:22
+     56|     const first = await consumeNotificationEventLog("evt-2");
+     57|     const second = await consumeNotificationEventLog("evt-2");
+     58|     expect(first.ok).toBe(true);
+       |                      ^
+     59|     expect(second.ok).toBe(true);
+     60|     expect(enqueueMock).toHaveBeenCalledTimes(2);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/7]⎯
+
+ FAIL  tests/ops/rbacGuardrails.test.ts > rbac drift guardrails > blocks ad-hoc RBAC tokens in app/api
+Error: Ad-hoc RBAC tokens found in app/api:
+app/api/organizacao/payouts/connect/route.ts:51:    if (!organization || !membership || !isOrgOwner(membership.role)) {
+app/api/organizacao/padel/waitlist/route.ts:25:    allowedRoles: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"],
+app/api/organizacao/payouts/status/route.ts:34:    if (!organization || !membership || !isOrgOwner(membership.role)) {
+app/api/organizacao/padel/waitlist/promote/route.ts:33:    allowedRoles: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"],
+app/api/organizacao/payouts/settings/route.ts:37:    if (!organization || !membership || !isOrgOwner(membership.role)) {
+app/api/organizacao/tournaments/[id]/structure/route.ts:29:    allowedRoles: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"],
+app/api/organizacao/tournaments/[id]/finance/route.ts:24:    allowedRoles: ["OWNER", "CO_OWNER", "ADMIN"],
+app/api/organizacao/tournaments/[id]/rules/route.ts:32:    allowedRoles: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"],
+app/api/organizacao/tournaments/[id]/matches/[matchId]/edit/route.ts:32:    allowedRoles: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"],
+app/api/organizacao/tournaments/[id]/live/route.ts:29:    allowedRoles: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"],
+app/api/organizacao/tournaments/[id]/participants/route.ts:43:    allowedRoles: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"],
+app/api/organizacao/tournaments/[id]/matches/[matchId]/notify/route.ts:34:    allowedRoles: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"],
+app/api/organizacao/tournaments/[id]/matches/schedule/route.ts:33:    allowedRoles: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"],
+app/api/organizacao/tournaments/[id]/sponsors/route.ts:38:    allowedRoles: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"],
+ ❯ tests/ops/rbacGuardrails.test.ts:15:23
+     13|       throw new Error(`rbac guardrail rg failed (status ${result.statu…
+     14|     }
+     15|     if (output) throw new Error(`Ad-hoc RBAC tokens found in app/api:\…
+       |                       ^
+     16|   });
+     17| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/7]⎯
+
+ Test Files  6 failed | 89 passed (95)
+      Tests  7 failed | 264 passed (271)
+   Start at  14:18:47
+   Duration  10.58s (transform 3.24s, setup 8ms, collect 15.02s, tests 6.36s, environment 45ms, prepare 25.64s)
+
+test exit:1
+
+## npm run build
+
+> orya@0.1.0 build
+> ORIGINAL_NODE_ENV=$NODE_ENV next build
+
+▲ Next.js 16.1.1 (Turbopack)
+- Environments: .env.local, .env
+
+⚠ The "middleware" file convention is deprecated. Please use "proxy" instead. Learn more: https://nextjs.org/docs/messages/middleware-to-proxy
+  Creating an optimized production build ...
+✓ Compiled successfully in 35.1s
+  Skipping validation of types
+  Collecting page data using 7 workers ...
+  Generating static pages using 7 workers (0/293) ...
+  Generating static pages using 7 workers (73/293) 
+  Generating static pages using 7 workers (146/293) 
+  Generating static pages using 7 workers (219/293) 
+✓ Generating static pages using 7 workers (293/293) in 1094.6ms
+  Finalizing page optimization ...
+
+Route (app)
+┌ ƒ /
+├ ƒ /_not-found
+├ ƒ /.well-known/apple-app-site-association
+├ ƒ /[username]
+├ ƒ /[username]/loja
+├ ƒ /[username]/loja/carrinho
+├ ƒ /[username]/loja/checkout
+├ ƒ /[username]/loja/descargas
+├ ƒ /[username]/loja/produto/[slug]
+├ ƒ /[username]/padel
+├ ƒ /[username]/treinadores/[trainer]
+├ ƒ /admin
+├ ƒ /admin/config/platform-email
+├ ƒ /admin/eventos
+├ ƒ /admin/finance
+├ ƒ /admin/organizacoes
+├ ƒ /admin/payments
+├ ƒ /admin/payouts
+├ ƒ /admin/refunds
+├ ƒ /admin/settings
+├ ƒ /admin/tickets
+├ ƒ /admin/utilizadores
+├ ƒ /agora
+├ ƒ /api/admin/config/platform-email
+├ ƒ /api/admin/data/purge
+├ ƒ /api/admin/eventos/list
+├ ƒ /api/admin/eventos/purge
+├ ƒ /api/admin/eventos/update-status
+├ ƒ /api/admin/fees
+├ ƒ /api/admin/ops/analytics-rollups
+├ ƒ /api/admin/organizacoes/event-log
+├ ƒ /api/admin/organizacoes/list
+├ ƒ /api/admin/organizacoes/refresh-payments-status
+├ ƒ /api/admin/organizacoes/update-payments-mode
+├ ƒ /api/admin/organizacoes/update-status
+├ ƒ /api/admin/organizacoes/verify-platform-email
+├ ƒ /api/admin/payments/dispute
+├ ƒ /api/admin/payments/export
+├ ƒ /api/admin/payments/list
+├ ƒ /api/admin/payments/overview
+├ ƒ /api/admin/payments/refund
+├ ƒ /api/admin/payments/reprocess
+├ ƒ /api/admin/payouts/[id]
+├ ƒ /api/admin/payouts/[id]/block
+├ ƒ /api/admin/payouts/[id]/cancel
+├ ƒ /api/admin/payouts/[id]/force-release
+├ ƒ /api/admin/payouts/[id]/unblock
+├ ƒ /api/admin/payouts/list
+├ ƒ /api/admin/refunds/list
+├ ƒ /api/admin/refunds/retry
+├ ƒ /api/admin/tickets/export
+├ ƒ /api/admin/tickets/list
+├ ƒ /api/admin/users/purge-pending
+├ ƒ /api/admin/utilizadores/list
+├ ƒ /api/admin/utilizadores/manage
+├ ƒ /api/auth/apple/link
+├ ƒ /api/auth/check-email
+├ ƒ /api/auth/clear
+├ ƒ /api/auth/login
+├ ƒ /api/auth/logout
+├ ƒ /api/auth/me
+├ ƒ /api/auth/password/reset-request
+├ ƒ /api/auth/refresh
+├ ƒ /api/auth/resend-otp
+├ ƒ /api/auth/send-otp
+├ ƒ /api/chat/attachments/presign
+├ ƒ /api/chat/blocks
+├ ƒ /api/chat/conversations
+├ ƒ /api/chat/conversations/[conversationId]
+├ ƒ /api/chat/conversations/[conversationId]/leave
+├ ƒ /api/chat/conversations/[conversationId]/messages
+├ ƒ /api/chat/conversations/[conversationId]/notifications
+├ ƒ /api/chat/conversations/[conversationId]/read
+├ ƒ /api/chat/conversations/[conversationId]/threads/[messageId]
+├ ƒ /api/chat/messages
+├ ƒ /api/chat/messages/[messageId]
+├ ƒ /api/chat/messages/[messageId]/pins
+├ ƒ /api/chat/messages/[messageId]/reactions
+├ ƒ /api/chat/messages/[messageId]/report
+├ ƒ /api/chat/search
+├ ƒ /api/checkout/resale
+├ ƒ /api/checkout/status
+├ ƒ /api/cron/bookings/cleanup
+├ ƒ /api/cron/chat/maintenance
+├ ƒ /api/cron/creditos/expire
+├ ƒ /api/cron/crm/campanhas
+├ ƒ /api/cron/crm/rebuild
+├ ƒ /api/cron/loyalty/expire
+├ ƒ /api/cron/operations
+├ ƒ /api/cron/padel/expire
+├ ƒ /api/cron/padel/reminders
+├ ƒ /api/cron/padel/tournament-eve
+├ ƒ /api/cron/payouts/release
+├ ƒ /api/cron/reservations/cleanup
+├ ƒ /api/email/verified
+├ ƒ /api/eventos/[slug]/invite-token
+├ ƒ /api/eventos/[slug]/invites/check
+├ ƒ /api/eventos/[slug]/resales
+├ ƒ /api/eventos/list
+├ ƒ /api/explorar/list
+├ ƒ /api/geo/autocomplete
+├ ƒ /api/geo/details
+├ ƒ /api/geo/reverse
+├ ƒ /api/inscricoes/[id]/submit
+├ ƒ /api/internal/analytics/rollup
+├ ƒ /api/internal/audit
+├ ƒ /api/internal/chat/backfill
+├ ƒ /api/internal/checkin/consume
+├ ƒ /api/internal/checkout/timeline
+├ ƒ /api/internal/crm/ingest
+├ ƒ /api/internal/crm/rebuild
+├ ƒ /api/internal/notifications/sweep
+├ ƒ /api/internal/ops/dashboard
+├ ƒ /api/internal/ops/feed
+├ ƒ /api/internal/ops/health
+├ ƒ /api/internal/ops/outbox/replay
+├ ƒ /api/internal/ops/outbox/summary
+├ ƒ /api/internal/ops/slo
+├ ƒ /api/internal/outbox/dlq
+├ ƒ /api/internal/outbox/replay
+├ ƒ /api/internal/padel/registrations/backfill
+├ ƒ /api/internal/public-api/keys
+├ ƒ /api/internal/reconcile
+├ ƒ /api/internal/reprocess/payment-intent
+├ ƒ /api/internal/reprocess/purchase
+├ ƒ /api/internal/reprocess/stripe-event
+├ ƒ /api/internal/worker/operations
+├ ƒ /api/livehub/[slug]
+├ ƒ /api/location/ip
+├ ƒ /api/maps/apple-token
+├ ƒ /api/me
+├ ƒ /api/me/agenda
+├ ƒ /api/me/claim-guest
+├ ƒ /api/me/consents
+├ ƒ /api/me/contact-phone
+├ ƒ /api/me/creditos
+├ ƒ /api/me/inscricoes
+├ ƒ /api/me/inscricoes/[id]
+├ ƒ /api/me/location/coarse
+├ ƒ /api/me/location/consent
+├ ƒ /api/me/loyalty/carteira
+├ ƒ /api/me/loyalty/recompensas
+├ ƒ /api/me/loyalty/recompensas/[rewardId]/resgatar
+├ ƒ /api/me/notifications
+├ ƒ /api/me/notifications/[id]/read
+├ ƒ /api/me/purchases
+├ ƒ /api/me/push-tokens
+├ ƒ /api/me/reservas
+├ ƒ /api/me/reservas/[id]
+├ ƒ /api/me/reservas/[id]/calendar.ics
+├ ƒ /api/me/reservas/[id]/cancel
+├ ƒ /api/me/reservas/[id]/review
+├ ƒ /api/me/settings/delete
+├ ƒ /api/me/settings/delete/cancel
+├ ƒ /api/me/settings/email
+├ ƒ /api/me/settings/save
+├ ƒ /api/me/store
+├ ƒ /api/me/store/bundles
+├ ƒ /api/me/store/bundles/[id]
+├ ƒ /api/me/store/bundles/[id]/items
+├ ƒ /api/me/store/bundles/[id]/items/[itemId]
+├ ƒ /api/me/store/categories
+├ ƒ /api/me/store/categories/[id]
+├ ƒ /api/me/store/orders
+├ ƒ /api/me/store/orders/[orderId]
+├ ƒ /api/me/store/orders/[orderId]/shipments
+├ ƒ /api/me/store/overview
+├ ƒ /api/me/store/products
+├ ƒ /api/me/store/products/[id]
+├ ƒ /api/me/store/products/[id]/digital-assets
+├ ƒ /api/me/store/products/[id]/digital-assets/[assetId]
+├ ƒ /api/me/store/products/[id]/images
+├ ƒ /api/me/store/products/[id]/images/[imageId]
+├ ƒ /api/me/store/products/[id]/options
+├ ƒ /api/me/store/products/[id]/options/[optionId]
+├ ƒ /api/me/store/products/[id]/options/[optionId]/values
+├ ƒ /api/me/store/products/[id]/options/[optionId]/values/[valueId]
+├ ƒ /api/me/store/products/[id]/variants
+├ ƒ /api/me/store/products/[id]/variants/[variantId]
+├ ƒ /api/me/store/purchases
+├ ƒ /api/me/store/purchases/[orderId]
+├ ƒ /api/me/store/purchases/[orderId]/invoice
+├ ƒ /api/me/store/purchases/[orderId]/receipt
+├ ƒ /api/me/store/shipments/[shipmentId]
+├ ƒ /api/me/store/shipping/methods/[methodId]
+├ ƒ /api/me/store/shipping/methods/[methodId]/tiers
+├ ƒ /api/me/store/shipping/settings
+├ ƒ /api/me/store/shipping/tiers/[tierId]
+├ ƒ /api/me/store/shipping/zones
+├ ƒ /api/me/store/shipping/zones/[zoneId]
+├ ƒ /api/me/store/shipping/zones/[zoneId]/methods
+├ ƒ /api/me/wallet
+├ ƒ /api/me/wallet/[entitlementId]
+├ ƒ /api/notifications
+├ ƒ /api/notifications/mark-click
+├ ƒ /api/notifications/mark-read
+├ ƒ /api/notifications/prefs
+├ ƒ /api/organizacao/agenda
+├ ƒ /api/organizacao/agenda/soft-blocks
+├ ƒ /api/organizacao/analytics/dimensoes
+├ ƒ /api/organizacao/analytics/overview
+├ ƒ /api/organizacao/audit
+├ ƒ /api/organizacao/avaliacoes
+├ ƒ /api/organizacao/become
+├ ƒ /api/organizacao/chat/canais
+├ ƒ /api/organizacao/chat/canais/[channelId]/mensagens
+├ ƒ /api/organizacao/checkin
+├ ƒ /api/organizacao/checkin/preview
+├ ƒ /api/organizacao/club/finance/overview
+├ ƒ /api/organizacao/consentimentos
+├ ƒ /api/organizacao/consentimentos/[userId]
+├ ƒ /api/organizacao/crm/campanhas
+├ ƒ /api/organizacao/crm/campanhas/[campaignId]/enviar
+├ ƒ /api/organizacao/crm/clientes
+├ ƒ /api/organizacao/crm/clientes/[customerId]
+├ ƒ /api/organizacao/crm/clientes/[customerId]/notas
+├ ƒ /api/organizacao/crm/clientes/[customerId]/tags
+├ ƒ /api/organizacao/crm/relatorios
+├ ƒ /api/organizacao/crm/segmentos
+├ ƒ /api/organizacao/crm/segmentos/[segmentId]
+├ ƒ /api/organizacao/crm/segmentos/[segmentId]/preview
+├ ƒ /api/organizacao/estatisticas/buyers
+├ ƒ /api/organizacao/estatisticas/overview
+├ ƒ /api/organizacao/estatisticas/time-series
+├ ƒ /api/organizacao/events/[id]/attendees
+├ ƒ /api/organizacao/events/[id]/invite-token
+├ ƒ /api/organizacao/events/[id]/invites
+├ ƒ /api/organizacao/events/[id]/refund
+├ ƒ /api/organizacao/events/create
+├ ƒ /api/organizacao/events/list
+├ ƒ /api/organizacao/events/update
+├ ƒ /api/organizacao/faturacao
+├ ƒ /api/organizacao/finance/exports/fees
+├ ƒ /api/organizacao/finance/exports/ledger
+├ ƒ /api/organizacao/finance/exports/payouts
+├ ƒ /api/organizacao/finance/invoicing
+├ ƒ /api/organizacao/finance/overview
+├ ƒ /api/organizacao/finance/reconciliation
+├ ƒ /api/organizacao/inscricoes
+├ ƒ /api/organizacao/inscricoes/[id]
+├ ƒ /api/organizacao/inscricoes/[id]/export
+├ ƒ /api/organizacao/inscricoes/[id]/submissions
+├ ƒ /api/organizacao/inscricoes/[id]/summary
+├ ƒ /api/organizacao/invites
+├ ƒ /api/organizacao/loja
+├ ƒ /api/organizacao/loja/bundles
+├ ƒ /api/organizacao/loja/bundles/[id]
+├ ƒ /api/organizacao/loja/bundles/[id]/items
+├ ƒ /api/organizacao/loja/bundles/[id]/items/[itemId]
+├ ƒ /api/organizacao/loja/categories
+├ ƒ /api/organizacao/loja/categories/[id]
+├ ƒ /api/organizacao/loja/orders
+├ ƒ /api/organizacao/loja/orders/[orderId]
+├ ƒ /api/organizacao/loja/orders/[orderId]/shipments
+├ ƒ /api/organizacao/loja/overview
+├ ƒ /api/organizacao/loja/preview
+├ ƒ /api/organizacao/loja/products
+├ ƒ /api/organizacao/loja/products/[id]
+├ ƒ /api/organizacao/loja/products/[id]/digital-assets
+├ ƒ /api/organizacao/loja/products/[id]/digital-assets/[assetId]
+├ ƒ /api/organizacao/loja/products/[id]/images
+├ ƒ /api/organizacao/loja/products/[id]/images/[imageId]
+├ ƒ /api/organizacao/loja/products/[id]/options
+├ ƒ /api/organizacao/loja/products/[id]/options/[optionId]
+├ ƒ /api/organizacao/loja/products/[id]/options/[optionId]/values
+├ ƒ /api/organizacao/loja/products/[id]/options/[optionId]/values/[valueId]
+├ ƒ /api/organizacao/loja/products/[id]/variants
+├ ƒ /api/organizacao/loja/products/[id]/variants/[variantId]
+├ ƒ /api/organizacao/loja/shipments/[shipmentId]
+├ ƒ /api/organizacao/loja/shipping/methods/[methodId]
+├ ƒ /api/organizacao/loja/shipping/methods/[methodId]/tiers
+├ ƒ /api/organizacao/loja/shipping/settings
+├ ƒ /api/organizacao/loja/shipping/tiers/[tierId]
+├ ƒ /api/organizacao/loja/shipping/zones
+├ ƒ /api/organizacao/loja/shipping/zones/[zoneId]
+├ ƒ /api/organizacao/loja/shipping/zones/[zoneId]/methods
+├ ƒ /api/organizacao/loyalty/programa
+├ ƒ /api/organizacao/loyalty/recompensas
+├ ƒ /api/organizacao/loyalty/regras
+├ ƒ /api/organizacao/marketing/overview
+├ ƒ /api/organizacao/me
+├ ƒ /api/organizacao/mensagens/broadcast
+├ ƒ /api/organizacao/mensagens/history
+├ ƒ /api/organizacao/ops/feed
+├ ƒ /api/organizacao/organizations
+├ ƒ /api/organizacao/organizations/[id]
+├ ƒ /api/organizacao/organizations/leave
+├ ƒ /api/organizacao/organizations/members
+├ ƒ /api/organizacao/organizations/members/invites
+├ ƒ /api/organizacao/organizations/members/permissions
+├ ƒ /api/organizacao/organizations/owner/confirm
+├ ƒ /api/organizacao/organizations/owner/transfer
+├ ƒ /api/organizacao/organizations/settings/official-email
+├ ƒ /api/organizacao/organizations/settings/official-email/confirm
+├ ƒ /api/organizacao/organizations/switch
+├ ƒ /api/organizacao/padel/analytics
+├ ƒ /api/organizacao/padel/audit
+├ ƒ /api/organizacao/padel/courts
+├ ƒ /api/organizacao/padel/exports/analytics
+├ ƒ /api/organizacao/padel/exports/bracket
+├ ƒ /api/organizacao/padel/exports/calendario
+├ ƒ /api/organizacao/padel/exports/inscritos
+├ ƒ /api/organizacao/padel/exports/resultados
+├ ƒ /api/organizacao/padel/imports/inscritos
+├ ƒ /api/organizacao/padel/mix/create
+├ ƒ /api/organizacao/padel/waitlist
+├ ƒ /api/organizacao/padel/waitlist/promote
+├ ƒ /api/organizacao/pagamentos/invoices
+├ ƒ /api/organizacao/payouts/connect
+├ ƒ /api/organizacao/payouts/list
+├ ƒ /api/organizacao/payouts/settings
+├ ƒ /api/organizacao/payouts/status
+├ ƒ /api/organizacao/payouts/summary
+├ ƒ /api/organizacao/payouts/webhook
+├ ƒ /api/organizacao/policies
+├ ƒ /api/organizacao/policies/[id]
+├ ƒ /api/organizacao/promo
+├ ƒ /api/organizacao/promo/[id]
+├ ƒ /api/organizacao/refunds/list
+├ ƒ /api/organizacao/reservas
+├ ƒ /api/organizacao/reservas/[id]/cancel
+├ ƒ /api/organizacao/reservas/[id]/checkout
+├ ƒ /api/organizacao/reservas/[id]/no-show
+├ ƒ /api/organizacao/reservas/[id]/reschedule
+├ ƒ /api/organizacao/reservas/clientes
+├ ƒ /api/organizacao/reservas/disponibilidade
+├ ƒ /api/organizacao/reservas/disponibilidade/[overrideId]
+├ ƒ /api/organizacao/reservas/profissionais
+├ ƒ /api/organizacao/reservas/profissionais/[id]
+├ ƒ /api/organizacao/reservas/recursos
+├ ƒ /api/organizacao/reservas/recursos/[id]
+├ ƒ /api/organizacao/servicos
+├ ƒ /api/organizacao/servicos/[id]
+├ ƒ /api/organizacao/servicos/[id]/disponibilidade
+├ ƒ /api/organizacao/servicos/[id]/disponibilidade/[availabilityId]
+├ ƒ /api/organizacao/servicos/[id]/packs
+├ ƒ /api/organizacao/servicos/[id]/packs/[packId]
+├ ƒ /api/organizacao/tournaments/[id]
+├ ƒ /api/organizacao/tournaments/[id]/featured-match
+├ ƒ /api/organizacao/tournaments/[id]/finance
+├ ƒ /api/organizacao/tournaments/[id]/generate
+├ ƒ /api/organizacao/tournaments/[id]/live
+├ ƒ /api/organizacao/tournaments/[id]/matches/[matchId]/edit
+├ ƒ /api/organizacao/tournaments/[id]/matches/[matchId]/notify
+├ ƒ /api/organizacao/tournaments/[id]/matches/[matchId]/result
+├ ƒ /api/organizacao/tournaments/[id]/matches/[matchId]/undo
+├ ƒ /api/organizacao/tournaments/[id]/matches/schedule
+├ ƒ /api/organizacao/tournaments/[id]/participants
+├ ƒ /api/organizacao/tournaments/[id]/rules
+├ ƒ /api/organizacao/tournaments/[id]/sponsors
+├ ƒ /api/organizacao/tournaments/[id]/structure
+├ ƒ /api/organizacao/tournaments/create
+├ ƒ /api/organizacao/tournaments/list
+├ ƒ /api/organizacao/trainers
+├ ƒ /api/organizacao/trainers/profile
+├ ƒ /api/organizacao/username
+├ ƒ /api/organizacao/venues/recent
+├ ƒ /api/organizations/search
+├ ƒ /api/padel/calendar
+├ ƒ /api/padel/calendar/auto-schedule
+├ ƒ /api/padel/categories/my
+├ ƒ /api/padel/clubs
+├ ƒ /api/padel/clubs/[id]/courts
+├ ƒ /api/padel/clubs/[id]/staff
+├ ƒ /api/padel/discover
+├ ƒ /api/padel/event-categories
+├ ƒ /api/padel/live
+├ ƒ /api/padel/matches
+├ ƒ /api/padel/matches/[id]/delay
+├ ƒ /api/padel/matches/[id]/dispute
+├ ƒ /api/padel/matches/[id]/undo
+├ ƒ /api/padel/matches/[id]/walkover
+├ ƒ /api/padel/matches/assign
+├ ƒ /api/padel/matches/generate
+├ ƒ /api/padel/onboarding
+├ ƒ /api/padel/pairings
+├ ƒ /api/padel/pairings/[id]/accept
+├ ƒ /api/padel/pairings/[id]/assume
+├ ƒ /api/padel/pairings/[id]/cancel
+├ ƒ /api/padel/pairings/[id]/checkout
+├ ƒ /api/padel/pairings/[id]/decline
+├ ƒ /api/padel/pairings/[id]/invite
+├ ƒ /api/padel/pairings/[id]/public
+├ ƒ /api/padel/pairings/[id]/regularize
+├ ƒ /api/padel/pairings/[id]/reopen
+├ ƒ /api/padel/pairings/[id]/swap
+├ ƒ /api/padel/pairings/claim/[token]
+├ ƒ /api/padel/pairings/invite-status
+├ ƒ /api/padel/pairings/my
+├ ƒ /api/padel/pairings/open
+├ ƒ /api/padel/pairings/swap/confirm/[token]
+├ ƒ /api/padel/players
+├ ƒ /api/padel/public/calendar
+├ ƒ /api/padel/public/clubs
+├ ƒ /api/padel/public/open-pairings
+├ ƒ /api/padel/rankings
+├ ƒ /api/padel/rulesets
+├ ƒ /api/padel/standings
+├ ƒ /api/padel/tournaments/config
+├ ƒ /api/padel/tournaments/seeds
+├ ƒ /api/payments/intent
+├ ƒ /api/platform/fees
+├ ƒ /api/profiles/check-username
+├ ƒ /api/profiles/save-basic
+├ ƒ /api/public/events/[eventId]/calendar.ics
+├ ƒ /api/public/v1/agenda
+├ ƒ /api/public/v1/analytics
+├ ƒ /api/public/v1/discover
+├ ƒ /api/public/v1/events
+├ ƒ /api/public/v1/search
+├ ƒ /api/public/v1/tournaments
+├ ƒ /api/qr/[token]
+├ ƒ /api/servicos/[id]
+├ ƒ /api/servicos/[id]/calendario
+├ ƒ /api/servicos/[id]/checkout
+├ ƒ /api/servicos/[id]/confirmar
+├ ƒ /api/servicos/[id]/creditos
+├ ƒ /api/servicos/[id]/creditos/checkout
+├ ƒ /api/servicos/[id]/disponibilidade
+├ ƒ /api/servicos/[id]/reservar
+├ ƒ /api/servicos/[id]/slots
+├ ƒ /api/servicos/checkout/status
+├ ƒ /api/servicos/list
+├ ƒ /api/social/follow
+├ ƒ /api/social/follow-organization
+├ ƒ /api/social/follow-requests
+├ ƒ /api/social/follow-requests/accept
+├ ƒ /api/social/follow-requests/cancel
+├ ƒ /api/social/follow-requests/decline
+├ ƒ /api/social/follow-status
+├ ƒ /api/social/followers
+├ ƒ /api/social/following
+├ ƒ /api/social/organization-follow-status
+├ ƒ /api/social/organization-followers
+├ ƒ /api/social/suggestions
+├ ƒ /api/social/unfollow
+├ ƒ /api/social/unfollow-organization
+├ ƒ /api/store/bundles
+├ ƒ /api/store/cart
+├ ƒ /api/store/cart/bundles
+├ ƒ /api/store/cart/bundles/[bundleKey]
+├ ƒ /api/store/cart/items
+├ ƒ /api/store/cart/items/[itemId]
+├ ƒ /api/store/checkout
+├ ƒ /api/store/checkout/prefill
+├ ƒ /api/store/digital/download
+├ ƒ /api/store/digital/grants
+├ ƒ /api/store/digital/lookup
+├ ƒ /api/store/orders/invoice
+├ ƒ /api/store/orders/lookup
+├ ƒ /api/store/orders/receipt
+├ ƒ /api/store/recommendations
+├ ƒ /api/store/shipping/methods
+├ ƒ /api/store/shipping/quote
+├ ƒ /api/stripe/webhook
+├ ƒ /api/tickets/resale/cancel
+├ ƒ /api/tickets/resale/list
+├ ƒ /api/tournaments/[id]
+├ ƒ /api/tournaments/[id]/live
+├ ƒ /api/tournaments/[id]/monitor
+├ ƒ /api/tournaments/[id]/structure
+├ ƒ /api/tournaments/list
+├ ƒ /api/upload
+├ ƒ /api/username/check
+├ ƒ /api/users/search
+├ ƒ /api/webhooks/stripe
+├ ƒ /api/widgets/padel/bracket
+├ ƒ /api/widgets/padel/calendar
+├ ƒ /api/widgets/padel/next
+├ ƒ /api/widgets/padel/standings
+├ ƒ /atividade
+├ ƒ /auth/callback
+├ ƒ /convites/organizacoes
+├ ƒ /descobrir
+├ ƒ /em-breve
+├ ƒ /eventos
+├ ƒ /eventos/[slug]
+├ ƒ /eventos/[slug]/live
+├ ƒ /eventos/[slug]/monitor
+├ ƒ /eventos/[slug]/score
+├ ƒ /eventos/nova
+├ ƒ /explorar
+├ ƒ /explorar/eventos
+├ ƒ /explorar/reservas
+├ ƒ /explorar/torneios
+├ ƒ /inscricoes/[id]
+├ ƒ /landing
+├ ƒ /live/[id]/monitor
+├ ƒ /login
+├ ƒ /logo
+├ ƒ /loja/seguimento
+├ ƒ /mapa
+├ ƒ /me
+├ ƒ /me/atividade
+├ ƒ /me/bilhetes/[id]
+├ ƒ /me/carteira
+├ ƒ /me/compras
+├ ƒ /me/compras/loja
+├ ƒ /me/compras/loja/[orderId]
+├ ƒ /me/creditos
+├ ƒ /me/loja
+├ ƒ /me/reservas
+├ ƒ /me/settings
+├ ƒ /me/wallet/[id]
+├ ƒ /onboarding/padel
+├ ƒ /onboarding/perfil
+├ ƒ /organizacao
+├ ƒ /organizacao/become
+├ ƒ /organizacao/categorias
+├ ƒ /organizacao/categorias/padel
+├ ƒ /organizacao/chat
+├ ƒ /organizacao/chat/preview
+├ ƒ /organizacao/clube/caixa
+├ ƒ /organizacao/clube/membros
+├ ƒ /organizacao/crm
+├ ƒ /organizacao/crm/campanhas
+├ ƒ /organizacao/crm/clientes
+├ ƒ /organizacao/crm/clientes/[customerId]
+├ ƒ /organizacao/crm/loyalty
+├ ƒ /organizacao/crm/relatorios
+├ ƒ /organizacao/crm/segmentos
+├ ƒ /organizacao/crm/segmentos/[segmentId]
+├ ƒ /organizacao/estatisticas
+├ ƒ /organizacao/eventos
+├ ƒ /organizacao/eventos/[id]
+├ ƒ /organizacao/eventos/[id]/edit
+├ ƒ /organizacao/eventos/[id]/live
+├ ƒ /organizacao/eventos/novo
+├ ƒ /organizacao/faturacao
+├ ƒ /organizacao/inscricoes
+├ ƒ /organizacao/inscricoes/[id]
+├ ƒ /organizacao/loja
+├ ƒ /organizacao/mensagens
+├ ƒ /organizacao/organizations
+├ ƒ /organizacao/padel
+├ ƒ /organizacao/padel/mix/novo
+├ ƒ /organizacao/padel/torneios/novo
+├ ƒ /organizacao/pagamentos
+├ ƒ /organizacao/pagamentos/invoices
+├ ƒ /organizacao/promo
+├ ƒ /organizacao/reservas
+├ ƒ /organizacao/reservas/[id]
+├ ƒ /organizacao/reservas/clientes
+├ ƒ /organizacao/reservas/novo
+├ ƒ /organizacao/reservas/politicas
+├ ƒ /organizacao/reservas/profissionais
+├ ƒ /organizacao/reservas/profissionais/[id]
+├ ƒ /organizacao/reservas/recursos
+├ ƒ /organizacao/reservas/recursos/[id]
+├ ƒ /organizacao/reservas/servicos
+├ ƒ /organizacao/scan
+├ ƒ /organizacao/settings
+├ ƒ /organizacao/settings/verify
+├ ƒ /organizacao/staff
+├ ƒ /organizacao/torneios
+├ ƒ /organizacao/torneios/[id]
+├ ƒ /organizacao/torneios/[id]/edit
+├ ƒ /organizacao/torneios/[id]/live
+├ ƒ /organizacao/torneios/novo
+├ ƒ /organizacao/tournaments/[id]/finance
+├ ƒ /organizacao/tournaments/[id]/live
+├ ƒ /organizacao/treinadores
+├ ƒ /padel/duplas
+├ ƒ /perfil
+├ ƒ /procurar
+├ ƒ /rede
+├ ƒ /resale/[id]
+├ ƒ /reset-password
+├ ƒ /servicos
+├ ƒ /servicos/[id]
+├ ƒ /signup
+├ ƒ /social
+├ ƒ /widgets/padel/bracket
+├ ƒ /widgets/padel/calendar
+├ ƒ /widgets/padel/inscricoes
+├ ƒ /widgets/padel/next
+└ ƒ /widgets/padel/standings
+
+
+ƒ Proxy (Middleware)
+
+ƒ  (Dynamic)  server-rendered on demand
+
+build exit:0

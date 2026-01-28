@@ -1,7 +1,8 @@
 export const runtime = "nodejs";
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import {
   OrganizationMemberRole,
   PadelPairingPaymentStatus,
@@ -54,10 +55,10 @@ async function _POST(req: NextRequest) {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+  if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const formData = await req.formData().catch(() => null);
-  if (!formData) return NextResponse.json({ ok: false, error: "INVALID_BODY" }, { status: 400 });
+  if (!formData) return jsonWrap({ ok: false, error: "INVALID_BODY" }, { status: 400 });
 
   const eventId = Number(formData.get("eventId"));
   const fallbackCategoryIdRaw = formData.get("fallbackCategoryId");
@@ -67,31 +68,31 @@ async function _POST(req: NextRequest) {
   const dryRun = resolveImportBoolean(asString(formData.get("dryRun")), false);
   const file = formData.get("file");
   if (!Number.isFinite(eventId) || eventId <= 0) {
-    return NextResponse.json({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
+    return jsonWrap({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
   }
   if (!file || !(file instanceof File)) {
-    return NextResponse.json({ ok: false, error: "MISSING_FILE" }, { status: 400 });
+    return jsonWrap({ ok: false, error: "MISSING_FILE" }, { status: 400 });
   }
 
   const event = await prisma.event.findUnique({
     where: { id: eventId, isDeleted: false },
     select: { organizationId: true },
   });
-  if (!event?.organizationId) return NextResponse.json({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+  if (!event?.organizationId) return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
 
   const { organization } = await getActiveOrganizationForUser(user.id, {
     organizationId: event.organizationId,
     roles: ROLE_ALLOWLIST,
   });
-  if (!organization) return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  if (!organization) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
   const emailGate = ensureOrganizationEmailVerified(organization);
-  if (!emailGate.ok) return NextResponse.json({ ok: false, error: emailGate.error }, { status: 403 });
+  if (!emailGate.ok) return jsonWrap({ ok: false, error: emailGate.error }, { status: 403 });
 
   const config = await prisma.padelTournamentConfig.findUnique({
     where: { eventId },
     select: { defaultCategoryId: true, advancedSettings: true },
   });
-  if (!config) return NextResponse.json({ ok: false, error: "PADEL_CONFIG_MISSING" }, { status: 409 });
+  if (!config) return jsonWrap({ ok: false, error: "PADEL_CONFIG_MISSING" }, { status: 409 });
 
   const categoryLinks = await prisma.padelEventCategoryLink.findMany({
     where: { eventId, isEnabled: true },
@@ -113,11 +114,11 @@ async function _POST(req: NextRequest) {
     ? read(buffer.toString("utf8"), { type: "string", raw: false, codepage: 65001 })
     : read(buffer, { type: "buffer" });
   const sheetName = workbook.SheetNames[0];
-  if (!sheetName) return NextResponse.json({ ok: false, error: "EMPTY_FILE" }, { status: 400 });
+  if (!sheetName) return jsonWrap({ ok: false, error: "EMPTY_FILE" }, { status: 400 });
   const sheet = workbook.Sheets[sheetName];
-  if (!sheet) return NextResponse.json({ ok: false, error: "EMPTY_FILE" }, { status: 400 });
+  if (!sheet) return jsonWrap({ ok: false, error: "EMPTY_FILE" }, { status: 400 });
   const rows = utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "", raw: false });
-  if (rows.length === 0) return NextResponse.json({ ok: false, error: "NO_ROWS" }, { status: 400 });
+  if (rows.length === 0) return jsonWrap({ ok: false, error: "NO_ROWS" }, { status: 400 });
 
   const {
     rows: parsedRows,
@@ -132,7 +133,7 @@ async function _POST(req: NextRequest) {
   });
 
   if (nonEmptyRows === 0) {
-    return NextResponse.json({ ok: false, error: "NO_ROWS" }, { status: 400 });
+    return jsonWrap({ ok: false, error: "NO_ROWS" }, { status: 400 });
   }
 
   const advanced = (config.advancedSettings as Record<string, unknown>) ?? {};
@@ -268,7 +269,7 @@ async function _POST(req: NextRequest) {
   const summary = buildSummary(nonEmptyRows, validRows.length, errors);
 
   if (errors.length > 0) {
-    return NextResponse.json({ ok: false, error: "INVALID_ROWS", errors, summary }, { status: 400 });
+    return jsonWrap({ ok: false, error: "INVALID_ROWS", errors, summary }, { status: 400 });
   }
 
   if (dryRun) {
@@ -288,7 +289,7 @@ async function _POST(req: NextRequest) {
         categories: categorySummary,
       },
     });
-    return NextResponse.json(
+    return jsonWrap(
       {
         ok: true,
         dryRun: true,
@@ -461,83 +462,94 @@ async function _POST(req: NextRequest) {
       }
 
       for (const row of parsedRows) {
-      if (maxEntriesTotal && Number.isFinite(maxEntriesTotal) && eventCount >= maxEntriesTotal) {
-        throw new Error("EVENT_FULL");
-      }
-      const categoryId = row.categoryId;
-      if (categoryId) {
-        const link = categoryLinks.find((c) => c.padelCategoryId === categoryId);
-        const capacityTeams =
-          typeof link?.capacityTeams === "number" && link.capacityTeams > 0 ? Math.floor(link.capacityTeams) : null;
-        if (capacityTeams) {
-          const current = categoryCounts.get(categoryId) ?? 0;
-          if (current >= capacityTeams) {
-            throw new Error("CATEGORY_FULL");
+        if (maxEntriesTotal && Number.isFinite(maxEntriesTotal) && eventCount >= maxEntriesTotal) {
+          throw new Error("EVENT_FULL");
+        }
+        const categoryId = row.categoryId;
+        if (categoryId) {
+          const link = categoryLinks.find((c) => c.padelCategoryId === categoryId);
+          const capacityTeams =
+            typeof link?.capacityTeams === "number" && link.capacityTeams > 0 ? Math.floor(link.capacityTeams) : null;
+          if (capacityTeams) {
+            const current = categoryCounts.get(categoryId) ?? 0;
+            if (current >= capacityTeams) {
+              throw new Error("CATEGORY_FULL");
+            }
+          }
+          const capacityPlayers =
+            typeof link?.capacityPlayers === "number" && link.capacityPlayers > 0
+              ? Math.floor(link.capacityPlayers)
+              : null;
+          if (capacityPlayers) {
+            const currentPlayers = categoryPlayerCounts.get(categoryId) ?? 0;
+            if (currentPlayers + 2 > capacityPlayers) {
+              throw new Error("CATEGORY_PLAYERS_FULL");
+            }
           }
         }
-        const capacityPlayers =
-          typeof link?.capacityPlayers === "number" && link.capacityPlayers > 0 ? Math.floor(link.capacityPlayers) : null;
-        if (capacityPlayers) {
-          const currentPlayers = categoryPlayerCounts.get(categoryId) ?? 0;
-          if (currentPlayers + 2 > capacityPlayers) {
-            throw new Error("CATEGORY_PLAYERS_FULL");
-          }
-        }
-      }
 
-      const playerA = await ensurePlayerProfile(tx, row.players[0]);
-      const playerB = await ensurePlayerProfile(tx, row.players[1]);
-      const registrationStatus = row.paid
-        ? PadelRegistrationStatus.CONFIRMED
-        : PadelRegistrationStatus.PENDING_PAYMENT;
-      const lifecycleStatus = mapRegistrationToPairingLifecycle(registrationStatus, row.paymentMode);
-      const pairing = await tx.padelPairing.create({
-        data: {
-          eventId,
-          organizationId: organization.id,
-          categoryId,
-          payment_mode: row.paymentMode,
-          pairingStatus: PadelPairingStatus.COMPLETE,
-          lifecycleStatus,
-          pairingJoinMode: "INVITE_PARTNER",
-          createdByUserId: user.id,
-          player1UserId: playerA.userId ?? undefined,
-          player2UserId: playerB.userId ?? undefined,
-          slots: {
-            create: [
-              {
-                slot_role: PadelPairingSlotRole.CAPTAIN,
-                slotStatus: PadelPairingSlotStatus.FILLED,
-                paymentStatus: row.paid ? PadelPairingPaymentStatus.PAID : PadelPairingPaymentStatus.UNPAID,
-                profileId: playerA.userId ?? undefined,
-                playerProfileId: playerA.playerProfileId,
-                invitedContact: null,
-                isPublicOpen: false,
-              },
-              {
-                slot_role: PadelPairingSlotRole.PARTNER,
-                slotStatus: PadelPairingSlotStatus.FILLED,
-                paymentStatus: row.paid ? PadelPairingPaymentStatus.PAID : PadelPairingPaymentStatus.UNPAID,
-                profileId: playerB.userId ?? undefined,
-                playerProfileId: playerB.playerProfileId,
-                invitedContact: null,
-                isPublicOpen: false,
-              },
-            ],
+        const playerA = await ensurePlayerProfile(tx, row.players[0]);
+        const playerB = await ensurePlayerProfile(tx, row.players[1]);
+        const registrationStatus = row.paid
+          ? PadelRegistrationStatus.CONFIRMED
+          : PadelRegistrationStatus.PENDING_PAYMENT;
+
+        const pairing = await tx.padelPairing.create({
+          data: {
+            eventId,
+            organizationId: organization.id,
+            categoryId,
+            payment_mode: row.paymentMode,
+            pairingStatus: PadelPairingStatus.COMPLETE,
+            pairingJoinMode: "INVITE_PARTNER",
+            createdByUserId: user.id,
+            player1UserId: playerA.userId ?? undefined,
+            player2UserId: playerB.userId ?? undefined,
+            slots: {
+              create: [
+                {
+                  slot_role: PadelPairingSlotRole.CAPTAIN,
+                  slotStatus: PadelPairingSlotStatus.FILLED,
+                  paymentStatus: row.paid ? PadelPairingPaymentStatus.PAID : PadelPairingPaymentStatus.UNPAID,
+                  profileId: playerA.userId ?? undefined,
+                  playerProfileId: playerA.playerProfileId,
+                  invitedContact: null,
+                  isPublicOpen: false,
+                },
+                {
+                  slot_role: PadelPairingSlotRole.PARTNER,
+                  slotStatus: PadelPairingSlotStatus.FILLED,
+                  paymentStatus: row.paid ? PadelPairingPaymentStatus.PAID : PadelPairingPaymentStatus.UNPAID,
+                  profileId: playerB.userId ?? undefined,
+                  playerProfileId: playerB.playerProfileId,
+                  invitedContact: null,
+                  isPublicOpen: false,
+                },
+              ],
+            },
           },
-        },
-        select: { id: true },
-      });
+          select: { id: true },
+        });
 
-      eventCount += 1;
-      if (categoryId) {
-        categoryCounts.set(categoryId, (categoryCounts.get(categoryId) ?? 0) + 1);
-        if (categoryPlayerCounts.has(categoryId)) {
-          categoryPlayerCounts.set(categoryId, (categoryPlayerCounts.get(categoryId) ?? 0) + 2);
+        await upsertPadelRegistrationForPairing(tx, {
+          pairingId: pairing.id,
+          organizationId: organization.id,
+          eventId,
+          status: registrationStatus,
+          paymentMode: row.paymentMode,
+          isFullyPaid: row.paid,
+          reason: "IMPORT",
+        });
+
+        eventCount += 1;
+        if (categoryId) {
+          categoryCounts.set(categoryId, (categoryCounts.get(categoryId) ?? 0) + 1);
+          if (categoryPlayerCounts.has(categoryId)) {
+            categoryPlayerCounts.set(categoryId, (categoryPlayerCounts.get(categoryId) ?? 0) + 2);
+          }
         }
+        created.push({ id: pairing.id, group: row.group, seed: row.seed });
       }
-      created.push({ id: pairing.id, group: row.group, seed: row.seed });
-    }
 
     return created;
     });
@@ -547,7 +559,7 @@ async function _POST(req: NextRequest) {
       message === "EVENT_FULL" || message === "CATEGORY_FULL" || message === "CATEGORY_PLAYERS_FULL"
         ? message
         : "IMPORT_FAILED";
-    return NextResponse.json({ ok: false, error }, { status: 409 });
+    return jsonWrap({ ok: false, error }, { status: 409 });
   }
 
   createdPairings.forEach((p) => {
@@ -578,33 +590,23 @@ async function _POST(req: NextRequest) {
     }
     await prisma.padelTournamentConfig.update({
       where: { eventId },
-      data: { advancedSettings: mergedAdvanced },
+      data: { advancedSettings: mergedAdvanced as Prisma.InputJsonValue },
     });
   }
 
-  await recordOrganizationAuditSafe({
-    organizationId: organization.id,
-    actorUserId: user.id,
-    action: "PADEL_IMPORT_PAIRINGS",
-    metadata: {
-      eventId,
-      count: createdPairings.length,
-      seedsApplied: seedsToApply.size,
-      groupsApplied: Object.keys(groupsToApply).length,
-        },
-      });
-
-      await upsertPadelRegistrationForPairing(tx, {
-        pairingId: pairing.id,
-        organizationId: organization.id,
+    await recordOrganizationAuditSafe({
+      organizationId: organization.id,
+      actorUserId: user.id,
+      action: "PADEL_IMPORT_PAIRINGS",
+      metadata: {
         eventId,
-        status: registrationStatus,
-        paymentMode: row.paymentMode,
-        isFullyPaid: row.paid,
-        reason: "IMPORT",
-      });
+        count: createdPairings.length,
+        seedsApplied: seedsToApply.size,
+        groupsApplied: Object.keys(groupsToApply).length,
+      },
+    });
 
-  return NextResponse.json(
+  return jsonWrap(
     {
       ok: true,
       imported: {

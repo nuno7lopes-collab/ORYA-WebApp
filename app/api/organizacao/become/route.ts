@@ -11,6 +11,7 @@ import { jsonWrap } from "@/lib/api/wrapResponse";
 import {
   DEFAULT_PRIMARY_MODULE,
   getDefaultOrganizationModules,
+  normalizePrimaryModule,
   parsePrimaryModule,
   parseOrganizationModules,
 } from "@/lib/organizationCategories";
@@ -49,8 +50,28 @@ async function _GET() {
   }
   const profileSafe = profile;
 
-    const { organization: currentOrganization } = await getActiveOrganizationForUser(profileSafe.id, ORG_ACTIVE_ACCESS_OPTIONS);
-    const fallbackOrganization = currentOrganization ?? null;
+    const { organization: currentOrganization } = await getActiveOrganizationForUser(
+      profileSafe.id,
+      ORG_ACTIVE_ACCESS_OPTIONS,
+    );
+    const fallbackOrganization = currentOrganization
+      ? await prisma.organization.findUnique({
+          where: { id: currentOrganization.id },
+          select: {
+            id: true,
+            publicName: true,
+            status: true,
+            stripeAccountId: true,
+            entityType: true,
+            businessName: true,
+            city: true,
+            payoutIban: true,
+            username: true,
+            primaryModule: true,
+            publicWebsite: true,
+          },
+        })
+      : null;
     const organizationModules = fallbackOrganization
       ? await prisma.organizationModuleEntry.findMany({
           where: { organizationId: fallbackOrganization.id, enabled: true },
@@ -72,11 +93,9 @@ async function _GET() {
               businessName: fallbackOrganization.businessName,
               city: fallbackOrganization.city,
               payoutIban: fallbackOrganization.payoutIban,
-              primaryModule:
-                (fallbackOrganization as { primaryModule?: string | null }).primaryModule ??
-                DEFAULT_PRIMARY_MODULE,
+              primaryModule: normalizePrimaryModule(fallbackOrganization.primaryModule ?? null),
               modules: organizationModules.map((module) => module.moduleKey),
-              publicWebsite: (fallbackOrganization as { publicWebsite?: string | null }).publicWebsite ?? null,
+              publicWebsite: fallbackOrganization.publicWebsite ?? null,
             }
           : null,
       },
@@ -181,7 +200,10 @@ async function _POST(req: NextRequest) {
     }
 
     // Procurar organization existente para este user
-    const { organization: currentOrganization, membership } = await getActiveOrganizationForUser(profile.id, ORG_ACTIVE_ACCESS_OPTIONS);
+    const { organization: currentOrganization, membership } = await getActiveOrganizationForUser(
+      profile.id,
+      ORG_ACTIVE_ACCESS_OPTIONS,
+    );
 
     // Se já existe organização ativo e o caller não é OWNER dessa organização, bloquear promoção
     if (currentOrganization) {
@@ -194,7 +216,12 @@ async function _POST(req: NextRequest) {
       }
     }
 
-    let organization = currentOrganization ?? null;
+    const existingOrganization = currentOrganization
+      ? await prisma.organization.findUnique({
+          where: { id: currentOrganization.id },
+        })
+      : null;
+    let organization = existingOrganization ?? null;
 
     const publicNameValue =
       businessName ||
@@ -213,10 +240,7 @@ async function _POST(req: NextRequest) {
 
     const username = validatedUsername.username;
 
-    const primaryFallback =
-      primaryModule ??
-      (organization as { primaryModule?: string | null } | null)?.primaryModule ??
-      DEFAULT_PRIMARY_MODULE;
+    const primaryFallback = primaryModule ?? normalizePrimaryModule(organization?.primaryModule ?? null);
     const modulesToApply = organization
       ? modulesProvided
         ? parsedModules ?? []
@@ -225,39 +249,42 @@ async function _POST(req: NextRequest) {
         ? parsedModules ?? []
         : getDefaultOrganizationModules(primaryFallback);
 
-    organization = await prisma.$transaction(async (tx) => {
-      const group = organization ? null : await tx.organizationGroup.create({ data: {} });
-      const nextOrganization = organization
-        ? await tx.organization.update({
-            where: { id: organization!.id },
-            data: {
-              status: "ACTIVE",
-              publicName: publicNameValue,
-              entityType,
-              businessName,
-              city,
-              payoutIban,
-              username,
-              ...(publicWebsite ? { publicWebsite } : {}),
-              ...(primaryModuleProvided && primaryModule
-                ? { primaryModule }
-                : {}),
-            },
-          })
-        : await tx.organization.create({
-            data: {
-              groupId: group?.id ?? undefined,
-              publicName: publicNameValue,
-              status: "ACTIVE", // self-serve aberto
-              entityType,
-              businessName,
-              city,
-              payoutIban,
-              username,
-              primaryModule: primaryFallback,
-              publicWebsite,
-            },
-          });
+    const nextOrganization = await prisma.$transaction(async (tx) => {
+      let nextOrganization;
+      if (organization) {
+        nextOrganization = await tx.organization.update({
+          where: { id: organization.id },
+          data: {
+            status: "ACTIVE",
+            publicName: publicNameValue,
+            entityType,
+            businessName,
+            city,
+            payoutIban,
+            username,
+            ...(publicWebsite ? { publicWebsite } : {}),
+            ...(primaryModuleProvided && primaryModule
+              ? { primaryModule }
+              : {}),
+          },
+        });
+      } else {
+        const group = await tx.organizationGroup.create({ data: {} });
+        nextOrganization = await tx.organization.create({
+          data: {
+            groupId: group.id,
+            publicName: publicNameValue,
+            status: "ACTIVE", // self-serve aberto
+            entityType,
+            businessName,
+            city,
+            payoutIban,
+            username,
+            primaryModule: primaryFallback,
+            publicWebsite,
+          },
+        });
+      }
 
       await setUsernameForOwner({
         username,
@@ -304,6 +331,7 @@ async function _POST(req: NextRequest) {
 
       return nextOrganization;
     });
+    organization = nextOrganization;
 
     // Garante que o perfil tem role de organization
     const roles = Array.isArray(profile.roles) ? profile.roles : [];
@@ -337,11 +365,9 @@ async function _POST(req: NextRequest) {
           city: organization.city,
           payoutIban: organization.payoutIban,
           username: organization.username,
-          primaryModule:
-            (organization as { primaryModule?: string | null }).primaryModule ??
-            DEFAULT_PRIMARY_MODULE,
+          primaryModule: normalizePrimaryModule(organization.primaryModule ?? null),
           modules: organizationModules,
-          publicWebsite: (organization as { publicWebsite?: string | null }).publicWebsite ?? null,
+          publicWebsite: organization.publicWebsite ?? null,
         },
       },
       { status: 200 },

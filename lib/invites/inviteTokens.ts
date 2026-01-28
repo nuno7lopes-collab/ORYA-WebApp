@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
+import type { Prisma } from "@prisma/client";
 import { normalizeEmail } from "@/lib/utils/email";
 import { getLatestPolicyForEvent } from "@/lib/checkin/accessPolicy";
 
@@ -22,7 +23,10 @@ export function hashInviteToken(token: string) {
   return crypto.createHash("sha256").update(token).digest("hex");
 }
 
-export async function issueInviteToken(input: InviteTokenIssueInput, client = prisma) {
+export async function issueInviteToken(
+  input: InviteTokenIssueInput,
+  client: Prisma.TransactionClient | typeof prisma = prisma,
+) {
   const emailNormalized = normalizeEmail(input.email);
   if (!emailNormalized) {
     throw new Error("INVITE_EMAIL_INVALID");
@@ -91,10 +95,16 @@ export function assertInviteTokenValid(params: {
   return true;
 }
 
-export async function consumeInviteToken(input: InviteTokenConsumeInput, client = prisma) {
+export async function consumeInviteToken(
+  input: InviteTokenConsumeInput,
+  client: Prisma.TransactionClient | typeof prisma = prisma,
+) {
   const now = input.now ?? new Date();
   const tokenHash = hashInviteToken(input.token);
   const tokenRow = await client.inviteToken.findUnique({ where: { tokenHash } });
+  if (!tokenRow) {
+    throw new Error("INVITE_TOKEN_INVALID");
+  }
 
   const ok = assertInviteTokenValid({
     tokenRow,

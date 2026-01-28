@@ -39,6 +39,20 @@ jobs:
       - name: Install
         run: npm ci
 
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: API contract gate
+        run: npm run gate:api-contract
+
+      - name: Parity gate
+        run: |
+          npm run v9:inventory
+          npm run gate:parity
+
       - name: DB gates offline
         run: npm run db:gates:offline
 
@@ -65,3 +79,4 @@ jobs:
           rg_expect_none 'outbox.*create' app/api -S -g '!domain/outbox/**'
           rg_expect_none 'organizationMember\.findFirst|ownerId\s*=' app lib domain tests -S
           rg_expect_none 'if \(!.*can|hasPermission\(|isOwner\(' app/api/organizacao -S
+          rg_expect_none 'TODO|FIXME' app/api lib/http lib/security lib/payments domain/finance app/components/checkout -S

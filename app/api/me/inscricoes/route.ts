@@ -1,4 +1,3 @@
-import { NextResponse } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
@@ -25,6 +24,7 @@ async function _GET() {
         select: {
           id: true,
           payment_mode: true,
+          pairingStatus: true,
           guaranteeStatus: true,
           partnerInvitedAt: true,
           partnerAcceptedAt: true,

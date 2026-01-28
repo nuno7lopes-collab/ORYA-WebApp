@@ -39,7 +39,7 @@ export default async function OrganizationChatPage() {
   const enabledModules = new Set(
     modulesRows
       .map((row) => row.moduleKey)
-      .filter((module): module is string => typeof module === "string")
+      .filter((module) => typeof module === "string")
       .map((module) => module.trim().toUpperCase())
       .filter((module) => module.length > 0),
   );

@@ -133,7 +133,39 @@ function isAllowedAdminIp(ip: string, hostname: string) {
   return false;
 }
 
+function resolveRequestIds(req: NextRequest) {
+  const requestId =
+    req.headers.get("x-orya-request-id") ??
+    req.headers.get("x-request-id") ??
+    crypto.randomUUID();
+  const correlationId =
+    req.headers.get("x-orya-correlation-id") ??
+    req.headers.get("x-correlation-id") ??
+    requestId;
+  return { requestId, correlationId };
+}
+
+function buildRequestHeaders(req: NextRequest, requestId: string, correlationId: string) {
+  const headers = new Headers(req.headers);
+  headers.set("x-orya-request-id", requestId);
+  headers.set("x-orya-correlation-id", correlationId);
+  headers.set("x-request-id", requestId);
+  headers.set("x-correlation-id", correlationId);
+  return headers;
+}
+
+function attachResponseHeaders(res: NextResponse, requestId: string, correlationId: string) {
+  res.headers.set("x-orya-request-id", requestId);
+  res.headers.set("x-orya-correlation-id", correlationId);
+  res.headers.set("x-request-id", requestId);
+  res.headers.set("x-correlation-id", correlationId);
+  return res;
+}
+
 export async function middleware(req: NextRequest) {
+  const { requestId, correlationId } = resolveRequestIds(req);
+  const requestHeaders = buildRequestHeaders(req, requestId, correlationId);
+
   const hostname = getHostname(req);
   const adminHost =
     isAdminHost(hostname) ||
@@ -157,7 +189,7 @@ export async function middleware(req: NextRequest) {
     const redirectHost = shouldRedirectCanonical ? CANONICAL_HOST : hostname;
     const redirectProtocol = shouldForceHttps ? "https" : CANONICAL_PROTOCOL || "https";
     const redirectUrl = buildRedirectUrl(req, redirectProtocol, redirectHost);
-    return NextResponse.redirect(redirectUrl, 301);
+    return attachResponseHeaders(NextResponse.redirect(redirectUrl, 301), requestId, correlationId);
   }
 
   const url = req.nextUrl.clone();
@@ -173,18 +205,20 @@ export async function middleware(req: NextRequest) {
 
   const enforceAdminHost = IS_PROD || ADMIN_HOSTS.length > 0;
   if (isAdminRequest && !adminHost && enforceAdminHost) {
-    return new NextResponse(null, { status: 404 });
+    return attachResponseHeaders(new NextResponse(null, { status: 404 }), requestId, correlationId);
   }
   if (isAdminRequest && adminHost && !isAllowedAdminIp(getClientIp(req), hostname)) {
-    return new NextResponse(null, { status: 403 });
+    return attachResponseHeaders(new NextResponse(null, { status: 403 }), requestId, correlationId);
   }
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
   const res = shouldRewriteRoot
-    ? NextResponse.rewrite(url)
-    : NextResponse.next({ request: { headers: req.headers } });
+    ? NextResponse.rewrite(url, { request: { headers: requestHeaders } })
+    : NextResponse.next({ request: { headers: requestHeaders } });
+
+  attachResponseHeaders(res, requestId, correlationId);
 
   const sensitivePath = isSensitivePath(pathname);
   if (sensitivePath) {

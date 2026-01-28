@@ -49,7 +49,10 @@ async function _POST(req: NextRequest) {
     const occurredAt = parseDate(payload?.occurredAt) ?? new Date();
     const amountCents = typeof payload?.amountCents === "number" ? payload.amountCents : null;
     const currency = typeof payload?.currency === "string" ? payload.currency.toUpperCase() : "EUR";
-    const metadata = payload?.metadata && typeof payload.metadata === "object" ? payload.metadata : {};
+    const metadata =
+      payload?.metadata && typeof payload.metadata === "object" && !Array.isArray(payload.metadata)
+        ? (payload.metadata as Record<string, unknown>)
+        : {};
 
     if (!organizationId || !userId || !type || !sourceType) {
       return jsonWrap({ ok: false, error: "INVALID_PAYLOAD" }, { status: 400 });

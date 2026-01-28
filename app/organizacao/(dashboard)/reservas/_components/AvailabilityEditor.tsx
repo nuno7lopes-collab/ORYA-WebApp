@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import useSWR from "swr";
 import { cn } from "@/lib/utils";
 import { normalizeIntervals } from "@/lib/reservas/availability";
@@ -331,7 +331,7 @@ export default function AvailabilityEditor({
     });
   };
 
-  const startDragCreate = (dayIdx: number, event: PointerEvent<HTMLDivElement>) => {
+  const startDragCreate = (dayIdx: number, event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
     event.preventDefault();
     const rect = event.currentTarget.getBoundingClientRect();
@@ -363,7 +363,7 @@ export default function AvailabilityEditor({
     dayIdx: number,
     index: number,
     mode: "resize-start" | "resize-end",
-    event: PointerEvent<HTMLDivElement>,
+    event: ReactPointerEvent<HTMLDivElement>,
   ) => {
     event.preventDefault();
     event.stopPropagation();
@@ -388,7 +388,7 @@ export default function AvailabilityEditor({
   const startDragMove = (
     dayIdx: number,
     index: number,
-    event: PointerEvent<HTMLDivElement>,
+    event: ReactPointerEvent<HTMLDivElement>,
   ) => {
     event.preventDefault();
     event.stopPropagation();
@@ -413,7 +413,7 @@ export default function AvailabilityEditor({
 
   useEffect(() => {
     if (!isDragging) return;
-    const handleMove = (event: PointerEvent) => {
+    const handleMove = (event: globalThis.PointerEvent) => {
       const state = dragStateRef.current;
       if (!state) return;
       const minute = getMinuteFromPointer(event.clientY, state.rectTop, state.rectHeight);

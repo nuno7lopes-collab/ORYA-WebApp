@@ -4,7 +4,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { Gender, PadelEligibilityType } from "@prisma/client";
+import {
+  Gender,
+  PadelEligibilityType,
+  PadelPairingSlotRole,
+  PadelPairingSlotStatus,
+  Prisma,
+} from "@prisma/client";
 import { validateEligibility } from "@/domain/padelEligibility";
 import { validatePadelCategoryGender } from "@/domain/padelCategoryGender";
 import { getPadelOnboardingMissing, isPadelOnboardingComplete } from "@/domain/padelOnboarding";
@@ -43,7 +49,19 @@ async function _GET(req: NextRequest) {
       invitedContact: { equals: value, mode: "insensitive" as const },
     }));
 
-    const pairings = await prisma.padelPairing.findMany({
+    type PairingWithSlots = Prisma.PadelPairingGetPayload<{
+      include: {
+        slots: {
+          include: {
+            ticket: { select: { id: true; status: true; stripePaymentIntentId: true } };
+          };
+        };
+        event: { select: { id: true; title: true; slug: true; organizationId: true; templateType: true } };
+        category: { select: { label: true } };
+      };
+    }>;
+
+    const pairings: PairingWithSlots[] = await prisma.padelPairing.findMany({
       where: {
         ...(eventId ? { eventId } : {}),
         OR: [
@@ -53,7 +71,7 @@ async function _GET(req: NextRequest) {
             slots: {
               some: {
                 invitedUserId: user.id,
-                slotStatus: "PENDING",
+                slotStatus: PadelPairingSlotStatus.PENDING,
                 profileId: null,
               },
             },
@@ -64,7 +82,7 @@ async function _GET(req: NextRequest) {
                   slots: {
                     some: {
                       OR: invitedContactFilters,
-                      slotStatus: "PENDING",
+                      slotStatus: PadelPairingSlotStatus.PENDING,
                       profileId: null,
                     },
                   },
@@ -130,7 +148,9 @@ async function _GET(req: NextRequest) {
         ...slotRest,
         slotRole: slot_role,
       }));
-      const partnerSlot = slots.find((s) => s.slot_role === "PARTNER" && s.slotStatus === "PENDING");
+      const partnerSlot = slots.find(
+        (s) => s.slot_role === PadelPairingSlotRole.PARTNER && s.slotStatus === PadelPairingSlotStatus.PENDING,
+      );
       const isInviteTarget =
         Boolean(
           partnerSlot &&

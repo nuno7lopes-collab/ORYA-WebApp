@@ -32,12 +32,12 @@ type ReportsResponse =
 
 export default function CrmRelatoriosPage() {
   const { data, isLoading } = useSWR<ReportsResponse>("/api/organizacao/crm/relatorios", fetcher);
-  const ok = Boolean(data && "ok" in data && data.ok);
-  const windowDays = ok ? data.windowDays : 30;
-  const totals = ok ? data.totals : { interactions: 0, amountCents: 0 };
-  const customers = ok ? data.customers : { total: 0, new: 0 };
-  const campaignsSent = ok ? data.campaignsSent : 0;
-  const categories = ok ? data.categories : [];
+  const okData = data && data.ok ? data : null;
+  const windowDays = okData?.windowDays ?? 30;
+  const totals = okData?.totals ?? { interactions: 0, amountCents: 0 };
+  const customers = okData?.customers ?? { total: 0, new: 0 };
+  const campaignsSent = okData?.campaignsSent ?? 0;
+  const categories = okData?.categories ?? [];
 
   return (
     <div className="space-y-6">

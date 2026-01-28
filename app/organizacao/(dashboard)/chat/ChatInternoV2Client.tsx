@@ -8,6 +8,7 @@ import {
   useState,
 } from "react";
 import { useSearchParams } from "next/navigation";
+import Image from "next/image";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { supabaseBrowser } from "@/lib/supabaseBrowser";
 import { useUser } from "@/app/hooks/useUser";
@@ -466,9 +467,9 @@ export default function ChatInternoV2Client() {
         sender: user
           ? {
               id: user.id,
-              fullName: user.user_metadata?.full_name ?? null,
-              username: user.user_metadata?.username ?? null,
-              avatarUrl: user.user_metadata?.avatar_url ?? null,
+              fullName: profile?.fullName ?? null,
+              username: profile?.username ?? null,
+              avatarUrl: profile?.avatarUrl ?? null,
             }
           : null,
         attachments: [],
@@ -1368,7 +1369,8 @@ export default function ChatInternoV2Client() {
     const next = messagesVirtualizer.getTotalSize();
     const delta = next - prev;
     if (delta !== 0) {
-      messagesVirtualizer.scrollToOffset(messagesVirtualizer.getScrollOffset() + delta);
+      const currentOffset = listRef.current?.scrollTop ?? 0;
+      messagesVirtualizer.scrollToOffset(currentOffset + delta);
     }
     prependAnchorRef.current = null;
   }, [displayMessages, messagesVirtualizer]);
@@ -2325,7 +2327,14 @@ export default function ChatInternoV2Client() {
                                     className="rounded-xl border border-white/10 bg-black/20 p-2 text-[11px] text-white/70"
                                   >
                                     {att.type === "IMAGE" ? (
-                                      <img src={att.url} alt="Anexo" className="h-28 w-full rounded-lg object-cover" />
+                                      <Image
+                                        src={att.url}
+                                        alt="Anexo"
+                                        width={448}
+                                        height={112}
+                                        sizes="(max-width: 640px) 100vw, 50vw"
+                                        className="h-28 w-full rounded-lg object-cover"
+                                      />
                                     ) : (
                                       <a
                                         href={att.url}

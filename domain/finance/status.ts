@@ -18,7 +18,6 @@ const REFUND_LEDGER_TYPES = new Set<LedgerEntryType>([
 const DISPUTE_LEDGER_TYPES = new Set<LedgerEntryType>([
   LedgerEntryType.CHARGEBACK_GROSS,
   LedgerEntryType.CHARGEBACK_PLATFORM_FEE_REVERSAL,
-  LedgerEntryType.CHARGEBACK_PROCESSOR_FEES_REVERSAL,
   LedgerEntryType.DISPUTE_FEE,
   LedgerEntryType.DISPUTE_FEE_REVERSAL,
 ]);

@@ -5,37 +5,28 @@ export type SourceRef = {
   sourceId: string;
 };
 
-export type FinanceSourceType =
-  | SourceType.TICKET_ORDER
-  | SourceType.BOOKING
-  | SourceType.PADEL_REGISTRATION
-  | SourceType.STORE_ORDER
-  | SourceType.SUBSCRIPTION
-  | SourceType.MEMBERSHIP;
-
-export type AgendaSourceType =
-  | SourceType.EVENT
-  | SourceType.TOURNAMENT
-  | SourceType.MATCH
-  | SourceType.SOFT_BLOCK
-  | SourceType.HARD_BLOCK;
-
-export const FINANCE_SOURCE_TYPE_ALLOWLIST = new Set<SourceType>([
+const FINANCE_SOURCE_TYPES = [
   SourceType.TICKET_ORDER,
   SourceType.BOOKING,
   SourceType.PADEL_REGISTRATION,
   SourceType.STORE_ORDER,
   SourceType.SUBSCRIPTION,
   SourceType.MEMBERSHIP,
-]);
+] as const;
 
-export const AGENDA_SOURCE_TYPE_ALLOWLIST = new Set<SourceType>([
+const AGENDA_SOURCE_TYPES = [
   SourceType.EVENT,
   SourceType.TOURNAMENT,
   SourceType.MATCH,
   SourceType.SOFT_BLOCK,
   SourceType.HARD_BLOCK,
-]);
+] as const;
+
+export type FinanceSourceType = (typeof FINANCE_SOURCE_TYPES)[number];
+export type AgendaSourceType = (typeof AGENDA_SOURCE_TYPES)[number];
+
+export const FINANCE_SOURCE_TYPE_ALLOWLIST = new Set<SourceType>(FINANCE_SOURCE_TYPES);
+export const AGENDA_SOURCE_TYPE_ALLOWLIST = new Set<SourceType>(AGENDA_SOURCE_TYPES);
 
 const AUX_SOURCE_TYPE_ALLOWLIST = new Set<SourceType>([
   SourceType.LOYALTY_TX,

@@ -10,6 +10,8 @@ import {
 } from "@prisma/client";
 import { getLatestPolicyVersionForEvent } from "@/lib/checkin/accessPolicy";
 
+type DbClient = Prisma.TransactionClient | typeof prisma;
+
 export type FulfillPaymentInput = {
   paymentId: string;
   causationId: string;
@@ -42,7 +44,7 @@ function parseIntId(value: string | number | null | undefined): number | null {
 
 async function resolveEventForTicketTypes(
   ticketTypeIds: Array<string | number>,
-  tx: typeof prisma,
+  tx: DbClient,
 ) {
   const ids = ticketTypeIds.map((id) => parseIntId(id)).filter((id): id is number => id != null);
   if (ids.length === 0) {
@@ -73,7 +75,7 @@ function allocatePlatformFeePerUnit(params: {
 
 async function issueTicketOrderEntitlements(
   payment: { id: string; sourceId: string; customerIdentityId: string | null; pricingSnapshotJson: any },
-  tx: typeof prisma,
+  tx: DbClient,
 ) {
   const order = await tx.ticketOrder.findUnique({
     where: { id: payment.sourceId },
@@ -185,7 +187,7 @@ async function issueTicketOrderEntitlements(
 
 async function issuePadelRegistrationEntitlements(
   payment: { id: string; sourceId: string; customerIdentityId: string | null; pricingSnapshotJson: any },
-  tx: typeof prisma,
+  tx: DbClient,
 ) {
   const registration = await tx.padelRegistration.findUnique({
     where: { id: payment.sourceId },

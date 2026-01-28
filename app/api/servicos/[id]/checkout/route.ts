@@ -112,7 +112,7 @@ async function _POST(
         actorUserId: user.id,
         data: { status: "CANCELLED_BY_CLIENT" },
       });
-      return fail("RESERVA_EXPIRADA", "Reserva expirada.", 410);
+      return fail("RESERVA_EXPIRADA", "Reserva expirada.", 409);
     }
 
     const allowedPaymentMethods = paymentMethod === "card" ? (["card"] as const) : (["mb_way"] as const);

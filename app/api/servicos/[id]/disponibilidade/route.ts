@@ -163,7 +163,7 @@ async function _GET(
     if (!assignmentConfig.isCourtService && partySize) {
       return jsonWrap(getResourceModeBlockedPayload(), { status: 409 });
     }
-    let scopeType: AvailabilityScopeType = assignmentMode === "RESOURCE" ? "RESOURCE" : "PROFESSIONAL";
+    const scopeType: AvailabilityScopeType = assignmentMode === "RESOURCE" ? "RESOURCE" : "PROFESSIONAL";
     let scopeIds: number[] = [];
 
     if (assignmentMode === "RESOURCE") {

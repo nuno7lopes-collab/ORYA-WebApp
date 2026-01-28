@@ -163,7 +163,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     pairing.deadlineAt.getTime() < Date.now() &&
     pendingSlot.paymentStatus !== PadelPairingPaymentStatus.PAID
   ) {
-    return jsonWrap({ ok: false, error: "PAIRING_EXPIRED" }, { status: 410 });
+    return jsonWrap({ ok: false, error: "PAIRING_EXPIRED" }, { status: 409 });
   }
 
   if (pairing.payment_mode === PadelPaymentMode.SPLIT && pendingSlot.paymentStatus !== PadelPairingPaymentStatus.PAID) {
@@ -273,7 +273,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
 
   try {
     const playerProfileId = await ensurePlayerProfile({ organizationId: pairing.organizationId, userId: user.id });
-    const { pairing: updated, shouldEnsureEntries } = await prisma.$transaction(async (tx) => {
+    const { pairing: updated, shouldEnsureEntries, nextRegistrationStatus } = await prisma.$transaction(async (tx) => {
       if (pendingSlot.ticketId) {
         const ticket = await tx.ticket.findUnique({ where: { id: pendingSlot.ticketId } });
         if (!ticket) throw new Error("TICKET_NOT_FOUND");
@@ -342,9 +342,9 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
           data: { pairingStatus: "COMPLETE" },
           include: { slots: true },
         });
-        return { pairing: completed, shouldEnsureEntries: true };
+        return { pairing: completed, shouldEnsureEntries: true, nextRegistrationStatus };
       }
-      return { pairing: updatedPairing, shouldEnsureEntries: allFilled && allPaid };
+      return { pairing: updatedPairing, shouldEnsureEntries: allFilled && allPaid, nextRegistrationStatus };
     });
 
     if (shouldEnsureEntries) {

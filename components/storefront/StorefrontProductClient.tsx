@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 
 type ProductImage = {
   url: string;
@@ -235,12 +236,14 @@ export default function StorefrontProductClient({
   return (
     <div className="grid gap-8 lg:grid-cols-[minmax(0,540px),minmax(0,1fr)] lg:items-start">
       <div className="space-y-4">
-        <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-black/40">
+        <div className="relative aspect-square overflow-hidden rounded-3xl border border-white/10 bg-black/40">
           {product.images.length ? (
-            <img
+            <Image
               src={product.images[selectedImage]?.url}
               alt={product.images[selectedImage]?.altText || product.name}
-              className="aspect-square w-full object-cover"
+              fill
+              sizes="(max-width: 1024px) 100vw, 540px"
+              className="object-cover"
             />
           ) : (
             <div className="flex aspect-square items-center justify-center text-white/50">Sem imagem</div>
@@ -259,11 +262,17 @@ export default function StorefrontProductClient({
                 type="button"
                 key={image.url}
                 onClick={() => setSelectedImage(index)}
-                className={`h-16 w-16 overflow-hidden rounded-xl border ${
+                className={`relative h-16 w-16 overflow-hidden rounded-xl border ${
                   selectedImage === index ? "border-white/60" : "border-white/10"
                 }`}
               >
-                <img src={image.url} alt={image.altText || product.name} className="h-full w-full object-cover" />
+                <Image
+                  src={image.url}
+                  alt={image.altText || product.name}
+                  fill
+                  sizes="64px"
+                  className="object-cover"
+                />
               </button>
             ))}
           </div>

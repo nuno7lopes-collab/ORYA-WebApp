@@ -160,7 +160,6 @@ async function _POST(req: NextRequest) {
         select: { resultCode: true },
       });
       if (existing) {
-        const sourceType = ent.sourceType ?? null;
         await appendEventLog(
           {
             organizationId: orgId,
@@ -173,8 +172,6 @@ async function _POST(req: NextRequest) {
               resultCode: existing.resultCode,
             },
             actorUserId: userId,
-            sourceType,
-            sourceId: sourceType ? ent.sourceId ?? null : null,
             correlationId: ent.purchaseId ?? null,
           },
           tx,
@@ -208,8 +205,6 @@ async function _POST(req: NextRequest) {
             resultCode: CheckinResultCode.OK,
           },
           actorUserId: userId,
-          sourceType: ent.sourceType ?? null,
-          sourceId: ent.sourceType ? ent.sourceId ?? null : null,
           correlationId: ent.purchaseId ?? null,
         },
         tx,

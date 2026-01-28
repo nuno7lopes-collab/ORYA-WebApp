@@ -1,4 +1,4 @@
-import { Prisma, SourceType } from "@prisma/client";
+import { PadelMatch, Prisma, SourceType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { appendEventLog } from "@/domain/eventLog/append";
 import { recordOutboxEvent } from "@/domain/outbox/producer";
@@ -39,10 +39,11 @@ async function recordMatchEvent(params: {
   correlationId?: string | null;
   payload: Record<string, unknown>;
 }) {
+  const payload = params.payload as Prisma.InputJsonValue;
   const outbox = await recordOutboxEvent(
     {
       eventType: params.outboxEventType,
-      payload: params.payload,
+      payload,
     },
     params.tx,
   );
@@ -57,7 +58,7 @@ async function recordMatchEvent(params: {
       sourceType: SourceType.MATCH,
       sourceId: String(params.payload.matchId ?? ""),
       correlationId: params.correlationId ?? outbox.eventId,
-      payload: params.payload,
+      payload,
     },
     params.tx,
   );
@@ -72,16 +73,16 @@ export async function createPadelMatch(
       select?: Prisma.PadelMatchSelect;
       include?: Prisma.PadelMatchInclude;
     },
-): Promise<MatchCommandResult<unknown>> {
+): Promise<MatchCommandResult<PadelMatch>> {
   const eventType = input.eventType ?? DEFAULT_CREATED_EVENT;
   const outboxEventType = input.outboxEventType ?? eventType;
 
   return withTx(input.tx, async (tx) => {
-    const created = await tx.padelMatch.create({
+    const created = (await tx.padelMatch.create({
       data: input.data,
       ...(input.select ? { select: input.select } : {}),
       ...(input.include ? { include: input.include } : {}),
-    });
+    })) as PadelMatch;
 
     const outboxEventId = await recordMatchEvent({
       tx,
@@ -111,17 +112,17 @@ export async function updatePadelMatch(
       select?: Prisma.PadelMatchSelect;
       include?: Prisma.PadelMatchInclude;
     },
-): Promise<MatchCommandResult<unknown>> {
+): Promise<MatchCommandResult<PadelMatch>> {
   const eventType = input.eventType ?? DEFAULT_UPDATED_EVENT;
   const outboxEventType = input.outboxEventType ?? eventType;
 
   return withTx(input.tx, async (tx) => {
-    const updated = await tx.padelMatch.update({
+    const updated = (await tx.padelMatch.update({
       where: { id: input.matchId },
       data: input.data,
       ...(input.select ? { select: input.select } : {}),
       ...(input.include ? { include: input.include } : {}),
-    });
+    })) as PadelMatch;
 
     const outboxEventId = await recordMatchEvent({
       tx,

@@ -2,7 +2,7 @@ export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
-import { OrganizationMemberRole } from "@prisma/client";
+import { OrganizationMemberRole, Prisma, SoftBlockScope } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
@@ -109,8 +109,8 @@ async function loadCourtCandidates(params: {
         startsAt: { lt: endsAt },
         endsAt: { gt: startsAt },
         OR: [
-          { scopeType: "ORGANIZATION" },
-          ...(courtId ? [{ scopeType: "COURT", scopeId: courtId }] : []),
+          { scopeType: SoftBlockScope.ORGANIZATION },
+          ...(courtId ? [{ scopeType: SoftBlockScope.COURT, scopeId: courtId }] : []),
         ],
       },
       select: { id: true, startsAt: true, endsAt: true, scopeType: true, scopeId: true },
@@ -1069,7 +1069,7 @@ async function _PATCH(req: NextRequest) {
           ...(plannedStartAt ? { plannedStartAt } : {}),
           ...(desiredEnd ? { plannedEndAt: desiredEnd, plannedDurationMinutes: computedDurationMinutes } : {}),
         },
-        data: shouldMarkRescheduled ? { score: nextScore } : undefined,
+        data: shouldMarkRescheduled ? { score: nextScore as Prisma.InputJsonValue } : undefined,
       });
       if (!res.ok) {
         const status = res.error === "MATCH_NOT_FOUND" ? 404 : 400;

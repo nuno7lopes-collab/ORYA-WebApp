@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { computeHoldUntil } from "@/lib/payments/payoutConfig";
-import { PendingPayoutStatus } from "@prisma/client";
+import { FeeMode, PendingPayoutStatus } from "@prisma/client";
 
 export type PendingPayoutMetadata = {
   sourceType: string;
@@ -11,7 +11,7 @@ export type PendingPayoutMetadata = {
   currency: string;
   grossAmountCents: number;
   platformFeeCents: number;
-  feeMode: string;
+  feeMode: FeeMode;
   amountCents: number;
   paidAt: Date;
 };
@@ -40,12 +40,19 @@ export function parsePendingPayoutMetadata(
   const grossAmountCents = parseRequiredNumber(meta.grossAmountCents);
   const platformFeeCents = parseRequiredNumber(meta.platformFeeCents);
   const amountCents = parseRequiredNumber(meta.payoutAmountCents);
-  const feeMode = parseRequiredString(meta.feeMode ?? meta.platformFeeMode);
-  const allowedFeeModes = new Set(["INCLUDED", "ADDED", "ON_TOP"]);
+  const feeModeRaw = parseRequiredString(meta.feeMode ?? meta.platformFeeMode).toUpperCase();
+  const feeMode =
+    feeModeRaw === "ON_TOP"
+      ? FeeMode.ON_TOP
+      : feeModeRaw === "ADDED"
+        ? FeeMode.ADDED
+        : feeModeRaw === "INCLUDED"
+          ? FeeMode.INCLUDED
+          : null;
 
   if (!recipientConnectAccountId || !sourceType || !sourceId || !currency) return null;
   if (grossAmountCents === null || platformFeeCents === null || amountCents === null) return null;
-  if (!allowedFeeModes.has(feeMode)) return null;
+  if (!feeMode) return null;
 
   return {
     sourceType,

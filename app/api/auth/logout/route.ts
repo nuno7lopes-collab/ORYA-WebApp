@@ -19,7 +19,7 @@ async function _POST(req: NextRequest) {
       return jsonWrap({ success: false, error: error.message }, { status: 500 });
     }
 
-    const res = jsonWrap({ success: true });
+    const res = jsonWrap({ success: true }) as NextResponse;
 
     // Garantir limpeza de todos os cookies sb-*
     try {

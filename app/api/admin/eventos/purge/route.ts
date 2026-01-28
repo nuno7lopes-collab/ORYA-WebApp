@@ -9,7 +9,7 @@ import { recordSearchIndexOutbox } from "@/domain/searchIndex/outbox";
 import { paymentEventRepo, saleLineRepo, saleSummaryRepo } from "@/domain/finance/readModelConsumer";
 import { deleteHardBlocksByEvent } from "@/domain/hardBlocks/commands";
 import { deleteMatchSlotsByEvent } from "@/domain/padel/matchSlots/commands";
-import { SourceType } from "@prisma/client";
+import { SourceType, type Prisma } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 type PurgePayload = {
@@ -36,6 +36,10 @@ async function _POST(req: Request) {
     if (!event) {
       return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
     }
+    if (event.organizationId == null) {
+      return jsonWrap({ ok: false, error: "ORG_REQUIRED" }, { status: 409 });
+    }
+    const organizationId = event.organizationId;
 
     const [tickets, pairings, promoCodes, saleSummaries, tournaments, entitlements] = await Promise.all([
       prisma.ticket.findMany({ where: { eventId }, select: { id: true } }),
@@ -52,8 +56,12 @@ async function _POST(req: Request) {
     const ticketIds = tickets.map((t) => t.id);
     const pairingIds = pairings.map((p) => p.id);
     const promoCodeIds = promoCodes.map((p) => p.id);
-    const salePaymentIntentIds = saleSummaries.map((s) => s.paymentIntentId).filter(Boolean);
-    const salePurchaseIds = saleSummaries.map((s) => s.purchaseId).filter(Boolean);
+    const salePaymentIntentIds = saleSummaries
+      .map((s) => s.paymentIntentId)
+      .filter((id): id is string => Boolean(id));
+    const salePurchaseIds = saleSummaries
+      .map((s) => s.purchaseId)
+      .filter((id): id is string => Boolean(id));
     const tournamentIds = tournaments.map((t) => t.id);
     const entitlementIds = entitlements.map((e) => e.id);
 
@@ -80,7 +88,7 @@ async function _POST(req: Request) {
       await appendEventLog(
         {
           eventId: eventLogId,
-          organizationId: event.organizationId ?? null,
+          organizationId,
           eventType: "event.cancelled",
           idempotencyKey: `event.cancelled:${eventId}:${eventLogId}`,
           actorUserId: admin.userId ?? null,
@@ -91,7 +99,7 @@ async function _POST(req: Request) {
             eventId,
             title: event.title,
             status: "CANCELLED",
-            organizationId: event.organizationId ?? null,
+            organizationId,
           },
         },
         tx,
@@ -112,7 +120,7 @@ async function _POST(req: Request) {
       await recordSearchIndexOutbox(
         {
           eventLogId,
-          organizationId: event.organizationId ?? null,
+          organizationId,
           sourceType: SourceType.EVENT,
           sourceId: String(eventId),
           correlationId: String(eventId),
@@ -129,7 +137,7 @@ async function _POST(req: Request) {
         data: { pairingId: null },
       });
 
-      const notificationOr = [{ eventId }];
+      const notificationOr: Prisma.NotificationWhereInput[] = [{ eventId }];
       if (ticketIds.length) {
         notificationOr.push({ ticketId: { in: ticketIds } });
       }
@@ -145,7 +153,7 @@ async function _POST(req: Request) {
         await tx.padelPairingSlot.deleteMany({ where: { pairingId: { in: pairingIds } } });
       }
       const matchDeleteRes = await deleteMatchSlotsByEvent({
-        organizationId: event.organizationId,
+        organizationId,
         eventId,
         actorUserId: admin.userId ?? null,
         correlationId: String(eventId),
@@ -172,11 +180,8 @@ async function _POST(req: Request) {
       }
 
       await tx.padelAvailability.deleteMany({ where: { eventId } });
-      if (!Number.isFinite(event.organizationId)) {
-        throw new Error("EVENT_ORG_MISSING");
-      }
       const hardBlocksRes = await deleteHardBlocksByEvent({
-        organizationId: event.organizationId,
+        organizationId,
         eventId,
         actorUserId: admin.userId ?? null,
         correlationId: String(eventId),
@@ -207,7 +212,7 @@ async function _POST(req: Request) {
       await paymentEventRepo(tx).deleteMany({ where: { eventId } });
 
       if (salePaymentIntentIds.length || salePurchaseIds.length) {
-        const operationOr = [{ eventId }];
+        const operationOr: Prisma.OperationWhereInput[] = [{ eventId }];
         if (salePaymentIntentIds.length) {
           operationOr.push({ paymentIntentId: { in: salePaymentIntentIds } });
         }
@@ -218,9 +223,6 @@ async function _POST(req: Request) {
         if (salePaymentIntentIds.length) {
           await tx.pendingPayout.deleteMany({
             where: { paymentIntentId: { in: salePaymentIntentIds } },
-          });
-          await tx.transaction.deleteMany({
-            where: { stripePaymentIntentId: { in: salePaymentIntentIds } },
           });
         }
       } else {

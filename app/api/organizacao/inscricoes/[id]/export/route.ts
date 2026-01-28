@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth/requireUser";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
-import { OrganizationFormSubmissionStatus } from "@prisma/client";
+import { OrganizationFormSubmissionStatus, Prisma } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const SUBMISSION_STATUS_LABEL: Record<OrganizationFormSubmissionStatus, string> = {
@@ -15,6 +15,10 @@ const SUBMISSION_STATUS_LABEL: Record<OrganizationFormSubmissionStatus, string> 
   INVITED: "Convocado",
   REJECTED: "Recusada",
 };
+
+type SubmissionWithUser = Prisma.OrganizationFormSubmissionGetPayload<{
+  include: { user: { select: { id: true; fullName: true; username: true; avatarUrl: true } } };
+}>;
 
 async function ensureInscricoesEnabled(organization: {
   id: number;
@@ -89,7 +93,7 @@ async function _GET(req: NextRequest, context: { params: Promise<{ id: string }>
     let cursor: number | null = null;
 
     while (true) {
-      const submissions = await prisma.organizationFormSubmission.findMany({
+      const submissions: SubmissionWithUser[] = await prisma.organizationFormSubmission.findMany({
         where: { formId },
         orderBy: { id: "desc" },
         take: batchSize,

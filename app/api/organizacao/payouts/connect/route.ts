@@ -12,7 +12,7 @@ import {
 } from "@/domain/finance/gateway/stripeGateway";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
-import { isOrgOwner } from "@/lib/organizationPermissions";
+import { ensureOrgOwner } from "@/lib/organizationPermissions";
 import { getAppBaseUrl } from "@/lib/appBaseUrl";
 
 async function _POST(req: NextRequest) {
@@ -45,9 +45,11 @@ async function _POST(req: NextRequest) {
     const { organization, membership } = await getActiveOrganizationForUser(profile.id, {
       organizationId: organizationId ?? undefined,
       roles: ["OWNER"],
+      includeOrganizationFields: "settings",
     });
 
-    if (!organization || !membership || !hasOrgOwnerAccess(membership.role)) {
+    const ownerCheck = membership ? ensureOrgOwner(membership.role) : { ok: false as const };
+    if (!organization || !membership || !ownerCheck.ok) {
       return jsonWrap(
         { ok: false, error: "APENAS_OWNER" },
         { status: 403 },

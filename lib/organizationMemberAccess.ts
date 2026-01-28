@@ -18,9 +18,7 @@ import type {
 type PrismaClientLike = Prisma.TransactionClient | typeof prisma;
 
 function getPermissionModel(client: PrismaClientLike) {
-  return (client as {
-    organizationMemberPermission?: { findMany?: Function };
-  }).organizationMemberPermission;
+  return client.organizationMemberPermission;
 }
 
 export async function getMemberPermissionOverrides(
@@ -30,7 +28,6 @@ export async function getMemberPermissionOverrides(
 ): Promise<MemberPermissionOverride[]> {
   const db = client ?? prisma;
   const permissionModel = getPermissionModel(db);
-  if (!permissionModel?.findMany) return [];
 
   const rows = await permissionModel.findMany({
     where: { organizationId, userId, scopeType: null, scopeId: null },

@@ -456,7 +456,7 @@ export default async function PadelProfilePage({ params }: PageProps) {
     // ignore
   }
 
-  let padelStats: PadelStats = {
+  const padelStats: PadelStats = {
     matches: 0,
     wins: 0,
     losses: 0,

@@ -8,7 +8,13 @@ import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { getStripeBaseFees } from "@/lib/platformSettings";
 import { ACTIVE_PAIRING_REGISTRATION_WHERE } from "@/domain/padelRegistration";
 import { resolvePaymentStatusMap } from "@/domain/finance/resolvePaymentStatus";
-import { OrganizationModule, PendingPayoutStatus, SaleSummaryStatus } from "@prisma/client";
+import {
+  EventTemplateType,
+  OrganizationModule,
+  PendingPayoutStatus,
+  Prisma,
+  SaleSummaryStatus,
+} from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 type Aggregate = {
@@ -32,24 +38,26 @@ async function _GET(req: NextRequest) {
 
     const url = new URL(req.url);
     const templateTypeParam = url.searchParams.get("templateType");
-    const templateType =
-      typeof templateTypeParam === "string" && templateTypeParam.trim()
-        ? templateTypeParam.trim().toUpperCase()
-        : null;
     const excludeTemplateTypeParam = url.searchParams.get("excludeTemplateType");
-    const excludeTemplateType =
-      typeof excludeTemplateTypeParam === "string" && excludeTemplateTypeParam.trim()
-        ? excludeTemplateTypeParam.trim().toUpperCase()
+    const parseTemplateType = (raw: string | null) => {
+      if (!raw) return null;
+      const normalized = raw.trim().toUpperCase();
+      return (Object.values(EventTemplateType) as string[]).includes(normalized)
+        ? (normalized as EventTemplateType)
         : null;
-    const eventTemplateFilter = templateType
+    };
+    const templateType = parseTemplateType(templateTypeParam);
+    const excludeTemplateType = parseTemplateType(excludeTemplateTypeParam);
+    const eventTemplateFilter: Prisma.EventWhereInput = templateType
       ? { templateType }
       : excludeTemplateType
         ? { NOT: { templateType: excludeTemplateType } }
         : {};
-    const isPadelScope = templateType === "PADEL";
+    const isPadelScope = templateType === EventTemplateType.PADEL;
     const organizationId = resolveOrganizationIdFromRequest(req);
     const { organization, membership } = await getActiveOrganizationForUser(user.id, {
       organizationId: organizationId ?? undefined,
+      includeOrganizationFields: "settings",
     });
 
     if (!organization || !membership) {

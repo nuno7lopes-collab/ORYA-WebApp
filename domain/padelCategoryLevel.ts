@@ -37,8 +37,12 @@ export function validatePadelCategoryLevel(
     return { ok: true };
   }
 
-  const enforceValue = (value: string) =>
-    value ? (player === value ? { ok: true } : { ok: false, code: "CATEGORY_LEVEL_MISMATCH" }) : { ok: true };
+  const enforceValue = (value: string): PadelCategoryLevelResult =>
+    value
+      ? player === value
+        ? { ok: true }
+        : { ok: false, code: "CATEGORY_LEVEL_MISMATCH" }
+      : { ok: true };
 
   if (min && max && min === max) return enforceValue(min);
   if (min && !max) return enforceValue(min);

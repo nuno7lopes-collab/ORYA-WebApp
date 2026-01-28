@@ -1,4 +1,4 @@
-import { OrganizationMemberRole, OrganizationRolePack, OrganizationStatus, Prisma } from "@prisma/client";
+import { Organization, OrganizationMemberRole, OrganizationRolePack, OrganizationStatus, Prisma } from "@prisma/client";
 import { cache } from "react";
 import { prisma } from "@/lib/prisma";
 import { resolveOrganizationIdFromCookies } from "@/lib/organizationId";
@@ -12,7 +12,7 @@ type Options = {
   organizationId?: number | null;
   roles?: OrganizationMemberRole[];
   allowFallback?: boolean;
-  allowedStatuses?: OrganizationStatus[];
+  allowedStatuses?: readonly OrganizationStatus[];
   includeOrganizationFields?: "minimal" | "settings" | "full";
   selectOrganization?: Prisma.OrganizationSelect;
   // apenas quando se quer forçar persistência do contexto
@@ -22,15 +22,15 @@ type Options = {
 
 export type OrganizationContextResult = {
   organization:
-    | {
+    | ({
         id: number;
         status: OrganizationStatus;
         groupId: number;
-      }
+      } & Partial<Organization>)
     | null;
   membership:
     | {
-        id: number;
+        id: string;
         organizationId: number;
         userId: string;
         groupId: number;
@@ -136,10 +136,10 @@ export const ORG_ACTIVE_WRITE_OPTIONS = {
 } as const;
 
 export const getActiveOrganizationForUser = cache(
-  async (userId: string, opts: Options = {}) => {
+  async (userId: string, opts: Options = {}): Promise<OrganizationContextResult> => {
   const { roles } = opts;
   const allowFallback = typeof opts.allowFallback === "boolean" ? opts.allowFallback : false;
-  const allowedStatuses = opts.allowedStatuses ?? [OrganizationStatus.ACTIVE];
+  const allowedStatuses = opts.allowedStatuses ? [...opts.allowedStatuses] : [OrganizationStatus.ACTIVE];
   const { select: organizationSelect, kind: organizationSelectKind } = resolveOrganizationSelect(opts);
   const shouldHydrateOrganization = organizationSelectKind !== "minimal";
   const directOrganizationId =

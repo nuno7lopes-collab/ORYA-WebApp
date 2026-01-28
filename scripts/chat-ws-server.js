@@ -1,4 +1,3 @@
-/* eslint-disable no-console */
 // WS Gateway para chat interno (first-party)
 const fs = require("fs");
 const path = require("path");

@@ -2,7 +2,7 @@ export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
-import { OrganizationMemberRole, SourceType } from "@prisma/client";
+import { OrganizationMemberRole, Prisma, SourceType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
@@ -583,26 +583,28 @@ async function _POST(req: NextRequest) {
     let outboxEventId: string | null = null;
     if (!dryRun && scheduledUpdates.length > 0) {
       const outbox = await prisma.$transaction(async (tx) => {
+        const payload = {
+          eventId: event.id,
+          organizationId: organization.id,
+          actorUserId: check.userId,
+          scheduledUpdates: scheduledUpdates.map((update) => ({
+            matchId: update.matchId,
+            courtId: update.courtId,
+            start: update.start.toISOString(),
+            end: update.end.toISOString(),
+            durationMinutes: update.durationMinutes,
+            score: (update.score ?? null) as Prisma.InputJsonValue,
+          })),
+          skipped,
+          matchIds: targetMatchIds ?? null,
+          requestedAt: new Date().toISOString(),
+          requestMeta: getRequestMeta(req),
+        } as Prisma.InputJsonValue;
+
         const outbox = await recordOutboxEvent(
           {
             eventType: "PADEL_AUTO_SCHEDULE_REQUESTED",
-            payload: {
-              eventId: event.id,
-              organizationId: organization.id,
-              actorUserId: check.userId,
-              scheduledUpdates: scheduledUpdates.map((update) => ({
-                matchId: update.matchId,
-                courtId: update.courtId,
-                start: update.start.toISOString(),
-                end: update.end.toISOString(),
-                durationMinutes: update.durationMinutes,
-                score: update.score ?? null,
-              })),
-              skipped,
-              matchIds: targetMatchIds ?? null,
-              requestedAt: new Date().toISOString(),
-              requestMeta: getRequestMeta(req),
-            },
+            payload,
           },
           tx,
         );

@@ -1,5 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import { prisma } from "@/lib/prisma";
 import { isStoreFeatureEnabled } from "@/lib/storeAccess";
 import { computeBundleTotals } from "@/lib/store/bundles";
@@ -390,10 +391,12 @@ export default async function PublicStorePage({ params }: PageProps) {
                                 >
                                   <div className="relative aspect-square w-full overflow-hidden rounded-xl border border-white/10 bg-black/30">
                                     {image ? (
-                                      <img
+                                      <Image
                                         src={image.url}
                                         alt={image.altText || product.name}
-                                        className="h-full w-full object-cover transition group-hover:scale-[1.02]"
+                                        fill
+                                        sizes="(max-width: 640px) 150px, (max-width: 1024px) 180px, 200px"
+                                        className="object-cover transition group-hover:scale-[1.02]"
                                       />
                                     ) : (
                                       <div className="flex h-full w-full items-center justify-center text-xs text-white/40">
@@ -466,10 +469,12 @@ export default async function PublicStorePage({ params }: PageProps) {
                             >
                               <div className="relative aspect-square w-full overflow-hidden rounded-xl border border-white/10 bg-black/30">
                                 {image ? (
-                                  <img
+                                  <Image
                                     src={image.url}
                                     alt={image.altText || product.name}
-                                    className="h-full w-full object-cover transition group-hover:scale-[1.02]"
+                                    fill
+                                    sizes="(max-width: 640px) 150px, (max-width: 1024px) 180px, 200px"
+                                    className="object-cover transition group-hover:scale-[1.02]"
                                   />
                                 ) : (
                                   <div className="flex h-full w-full items-center justify-center text-xs text-white/40">
@@ -531,10 +536,12 @@ export default async function PublicStorePage({ params }: PageProps) {
                           >
                             <div className="relative aspect-square w-full overflow-hidden rounded-xl border border-white/10 bg-black/30">
                               {image ? (
-                                <img
+                                <Image
                                   src={image.url}
                                   alt={image.altText || product.name}
-                                  className="h-full w-full object-cover transition group-hover:scale-[1.02]"
+                                  fill
+                                  sizes="(max-width: 640px) 150px, (max-width: 1024px) 180px, 200px"
+                                  className="object-cover transition group-hover:scale-[1.02]"
                                 />
                               ) : (
                                 <div className="flex h-full w-full items-center justify-center text-xs text-white/40">

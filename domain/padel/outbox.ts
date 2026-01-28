@@ -545,7 +545,7 @@ async function handleMatchUpdated(payload: MatchUpdatedPayload) {
                 winnerPairingId: null,
                 status: "PENDING",
                 score: {},
-                scoreSets: null,
+                scoreSets: Prisma.DbNull,
               },
               ...systemContext,
             });
@@ -558,7 +558,7 @@ async function handleMatchUpdated(payload: MatchUpdatedPayload) {
                 winnerPairingId: null,
                 status: "CANCELLED",
                 score: {},
-                scoreSets: null,
+                scoreSets: Prisma.DbNull,
               },
               ...systemContext,
             });
@@ -568,7 +568,7 @@ async function handleMatchUpdated(payload: MatchUpdatedPayload) {
 
       const isFirstRound = roundOrder.length > 0 && (updated.roundLabel || "") === roundOrder[0];
       const finalRound = roundOrder[roundOrder.length - 1];
-      const isFinal = finalRound && (updated.roundLabel || "") === finalRound;
+      const isFinal = finalRound ? (updated.roundLabel || "") === finalRound : false;
       const isMainBracket = bracketPrefix !== "B ";
       const hasGrandFinal = isDoubleElim && aMatches.some((m) => isGrandFinalLabel(m.roundLabel));
       let shouldNotifyEliminated = false;

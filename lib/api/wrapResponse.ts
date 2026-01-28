@@ -1,41 +1,55 @@
 import { NextResponse } from "next/server";
+import { buildResponseHeaders, getRequestContext, type RequestContext } from "@/lib/http/requestContext";
 
-type EnvelopeSuccess = { ok: true; result: unknown; meta?: Record<string, unknown> };
+type EnvelopeSuccess = {
+  ok: true;
+  data: unknown;
+  result?: unknown;
+  meta?: Record<string, unknown>;
+  requestId?: string;
+  correlationId?: string;
+};
 type EnvelopeError = {
   ok: false;
-  error: {
-    errorCode: string;
-    message: string;
-    retryable?: boolean;
-    nextAction?: string | null;
-    details?: Record<string, unknown>;
-  };
+  errorCode: string;
+  message: string;
+  retryable?: boolean;
+  nextAction?: string | null;
+  details?: Record<string, unknown>;
+  data?: unknown;
+  error?: string;
+  code?: string;
+  requestId?: string;
+  correlationId?: string;
+  errorDetail?: Record<string, unknown>;
 };
 
 type WrapOptions = {
   status?: number;
   headers?: HeadersInit;
+  req?: Request | null;
+  ctx?: RequestContext | null;
 };
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 function isEnvelope(payload: unknown): payload is EnvelopeSuccess | EnvelopeError {
-  if (!payload || typeof payload !== "object") return false;
+  if (!isRecord(payload)) return false;
   const obj = payload as Record<string, unknown>;
   if (typeof obj.ok !== "boolean") return false;
-  if (obj.ok === true) return "result" in obj || "meta" in obj;
+  if (obj.ok === true) return "data" in obj || "result" in obj || "meta" in obj;
   if (obj.ok === false) {
+    if (typeof obj.errorCode === "string" && typeof obj.message === "string") return true;
     const err = obj.error;
-    return (
-      typeof err === "object" &&
-      err !== null &&
-      typeof (err as Record<string, unknown>).errorCode === "string" &&
-      typeof (err as Record<string, unknown>).message === "string"
-    );
+    return isRecord(err) && typeof err.errorCode === "string" && typeof err.message === "string";
   }
   return false;
 }
 
 function isErrorShape(payload: unknown) {
-  if (!payload || typeof payload !== "object") return false;
+  if (!isRecord(payload)) return false;
   const obj = payload as Record<string, unknown>;
   if (typeof obj.success === "boolean" && obj.success === false) return true;
   if (typeof obj.error === "string") return true;
@@ -47,10 +61,31 @@ function isErrorShape(payload: unknown) {
   return false;
 }
 
+function resolveHeaderValue(headers: HeadersInit | undefined, name: string) {
+  if (!headers) return undefined;
+  const resolved = new Headers(headers).get(name);
+  return resolved ?? undefined;
+}
+
+function resolveRequestMeta(payload: Record<string, unknown> | null, headers?: HeadersInit) {
+  const requestId =
+    (payload && typeof payload.requestId === "string" ? payload.requestId : undefined) ??
+    resolveHeaderValue(headers, "x-orya-request-id") ??
+    resolveHeaderValue(headers, "x-request-id");
+  const correlationId =
+    (payload && typeof payload.correlationId === "string" ? payload.correlationId : undefined) ??
+    resolveHeaderValue(headers, "x-orya-correlation-id") ??
+    resolveHeaderValue(headers, "x-correlation-id") ??
+    requestId;
+  return { requestId, correlationId };
+}
+
 function extractExtraDetails(payload: Record<string, unknown>, base?: Record<string, unknown>) {
   const {
     ok: _ok,
     success: _success,
+    requestId: _requestId,
+    correlationId: _correlationId,
     error: _error,
     errorCode: _errorCode,
     code: _code,
@@ -58,6 +93,7 @@ function extractExtraDetails(payload: Record<string, unknown>, base?: Record<str
     retryable: _retryable,
     nextAction: _nextAction,
     details: _details,
+    data: _data,
     ...rest
   } = payload;
   const extra = Object.keys(rest).length > 0 ? (rest as Record<string, unknown>) : undefined;
@@ -126,58 +162,137 @@ function normalizeError(payload: Record<string, unknown>) {
   };
 }
 
-export function jsonWrap(payload: unknown, opts: WrapOptions = {}) {
-  if (payload instanceof Response) return payload;
-  if (isEnvelope(payload)) {
-    return NextResponse.json(payload, { status: opts.status, headers: opts.headers });
+function buildSuccessEnvelope(payload: Record<string, unknown>, headers?: HeadersInit): EnvelopeSuccess {
+  const { requestId, correlationId } = resolveRequestMeta(payload, headers);
+  const {
+    ok: _ok,
+    success: _success,
+    requestId: _requestId,
+    correlationId: _correlationId,
+    data: payloadData,
+    result: payloadResult,
+    meta,
+    ...rest
+  } = payload;
+
+  const data =
+    payloadData ??
+    payloadResult ??
+    (Object.keys(rest).length > 0 ? rest : null);
+
+  const response: Record<string, unknown> = {
+    ok: true,
+    ...(requestId ? { requestId } : {}),
+    ...(correlationId ? { correlationId } : {}),
+    ...(payloadData !== undefined ? { data: payloadData } : { data }),
+    ...(payloadResult !== undefined ? { result: payloadResult } : { result: data }),
+    ...rest,
+  };
+
+  if (meta) response.meta = meta;
+  return response as EnvelopeSuccess;
+}
+
+function buildErrorEnvelope(payload: Record<string, unknown>, headers?: HeadersInit): EnvelopeError {
+  const { requestId, correlationId } = resolveRequestMeta(payload, headers);
+  const normalized = normalizeError(payload);
+  const {
+    ok: _ok,
+    success: _success,
+    requestId: _requestId,
+    correlationId: _correlationId,
+    error: payloadError,
+    errorCode: _errorCode,
+    code: payloadCode,
+    message: _message,
+    retryable: _retryable,
+    nextAction: _nextAction,
+    details: _details,
+    data: payloadData,
+    ...rest
+  } = payload;
+
+  const retryable = typeof normalized.retryable === "boolean" ? normalized.retryable : false;
+
+  const response: Record<string, unknown> = {
+    ok: false,
+    ...(requestId ? { requestId } : {}),
+    ...(correlationId ? { correlationId } : {}),
+    errorCode: normalized.errorCode,
+    message: normalized.message,
+    retryable,
+    ...(normalized.nextAction ? { nextAction: normalized.nextAction } : {}),
+    ...(normalized.details ? { details: normalized.details } : {}),
+    ...(payloadData !== undefined
+      ? { data: payloadData }
+      : normalized.details
+        ? { data: normalized.details }
+        : {}),
+    code: typeof payloadCode === "string" ? payloadCode : normalized.errorCode,
+    error: typeof payloadError === "string" ? payloadError : normalized.message,
+    ...rest,
+  };
+
+  if (isRecord(payloadError)) {
+    response.errorDetail = payloadError;
   }
-  if (payload && typeof payload === "object") {
+
+  return response as EnvelopeError;
+}
+
+export function jsonWrap(payload: unknown, opts: WrapOptions = {}) {
+  const ctx =
+    opts.ctx ??
+    getRequestContext(
+      opts.req ?? (opts.headers ? { headers: new Headers(opts.headers) } : null),
+    );
+  const headers = buildResponseHeaders(ctx, opts.headers);
+
+  if (payload instanceof Response) {
+    return new Response(payload.body, {
+      status: payload.status,
+      statusText: payload.statusText,
+      headers: buildResponseHeaders(ctx, payload.headers),
+    });
+  }
+  if (isRecord(payload) && isEnvelope(payload)) {
+    const envelope = payload.ok ? buildSuccessEnvelope(payload, headers) : buildErrorEnvelope(payload, headers);
+    return NextResponse.json(envelope, { status: opts.status, headers });
+  }
+  if (isRecord(payload)) {
     const obj = payload as Record<string, unknown>;
     if (obj.ok === true) {
-      if ("data" in obj && !("result" in obj)) {
-        return NextResponse.json(
-          { ok: true, result: obj.data, ...(obj.meta ? { meta: obj.meta } : {}) },
-          { status: opts.status, headers: opts.headers },
-        );
-      }
-      const { ok: _ok, requestId: _requestId, correlationId: _correlationId, ...rest } = obj;
-      const result =
-        "result" in obj
-          ? obj.result
-          : "data" in obj
-            ? obj.data
-            : Object.keys(rest).length > 0
-              ? rest
-              : null;
-      return NextResponse.json({ ok: true, result }, { status: opts.status, headers: opts.headers });
+      return NextResponse.json(buildSuccessEnvelope(obj, headers), {
+        status: opts.status,
+        headers,
+      });
     }
-    if (obj.ok === false && ("error" in obj || "errorCode" in obj || "message" in obj)) {
-      const error = normalizeError(obj);
+    if (obj.ok === false && ("error" in obj || "errorCode" in obj || "message" in obj || "code" in obj)) {
       const status = opts.status ?? 400;
-      return NextResponse.json({ ok: false, error }, { status, headers: opts.headers });
+      return NextResponse.json(buildErrorEnvelope(obj, headers), { status, headers });
     }
     if (typeof obj.success === "boolean") {
       if (obj.success) {
-        const { success: _success, error: _error, errorCode: _errorCode, message: _message, meta: _meta, ...rest } = obj;
-        const result =
-          "data" in obj
-            ? obj.data
-            : "result" in obj
-              ? obj.result
-              : Object.keys(rest).length > 0
-                ? rest
-                : null;
-        return NextResponse.json({ ok: true, result }, { status: opts.status, headers: opts.headers });
+        return NextResponse.json(buildSuccessEnvelope(obj, headers), {
+          status: opts.status,
+          headers,
+        });
       }
-      const error = normalizeError(obj);
       const status = opts.status ?? 400;
-      return NextResponse.json({ ok: false, error }, { status, headers: opts.headers });
+      return NextResponse.json(buildErrorEnvelope(obj, headers), { status, headers });
     }
   }
-  if (payload && typeof payload === "object" && isErrorShape(payload)) {
-    const error = normalizeError(payload as Record<string, unknown>);
+  if (isRecord(payload) && isErrorShape(payload)) {
     const status = opts.status ?? 400;
-    return NextResponse.json({ ok: false, error }, { status, headers: opts.headers });
+    return NextResponse.json(buildErrorEnvelope(payload, headers), { status, headers });
   }
-  return NextResponse.json({ ok: true, result: payload }, { status: opts.status, headers: opts.headers });
+  const { requestId, correlationId } = resolveRequestMeta(null, headers);
+  const response: EnvelopeSuccess = {
+    ok: true,
+    ...(requestId ? { requestId } : {}),
+    ...(correlationId ? { correlationId } : {}),
+    data: payload,
+    result: payload,
+  };
+  return NextResponse.json(response, { status: opts.status, headers });
 }

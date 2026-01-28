@@ -107,13 +107,18 @@ async function _GET(req: NextRequest) {
     }
 
     if (grant.expiresAt && grant.expiresAt.getTime() < Date.now()) {
-      return jsonWrap({ ok: false, error: "Download expirado." }, { status: 410 });
+      return jsonWrap({ ok: false, error: "Download expirado." }, { status: 409 });
+    }
+
+    const productId = grant.orderLine?.productId ?? null;
+    if (!productId) {
+      return jsonWrap({ ok: false, error: "Produto nao encontrado." }, { status: 404 });
     }
 
     const issued = await issueSignedUrl({
       grantId: grant.id,
       assetId: assetParsed.assetId,
-      productId: grant.orderLine.productId,
+      productId,
     });
 
     if (!issued.ok) {
@@ -126,7 +131,7 @@ async function _GET(req: NextRequest) {
       return jsonWrap({ ok: false, error: issued.error }, { status });
     }
 
-    return jsonWrap({ ok: true, ...issued });
+    return jsonWrap(issued);
   } catch (err) {
     console.error("GET /api/store/digital/download error:", err);
     return jsonWrap({ ok: false, error: "Erro ao gerar download." }, { status: 500 });
@@ -162,13 +167,18 @@ async function _POST(req: NextRequest) {
     }
 
     if (grant.expiresAt && grant.expiresAt.getTime() < Date.now()) {
-      return jsonWrap({ ok: false, error: "Download expirado." }, { status: 410 });
+      return jsonWrap({ ok: false, error: "Download expirado." }, { status: 409 });
+    }
+
+    const productId = grant.orderLine?.productId ?? null;
+    if (!productId) {
+      return jsonWrap({ ok: false, error: "Produto nao encontrado." }, { status: 404 });
     }
 
     const issued = await issueSignedUrl({
       grantId: grant.id,
       assetId: parsed.data.assetId,
-      productId: grant.orderLine.productId,
+      productId,
     });
 
     if (!issued.ok) {
@@ -181,7 +191,7 @@ async function _POST(req: NextRequest) {
       return jsonWrap({ ok: false, error: issued.error }, { status });
     }
 
-    return jsonWrap({ ok: true, ...issued });
+    return jsonWrap(issued);
   } catch (err) {
     if (isUnauthenticatedError(err)) {
       return jsonWrap({ ok: false, error: "Nao autenticado." }, { status: 401 });

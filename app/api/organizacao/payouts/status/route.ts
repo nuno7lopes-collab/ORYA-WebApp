@@ -8,7 +8,7 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { retrieveStripeAccount } from "@/domain/finance/gateway/stripeGateway";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
-import { isOrgOwner } from "@/lib/organizationPermissions";
+import { ensureOrgOwner } from "@/lib/organizationPermissions";
 import { createNotification, shouldNotify } from "@/lib/notifications";
 import { NotificationType } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
@@ -28,9 +28,11 @@ async function _GET(req: NextRequest) {
     const organizationId = resolveOrganizationIdFromRequest(req);
     const { organization, membership } = await getActiveOrganizationForUser(user.id, {
       organizationId: organizationId ?? undefined,
+      includeOrganizationFields: "settings",
     });
 
-    if (!organization || !membership || !hasOrgOwnerAccess(membership.role)) {
+    const ownerCheck = membership ? ensureOrgOwner(membership.role) : { ok: false as const };
+    if (!organization || !membership || !ownerCheck.ok) {
       return jsonWrap({ ok: false, error: "APENAS_OWNER" }, { status: 403 });
     }
 

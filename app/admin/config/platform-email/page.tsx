@@ -76,7 +76,10 @@ export default function AdminPlatformEmailPage() {
           setError(`Sem permissões (ADMIN)${requestId ? ` • ${requestId}` : ""}`);
           return;
         }
-        const msg = typeof json?.error === "string" ? json.error : "Não foi possível guardar.";
+        const msg =
+          json && json.ok === false && typeof json.error === "string"
+            ? json.error
+            : "Não foi possível guardar.";
         setError(`${msg}${requestId ? ` • ${requestId}` : ""}`);
         return;
       }

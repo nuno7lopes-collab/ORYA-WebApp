@@ -101,7 +101,7 @@ async function _POST(req: NextRequest) {
     const values = optionIds.length
       ? await prisma.storeProductOptionValue.findMany({
           where: { optionId: { in: optionIds } },
-          select: { id: true, optionId: true, value: true, label: true },
+          select: { id: true, optionId: true, value: true, label: true, priceDeltaCents: true },
         })
       : [];
     const optionsByProduct = new Map<number, typeof options>();

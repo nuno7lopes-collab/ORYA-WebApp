@@ -1,4 +1,3 @@
-/* eslint-disable no-console */
 const DEFAULT_TIMEOUT_MS = 2000;
 
 async function fetchDnsJson(url, timeoutMs) {

@@ -346,7 +346,7 @@ export default function StoreProductDigitalAssetsPanel({
         <div>
           <h2 className="text-lg font-semibold text-white">Ficheiros digitais</h2>
           <p className="text-sm text-white/65">
-            Carrega ficheiros para produtos digitais. Para entrega digital, define "Requer envio" como falso no produto.
+            Carrega ficheiros para produtos digitais. Para entrega digital, define &quot;Requer envio&quot; como falso no produto.
           </p>
         </div>
         <button

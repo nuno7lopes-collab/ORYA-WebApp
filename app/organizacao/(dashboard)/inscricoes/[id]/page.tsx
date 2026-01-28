@@ -172,6 +172,7 @@ export default function InscricaoDetailPage() {
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [submissionItems, setSubmissionItems] = useState<SubmissionItem[]>([]);
+  const [nowMs, setNowMs] = useState<number | null>(null);
   const [hasLoadedMore, setHasLoadedMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
@@ -204,6 +205,10 @@ export default function InscricaoDetailPage() {
       })),
     );
   }, [form]);
+
+  useEffect(() => {
+    setNowMs(Date.now());
+  }, []);
 
   useEffect(() => {
     if (!form) return;
@@ -323,16 +328,15 @@ export default function InscricaoDetailPage() {
     return base;
   }, [submissions]);
   const statusCounts = summaryStatusCounts ?? submissionStatusCounts;
-  const responsesLast7Days = summaryData?.ok
-    ? summaryData.last7Days
-    : (() => {
-        const now = Date.now();
-        const windowMs = 7 * 24 * 60 * 60 * 1000;
-        return submissions.filter((submission) => {
-          const createdAt = new Date(submission.createdAt).getTime();
-          return Number.isFinite(createdAt) && now - createdAt <= windowMs;
-        }).length;
-      })();
+  const responsesLast7Days = useMemo(() => {
+    if (summaryData?.ok) return summaryData.last7Days;
+    if (nowMs === null) return 0;
+    const windowMs = 7 * 24 * 60 * 60 * 1000;
+    return submissions.filter((submission) => {
+      const createdAt = new Date(submission.createdAt).getTime();
+      return Number.isFinite(createdAt) && nowMs - createdAt <= windowMs;
+    }).length;
+  }, [summaryData?.ok, summaryData?.last7Days, submissions, nowMs]);
   const latestSubmission = summaryData?.ok
     ? summaryData.latestSubmission
     : (submissions

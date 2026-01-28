@@ -1,4 +1,4 @@
-import type { Prisma, PrismaClient } from "@prisma/client";
+import { Prisma, type PrismaClient } from "@prisma/client";
 import {
   BOOKING_CONFIRMATION_SNAPSHOT_VERSION,
   buildBookingConfirmationSnapshot,
@@ -60,7 +60,7 @@ export async function backfillBookingConfirmationSnapshots(
   const bookings = await prisma.booking.findMany({
     where: {
       status: { in: [...BACKFILL_STATUSES] },
-      confirmationSnapshot: null,
+      confirmationSnapshot: { equals: Prisma.DbNull },
     },
     orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
     take: limit,
@@ -198,4 +198,3 @@ export async function backfillBookingConfirmationSnapshots(
     byStatus,
   };
 }
-

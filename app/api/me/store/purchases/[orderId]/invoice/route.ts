@@ -112,7 +112,7 @@ async function _GET(_req: NextRequest, { params }: { params: Promise<{ orderId: 
     const values = optionIds.length
       ? await prisma.storeProductOptionValue.findMany({
           where: { optionId: { in: optionIds } },
-          select: { id: true, optionId: true, value: true, label: true },
+          select: { id: true, optionId: true, value: true, label: true, priceDeltaCents: true },
         })
       : [];
     const optionsByProduct = new Map<number, typeof options>();

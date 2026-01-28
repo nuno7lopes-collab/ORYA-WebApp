@@ -90,7 +90,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     }
   }
   if (pairing.payment_mode === PadelPaymentMode.SPLIT && pairing.deadlineAt && pairing.deadlineAt.getTime() < Date.now()) {
-    return jsonWrap({ ok: false, error: "PAIRING_EXPIRED" }, { status: 410 });
+    return jsonWrap({ ok: false, error: "PAIRING_EXPIRED" }, { status: 409 });
   }
 
   // Apenas capitão pode iniciar checkout se for "assume resto"; parceiro também pode iniciar, mas validamos que não há ticket já atribuído

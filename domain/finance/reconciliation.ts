@@ -1,6 +1,6 @@
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
-import { LedgerEntryType, ProcessorFeesStatus } from "@prisma/client";
+import { LedgerEntryType, ProcessorFeesStatus, Prisma } from "@prisma/client";
 import { FINANCE_OUTBOX_EVENTS } from "@/domain/finance/events";
 import { appendEventLog } from "@/domain/eventLog/append";
 import { recordOutboxEvent } from "@/domain/outbox/producer";
@@ -23,8 +23,10 @@ function normalizeFee(value: number): number {
   return Math.abs(Math.round(value));
 }
 
+type DbClient = Prisma.TransactionClient | typeof prisma;
+
 async function computeNetToOrgFinal(
-  tx: typeof prisma,
+  tx: DbClient,
   paymentId: string,
 ): Promise<number> {
   const entries = await tx.ledgerEntry.findMany({

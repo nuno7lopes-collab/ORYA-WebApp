@@ -8,7 +8,7 @@ import { isChatV2Enabled } from "@/lib/chat/featureFlags";
 import { isUnauthenticatedError } from "@/lib/security";
 import { CHAT_MESSAGE_MAX_LENGTH } from "@/lib/chat/constants";
 import { OrganizationMemberRole } from "@prisma/client";
-import { publishChatEvent } from "@/lib/chat/redis";
+import { publishChatEvent, type ChatEvent } from "@/lib/chat/redis";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 function isAdminRole(role: OrganizationMemberRole) {
@@ -157,12 +157,13 @@ async function _DELETE(req: NextRequest, context: { params: { messageId: string 
       });
     }
 
-    const eventPayload: Record<string, unknown> = {
+    const deletedAt = updated.deletedAt ?? new Date();
+    const eventPayload: ChatEvent = {
       type: "message:delete",
       organizationId: organization.id,
       conversationId: message.conversationId,
       messageId,
-      deletedAt: updated.deletedAt.toISOString(),
+      deletedAt: deletedAt.toISOString(),
     };
 
     if (lastMessage !== undefined) {
@@ -178,7 +179,7 @@ async function _DELETE(req: NextRequest, context: { params: { messageId: string 
 
     await publishChatEvent(eventPayload);
 
-    return jsonWrap({ ok: true, deletedAt: updated.deletedAt });
+    return jsonWrap({ ok: true, deletedAt });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
       return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });

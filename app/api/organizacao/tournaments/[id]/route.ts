@@ -30,14 +30,17 @@ async function _GET(req: NextRequest, { params }: { params: { id: string } }) {
   });
   if (!tournament) return jsonWrap({ ok: false, error: "NOT_FOUND" }, { status: 404 });
 
+  const organizationId = tournament.event.organizationId;
+  if (!organizationId) return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+
   const { membership } = await getActiveOrganizationForUser(user.id, {
-    organizationId: tournament.event.organizationId,
+    organizationId,
     roles: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"],
   });
   if (!membership) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
   const access = await ensureMemberModuleAccess({
-    organizationId: tournament.event.organizationId,
+    organizationId,
     userId: user.id,
     role: membership.role,
     rolePack: membership.rolePack,
@@ -64,14 +67,17 @@ async function _PATCH(req: NextRequest, { params }: { params: { id: string } }) 
   });
   if (!tournament) return jsonWrap({ ok: false, error: "NOT_FOUND" }, { status: 404 });
 
+  const organizationId = tournament.event.organizationId;
+  if (!organizationId) return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+
   const { membership } = await getActiveOrganizationForUser(user.id, {
-    organizationId: tournament.event.organizationId,
+    organizationId,
     roles: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"],
   });
   if (!membership) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
   const access = await ensureMemberModuleAccess({
-    organizationId: tournament.event.organizationId,
+    organizationId,
     userId: user.id,
     role: membership.role,
     rolePack: membership.rolePack,

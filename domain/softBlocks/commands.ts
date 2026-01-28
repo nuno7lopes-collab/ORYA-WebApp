@@ -40,7 +40,7 @@ const buildSoftBlockIdempotencyKey = (input: {
 };
 
 const normalizeScope = (input?: { scopeType?: SoftBlockScope | string | null; scopeId?: number | null }) => {
-  const rawType = typeof input?.scopeType === "string" ? input?.scopeType : input?.scopeType?.toString();
+  const rawType = input?.scopeType ? String(input.scopeType) : null;
   const scopeType =
     rawType === "PROFESSIONAL" || rawType === "RESOURCE" || rawType === "COURT" || rawType === "ORGANIZATION"
       ? (rawType as SoftBlockScope)
@@ -109,13 +109,14 @@ export async function createSoftBlock(input: {
   if (normalizedScope.scopeType !== SoftBlockScope.ORGANIZATION && !Number.isFinite(normalizedScope.scopeId)) {
     return { ok: false, error: "SCOPE_ID_REQUIRED" };
   }
+  const scopeId = normalizedScope.scopeId ?? 0;
 
   return prisma.$transaction(async (tx) => {
     const scopeOk = await ensureScopeExists({
       tx,
       organizationId,
       scopeType: normalizedScope.scopeType,
-      scopeId: normalizedScope.scopeId,
+      scopeId,
     });
     if (!scopeOk) return { ok: false as const, error: "SCOPE_NOT_FOUND" };
 
@@ -123,7 +124,7 @@ export async function createSoftBlock(input: {
       data: {
         organizationId,
         scopeType: normalizedScope.scopeType,
-        scopeId: normalizedScope.scopeId,
+        scopeId,
         startsAt,
         endsAt,
         reason: reason?.trim() || null,
@@ -153,7 +154,7 @@ export async function createSoftBlock(input: {
           title,
           status: "ACTIVE",
           scopeType: normalizedScope.scopeType,
-          scopeId: normalizedScope.scopeId,
+          scopeId,
         },
       },
       tx,
@@ -210,12 +211,13 @@ export async function updateSoftBlock(input: {
     if (normalizedScope.scopeType !== SoftBlockScope.ORGANIZATION && !Number.isFinite(normalizedScope.scopeId)) {
       return { ok: false as const, error: "SCOPE_ID_REQUIRED" };
     }
+    const scopeId = normalizedScope.scopeId ?? 0;
 
     const scopeOk = await ensureScopeExists({
       tx,
       organizationId,
       scopeType: normalizedScope.scopeType,
-      scopeId: normalizedScope.scopeId,
+      scopeId,
     });
     if (!scopeOk) return { ok: false as const, error: "SCOPE_NOT_FOUND" };
 
@@ -226,7 +228,7 @@ export async function updateSoftBlock(input: {
         endsAt: nextEndsAt,
         reason: typeof reason === "string" ? reason.trim() || null : undefined,
         scopeType: normalizedScope.scopeType,
-        scopeId: normalizedScope.scopeId,
+        scopeId,
       },
       select: { id: true },
     });
@@ -242,7 +244,7 @@ export async function updateSoftBlock(input: {
       endsAt: nextEndsAt,
       reason: nextReason,
       scopeType: normalizedScope.scopeType,
-      scopeId: normalizedScope.scopeId ?? 0,
+      scopeId,
     });
 
     await appendEventLog(

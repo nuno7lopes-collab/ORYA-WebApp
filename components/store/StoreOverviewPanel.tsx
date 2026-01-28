@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Image from "next/image";
 
 type OverviewProduct = {
   id: number;
@@ -110,7 +111,7 @@ export default function StoreOverviewPanel({ endpoint }: StoreOverviewPanelProps
             </div>
             {products.length === 0 ? (
               <div className="mt-3 rounded-2xl border border-white/10 bg-black/40 px-4 py-4 text-sm text-white/70">
-                Sem produtos ativos ainda. Usa o botao "Criar produto" no topo para começar.
+                Sem produtos ativos ainda. Usa o botao &quot;Criar produto&quot; no topo para começar.
               </div>
             ) : (
               <div className="mt-3 flex gap-4 overflow-x-auto pb-3 -mx-1 px-1 snap-x snap-mandatory">
@@ -121,10 +122,12 @@ export default function StoreOverviewPanel({ endpoint }: StoreOverviewPanelProps
                   >
                     <div className="relative aspect-square w-full overflow-hidden rounded-xl border border-white/10 bg-black/60">
                       {product.imageUrl ? (
-                        <img
+                        <Image
                           src={product.imageUrl}
                           alt={product.name}
-                          className="h-full w-full object-cover"
+                          fill
+                          sizes="210px"
+                          className="object-cover"
                         />
                       ) : (
                         <div className="flex h-full w-full items-center justify-center text-xs text-white/40">

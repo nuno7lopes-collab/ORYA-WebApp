@@ -346,7 +346,7 @@ export async function fulfillPadelSplitIntent(intent: IntentLike, stripeFeeForIn
           : slot.slotStatus;
 
     const partnerPaidAt = shouldSetPartner ? new Date() : null;
-    let updated = await tx.padelPairing.update({
+    const updated = await tx.padelPairing.update({
       where: { id: pairingId },
       data: {
         slots: {
@@ -407,8 +407,9 @@ export async function fulfillPadelSplitIntent(intent: IntentLike, stripeFeeForIn
       }
     }
 
+    const paymentEventKey = purchaseId ?? intent.id;
     await paymentEventRepo(tx).upsert({
-      where: { stripePaymentIntentId: intent.id },
+      where: { purchaseId: paymentEventKey },
       update: {
         status: "OK",
         amountCents: intent.amount,
@@ -419,7 +420,7 @@ export async function fulfillPadelSplitIntent(intent: IntentLike, stripeFeeForIn
         mode: intent.livemode ? "LIVE" : "TEST",
         isTest: !intent.livemode,
         stripeFeeCents: stripeFeeForIntentValue ?? 0,
-        purchaseId: purchaseId ?? intent.id,
+        purchaseId: paymentEventKey,
         source: PaymentEventSource.WEBHOOK,
         dedupeKey: paymentDedupeKey,
         attempt: { increment: 1 },
@@ -433,7 +434,7 @@ export async function fulfillPadelSplitIntent(intent: IntentLike, stripeFeeForIn
         mode: intent.livemode ? "LIVE" : "TEST",
         isTest: !intent.livemode,
         stripeFeeCents: stripeFeeForIntentValue ?? 0,
-        purchaseId: purchaseId ?? intent.id,
+        purchaseId: paymentEventKey,
         source: PaymentEventSource.WEBHOOK,
         dedupeKey: paymentDedupeKey,
         attempt: 1,

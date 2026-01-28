@@ -1,10 +1,10 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { isStoreFeatureEnabled } from "@/lib/storeAccess";
-import { StoreOrderStatus } from "@prisma/client";
+import { Prisma, StoreOrderStatus } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 async function getStoreContext(userId: string) {
@@ -42,14 +42,14 @@ async function _GET(req: NextRequest) {
     const limitRaw = Number(req.nextUrl.searchParams.get("limit") ?? "40");
     const limit = Number.isFinite(limitRaw) ? Math.min(100, Math.max(1, limitRaw)) : 40;
 
-    const where = {
+    const where: Prisma.StoreOrderWhereInput = {
       storeId: context.store.id,
       status: status ?? undefined,
       OR: query
         ? [
-            { orderNumber: { contains: query, mode: "insensitive" } },
-            { customerEmail: { contains: query, mode: "insensitive" } },
-            { customerName: { contains: query, mode: "insensitive" } },
+            { orderNumber: { contains: query, mode: Prisma.QueryMode.insensitive } },
+            { customerEmail: { contains: query, mode: Prisma.QueryMode.insensitive } },
+            { customerName: { contains: query, mode: Prisma.QueryMode.insensitive } },
           ]
         : undefined,
     };
@@ -85,9 +85,12 @@ async function _GET(req: NextRequest) {
       ok: true,
       items,
       summary: {
-        totalOrders: summary._count._all ?? 0,
-        totalCents: summary._sum.totalCents ?? 0,
-        shippingCents: summary._sum.shippingCents ?? 0,
+        totalOrders:
+          typeof summary._count === "object" && summary._count?._all
+            ? summary._count._all
+            : 0,
+        totalCents: summary._sum?.totalCents ?? 0,
+        shippingCents: summary._sum?.shippingCents ?? 0,
       },
     });
   } catch (err) {

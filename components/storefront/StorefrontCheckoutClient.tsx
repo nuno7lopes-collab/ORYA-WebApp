@@ -321,7 +321,7 @@ export default function StorefrontCheckoutClient({
           setPrefillLoaded(true);
           return;
         }
-        const customerData = json.customer ?? {};
+        const customerData = json.customer ?? { name: null, email: null, phone: null };
         setCustomer((prev) => ({
           name: applyPrefill(prev.name, customerData.name),
           email: applyPrefill(prev.email, customerData.email),

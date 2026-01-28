@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { requireAdminUser } from "@/lib/admin/auth";
@@ -26,7 +26,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     return jsonWrap({ ok: false, error: "NOT_FOUND" }, { status: 404 });
   }
 
-  if ([PendingPayoutStatus.RELEASED, PendingPayoutStatus.CANCELLED].includes(payout.status)) {
+  if (payout.status === PendingPayoutStatus.RELEASED || payout.status === PendingPayoutStatus.CANCELLED) {
     return jsonWrap({ ok: false, error: "INVALID_STATUS" }, { status: 409 });
   }
 

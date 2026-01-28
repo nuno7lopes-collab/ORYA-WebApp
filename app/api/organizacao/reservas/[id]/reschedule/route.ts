@@ -182,8 +182,8 @@ async function _POST(
 
     let professionalId: number | null = booking.professionalId ?? null;
     let resourceId: number | null = booking.resourceId ?? null;
-    let partySize: number | null = booking.partySize ?? null;
-    let scopeType: AvailabilityScopeType = assignmentMode === "RESOURCE" ? "RESOURCE" : "PROFESSIONAL";
+    const partySize: number | null = booking.partySize ?? null;
+    const scopeType: AvailabilityScopeType = assignmentMode === "RESOURCE" ? "RESOURCE" : "PROFESSIONAL";
     let scopeIds: number[] = [];
 
     if (assignmentMode === "RESOURCE") {

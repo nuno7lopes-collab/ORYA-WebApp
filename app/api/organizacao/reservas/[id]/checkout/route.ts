@@ -97,8 +97,8 @@ async function _POST(
     });
     if (!reservasAccess.ok) {
       return fail(
-        reservasAccess.error ?? "FORBIDDEN",
-        reservasAccess.message ?? "Sem permissões.",
+        "FORBIDDEN",
+        reservasAccess.error ?? "Sem permissões.",
         403,
         false,
         reservasAccess,
@@ -120,7 +120,7 @@ async function _POST(
         actorUserId: profile.id,
         data: { status: "CANCELLED_BY_ORG" },
       });
-      return fail("RESERVA_EXPIRADA", "Reserva expirada.", 410);
+      return fail("RESERVA_EXPIRADA", "Reserva expirada.", 409);
     }
 
     if (booking.paymentIntentId) {

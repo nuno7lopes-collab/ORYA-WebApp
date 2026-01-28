@@ -13,11 +13,11 @@ const ROLE_ALLOWLIST = Object.values(OrganizationMemberRole);
 
 const MAX_LIMIT = 50;
 
-const CONSENT_TYPES = [
+const CONSENT_TYPES: ConsentType[] = [
   ConsentType.MARKETING,
   ConsentType.CONTACT_EMAIL,
   ConsentType.CONTACT_SMS,
-] as const;
+];
 
 function parseLimit(value: string | null) {
   const parsed = Number(value ?? "20");

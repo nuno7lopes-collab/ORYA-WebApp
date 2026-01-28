@@ -144,7 +144,23 @@ export async function updateHardBlock(input: {
   note?: string | null;
   actorUserId: string;
   correlationId?: string | null;
-}): Promise<HardBlockResult<{ block: { id: number; eventId: number; padelClubId: number | null; courtId: number | null; startAt: Date; endAt: Date; label: string | null; kind: string; note: string | null }; eventId: string }>> {
+}): Promise<
+  HardBlockResult<{
+    block: {
+      id: number;
+      eventId: number;
+      padelClubId: number | null;
+      courtId: number | null;
+      startAt: Date;
+      endAt: Date;
+      updatedAt: Date;
+      label: string | null;
+      kind: string;
+      note: string | null;
+    };
+    eventId: string;
+  }>
+> {
   const { hardBlockId, organizationId, actorUserId, correlationId } = input;
   if (!Number.isFinite(hardBlockId)) return { ok: false, error: "INVALID_ID" };
   if (!Number.isFinite(organizationId)) return { ok: false, error: "INVALID_ORG" };
@@ -152,7 +168,18 @@ export async function updateHardBlock(input: {
   return prisma.$transaction(async (tx) => {
     const existing = await tx.padelCourtBlock.findFirst({
       where: { id: hardBlockId, organizationId },
-      select: { id: true, eventId: true, padelClubId: true, courtId: true, startAt: true, endAt: true, label: true, kind: true, note: true },
+      select: {
+        id: true,
+        eventId: true,
+        padelClubId: true,
+        courtId: true,
+        startAt: true,
+        endAt: true,
+        updatedAt: true,
+        label: true,
+        kind: true,
+        note: true,
+      },
     });
     if (!existing) return { ok: false as const, error: "NOT_FOUND" };
 
@@ -171,7 +198,18 @@ export async function updateHardBlock(input: {
         ...(typeof input.kind === "string" ? { kind: input.kind } : {}),
         ...(typeof input.note === "string" ? { note: input.note.trim() || null } : {}),
       },
-      select: { id: true, eventId: true, padelClubId: true, courtId: true, startAt: true, endAt: true, label: true, kind: true, note: true },
+      select: {
+        id: true,
+        eventId: true,
+        padelClubId: true,
+        courtId: true,
+        startAt: true,
+        endAt: true,
+        updatedAt: true,
+        label: true,
+        kind: true,
+        note: true,
+      },
     });
 
     const eventLogId = crypto.randomUUID();

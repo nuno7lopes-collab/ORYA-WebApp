@@ -1,4 +1,3 @@
-/* eslint-disable no-console */
 const required = ["DATABASE_URL", "DIRECT_URL"];
 const missing = required.filter((key) => !process.env[key] || String(process.env[key]).trim() === "");
 

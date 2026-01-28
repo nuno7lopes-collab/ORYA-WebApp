@@ -276,19 +276,23 @@ async function _POST(req: NextRequest) {
     });
 
     let assignedTrainerRole = false;
+    const protectedRoles: OrganizationMemberRole[] = [
+      OrganizationMemberRole.OWNER,
+      OrganizationMemberRole.CO_OWNER,
+      OrganizationMemberRole.ADMIN,
+    ];
     if (!existingMember) {
       await prisma.organizationMember.create({
         data: {
           organizationId: organization.id,
           userId: targetProfile.id,
           role: OrganizationMemberRole.TRAINER,
-          status: "ACTIVE",
         },
       });
       assignedTrainerRole = true;
     } else if (
       existingMember.role !== OrganizationMemberRole.TRAINER &&
-      ![OrganizationMemberRole.OWNER, OrganizationMemberRole.CO_OWNER, OrganizationMemberRole.ADMIN].includes(existingMember.role)
+      !protectedRoles.includes(existingMember.role)
     ) {
       await prisma.organizationMember.update({
         where: { organizationId_userId: { organizationId: organization.id, userId: targetProfile.id } },

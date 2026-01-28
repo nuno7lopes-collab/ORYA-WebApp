@@ -419,10 +419,8 @@ export default function Step2Pagamento() {
     const resolvedPaymentMethod =
       paymentMethod === "card" ? "card" : "mbway";
 
-    const idemKey =
-      typeof (safeDados?.additional as Record<string, unknown> | undefined)?.idempotencyKey === "string"
-        ? (safeDados?.additional as Record<string, unknown>).idempotencyKey.trim()
-        : undefined;
+    const idemKeyRaw = (safeDados?.additional as Record<string, unknown> | undefined)?.idempotencyKey;
+    const idemKey = typeof idemKeyRaw === "string" ? idemKeyRaw.trim() : undefined;
     const purchaseId = undefined;
 
     return {

@@ -59,8 +59,9 @@ export async function fulfillResaleIntent(intent: IntentLike): Promise<boolean> 
         },
       });
 
+      const paymentEventKey = purchaseId ?? intent.id;
       await paymentEventRepo(tx).upsert({
-        where: { stripePaymentIntentId: intent.id },
+        where: { purchaseId: paymentEventKey },
         update: {
           status: "OK",
           amountCents: intent.amount,
@@ -70,7 +71,7 @@ export async function fulfillResaleIntent(intent: IntentLike): Promise<boolean> 
           errorMessage: null,
           mode: intent.livemode ? "LIVE" : "TEST",
           isTest: !intent.livemode,
-          purchaseId: purchaseId ?? intent.id,
+          purchaseId: paymentEventKey,
           source: PaymentEventSource.WEBHOOK,
           dedupeKey: paymentDedupeKey,
           attempt: { increment: 1 },
@@ -83,7 +84,7 @@ export async function fulfillResaleIntent(intent: IntentLike): Promise<boolean> 
           userId: buyerUserId,
           mode: intent.livemode ? "LIVE" : "TEST",
           isTest: !intent.livemode,
-          purchaseId: purchaseId ?? intent.id,
+          purchaseId: paymentEventKey,
           source: PaymentEventSource.WEBHOOK,
           dedupeKey: paymentDedupeKey,
           attempt: 1,

@@ -155,7 +155,7 @@ async function _GET(_: NextRequest, { params }: { params: Promise<{ token: strin
     pairing.partnerLinkExpiresAt.getTime() < Date.now() &&
     pendingSlot.paymentStatus !== PadelPairingPaymentStatus.PAID
   ) {
-    return jsonWrap({ ok: false, error: "INVITE_EXPIRED" }, { status: 410 });
+    return jsonWrap({ ok: false, error: "INVITE_EXPIRED" }, { status: 409 });
   }
 
   const ticketTypes = await prisma.ticketType.findMany({
@@ -262,7 +262,7 @@ async function _POST(_: NextRequest, { params }: { params: Promise<{ token: stri
     pairing.partnerLinkExpiresAt.getTime() < Date.now() &&
     pendingSlot.paymentStatus !== PadelPairingPaymentStatus.PAID
   ) {
-    return jsonWrap({ ok: false, error: "INVITE_EXPIRED" }, { status: 410 });
+    return jsonWrap({ ok: false, error: "INVITE_EXPIRED" }, { status: 409 });
   }
 
   // SPLIT sem pagamento do parceiro: devolve ação para checkout
@@ -284,7 +284,7 @@ async function _POST(_: NextRequest, { params }: { params: Promise<{ token: stri
     pairing.deadlineAt.getTime() < Date.now() &&
     pendingSlot.paymentStatus !== PadelPairingPaymentStatus.PAID
   ) {
-    return jsonWrap({ ok: false, error: "PAIRING_EXPIRED" }, { status: 410 });
+    return jsonWrap({ ok: false, error: "PAIRING_EXPIRED" }, { status: 409 });
   }
 
   // Guard: utilizador já tem pairing ativo no torneio?
@@ -410,7 +410,7 @@ async function _POST(_: NextRequest, { params }: { params: Promise<{ token: stri
 
   try {
     const playerProfileId = await ensurePlayerProfile({ organizationId: pairing.organizationId, userId: user.id });
-    const { pairing: updated, shouldEnsureEntries } = await prisma.$transaction(async (tx) => {
+    const { pairing: updated, shouldEnsureEntries, nextRegistrationStatus } = await prisma.$transaction(async (tx) => {
       // Se já tem ticket, validar apropriação
       if (pendingSlot.ticketId) {
         const ticket = await tx.ticket.findUnique({ where: { id: pendingSlot.ticketId } });
@@ -473,10 +473,10 @@ async function _POST(_: NextRequest, { params }: { params: Promise<{ token: stri
           data: { pairingStatus: "COMPLETE" },
           include: { slots: true },
         });
-        return { pairing: completed, shouldEnsureEntries: true };
+        return { pairing: completed, shouldEnsureEntries: true, nextRegistrationStatus };
       }
 
-      return { pairing: updatedPairing, shouldEnsureEntries: allFilled && allPaid };
+      return { pairing: updatedPairing, shouldEnsureEntries: allFilled && allPaid, nextRegistrationStatus };
     });
 
     if (shouldEnsureEntries) {

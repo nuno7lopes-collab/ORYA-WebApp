@@ -18,7 +18,6 @@ import {
   OrganizationModule,
   OrganizationStatus,
   PadelPairingJoinMode,
-  PadelPairingLifecycleStatus,
   PadelPairingPaymentStatus,
   PadelPairingSlotRole,
   PadelPairingSlotStatus,
@@ -34,7 +33,7 @@ import {
 } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { Pool } from "pg";
-import { computeAutoSchedulePlan } from "../domain/padel/autoSchedule.ts";
+import { computeAutoSchedulePlan } from "../domain/padel/autoSchedule";
 
 const loadEnvFile = (file: string) => {
   if (!fs.existsSync(file)) return;
@@ -395,7 +394,6 @@ const createPairings = async ({
         categoryId,
         payment_mode: PadelPaymentMode.FULL,
         pairingStatus: PadelPairingStatus.COMPLETE,
-        lifecycleStatus: PadelPairingLifecycleStatus.CONFIRMED_BOTH_PAID,
         pairingJoinMode: PadelPairingJoinMode.INVITE_PARTNER,
         createdByUserId,
         slots: {
@@ -461,6 +459,7 @@ async function main() {
             entityType: "CLUBE",
             status: OrganizationStatus.ACTIVE,
             primaryModule: OrganizationModule.TORNEIOS,
+            group: { create: {} },
           },
         });
   }

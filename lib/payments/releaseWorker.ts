@@ -223,7 +223,7 @@ export async function releaseSinglePayout(payoutId: number, options?: { force?: 
   const payout = await prisma.pendingPayout.findUnique({ where: { id: payoutId } });
   if (!payout) return { id: payoutId, status: "FAILED", error: "NOT_FOUND" };
 
-  const allowedStatuses = options?.force
+  const allowedStatuses: PendingPayoutStatus[] = options?.force
     ? [PendingPayoutStatus.HELD, PendingPayoutStatus.BLOCKED]
     : [PendingPayoutStatus.HELD];
 

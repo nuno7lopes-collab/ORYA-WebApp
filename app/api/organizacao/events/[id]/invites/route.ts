@@ -7,7 +7,7 @@ import { normalizeEmail } from "@/lib/utils/email";
 import { resolveUserIdentifier } from "@/lib/userResolver";
 import { validateUsername } from "@/lib/username";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
-import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
+import { ensureGroupMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { OrganizationModule } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
@@ -92,12 +92,13 @@ async function ensureInviteAccess(
   const isAdmin = Array.isArray(profile.roles) && profile.roles.includes("admin");
   if (isAdmin) return { ok: true as const, isAdmin };
 
-  if (!event.organizationId) {
+  if (event.organizationId == null) {
     return { ok: false as const, status: 403, error: "FORBIDDEN" };
   }
+  const organizationId = event.organizationId;
 
-  const access = await ensureMemberModuleAccess({
-    organizationId: event.organizationId,
+  const access = await ensureGroupMemberModuleAccess({
+    organizationId,
     userId,
     moduleKey: OrganizationModule.EVENTOS,
     required: "EDIT",

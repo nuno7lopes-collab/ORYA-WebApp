@@ -69,13 +69,18 @@ export async function fulfillPadelSecondCharge(intent: IntentLike): Promise<bool
         where: { pairingId, status: "ACTIVE" },
         data: { status: "CANCELLED" },
       });
+      const purchaseId =
+        typeof (meta as Record<string, unknown>)?.purchaseId === "string"
+          ? ((meta as Record<string, unknown>).purchaseId as string)
+          : null;
+      const paymentEventKey = purchaseId ?? intent.id;
       await paymentEventRepo(tx).upsert({
-        where: { stripePaymentIntentId: intent.id },
+        where: { purchaseId: paymentEventKey },
         update: {
           status: "OK",
           updatedAt: now,
           amountCents: intent.amount,
-          purchaseId: (meta as Record<string, unknown>)?.purchaseId as string | undefined ?? intent.id,
+          purchaseId: paymentEventKey,
           stripeFeeCents: 0,
           source: PaymentEventSource.WEBHOOK,
           dedupeKey: paymentDedupeKey,
@@ -87,7 +92,7 @@ export async function fulfillPadelSecondCharge(intent: IntentLike): Promise<bool
           amountCents: intent.amount,
           eventId: Number(meta.eventId) || undefined,
           userId: ownerUserId ?? undefined,
-          purchaseId: (meta as Record<string, unknown>)?.purchaseId as string | undefined ?? intent.id,
+          purchaseId: paymentEventKey,
           source: PaymentEventSource.WEBHOOK,
           dedupeKey: paymentDedupeKey,
           attempt: 1,

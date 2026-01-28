@@ -38,7 +38,7 @@ export type EnsurePaymentIntentInput = {
   sourceId: string;
   amountCents: number;
   currency: string;
-  intentParams?: Stripe.PaymentIntentCreateParams;
+  intentParams?: Omit<Stripe.PaymentIntentCreateParams, "amount" | "currency">;
   metadata: Record<string, string>;
   orgContext?: StripeOrgContext | null;
   requireStripe: boolean;

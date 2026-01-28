@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { cn } from "@/lib/utils";
 
 type CartItem = {
@@ -432,12 +433,14 @@ export default function StorefrontCartOverlay({
                       className="rounded-2xl border border-white/12 bg-black/35 px-3 py-3 space-y-3"
                     >
                       <div className="flex items-center gap-3">
-                        <div className="h-12 w-12 overflow-hidden rounded-xl border border-white/10 bg-black/30">
+                        <div className="relative h-12 w-12 overflow-hidden rounded-xl border border-white/10 bg-black/30">
                           {preview ? (
-                            <img
+                            <Image
                               src={preview.url}
                               alt={preview.altText || bundle.name}
-                              className="h-full w-full object-cover"
+                              fill
+                              sizes="48px"
+                              className="object-cover"
                             />
                           ) : null}
                         </div>
@@ -512,12 +515,14 @@ export default function StorefrontCartOverlay({
                       key={item.id}
                       className="flex items-center gap-3 rounded-2xl border border-white/10 bg-black/30 px-3 py-2"
                     >
-                      <div className="h-12 w-12 overflow-hidden rounded-xl border border-white/10 bg-black/30">
+                      <div className="relative h-12 w-12 overflow-hidden rounded-xl border border-white/10 bg-black/30">
                         {image ? (
-                          <img
+                          <Image
                             src={image.url}
                             alt={image.altText || item.product.name}
-                            className="h-full w-full object-cover"
+                            fill
+                            sizes="48px"
+                            className="object-cover"
                           />
                         ) : null}
                       </div>
@@ -602,12 +607,14 @@ export default function StorefrontCartOverlay({
                         key={item.id}
                         className="flex items-center gap-3 rounded-xl border border-white/10 bg-black/30 px-2 py-2"
                       >
-                        <div className="h-10 w-10 overflow-hidden rounded-lg border border-white/10 bg-black/30">
+                        <div className="relative h-10 w-10 overflow-hidden rounded-lg border border-white/10 bg-black/30">
                           {image ? (
-                            <img
+                            <Image
                               src={image.url}
                               alt={image.altText || item.name}
-                              className="h-full w-full object-cover"
+                              fill
+                              sizes="40px"
+                              className="object-cover"
                             />
                           ) : null}
                         </div>

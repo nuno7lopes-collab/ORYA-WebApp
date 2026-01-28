@@ -39,6 +39,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
   if (!match.event?.organizationId) {
     return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
   }
+  const organizationId = match.event.organizationId;
   if (match.status === padel_match_status.DONE) {
     return jsonWrap({ ok: false, error: "ALREADY_DONE" }, { status: 409 });
   }
@@ -55,7 +56,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
   }
 
   const { organization } = await getActiveOrganizationForUser(authData.user.id, {
-    organizationId: match.event.organizationId,
+    organizationId,
     roles: ROLE_ALLOWLIST,
   });
   if (!organization) {
@@ -89,7 +90,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
       tx,
       matchId,
       eventId: match.eventId,
-      organizationId: match.event.organizationId,
+      organizationId,
       actorUserId: authData.user.id,
       beforeStatus: match.status ?? null,
       data: {

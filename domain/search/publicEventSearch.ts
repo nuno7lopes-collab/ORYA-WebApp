@@ -166,8 +166,7 @@ export async function searchPublicEvents(
     ...(cursorId ? { skip: 1, cursor: { id: cursorId } } : {}),
   } satisfies Prisma.SearchIndexItemFindManyArgs;
 
-  const events: Prisma.SearchIndexItemGetPayload<typeof query>[] =
-    await prisma.searchIndexItem.findMany(query);
+  const events = await prisma.searchIndexItem.findMany(query);
 
   let nextCursor: string | null = null;
   if (events.length > take) {

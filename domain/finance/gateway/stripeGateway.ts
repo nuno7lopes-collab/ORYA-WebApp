@@ -42,9 +42,9 @@ export async function createPaymentIntent(
 
 export async function retrievePaymentIntent(
   id: string,
-  params?: Parameters<typeof stripe.paymentIntents.retrieve>[1],
+  params?: Stripe.PaymentIntentRetrieveParams,
 ) {
-  return stripe.paymentIntents.retrieve(id, params);
+  return stripe.paymentIntents.retrieve(id, params as Stripe.PaymentIntentRetrieveParams);
 }
 
 export async function cancelPaymentIntent(
@@ -54,9 +54,7 @@ export async function cancelPaymentIntent(
   return stripe.paymentIntents.cancel(id, params);
 }
 
-export async function createStripeAccount(
-  params: Parameters<typeof stripe.accounts.create>[0],
-) {
+export async function createStripeAccount(params: Stripe.AccountCreateParams) {
   return stripe.accounts.create(params);
 }
 
@@ -72,13 +70,13 @@ export async function retrieveStripeAccount(id: string) {
 
 export async function retrieveCharge(
   id: string,
-  params?: Parameters<typeof stripe.charges.retrieve>[1],
+  params?: Stripe.ChargeRetrieveParams,
 ) {
-  return stripe.charges.retrieve(id, params);
+  return stripe.charges.retrieve(id, params as Stripe.ChargeRetrieveParams);
 }
 
 export async function createRefund(
-  params: Parameters<typeof stripe.refunds.create>[0],
+  params: Stripe.RefundCreateParams,
   opts?: {
     idempotencyKey?: string;
     requireStripe?: boolean;

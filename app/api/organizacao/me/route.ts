@@ -624,9 +624,9 @@ async function _PATCH(req: NextRequest) {
       new Set(
         nextModulesRaw
           .map((module) => (module === "ANALYTICS" ? "FINANCEIRO" : module))
-          .filter((module): module is string => typeof module === "string" && module.length > 0),
+          .filter((module) => typeof module === "string" && module.length > 0),
       ),
-    );
+    ) as string[];
 
     if (modulesProvided) {
       await recordOrganizationAuditSafe({

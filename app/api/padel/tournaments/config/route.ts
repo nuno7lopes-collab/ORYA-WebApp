@@ -2,7 +2,7 @@ export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
-import { OrganizationMemberRole, PadelEligibilityType, padel_format } from "@prisma/client";
+import { OrganizationMemberRole, PadelEligibilityType, Prisma, padel_format } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
@@ -94,13 +94,18 @@ async function _POST(req: NextRequest) {
       ? Number(body.numberOfCourts)
       : null;
   const numberOfCourtsParsed =
-    hasNumberOfCourts && Number.isFinite(numberOfCourtsRaw) ? Math.max(1, Math.floor(numberOfCourtsRaw)) : null;
+    hasNumberOfCourts && typeof numberOfCourtsRaw === "number" && Number.isFinite(numberOfCourtsRaw)
+      ? Math.max(1, Math.floor(numberOfCourtsRaw))
+      : null;
   const hasRuleSetId = Object.prototype.hasOwnProperty.call(body, "ruleSetId");
   const ruleSetIdRaw =
     hasRuleSetId && (typeof body.ruleSetId === "number" || typeof body.ruleSetId === "string")
       ? Number(body.ruleSetId)
       : null;
-  const ruleSetId = hasRuleSetId && Number.isFinite(ruleSetIdRaw) ? Math.floor(ruleSetIdRaw) : null;
+  const ruleSetId =
+    hasRuleSetId && typeof ruleSetIdRaw === "number" && Number.isFinite(ruleSetIdRaw)
+      ? Math.floor(ruleSetIdRaw)
+      : null;
   const hasDefaultCategoryId = Object.prototype.hasOwnProperty.call(body, "defaultCategoryId");
   const defaultCategoryRaw =
     hasDefaultCategoryId &&
@@ -108,7 +113,9 @@ async function _POST(req: NextRequest) {
       ? Number(body.defaultCategoryId)
       : null;
   const defaultCategoryId =
-    hasDefaultCategoryId && Number.isFinite(defaultCategoryRaw) ? Math.floor(defaultCategoryRaw) : null;
+    hasDefaultCategoryId && typeof defaultCategoryRaw === "number" && Number.isFinite(defaultCategoryRaw)
+      ? Math.floor(defaultCategoryRaw)
+      : null;
   const hasEligibilityType = Object.prototype.hasOwnProperty.call(body, "eligibilityType");
   const eligibilityType =
     hasEligibilityType &&
@@ -461,34 +468,39 @@ async function _POST(req: NextRequest) {
       generationVersion: "v1-groups-ko",
     };
 
+    const normalizedFormats = hasEnabledFormats
+      ? (enabledFormats?.filter((f) => allowedFormats.has(f as padel_format)) ?? []).map(
+          (f) => f as padel_format,
+        )
+      : undefined;
+
+    const createData: Prisma.PadelTournamentConfigUncheckedCreateInput = {
+      eventId,
+      organizationId: organizationIdBody,
+      numberOfCourts: numberOfCourtsParsed ?? existing?.numberOfCourts ?? 1,
+      ruleSetId: hasRuleSetId ? ruleSetId ?? undefined : existing?.ruleSetId ?? undefined,
+      defaultCategoryId: hasDefaultCategoryId ? defaultCategoryId ?? undefined : existing?.defaultCategoryId ?? undefined,
+      eligibilityType: hasEligibilityType ? eligibilityType || undefined : existing?.eligibilityType ?? undefined,
+      splitDeadlineHours: hasSplitDeadlineHours ? splitDeadlineHours ?? undefined : existing?.splitDeadlineHours ?? undefined,
+      enabledFormats: normalizedFormats ?? existing?.enabledFormats ?? undefined,
+      advancedSettings: mergedAdvanced as Prisma.InputJsonValue,
+      format: formatEffective,
+    };
+    const updateData: Prisma.PadelTournamentConfigUncheckedUpdateInput = {
+      ...(hasFormat ? { format: formatEffective } : {}),
+      ...(hasNumberOfCourts && numberOfCourtsParsed !== null ? { numberOfCourts: numberOfCourtsParsed } : {}),
+      ...(hasRuleSetId ? { ruleSetId } : {}),
+      ...(hasDefaultCategoryId ? { defaultCategoryId } : {}),
+      ...(hasEligibilityType ? { eligibilityType: eligibilityType || undefined } : {}),
+      ...(hasSplitDeadlineHours ? { splitDeadlineHours } : {}),
+      ...(hasEnabledFormats ? { enabledFormats: normalizedFormats ?? [] } : {}),
+      advancedSettings: mergedAdvanced as Prisma.InputJsonValue,
+    };
+
     const config = await prisma.padelTournamentConfig.upsert({
       where: { eventId },
-      create: {
-        eventId,
-        organizationId: organizationIdBody,
-        numberOfCourts: numberOfCourtsParsed ?? existing?.numberOfCourts ?? 1,
-        ruleSetId: hasRuleSetId ? ruleSetId ?? undefined : existing?.ruleSetId ?? undefined,
-        defaultCategoryId: hasDefaultCategoryId ? defaultCategoryId ?? undefined : existing?.defaultCategoryId ?? undefined,
-        eligibilityType: hasEligibilityType ? eligibilityType || undefined : existing?.eligibilityType ?? undefined,
-        splitDeadlineHours: hasSplitDeadlineHours ? splitDeadlineHours ?? undefined : existing?.splitDeadlineHours ?? undefined,
-        enabledFormats: hasEnabledFormats
-          ? enabledFormats?.filter((f) => allowedFormats.has(f as padel_format)) ?? []
-          : existing?.enabledFormats ?? undefined,
-        advancedSettings: mergedAdvanced,
-        format: formatEffective,
-      },
-      update: {
-        ...(hasFormat ? { format: formatEffective } : {}),
-        ...(hasNumberOfCourts && numberOfCourtsParsed !== null ? { numberOfCourts: numberOfCourtsParsed } : {}),
-        ...(hasRuleSetId ? { ruleSetId } : {}),
-        ...(hasDefaultCategoryId ? { defaultCategoryId } : {}),
-        ...(hasEligibilityType ? { eligibilityType: eligibilityType || null } : {}),
-        ...(hasSplitDeadlineHours ? { splitDeadlineHours } : {}),
-        ...(hasEnabledFormats
-          ? { enabledFormats: enabledFormats?.filter((f) => allowedFormats.has(f as padel_format)) ?? [] }
-          : {}),
-        advancedSettings: mergedAdvanced,
-      },
+      create: createData,
+      update: updateData,
     });
 
     return jsonWrap({ ok: true, config }, { status: 200 });

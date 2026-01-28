@@ -170,7 +170,7 @@ async function _POST(req: NextRequest) {
     const values = optionIds.length
       ? await prisma.storeProductOptionValue.findMany({
           where: { optionId: { in: optionIds } },
-          select: { id: true, optionId: true, value: true, label: true },
+          select: { id: true, optionId: true, value: true, label: true, priceDeltaCents: true },
         })
       : [];
     const optionsByProduct = new Map<number, typeof options>();
@@ -186,7 +186,7 @@ async function _POST(req: NextRequest) {
       valuesByOption.set(value.optionId, existing);
     });
 
-    const paymentEvents = await prisma.paymentEvent.findMany({
+    const paymentEventsRaw = await prisma.paymentEvent.findMany({
       where: {
         OR: [
           order.purchaseId ? { purchaseId: order.purchaseId } : undefined,
@@ -196,6 +196,10 @@ async function _POST(req: NextRequest) {
       orderBy: [{ createdAt: "asc" }],
       select: { status: true, createdAt: true },
     });
+    const paymentEvents = paymentEventsRaw.map((event) => ({
+      status: event.status,
+      createdAt: event.createdAt ?? order.createdAt,
+    }));
     const statusMap = await resolvePaymentStatusMap(order.purchaseId ? [order.purchaseId] : []);
     const resolved = order.purchaseId ? statusMap.get(order.purchaseId) : null;
     const paymentStatus = resolved ? mapCheckoutStatus(resolved.status) : "PROCESSING";

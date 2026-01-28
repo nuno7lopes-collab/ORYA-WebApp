@@ -24,29 +24,26 @@ let POST: typeof import("@/app/api/payments/intent/route").POST;
 beforeEach(() => {
   evaluateEventAccess.mockReset();
   prisma.$queryRaw.mockReset();
-  process.env.LEGACY_INTENT_DISABLED = "true";
 });
 
 describe("payments intent access gate", () => {
-  it("bloqueia checkout quando legacy intent esta desativado", async () => {
+  it("bloqueia checkout com payload inválido antes do access engine", async () => {
     vi.resetModules();
     POST = (await import("@/app/api/payments/intent/route")).POST;
     const req = new NextRequest("http://localhost/api/payments/intent", {
       method: "POST",
       body: JSON.stringify({
         slug: "slug",
-        items: [{ ticketId: 1, quantity: 1 }],
-        guest: { name: "Guest", email: "g@x.com" },
+        items: [],
       }),
     });
     const res = await POST(req);
     const body = await res.json();
-    expect(body.error.errorCode).toBe("LEGACY_INTENT_DISABLED");
+    expect(body.errorCode).toBe("INVALID_INPUT");
     expect(evaluateEventAccess).not.toHaveBeenCalled();
   });
 
   it("bloqueia checkout quando access engine nega (legacy enabled)", async () => {
-    process.env.LEGACY_INTENT_DISABLED = "false";
     vi.resetModules();
     POST = (await import("@/app/api/payments/intent/route")).POST;
     prisma.$queryRaw.mockResolvedValue([
@@ -70,7 +67,7 @@ describe("payments intent access gate", () => {
     });
     const res = await POST(req);
     const body = await res.json();
-    expect(body.error.errorCode).toBe("INVITE_ONLY");
+    expect(body.errorCode).toBe("INVITE_ONLY");
     expect(evaluateEventAccess).toHaveBeenCalled();
   });
 });

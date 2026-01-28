@@ -25,12 +25,13 @@ export async function refundPurchase(params: {
     where: { id: eventId },
     select: { organizationId: true },
   });
-  if (!event?.organizationId) {
+  const organizationId = event?.organizationId ?? null;
+  if (!organizationId) {
     throw new Error("FINANCE_ORG_NOT_RESOLVED");
   }
 
   const org = await prisma.organization.findUnique({
-    where: { id: event.organizationId },
+    where: { id: organizationId },
     select: {
       stripeAccountId: true,
       stripeChargesEnabled: true,
@@ -60,10 +61,10 @@ export async function refundPurchase(params: {
   }
 
   const cardFeeCents = saleSummary.cardPlatformFeeCents ?? 0;
-  const baseAmount = Math.max(
-    0,
-    saleSummary.totalCents - saleSummary.platformFeeCents - cardFeeCents - saleSummary.stripeFeeCents,
-  );
+  const totalCents = saleSummary.totalCents ?? 0;
+  const platformFeeCents = saleSummary.platformFeeCents ?? 0;
+  const stripeFeeCents = saleSummary.stripeFeeCents ?? 0;
+  const baseAmount = Math.max(0, totalCents - platformFeeCents - cardFeeCents - stripeFeeCents);
 
   let stripeRefundId: string | null = null;
   try {
@@ -118,7 +119,7 @@ export async function refundPurchase(params: {
     await appendEventLog(
       {
         eventId: outbox.eventId,
-        organizationId: event.organizationId,
+        organizationId,
         eventType: "refund.created",
         idempotencyKey: outbox.eventId,
         actorUserId: refundedBy ?? null,

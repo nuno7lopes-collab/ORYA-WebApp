@@ -2,7 +2,7 @@ export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
-import { OrganizationMemberRole } from "@prisma/client";
+import { LocationSource, OrganizationMemberRole, PadelClubKind, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
@@ -162,14 +162,15 @@ async function _POST(req: NextRequest) {
   }
 
   const existingKind = existing?.kind ? String(existing.kind).toUpperCase() : null;
-  const kind = (existingKind && CLUB_KINDS.has(existingKind) ? existingKind : requestedKind) ?? "OWN";
+  const kind = ((existingKind && CLUB_KINDS.has(existingKind) ? existingKind : requestedKind) ?? "OWN") as PadelClubKind;
   const isPartner = kind === "PARTNER";
   const resolvedName = name || existing?.name || "";
   const resolvedCity = city || existing?.city || "";
   const resolvedAddress = address || existing?.address || "";
-  const locationSource =
+  const locationSource = (
     (locationSourceInput ?? (existing?.locationSource ? String(existing.locationSource).toUpperCase() : null)) ??
-    (isPartner ? "MANUAL" : "OSM");
+    (isPartner ? "MANUAL" : "OSM")
+  ) as LocationSource;
   const locationProviderId = locationProviderIdRaw || existing?.locationProviderId || null;
   const composedFormatted = [resolvedAddress, resolvedCity].filter(Boolean).join(", ");
   const locationFormattedAddress =
@@ -239,20 +240,19 @@ async function _POST(req: NextRequest) {
           ? existing?.sourceClubId ?? null
           : null;
 
-    const data = isPartner && existing
+    const updateData: Prisma.PadelClubUncheckedUpdateInput = isPartner && existing
       ? {
           isActive,
           isDefault: false,
         }
       : {
-          organizationId: organization.id,
           name: resolvedName,
           shortName: resolvedName,
           city: resolvedCity || null,
           address: resolvedAddress || null,
           courtsCount,
           hours: null,
-          favoriteCategoryIds: [],
+          favoriteCategoryIds: [] as number[],
           isActive,
           slug: slug || null,
           isDefault: safeIsDefault,
@@ -261,19 +261,40 @@ async function _POST(req: NextRequest) {
           locationSource,
           locationProviderId,
           locationFormattedAddress,
-          locationComponents,
+          locationComponents: locationComponents as Prisma.InputJsonValue,
           latitude,
           longitude,
         };
+    const createData: Prisma.PadelClubUncheckedCreateInput = {
+      organizationId: organization.id,
+      name: resolvedName,
+      shortName: resolvedName,
+      city: resolvedCity || null,
+      address: resolvedAddress || null,
+      courtsCount,
+      hours: null,
+      favoriteCategoryIds: [] as number[],
+      isActive,
+      slug: slug || null,
+      isDefault: safeIsDefault,
+      kind,
+      sourceClubId,
+      locationSource,
+      locationProviderId,
+      locationFormattedAddress,
+      locationComponents: locationComponents as Prisma.InputJsonValue,
+      latitude,
+      longitude,
+    };
 
     const club = await prisma.$transaction(async (tx) => {
       let saved = id
         ? await tx.padelClub.update({
             where: { id, organizationId: organization.id, deletedAt: null },
-            data,
+            data: updateData,
           })
         : await tx.padelClub.create({
-            data,
+            data: createData,
           });
 
       const allowDefault = !isPartner;

@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
@@ -6,7 +6,11 @@ import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { ConsentStatus, ConsentType } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
-const CONSENT_TYPES = [ConsentType.MARKETING, ConsentType.CONTACT_EMAIL, ConsentType.CONTACT_SMS] as const;
+const CONSENT_TYPES: ConsentType[] = [
+  ConsentType.MARKETING,
+  ConsentType.CONTACT_EMAIL,
+  ConsentType.CONTACT_SMS,
+];
 
 function isValidConsentType(value: unknown): value is ConsentType {
   return typeof value === "string" && CONSENT_TYPES.includes(value as ConsentType);

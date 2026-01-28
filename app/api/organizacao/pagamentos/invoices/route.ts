@@ -63,10 +63,10 @@ async function _GET(req: NextRequest) {
 
     const summary = sales.reduce(
       (acc, sale) => {
-        acc.grossCents += sale.subtotalCents;
-        acc.discountCents += sale.discountCents;
-        acc.platformFeeCents += sale.platformFeeCents;
-        acc.netCents += sale.netCents;
+        acc.grossCents += sale.subtotalCents ?? 0;
+        acc.discountCents += sale.discountCents ?? 0;
+        acc.platformFeeCents += sale.platformFeeCents ?? 0;
+        acc.netCents += sale.netCents ?? 0;
         acc.tickets += sale.lines.reduce((s, l) => s + l.quantity, 0);
         return acc;
       },

@@ -2,7 +2,7 @@ export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
-import { OrganizationMemberRole, padel_match_status } from "@prisma/client";
+import { OrganizationMemberRole, Prisma, padel_match_status } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
@@ -52,6 +52,7 @@ async function _POST(req: NextRequest) {
   if (!match || !match.event?.organizationId) {
     return jsonWrap({ ok: false, error: "MATCH_NOT_FOUND" }, { status: 404 });
   }
+  const organizationId = match.event.organizationId;
   if (match.roundType !== "KNOCKOUT") {
     return jsonWrap({ ok: false, error: "MATCH_NOT_KNOCKOUT" }, { status: 409 });
   }
@@ -60,7 +61,7 @@ async function _POST(req: NextRequest) {
   }
 
   const { organization } = await getActiveOrganizationForUser(user.id, {
-    organizationId: match.event.organizationId,
+    organizationId,
     roles: ROLE_ALLOWLIST,
   });
   if (!organization) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
@@ -114,20 +115,22 @@ async function _POST(req: NextRequest) {
     }
   }
 
+  const data: Prisma.PadelMatchUncheckedUpdateInput = {
+    pairingAId: pairingAId ?? null,
+    pairingBId: pairingBId ?? null,
+    winnerPairingId: null,
+    status: padel_match_status.PENDING,
+    score: {} as Prisma.InputJsonValue,
+    scoreSets: Prisma.DbNull,
+  };
+
   const { match: updated } = await updatePadelMatch({
     matchId: match.id,
     eventId: match.eventId,
-    organizationId: match.event.organizationId,
+    organizationId,
     actorUserId: user.id,
     beforeStatus: match.status ?? null,
-    data: {
-      pairingAId: pairingAId ?? null,
-      pairingBId: pairingBId ?? null,
-      winnerPairingId: null,
-      status: padel_match_status.PENDING,
-      score: {},
-      scoreSets: null,
-    },
+    data,
     select: { id: true, pairingAId: true, pairingBId: true, roundLabel: true },
   });
 

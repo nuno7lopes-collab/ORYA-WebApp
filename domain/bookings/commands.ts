@@ -91,7 +91,7 @@ async function recordBookingEvent(params: {
       sourceType: SourceType.BOOKING,
       sourceId: String(params.payload.sourceId ?? ""),
       correlationId: params.correlationId ?? null,
-      payload: params.payload,
+      payload: params.payload as Prisma.InputJsonValue,
     },
     params.tx,
   );
@@ -105,7 +105,7 @@ async function recordBookingEvent(params: {
         sourceType: SourceType.BOOKING,
         sourceId: String(params.payload.sourceId ?? ""),
         organizationId: params.organizationId,
-      },
+      } as Prisma.InputJsonValue,
       correlationId: params.correlationId ?? null,
     },
     params.tx,
@@ -127,6 +127,8 @@ const baseSelect = {
   partySize: true,
 } satisfies Prisma.BookingSelect;
 
+type BookingBase = Prisma.BookingGetPayload<{ select: typeof baseSelect }>;
+
 export async function createBooking(
   input: BookingCommandBase &
     BookingCommandTx & {
@@ -134,18 +136,19 @@ export async function createBooking(
       select?: Prisma.BookingSelect;
       include?: Prisma.BookingInclude;
     },
-): Promise<BookingCommandResult<unknown>> {
+): Promise<BookingCommandResult<BookingBase>> {
   const eventType = input.eventType ?? DEFAULT_CREATED_EVENT;
 
   return withTx(input.tx, async (tx) => {
-    const created = await tx.booking.create({
+    const createArgs: Prisma.BookingCreateArgs = {
       data: input.data,
       ...(input.select
         ? { select: { ...input.select, ...baseSelect } }
         : input.include
           ? { include: input.include }
           : { select: baseSelect }),
-    });
+    };
+    const created = (await tx.booking.create(createArgs)) as BookingBase;
 
     const eventId = crypto.randomUUID();
     const payload = buildPayload(created as any);
@@ -172,11 +175,11 @@ export async function updateBooking(
       select?: Prisma.BookingSelect;
       include?: Prisma.BookingInclude;
     },
-): Promise<BookingCommandResult<unknown>> {
+): Promise<BookingCommandResult<BookingBase>> {
   const eventType = input.eventType ?? DEFAULT_UPDATED_EVENT;
 
   return withTx(input.tx, async (tx) => {
-    const updated = await tx.booking.update({
+    const updateArgs: Prisma.BookingUpdateArgs = {
       where: { id: input.bookingId },
       data: input.data,
       ...(input.select
@@ -184,7 +187,8 @@ export async function updateBooking(
         : input.include
           ? { include: input.include }
           : { select: baseSelect }),
-    });
+    };
+    const updated = (await tx.booking.update(updateArgs)) as BookingBase;
 
     const eventId = crypto.randomUUID();
     const payload = buildPayload(updated as any);
@@ -211,7 +215,7 @@ export async function cancelBooking(
       select?: Prisma.BookingSelect;
       include?: Prisma.BookingInclude;
     },
-): Promise<BookingCommandResult<unknown>> {
+): Promise<BookingCommandResult<BookingBase>> {
   return updateBooking({
     ...input,
     eventType: input.eventType ?? DEFAULT_CANCELLED_EVENT,
@@ -226,7 +230,7 @@ export async function markNoShowBooking(
       select?: Prisma.BookingSelect;
       include?: Prisma.BookingInclude;
     },
-): Promise<BookingCommandResult<unknown>> {
+): Promise<BookingCommandResult<BookingBase>> {
   return updateBooking({
     ...input,
     eventType: input.eventType ?? DEFAULT_NO_SHOW_EVENT,

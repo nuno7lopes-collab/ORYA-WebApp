@@ -54,7 +54,8 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     where: { id: match.stage.tournament.eventId },
     select: { organizationId: true },
   });
-  if (!event?.organizationId) {
+  const organizationId = event?.organizationId ?? null;
+  if (!organizationId) {
     return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
   }
 
@@ -102,7 +103,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
       await appendEventLog(
         {
           eventId: outbox.eventId,
-          organizationId: event.organizationId,
+          organizationId,
           eventType: "TOURNAMENT_MATCH_RESULT_REQUESTED",
           idempotencyKey: outbox.eventId,
           actorUserId: data.user.id,

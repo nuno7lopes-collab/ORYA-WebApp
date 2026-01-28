@@ -103,6 +103,7 @@ async function _POST(req: NextRequest) {
       description?: unknown;
       segmentId?: unknown;
       channel?: unknown;
+      channels?: unknown;
       payload?: unknown;
       scheduledAt?: unknown;
     } | null;

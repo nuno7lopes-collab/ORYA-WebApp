@@ -75,6 +75,8 @@ type OpsSummaryResponse =
     }
   | { ok: false; error?: string };
 
+type OpsSummaryData = Extract<OpsSummaryResponse, { ok: true }>["slo"];
+
 type RollupStatusResponse =
   | { ok: true; latestBucketDate: string | null }
   | { ok: false; error?: string };
@@ -344,7 +346,7 @@ export default function AdminOrganizacoesPage() {
   const [opsSummary, setOpsSummary] = useState<{
     loading: boolean;
     error?: string | null;
-    data: OpsSummaryResponse["slo"] | null;
+    data: OpsSummaryData | null;
   }>({ loading: false, error: null, data: null });
   const [rollup, setRollup] = useState<{
     loading: boolean;
@@ -390,8 +392,8 @@ export default function AdminOrganizacoesPage() {
         }
 
         const json = (await res.json().catch(() => null)) as AdminOrganizationsListResponse | null;
-        if (!res.ok || !json || !("ok" in json) || !json.ok) {
-          const code = json && "ok" in json ? json.error || json.reason : null;
+        if (!res.ok || !json || json.ok === false) {
+          const code = json?.ok === false ? json.error ?? json.reason : null;
           logAdminError("load-organizations", code);
           if (!cancelled) {
             const copy = getErrorCopy(code ?? "INTERNAL_ERROR");
@@ -492,8 +494,8 @@ export default function AdminOrganizacoesPage() {
       cache: "no-store",
     });
     const json = (await res.json().catch(() => null)) as EventLogResponse | null;
-    if (!res.ok || !json || !json.ok) {
-      const code = json && "ok" in json ? json.error : null;
+    if (!res.ok || !json || json.ok === false) {
+      const code = json?.ok === false ? json.error : null;
       logAdminError("load-event-log", code);
       setEventLog({ loading: false, error: code ?? "INTERNAL_ERROR", items: [] });
       return;
@@ -504,8 +506,8 @@ export default function AdminOrganizacoesPage() {
   async function loadOpsSummary() {
     setOpsSummary((prev) => ({ ...prev, loading: true, error: null }));
     const json = (await adminLoadOpsSummary().catch(() => null)) as OpsSummaryResponse | null;
-    if (!json || !json.ok) {
-      const code = json && "ok" in json ? json.error : null;
+    if (!json || json.ok === false) {
+      const code = json?.ok === false ? json.error : null;
       logAdminError("load-ops-summary", code);
       setOpsSummary({ loading: false, error: code ?? "INTERNAL_ERROR", data: null });
       return;
@@ -522,8 +524,8 @@ export default function AdminOrganizacoesPage() {
       cache: "no-store",
     });
     const json = (await res.json().catch(() => null)) as RollupStatusResponse | null;
-    if (!res.ok || !json || !json.ok) {
-      const code = json && "ok" in json ? json.error : null;
+    if (!res.ok || !json || json.ok === false) {
+      const code = json?.ok === false ? json.error : null;
       logAdminError("load-rollup-status", code);
       setRollup({ loading: false, error: code ?? "INTERNAL_ERROR", latestBucketDate: null });
       return;
@@ -663,15 +665,15 @@ export default function AdminOrganizacoesPage() {
         body: JSON.stringify({ organizationId }),
       });
       const data = (await res.json().catch(() => null)) as PaymentsRefreshResponse | null;
-      if (!res.ok || !data?.ok) {
-        const code = data?.error ?? "INTERNAL_ERROR";
+      if (!res.ok || !data || data.ok === false) {
+        const code = data?.ok === false ? data.error ?? "INTERNAL_ERROR" : "INTERNAL_ERROR";
         logAdminError("refresh-payments-status", code);
         const resolvedRequestId = data?.requestId ?? requestId;
         setActionError({ scope: "payments", code, requestId: resolvedRequestId });
         recordLastAction(organizationId, "Atualizar status pagamentos", "ERROR", {
           code,
           requestId: resolvedRequestId,
-          details: data?.retryAfterSec ? `retryAfter ${data.retryAfterSec}s` : null,
+          details: data?.ok === false && data.retryAfterSec ? `retryAfter ${data.retryAfterSec}s` : null,
         });
         return;
       }

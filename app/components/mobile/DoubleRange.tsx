@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { MouseEvent, TouchEvent } from "react";
+import type { MouseEvent as ReactMouseEvent, TouchEvent as ReactTouchEvent } from "react";
 
 type DoubleRangeProps = {
   min: number;
@@ -74,13 +74,13 @@ export default function DoubleRange({ min, max, step, valueMin, valueMax, onComm
     onCommit(localMinRef.current, localMaxRef.current);
   };
 
-  const handleThumbMouseDown = (thumb: 0 | 1) => (event: MouseEvent<HTMLButtonElement>) => {
+  const handleThumbMouseDown = (thumb: 0 | 1) => (event: ReactMouseEvent<HTMLButtonElement>) => {
     event.preventDefault();
     event.stopPropagation();
     startDrag(thumb, event.clientX);
   };
 
-  const handleThumbTouchStart = (thumb: 0 | 1) => (event: TouchEvent<HTMLButtonElement>) => {
+  const handleThumbTouchStart = (thumb: 0 | 1) => (event: ReactTouchEvent<HTMLButtonElement>) => {
     event.preventDefault();
     event.stopPropagation();
     const touch = event.touches[0];
@@ -88,7 +88,7 @@ export default function DoubleRange({ min, max, step, valueMin, valueMax, onComm
     startDrag(thumb, touch.clientX);
   };
 
-  const handleTrackMouseDown = (event: MouseEvent<HTMLDivElement>) => {
+  const handleTrackMouseDown = (event: ReactMouseEvent<HTMLDivElement>) => {
     event.preventDefault();
     event.stopPropagation();
     const next = valueFromClientX(event.clientX);
@@ -98,7 +98,7 @@ export default function DoubleRange({ min, max, step, valueMin, valueMax, onComm
     startDrag(targetThumb, event.clientX);
   };
 
-  const handleTrackTouchStart = (event: TouchEvent<HTMLDivElement>) => {
+  const handleTrackTouchStart = (event: ReactTouchEvent<HTMLDivElement>) => {
     event.preventDefault();
     event.stopPropagation();
     const touch = event.touches[0];
@@ -111,12 +111,12 @@ export default function DoubleRange({ min, max, step, valueMin, valueMax, onComm
   };
 
   useEffect(() => {
-    const handleMouseMove = (event: MouseEvent) => {
+    const handleMouseMove = (event: globalThis.MouseEvent) => {
       if (draggingRef.current === null) return;
       applyValue(valueFromClientX(event.clientX), draggingRef.current);
     };
     const handleMouseUp = () => stopDrag();
-    const handleTouchMove = (event: TouchEvent) => {
+    const handleTouchMove = (event: globalThis.TouchEvent) => {
       if (draggingRef.current === null) return;
       const touch = event.touches[0];
       if (!touch) return;

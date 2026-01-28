@@ -184,7 +184,7 @@ async function _GET(_req: NextRequest, { params }: { params: Promise<{ orderId: 
     const values = optionIds.length
       ? await prisma.storeProductOptionValue.findMany({
           where: { optionId: { in: optionIds } },
-          select: { id: true, optionId: true, value: true, label: true },
+          select: { id: true, optionId: true, value: true, label: true, priceDeltaCents: true },
         })
       : [];
     const optionsByProduct = new Map<number, typeof options>();
@@ -200,7 +200,7 @@ async function _GET(_req: NextRequest, { params }: { params: Promise<{ orderId: 
       valuesByOption.set(value.optionId, existing);
     });
 
-    const paymentEvents = await prisma.paymentEvent.findMany({
+    const paymentEventsRaw = await prisma.paymentEvent.findMany({
       where: {
         OR: [
           order.purchaseId ? { purchaseId: order.purchaseId } : undefined,
@@ -210,6 +210,9 @@ async function _GET(_req: NextRequest, { params }: { params: Promise<{ orderId: 
       orderBy: [{ createdAt: "asc" }],
       select: { status: true, createdAt: true },
     });
+    const paymentEvents = paymentEventsRaw.filter(
+      (event): event is { status: string; createdAt: Date } => event.createdAt != null,
+    );
 
     const paidEvent = paymentEvents.find((event) => event.status === "OK");
     const statusMap = await resolvePaymentStatusMap(order.purchaseId ? [order.purchaseId] : []);
@@ -264,7 +267,7 @@ async function _GET(_req: NextRequest, { params }: { params: Promise<{ orderId: 
         notes: order.notes,
         createdAt: order.createdAt.toISOString(),
         updatedAt: order.updatedAt.toISOString(),
-        paidAt: paidEvent?.createdAt.toISOString() ?? null,
+        paidAt: paidEvent?.createdAt ? paidEvent.createdAt.toISOString() : null,
         paymentStatus,
         store: buildStoreLabel(order.store),
         shipping: {

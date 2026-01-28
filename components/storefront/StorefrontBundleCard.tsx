@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 
 type BundleItem = {
   id: number;
@@ -70,9 +71,15 @@ export default function StorefrontBundleCard({ storeId, bundle }: StorefrontBund
   return (
     <div className="rounded-3xl border border-white/12 bg-black/35 p-4 shadow-[0_16px_40px_rgba(0,0,0,0.45)]">
       <div className="flex flex-wrap gap-4">
-        <div className="h-36 w-36 overflow-hidden rounded-2xl border border-white/10 bg-black/40">
+        <div className="relative h-36 w-36 overflow-hidden rounded-2xl border border-white/10 bg-black/40">
           {preview ? (
-            <img src={preview.url} alt={preview.altText || bundle.name} className="h-full w-full object-cover" />
+            <Image
+              src={preview.url}
+              alt={preview.altText || bundle.name}
+              fill
+              sizes="144px"
+              className="object-cover"
+            />
           ) : (
             <div className="flex h-full w-full items-center justify-center text-xs text-white/40">Bundle</div>
           )}

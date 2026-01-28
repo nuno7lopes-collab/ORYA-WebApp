@@ -30,9 +30,16 @@ describe("withApiEnvelope", () => {
     const res = await handler(new Request("http://localhost/test"));
     const body = await res.json();
 
-    expect(body).toEqual({
+    expect(body).toMatchObject({
       ok: false,
-      error: { errorCode: "BAD_REQUEST", message: "bad" },
+      requestId: "req_test",
+      correlationId: "corr_test",
+      errorCode: "BAD_REQUEST",
+      message: "bad",
+      retryable: false,
+      code: "BAD_REQUEST",
+      error: "bad",
+      errorDetail: { errorCode: "BAD_REQUEST", message: "bad" },
     });
     expect((body as any).data).toBeUndefined();
     expect(res.headers.get("x-request-id")).toBe("req_test");

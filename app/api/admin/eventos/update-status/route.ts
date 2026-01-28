@@ -125,7 +125,7 @@ async function _POST(req: NextRequest) {
         },
       });
 
-      if (existing.status !== updated.status) {
+      if (existing.status !== updated.status && updated.organizationId != null) {
         await recordOrganizationAuditSafe({
           organizationId: updated.organizationId,
           actorUserId: admin.userId,

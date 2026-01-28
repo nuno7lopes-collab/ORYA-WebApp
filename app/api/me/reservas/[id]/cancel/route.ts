@@ -30,6 +30,17 @@ async function _POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  type CancelTxnResult =
+    | { ok: false; error: Response }
+    | {
+        ok: true;
+        booking: { id: number; status: string };
+        already: boolean;
+        refundRequired: boolean;
+        paymentIntentId: string | null;
+        refundAmountCents: number | null;
+        snapshotTimezone: string;
+      };
   const resolved = await params;
   const bookingId = parseId(resolved.id);
   const ctx = getRequestContext(req);
@@ -57,7 +68,7 @@ async function _POST(
     const { ip, userAgent } = getRequestMeta(req);
     const now = new Date();
 
-    const result = await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction<CancelTxnResult>(async (tx) => {
       const booking = await tx.booking.findUnique({
         where: { id: bookingId },
         select: {
@@ -75,21 +86,30 @@ async function _POST(
       });
 
       if (!booking) {
-        return { error: errorWithCtx(404, "Reserva não encontrada.", "BOOKING_NOT_FOUND") };
+        return { ok: false, error: errorWithCtx(404, "Reserva não encontrada.", "BOOKING_NOT_FOUND") };
       }
 
       if (booking.userId !== user.id) {
-        return { error: errorWithCtx(403, "Sem permissões.", "FORBIDDEN") };
+        return { ok: false, error: errorWithCtx(403, "Sem permissões.", "FORBIDDEN") };
       }
 
       if (["CANCELLED_BY_CLIENT", "CANCELLED_BY_ORG", "CANCELLED"].includes(booking.status)) {
-        return { booking, already: true };
+        return {
+          ok: true,
+          booking: { id: booking.id, status: booking.status },
+          already: true,
+          refundRequired: false,
+          paymentIntentId: booking.paymentIntentId,
+          refundAmountCents: null,
+          snapshotTimezone: booking.snapshotTimezone,
+        };
       }
 
       const isPending = ["PENDING_CONFIRMATION", "PENDING"].includes(booking.status);
       const snapshot = parseBookingConfirmationSnapshot(booking.confirmationSnapshot);
       if (!isPending && booking.status === "CONFIRMED" && !snapshot) {
         return {
+          ok: false,
           error: errorWithCtx(
             409,
             "Reserva confirmada sem snapshot. Corre o backfill antes de cancelar.",
@@ -112,6 +132,7 @@ async function _POST(
 
       if (!canCancel) {
         return {
+          ok: false,
           error: errorWithCtx(
             400,
             "O prazo de cancelamento já passou.",
@@ -128,6 +149,7 @@ async function _POST(
         actorUserId: user.id,
         data: { status: "CANCELLED_BY_CLIENT" },
       });
+      const updatedSummary = { id: updated.id, status: updated.status };
 
       const refundRequired =
         !!booking.paymentIntentId &&
@@ -156,7 +178,8 @@ async function _POST(
       });
 
       return {
-        booking: updated,
+        ok: true,
+        booking: updatedSummary,
         already: false,
         refundRequired,
         paymentIntentId: booking.paymentIntentId,
@@ -165,7 +188,7 @@ async function _POST(
       };
     });
 
-    if ("error" in result) return result.error;
+    if (!result.ok) return result.error;
 
     if (result.refundRequired && result.paymentIntentId) {
       try {

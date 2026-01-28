@@ -7,7 +7,7 @@ let eventLogs: any[] = [];
 
 vi.mock("@/lib/prisma", () => {
   const eventLog = {
-    findUnique: vi.fn(({ where }: any) => eventLogs.find((evt) => evt.eventId === where.eventId) ?? null),
+    findUnique: vi.fn(({ where }: any) => eventLogs.find((evt) => evt.id === where.id) ?? null),
   };
   return { prisma: { eventLog } };
 });
@@ -29,7 +29,7 @@ describe("notification eventlog consumer", () => {
   it("ignore allowlist: evento fora da lista", async () => {
     eventLogs = [
       {
-        eventId: "evt-1",
+        id: "evt-1",
         eventType: "custom.event",
         organizationId: 1,
         actorUserId: "u1",
@@ -45,7 +45,7 @@ describe("notification eventlog consumer", () => {
   it("idempotente: dedupeKey consistente para o mesmo eventId", async () => {
     eventLogs = [
       {
-        eventId: "evt-2",
+        id: "evt-2",
         eventType: "loyalty.earned",
         organizationId: 1,
         actorUserId: "u1",

@@ -519,6 +519,17 @@ async function _GET(req: NextRequest) {
     statusHint = blockingDetails?.message ?? "A dupla não cumpre os requisitos.";
   }
 
+  const canSwap =
+    viewerRole === "CAPTAIN" && partnerSlot
+      ? partnerSlot.paymentStatus !== PadelPairingPaymentStatus.PAID &&
+        partnerSlot.slotStatus !== PadelPairingSlotStatus.FILLED
+      : false;
+  const canCancel =
+    viewerRole === "CAPTAIN" &&
+    !isCancelled &&
+    (pairing.payment_mode === PadelPaymentMode.FULL || !partnerPaid) &&
+    (partnerSlot ? partnerSlot.slotStatus !== PadelPairingSlotStatus.FILLED : true);
+
   return jsonWrap(
     {
       ok: true,
@@ -541,16 +552,8 @@ async function _GET(req: NextRequest) {
         canPay,
         canAccept,
         canDecline,
-        canSwap:
-          viewerRole === "CAPTAIN" &&
-          Boolean(partnerSlot) &&
-          partnerSlot.paymentStatus !== PadelPairingPaymentStatus.PAID &&
-          partnerSlot.slotStatus !== PadelPairingSlotStatus.FILLED,
-        canCancel:
-          viewerRole === "CAPTAIN" &&
-          !isCancelled &&
-          (pairing.payment_mode === PadelPaymentMode.FULL || !partnerPaid) &&
-          partnerSlot?.slotStatus !== PadelPairingSlotStatus.FILLED,
+        canSwap,
+        canCancel,
         canReinvite,
         canMatchmake,
         canRefreshInvite,

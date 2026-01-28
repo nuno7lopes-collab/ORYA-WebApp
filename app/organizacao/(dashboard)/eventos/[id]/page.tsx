@@ -188,8 +188,9 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
     const enabledLinks = padelLinks.filter((link) => link.isEnabled !== false);
     if (enabledLinks.length === 0) return null;
     const capacities = enabledLinks.map((link) => link.capacityTeams ?? link.capacityPlayers ?? null);
-    if (capacities.some((cap) => cap === null)) return null;
-    return capacities.reduce((sum, cap) => sum + (cap ?? 0), 0);
+    const normalizedCapacities = capacities.filter((cap): cap is number => typeof cap === "number");
+    if (normalizedCapacities.length !== capacities.length) return null;
+    return normalizedCapacities.reduce((sum, cap) => sum + cap, 0);
   })();
 
   const padelPairingsCount = isPadelEvent

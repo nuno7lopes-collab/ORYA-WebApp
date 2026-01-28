@@ -37,7 +37,8 @@ import InscricoesPage from "./(dashboard)/inscricoes/page";
 import { getEventCoverSuggestionIds, getEventCoverUrl } from "@/lib/eventCover";
 import { getProfileCoverUrl } from "@/lib/profileCover";
 import { getOrganizationRoleFlags } from "@/lib/organizationUiPermissions";
-import { hasModuleAccess, resolveMemberModuleAccess } from "@/lib/organizationRbac";
+import { hasModuleAccess, normalizeAccessLevel, resolveMemberModuleAccess } from "@/lib/organizationRbac";
+import { ensurePublicProfileLayout } from "@/lib/publicProfileLayout";
 import type { OrganizationMemberRole, OrganizationModule, OrganizationRolePack } from "@prisma/client";
 import { ModuleIcon } from "./moduleIcons";
 
@@ -599,12 +600,19 @@ function OrganizacaoPageInner({
   const profileStatus = organizationData?.profileStatus ?? "MISSING_CONTACT";
   const membershipRole = organizationData?.membershipRole ?? null;
   const membershipRolePack = organizationData?.membershipRolePack ?? null;
+  const organizationProfile = useMemo(() => {
+    if (!organization) return null;
+    return {
+      ...organization,
+      publicProfileLayout: ensurePublicProfileLayout(organization.publicProfileLayout ?? null),
+    };
+  }, [organization]);
   const moduleOverrides = useMemo(
     () =>
       Array.isArray(organizationData?.modulePermissions)
         ? organizationData?.modulePermissions.map((item) => ({
             moduleKey: item.moduleKey,
-            accessLevel: item.accessLevel,
+            accessLevel: normalizeAccessLevel(item.accessLevel) ?? "NONE",
             scopeType: item.scopeType ?? null,
             scopeId: item.scopeId ?? null,
           }))
@@ -1109,10 +1117,15 @@ function OrganizacaoPageInner({
   };
   const eventsList = useMemo(() => {
     const items = events?.items ?? [];
+    const normalizedItems = items.map((ev) => ({
+      ...ev,
+      startsAt: ev.startsAt ?? null,
+      endsAt: ev.endsAt ?? null,
+    }));
     if (eventsScope === "PADEL") {
-      return items.filter((ev) => ev.templateType === "PADEL");
+      return normalizedItems.filter((ev) => ev.templateType === "PADEL");
     }
-    return items.filter((ev) => ev.templateType !== "PADEL");
+    return normalizedItems.filter((ev) => ev.templateType !== "PADEL");
   }, [events, eventsScope]);
   const eventSummary = useMemo(() => {
     const now = new Date();
@@ -2605,7 +2618,7 @@ function OrganizacaoPageInner({
 
           <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-[#0b1226]/80 via-[#0b1124]/70 to-[#050a12]/92 p-5 shadow-[0_24px_70px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
             <OrganizationPublicProfilePanel
-              organization={organization ?? null}
+              organization={organizationProfile}
               membershipRole={membershipRole}
               categoryLabel={operationLabel}
               coverUrl={profileCoverUrl}

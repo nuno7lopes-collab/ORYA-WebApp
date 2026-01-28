@@ -40,7 +40,8 @@ export async function createTournamentForEvent(input: {
       where: { id: eventId },
       select: { id: true, organizationId: true, templateType: true, tournament: { select: { id: true } } },
     });
-    if (!event?.organizationId) return { ok: false as const, error: "NOT_FOUND" };
+    if (event?.organizationId == null) return { ok: false as const, error: "NOT_FOUND" };
+    const organizationId = event.organizationId;
     if (event.templateType !== EventTemplateType.PADEL) {
       return { ok: false as const, error: "EVENT_NOT_PADEL" };
     }
@@ -49,7 +50,7 @@ export async function createTournamentForEvent(input: {
     }
 
     const tournament = await tx.tournament.create({
-      data: { eventId, format, config },
+      data: { eventId, format, config: config as Prisma.InputJsonValue },
       select: { id: true },
     });
 
@@ -57,14 +58,14 @@ export async function createTournamentForEvent(input: {
     await appendEventLog(
       {
         eventId: eventIdLog,
-        organizationId: event.organizationId,
+        organizationId,
         eventType: "tournament.created",
         idempotencyKey: `tournament.created:${eventId}`,
         actorUserId,
         sourceType: SourceType.TOURNAMENT,
         sourceId: String(tournament.id),
         correlationId: correlationId ?? null,
-        payload: { tournamentId: tournament.id, eventId },
+        payload: { tournamentId: tournament.id, eventId } as Prisma.InputJsonValue,
       },
       tx
     );
@@ -72,7 +73,7 @@ export async function createTournamentForEvent(input: {
       {
         eventId: eventIdLog,
         eventType: "tournament.created",
-        payload: { tournamentId: tournament.id, eventId },
+        payload: { tournamentId: tournament.id, eventId } as Prisma.InputJsonValue,
         correlationId: correlationId ?? null,
       },
       tx
@@ -98,6 +99,10 @@ export async function updateTournament(input: {
     if (existing.event.templateType !== EventTemplateType.PADEL) {
       return { ok: false as const, error: "EVENT_NOT_PADEL" };
     }
+    const organizationId = existing.event.organizationId;
+    if (!organizationId) {
+      return { ok: false as const, error: "ORGANIZATION_REQUIRED" };
+    }
 
     const tournament = await tx.tournament.update({
       where: { id: tournamentId },
@@ -109,14 +114,14 @@ export async function updateTournament(input: {
     await appendEventLog(
       {
         eventId: eventIdLog,
-        organizationId: tournament.event.organizationId,
+        organizationId,
         eventType: "tournament.updated",
         idempotencyKey: `tournament.updated:${tournamentId}:${hashPayload({ tournamentId, data })}`,
         actorUserId,
         sourceType: SourceType.TOURNAMENT,
         sourceId: String(tournament.id),
         correlationId: correlationId ?? null,
-        payload: { tournamentId: tournament.id, eventId: tournament.eventId },
+        payload: { tournamentId: tournament.id, eventId: tournament.eventId } as Prisma.InputJsonValue,
       },
       tx
     );
@@ -124,7 +129,7 @@ export async function updateTournament(input: {
       {
         eventId: eventIdLog,
         eventType: "tournament.updated",
-        payload: { tournamentId: tournament.id, eventId: tournament.eventId },
+        payload: { tournamentId: tournament.id, eventId: tournament.eventId } as Prisma.InputJsonValue,
         correlationId: correlationId ?? null,
       },
       tx
@@ -163,7 +168,7 @@ export async function requestTournamentGeneration(input: {
       {
         eventId: eventIdLog,
         eventType: "TOURNAMENT_GENERATE",
-        payload,
+        payload: payload as Prisma.InputJsonValue,
         correlationId: correlationId ?? null,
       },
       tx

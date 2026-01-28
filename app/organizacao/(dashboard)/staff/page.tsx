@@ -808,15 +808,14 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
   const wrapperClass = cn(
     embedded ? "space-y-6 text-white" : "w-full space-y-6 py-8 text-white",
   );
+  const permissionTabs: { key: StaffTabKey; label: string }[] = [
+    { key: "permissoes", label: "Permissões" },
+    { key: "auditoria", label: "Auditoria" },
+  ];
   const staffTabs: { key: StaffTabKey; label: string }[] = [
     { key: "membros", label: "Equipa" },
     { key: "convidados", label: "Convidados" },
-    ...(canManagePermissions
-      ? [
-          { key: "permissoes", label: "Permissões" },
-          { key: "auditoria", label: "Auditoria" },
-        ]
-      : []),
+    ...(canManagePermissions ? permissionTabs : []),
   ];
   const setStaffTab = (next: StaffTabKey) => {
     const params = new URLSearchParams(searchParams?.toString());

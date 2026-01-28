@@ -191,7 +191,8 @@ export async function autoGeneratePadelMatches({
     where: { id: eventId, isDeleted: false },
     select: { id: true, organizationId: true },
   });
-  if (!event || !event.organizationId) return { ok: false, error: "EVENT_NOT_FOUND" };
+  const organizationId = event?.organizationId ?? null;
+  if (!event || organizationId == null) return { ok: false, error: "EVENT_NOT_FOUND" };
 
   const resolvedCategoryId = Number.isFinite(categoryId as number) ? (categoryId as number) : null;
   if (resolvedCategoryId) {
@@ -293,7 +294,7 @@ export async function autoGeneratePadelMatches({
         await deleteMatchList({
           matchIds: existingMatches.map((m) => m.id),
           eventId,
-          organizationId: event.organizationId,
+          organizationId: organizationId,
           actorUserId,
         });
       } else {
@@ -394,12 +395,12 @@ export async function autoGeneratePadelMatches({
     await createMatchList({
       matches: matchesToCreate,
       eventId,
-      organizationId: event.organizationId,
+      organizationId: organizationId,
       actorUserId,
     });
     if (notifyUsers && userIds.length) await queueBracketPublished(userIds, eventId);
     await recordOrganizationAuditSafe({
-      organizationId: event.organizationId,
+      organizationId: organizationId,
       actorUserId,
       action: auditAction,
       metadata: {
@@ -449,7 +450,7 @@ export async function autoGeneratePadelMatches({
         await deleteMatchList({
           matchIds: existingMatches.map((m) => m.id),
           eventId,
-          organizationId: event.organizationId,
+          organizationId: organizationId,
           actorUserId,
         });
       } else {
@@ -651,7 +652,7 @@ export async function autoGeneratePadelMatches({
     await createMatchList({
       matches: matchCreateData,
       eventId,
-      organizationId: event.organizationId,
+      organizationId: organizationId,
       actorUserId,
     });
     const koMatches = await prisma.padelMatch.findMany({
@@ -666,7 +667,7 @@ export async function autoGeneratePadelMatches({
           matchId,
           data,
           eventId,
-          organizationId: event.organizationId,
+          organizationId: organizationId,
           actorUserId,
           eventType: MATCH_SYSTEM_EVENT,
           select: { id: true, roundLabel: true, pairingAId: true, pairingBId: true, winnerPairingId: true },
@@ -698,7 +699,7 @@ export async function autoGeneratePadelMatches({
     });
     if (notifyUsers && userIds.length) await queueBracketPublished(userIds, eventId);
     await recordOrganizationAuditSafe({
-      organizationId: event.organizationId,
+      organizationId: organizationId,
       actorUserId,
       action: auditAction,
       metadata: {
@@ -741,7 +742,7 @@ export async function autoGeneratePadelMatches({
       await deleteMatchList({
         matchIds: existingMatches.map((m) => m.id),
         eventId,
-        organizationId: event.organizationId,
+        organizationId: organizationId,
         actorUserId,
       });
     } else {
@@ -936,7 +937,7 @@ export async function autoGeneratePadelMatches({
   await createMatchList({
     matches: matchCreateData,
     eventId,
-    organizationId: event.organizationId,
+    organizationId: organizationId,
     actorUserId,
   });
   if (isKnockout) {
@@ -952,7 +953,7 @@ export async function autoGeneratePadelMatches({
           matchId,
           data,
           eventId,
-          organizationId: event.organizationId,
+          organizationId: organizationId,
           actorUserId,
           eventType: MATCH_SYSTEM_EVENT,
           select: { id: true, roundLabel: true, pairingAId: true, pairingBId: true, winnerPairingId: true },
@@ -970,7 +971,7 @@ export async function autoGeneratePadelMatches({
   }
   if (notifyUsers && userIds.length) await queueBracketPublished(userIds, eventId);
   await recordOrganizationAuditSafe({
-    organizationId: event.organizationId,
+    organizationId: organizationId,
     actorUserId,
     action: auditAction,
     metadata: {

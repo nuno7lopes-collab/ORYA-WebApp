@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-/* eslint-disable no-console */
 
 process.env.TS_NODE_COMPILER_OPTIONS = JSON.stringify({
   module: "commonjs",

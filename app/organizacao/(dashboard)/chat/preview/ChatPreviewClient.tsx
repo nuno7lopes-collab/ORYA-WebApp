@@ -9,9 +9,11 @@ import {
   useState,
   type ChangeEvent,
   type DragEvent,
-  type KeyboardEvent,
-  type MouseEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
+  type ReactNode,
 } from "react";
+import Image from "next/image";
 import { cn } from "@/lib/utils";
 import { useChatPreviewData } from "./useChatPreviewData";
 import type {
@@ -102,7 +104,7 @@ function renderMessageText(text: string, mentionTokens: string[]) {
   );
   if (tokens.length === 0) return text;
   const pattern = new RegExp(`(^|\\s)(${tokens.map(escapeRegex).join("|")})(?=\\s|$)`, "gi");
-  const parts: Array<string | JSX.Element> = [];
+  const parts: ReactNode[] = [];
   let lastIndex = 0;
   let match: RegExpExecArray | null;
   while ((match = pattern.exec(text)) !== null) {
@@ -223,7 +225,7 @@ function ChatSidebar({
   const searchRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    const handleShortcut = (event: KeyboardEvent) => {
+    const handleShortcut = (event: globalThis.KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
         searchRef.current?.focus();
@@ -857,7 +859,7 @@ export default function ChatPreviewPage() {
     return base.filter((member) => resolveDirectoryLabel(member).toLowerCase().includes(query));
   }, [availableMembers, membersQuery]);
   const mutedUntil = activeConversation?.mutedUntil ? new Date(activeConversation.mutedUntil) : null;
-  const notifLevel = activeConversation?.notifLevel ?? "ALL";
+  const notifLevel: "ALL" | "MENTIONS_ONLY" | "OFF" = activeConversation?.notifLevel ?? "ALL";
   const isMuted = notifLevel === "OFF" || (mutedUntil ? mutedUntil.getTime() > Date.now() : false);
   const isBlocked = directMember ? blockedUserIds.includes(directMember.userId) : false;
   const connectionLabel = useMemo(() => {
@@ -1250,7 +1252,7 @@ export default function ChatPreviewPage() {
   };
 
   const handleToggleMessageAction = (
-    event: MouseEvent<HTMLButtonElement>,
+    event: ReactMouseEvent<HTMLButtonElement>,
     messageId: string,
     type: MessageAction["type"],
   ) => {
@@ -1269,7 +1271,7 @@ export default function ChatPreviewPage() {
     });
   };
 
-  const handleOpenMessageMenu = (event: MouseEvent<HTMLDivElement>, messageId: string) => {
+  const handleOpenMessageMenu = (event: ReactMouseEvent<HTMLDivElement>, messageId: string) => {
     event.preventDefault();
     const rect = event.currentTarget.getBoundingClientRect();
     const shouldPlaceBelow = rect.top < 180;
@@ -1382,7 +1384,7 @@ export default function ChatPreviewPage() {
     }
   };
 
-  const handleComposerKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+  const handleComposerKeyDown = (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === "Escape") {
       setMentionOpen(false);
       setIsEmojiOpen(false);
@@ -1732,7 +1734,7 @@ export default function ChatPreviewPage() {
                                 type="button"
                                 onClick={() =>
                                   handleUpdateNotifications(
-                                    notifLevel === "OFF" ? "OFF" : notifLevel,
+                                    notifLevel,
                                     new Date(Date.now() + 60 * 60 * 1000).toISOString(),
                                   )
                                 }
@@ -1745,7 +1747,7 @@ export default function ChatPreviewPage() {
                                 type="button"
                                 onClick={() =>
                                   handleUpdateNotifications(
-                                    notifLevel === "OFF" ? "OFF" : notifLevel,
+                                    notifLevel,
                                     new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString(),
                                   )
                                 }
@@ -1758,7 +1760,7 @@ export default function ChatPreviewPage() {
                                 type="button"
                                 onClick={() =>
                                   handleUpdateNotifications(
-                                    notifLevel === "OFF" ? "OFF" : notifLevel,
+                                    notifLevel,
                                     new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
                                   )
                                 }
@@ -2120,9 +2122,12 @@ export default function ChatPreviewPage() {
                                           return (
                                             <div key={attachment.id} className="space-y-2">
                                               {attachment.url ? (
-                                                <img
+                                                <Image
                                                   src={attachment.url}
                                                   alt={attachment.title}
+                                                  width={512}
+                                                  height={128}
+                                                  sizes="(max-width: 640px) 100vw, 50vw"
                                                   className="h-32 w-full rounded-xl border border-white/10 object-cover"
                                                 />
                                               ) : (

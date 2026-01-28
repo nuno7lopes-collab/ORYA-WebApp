@@ -1,8 +1,8 @@
 import { prisma } from "@/lib/prisma";
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { AuthRequiredError, requireUser } from "@/lib/auth/requireUser";
-import { NotificationType } from "@prisma/client";
+import { NotificationType, Prisma } from "@prisma/client";
 import { getUserFollowingSet } from "@/domain/social/follows";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
@@ -38,16 +38,18 @@ async function _GET(req: NextRequest) {
           .filter((t) => validTypes.has(t as NotificationType))
       : [];
 
-    const where = {
+    const where: Prisma.NotificationWhereInput = {
       userId: user.id,
       ...(status === "unread" ? { isRead: false } : {}),
       ...(types.length > 0 ? { type: { in: types as NotificationType[] } } : {}),
     };
     if (Number.isFinite(organizationId) && organizationId) {
-      where.AND = [
-        ...(where.AND ?? []),
-        { OR: [{ organizationId }, { event: { organizationId } }] },
-      ];
+      const andFilters = Array.isArray(where.AND)
+        ? where.AND
+        : where.AND
+          ? [where.AND]
+          : [];
+      where.AND = [...andFilters, { OR: [{ organizationId }, { event: { organizationId } }] }];
     }
 
     const notifications = await prisma.notification.findMany({
@@ -73,15 +75,17 @@ async function _GET(req: NextRequest) {
       return item;
     });
 
-    const unreadCountWhere = {
+    const unreadCountWhere: Prisma.NotificationWhereInput = {
       userId: user.id,
       isRead: false,
-    } as typeof where;
+    };
     if (Number.isFinite(organizationId) && organizationId) {
-      unreadCountWhere.AND = [
-        ...(unreadCountWhere.AND ?? []),
-        { OR: [{ organizationId }, { event: { organizationId } }] },
-      ];
+      const andFilters = Array.isArray(unreadCountWhere.AND)
+        ? unreadCountWhere.AND
+        : unreadCountWhere.AND
+          ? [unreadCountWhere.AND]
+          : [];
+      unreadCountWhere.AND = [...andFilters, { OR: [{ organizationId }, { event: { organizationId } }] }];
     }
     const unreadCount = await prisma.notification.count({ where: unreadCountWhere });
 

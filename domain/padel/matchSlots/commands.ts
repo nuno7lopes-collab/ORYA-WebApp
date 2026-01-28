@@ -273,7 +273,7 @@ export async function createMatchSlot(input: {
   actorUserId: string | null;
   correlationId?: string | null;
   causationId?: string | null;
-  data: Prisma.PadelMatchCreateInput;
+  data: Prisma.PadelMatchCreateInput | Prisma.PadelMatchUncheckedCreateInput;
   eventType?: string;
   tx?: Prisma.TransactionClient;
 }): Promise<MatchSlotResult<{ match: MatchSlotSnapshot; eventLogId: string }>> {
@@ -281,9 +281,10 @@ export async function createMatchSlot(input: {
   if (!Number.isFinite(organizationId)) return { ok: false, error: "INVALID_ORG" };
 
   const run = async (tx: Prisma.TransactionClient) => {
-    const eventId = typeof input.data.event === "object" && "connect" in input.data.event
-      ? Number((input.data.event as Prisma.EventCreateNestedOneWithoutPadelMatchesInput).connect?.id)
-      : Number((input.data as Prisma.PadelMatchCreateInput).eventId ?? NaN);
+    const eventId =
+      "event" in input.data && typeof input.data.event === "object" && input.data.event && "connect" in input.data.event
+        ? Number((input.data.event as Prisma.EventCreateNestedOneWithoutPadelMatchesInput).connect?.id)
+        : Number((input.data as Prisma.PadelMatchUncheckedCreateInput).eventId ?? NaN);
     if (!Number.isFinite(eventId)) return { ok: false as const, error: "INVALID_EVENT" };
 
     const event = await tx.event.findFirst({ where: { id: eventId, organizationId }, select: { id: true } });

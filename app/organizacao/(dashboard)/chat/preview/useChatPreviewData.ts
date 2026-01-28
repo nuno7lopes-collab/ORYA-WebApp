@@ -226,7 +226,7 @@ function mapMessageToPreview({
     message.attachments && message.attachments.length > 0
       ? message.attachments.map((attachment) => ({
           id: attachment.id,
-          kind: attachment.type === "IMAGE" ? "image" : "file",
+          kind: (attachment.type === "IMAGE" ? "image" : "file") as "image" | "file" | "link",
           title: resolveAttachmentTitle(attachment),
           meta: resolveAttachmentMeta(attachment),
           url: attachment.url,
@@ -287,7 +287,7 @@ function mapPendingToPreview(
     pending.attachments.length > 0
       ? pending.attachments.map((attachment) => ({
           id: attachment.id,
-          kind: attachment.kind,
+          kind: attachment.kind as "file" | "image" | "link",
           title: attachment.title,
           meta: attachment.meta,
           urlLabel: attachment.urlLabel,

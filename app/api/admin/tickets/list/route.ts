@@ -1,8 +1,8 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { requireAdminUser } from "@/lib/admin/auth";
-import type { Prisma } from "@prisma/client";
+import { TicketStatus, type Prisma } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const DEFAULT_PAGE_SIZE = 25;
@@ -24,7 +24,7 @@ async function _GET(req: NextRequest) {
 
     const url = new URL(req.url);
     const q = (url.searchParams.get("q") || "").trim();
-    const status = (url.searchParams.get("status") || "ALL").toUpperCase();
+    const statusRaw = (url.searchParams.get("status") || "ALL").toUpperCase();
     const intent = (url.searchParams.get("intent") || "").trim();
     const slug = (url.searchParams.get("slug") || "").trim();
     const userQuery = (url.searchParams.get("userQuery") || "").trim();
@@ -34,8 +34,10 @@ async function _GET(req: NextRequest) {
     const skip = (page - 1) * pageSize;
 
     const where: Prisma.TicketWhereInput = {};
-    if (status !== "ALL") {
-      where.status = status;
+    if (statusRaw !== "ALL") {
+      if (Object.values(TicketStatus).includes(statusRaw as TicketStatus)) {
+        where.status = statusRaw as TicketStatus;
+      }
     }
     if (intent) {
       where.purchaseId = { contains: intent, mode: "insensitive" };
