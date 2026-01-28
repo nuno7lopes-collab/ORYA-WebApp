@@ -778,6 +778,7 @@ function NavbarInner({ rawPathname }: { rawPathname: string | null }) {
           }`}
           role="dialog"
           aria-modal="true"
+          aria-label="Pesquisa de eventos ORYA"
           onClick={(e) => {
             if (e.target === e.currentTarget) {
               setIsSearchOpen(false);

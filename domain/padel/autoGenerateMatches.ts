@@ -209,21 +209,89 @@ export async function autoGeneratePadelMatches({
     select: { numberOfCourts: true, advancedSettings: true, format: true, ruleSetId: true },
   });
   const advanced = (config?.advancedSettings || {}) as {
-    courtsFromClubs?: Array<{ name?: string | null; clubName?: string | null; displayOrder?: number | null }>;
+    courtsFromClubs?: Array<{
+      id?: number | string | null;
+      clubId?: number | string | null;
+      name?: string | null;
+      clubName?: string | null;
+      displayOrder?: number | null;
+      indoor?: boolean | null;
+    }>;
+    courtIds?: Array<number | string | null>;
     groupsConfig?: GroupsConfig;
     seedRanks?: Record<string, unknown>;
     generationVersion?: string;
     scoreRules?: unknown;
   };
   const scoreRules = normalizePadelScoreRules(advanced.scoreRules);
-  const courtsList =
-    Array.isArray(advanced.courtsFromClubs) && advanced.courtsFromClubs.length > 0
-      ? [...advanced.courtsFromClubs].sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0))
-      : Array.from({ length: Math.max(1, config?.numberOfCourts || 1) }).map((_, idx) => ({
-          name: `Court ${idx + 1}`,
-          clubName: null,
+
+  type CourtSlot = { id: number | null; name: string; clubName: string | null; displayOrder: number };
+  const courtsFromClubs = Array.isArray(advanced.courtsFromClubs)
+    ? advanced.courtsFromClubs
+        .filter((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === "object")
+        .map((entry, idx) => {
+          const idRaw = entry.id;
+          const id = typeof idRaw === "string" ? Number(idRaw) : idRaw;
+          const nameRaw = entry.name;
+          const name = typeof nameRaw === "string" && nameRaw.trim() ? nameRaw.trim() : `Court ${idx + 1}`;
+          const clubNameRaw = entry.clubName;
+          const clubName = typeof clubNameRaw === "string" && clubNameRaw.trim() ? clubNameRaw.trim() : null;
+          const displayOrderRaw = entry.displayOrder;
+          const displayOrder =
+            typeof displayOrderRaw === "number" && Number.isFinite(displayOrderRaw) ? displayOrderRaw : idx;
+          return {
+            id: typeof id === "number" && Number.isFinite(id) ? id : null,
+            name,
+            clubName,
+            displayOrder,
+          };
+        })
+    : [];
+
+  const courtIdsRaw = Array.isArray(advanced.courtIds) ? advanced.courtIds : [];
+  const courtIds = courtIdsRaw
+    .map((id) => (typeof id === "string" ? Number(id) : id))
+    .filter((id): id is number => typeof id === "number" && Number.isFinite(id));
+
+  let courtsList: CourtSlot[] = courtsFromClubs.sort((a, b) => a.displayOrder - b.displayOrder);
+
+  if (courtsList.length === 0 && courtIds.length > 0) {
+    const courts = await prisma.padelClubCourt.findMany({
+      where: {
+        id: { in: courtIds },
+        isActive: true,
+        club: { organizationId },
+      },
+      select: {
+        id: true,
+        name: true,
+        displayOrder: true,
+        club: { select: { name: true } },
+      },
+    });
+    const courtById = new Map(courts.map((court) => [court.id, court]));
+    courtsList = courtIds
+      .map((id, idx) => {
+        const court = courtById.get(id);
+        if (!court) return null;
+        return {
+          id: court.id,
+          name: court.name,
+          clubName: court.club?.name ?? null,
           displayOrder: idx,
-        }));
+        };
+      })
+      .filter((court): court is CourtSlot => Boolean(court));
+  }
+
+  if (courtsList.length === 0) {
+    courtsList = Array.from({ length: Math.max(1, config?.numberOfCourts || 1) }).map((_, idx) => ({
+      id: null,
+      name: `Court ${idx + 1}`,
+      clubName: null,
+      displayOrder: idx,
+    }));
+  }
 
   const pairings = await prisma.padelPairing.findMany({
     where: {
@@ -373,14 +441,16 @@ export async function autoGeneratePadelMatches({
       rounds.forEach((round, roundIdx) => {
         round.forEach((pair, matchIdx) => {
           if (pair.a === null || pair.b === null) return;
-          const court = courtsList[(matchIdx + groupIdx) % courtsList.length];
+          const courtIndex = (matchIdx + groupIdx) % courtsList.length;
+          const court = courtsList[courtIndex];
           matchesToCreate.push({
             eventId,
             categoryId: resolvedCategoryId ?? null,
             pairingAId: pair.a,
             pairingBId: pair.b,
             status: "PENDING",
-            courtNumber: court ? (matchIdx % courtsList.length) + 1 : null,
+            courtId: court?.id ?? null,
+            courtNumber: court ? courtIndex + 1 : null,
             courtName: court?.name || null,
             roundLabel: `Jornada ${roundIdx + 1}`,
             roundType: "GROUPS",
@@ -606,7 +676,8 @@ export async function autoGeneratePadelMatches({
     const firstRoundLabel =
       koPairs.length === 1 ? "FINAL" : koPairs.length === 2 ? "SEMIFINAL" : koPairs.length === 4 ? "QUARTERFINAL" : `R${koPairs.length * 2}`;
     koPairs.forEach((p, idx) => {
-      const court = courtsList[idx % courtsList.length];
+      const courtIndex = idx % courtsList.length;
+      const court = courtsList[courtIndex];
       matchCreateData.push({
         eventId,
         categoryId: resolvedCategoryId ?? null,
@@ -615,7 +686,8 @@ export async function autoGeneratePadelMatches({
         status: "PENDING",
         roundType: "KNOCKOUT",
         roundLabel: firstRoundLabel,
-        courtNumber: court ? (idx % courtsList.length) + 1 : null,
+        courtId: court?.id ?? null,
+        courtNumber: court ? courtIndex + 1 : null,
         courtName: court?.name || null,
         score: {},
       });
@@ -775,7 +847,8 @@ export async function autoGeneratePadelMatches({
     const firstRoundLabel = labelForRound(pairs.length, bracketPrefix);
     pairs.forEach((p, idx) => {
       if (!p.a && !p.b) return;
-      const court = courtsList[idx % courtsList.length];
+      const courtIndex = idx % courtsList.length;
+      const court = courtsList[courtIndex];
       matchCreateData.push({
         eventId,
         categoryId: resolvedCategoryId ?? null,
@@ -784,7 +857,8 @@ export async function autoGeneratePadelMatches({
         status: "PENDING",
         roundType: "KNOCKOUT",
         roundLabel: firstRoundLabel,
-        courtNumber: (idx % courtsList.length) + 1,
+        courtId: court?.id ?? null,
+        courtNumber: courtIndex + 1,
         courtName: court?.name || null,
         score: {},
       });
@@ -913,7 +987,8 @@ export async function autoGeneratePadelMatches({
     rounds.forEach((round, roundIdx) => {
       round.forEach((pair) => {
         if (pair.a === null || pair.b === null) return;
-        const court = courtsList[matchIdx % courtsList.length];
+        const courtIndex = matchIdx % courtsList.length;
+        const court = courtsList[courtIndex];
         matchCreateData.push({
           eventId,
           categoryId: resolvedCategoryId ?? null,
@@ -923,7 +998,8 @@ export async function autoGeneratePadelMatches({
           roundType: "GROUPS",
           roundLabel: `${roundLabelPrefix} ${roundIdx + 1}`,
           groupLabel,
-          courtNumber: (matchIdx % courtsList.length) + 1,
+          courtId: court?.id ?? null,
+          courtNumber: courtIndex + 1,
           courtName: court?.name || null,
           score: {},
         });

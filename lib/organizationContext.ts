@@ -151,6 +151,7 @@ export const getActiveOrganizationForUser = cache(
       typeof opts.organizationId === "number" && Number.isFinite(opts.organizationId)
         ? opts.organizationId
         : null;
+    const hasExplicitOrganizationId = directOrganizationId !== null;
     const profileActive =
       directOrganizationId || !allowFallback
         ? null
@@ -190,12 +191,12 @@ export const getActiveOrganizationForUser = cache(
               },
             };
           }
-        }
       }
-      // Se o organizationId foi pedido explicitamente e não existe membership, não faz fallback.
-      if (!allowFallback) {
-        return { organization: null, membership: null };
-      }
+    }
+    // Se o organizationId foi pedido explicitamente e não existe membership, não faz fallback.
+    if (hasExplicitOrganizationId || !allowFallback) {
+      return { organization: null, membership: null };
+    }
     }
 
     const groupMembers = await prisma.organizationGroupMember.findMany({

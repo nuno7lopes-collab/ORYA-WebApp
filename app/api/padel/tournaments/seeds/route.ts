@@ -2,14 +2,13 @@ export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
-import { OrganizationMemberRole } from "@prisma/client";
+import { OrganizationModule } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
-
-const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
+import { ensureGroupMemberModuleAccess } from "@/lib/organizationMemberAccess";
 
 async function _POST(req: NextRequest) {
   const supabase = await createSupabaseServer();
@@ -32,11 +31,18 @@ async function _POST(req: NextRequest) {
   });
   if (!event?.organizationId) return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
 
-  const { organization } = await getActiveOrganizationForUser(user.id, {
+  const { organization, membership } = await getActiveOrganizationForUser(user.id, {
     organizationId: event.organizationId,
-    roles: ROLE_ALLOWLIST,
   });
-  if (!organization) return jsonWrap({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });
+  if (!organization || !membership) return jsonWrap({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });
+  const access = await ensureGroupMemberModuleAccess({
+    organizationId: event.organizationId,
+    userId: user.id,
+    moduleKey: OrganizationModule.TORNEIOS,
+    required: "EDIT",
+    membership: { role: membership.role, rolePack: membership.rolePack },
+  });
+  if (!access.ok) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
   if (!event.padelTournamentConfig) return jsonWrap({ ok: false, error: "NO_TOURNAMENT" }, { status: 404 });
 
   const matchCategoryFilter = Number.isFinite(categoryId) ? { categoryId } : {};

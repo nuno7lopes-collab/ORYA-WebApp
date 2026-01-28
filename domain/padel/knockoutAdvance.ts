@@ -29,16 +29,22 @@ export type KnockoutUpdateFn = (
   winnerPairingId: number | null;
 }>;
 
+function normalizeRoundLabel(label: string | null | undefined) {
+  const trimmed = (label ?? "?").trim();
+  return trimmed.length > 0 ? trimmed : "?";
+}
+
 export function extractBracketPrefix(label: string | null): "" | "A " | "B " {
   if (!label) return "";
-  if (label.startsWith("A ")) return "A ";
-  if (label.startsWith("B ")) return "B ";
+  const trimmed = label.trim();
+  if (trimmed.startsWith("A ")) return "A ";
+  if (trimmed.startsWith("B ")) return "B ";
   return "";
 }
 
 export function sortRoundsBySize(matches: Array<{ roundLabel: string | null }>) {
   const counts = matches.reduce<Record<string, number>>((acc, m) => {
-    const key = (m.roundLabel || "?").trim();
+    const key = normalizeRoundLabel(m.roundLabel);
     acc[key] = (acc[key] || 0) + 1;
     return acc;
   }, {});
@@ -82,14 +88,14 @@ function createBracketAdvancer(
   roundOrder.forEach((label) => {
     roundsMap.set(
       label,
-      bracketMatches.filter((m) => (m.roundLabel || "?") === label),
+      bracketMatches.filter((m) => normalizeRoundLabel(m.roundLabel) === label),
     );
   });
 
   const advance = async (fromMatchId: number, winner: number) => {
     const fromMatch = bracketMatches.find((m) => m.id === fromMatchId);
     if (!fromMatch) return;
-    const currentRound = fromMatch.roundLabel || roundOrder[0] || null;
+    const currentRound = normalizeRoundLabel(fromMatch.roundLabel);
     if (!currentRound) return;
     const currentIdx = roundOrder.findIndex((label) => label === currentRound);
     if (currentIdx === -1 || currentIdx >= roundOrder.length - 1) return;
@@ -158,7 +164,7 @@ export async function autoAdvancePadelByes({
     if (bracketMatches.length === 0 || roundOrder.length === 0) continue;
 
     for (const roundLabel of roundOrder) {
-      const roundMatches = bracketMatches.filter((m) => (m.roundLabel || "?") === roundLabel);
+      const roundMatches = bracketMatches.filter((m) => normalizeRoundLabel(m.roundLabel) === roundLabel);
       for (const match of roundMatches) {
         if (match.winnerPairingId) continue;
         const hasA = Boolean(match.pairingAId);

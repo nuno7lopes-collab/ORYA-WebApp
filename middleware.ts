@@ -1,0 +1,39 @@
+import { NextResponse, type NextRequest } from "next/server";
+
+function resolveHeader(req: NextRequest, name: string) {
+  return req.headers.get(name);
+}
+
+export function middleware(req: NextRequest) {
+  const requestId =
+    resolveHeader(req, "x-orya-request-id") ??
+    resolveHeader(req, "x-request-id") ??
+    crypto.randomUUID();
+  const correlationId =
+    resolveHeader(req, "x-orya-correlation-id") ??
+    resolveHeader(req, "x-correlation-id") ??
+    requestId;
+
+  const requestHeaders = new Headers(req.headers);
+  requestHeaders.set("x-orya-request-id", requestId);
+  requestHeaders.set("x-request-id", requestId);
+  requestHeaders.set("x-orya-correlation-id", correlationId);
+  requestHeaders.set("x-correlation-id", correlationId);
+
+  const res = NextResponse.next({
+    request: { headers: requestHeaders },
+  });
+
+  res.headers.set("x-orya-request-id", requestId);
+  res.headers.set("x-request-id", requestId);
+  res.headers.set("x-orya-correlation-id", correlationId);
+  res.headers.set("x-correlation-id", correlationId);
+
+  return res;
+}
+
+export const config = {
+  matcher: [
+    "/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml).*)",
+  ],
+};

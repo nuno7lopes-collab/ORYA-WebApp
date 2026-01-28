@@ -17,6 +17,7 @@ import {
   FeeMode,
   OrganizationModule,
   OrganizationStatus,
+  PadelClubKind,
   PadelPairingJoinMode,
   PadelPairingPaymentStatus,
   PadelPairingSlotRole,
@@ -169,6 +170,7 @@ const ensureClub = async ({
   address,
   courtsCount,
   isDefault,
+  kind,
 }: {
   organizationId: number;
   name: string;
@@ -177,6 +179,7 @@ const ensureClub = async ({
   address: string;
   courtsCount: number;
   isDefault: boolean;
+  kind: PadelClubKind;
 }) => {
   const existing = await prisma.padelClub.findUnique({ where: { slug } });
   if (existing) {
@@ -189,6 +192,7 @@ const ensureClub = async ({
         address,
         courtsCount,
         isDefault,
+        kind,
         isActive: true,
       },
     });
@@ -202,6 +206,7 @@ const ensureClub = async ({
       address,
       courtsCount,
       isDefault,
+      kind,
       isActive: true,
     },
   });
@@ -369,6 +374,46 @@ const seedPlayers = async ({
   return players;
 };
 
+const seedRankingEntries = async ({
+  organizationId,
+  eventId,
+  players,
+}: {
+  organizationId: number;
+  eventId: number;
+  players: Awaited<ReturnType<typeof prisma.padelPlayerProfile.findMany>>;
+}) => {
+  const year = new Date().getFullYear();
+  for (const [idx, player] of players.entries()) {
+    const points = Math.max(100, 1200 - idx * 15);
+    const existing = await prisma.padelRankingEntry.findFirst({
+      where: { organizationId, eventId, playerId: player.id },
+      select: { id: true },
+    });
+    if (existing) {
+      await prisma.padelRankingEntry.update({
+        where: { id: existing.id },
+        data: {
+          points,
+          level: player.level,
+          year,
+        },
+      });
+    } else {
+      await prisma.padelRankingEntry.create({
+        data: {
+          organizationId,
+          eventId,
+          playerId: player.id,
+          points,
+          level: player.level,
+          year,
+        },
+      });
+    }
+  }
+};
+
 const createPairings = async ({
   eventId,
   organizationId,
@@ -501,6 +546,7 @@ async function main() {
     address: "Rua do Padel, 123",
     courtsCount: MAIN_COURTS_COUNT,
     isDefault: true,
+    kind: PadelClubKind.OWN,
   });
 
   const partnerClub = await ensureClub({
@@ -511,6 +557,7 @@ async function main() {
     address: "Avenida Parceiro, 45",
     courtsCount: PARTNER_COURTS_COUNT,
     isDefault: false,
+    kind: PadelClubKind.PARTNER,
   });
 
   const mainCourts = await ensureCourts({
@@ -576,8 +623,11 @@ async function main() {
 
   const allCourts = [...mainCourts, ...partnerCourts];
   const courtsFromClubs = allCourts.map((court, idx) => ({
+    id: court.id,
+    clubId: court.padelClubId,
     name: court.name,
     clubName: court.padelClubId === mainClub.id ? MAIN_CLUB_NAME : PARTNER_CLUB_NAME,
+    indoor: court.indoor ?? null,
     displayOrder: idx,
   }));
 
@@ -668,6 +718,11 @@ async function main() {
     totalPlayers: TOTAL_PLAYERS,
     levels: CATEGORY_LEVELS,
     clubNames: [MAIN_CLUB_NAME, PARTNER_CLUB_NAME],
+  });
+  await seedRankingEntries({
+    organizationId: organization.id,
+    eventId: event.id,
+    players,
   });
 
   const playersByLevel = new Map<string, typeof players>();

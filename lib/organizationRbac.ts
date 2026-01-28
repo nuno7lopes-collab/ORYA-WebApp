@@ -166,6 +166,14 @@ const ROLE_CHECKIN_ACCESS: Record<OrganizationMemberRole, CheckinAccessLevel> = 
   VIEWER: "NONE",
 };
 
+const ADMIN_ROLE_SET = new Set<OrganizationMemberRole>(["OWNER", "CO_OWNER", "ADMIN"]);
+
+function shouldUseRolePack(role: OrganizationMemberRole | null | undefined, rolePack?: OrganizationRolePack | null) {
+  if (!rolePack) return false;
+  if (!role) return true;
+  return !ADMIN_ROLE_SET.has(role);
+}
+
 export function normalizeAccessLevel(value: string | null | undefined): ModuleAccessLevel | null {
   if (!value) return null;
   const normalized = value.toUpperCase();
@@ -235,7 +243,9 @@ export function resolveMemberModuleAccess(input: {
   overrides?: MemberPermissionOverride[];
 }) {
   const { role, rolePack, overrides = [] } = input;
-  const access = rolePack ? getDefaultModuleAccessForRolePack(rolePack) : getDefaultModuleAccess(role);
+  const access = shouldUseRolePack(role, rolePack)
+    ? getDefaultModuleAccessForRolePack(rolePack)
+    : getDefaultModuleAccess(role);
   overrides.forEach((override) => {
     if (override.scopeType || override.scopeId) return;
     const normalized = normalizeAccessLevel(override.accessLevel);
@@ -250,7 +260,7 @@ export function resolveCheckinAccess(input: {
   rolePack?: OrganizationRolePack | null;
 }): CheckinAccessLevel {
   const { role, rolePack } = input;
-  if (rolePack) {
+  if (shouldUseRolePack(role, rolePack)) {
     return ROLE_PACK_ACCESS[rolePack]?.checkin ?? "NONE";
   }
   if (!role) return "NONE";

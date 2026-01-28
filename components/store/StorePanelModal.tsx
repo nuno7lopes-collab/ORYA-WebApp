@@ -64,6 +64,7 @@ export default function StorePanelModal({
       className="fixed inset-0 z-[120] flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm"
       role="dialog"
       aria-modal="true"
+      aria-label={title}
       onClick={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
