@@ -1,0 +1,121 @@
+name: CI Env Gate
+
+on:
+  pull_request:
+    branches: [develop]
+  push:
+    branches: [develop]
+  workflow_dispatch: {}
+
+jobs:
+  env-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SUPABASE_URL: http://127.0.0.1:54321
+      NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+      SUPABASE_ANON_KEY: dummy
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: dummy
+      SUPABASE_SERVICE_ROLE: dummy
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+      DIRECT_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+      STRIPE_SECRET_KEY: sk_test_dummy
+      STRIPE_WEBHOOK_SECRET: whsec_dummy
+      STRIPE_PAYOUTS_WEBHOOK_SECRET: whsec_dummy
+      NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: pk_test_dummy
+      QR_SECRET_KEY: dummy
+      RESEND_API_KEY: dummy
+      RESEND_FROM_EMAIL: no-reply@example.com
+      APP_BASE_URL: https://example.com
+      ORYA_CRON_SECRET: dummy
+      APPLE_SIGNIN_SERVICE_ID: com.example.app
+      APPLE_SIGNIN_REDIRECT_URI: https://example.com/auth/callback
+      APPLE_SIGNIN_TEAM_ID: TEAMID
+      APPLE_SIGNIN_KEY_ID: KEYID
+      APPLE_SIGNIN_PRIVATE_KEY_BASE64: ZHVtbXk=
+      APNS_TEAM_ID: TEAMID
+      APNS_KEY_ID: KEYID
+      APNS_PRIVATE_KEY_BASE64: ZHVtbXk=
+      APNS_TOPIC: com.example.app
+      APPLE_MAPS_TEAM_ID: TEAMID
+      APPLE_MAPS_KEY_ID: KEYID
+      APPLE_MAPS_PRIVATE_KEY_BASE64: ZHVtbXk=
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Env check
+        run: |
+          node - <<'NODE'
+          const required = [
+            "SUPABASE_URL",
+            "NEXT_PUBLIC_SUPABASE_URL",
+            "SUPABASE_ANON_KEY",
+            "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+            "SUPABASE_SERVICE_ROLE",
+            "DATABASE_URL",
+            "DIRECT_URL",
+            "STRIPE_SECRET_KEY",
+            "STRIPE_WEBHOOK_SECRET",
+            "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY",
+            "QR_SECRET_KEY",
+            "RESEND_API_KEY",
+            "ORYA_CRON_SECRET",
+            "APPLE_SIGNIN_SERVICE_ID",
+            "APPLE_SIGNIN_REDIRECT_URI",
+            "APPLE_SIGNIN_TEAM_ID",
+            "APPLE_SIGNIN_KEY_ID",
+            "APPLE_SIGNIN_PRIVATE_KEY_BASE64",
+            "APNS_TEAM_ID",
+            "APNS_KEY_ID",
+            "APNS_PRIVATE_KEY_BASE64",
+            "APNS_TOPIC",
+            "APPLE_MAPS_TEAM_ID",
+            "APPLE_MAPS_KEY_ID",
+            "APPLE_MAPS_PRIVATE_KEY_BASE64",
+          ];
+          const missing = required.filter((key) => !process.env[key] || String(process.env[key]).trim() === "");
+          if (missing.length > 0) {
+            console.error("Missing required env vars:", missing.join(", "));
+            process.exit(1);
+          }
+          console.log("env-check: OK");
+          NODE
+
+  envelope-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SUPABASE_URL: http://127.0.0.1:54321
+      NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+      SUPABASE_ANON_KEY: dummy
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: dummy
+      SUPABASE_SERVICE_ROLE: dummy
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+      DIRECT_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+      STRIPE_SECRET_KEY: sk_test_dummy
+      STRIPE_WEBHOOK_SECRET: whsec_dummy
+      QR_SECRET_KEY: dummy
+      RESEND_API_KEY: dummy
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
+
+      - name: Install
+        run: npm ci
+
+      - name: API envelope helpers gate
+        run: npm run gate:api-contract
+
+      - name: P0 error envelope gate
+        run: npm run gate:p0-errors
+
+      - name: Envelope shape tests
+        run: npx vitest run tests/http
