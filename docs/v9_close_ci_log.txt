@@ -3245,3 +3245,45 @@ agenda drift allowlist [
    Start at  17:36:01
    Duration  1.10s (transform 899ms, setup 0ms, collect 1.91s, tests 969ms, environment 2ms, prepare 1.29s)
 
+
+## CI RUN (v9 patches 2) 2026-01-28T17:40:30Z commit 5e29280
+
+> orya@0.1.0 gate:internal-secret
+> node scripts/v9_internal_secret_gate.mjs
+
+V9 internal secret gate: OK
+
+> orya@0.1.0 gate:p0-errors
+> node scripts/v9_p0_error_gate.mjs
+
+V9 P0 error envelope gate: OK
+
+ RUN  v1.6.1 /Users/nuno/orya/ORYA-WebApp
+
+ ✓ tests/access/evaluateAccess.test.ts  (5 tests) 4ms
+ ✓ tests/ops/agendaDriftGuardrails.test.ts  (1 test) 48ms
+stdout | tests/ops/agendaDriftGuardrails.test.ts > agenda drift guardrails > permite apenas allowlist atual (D3.5 a apertar)
+agenda drift allowlist [
+  'domain/bookings/commands.ts',
+  'domain/hardBlocks/commands.ts',
+  'domain/padel/matchSlots/commands.ts',
+  'domain/padel/matches/commands.ts',
+  'domain/softBlocks/commands.ts'
+]
+
+ ✓ tests/ops/opsFeedConsumer.test.ts  (4 tests) 49ms
+ ✓ tests/ops/orgContextGuardrails.test.ts  (2 tests) 106ms
+ ✓ tests/ops/bookingGuardrails.test.ts  (1 test) 33ms
+ ✓ tests/ops/opsFeedRoutes.test.ts  (3 tests) 43ms
+ ✓ tests/access/inviteTokenRoutes.test.ts  (2 tests) 7ms
+ ✓ tests/ops/sloRoute.test.ts  (2 tests) 109ms
+ ✓ tests/ops/dashboardRoute.test.ts  (1 test) 32ms
+ ✓ tests/ops/healthRoute.test.ts  (2 tests) 54ms
+ ✓ tests/ops/rbacGuardrails.test.ts  (1 test) 19ms
+ ✓ tests/access/paymentsIntentAccess.test.ts  (2 tests) 489ms
+
+ Test Files  12 passed (12)
+      Tests  26 passed (26)
+   Start at  17:40:31
+   Duration  923ms (transform 575ms, setup 0ms, collect 1.38s, tests 993ms, environment 1ms, prepare 1.17s)
+
