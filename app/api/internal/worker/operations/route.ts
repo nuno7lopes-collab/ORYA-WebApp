@@ -2,7 +2,7 @@
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import Stripe from "stripe";
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
@@ -52,6 +52,7 @@ import { handleOwnerTransferOutboxEvent } from "@/domain/organization/ownerTrans
 import { consumeAgendaMaterializationEvent } from "@/domain/agendaReadModel/consumer";
 import { handleSearchIndexOutboxEvent } from "@/domain/searchIndex/consumer";
 import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 
 const MAX_ATTEMPTS = 5;
 const BATCH_SIZE = 5;
@@ -257,17 +258,14 @@ async function processSendEmailOutbox(op: OperationRecord) {
 
 async function _POST(req: NextRequest) {
   if (LEGACY_OPERATIONS_DISABLED) {
-    return NextResponse.json(
-      { ok: false, error: "LEGACY_OPERATIONS_DISABLED" },
-      { status: 410 }
-    );
+    return jsonWrap({ ok: false, error: "LEGACY_OPERATIONS_DISABLED" }, { status: 410 });
   }
   if (!requireInternalSecret(req)) {
-    return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
+    return jsonWrap({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
   }
 
   const results = await runOperationsBatch();
-  return NextResponse.json({ ok: true, processed: results.length, results }, { status: 200 });
+  return jsonWrap({ ok: true, processed: results.length, results }, { status: 200 });
 }
 
 export async function runOperationsBatch() {

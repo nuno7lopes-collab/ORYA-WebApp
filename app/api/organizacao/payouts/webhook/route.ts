@@ -54,7 +54,7 @@ async function _POST(req: NextRequest) {
           select: { id: true },
         });
         if (!organization) {
-          return new Response("Organization not resolved", { status: 400 });
+          return new Response("ORG_NOT_RESOLVED", { status: 422 });
         }
 
         await prisma.organization.update({
@@ -84,6 +84,7 @@ async function _POST(req: NextRequest) {
     }
   } catch (err) {
     console.error("[Stripe Connect Webhook] Error processing event:", err);
+    return new Response("WEBHOOK_PROCESSING_ERROR", { status: 500 });
   }
 
   return NextResponse.json({ received: true });

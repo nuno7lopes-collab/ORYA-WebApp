@@ -1,4 +1,5 @@
 import { padel_format, Prisma } from "@prisma/client";
+import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { queueBracketPublished } from "@/domain/notifications/tournament";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
@@ -66,17 +67,38 @@ type AutoGenerateResult = {
   koOverride?: boolean;
 };
 
-function shuffle<T>(arr: T[]): T[] {
+function shuffle<T>(arr: T[], rng: () => number): T[] {
   const out = [...arr];
   for (let i = out.length - 1; i > 0; i -= 1) {
-    const j = Math.floor(Math.random() * (i + 1));
+    const j = Math.floor(rng() * (i + 1));
     [out[i], out[j]] = [out[j], out[i]];
   }
   return out;
 }
 
-function distributeIntoGroups(ids: number[], groupCount: number, seeding: "SNAKE" | "NONE") {
-  const sorted = seeding === "SNAKE" ? [...ids] : shuffle(ids);
+function hashSeed(input: string) {
+  const hash = crypto.createHash("sha256").update(input).digest("hex");
+  return parseInt(hash.slice(0, 8), 16) >>> 0;
+}
+
+function seededRng(seed: number) {
+  let t = seed;
+  return () => {
+    t |= 0;
+    t = (t + 0x6D2B79F5) | 0;
+    let r = Math.imul(t ^ (t >>> 15), 1 | t);
+    r ^= r + Math.imul(r ^ (r >>> 7), 61 | r);
+    return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function distributeIntoGroups(
+  ids: number[],
+  groupCount: number,
+  seeding: "SNAKE" | "NONE",
+  rng: () => number,
+) {
+  const sorted = seeding === "SNAKE" ? [...ids] : shuffle(ids, rng);
   const groups: number[][] = Array.from({ length: groupCount }, () => []);
   let forward = true;
   let idx = 0;
@@ -243,6 +265,16 @@ export async function autoGeneratePadelMatches({
 
   const formatEffective = format ?? config?.format ?? padel_format.TODOS_CONTRA_TODOS;
   const phaseEffective = phase ?? "GROUPS";
+  const seedSource = [
+    eventId,
+    resolvedCategoryId ?? "",
+    formatEffective,
+    phaseEffective,
+    advanced.generationVersion ?? "",
+    pairingIds.join(","),
+  ].join("|");
+  const seedHash = crypto.createHash("sha256").update(seedSource).digest("hex");
+  const rngFor = (tag: string) => seededRng(hashSeed(`${seedHash}|${tag}`));
 
   if (formatEffective === "GRUPOS_ELIMINATORIAS" && phaseEffective !== "KNOCKOUT") {
     const existingGroupMatch = await prisma.padelMatch.findFirst({
@@ -326,7 +358,7 @@ export async function autoGeneratePadelMatches({
       });
     }
     const remaining = pairingIds.filter((id) => !assigned.has(id));
-    const fillGroups = distributeIntoGroups(remaining, Math.max(1, groupCount), seeding);
+    const fillGroups = distributeIntoGroups(remaining, Math.max(1, groupCount), seeding, rngFor("groups"));
     fillGroups.forEach((ids, idx) => groups[idx]?.push(...ids));
     if (groups.length === 0 || groups.every((g) => g.length === 0)) return { ok: false, error: "NO_GROUPS" };
 
@@ -381,6 +413,7 @@ export async function autoGeneratePadelMatches({
         mode: cfg.mode ?? "AUTO",
         manualAssigned: manualAssignments.size,
         seeding,
+        seedHash,
         matches: matchesToCreate.length,
       },
     });
@@ -716,7 +749,7 @@ export async function autoGeneratePadelMatches({
     }
   }
 
-  const drawPairingIds = hasSeedRanks ? pairingIds : shuffle(pairingIds);
+  const drawPairingIds = hasSeedRanks ? pairingIds : shuffle(pairingIds, rngFor("draw"));
   const isDoubleElim = formatEffective === "DUPLA_ELIMINACAO";
   const isKnockout =
     formatEffective === "QUADRO_ELIMINATORIO" || formatEffective === "QUADRO_AB" || isDoubleElim;
@@ -945,6 +978,7 @@ export async function autoGeneratePadelMatches({
       categoryId: resolvedCategoryId ?? null,
       phase: isKnockout ? "KNOCKOUT" : "ROUND_ROBIN",
       format: formatEffective,
+      seedHash,
       matches: matchCreateData.length,
     },
   });

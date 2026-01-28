@@ -220,11 +220,11 @@ async function _POST(req: NextRequest) {
   try {
     const outbox = await recordStripeWebhookOutbox(event);
     if (!outbox.ok) {
-      return new Response("Organization not resolved", { status: 400 });
+      return new Response("ORG_NOT_RESOLVED", { status: 422 });
     }
   } catch (err) {
     console.error("[Webhook] Error processing event:", err);
-    // devolvemos 200 na mesma para o Stripe não re-tentar para sempre
+    return new Response("WEBHOOK_PROCESSING_ERROR", { status: 500 });
   }
 
   return NextResponse.json({ received: true });

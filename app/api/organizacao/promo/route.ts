@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
@@ -8,10 +8,48 @@ import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { OrganizationModule } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import crypto from "crypto";
 
 const resolveOrganizationId = (req: NextRequest) => {
   const organizationId = resolveOrganizationIdFromRequest(req);
   return { organizationId };
+};
+
+type AutoPromoCodeInput = {
+  organizationId: number;
+  eventId: number | null;
+  type: "PERCENTAGE" | "FIXED";
+  value: number;
+  maxUses: number | null;
+  perUserLimit: number | null;
+  validFrom: Date | null;
+  validUntil: Date | null;
+  minQuantity: number | null;
+  minTotalCents: number | null;
+  promoterUserId: string | null;
+  active: boolean;
+  autoApply: boolean;
+};
+
+const buildAutoPromoCode = (input: AutoPromoCodeInput) => {
+  const iso = (d: Date | null) => (d ? d.toISOString() : "");
+  const seed = [
+    input.organizationId,
+    input.eventId ?? "",
+    input.type,
+    input.value,
+    input.maxUses ?? "",
+    input.perUserLimit ?? "",
+    iso(input.validFrom),
+    iso(input.validUntil),
+    input.minQuantity ?? "",
+    input.minTotalCents ?? "",
+    input.promoterUserId ?? "",
+    input.active ? "1" : "0",
+    input.autoApply ? "1" : "0",
+  ].join("|");
+  const hash = crypto.createHash("sha256").update(seed).digest("hex").slice(0, 8).toUpperCase();
+  return `AUTO-${hash}`;
 };
 
 async function requireOrganization(req: NextRequest) {
@@ -304,12 +342,7 @@ async function _POST(req: NextRequest) {
 
     const cleanCode = (code || "").trim();
     const auto = Boolean(autoApply);
-    // Se autoApply e sem código, gerar um placeholder interno
-    const finalCode =
-      auto && !cleanCode
-        ? `AUTO-${Math.random().toString(36).slice(2, 8).toUpperCase()}`
-        : cleanCode;
-    if (!finalCode) {
+    if (!auto && !cleanCode) {
       return jsonWrap({ ok: false, error: "Código em falta." }, { status: 400 });
     }
     if (type !== "PERCENTAGE" && type !== "FIXED") {
@@ -319,6 +352,7 @@ async function _POST(req: NextRequest) {
     if (!Number.isFinite(cleanValue) || cleanValue <= 0) {
       return jsonWrap({ ok: false, error: "Valor inválido." }, { status: 400 });
     }
+    const normalizedValue = Math.floor(cleanValue);
 
     let targetEventId: number | null = null;
     if (eventId !== null && eventId !== undefined) {
@@ -340,6 +374,8 @@ async function _POST(req: NextRequest) {
       const dt = new Date(d);
       return Number.isNaN(dt.getTime()) ? null : dt;
     };
+    const normalizedValidFrom = parseDate(validFrom);
+    const normalizedValidUntil = parseDate(validUntil);
 
     let resolvedPromoterId: string | null = null;
     if (typeof promoterUserId === "string") {
@@ -353,18 +389,41 @@ async function _POST(req: NextRequest) {
       resolvedPromoterId = promoterUserId;
     }
 
+    const resolvedActive = active ?? true;
+    const finalCode =
+      auto && !cleanCode
+        ? buildAutoPromoCode({
+            organizationId: ctx.organization.id,
+            eventId: targetEventId,
+            type,
+            value: normalizedValue,
+            maxUses: maxUses ?? null,
+            perUserLimit: perUserLimit ?? null,
+            validFrom: normalizedValidFrom,
+            validUntil: normalizedValidUntil,
+            minQuantity: minQuantity ?? null,
+            minTotalCents: minTotalCents ?? null,
+            promoterUserId: resolvedPromoterId,
+            active: resolvedActive,
+            autoApply: auto,
+          })
+        : cleanCode;
+    if (!finalCode) {
+      return jsonWrap({ ok: false, error: "Código em falta." }, { status: 400 });
+    }
+
     const created = await prisma.promoCode.create({
       data: {
         code: finalCode,
         type,
-        value: Math.floor(cleanValue),
+        value: normalizedValue,
         organizationId: ctx.organization.id,
         maxUses: maxUses ?? null,
         perUserLimit: perUserLimit ?? null,
-        validFrom: parseDate(validFrom),
-        validUntil: parseDate(validUntil),
+        validFrom: normalizedValidFrom,
+        validUntil: normalizedValidUntil,
         eventId: targetEventId,
-        active: active ?? true,
+        active: resolvedActive,
         autoApply: auto,
         minQuantity: minQuantity ?? null,
         minTotalCents: minTotalCents ?? null,
