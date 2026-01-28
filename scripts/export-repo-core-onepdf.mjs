@@ -25,7 +25,7 @@ const INCLUDE_FILES = [
   "tsconfig.json",
   "next.config.js",
   "next.config.mjs",
-  "middleware.ts",
+  "proxy.ts",
   "README.md",
   ".env.example",
 ];

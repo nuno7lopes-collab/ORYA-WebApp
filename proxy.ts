@@ -1,4 +1,4 @@
-// Middleware para manter a sessão do Supabase fresca e aplicar regras base de segurança.
+// Proxy (Next.js) para manter a sessão do Supabase fresca e aplicar regras base de segurança.
 // Inclui redirects canónicos/HTTPS, proteção de admin e headers de cache para rotas sensíveis.
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
@@ -162,7 +162,7 @@ function attachResponseHeaders(res: NextResponse, requestId: string, correlation
   return res;
 }
 
-export async function middleware(req: NextRequest) {
+export async function proxy(req: NextRequest) {
   const { requestId, correlationId } = resolveRequestIds(req);
   const requestHeaders = buildRequestHeaders(req, requestId, correlationId);
 
