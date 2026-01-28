@@ -4,8 +4,9 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { MouseEvent, PointerEvent } from "react";
 import Link from "next/link";
 import useSWR from "swr";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { parseOrganizationId } from "@/lib/organizationId";
 import {
   CORE_ORGANIZATION_MODULES,
   OPERATION_MODULES,
@@ -34,6 +35,7 @@ type ObjectiveSubnavProps = {
   focusSectionId?: string;
   primaryModule?: string | null;
   modules?: string[] | null;
+  organizationId?: number | null;
   mode?: "dashboard" | "page";
   variant?: "full" | "tabs" | "topbar";
   hideWhenSingle?: boolean;
@@ -46,6 +48,7 @@ export default function ObjectiveSubnav({
   focusSectionId,
   primaryModule,
   modules,
+  organizationId: organizationIdProp = null,
   mode,
   variant = "full",
   hideWhenSingle = true,
@@ -64,7 +67,11 @@ export default function ObjectiveSubnav({
     scrollLeft: 0,
     hasDragged: false,
   });
-  const { data } = useSWR(primaryModule || modules ? null : "/api/organizacao/me", fetcher);
+  const searchParams = useSearchParams();
+  const organizationIdParam = parseOrganizationId(searchParams?.get("organizationId"));
+  const organizationId = organizationIdProp ?? organizationIdParam ?? null;
+  const orgMeUrl = organizationId ? `/api/organizacao/me?organizationId=${organizationId}` : null;
+  const { data } = useSWR(primaryModule || modules ? null : orgMeUrl, fetcher);
   const organization = data?.organization ?? null;
   const pathname = usePathname();
   const inscricoesBasePath = (() => {

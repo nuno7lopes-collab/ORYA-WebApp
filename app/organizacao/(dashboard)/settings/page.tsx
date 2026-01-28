@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import useSWR from "swr";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useUser } from "@/app/hooks/useUser";
 import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
 import { isValidPhone, sanitizePhone } from "@/lib/phone";
@@ -61,10 +61,17 @@ type OrganizationSettingsPageProps = {
 
 export default function OrganizationSettingsPage({ embedded }: OrganizationSettingsPageProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { user } = useUser();
   const { openModal } = useAuthModal();
+  const organizationIdParam = searchParams?.get("organizationId") ?? null;
+  const organizationId = organizationIdParam ? Number(organizationIdParam) : null;
+  const orgMeUrl =
+    user && organizationId && Number.isFinite(organizationId)
+      ? `/api/organizacao/me?organizationId=${organizationId}`
+      : null;
   const { data, isLoading, mutate } = useSWR<OrganizationMeResponse>(
-    user ? "/api/organizacao/me" : null,
+    orgMeUrl,
     fetcher,
     {
       revalidateOnFocus: false,
@@ -131,7 +138,11 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
     setSavingOrg(true);
     setOrgMessage(null);
     try {
-      const res = await fetch("/api/organizacao/me", {
+      if (!organizationId || Number.isNaN(organizationId)) {
+        setOrgMessage("Seleciona uma organização primeiro.");
+        return;
+      }
+      const res = await fetch(`/api/organizacao/me?organizationId=${organizationId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

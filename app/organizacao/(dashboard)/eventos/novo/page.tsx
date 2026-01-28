@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import useSWR from "swr";
 import { EventCoverCropModal } from "@/app/components/forms/EventCoverCropModal";
@@ -221,8 +221,15 @@ export default function NewOrganizationEventPage({
   forcePreset,
 }: NewOrganizationEventPageProps = {}) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { user, profile, isLoading: isUserLoading } = useUser();
   const { openModal } = useAuthModal();
+  const organizationIdParam = searchParams?.get("organizationId") ?? null;
+  const organizationId = organizationIdParam ? Number(organizationIdParam) : null;
+  const orgMeUrl =
+    user && organizationId && Number.isFinite(organizationId)
+      ? `/api/organizacao/me?organizationId=${organizationId}`
+      : null;
   const { data: organizationStatus } = useSWR<{
     ok?: boolean;
     organization?: {
@@ -243,7 +250,7 @@ export default function NewOrganizationEventPage({
     paymentsMode?: "PLATFORM" | "CONNECT";
     profileStatus?: string;
   }>(
-    user ? "/api/organizacao/me" : null,
+    orgMeUrl,
     fetcher,
     { revalidateOnFocus: false }
   );

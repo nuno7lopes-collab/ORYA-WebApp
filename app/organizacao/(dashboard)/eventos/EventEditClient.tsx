@@ -152,8 +152,11 @@ const normalizeIntegerInput = (value: string) => {
 
 export function EventEditClient({ event, tickets }: EventEditClientProps) {
   const { user, profile } = useUser();
+  const organizationId = event.organizationId ?? null;
+  const orgMeUrl =
+    user && organizationId ? `/api/organizacao/me?organizationId=${organizationId}` : null;
   const { data: organizationStatus } = useSWR<{ paymentsStatus?: string }>(
-    user ? "/api/organizacao/me" : null,
+    orgMeUrl,
     fetcher,
     { revalidateOnFocus: false }
   );

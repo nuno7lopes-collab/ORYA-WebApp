@@ -6,6 +6,7 @@ import { CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
 
 type FinanceAlertsPanelProps = {
   organization: {
+    id?: number | null;
     alertsEmail?: string | null;
     alertsSalesEnabled?: boolean | null;
     alertsPayoutEnabled?: boolean | null;
@@ -31,10 +32,15 @@ export default function FinanceAlertsPanel({ organization, canEdit = false, onSa
 
   const handleSave = async () => {
     if (!canEdit) return;
+    const organizationId = organization?.id ?? null;
+    if (!organizationId) {
+      setMessage("Seleciona uma organização primeiro.");
+      return;
+    }
     setSaving(true);
     setMessage(null);
     try {
-      const res = await fetch("/api/organizacao/me", {
+      const res = await fetch(`/api/organizacao/me?organizationId=${organizationId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

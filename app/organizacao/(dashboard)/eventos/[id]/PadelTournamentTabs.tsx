@@ -234,8 +234,10 @@ export default function PadelTournamentTabs({
       : null,
     fetcher,
   );
+  const orgIdForMe =
+    typeof configRes?.config?.organizationId === "number" ? configRes.config.organizationId : null;
   const { data: orgMeRes } = useSWR<OrganizationMeResponse>(
-    eventId ? "/api/organizacao/me" : null,
+    orgIdForMe ? `/api/organizacao/me?organizationId=${orgIdForMe}` : null,
     fetcher,
   );
   const { data: analyticsRes } = useSWR(
