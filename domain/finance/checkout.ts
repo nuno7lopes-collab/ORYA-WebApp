@@ -17,6 +17,12 @@ export type CreateCheckoutInput = {
   inviteToken?: string | null;
   pricingSnapshotHash?: string | null;
   idempotencyKey: string;
+  // Allow callers to anchor the payment id to the purchaseId SSOT.
+  paymentId?: string | null;
+  // Optional pre-resolved snapshot to avoid drift between flows.
+  resolvedSnapshot?: ResolvedSnapshotOverride | null;
+  // Some routes already perform access checks and invite handling.
+  skipAccessChecks?: boolean;
 };
 
 export type CreateCheckoutOutput = {
@@ -26,7 +32,7 @@ export type CreateCheckoutOutput = {
   pricingSnapshotHash?: string | null;
 };
 
-type PricingSnapshot = {
+export type PricingSnapshot = {
   currency: string;
   gross: number;
   discounts: number;
@@ -62,6 +68,14 @@ type ResolvedSnapshot = {
   ticketTypeIds?: number[];
 };
 
+export type ResolvedSnapshotOverride = {
+  organizationId: number;
+  buyerIdentityId?: string | null;
+  snapshot: PricingSnapshot;
+  eventId?: number;
+  ticketTypeIds?: number[];
+};
+
 const MVP_ALLOWED_SOURCE_TYPES = new Set<SourceType>([
   SourceType.TICKET_ORDER,
   SourceType.BOOKING,
@@ -81,6 +95,10 @@ function ensureMvpSourceType(sourceType: SourceType) {
 function hashFeePolicyVersion(input: { feeMode: FeeMode; feeBps: number; feeFixed: number }) {
   const payload = JSON.stringify(input);
   return crypto.createHash("sha256").update(payload).digest("hex");
+}
+
+export function computeFeePolicyVersion(input: { feeMode: FeeMode; feeBps: number; feeFixed: number }) {
+  return hashFeePolicyVersion(input);
 }
 
 function canonicalize(value: unknown): unknown {
@@ -416,6 +434,53 @@ async function resolvePricingSnapshot(input: CreateCheckoutInput): Promise<Resol
   }
 }
 
+function buildLedgerEntries(params: {
+  paymentId: string;
+  snapshot: PricingSnapshot;
+  idempotencyKey: string;
+}) {
+  const { paymentId, snapshot, idempotencyKey } = params;
+  return [
+    {
+      paymentId,
+      entryType: LedgerEntryType.GROSS,
+      amount: snapshot.gross,
+      currency: snapshot.currency,
+      sourceType: snapshot.sourceType,
+      sourceId: snapshot.sourceId,
+      causationId: `${idempotencyKey}:gross`,
+      correlationId: idempotencyKey,
+    },
+    {
+      paymentId,
+      entryType: LedgerEntryType.PLATFORM_FEE,
+      amount: -Math.abs(snapshot.platformFee),
+      currency: snapshot.currency,
+      sourceType: snapshot.sourceType,
+      sourceId: snapshot.sourceId,
+      causationId: `${idempotencyKey}:platform_fee`,
+      correlationId: idempotencyKey,
+    },
+  ];
+}
+
+async function ensureLedgerEntriesForExistingPayment(payment: {
+  id: string;
+  idempotencyKey: string;
+  pricingSnapshotJson: unknown;
+}) {
+  const snapshot = payment.pricingSnapshotJson as PricingSnapshot | null;
+  if (!snapshot) return;
+  await prisma.ledgerEntry.createMany({
+    data: buildLedgerEntries({
+      paymentId: payment.id,
+      snapshot,
+      idempotencyKey: payment.idempotencyKey,
+    }),
+    skipDuplicates: true,
+  });
+}
+
 export async function createCheckout(input: CreateCheckoutInput): Promise<CreateCheckoutOutput> {
   ensureMvpSourceType(input.sourceType);
 
@@ -423,10 +488,59 @@ export async function createCheckout(input: CreateCheckoutInput): Promise<Create
     throw new Error("IDEMPOTENCY_KEY_REQUIRED");
   }
 
+  const desiredPaymentId =
+    typeof input.paymentId === "string" && input.paymentId.trim() !== ""
+      ? input.paymentId.trim()
+      : null;
+
+  if (desiredPaymentId) {
+    const existingById = await prisma.payment.findUnique({
+      where: { id: desiredPaymentId },
+      select: {
+        id: true,
+        status: true,
+        pricingSnapshotHash: true,
+        idempotencyKey: true,
+        pricingSnapshotJson: true,
+      },
+    });
+    if (existingById) {
+      if (existingById.idempotencyKey !== input.idempotencyKey) {
+        console.warn("[finance/checkout] paymentId already exists with different idempotencyKey", {
+          paymentId: desiredPaymentId,
+          existingIdempotencyKey: existingById.idempotencyKey,
+          incomingIdempotencyKey: input.idempotencyKey,
+        });
+      }
+      await ensureLedgerEntriesForExistingPayment(existingById);
+      return {
+        paymentId: existingById.id,
+        status: existingById.status,
+        clientSecret: null,
+        pricingSnapshotHash: existingById.pricingSnapshotHash ?? input.pricingSnapshotHash ?? null,
+      };
+    }
+  }
+
   const existing = await prisma.payment.findUnique({
     where: { idempotencyKey: input.idempotencyKey },
+    select: {
+      id: true,
+      status: true,
+      pricingSnapshotHash: true,
+      idempotencyKey: true,
+      pricingSnapshotJson: true,
+    },
   });
   if (existing) {
+    if (desiredPaymentId && desiredPaymentId !== existing.id) {
+      console.warn("[finance/checkout] idempotencyKey resolved to different paymentId", {
+        desiredPaymentId,
+        resolvedPaymentId: existing.id,
+        idempotencyKey: input.idempotencyKey,
+      });
+    }
+    await ensureLedgerEntriesForExistingPayment(existing);
     return {
       paymentId: existing.id,
       status: existing.status,
@@ -435,13 +549,28 @@ export async function createCheckout(input: CreateCheckoutInput): Promise<Create
     };
   }
 
-  const resolved = await resolvePricingSnapshot(input);
-  const paymentId = crypto.randomUUID();
+  const resolved =
+    input.resolvedSnapshot != null
+      ? {
+          organizationId: input.resolvedSnapshot.organizationId,
+          buyerIdentityId: input.resolvedSnapshot.buyerIdentityId ?? null,
+          snapshot: input.resolvedSnapshot.snapshot,
+          eventId: input.resolvedSnapshot.eventId,
+          ticketTypeIds: input.resolvedSnapshot.ticketTypeIds,
+        }
+      : await resolvePricingSnapshot(input);
+  const paymentId = desiredPaymentId ?? crypto.randomUUID();
   const pricingSnapshot = resolved.snapshot;
+  if (pricingSnapshot.sourceType !== input.sourceType) {
+    throw new Error("SOURCE_TYPE_MISMATCH");
+  }
+  if (!pricingSnapshot.sourceId) {
+    throw new Error("SOURCE_ID_REQUIRED");
+  }
   const pricingSnapshotHash = hashPricingSnapshot(pricingSnapshot);
 
   await prisma.$transaction(async (tx) => {
-    if (input.sourceType === SourceType.TICKET_ORDER) {
+    if (input.sourceType === SourceType.TICKET_ORDER && !input.skipAccessChecks) {
       if (!resolved.eventId) {
         throw new Error("EVENT_ID_REQUIRED");
       }
