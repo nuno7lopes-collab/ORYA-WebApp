@@ -89,6 +89,20 @@ describe("tournament commands", () => {
     expect(recordOutboxEvent).not.toHaveBeenCalled();
   });
 
+  it("create exige eventId", async () => {
+    const res = await createTournamentForEvent({
+      eventId: Number.NaN,
+      format: "DRAW_A_B",
+      config: {},
+      actorUserId: "user-1",
+    });
+
+    expect(res.ok).toBe(false);
+    expect(res).toEqual(expect.objectContaining({ error: "EVENT_ID_REQUIRED" }));
+    expect(appendEventLog).not.toHaveBeenCalled();
+    expect(recordOutboxEvent).not.toHaveBeenCalled();
+  });
+
   it("update bloqueia eventos nao-PADEL", async () => {
     tx.tournament.findUnique.mockResolvedValue({
       id: 3,
@@ -104,6 +118,19 @@ describe("tournament commands", () => {
 
     expect(res.ok).toBe(false);
     expect(res).toEqual(expect.objectContaining({ error: "EVENT_NOT_PADEL" }));
+    expect(appendEventLog).not.toHaveBeenCalled();
+    expect(recordOutboxEvent).not.toHaveBeenCalled();
+  });
+
+  it("update rejeita eventId invalido no payload", async () => {
+    const res = await updateTournament({
+      tournamentId: 3,
+      data: { eventId: null } as any,
+      actorUserId: "user-2",
+    });
+
+    expect(res.ok).toBe(false);
+    expect(res).toEqual(expect.objectContaining({ error: "EVENT_ID_REQUIRED" }));
     expect(appendEventLog).not.toHaveBeenCalled();
     expect(recordOutboxEvent).not.toHaveBeenCalled();
   });

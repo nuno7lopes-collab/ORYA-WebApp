@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
@@ -49,7 +49,7 @@ async function _POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
   const eventId = Number(body?.eventId);
   if (!Number.isFinite(eventId)) {
-    return jsonWrap({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
+    return jsonWrap({ ok: false, error: "EVENT_ID_REQUIRED" }, { status: 400 });
   }
 
   const supabase = await createSupabaseServer();
@@ -84,8 +84,8 @@ async function _POST(req: NextRequest) {
     actorUserId: authData.user.id,
   });
   if (!result.ok) {
-    if (result.error === "INVALID_EVENT_ID") {
-      return jsonWrap({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
+    if (result.error === "EVENT_ID_REQUIRED") {
+      return jsonWrap({ ok: false, error: "EVENT_ID_REQUIRED" }, { status: 400 });
     }
     if (result.error === "EVENT_NOT_PADEL") {
       return jsonWrap({ ok: false, error: "EVENT_NOT_PADEL" }, { status: 400 });
